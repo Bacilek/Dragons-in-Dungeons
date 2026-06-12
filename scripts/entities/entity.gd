@@ -9,10 +9,10 @@ var stats: Stats
 func take_turn() -> void:
 	pass
 
-func move_to(new_pos: Vector2i) -> void:
+func move_to(new_pos: Vector2i, duration: float = 0.08) -> void:
 	grid_pos = new_pos
 	var tween := create_tween()
-	tween.tween_property(self, "position", _tile_center(new_pos), 0.08)
+	tween.tween_property(self, "position", _tile_center(new_pos), duration)
 	await tween.finished
 
 func set_grid_pos(pos: Vector2i) -> void:

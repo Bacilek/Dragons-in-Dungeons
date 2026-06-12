@@ -6,6 +6,7 @@ signal player_turn_started()
 signal turn_resolved()
 
 var phase: Phase = Phase.WAITING_FOR_INPUT
+var fast_mode: bool = false
 
 var _enemies: Array = []  # Array[Entity]
 

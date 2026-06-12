@@ -43,6 +43,6 @@ func take_turn() -> void:
 		if _dungeon_floor.is_walkable_for_enemy(target):
 			$AnimatedSprite2D.flip_h = dir.x < 0
 			$AnimatedSprite2D.play("run")
-			await move_to(target)
+			await move_to(target, 0.04 if TurnManager.fast_mode else 0.08)
 			$AnimatedSprite2D.play("idle")
 			return

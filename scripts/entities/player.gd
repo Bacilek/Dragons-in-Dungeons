@@ -64,6 +64,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _execute_queued_path() -> void:
 	_path_executing = true
+	TurnManager.fast_mode = true
 	while not _queued_path.is_empty():
 		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
 			await TurnManager.player_turn_started
@@ -86,7 +87,7 @@ func _execute_queued_path() -> void:
 		TurnManager.begin_player_action()
 		$AnimatedSprite2D.flip_h = dir.x < 0
 		$AnimatedSprite2D.play("run")
-		await move_to(next)
+		await move_to(next, 0.05)
 		$AnimatedSprite2D.play("idle")
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
@@ -94,10 +95,12 @@ func _execute_queued_path() -> void:
 
 		if is_stairs:
 			_dungeon_floor.on_player_reached_stairs.call_deferred()
+			TurnManager.fast_mode = false
 			_path_executing = false
 			return
 
 		await TurnManager.turn_resolved
+	TurnManager.fast_mode = false
 	_path_executing = false
 
 func _try_move(dir: Vector2i) -> void:
