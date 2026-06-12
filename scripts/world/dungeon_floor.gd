@@ -2,10 +2,12 @@ class_name DungeonFloor
 extends Node2D
 
 const TILE_SIZE: int = 16
-const SOURCE_ID: int = 0
-const ATLAS_FLOOR := Vector2i(0, 0)
-const ATLAS_WALL := Vector2i(1, 0)
-const ATLAS_STAIRS := Vector2i(2, 0)
+const ATLAS_ORIGIN := Vector2i(0, 0)
+const SOURCE_FLOOR: int = 0
+const SOURCE_WALL: int = 1
+const SOURCE_STAIRS: int = 2
+
+const SPRITES_PATH := "res://sprites/0x72_DungeonTilesetII_v1.7/frames/"
 
 @onready var tilemap: TileMapLayer = $TileMap
 @onready var entities: Node2D = $Entities
@@ -18,30 +20,19 @@ func _ready() -> void:
 	_load_floor()
 
 func _setup_tileset() -> void:
-	# Build a 48×16 atlas programmatically: [floor | wall | stairs]
-	var img := Image.create(48, 16, false, Image.FORMAT_RGB8)
-	for y in 16:
-		for x in 16:
-			img.set_pixel(x, y, Color(0.23, 0.23, 0.23))       # floor — dark gray
-		for x in range(16, 32):
-			img.set_pixel(x, y, Color(0.10, 0.10, 0.10))       # wall — near black
-		for x in range(32, 48):
-			img.set_pixel(x, y, Color(0.83, 0.63, 0.09))       # stairs — gold
-
-	var tex := ImageTexture.create_from_image(img)
-
-	var atlas := TileSetAtlasSource.new()
-	atlas.texture = tex
-	atlas.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
-	atlas.create_tile(Vector2i(0, 0))  # floor
-	atlas.create_tile(Vector2i(1, 0))  # wall
-	atlas.create_tile(Vector2i(2, 0))  # stairs
-
 	var tile_set := TileSet.new()
 	tile_set.tile_size = Vector2i(TILE_SIZE, TILE_SIZE)
-	tile_set.add_source(atlas, SOURCE_ID)
-
+	_add_tile_source(tile_set, SOURCE_FLOOR,  SPRITES_PATH + "floor_1.png")
+	_add_tile_source(tile_set, SOURCE_WALL,   SPRITES_PATH + "wall_mid.png")
+	_add_tile_source(tile_set, SOURCE_STAIRS, SPRITES_PATH + "floor_stairs.png")
 	tilemap.tile_set = tile_set
+
+func _add_tile_source(tile_set: TileSet, source_id: int, path: String) -> void:
+	var atlas := TileSetAtlasSource.new()
+	atlas.texture = load(path)
+	atlas.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
+	atlas.create_tile(ATLAS_ORIGIN)
+	tile_set.add_source(atlas, source_id)
 
 func _load_floor() -> void:
 	TurnManager.clear_enemies()
@@ -54,11 +45,11 @@ func _load_floor() -> void:
 			var tile: DungeonData.TileType = _data.grid[y][x]
 			match tile:
 				DungeonData.TileType.FLOOR:
-					tilemap.set_cell(Vector2i(x, y), SOURCE_ID, ATLAS_FLOOR)
+					tilemap.set_cell(Vector2i(x, y), SOURCE_FLOOR, ATLAS_ORIGIN)
 				DungeonData.TileType.WALL:
-					tilemap.set_cell(Vector2i(x, y), SOURCE_ID, ATLAS_WALL)
+					tilemap.set_cell(Vector2i(x, y), SOURCE_WALL, ATLAS_ORIGIN)
 				DungeonData.TileType.STAIRS_DOWN:
-					tilemap.set_cell(Vector2i(x, y), SOURCE_ID, ATLAS_STAIRS)
+					tilemap.set_cell(Vector2i(x, y), SOURCE_STAIRS, ATLAS_ORIGIN)
 
 	# Spawn player on first load; reuse the same instance on subsequent floors
 	if _player == null:

@@ -8,9 +8,7 @@ func _ready() -> void:
 	_setup_sprite()
 
 func _setup_sprite() -> void:
-	var img := Image.create(16, 16, false, Image.FORMAT_RGB8)
-	img.fill(Color(0.2, 0.4, 0.9))  # blue player square
-	$Sprite2D.texture = ImageTexture.create_from_image(img)
+	$Sprite2D.texture = load("res://sprites/0x72_DungeonTilesetII_v1.7/frames/knight_m_idle_anim_f0.png")
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not event is InputEventKey:
