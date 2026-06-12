@@ -30,7 +30,6 @@ func _on_turn_started() -> void:
 	var s: Stats = GameState.player_stats
 	if s.current_hp < s.max_hp and not GameState.is_game_over:
 		GameState.heal(1)
-		GameState.log("[color=green]You recover 1 HP.[/color]")
 
 func _setup_animations() -> void:
 	var frames := SpriteFrames.new()

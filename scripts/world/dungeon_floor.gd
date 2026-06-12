@@ -50,6 +50,7 @@ func _load_floor() -> void:
 			e.queue_free()
 	_enemies.clear()
 	TurnManager.clear_enemies()
+	TurnManager.reset()
 
 	_data = DungeonGenerator.generate(GameState.run_seed, GameState.current_floor)
 

@@ -44,8 +44,15 @@ func _process_enemies() -> void:
 	for e in valid:
 		_run_single_enemy(e)
 
+func reset() -> void:
+	_remaining_enemies = 0
+	phase = Phase.WAITING_FOR_INPUT
+	player_turn_started.emit()
+
 func _run_single_enemy(enemy: Node) -> void:
 	await enemy.take_turn()
+	if _remaining_enemies <= 0:
+		return
 	_remaining_enemies -= 1
 	if _remaining_enemies <= 0:
 		_end_turn()
