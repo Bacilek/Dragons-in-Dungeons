@@ -9,6 +9,7 @@ var _dungeon_floor: Node
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
 var _last_move_dir := Vector2i.ZERO
+var _target_enemy: Enemy = null
 
 var _regen_counter: int = 0
 const REGEN_TURNS: int = 6
@@ -95,6 +96,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		var clicked: Vector2i = Vector2i(int(world_pos.x / TILE_SIZE), int(world_pos.y / TILE_SIZE))
 		if clicked == grid_pos:
 			return
+		# Clicking on an enemy → chase and attack
+		var enemy_clicked: Enemy = _dungeon_floor.get_enemy_at(clicked)
+		if enemy_clicked != null:
+			_target_enemy = enemy_clicked
+			_queued_path.clear()
+			if not _path_executing:
+				_execute_queued_path()
+			return
+		# Regular floor click → path walk
+		_target_enemy = null
 		var path: Array[Vector2i] = _dungeon_floor.find_path(grid_pos, clicked)
 		if path.is_empty():
 			return
@@ -105,9 +116,54 @@ func _unhandled_input(event: InputEvent) -> void:
 func _execute_queued_path() -> void:
 	_path_executing = true
 	TurnManager.fast_mode = true
-	while not _queued_path.is_empty():
+	var fov_snapshot: Array[Enemy] = _dungeon_floor.get_visible_enemies()
+
+	while true:
 		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
 			await TurnManager.player_turn_started
+
+		# ── Enemy-chase mode: target was set by clicking on an enemy ──────
+		if _target_enemy != null:
+			if not is_instance_valid(_target_enemy) or _target_enemy.stats.is_dead():
+				_target_enemy = null
+				break
+
+			var chase_path: Array[Vector2i] = _dungeon_floor.find_path(grid_pos, _target_enemy.grid_pos)
+			if chase_path.is_empty():
+				_target_enemy = null
+				break
+
+			if chase_path.size() == 1:
+				# Adjacent — attack
+				var atk_dir: Vector2i = _target_enemy.grid_pos - grid_pos
+				_bump_attack(_target_enemy, atk_dir)
+				_target_enemy = null
+				if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
+					await TurnManager.player_turn_started
+				break
+
+			# One step closer
+			var next: Vector2i = chase_path[0]
+			var dir: Vector2i = next - grid_pos
+			TurnManager.begin_player_action()
+			$AnimatedSprite2D.flip_h = dir.x < 0
+			$AnimatedSprite2D.play("run")
+			move_to(next, 0.05)
+			if _dungeon_floor != null:
+				_dungeon_floor.update_fog(grid_pos)
+			TurnManager.on_player_action_complete()
+			await move_completed
+			$AnimatedSprite2D.play("idle")
+
+			if _has_new_enemy_in_fov(fov_snapshot):
+				_target_enemy = null
+				break
+			continue
+
+		# ── Regular queued-path mode ──────────────────────────────────────
+		if _queued_path.is_empty():
+			break
+
 		var next: Vector2i = _queued_path[0]
 		_queued_path.remove_at(0)
 		var dir: Vector2i = next - grid_pos
@@ -141,10 +197,23 @@ func _execute_queued_path() -> void:
 			_path_executing = false
 			return
 
+		if _has_new_enemy_in_fov(fov_snapshot):
+			_queued_path.clear()
+			break
+
 		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
 			await TurnManager.player_turn_started
+
 	TurnManager.fast_mode = false
 	_path_executing = false
+
+func _has_new_enemy_in_fov(snapshot: Array[Enemy]) -> bool:
+	if _dungeon_floor == null:
+		return false
+	for e: Enemy in _dungeon_floor.get_visible_enemies():
+		if e not in snapshot:
+			return true
+	return false
 
 func _try_move(dir: Vector2i) -> void:
 	if _dungeon_floor == null:

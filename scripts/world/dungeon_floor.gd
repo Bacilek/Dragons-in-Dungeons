@@ -230,6 +230,13 @@ func find_path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 		cur = came_from[cur]
 	return path
 
+func get_visible_enemies() -> Array[Enemy]:
+	var result: Array[Enemy] = []
+	for e: Enemy in _enemies:
+		if is_instance_valid(e) and e.visible:
+			result.append(e)
+	return result
+
 func on_player_reached_stairs() -> void:
 	GameState.advance_floor()
 	_load_floor()

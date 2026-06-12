@@ -47,7 +47,7 @@ func gain_exp(amount: int) -> void:
 	if leveled_up:
 		player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 		player_leveled_up.emit(player_stats.character_level)
-		log("[color=yellow]Level up! You are now level %d. (+5 HP, +1 STR)[/color]" % player_stats.character_level)
+		combat_message.emit("[color=yellow]Level up! You are now level %d. (+5 HP, +1 STR)[/color]" % player_stats.character_level)
 
 func log(msg: String) -> void:
 	combat_message.emit(msg)
