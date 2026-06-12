@@ -9,6 +9,7 @@ func _ready() -> void:
 
 func _on_new_game() -> void:
 	GameState.start_new_run()
+	var tree := get_tree()
 	get_parent().remove_child(self)
 	queue_free()
-	get_tree().reload_current_scene()
+	tree.reload_current_scene()

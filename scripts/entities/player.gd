@@ -2,18 +2,20 @@ class_name Player
 extends Entity
 
 const KNIGHT_PATH := "res://sprites/0x72_DungeonTilesetII_v1.7/frames/"
+const SWORD_SPRITE := "res://sprites/0x72_DungeonTilesetII_v1.7/frames/weapon_anime_sword.png"
 
-var _dungeon_floor: Node  # set by DungeonFloor after spawning
+var _dungeon_floor: Node
 
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
+var _last_move_dir := Vector2i.ZERO
 
 var _regen_counter: int = 0
 const REGEN_TURNS: int = 6
 
 func _ready() -> void:
 	stats = GameState.player_stats
-	z_index = 3  # render above fog overlay
+	z_index = 3
 	_setup_animations()
 	_setup_hp_bar()
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
@@ -45,33 +47,44 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 	frames.add_animation(anim_name)
 	frames.set_animation_loop(anim_name, loop)
 	frames.set_animation_speed(anim_name, fps)
-	for i in count:
+	for i: int in count:
 		frames.add_frame(anim_name, load(path_fmt % i))
+
+# Cardinal + diagonal movement via per-frame key sampling so two held cardinals = diagonal
+func _process(_delta: float) -> void:
+	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
+		_last_move_dir = Vector2i.ZERO
+		return
+	var dx: int = 0
+	var dy: int = 0
+	if Input.is_physical_key_pressed(KEY_UP)    or Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_KP_8): dy -= 1
+	if Input.is_physical_key_pressed(KEY_DOWN)  or Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_KP_2): dy += 1
+	if Input.is_physical_key_pressed(KEY_LEFT)  or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_KP_4): dx -= 1
+	if Input.is_physical_key_pressed(KEY_RIGHT) or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_KP_6): dx += 1
+	var dir := Vector2i(dx, dy)
+	if dir == Vector2i.ZERO:
+		_last_move_dir = Vector2i.ZERO
+		return
+	if dir == _last_move_dir:
+		return
+	_last_move_dir = dir
+	_queued_path.clear()
+	_try_move(dir)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		var key := event as InputEventKey
 		if not key.pressed or key.echo:
 			return
-		_queued_path.clear()
-		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
+		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 			return
-		# Explicit diagonal / wait keys
+		_queued_path.clear()
 		match key.physical_keycode:
-			KEY_Q, KEY_KP_7:             _try_move(Vector2i(-1, -1)); return
-			KEY_E, KEY_KP_9:             _try_move(Vector2i(1, -1));  return
-			KEY_Z, KEY_KP_1:             _try_move(Vector2i(-1, 1));  return
-			KEY_C, KEY_KP_3:             _try_move(Vector2i(1, 1));   return
-			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _wait_action(); return
-		# Cardinal keys: sample combined state so holding two cardinals = diagonal
-		var dx: int = 0
-		var dy: int = 0
-		if Input.is_physical_key_pressed(KEY_UP)    or Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_KP_8): dy -= 1
-		if Input.is_physical_key_pressed(KEY_DOWN)  or Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_KP_2): dy += 1
-		if Input.is_physical_key_pressed(KEY_LEFT)  or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_KP_4): dx -= 1
-		if Input.is_physical_key_pressed(KEY_RIGHT) or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_KP_6): dx += 1
-		if dx != 0 or dy != 0:
-			_try_move(Vector2i(dx, dy))
+			KEY_Q, KEY_KP_7: _try_move(Vector2i(-1, -1))
+			KEY_E, KEY_KP_9: _try_move(Vector2i(1, -1))
+			KEY_Z, KEY_KP_1: _try_move(Vector2i(-1, 1))
+			KEY_C, KEY_KP_3: _try_move(Vector2i(1, 1))
+			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _wait_action()
 
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -116,7 +129,6 @@ func _execute_queued_path() -> void:
 		TurnManager.begin_player_action()
 		$AnimatedSprite2D.flip_h = dir.x < 0
 		$AnimatedSprite2D.play("run")
-		# Start player move and enemy turns simultaneously
 		move_to(next, 0.05)
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
@@ -167,6 +179,10 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	$AnimatedSprite2D.play("hit")
 	await $AnimatedSprite2D.animation_finished
 	$AnimatedSprite2D.play("idle")
+
+	_show_sword_slash(enemy.grid_pos, dir)
+	_flash_hit(enemy)
+
 	var dmg: int = stats.roll_damage()
 	var actual: int = enemy.stats.take_damage(dmg)
 	enemy.update_hp_bar()
@@ -178,6 +194,26 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
+
+func _show_sword_slash(target_pos: Vector2i, dir: Vector2i) -> void:
+	var slash := Sprite2D.new()
+	slash.texture = load(SWORD_SPRITE)
+	slash.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	slash.position = _tile_center(target_pos)
+	slash.z_index = 5
+	slash.rotation = atan2(float(dir.y), float(dir.x)) - PI * 0.25
+	get_parent().add_child(slash)
+	var tween := slash.create_tween()
+	tween.tween_property(slash, "scale", Vector2(1.6, 1.6), 0.07)
+	tween.tween_property(slash, "modulate:a", 0.0, 0.1)
+	tween.tween_callback(slash.queue_free)
+
+func _flash_hit(target: Entity) -> void:
+	if not is_instance_valid(target):
+		return
+	var tween := target.create_tween()
+	tween.tween_property(target, "modulate", Color(1.8, 0.3, 0.3), 0.05)
+	tween.tween_property(target, "modulate", Color(1.0, 1.0, 1.0), 0.1)
 
 func _wait_action() -> void:
 	TurnManager.begin_player_action()
