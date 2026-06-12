@@ -17,7 +17,7 @@ const FOV_RADIUS: int = 6
 
 var _data: DungeonData
 var _player: Player
-var _enemies: Array = []  # Array[Enemy]
+var _enemies: Array[Enemy] = []
 
 var _fog_image: Image
 var _fog_texture: ImageTexture
@@ -82,9 +82,9 @@ func _load_floor() -> void:
 func _spawn_enemies() -> void:
 	# Collect candidate floor tiles (not player start, not stairs)
 	var candidates: Array = []
-	for y in _data.height:
-		for x in _data.width:
-			var pos := Vector2i(x, y)
+	for y: int in _data.height:
+		for x: int in _data.width:
+			var pos: Vector2i = Vector2i(x, y)
 			if _data.get_tile(x, y) == DungeonData.TileType.FLOOR:
 				if pos != _data.player_start and pos != _data.stairs_pos:
 					candidates.append(pos)
@@ -121,11 +121,11 @@ func _setup_fog() -> void:
 	add_child(_fog_sprite)
 
 func update_fog(player_pos: Vector2i) -> void:
-	var r2 := FOV_RADIUS * FOV_RADIUS
-	for y in _data.height:
-		for x in _data.width:
-			var dx := x - player_pos.x
-			var dy := y - player_pos.y
+	var r2: int = FOV_RADIUS * FOV_RADIUS
+	for y: int in _data.height:
+		for x: int in _data.width:
+			var dx: int = x - player_pos.x
+			var dy: int = y - player_pos.y
 			if dx * dx + dy * dy <= r2:
 				_explored[Vector2i(x, y)] = true
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0))
