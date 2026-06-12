@@ -12,6 +12,11 @@ func _ready() -> void:
 	stats = GameState.player_stats
 	z_index = 3  # render above fog overlay
 	_setup_animations()
+	_setup_hp_bar()
+	GameState.player_hp_changed.connect(_on_player_hp_changed)
+
+func _on_player_hp_changed(_c: int, _m: int) -> void:
+	update_hp_bar()
 
 func _setup_animations() -> void:
 	var frames := SpriteFrames.new()
@@ -140,8 +145,11 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	await $AnimatedSprite2D.animation_finished
 	$AnimatedSprite2D.play("idle")
 	var dmg: int = stats.roll_damage()
-	enemy.stats.take_damage(dmg)
+	var actual: int = enemy.stats.take_damage(dmg)
+	enemy.update_hp_bar()
+	GameState.log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg." % [enemy.display_name, actual])
 	if enemy.stats.is_dead():
+		GameState.log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
 		_dungeon_floor.remove_enemy(enemy)
 		enemy.die()
 	if _dungeon_floor != null:

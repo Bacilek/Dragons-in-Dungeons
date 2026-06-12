@@ -7,6 +7,16 @@ signal move_completed
 
 var grid_pos: Vector2i = Vector2i.ZERO
 var stats: Stats
+var _hp_bar: HealthBarNode
+
+func _setup_hp_bar() -> void:
+	_hp_bar = HealthBarNode.new()
+	_hp_bar.position = Vector2(0.0, -20.0)
+	add_child(_hp_bar)
+
+func update_hp_bar() -> void:
+	if _hp_bar != null and stats != null:
+		_hp_bar.update_bar(stats.current_hp, stats.max_hp)
 
 func take_turn() -> void:
 	pass

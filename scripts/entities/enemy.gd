@@ -5,12 +5,14 @@ const ORC_PATH := "res://sprites/0x72_DungeonTilesetII_v1.7/frames/"
 const FOV_RADIUS: int = 6
 
 var _dungeon_floor: Node  # set by DungeonFloor after spawning
+var display_name: String = "Orc Warrior"
 
 func _ready() -> void:
 	stats = Stats.new()
 	_apply_floor_scaling()
 	z_index = 1
 	_setup_animations()
+	_setup_hp_bar()
 
 func _apply_floor_scaling() -> void:
 	var f: int = GameState.current_floor
@@ -91,8 +93,9 @@ func _chase_step(dx: int, dy: int) -> Vector2i:
 			return Vector2i(step_x, 0)
 	return Vector2i.ZERO
 
-func _attack_player(player: Player) -> void:
+func _attack_player(_player: Player) -> void:
 	var dmg: int = stats.roll_damage()
 	var actual: int = GameState.player_stats.take_damage(dmg)
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
+	GameState.log("[color=tomato]%s[/color] strikes you for [color=yellow]%d[/color] dmg." % [display_name, actual])
 	GameState.check_player_death()

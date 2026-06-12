@@ -3,6 +3,7 @@ extends Node
 signal floor_changed(new_floor: int)
 signal player_hp_changed(current_hp: int, max_hp: int)
 signal player_died()
+signal combat_message(msg: String)
 
 var current_floor: int = 1
 var player_stats: Stats
@@ -37,3 +38,6 @@ func check_player_death() -> void:
 func heal(amount: int) -> void:
 	player_stats.current_hp = mini(player_stats.current_hp + amount, player_stats.max_hp)
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
+
+func log(msg: String) -> void:
+	combat_message.emit(msg)
