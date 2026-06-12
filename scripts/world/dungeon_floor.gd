@@ -162,6 +162,13 @@ func get_enemy_at(pos: Vector2i) -> Enemy:
 			return e as Enemy
 	return null
 
+func get_player() -> Player:
+	return _player
+
+func remove_enemy(enemy: Enemy) -> void:
+	_enemies.erase(enemy)
+	TurnManager.unregister_enemy(enemy)
+
 func get_tile_type(pos: Vector2i) -> DungeonData.TileType:
 	return _data.get_tile(pos.x, pos.y)
 

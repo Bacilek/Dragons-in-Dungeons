@@ -11,6 +11,9 @@ var stats: Stats
 func take_turn() -> void:
 	pass
 
+func die() -> void:
+	queue_free()
+
 func move_to(new_pos: Vector2i, duration: float = 0.08) -> void:
 	grid_pos = new_pos
 	var tween := create_tween()

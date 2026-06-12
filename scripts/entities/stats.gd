@@ -18,6 +18,10 @@ enum CharacterClass { FIGHTER, ROGUE, WIZARD, CLERIC }
 @export var armor_class: int = 10
 @export var proficiency_bonus: int = 2
 
+@export var min_damage: int = 1
+@export var max_damage: int = 4
+@export var armor: int = 0
+
 func modifier(score: int) -> int:
 	return floori((score - 10) / 2.0)
 
@@ -32,6 +36,17 @@ func ability_check(score: int, proficient: bool, dc: int) -> bool:
 	var roll: int = randi_range(1, 20)
 	var bonus: int = modifier(score) + (proficiency_bonus if proficient else 0)
 	return (roll + bonus) >= dc
+
+func roll_damage() -> int:
+	return randi_range(min_damage, max_damage)
+
+func take_damage(amount: int) -> int:
+	var actual: int = maxi(1, amount - armor)
+	current_hp -= actual
+	return actual
+
+func is_dead() -> bool:
+	return current_hp <= 0
 
 func apply_class_defaults() -> void:
 	match character_class:

@@ -139,6 +139,11 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	$AnimatedSprite2D.play("hit")
 	await $AnimatedSprite2D.animation_finished
 	$AnimatedSprite2D.play("idle")
+	var dmg: int = stats.roll_damage()
+	enemy.stats.take_damage(dmg)
+	if enemy.stats.is_dead():
+		_dungeon_floor.remove_enemy(enemy)
+		enemy.die()
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
