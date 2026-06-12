@@ -32,7 +32,7 @@ func _setup_tileset() -> void:
 	var tile_set := TileSet.new()
 	tile_set.tile_size = Vector2i(TILE_SIZE, TILE_SIZE)
 	_add_tile_source(tile_set, SOURCE_FLOOR,  SPRITES_PATH + "floor_1.png")
-	_add_tile_source(tile_set, SOURCE_WALL,   SPRITES_PATH + "wall_mid.png")
+	_add_tile_source(tile_set, SOURCE_WALL,   SPRITES_PATH + "wall_top_mid.png")
 	_add_tile_source(tile_set, SOURCE_STAIRS, SPRITES_PATH + "floor_stairs.png")
 	tilemap.tile_set = tile_set
 
