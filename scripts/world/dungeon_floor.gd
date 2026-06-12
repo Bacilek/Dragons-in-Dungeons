@@ -6,14 +6,23 @@ const ATLAS_ORIGIN := Vector2i(0, 0)
 const SOURCE_FLOOR: int = 0
 const SOURCE_WALL: int = 1
 const SOURCE_STAIRS: int = 2
-
 const SPRITES_PATH := "res://sprites/0x72_DungeonTilesetII_v1.7/frames/"
+
+const ENEMY_COUNT_MIN: int = 3
+const ENEMY_COUNT_MAX: int = 5
+const FOV_RADIUS: int = 6
 
 @onready var tilemap: TileMapLayer = $TileMap
 @onready var entities: Node2D = $Entities
 
 var _data: DungeonData
 var _player: Player
+var _enemies: Array = []  # Array[Enemy]
+
+var _fog_image: Image
+var _fog_texture: ImageTexture
+var _fog_sprite: Sprite2D
+var _explored: Dictionary = {}  # Vector2i → bool
 
 func _ready() -> void:
 	_setup_tileset()
@@ -35,6 +44,11 @@ func _add_tile_source(tile_set: TileSet, source_id: int, path: String) -> void:
 	tile_set.add_source(atlas, source_id)
 
 func _load_floor() -> void:
+	# Clean up enemies from previous floor
+	for e in _enemies:
+		if is_instance_valid(e):
+			e.queue_free()
+	_enemies.clear()
 	TurnManager.clear_enemies()
 
 	_data = DungeonGenerator.generate(GameState.run_seed, GameState.current_floor)
@@ -61,8 +75,86 @@ func _load_floor() -> void:
 	_player.stats = GameState.player_stats
 	_player.set_grid_pos(_data.player_start)
 
+	_spawn_enemies()
+	_setup_fog()
+	update_fog(_data.player_start)
+
+func _spawn_enemies() -> void:
+	# Collect candidate floor tiles (not player start, not stairs)
+	var candidates: Array = []
+	for y in _data.height:
+		for x in _data.width:
+			var pos := Vector2i(x, y)
+			if _data.get_tile(x, y) == DungeonData.TileType.FLOOR:
+				if pos != _data.player_start and pos != _data.stairs_pos:
+					candidates.append(pos)
+	candidates.shuffle()
+
+	var enemy_scene: PackedScene = preload("res://scenes/game/enemy.tscn")
+	var count: int = randi_range(ENEMY_COUNT_MIN, ENEMY_COUNT_MAX)
+	count = mini(count, candidates.size())
+
+	for i in count:
+		var enemy: Enemy = enemy_scene.instantiate() as Enemy
+		enemy._dungeon_floor = self
+		entities.add_child(enemy)
+		enemy.set_grid_pos(candidates[i])
+		_enemies.append(enemy)
+		TurnManager.register_enemy(enemy)
+
+func _setup_fog() -> void:
+	# Remove old fog sprite if reloading floor
+	if _fog_sprite != null and is_instance_valid(_fog_sprite):
+		_fog_sprite.queue_free()
+
+	_explored.clear()
+	_fog_image = Image.create(_data.width, _data.height, false, Image.FORMAT_RGBA8)
+	_fog_image.fill(Color(0, 0, 0, 1.0))
+	_fog_texture = ImageTexture.create_from_image(_fog_image)
+
+	_fog_sprite = Sprite2D.new()
+	_fog_sprite.texture = _fog_texture
+	_fog_sprite.centered = false
+	_fog_sprite.scale = Vector2(TILE_SIZE, TILE_SIZE)
+	_fog_sprite.z_index = 2
+	_fog_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	add_child(_fog_sprite)
+
+func update_fog(player_pos: Vector2i) -> void:
+	var r2 := FOV_RADIUS * FOV_RADIUS
+	for y in _data.height:
+		for x in _data.width:
+			var dx := x - player_pos.x
+			var dy := y - player_pos.y
+			if dx * dx + dy * dy <= r2:
+				_explored[Vector2i(x, y)] = true
+				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0))
+			elif _explored.get(Vector2i(x, y), false):
+				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0.65))
+			else:
+				_fog_image.set_pixel(x, y, Color(0, 0, 0, 1.0))
+	_fog_texture.update(_fog_image)
+	_update_enemy_visibility(player_pos, r2)
+
+func _update_enemy_visibility(player_pos: Vector2i, r2: int) -> void:
+	for enemy in _enemies:
+		if is_instance_valid(enemy):
+			var dx := enemy.grid_pos.x - player_pos.x
+			var dy := enemy.grid_pos.y - player_pos.y
+			enemy.visible = (dx * dx + dy * dy) <= r2
+
 func is_walkable(pos: Vector2i) -> bool:
 	return _data.is_walkable(pos)
+
+func is_walkable_for_enemy(pos: Vector2i) -> bool:
+	if not _data.is_walkable(pos):
+		return false
+	if _player != null and _player.grid_pos == pos:
+		return false
+	for e in _enemies:
+		if is_instance_valid(e) and e.grid_pos == pos:
+			return false
+	return true
 
 func get_tile_type(pos: Vector2i) -> DungeonData.TileType:
 	return _data.get_tile(pos.x, pos.y)
