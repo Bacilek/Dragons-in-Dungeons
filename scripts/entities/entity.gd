@@ -12,10 +12,12 @@ func take_turn() -> void:
 func move_to(new_pos: Vector2i) -> void:
 	grid_pos = new_pos
 	var tween := create_tween()
-	tween.tween_property(self, "position",
-		Vector2(new_pos.x * TILE_SIZE, new_pos.y * TILE_SIZE), 0.08)
+	tween.tween_property(self, "position", _tile_center(new_pos), 0.08)
 	await tween.finished
 
 func set_grid_pos(pos: Vector2i) -> void:
 	grid_pos = pos
-	position = Vector2(pos.x * TILE_SIZE, pos.y * TILE_SIZE)
+	position = _tile_center(pos)
+
+func _tile_center(pos: Vector2i) -> Vector2:
+	return Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
