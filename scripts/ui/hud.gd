@@ -29,7 +29,7 @@ func _on_player_died() -> void:
 	get_tree().root.add_child(game_over.instantiate())
 
 func _on_combat_message(msg: String) -> void:
-	_log_messages.push_front(msg)
+	_log_messages.push_back(msg)
 	if _log_messages.size() > MAX_LOG_MESSAGES:
-		_log_messages.resize(MAX_LOG_MESSAGES)
+		_log_messages.remove_at(0)
 	log_label.text = "\n".join(_log_messages)

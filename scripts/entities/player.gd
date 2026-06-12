@@ -8,15 +8,29 @@ var _dungeon_floor: Node  # set by DungeonFloor after spawning
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
 
+var _regen_counter: int = 0
+const REGEN_TURNS: int = 6
+
 func _ready() -> void:
 	stats = GameState.player_stats
 	z_index = 3  # render above fog overlay
 	_setup_animations()
 	_setup_hp_bar()
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
+	TurnManager.player_turn_started.connect(_on_turn_started)
 
 func _on_player_hp_changed(_c: int, _m: int) -> void:
 	update_hp_bar()
+
+func _on_turn_started() -> void:
+	_regen_counter += 1
+	if _regen_counter < REGEN_TURNS:
+		return
+	_regen_counter = 0
+	var s: Stats = GameState.player_stats
+	if s.current_hp < s.max_hp and not GameState.is_game_over:
+		GameState.heal(1)
+		GameState.log("[color=green]You recover 1 HP.[/color]")
 
 func _setup_animations() -> void:
 	var frames := SpriteFrames.new()
