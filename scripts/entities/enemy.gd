@@ -35,10 +35,10 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 func take_turn() -> void:
 	if _dungeon_floor == null:
 		return
-	var dirs := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
+	var dirs: Array[Vector2i] = [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
 	dirs.shuffle()
-	for dir in dirs:
-		var target := grid_pos + dir
+	for dir: Vector2i in dirs:
+		var target: Vector2i = grid_pos + dir
 		if _dungeon_floor.is_walkable_for_enemy(target):
 			$AnimatedSprite2D.flip_h = dir.x < 0
 			$AnimatedSprite2D.play("run")

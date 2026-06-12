@@ -47,6 +47,10 @@ World position = `pos * TILE_SIZE + TILE_SIZE / 2` (centered on tile). `TILE_SIZ
 
 All character sprites are individual 16×16 PNGs under `sprites/0x72_DungeonTilesetII_v1.7/frames/`. Naming pattern: `{character}_{anim}_f{n}.png`. Available characters: `knight_m`, `knight_f`, `orc_warrior`, `masked_orc` (each with `idle`/`run` 4-frame and `hit` 1-frame). Dungeon tiles: `floor_1.png`, `wall_mid.png`, `floor_stairs.png`. `SpriteFrames` are built in `_setup_animations()` in each entity script — no `.tres` import files needed.
 
+## Git Workflow
+
+After every feature, fix, or meaningful change: `git add`, `git commit`, `git push origin main`. No need to ask — always commit and push as part of finishing any task.
+
 ## Key Conventions
 
 - **New enemy type**: extend `Entity`, implement `take_turn()`, build `SpriteFrames` in `_setup_animations()`, call `TurnManager.register_enemy(self)` from `DungeonFloor._spawn_enemies()`.
