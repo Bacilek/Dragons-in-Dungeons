@@ -58,3 +58,4 @@ After every feature, fix, or meaningful change: `git add`, `git commit`, `git pu
 - **UI signals**: HUD connects to `GameState` signals (`floor_changed`, `player_hp_changed`). Add new HUD elements by connecting additional signals from `GameState` — never read `GameState` state directly in `_process()`.
 - **Fog after any action**: every player action must call `_dungeon_floor.update_fog(grid_pos)` before `TurnManager.on_player_action_complete()`.
 - **Floor transitions**: `DungeonFloor.on_player_reached_stairs()` calls `GameState.advance_floor()` then `_load_floor()`. The `_explored` dict and fog image reset on each `_load_floor()` call.
+- **GDScript type inference**: always use explicit types (`var x: int`, `Array[Enemy]`, `for y: int in n`). Iterating over an `int` or an untyped `Array` yields untyped loop variables, causing parser errors on any `:=` expression that depends on them. Prefer typed arrays and annotated for-loop variables throughout.
