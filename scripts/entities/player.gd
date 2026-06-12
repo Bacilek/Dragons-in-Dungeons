@@ -180,7 +180,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	await $AnimatedSprite2D.animation_finished
 	$AnimatedSprite2D.play("idle")
 
-	_show_sword_slash(enemy.grid_pos, dir)
+	_show_sword_slash(dir)
 	_flash_hit(enemy)
 
 	var dmg: int = stats.roll_damage()
@@ -195,18 +195,31 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
 
-func _show_sword_slash(target_pos: Vector2i, dir: Vector2i) -> void:
+func _show_sword_slash(dir: Vector2i) -> void:
+	var attack_angle := atan2(float(dir.y), float(dir.x))
+
+	# Pivot sits at the player's center; the sword sprite hangs off it so
+	# rotating the pivot swings the sword in an arc around the player.
+	var pivot := Node2D.new()
+	pivot.position = _tile_center(grid_pos)
+	pivot.z_index = 5
+	pivot.rotation = attack_angle - deg_to_rad(75.0)
+
 	var slash := Sprite2D.new()
 	slash.texture = load(SWORD_SPRITE)
 	slash.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	slash.position = _tile_center(target_pos)
-	slash.z_index = 5
-	slash.rotation = atan2(float(dir.y), float(dir.x)) - PI * 0.25
-	get_parent().add_child(slash)
-	var tween := slash.create_tween()
-	tween.tween_property(slash, "scale", Vector2(1.6, 1.6), 0.07)
-	tween.tween_property(slash, "modulate:a", 0.0, 0.1)
-	tween.tween_callback(slash.queue_free)
+	slash.position = Vector2(12.0, 0.0)
+	# weapon_anime_sword.png points upper-right at ~45°; rotate to point right.
+	slash.rotation = -PI * 0.25
+
+	pivot.add_child(slash)
+	get_parent().add_child(pivot)
+
+	var tween := pivot.create_tween()
+	tween.tween_property(pivot, "rotation", attack_angle + deg_to_rad(50.0), 0.18) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(slash, "modulate:a", 0.0, 0.07).set_delay(0.11)
+	tween.tween_callback(pivot.queue_free)
 
 func _flash_hit(target: Entity) -> void:
 	if not is_instance_valid(target):
