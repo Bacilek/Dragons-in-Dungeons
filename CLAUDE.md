@@ -45,7 +45,7 @@ World position = `pos * TILE_SIZE + TILE_SIZE / 2` (centered on tile). `TILE_SIZ
 
 ## Sprite Assets
 
-All character sprites are individual 16×16 PNGs under `sprites/0x72_DungeonTilesetII_v1.7/frames/`. Naming pattern: `{character}_{anim}_f{n}.png`. Available characters: `knight_m`, `knight_f`, `orc_warrior`, `masked_orc` (each with `idle`/`run` 4-frame and `hit` 1-frame). Dungeon tiles: `floor_1.png`, `wall_mid.png`, `floor_stairs.png`. `SpriteFrames` are built in `_setup_animations()` in each entity script — no `.tres` import files needed.
+All character sprites are individual 16×16 PNGs under `sprites/0x72_DungeonTilesetII_v1.7/frames/`. Naming pattern: `{character}_{anim}_f{n}.png`. Available characters: `knight_m`, `knight_f`, `orc_warrior`, `masked_orc` (each with `idle`/`run` 4-frame and `hit` 1-frame). Dungeon tiles: `floor_1.png`, `wall_mid.png`, `floor_stairs.png`. **Use `wall_mid.png` for walls, NOT `wall_top_mid.png`** — the `_top_` variant is just a thin horizontal bar at the bottom edge of the frame; it makes walls appear shifted down and creates visual confusion about tile boundaries. `SpriteFrames` are built in `_setup_animations()` in each entity script — no `.tres` import files needed.
 
 ## Git Workflow
 
