@@ -22,6 +22,26 @@ enum CharacterClass { FIGHTER, ROGUE, WIZARD, CLERIC }
 @export var max_damage: int = 4
 @export var armor: int = 0
 
+@export var experience: int = 0
+
+func exp_for_level(lv: int) -> int:
+	return lv * 10
+
+func exp_to_next() -> int:
+	return exp_for_level(character_level)
+
+func gain_exp(amount: int) -> bool:
+	experience += amount
+	var leveled := false
+	while experience >= exp_for_level(character_level):
+		experience -= exp_for_level(character_level)
+		character_level += 1
+		max_hp += 5
+		current_hp = mini(current_hp + 5, max_hp)
+		strength += 1
+		leveled = true
+	return leveled
+
 func modifier(score: int) -> int:
 	return floori((score - 10) / 2.0)
 

@@ -6,6 +6,7 @@ const FOV_RADIUS: int = 6
 
 var _dungeon_floor: Node
 var display_name: String = "Enemy"
+var exp_reward: int = 5
 var _type: Dictionary = {}
 
 func configure(type_data: Dictionary) -> void:
@@ -26,6 +27,7 @@ func _apply_stats() -> void:
 	stats.max_damage = _type.get("dmg_max", 4) + (f - 1) / 2
 	stats.armor      = _type.get("armor", 0)   + f / 5
 	stats.current_hp = stats.max_hp
+	exp_reward       = _type.get("exp", 5)
 
 func _setup_animations() -> void:
 	var prefix: String = _type.get("sprite", "orc_warrior")

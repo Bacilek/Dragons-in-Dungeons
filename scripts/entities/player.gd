@@ -17,7 +17,6 @@ func _ready() -> void:
 	stats = GameState.player_stats
 	z_index = 3
 	_setup_animations()
-	_setup_hp_bar()
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	TurnManager.player_turn_started.connect(_on_turn_started)
 
@@ -189,6 +188,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	GameState.log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg." % [enemy.display_name, actual])
 	if enemy.stats.is_dead():
 		GameState.log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
+		GameState.gain_exp(enemy.exp_reward)
 		_dungeon_floor.remove_enemy(enemy)
 		enemy.die()
 	if _dungeon_floor != null:
