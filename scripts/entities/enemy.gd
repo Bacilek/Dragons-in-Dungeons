@@ -22,6 +22,7 @@ func _setup_animations() -> void:
 	_add_anim(frames, "idle", ORC_PATH + "orc_warrior_idle_anim_f%d.png", 4, true,  8.0)
 	_add_anim(frames, "run",  ORC_PATH + "orc_warrior_run_anim_f%d.png",  4, false, 16.0)
 	$AnimatedSprite2D.sprite_frames = frames
+	$AnimatedSprite2D.offset = Vector2(0, -4)
 	$AnimatedSprite2D.play("idle")
 
 func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
