@@ -56,19 +56,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		_queued_path.clear()
 		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
 			return
-		var dir := Vector2i.ZERO
+		# Explicit diagonal / wait keys
 		match key.physical_keycode:
-			KEY_UP,    KEY_W, KEY_KP_8: dir = Vector2i(0, -1)
-			KEY_DOWN,  KEY_S, KEY_KP_2: dir = Vector2i(0, 1)
-			KEY_LEFT,  KEY_A, KEY_KP_4: dir = Vector2i(-1, 0)
-			KEY_RIGHT, KEY_D, KEY_KP_6: dir = Vector2i(1, 0)
-			KEY_Q, KEY_KP_7:            dir = Vector2i(-1, -1)
-			KEY_E, KEY_KP_9:            dir = Vector2i(1, -1)
-			KEY_Z, KEY_KP_1:            dir = Vector2i(-1, 1)
-			KEY_C, KEY_KP_3:            dir = Vector2i(1, 1)
+			KEY_Q, KEY_KP_7:             _try_move(Vector2i(-1, -1)); return
+			KEY_E, KEY_KP_9:             _try_move(Vector2i(1, -1));  return
+			KEY_Z, KEY_KP_1:             _try_move(Vector2i(-1, 1));  return
+			KEY_C, KEY_KP_3:             _try_move(Vector2i(1, 1));   return
 			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _wait_action(); return
-		if dir != Vector2i.ZERO:
-			_try_move(dir)
+		# Cardinal keys: sample combined state so holding two cardinals = diagonal
+		var dx: int = 0
+		var dy: int = 0
+		if Input.is_physical_key_pressed(KEY_UP)    or Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_KP_8): dy -= 1
+		if Input.is_physical_key_pressed(KEY_DOWN)  or Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_KP_2): dy += 1
+		if Input.is_physical_key_pressed(KEY_LEFT)  or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_KP_4): dx -= 1
+		if Input.is_physical_key_pressed(KEY_RIGHT) or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_KP_6): dx += 1
+		if dx != 0 or dy != 0:
+			_try_move(Vector2i(dx, dy))
 
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
