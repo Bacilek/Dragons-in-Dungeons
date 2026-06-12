@@ -165,6 +165,41 @@ func get_enemy_at(pos: Vector2i) -> Enemy:
 func get_tile_type(pos: Vector2i) -> DungeonData.TileType:
 	return _data.get_tile(pos.x, pos.y)
 
+func find_path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	if not _explored.get(to, false):
+		return []
+	if not _data.is_walkable(to) and get_enemy_at(to) == null:
+		return []
+
+	var queue: Array[Vector2i] = [from]
+	var came_from: Dictionary = {}
+	came_from[from] = from
+	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0)]
+
+	while not queue.is_empty():
+		var current: Vector2i = queue.pop_front()
+		if current == to:
+			break
+		for d: Vector2i in dirs:
+			var nxt: Vector2i = current + d
+			if came_from.has(nxt):
+				continue
+			if not _explored.get(nxt, false):
+				continue
+			if _data.is_walkable(nxt) or nxt == to:
+				came_from[nxt] = current
+				queue.append(nxt)
+
+	if not came_from.has(to):
+		return []
+
+	var path: Array[Vector2i] = []
+	var cur: Vector2i = to
+	while cur != from:
+		path.push_front(cur)
+		cur = came_from[cur]
+	return path
+
 func on_player_reached_stairs() -> void:
 	GameState.advance_floor()
 	_load_floor()
