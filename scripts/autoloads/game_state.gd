@@ -1,0 +1,33 @@
+extends Node
+
+signal floor_changed(new_floor: int)
+signal player_hp_changed(current_hp: int, max_hp: int)
+
+var current_floor: int = 1
+var player_stats: Stats
+var run_seed: int = 0
+var is_game_over: bool = false
+
+func _ready() -> void:
+	start_new_run()
+
+func start_new_run() -> void:
+	run_seed = randi()
+	current_floor = 1
+	is_game_over = false
+	player_stats = Stats.new()
+	player_stats.apply_class_defaults()
+
+func advance_floor() -> void:
+	current_floor += 1
+	floor_changed.emit(current_floor)
+
+func apply_damage(amount: int) -> void:
+	player_stats.current_hp -= amount
+	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
+	if player_stats.current_hp <= 0:
+		is_game_over = true
+
+func heal(amount: int) -> void:
+	player_stats.current_hp = mini(player_stats.current_hp + amount, player_stats.max_hp)
+	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)

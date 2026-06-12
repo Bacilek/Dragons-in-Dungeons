@@ -1,0 +1,15 @@
+# Godot 4 generated files
+.godot/
+
+# Export presets (contain paths, not needed in source control)
+export_presets.cfg
+
+# Mono/C# (Mono build but using GDScript only)
+.mono/
+data_*/
+mono_crash.*.json
+
+# OS generated
+.DS_Store
+Thumbs.db
+desktop.ini
