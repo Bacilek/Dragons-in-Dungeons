@@ -203,7 +203,8 @@ func find_path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 	var queue: Array[Vector2i] = [from]
 	var came_from: Dictionary = {}
 	came_from[from] = from
-	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0)]
+	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
+		Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]
 
 	while not queue.is_empty():
 		var current: Vector2i = queue.pop_front()

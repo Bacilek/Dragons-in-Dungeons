@@ -58,11 +58,9 @@ func take_turn() -> void:
 	var dist_sq: int = dx * dx + dy * dy
 
 	if dist_sq <= FOV_RADIUS * FOV_RADIUS:
-		if dist_sq <= 2:
-			var manhattan: int = abs(dx) + abs(dy)
-			if manhattan == 1:
-				_attack_player(player)
-				return
+		if maxi(abs(dx), abs(dy)) == 1:
+			_attack_player(player)
+			return
 		var step: Vector2i = _chase_step(dx, dy)
 		if step != Vector2i.ZERO and _dungeon_floor.is_walkable_for_enemy(grid_pos + step):
 			$AnimatedSprite2D.flip_h = step.x < 0
@@ -71,7 +69,8 @@ func take_turn() -> void:
 			$AnimatedSprite2D.play("idle")
 			return
 
-	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0)]
+	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
+			Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]
 	dirs.shuffle()
 	for dir: Vector2i in dirs:
 		var target: Vector2i = grid_pos + dir
@@ -83,18 +82,22 @@ func take_turn() -> void:
 			return
 
 func _chase_step(dx: int, dy: int) -> Vector2i:
-	var step_x: int = sign(dx)
-	var step_y: int = sign(dy)
+	var sx: int = sign(dx)
+	var sy: int = sign(dy)
+	# Try diagonal first
+	if sx != 0 and sy != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(sx, sy)):
+		return Vector2i(sx, sy)
+	# Fall back to primary axis
 	if abs(dx) >= abs(dy):
-		if step_x != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(step_x, 0)):
-			return Vector2i(step_x, 0)
-		if step_y != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(0, step_y)):
-			return Vector2i(0, step_y)
+		if sx != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(sx, 0)):
+			return Vector2i(sx, 0)
+		if sy != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(0, sy)):
+			return Vector2i(0, sy)
 	else:
-		if step_y != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(0, step_y)):
-			return Vector2i(0, step_y)
-		if step_x != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(step_x, 0)):
-			return Vector2i(step_x, 0)
+		if sy != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(0, sy)):
+			return Vector2i(0, sy)
+		if sx != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(sx, 0)):
+			return Vector2i(sx, 0)
 	return Vector2i.ZERO
 
 func _attack_player(_player: Player) -> void:

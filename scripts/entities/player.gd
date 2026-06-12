@@ -56,12 +56,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		_queued_path.clear()
 		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
 			return
+		var dir := Vector2i.ZERO
 		match key.physical_keycode:
-			KEY_UP, KEY_W:         _try_move(Vector2i(0, -1))
-			KEY_DOWN, KEY_S:       _try_move(Vector2i(0, 1))
-			KEY_LEFT, KEY_A:       _try_move(Vector2i(-1, 0))
-			KEY_RIGHT, KEY_D:      _try_move(Vector2i(1, 0))
-			KEY_SPACE, KEY_PERIOD: _wait_action()
+			KEY_UP,    KEY_W, KEY_KP_8: dir = Vector2i(0, -1)
+			KEY_DOWN,  KEY_S, KEY_KP_2: dir = Vector2i(0, 1)
+			KEY_LEFT,  KEY_A, KEY_KP_4: dir = Vector2i(-1, 0)
+			KEY_RIGHT, KEY_D, KEY_KP_6: dir = Vector2i(1, 0)
+			KEY_Q, KEY_KP_7:            dir = Vector2i(-1, -1)
+			KEY_E, KEY_KP_9:            dir = Vector2i(1, -1)
+			KEY_Z, KEY_KP_1:            dir = Vector2i(-1, 1)
+			KEY_C, KEY_KP_3:            dir = Vector2i(1, 1)
+			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _wait_action(); return
+		if dir != Vector2i.ZERO:
+			_try_move(dir)
 
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
