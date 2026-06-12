@@ -3,6 +3,8 @@ extends CharacterBody2D
 
 const TILE_SIZE: int = 16
 
+signal move_completed
+
 var grid_pos: Vector2i = Vector2i.ZERO
 var stats: Stats
 
@@ -14,6 +16,7 @@ func move_to(new_pos: Vector2i, duration: float = 0.08) -> void:
 	var tween := create_tween()
 	tween.tween_property(self, "position", _tile_center(new_pos), duration)
 	await tween.finished
+	move_completed.emit()
 
 func set_grid_pos(pos: Vector2i) -> void:
 	grid_pos = pos

@@ -8,7 +8,8 @@ signal turn_resolved()
 var phase: Phase = Phase.WAITING_FOR_INPUT
 var fast_mode: bool = false
 
-var _enemies: Array = []  # Array[Entity]
+var _enemies: Array = []
+var _remaining_enemies: int = 0
 
 func _ready() -> void:
 	call_deferred("_start_player_turn")
@@ -32,10 +33,22 @@ func on_player_action_complete() -> void:
 	_process_enemies()
 
 func _process_enemies() -> void:
-	for enemy in _enemies:
-		if is_instance_valid(enemy):
-			await enemy.take_turn()
-	_end_turn()
+	var valid: Array = []
+	for e in _enemies:
+		if is_instance_valid(e):
+			valid.append(e)
+	if valid.is_empty():
+		_end_turn()
+		return
+	_remaining_enemies = valid.size()
+	for e in valid:
+		_run_single_enemy(e)
+
+func _run_single_enemy(enemy: Node) -> void:
+	await enemy.take_turn()
+	_remaining_enemies -= 1
+	if _remaining_enemies <= 0:
+		_end_turn()
 
 func _end_turn() -> void:
 	turn_resolved.emit()

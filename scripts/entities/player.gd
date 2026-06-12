@@ -75,7 +75,8 @@ func _execute_queued_path() -> void:
 		var enemy_there: Enemy = _dungeon_floor.get_enemy_at(next)
 		if enemy_there != null:
 			_bump_attack(enemy_there, dir)
-			await TurnManager.turn_resolved
+			if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
+				await TurnManager.player_turn_started
 			break
 
 		if not _dungeon_floor.is_walkable(next):
@@ -87,11 +88,13 @@ func _execute_queued_path() -> void:
 		TurnManager.begin_player_action()
 		$AnimatedSprite2D.flip_h = dir.x < 0
 		$AnimatedSprite2D.play("run")
-		await move_to(next, 0.05)
-		$AnimatedSprite2D.play("idle")
+		# Start player move and enemy turns simultaneously
+		move_to(next, 0.05)
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
 		TurnManager.on_player_action_complete()
+		await move_completed
+		$AnimatedSprite2D.play("idle")
 
 		if is_stairs:
 			_dungeon_floor.on_player_reached_stairs.call_deferred()
@@ -99,7 +102,8 @@ func _execute_queued_path() -> void:
 			_path_executing = false
 			return
 
-		await TurnManager.turn_resolved
+		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
+			await TurnManager.player_turn_started
 	TurnManager.fast_mode = false
 	_path_executing = false
 
