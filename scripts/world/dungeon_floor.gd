@@ -156,6 +156,12 @@ func is_walkable_for_enemy(pos: Vector2i) -> bool:
 			return false
 	return true
 
+func get_enemy_at(pos: Vector2i) -> Enemy:
+	for e in _enemies:
+		if is_instance_valid(e) and e.grid_pos == pos:
+			return e as Enemy
+	return null
+
 func get_tile_type(pos: Vector2i) -> DungeonData.TileType:
 	return _data.get_tile(pos.x, pos.y)
 

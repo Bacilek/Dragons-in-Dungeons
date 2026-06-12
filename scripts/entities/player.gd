@@ -44,37 +44,47 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_RIGHT, KEY_D:
 			_try_move(Vector2i(1, 0))
 		KEY_SPACE, KEY_PERIOD:
-			_attack_action()
+			_wait_action()
 
 func _try_move(dir: Vector2i) -> void:
 	if _dungeon_floor == null:
 		return
-	var target := grid_pos + dir
+	var target: Vector2i = grid_pos + dir
+
+	# Bump into enemy = attack
+	var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
+	if enemy != null:
+		_bump_attack(enemy, dir)
+		return
+
 	if not _dungeon_floor.is_walkable(target):
 		return
 
 	var is_stairs: bool = _dungeon_floor.get_tile_type(target) == DungeonData.TileType.STAIRS_DOWN
 
 	TurnManager.begin_player_action()
-
 	$AnimatedSprite2D.flip_h = dir.x < 0
 	$AnimatedSprite2D.play("run")
 	await move_to(target)
 	$AnimatedSprite2D.play("idle")
-
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
-
 	TurnManager.on_player_action_complete()
-
 	if is_stairs:
 		_dungeon_floor.on_player_reached_stairs.call_deferred()
 
-func _attack_action() -> void:
+func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	TurnManager.begin_player_action()
+	$AnimatedSprite2D.flip_h = dir.x < 0
 	$AnimatedSprite2D.play("hit")
 	await $AnimatedSprite2D.animation_finished
 	$AnimatedSprite2D.play("idle")
+	if _dungeon_floor != null:
+		_dungeon_floor.update_fog(grid_pos)
+	TurnManager.on_player_action_complete()
+
+func _wait_action() -> void:
+	TurnManager.begin_player_action()
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
