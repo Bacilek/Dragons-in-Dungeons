@@ -12,6 +12,19 @@ const ENEMY_COUNT_MIN: int = 3
 const ENEMY_COUNT_MAX: int = 5
 const FOV_RADIUS: int = 6
 
+const ENEMY_POOL: Array = [
+	{"display_name": "Tiny Zombie", "sprite": "tiny_zombie", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 3,  "hp": 5,  "hp_per_floor": 1, "dmg_min": 1, "dmg_max": 3, "armor": 0},
+	{"display_name": "Orc Warrior", "sprite": "orc_warrior", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 5,  "hp": 8,  "hp_per_floor": 2, "dmg_min": 1, "dmg_max": 4, "armor": 0},
+	{"display_name": "Goblin",      "sprite": "goblin",      "idle_frames": 4, "run_frames": 4, "floor_min": 2, "floor_max": 6,  "hp": 7,  "hp_per_floor": 2, "dmg_min": 2, "dmg_max": 4, "armor": 0},
+	{"display_name": "Orc Shaman",  "sprite": "orc_shaman",  "idle_frames": 4, "run_frames": 4, "floor_min": 3, "floor_max": 6,  "hp": 10, "hp_per_floor": 2, "dmg_min": 2, "dmg_max": 5, "armor": 0},
+	{"display_name": "Masked Orc",  "sprite": "masked_orc",  "idle_frames": 4, "run_frames": 4, "floor_min": 4, "floor_max": 7,  "hp": 12, "hp_per_floor": 2, "dmg_min": 2, "dmg_max": 5, "armor": 1},
+	{"display_name": "Skeleton",    "sprite": "skelet",      "idle_frames": 4, "run_frames": 4, "floor_min": 4, "floor_max": 7,  "hp": 9,  "hp_per_floor": 2, "dmg_min": 3, "dmg_max": 6, "armor": 1},
+	{"display_name": "Wogol",       "sprite": "wogol",       "idle_frames": 4, "run_frames": 4, "floor_min": 5, "floor_max": 8,  "hp": 14, "hp_per_floor": 3, "dmg_min": 3, "dmg_max": 6, "armor": 1},
+	{"display_name": "Imp",         "sprite": "imp",         "idle_frames": 4, "run_frames": 4, "floor_min": 6, "floor_max": 9,  "hp": 11, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 7, "armor": 1},
+	{"display_name": "Chort",       "sprite": "chort",       "idle_frames": 4, "run_frames": 4, "floor_min": 7, "floor_max": 10, "hp": 16, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 8, "armor": 2},
+	{"display_name": "Pumpkin Dude","sprite": "pumpkin_dude","idle_frames": 4, "run_frames": 4, "floor_min": 8, "floor_max": 10, "hp": 20, "hp_per_floor": 4, "dmg_min": 5, "dmg_max": 9, "armor": 2},
+]
+
 @onready var tilemap: TileMapLayer = $TileMap
 @onready var entities: Node2D = $Entities
 
@@ -81,7 +94,6 @@ func _load_floor() -> void:
 	update_fog(_data.player_start)
 
 func _spawn_enemies() -> void:
-	# Collect candidate floor tiles (not player start, not stairs)
 	var candidates: Array = []
 	for y: int in _data.height:
 		for x: int in _data.width:
@@ -91,12 +103,21 @@ func _spawn_enemies() -> void:
 					candidates.append(pos)
 	candidates.shuffle()
 
-	var enemy_scene: PackedScene = preload("res://scenes/game/enemy.tscn")
-	var count: int = randi_range(ENEMY_COUNT_MIN, ENEMY_COUNT_MAX)
-	count = mini(count, candidates.size())
+	var eligible: Array = []
+	for entry in ENEMY_POOL:
+		var t: Dictionary = entry
+		if GameState.current_floor >= t["floor_min"] and GameState.current_floor <= t["floor_max"]:
+			eligible.append(t)
+	if eligible.is_empty():
+		eligible = [ENEMY_POOL[0]]
 
-	for i in count:
+	var enemy_scene: PackedScene = preload("res://scenes/game/enemy.tscn")
+	var count: int = mini(randi_range(ENEMY_COUNT_MIN, ENEMY_COUNT_MAX), candidates.size())
+
+	for i: int in count:
+		var type_data: Dictionary = eligible[randi() % eligible.size()]
 		var enemy: Enemy = enemy_scene.instantiate() as Enemy
+		enemy.configure(type_data)
 		enemy._dungeon_floor = self
 		entities.add_child(enemy)
 		enemy.set_grid_pos(candidates[i])
