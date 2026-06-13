@@ -1,13 +1,23 @@
 class_name Enemy
 extends Entity
 
+enum Behavior { SLEEPING, STATIONARY, ROAMING, CHASING }
+
 const SPRITES_PATH := "res://sprites/characters/"
 const FOV_RADIUS: int = 6
+const WAKE_RADIUS_SQ: int = 4  # 2-tile adjacency wakes sleeping enemies
 
 var _dungeon_floor: Node
 var display_name: String = "Enemy"
 var exp_reward: int = 5
 var _type: Dictionary = {}
+
+var initial_behavior: Behavior = Behavior.SLEEPING
+var behavior: Behavior = Behavior.SLEEPING
+var last_known_player_pos: Vector2i = Vector2i(-1, -1)
+
+var _zzz_label: Label
+var _zzz_tween: Tween
 
 func configure(type_data: Dictionary) -> void:
 	_type = type_data
@@ -19,6 +29,10 @@ func _ready() -> void:
 	z_index = 1
 	_setup_animations()
 	_setup_hp_bar()
+	_setup_zzz()
+	behavior = initial_behavior
+	if behavior == Behavior.SLEEPING:
+		_start_zzz()
 
 func _apply_stats() -> void:
 	var f: int = GameState.current_floor
@@ -48,6 +62,37 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 	for i: int in count:
 		frames.add_frame(anim_name, load(path_fmt % i))
 
+func _setup_zzz() -> void:
+	_zzz_label = Label.new()
+	_zzz_label.text = "z z z"
+	_zzz_label.add_theme_font_size_override("font_size", 7)
+	_zzz_label.position = Vector2(-9, -22)
+	_zzz_label.z_index = 4
+	_zzz_label.modulate.a = 0.0
+	_zzz_label.visible = false
+	add_child(_zzz_label)
+
+func _start_zzz() -> void:
+	if not is_instance_valid(_zzz_label):
+		return
+	_zzz_label.visible = true
+	if _zzz_tween != null and _zzz_tween.is_valid():
+		_zzz_tween.kill()
+	_zzz_tween = create_tween().set_loops()
+	_zzz_tween.tween_property(_zzz_label, "modulate:a", 1.0, 1.0)
+	_zzz_tween.tween_property(_zzz_label, "modulate:a", 0.3, 1.0)
+
+func _stop_zzz() -> void:
+	if _zzz_tween != null and _zzz_tween.is_valid():
+		_zzz_tween.kill()
+		_zzz_tween = null
+	if is_instance_valid(_zzz_label):
+		_zzz_label.visible = false
+
+func _wake_up() -> void:
+	behavior = Behavior.CHASING
+	_stop_zzz()
+
 func take_turn() -> void:
 	if _dungeon_floor == null:
 		return
@@ -58,59 +103,105 @@ func take_turn() -> void:
 	var dx: int = player.grid_pos.x - grid_pos.x
 	var dy: int = player.grid_pos.y - grid_pos.y
 	var dist_sq: int = dx * dx + dy * dy
+	var can_see: bool = dist_sq <= FOV_RADIUS * FOV_RADIUS \
+		and _dungeon_floor.has_line_of_sight(grid_pos, player.grid_pos)
 
-	if dist_sq <= FOV_RADIUS * FOV_RADIUS and _dungeon_floor.has_line_of_sight(grid_pos, player.grid_pos):
-		if maxi(abs(dx), abs(dy)) == 1:
-			_attack_player(player)
+	match behavior:
+		Behavior.SLEEPING:
+			if can_see or dist_sq <= WAKE_RADIUS_SQ:
+				_wake_up()
+				last_known_player_pos = player.grid_pos
+				await _act_toward(player)
+
+		Behavior.STATIONARY:
+			if can_see:
+				last_known_player_pos = player.grid_pos
+				behavior = Behavior.CHASING
+				await _act_toward(player)
+
+		Behavior.ROAMING:
+			if can_see:
+				last_known_player_pos = player.grid_pos
+				behavior = Behavior.CHASING
+				await _act_toward(player)
+			else:
+				await _do_random_walk()
+
+		Behavior.CHASING:
+			if can_see:
+				last_known_player_pos = player.grid_pos
+			await _act_toward(player)
+			if not is_instance_valid(self) or stats.is_dead():
+				return
+			# Reached last known position without spotting player — go back to roaming
+			if not can_see and last_known_player_pos != Vector2i(-1, -1) and grid_pos == last_known_player_pos:
+				behavior = Behavior.ROAMING
+				last_known_player_pos = Vector2i(-1, -1)
+
+# Attack if adjacent to player; otherwise step toward last known / player position.
+func _act_toward(player: Player) -> void:
+	var dx: int = player.grid_pos.x - grid_pos.x
+	var dy: int = player.grid_pos.y - grid_pos.y
+	if maxi(abs(dx), abs(dy)) == 1:
+		_attack_player(player)
+		return
+
+	var target: Vector2i = last_known_player_pos if last_known_player_pos != Vector2i(-1, -1) else player.grid_pos
+	var tdx: int = target.x - grid_pos.x
+	var tdy: int = target.y - grid_pos.y
+
+	for step: Vector2i in _preferred_steps(tdx, tdy):
+		var next_pos: Vector2i = grid_pos + step
+		# Open door and spend this turn
+		if _dungeon_floor.has_door_at(next_pos) and not _dungeon_floor.is_door_open(next_pos):
+			_dungeon_floor.open_door(next_pos)
 			return
-		var step: Vector2i = _chase_step(dx, dy)
-		if step != Vector2i.ZERO and _dungeon_floor.is_walkable_for_enemy(grid_pos + step):
-			$AnimatedSprite2D.flip_h = step.x < 0
-			$AnimatedSprite2D.play("run")
-			await move_to(grid_pos + step, 0.04 if TurnManager.fast_mode else 0.08)
-			$AnimatedSprite2D.play("idle")
-			var trap_c: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
-			if not trap_c.is_empty():
-				await _dungeon_floor.trigger_trap(grid_pos, self)
-				if not is_instance_valid(self) or stats.is_dead():
-					return
+		if _dungeon_floor.is_walkable_for_enemy(next_pos):
+			await _move_step(step, next_pos)
 			return
 
+# Roaming random walk — skips grass tiles (enemies don't prioritize them).
+func _do_random_walk() -> void:
 	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
 			Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]
 	dirs.shuffle()
 	for dir: Vector2i in dirs:
 		var target: Vector2i = grid_pos + dir
+		if _dungeon_floor.get_tile_type(target) == DungeonData.TileType.GRASS:
+			continue
+		if _dungeon_floor.has_door_at(target):
+			continue  # Don't bother opening doors while roaming
 		if _dungeon_floor.is_walkable_for_enemy(target):
-			$AnimatedSprite2D.flip_h = dir.x < 0
-			$AnimatedSprite2D.play("run")
-			await move_to(target, 0.04 if TurnManager.fast_mode else 0.08)
-			$AnimatedSprite2D.play("idle")
-			var trap_r: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
-			if not trap_r.is_empty():
-				await _dungeon_floor.trigger_trap(grid_pos, self)
-				if not is_instance_valid(self) or stats.is_dead():
-					return
+			await _move_step(dir, target)
 			return
 
-func _chase_step(dx: int, dy: int) -> Vector2i:
+func _move_step(step: Vector2i, next_pos: Vector2i) -> void:
+	$AnimatedSprite2D.flip_h = step.x < 0
+	$AnimatedSprite2D.play("run")
+	await move_to(next_pos, 0.04 if TurnManager.fast_mode else 0.08)
+	if not is_instance_valid(self):
+		return
+	$AnimatedSprite2D.play("idle")
+	if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
+		_dungeon_floor.destroy_grass(grid_pos)
+	var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
+	if not trap.is_empty():
+		await _dungeon_floor.trigger_trap(grid_pos, self)
+
+# Returns movement direction candidates in priority order (diagonal first, then axes).
+func _preferred_steps(dx: int, dy: int) -> Array[Vector2i]:
 	var sx: int = sign(dx)
 	var sy: int = sign(dy)
-	# Try diagonal first
-	if sx != 0 and sy != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(sx, sy)):
-		return Vector2i(sx, sy)
-	# Fall back to primary axis
+	var steps: Array[Vector2i] = []
+	if sx != 0 and sy != 0:
+		steps.append(Vector2i(sx, sy))
 	if abs(dx) >= abs(dy):
-		if sx != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(sx, 0)):
-			return Vector2i(sx, 0)
-		if sy != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(0, sy)):
-			return Vector2i(0, sy)
+		if sx != 0: steps.append(Vector2i(sx, 0))
+		if sy != 0: steps.append(Vector2i(0, sy))
 	else:
-		if sy != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(0, sy)):
-			return Vector2i(0, sy)
-		if sx != 0 and _dungeon_floor.is_walkable_for_enemy(grid_pos + Vector2i(sx, 0)):
-			return Vector2i(sx, 0)
-	return Vector2i.ZERO
+		if sy != 0: steps.append(Vector2i(0, sy))
+		if sx != 0: steps.append(Vector2i(sx, 0))
+	return steps
 
 func _attack_player(_player: Player) -> void:
 	var dmg: int = stats.roll_damage()

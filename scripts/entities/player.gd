@@ -157,6 +157,8 @@ func _execute_queued_path() -> void:
 			$AnimatedSprite2D.play("idle")
 
 			if _dungeon_floor != null:
+				if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
+					_dungeon_floor.destroy_grass(grid_pos)
 				_check_pickup()
 				var trap_c: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 				if not trap_c.is_empty():
@@ -184,6 +186,10 @@ func _execute_queued_path() -> void:
 				await TurnManager.player_turn_started
 			break
 
+		# Open closed door for free — movement continues in the same turn
+		if _dungeon_floor.has_door_at(next) and not _dungeon_floor.is_door_open(next):
+			_dungeon_floor.open_door(next)
+
 		if not _dungeon_floor.is_walkable(next):
 			_queued_path.clear()
 			break
@@ -201,6 +207,9 @@ func _execute_queued_path() -> void:
 		$AnimatedSprite2D.play("idle")
 
 		if _dungeon_floor != null:
+			if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
+				_dungeon_floor.destroy_grass(grid_pos)
+				_dungeon_floor.update_fog(grid_pos)
 			_check_pickup()
 			var trap_p: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 			if not trap_p.is_empty():
@@ -216,6 +225,17 @@ func _execute_queued_path() -> void:
 
 		if _has_new_enemy_in_fov(fov_snapshot):
 			_queued_path.clear()
+			break
+
+		# Difficult terrain: water/mud costs 2 turns — stop queued path and waste a turn
+		var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
+		if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
+			_queued_path.clear()
+			if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
+				await TurnManager.player_turn_started
+			TurnManager.begin_player_action()
+			_dungeon_floor.update_fog(grid_pos)
+			TurnManager.on_player_action_complete()
 			break
 
 		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
@@ -242,6 +262,10 @@ func _try_move(dir: Vector2i) -> void:
 		_bump_attack(enemy, dir)
 		return
 
+	# Open closed door for free — movement continues in the same turn
+	if _dungeon_floor.has_door_at(target) and not _dungeon_floor.is_door_open(target):
+		_dungeon_floor.open_door(target)
+
 	if not _dungeon_floor.is_walkable(target):
 		return
 
@@ -253,6 +277,9 @@ func _try_move(dir: Vector2i) -> void:
 	await move_to(target)
 	$AnimatedSprite2D.play("idle")
 	if _dungeon_floor != null:
+		# Destroy grass before fog update so our own tile doesn't block sight
+		if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
+			_dungeon_floor.destroy_grass(grid_pos)
 		_dungeon_floor.update_fog(grid_pos)
 		_check_pickup()
 		var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
@@ -261,6 +288,14 @@ func _try_move(dir: Vector2i) -> void:
 	TurnManager.on_player_action_complete()
 	if is_stairs:
 		_dungeon_floor.on_player_reached_stairs.call_deferred()
+		return
+	# Difficult terrain: water/mud costs 2 turns per step
+	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
+	if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
+		await TurnManager.player_turn_started
+		TurnManager.begin_player_action()
+		_dungeon_floor.update_fog(grid_pos)
+		TurnManager.on_player_action_complete()
 
 func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	TurnManager.begin_player_action()

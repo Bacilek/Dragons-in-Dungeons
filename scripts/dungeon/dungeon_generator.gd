@@ -61,6 +61,9 @@ static func generate(seed_val: int, floor_num: int) -> DungeonData:
 	data.grid[data.stairs_pos.y][data.stairs_pos.x] = DungeonData.TileType.STAIRS_DOWN
 
 	_place_pillars(data, rng)
+	_place_chasms(data, rng)
+	_place_water_mud(data, rng)
+	_place_grass_clusters(data, rng)
 
 	return data
 
@@ -238,3 +241,114 @@ static func _is_connected(data: DungeonData) -> bool:
 				visited[nxt] = true
 				queue.append(nxt)
 	return false
+
+
+static func _place_chasms(data: DungeonData, rng: RandomNumberGenerator) -> void:
+	for room_entry in data.rooms:
+		var r: Rect2i = room_entry
+		if r.size.x < 4 or r.size.y < 4:
+			continue
+		var max_chasms: int = int(r.size.x * r.size.y * 0.10)
+		if max_chasms <= 0:
+			continue
+		var candidates: Array = []
+		for y: int in range(r.position.y + 1, r.position.y + r.size.y - 1):
+			for x: int in range(r.position.x + 1, r.position.x + r.size.x - 1):
+				var pos: Vector2i = Vector2i(x, y)
+				if pos == data.player_start or pos == data.stairs_pos:
+					continue
+				if data.grid[y][x] == DungeonData.TileType.FLOOR:
+					candidates.append(pos)
+		for i: int in range(candidates.size() - 1, 0, -1):
+			var j: int = rng.randi_range(0, i)
+			var tmp = candidates[i]; candidates[i] = candidates[j]; candidates[j] = tmp
+		var placed: int = 0
+		for cand in candidates:
+			if placed >= max_chasms:
+				break
+			var cp: Vector2i = cand
+			data.grid[cp.y][cp.x] = DungeonData.TileType.CHASM
+			if _is_connected(data):
+				placed += 1
+			else:
+				data.grid[cp.y][cp.x] = DungeonData.TileType.FLOOR
+
+
+static func _place_water_mud(data: DungeonData, rng: RandomNumberGenerator) -> void:
+	var all_floor: Array = []
+	for y: int in data.height:
+		for x: int in data.width:
+			if data.grid[y][x] == DungeonData.TileType.FLOOR:
+				var pos: Vector2i = Vector2i(x, y)
+				if pos != data.player_start and pos != data.stairs_pos:
+					all_floor.append(pos)
+	if all_floor.is_empty():
+		return
+	var dirs4: Array = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0)]
+	var num_clusters: int = rng.randi_range(2, 4)
+	for _c: int in num_clusters:
+		if all_floor.is_empty():
+			break
+		var seed_idx: int = rng.randi_range(0, all_floor.size() - 1)
+		var seed: Vector2i = all_floor[seed_idx]
+		if data.grid[seed.y][seed.x] != DungeonData.TileType.FLOOR:
+			continue
+		var is_water: bool = rng.randi() % 2 == 0
+		var tile_type: DungeonData.TileType = DungeonData.TileType.WATER if is_water else DungeonData.TileType.MUD
+		var max_size: int = rng.randi_range(4, 9)
+		var queue: Array = [seed]
+		var placed_count: int = 0
+		data.grid[seed.y][seed.x] = tile_type
+		placed_count += 1
+		while not queue.is_empty() and placed_count < max_size:
+			var cur: Vector2i = queue.pop_front()
+			dirs4.shuffle()
+			for d in dirs4:
+				var nxt: Vector2i = cur + (d as Vector2i)
+				if nxt == data.player_start or nxt == data.stairs_pos:
+					continue
+				if data.grid[nxt.y][nxt.x] != DungeonData.TileType.FLOOR:
+					continue
+				if rng.randf() < 0.55:
+					data.grid[nxt.y][nxt.x] = tile_type
+					placed_count += 1
+					queue.append(nxt)
+
+
+static func _place_grass_clusters(data: DungeonData, rng: RandomNumberGenerator) -> void:
+	var all_floor: Array = []
+	for y: int in data.height:
+		for x: int in data.width:
+			if data.grid[y][x] == DungeonData.TileType.FLOOR:
+				var pos: Vector2i = Vector2i(x, y)
+				if pos != data.player_start and pos != data.stairs_pos:
+					all_floor.append(pos)
+	if all_floor.is_empty():
+		return
+	var dirs4: Array = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0)]
+	var num_clusters: int = rng.randi_range(2, 5)
+	for _c: int in num_clusters:
+		if all_floor.is_empty():
+			break
+		var seed_idx: int = rng.randi_range(0, all_floor.size() - 1)
+		var seed: Vector2i = all_floor[seed_idx]
+		if data.grid[seed.y][seed.x] != DungeonData.TileType.FLOOR:
+			continue
+		var max_size: int = rng.randi_range(6, 14)
+		var queue: Array = [seed]
+		var placed_count: int = 0
+		data.grid[seed.y][seed.x] = DungeonData.TileType.GRASS
+		placed_count += 1
+		while not queue.is_empty() and placed_count < max_size:
+			var cur: Vector2i = queue.pop_front()
+			dirs4.shuffle()
+			for d in dirs4:
+				var nxt: Vector2i = cur + (d as Vector2i)
+				if nxt == data.player_start or nxt == data.stairs_pos:
+					continue
+				if data.grid[nxt.y][nxt.x] != DungeonData.TileType.FLOOR:
+					continue
+				if rng.randf() < 0.60:
+					data.grid[nxt.y][nxt.x] = DungeonData.TileType.GRASS
+					placed_count += 1
+					queue.append(nxt)

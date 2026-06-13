@@ -3,9 +3,15 @@ extends Node2D
 
 const TILE_SIZE: int = 16
 const ATLAS_ORIGIN := Vector2i(0, 0)
-const SOURCE_FLOOR: int = 0
-const SOURCE_WALL: int = 1
-const SOURCE_STAIRS: int = 2
+const SOURCE_FLOOR:       int = 0
+const SOURCE_WALL:        int = 1
+const SOURCE_STAIRS:      int = 2
+const SOURCE_CHASM:       int = 3
+const SOURCE_WATER:       int = 4
+const SOURCE_MUD:         int = 5
+const SOURCE_GRASS:       int = 6
+const SOURCE_DOOR_CLOSED: int = 7
+const SOURCE_DOOR_OPEN:   int = 8
 const TILE_SPRITES_PATH := "res://sprites/tiles/"
 const WEAPONS_PATH := "res://sprites/weapons/"
 const OBJECTS_PATH := "res://sprites/objects/"
@@ -17,6 +23,10 @@ const TRAP_COUNT_MIN: int = 4
 const TRAP_COUNT_MAX: int = 7
 const TRAP_PATH := "res://sprites/Traps/"
 
+# Names of spike-type traps that re-arm after a delay
+const REARMABLE_TRAPS: Array[String] = ["Spike Trap", "Pit Spikes"]
+const REARM_TURNS: int = 3
+
 const TRAP_POOL: Array = [
 	{"name": "Bear Trap",  "sprite": "Bear_Trap.png",       "damage": 5, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
 	{"name": "Fire Trap",  "sprite": "Fire_Trap.png",        "damage": 8, "msg": "Jets of flame engulf you!",        "wall_trap": false},
@@ -27,14 +37,14 @@ const TRAP_POOL: Array = [
 
 # item_type: 0=WEAPON 1=ARMOR 2=POTION  (matches Item.Type enum)
 const ITEM_POOL: Array = [
-	{"name": "Rusty Sword",   "type": 0, "icon": "weapon_rusty_sword.png",   "src": "weapons", "bonus_dmg": 1, "heal": 0,  "fmin": 1, "fmax": 3,  "desc": "+1 damage"},
-	{"name": "Short Sword",   "type": 0, "icon": "weapon_knife.png",          "src": "weapons", "bonus_dmg": 1, "heal": 0,  "fmin": 1, "fmax": 4,  "desc": "+1 damage"},
-	{"name": "Sword",         "type": 0, "icon": "weapon_regular_sword.png",  "src": "weapons", "bonus_dmg": 2, "heal": 0,  "fmin": 2, "fmax": 6,  "desc": "+2 damage"},
-	{"name": "Knight Sword",  "type": 0, "icon": "weapon_knight_sword.png",   "src": "weapons", "bonus_dmg": 3, "heal": 0,  "fmin": 4, "fmax": 8,  "desc": "+3 damage"},
-	{"name": "Golden Sword",  "type": 0, "icon": "weapon_golden_sword.png",   "src": "weapons", "bonus_dmg": 4, "heal": 0,  "fmin": 6, "fmax": 10, "desc": "+4 damage"},
-	{"name": "Lavish Sword",  "type": 0, "icon": "weapon_lavish_sword.png",   "src": "weapons", "bonus_dmg": 5, "heal": 0,  "fmin": 8, "fmax": 10, "desc": "+5 damage"},
-	{"name": "Health Potion",   "type": 2, "icon": "flask_red.png",    "src": "objects", "bonus_dmg": 0, "heal": 10, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 10 HP"},
-	{"name": "Strength Potion","type": 2, "icon": "flask_big_yellow.png","src": "objects","bonus_dmg": 2, "heal": 0,  "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
+	{"name": "Rusty Sword",    "type": 0, "icon": "weapon_rusty_sword.png",    "src": "weapons", "bonus_dmg": 1, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 3,  "desc": "+1 damage"},
+	{"name": "Short Sword",    "type": 0, "icon": "weapon_knife.png",           "src": "weapons", "bonus_dmg": 1, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 4,  "desc": "+1 damage"},
+	{"name": "Sword",          "type": 0, "icon": "weapon_regular_sword.png",   "src": "weapons", "bonus_dmg": 2, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 6,  "desc": "+2 damage"},
+	{"name": "Knight Sword",   "type": 0, "icon": "weapon_knight_sword.png",    "src": "weapons", "bonus_dmg": 3, "heal": 0, "str_bonus": 0, "fmin": 4, "fmax": 8,  "desc": "+3 damage"},
+	{"name": "Golden Sword",   "type": 0, "icon": "weapon_golden_sword.png",    "src": "weapons", "bonus_dmg": 4, "heal": 0, "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "+4 damage"},
+	{"name": "Lavish Sword",   "type": 0, "icon": "weapon_lavish_sword.png",    "src": "weapons", "bonus_dmg": 5, "heal": 0, "str_bonus": 0, "fmin": 8, "fmax": 10, "desc": "+5 damage"},
+	{"name": "Health Potion",  "type": 2, "icon": "flask_red.png",              "src": "objects", "bonus_dmg": 0, "heal": 10, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 10 HP"},
+	{"name": "Strength Potion","type": 2, "icon": "flask_big_yellow.png",       "src": "objects", "bonus_dmg": 2, "heal": 0,  "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
 ]
 
 const ENEMY_POOL: Array = [
@@ -56,19 +66,22 @@ const ENEMY_POOL: Array = [
 var _data: DungeonData
 var _player: Player
 var _enemies: Array[Enemy] = []
-var _traps: Dictionary = {}   # Vector2i → {name, damage, msg, sprite_node, revealed}
+var _traps: Dictionary = {}         # Vector2i → {name, damage, msg, sprite_node, revealed, triggered, is_push}
+var _trap_rearm_timers: Dictionary = {}  # Vector2i → int (turns until re-arm)
+var _doors: Dictionary = {}         # Vector2i → {is_open: bool, sprite: Sprite2D}
 
-var _floor_items: Dictionary = {}         # Vector2i → Item
-var _floor_item_sprites: Dictionary = {}  # Vector2i → Sprite2D
+var _floor_items: Dictionary = {}
+var _floor_item_sprites: Dictionary = {}
 
 var _fog_image: Image
 var _fog_texture: ImageTexture
 var _fog_sprite: Sprite2D
-var _explored: Dictionary = {}  # Vector2i → bool
+var _explored: Dictionary = {}
 
 func _ready() -> void:
 	_setup_tileset()
 	_load_floor()
+	TurnManager.player_turn_started.connect(_tick_trap_rearm)
 
 func _setup_tileset() -> void:
 	var tile_set := TileSet.new()
@@ -76,11 +89,51 @@ func _setup_tileset() -> void:
 	_add_tile_source(tile_set, SOURCE_FLOOR,  TILE_SPRITES_PATH + "floor_1.png")
 	_add_tile_source(tile_set, SOURCE_WALL,   TILE_SPRITES_PATH + "wall_mid.png")
 	_add_tile_source(tile_set, SOURCE_STAIRS, TILE_SPRITES_PATH + "floor_stairs.png")
+	# New tile types — extract from atlas sheets or use solid-color fallbacks
+	_add_tile_source_or_color(tile_set, SOURCE_CHASM, TILE_SPRITES_PATH + "hole.png", Color(0.06, 0.04, 0.08))
+	_add_tile_from_atlas(tile_set, SOURCE_WATER, "res://sprites/WaterRockDirt.png", 32, 0, Color(0.10, 0.30, 0.72))
+	_add_tile_from_atlas(tile_set, SOURCE_MUD,   "res://sprites/WaterRockDirt.png",  0, 0, Color(0.30, 0.18, 0.08))
+	_add_tile_from_atlas(tile_set, SOURCE_GRASS, "res://sprites/Grass.png",          0, 0, Color(0.10, 0.42, 0.10))
+	_add_tile_source_or_color(tile_set, SOURCE_DOOR_CLOSED, OBJECTS_PATH + "doors_leaf_closed.png", Color(0.5, 0.3, 0.1))
+	_add_tile_source_or_color(tile_set, SOURCE_DOOR_OPEN,   OBJECTS_PATH + "doors_leaf_open.png",   Color(0.3, 0.2, 0.05))
 	tilemap.tile_set = tile_set
 
 func _add_tile_source(tile_set: TileSet, source_id: int, path: String) -> void:
 	var atlas := TileSetAtlasSource.new()
 	atlas.texture = load(path)
+	atlas.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
+	atlas.create_tile(ATLAS_ORIGIN)
+	tile_set.add_source(atlas, source_id)
+
+func _add_tile_from_atlas(tile_set: TileSet, source_id: int, atlas_path: String, px_x: int, px_y: int, fallback: Color) -> void:
+	var tex: Texture2D = null
+	if ResourceLoader.exists(atlas_path):
+		var atlas_tex := load(atlas_path) as Texture2D
+		if atlas_tex != null:
+			var img := atlas_tex.get_image()
+			if img != null and not img.is_empty():
+				var region := img.get_region(Rect2i(px_x, px_y, TILE_SIZE, TILE_SIZE))
+				tex = ImageTexture.create_from_image(region)
+	if tex == null:
+		var img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
+		img.fill(fallback)
+		tex = ImageTexture.create_from_image(img)
+	var atlas := TileSetAtlasSource.new()
+	atlas.texture = tex
+	atlas.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
+	atlas.create_tile(ATLAS_ORIGIN)
+	tile_set.add_source(atlas, source_id)
+
+func _add_tile_source_or_color(tile_set: TileSet, source_id: int, path: String, fallback: Color) -> void:
+	var tex: Texture2D = null
+	if ResourceLoader.exists(path):
+		tex = load(path) as Texture2D
+	if tex == null:
+		var img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
+		img.fill(fallback)
+		tex = ImageTexture.create_from_image(img)
+	var atlas := TileSetAtlasSource.new()
+	atlas.texture = tex
 	atlas.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
 	atlas.create_tile(ATLAS_ORIGIN)
 	tile_set.add_source(atlas, source_id)
@@ -92,11 +145,20 @@ func _load_floor() -> void:
 	_enemies.clear()
 	TurnManager.clear_enemies()
 	TurnManager.reset()
+
 	for pos: Vector2i in _traps:
 		var sn: Sprite2D = _traps[pos].get("sprite_node")
 		if sn != null and is_instance_valid(sn):
 			sn.queue_free()
 	_traps.clear()
+	_trap_rearm_timers.clear()
+
+	for pos: Vector2i in _doors:
+		var sp: Sprite2D = _doors[pos].get("sprite")
+		if sp != null and is_instance_valid(sp):
+			sp.queue_free()
+	_doors.clear()
+
 	for pos: Vector2i in _floor_item_sprites:
 		var sn: Sprite2D = _floor_item_sprites[pos]
 		if is_instance_valid(sn):
@@ -107,18 +169,24 @@ func _load_floor() -> void:
 	_data = DungeonGenerator.generate(GameState.run_seed, GameState.current_floor)
 
 	tilemap.clear()
-	for y in _data.height:
-		for x in _data.width:
-			var tile: DungeonData.TileType = _data.grid[y][x]
-			match tile:
+	for y: int in _data.height:
+		for x: int in _data.width:
+			match _data.grid[y][x] as DungeonData.TileType:
 				DungeonData.TileType.FLOOR:
 					tilemap.set_cell(Vector2i(x, y), SOURCE_FLOOR, ATLAS_ORIGIN)
 				DungeonData.TileType.WALL:
 					tilemap.set_cell(Vector2i(x, y), SOURCE_WALL, ATLAS_ORIGIN)
 				DungeonData.TileType.STAIRS_DOWN:
 					tilemap.set_cell(Vector2i(x, y), SOURCE_STAIRS, ATLAS_ORIGIN)
+				DungeonData.TileType.CHASM:
+					tilemap.set_cell(Vector2i(x, y), SOURCE_CHASM, ATLAS_ORIGIN)
+				DungeonData.TileType.WATER:
+					tilemap.set_cell(Vector2i(x, y), SOURCE_WATER, ATLAS_ORIGIN)
+				DungeonData.TileType.MUD:
+					tilemap.set_cell(Vector2i(x, y), SOURCE_MUD, ATLAS_ORIGIN)
+				DungeonData.TileType.GRASS:
+					tilemap.set_cell(Vector2i(x, y), SOURCE_GRASS, ATLAS_ORIGIN)
 
-	# Spawn player on first load; reuse the same instance on subsequent floors
 	if _player == null:
 		var player_scene: PackedScene = preload("res://scenes/game/player.tscn")
 		_player = player_scene.instantiate() as Player
@@ -130,51 +198,51 @@ func _load_floor() -> void:
 
 	_spawn_enemies()
 	_spawn_traps()
+	_spawn_doors()
 	_spawn_items()
 	_setup_fog()
 	update_fog(_data.player_start)
 
-func _spawn_enemies() -> void:
-	var candidates: Array = []
-	for y: int in _data.height:
-		for x: int in _data.width:
-			var pos: Vector2i = Vector2i(x, y)
-			if _data.get_tile(x, y) == DungeonData.TileType.FLOOR:
-				if pos != _data.player_start and pos != _data.stairs_pos:
-					candidates.append(pos)
-	candidates.shuffle()
+# ── Tilemap queries ───────────────────────────────────────────────────────────
 
-	var eligible: Array = []
-	for entry in ENEMY_POOL:
-		var t: Dictionary = entry
-		if GameState.current_floor >= t["floor_min"] and GameState.current_floor <= t["floor_max"]:
-			eligible.append(t)
-	if eligible.is_empty():
-		eligible = [ENEMY_POOL[0]]
+func get_tile_type(pos: Vector2i) -> DungeonData.TileType:
+	return _data.get_tile(pos.x, pos.y)
 
-	var enemy_scene: PackedScene = preload("res://scenes/game/enemy.tscn")
-	var count: int = mini(randi_range(ENEMY_COUNT_MIN, ENEMY_COUNT_MAX), candidates.size())
+func is_walkable(pos: Vector2i) -> bool:
+	if _doors.has(pos) and not _doors[pos]["is_open"]:
+		return false
+	return _data.is_walkable(pos)
 
-	for i: int in count:
-		var type_data: Dictionary = eligible[randi() % eligible.size()]
-		var enemy: Enemy = enemy_scene.instantiate() as Enemy
-		enemy.configure(type_data)
-		enemy._dungeon_floor = self
-		entities.add_child(enemy)
-		enemy.set_grid_pos(candidates[i])
-		_enemies.append(enemy)
-		TurnManager.register_enemy(enemy)
+func is_walkable_for_enemy(pos: Vector2i) -> bool:
+	if not _data.is_walkable(pos):
+		return false
+	if _doors.has(pos):
+		# Closed doors block normal movement (enemy handles opening separately)
+		if not _doors[pos]["is_open"]:
+			return false
+	if _player != null and _player.grid_pos == pos:
+		return false
+	for e in _enemies:
+		if is_instance_valid(e) and e.grid_pos == pos:
+			return false
+	if _traps.has(pos):
+		var trap: Dictionary = _traps[pos]
+		if trap.get("is_push", false):
+			return false  # Push traps always avoided
+		if not trap.get("triggered", false):
+			return false  # Active non-push traps avoided
+		# Triggered single-use traps: enemy can walk through
+	return true
+
+# ── Fog of war ────────────────────────────────────────────────────────────────
 
 func _setup_fog() -> void:
-	# Remove old fog sprite if reloading floor
 	if _fog_sprite != null and is_instance_valid(_fog_sprite):
 		_fog_sprite.queue_free()
-
 	_explored.clear()
 	_fog_image = Image.create(_data.width, _data.height, false, Image.FORMAT_RGBA8)
 	_fog_image.fill(Color(0, 0, 0, 1.0))
 	_fog_texture = ImageTexture.create_from_image(_fog_image)
-
 	_fog_sprite = Sprite2D.new()
 	_fog_sprite.texture = _fog_texture
 	_fog_sprite.centered = false
@@ -208,20 +276,86 @@ func _update_enemy_visibility(player_pos: Vector2i, r2: int) -> void:
 			var dy := enemy.grid_pos.y - player_pos.y
 			enemy.visible = (dx * dx + dy * dy) <= r2 and has_line_of_sight(player_pos, enemy.grid_pos)
 
-func is_walkable(pos: Vector2i) -> bool:
-	return _data.is_walkable(pos)
-
-func is_walkable_for_enemy(pos: Vector2i) -> bool:
-	if not _data.is_walkable(pos):
-		return false
-	if _player != null and _player.grid_pos == pos:
-		return false
-	for e in _enemies:
-		if is_instance_valid(e) and e.grid_pos == pos:
+func has_line_of_sight(from: Vector2i, to: Vector2i) -> bool:
+	var x: int = from.x
+	var y: int = from.y
+	var dx: int = abs(to.x - x)
+	var dy: int = abs(to.y - y)
+	var sx: int = 1 if x < to.x else -1
+	var sy: int = 1 if y < to.y else -1
+	var err: int = dx - dy
+	while x != to.x or y != to.y:
+		var e2: int = 2 * err
+		if e2 > -dy:
+			err -= dy
+			x += sx
+		if e2 < dx:
+			err += dx
+			y += sy
+		if x == to.x and y == to.y:
+			break
+		var t: DungeonData.TileType = _data.get_tile(x, y)
+		if t == DungeonData.TileType.WALL or t == DungeonData.TileType.GRASS or t == DungeonData.TileType.CHASM:
 			return false
-	if _traps.has(pos):
-		return false
+		# Closed doors also block LOS
+		if _doors.has(Vector2i(x, y)) and not _doors[Vector2i(x, y)]["is_open"]:
+			return false
 	return true
+
+# ── Pathfinding ───────────────────────────────────────────────────────────────
+
+func find_path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	if not _explored.get(to, false):
+		return []
+	if not _data.is_walkable(to) and get_enemy_at(to) == null:
+		return []
+	var queue: Array[Vector2i] = [from]
+	var came_from: Dictionary = {}
+	came_from[from] = from
+	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
+		Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]
+	while not queue.is_empty():
+		var current: Vector2i = queue.pop_front()
+		if current == to:
+			break
+		for d: Vector2i in dirs:
+			var nxt: Vector2i = current + d
+			if came_from.has(nxt):
+				continue
+			if not _explored.get(nxt, false):
+				continue
+			# Treat closed doors as passable for player pathfinding (will open on arrival)
+			if _data.is_walkable(nxt) or nxt == to:
+				came_from[nxt] = current
+				queue.append(nxt)
+	if not came_from.has(to):
+		return []
+	var path: Array[Vector2i] = []
+	var cur: Vector2i = to
+	while cur != from:
+		path.push_front(cur)
+		cur = came_from[cur]
+	return path
+
+func _bfs_reachable(from: Vector2i, to: Vector2i, exclude: Array) -> bool:
+	var visited: Dictionary = {}
+	var queue: Array = [from]
+	visited[from] = true
+	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0)]
+	while not queue.is_empty():
+		var cur: Vector2i = queue.pop_front()
+		if cur == to:
+			return true
+		for d: Vector2i in dirs:
+			var nxt: Vector2i = cur + d
+			if visited.has(nxt) or exclude.has(nxt):
+				continue
+			if _data.is_walkable(nxt):
+				visited[nxt] = true
+				queue.append(nxt)
+	return false
+
+# ── Enemy management ──────────────────────────────────────────────────────────
 
 func get_enemy_at(pos: Vector2i) -> Enemy:
 	for e in _enemies:
@@ -236,45 +370,6 @@ func remove_enemy(enemy: Enemy) -> void:
 	_enemies.erase(enemy)
 	TurnManager.unregister_enemy(enemy)
 
-func get_tile_type(pos: Vector2i) -> DungeonData.TileType:
-	return _data.get_tile(pos.x, pos.y)
-
-func find_path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
-	if not _explored.get(to, false):
-		return []
-	if not _data.is_walkable(to) and get_enemy_at(to) == null:
-		return []
-
-	var queue: Array[Vector2i] = [from]
-	var came_from: Dictionary = {}
-	came_from[from] = from
-	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
-		Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]
-
-	while not queue.is_empty():
-		var current: Vector2i = queue.pop_front()
-		if current == to:
-			break
-		for d: Vector2i in dirs:
-			var nxt: Vector2i = current + d
-			if came_from.has(nxt):
-				continue
-			if not _explored.get(nxt, false):
-				continue
-			if _data.is_walkable(nxt) or nxt == to:
-				came_from[nxt] = current
-				queue.append(nxt)
-
-	if not came_from.has(to):
-		return []
-
-	var path: Array[Vector2i] = []
-	var cur: Vector2i = to
-	while cur != from:
-		path.push_front(cur)
-		cur = came_from[cur]
-	return path
-
 func get_visible_enemies() -> Array[Enemy]:
 	var result: Array[Enemy] = []
 	for e: Enemy in _enemies:
@@ -288,9 +383,52 @@ func on_player_reached_stairs() -> void:
 		return
 	_load_floor()
 
+# ── Enemy spawning ────────────────────────────────────────────────────────────
+
+func _spawn_enemies() -> void:
+	var candidates: Array = []
+	for y: int in _data.height:
+		for x: int in _data.width:
+			var pos: Vector2i = Vector2i(x, y)
+			if _data.get_tile(x, y) == DungeonData.TileType.FLOOR:
+				if pos != _data.player_start and pos != _data.stairs_pos:
+					candidates.append(pos)
+	candidates.shuffle()
+
+	var eligible: Array = []
+	for entry in ENEMY_POOL:
+		var t: Dictionary = entry
+		if GameState.current_floor >= t["floor_min"] and GameState.current_floor <= t["floor_max"]:
+			eligible.append(t)
+	if eligible.is_empty():
+		eligible = [ENEMY_POOL[0]]
+
+	var enemy_scene: PackedScene = preload("res://scenes/game/enemy.tscn")
+	var count: int = mini(randi_range(ENEMY_COUNT_MIN, ENEMY_COUNT_MAX), candidates.size())
+	var rng := RandomNumberGenerator.new()
+	rng.seed = GameState.run_seed ^ (GameState.current_floor * 0x1234ABCD)
+
+	for i: int in count:
+		var type_data: Dictionary = eligible[randi() % eligible.size()]
+		var enemy: Enemy = enemy_scene.instantiate() as Enemy
+		enemy.configure(type_data)
+		# Assign random initial behavior
+		var behavior_roll: int = rng.randi() % 3
+		match behavior_roll:
+			0: enemy.initial_behavior = Enemy.Behavior.SLEEPING
+			1: enemy.initial_behavior = Enemy.Behavior.STATIONARY
+			2: enemy.initial_behavior = Enemy.Behavior.ROAMING
+		enemy._dungeon_floor = self
+		entities.add_child(enemy)
+		enemy.set_grid_pos(candidates[i])
+		_enemies.append(enemy)
+		TurnManager.register_enemy(enemy)
+
+# ── Trap system ───────────────────────────────────────────────────────────────
+
 func _spawn_traps() -> void:
 	var floor_cands: Array = []
-	var wall_cands: Array = []  # {floor_pos, wall_pos, push_dir}
+	var wall_cands: Array = []
 	var cardinal: Array[Vector2i] = [Vector2i(1,0), Vector2i(-1,0), Vector2i(0,1), Vector2i(0,-1)]
 
 	for y: int in _data.height:
@@ -302,7 +440,9 @@ func _spawn_traps() -> void:
 				continue
 			if maxi(abs(pos.x - _data.player_start.x), abs(pos.y - _data.player_start.y)) < 2:
 				continue
-			floor_cands.append(pos)
+			# Only place floor traps where there's an alternate path (bypass check)
+			if _bfs_reachable(_data.player_start, _data.stairs_pos, [pos]):
+				floor_cands.append(pos)
 			for d: Vector2i in cardinal:
 				var wp: Vector2i = pos + d
 				if _data.get_tile(wp.x, wp.y) == DungeonData.TileType.WALL:
@@ -341,7 +481,7 @@ func _spawn_traps() -> void:
 		sprite.modulate.a = 0.5
 		entities.add_child(sprite)
 		_traps[pos] = {"name": t["name"], "damage": t["damage"], "msg": t["msg"],
-					   "sprite_node": sprite, "revealed": false, "is_push": false}
+					   "sprite_node": sprite, "revealed": false, "is_push": false, "triggered": false}
 
 	if not wall_pool.is_empty():
 		var valid_wc: Array = []
@@ -367,14 +507,13 @@ func _spawn_traps() -> void:
 			sprite.region_rect = Rect2(0, 0, frame_size, frame_size)
 			sprite.scale = Vector2(float(TILE_SIZE) / float(frame_size), float(TILE_SIZE) / float(frame_size))
 			sprite.position = Vector2(wall_pos.x * TILE_SIZE + TILE_SIZE * 0.5, wall_pos.y * TILE_SIZE + TILE_SIZE * 0.5)
-			# Sprite faces down at 0°; subtract PI/2 to map push_dir to correct facing
 			sprite.rotation = atan2(float(push_dir.y), float(push_dir.x)) - PI / 2.0
 			sprite.z_index = 1
 			sprite.modulate.a = 0.5
 			entities.add_child(sprite)
 			_traps[floor_pos] = {"name": t["name"], "damage": 0, "msg": t["msg"],
 								 "sprite_node": sprite, "revealed": false, "is_push": true,
-								 "push_dir": push_dir}
+								 "push_dir": push_dir, "triggered": false}
 
 	GameState.log("[color=gray]Floor has %d hidden traps.[/color]" % _traps.size())
 
@@ -385,24 +524,72 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 	if not _traps.has(pos):
 		return
 	var trap: Dictionary = _traps[pos]
+	var is_push: bool = trap.get("is_push", false)
+
+	# Non-push traps that are already triggered: skip (single-use or awaiting re-arm)
+	if trap.get("triggered", false) and not is_push:
+		return
+
 	var sprite_node: Sprite2D = trap.get("sprite_node") as Sprite2D
 	if is_instance_valid(sprite_node):
-		sprite_node.modulate.a = 1.0
-	_traps.erase(pos)
+		sprite_node.modulate = Color(1.0, 1.0, 1.0, 1.0)  # Fully reveal on trigger
 
-	var target: Node2D
-	if entity != null:
-		target = entity
-	elif _player != null:
-		target = _player
+	var target: Node2D = entity if entity != null else _player
 
-	if trap.get("is_push", false):
+	if is_push:
 		await _push_entity(target, trap["push_dir"], 2, sprite_node)
+		# Push traps are always reusable — restore semi-visible active state
+		if is_instance_valid(sprite_node):
+			sprite_node.modulate = Color(1.0, 1.0, 1.0, 0.5)
 	else:
+		trap["triggered"] = true
+		if is_instance_valid(sprite_node):
+			sprite_node.modulate = Color(0.25, 0.25, 0.25, 0.85)  # Dark = spent
 		var dmg: int = trap["damage"] + GameState.current_floor / 2
 		_apply_trap_damage(target, dmg, trap["msg"])
+		# Play animation (without freeing sprite — trap persists visually)
 		if is_instance_valid(sprite_node):
-			_play_trap_animation(sprite_node)
+			await _play_trap_animation(sprite_node)
+		# Queue re-arm for spike-type traps
+		if REARMABLE_TRAPS.has(trap["name"]):
+			_trap_rearm_timers[pos] = REARM_TURNS
+
+func _tick_trap_rearm() -> void:
+	var to_rearm: Array[Vector2i] = []
+	for pos: Vector2i in _trap_rearm_timers:
+		_trap_rearm_timers[pos] -= 1
+		if _trap_rearm_timers[pos] <= 0:
+			to_rearm.append(pos)
+	for pos: Vector2i in to_rearm:
+		_trap_rearm_timers.erase(pos)
+		if _traps.has(pos):
+			_traps[pos]["triggered"] = false
+			var sp: Sprite2D = _traps[pos].get("sprite_node")
+			if is_instance_valid(sp):
+				sp.modulate = Color(1.0, 1.0, 1.0, 0.5)  # Back to active state
+				sp.region_rect = Rect2(0, 0, 32, 32)       # Reset to first frame
+
+func reveal_trap(pos: Vector2i) -> bool:
+	if not _traps.has(pos):
+		return false
+	var trap: Dictionary = _traps[pos]
+	if trap.get("revealed", false):
+		return false
+	trap["revealed"] = true
+	var sprite_node: Sprite2D = trap["sprite_node"]
+	if is_instance_valid(sprite_node):
+		sprite_node.modulate.a = 1.0
+	return true
+
+func search_around(pos: Vector2i) -> int:
+	var found: int = 0
+	for dy: int in range(-1, 2):
+		for dx: int in range(-1, 2):
+			if dx == 0 and dy == 0:
+				continue
+			if reveal_trap(pos + Vector2i(dx, dy)):
+				found += 1
+	return found
 
 func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
 	if entity is Player:
@@ -424,7 +611,7 @@ func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
 func _push_entity(entity: Node2D, push_dir: Vector2i, distance: int, trap_sprite: Sprite2D = null) -> void:
 	if not is_instance_valid(entity):
 		if is_instance_valid(trap_sprite):
-			_play_trap_animation(trap_sprite)
+			await _play_trap_animation(trap_sprite)
 		return
 	var e: Entity = entity as Entity
 	var current: Vector2i = e.grid_pos
@@ -442,7 +629,7 @@ func _push_entity(entity: Node2D, push_dir: Vector2i, distance: int, trap_sprite
 			break
 		current = nxt
 	if is_instance_valid(trap_sprite):
-		_play_trap_animation(trap_sprite)
+		await _play_trap_animation(trap_sprite)
 	if current != e.grid_pos:
 		await e.move_to(current, 0.15)
 	if not is_instance_valid(entity):
@@ -468,40 +655,100 @@ func _push_entity(entity: Node2D, push_dir: Vector2i, distance: int, trap_sprite
 			enemy.die()
 
 func _play_trap_animation(sprite_node: Sprite2D) -> void:
+	if not is_instance_valid(sprite_node):
+		return
 	var tex: Texture2D = sprite_node.texture
 	if tex == null:
-		sprite_node.queue_free()
 		return
 	var frame_count: int = int(tex.get_width()) / 32
 	if frame_count <= 1:
-		sprite_node.queue_free()
 		return
 	for f: int in range(1, frame_count):
+		if not is_instance_valid(sprite_node):
+			return
 		sprite_node.region_rect = Rect2(f * 32, 0, 32, 32)
 		await get_tree().create_timer(0.07).timeout
-	sprite_node.queue_free()
 
-func reveal_trap(pos: Vector2i) -> bool:
-	if not _traps.has(pos):
-		return false
-	var trap: Dictionary = _traps[pos]
-	if trap.get("revealed", false):
-		return false
-	trap["revealed"] = true
-	var sprite_node: Sprite2D = trap["sprite_node"]
-	if is_instance_valid(sprite_node):
-		sprite_node.modulate.a = 1.0
-	return true
+# ── Door system ───────────────────────────────────────────────────────────────
 
-func search_around(pos: Vector2i) -> int:
-	var found: int = 0
-	for dy: int in range(-1, 2):
-		for dx: int in range(-1, 2):
-			if dx == 0 and dy == 0:
-				continue
-			if reveal_trap(pos + Vector2i(dx, dy)):
-				found += 1
-	return found
+func _spawn_doors() -> void:
+	var cardinal: Array[Vector2i] = [Vector2i(1,0), Vector2i(-1,0), Vector2i(0,1), Vector2i(0,-1)]
+	var door_candidates: Dictionary = {}  # Vector2i → bool (deduplicate)
+
+	for room_entry in _data.rooms:
+		var r: Rect2i = room_entry
+		var added_for_room: int = 0
+
+		# Check perimeter tiles of this room (1 tile inside the edge)
+		for y: int in range(r.position.y, r.position.y + r.size.y):
+			for x: int in range(r.position.x, r.position.x + r.size.x):
+				# Only border tiles of the room rect
+				if x != r.position.x and x != r.position.x + r.size.x - 1 \
+				   and y != r.position.y and y != r.position.y + r.size.y - 1:
+					continue
+				var pos: Vector2i = Vector2i(x, y)
+				if _data.get_tile(x, y) != DungeonData.TileType.FLOOR:
+					continue
+				if pos == _data.player_start or pos == _data.stairs_pos:
+					continue
+				# Check if any neighbor outside this room is FLOOR (= corridor entry)
+				for d: Vector2i in cardinal:
+					var out: Vector2i = pos + d
+					if r.has_point(out):
+						continue
+					if _data.get_tile(out.x, out.y) == DungeonData.TileType.FLOOR:
+						door_candidates[pos] = true
+						break
+
+	# Place doors with 65% probability, max 2 per room is handled by room perimeter size
+	var tex_closed: Texture2D = null
+	var tex_open: Texture2D = null
+	if ResourceLoader.exists(OBJECTS_PATH + "doors_leaf_closed.png"):
+		tex_closed = load(OBJECTS_PATH + "doors_leaf_closed.png")
+	if ResourceLoader.exists(OBJECTS_PATH + "doors_leaf_open.png"):
+		tex_open = load(OBJECTS_PATH + "doors_leaf_open.png")
+
+	for pos: Vector2i in door_candidates:
+		if randf() > 0.65:
+			continue
+		if _traps.has(pos) or _floor_items.has(pos):
+			continue
+		var sprite := Sprite2D.new()
+		sprite.texture = tex_closed
+		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+		sprite.z_index = 1
+		entities.add_child(sprite)
+		_doors[pos] = {"is_open": false, "sprite": sprite, "tex_open": tex_open, "tex_closed": tex_closed}
+
+func has_door_at(pos: Vector2i) -> bool:
+	return _doors.has(pos)
+
+func is_door_open(pos: Vector2i) -> bool:
+	if not _doors.has(pos):
+		return true
+	return _doors[pos]["is_open"]
+
+func open_door(pos: Vector2i) -> void:
+	if not _doors.has(pos) or _doors[pos]["is_open"]:
+		return
+	_doors[pos]["is_open"] = true
+	var sp: Sprite2D = _doors[pos]["sprite"]
+	if is_instance_valid(sp):
+		sp.texture = _doors[pos]["tex_open"]
+	# Re-run fog so the now-open door's LOS is revealed
+	if _player != null:
+		update_fog(_player.grid_pos)
+
+# ── Grass ─────────────────────────────────────────────────────────────────────
+
+func destroy_grass(pos: Vector2i) -> void:
+	if _data.get_tile(pos.x, pos.y) != DungeonData.TileType.GRASS:
+		return
+	_data.grid[pos.y][pos.x] = DungeonData.TileType.FLOOR
+	tilemap.set_cell(pos, SOURCE_FLOOR, ATLAS_ORIGIN)
+
+# ── Items ─────────────────────────────────────────────────────────────────────
 
 func _spawn_items() -> void:
 	var eligible: Array = []
@@ -539,9 +786,9 @@ func _spawn_items() -> void:
 		item.floor_min = d["fmin"]
 		item.floor_max = d["fmax"]
 		item.description = d["desc"]
-		var base_path: String = WEAPONS_PATH if d["src"] == "weapons" else OBJECTS_PATH
 		item.icon_path = "res://sprites/%s/%s" % [d["src"], d["icon"]]
 
+		var base_path: String = WEAPONS_PATH if d["src"] == "weapons" else OBJECTS_PATH
 		var tex: Texture2D = load(base_path + d["icon"])
 		if tex == null:
 			continue
@@ -557,28 +804,6 @@ func _spawn_items() -> void:
 
 func get_item_at(pos: Vector2i) -> Item:
 	return _floor_items.get(pos, null) as Item
-
-func has_line_of_sight(from: Vector2i, to: Vector2i) -> bool:
-	var x: int = from.x
-	var y: int = from.y
-	var dx: int = abs(to.x - x)
-	var dy: int = abs(to.y - y)
-	var sx: int = 1 if x < to.x else -1
-	var sy: int = 1 if y < to.y else -1
-	var err: int = dx - dy
-	while x != to.x or y != to.y:
-		var e2: int = 2 * err
-		if e2 > -dy:
-			err -= dy
-			x += sx
-		if e2 < dx:
-			err += dx
-			y += sy
-		if x == to.x and y == to.y:
-			break
-		if _data.get_tile(x, y) == DungeonData.TileType.WALL:
-			return false
-	return true
 
 func remove_floor_item(pos: Vector2i) -> void:
 	if _floor_item_sprites.has(pos):
