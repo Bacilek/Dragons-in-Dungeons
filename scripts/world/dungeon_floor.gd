@@ -23,10 +23,6 @@ const TRAP_COUNT_MIN: int = 4
 const TRAP_COUNT_MAX: int = 7
 const TRAP_PATH := "res://sprites/Traps/"
 
-# Names of spike-type traps that re-arm after a delay
-const REARMABLE_TRAPS: Array[String] = ["Spike Trap", "Pit Spikes"]
-const REARM_TURNS: int = 3
-
 const TRAP_POOL: Array = [
 	{"name": "Bear Trap",  "sprite": "Bear_Trap.png",       "damage": 5, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
 	{"name": "Fire Trap",  "sprite": "Fire_Trap.png",        "damage": 8, "msg": "Jets of flame engulf you!",        "wall_trap": false},
@@ -67,7 +63,6 @@ var _data: DungeonData
 var _player: Player
 var _enemies: Array[Enemy] = []
 var _traps: Dictionary = {}         # Vector2i → {name, damage, msg, sprite_node, revealed, triggered, is_push}
-var _trap_rearm_timers: Dictionary = {}  # Vector2i → int (turns until re-arm)
 var _doors: Dictionary = {}         # Vector2i → {is_open: bool, sprite: Sprite2D}
 
 var _floor_items: Dictionary = {}
@@ -81,7 +76,6 @@ var _explored: Dictionary = {}
 func _ready() -> void:
 	_setup_tileset()
 	_load_floor()
-	TurnManager.player_turn_started.connect(_tick_trap_rearm)
 
 func _setup_tileset() -> void:
 	var tile_set := TileSet.new()
@@ -151,7 +145,6 @@ func _load_floor() -> void:
 		if sn != null and is_instance_valid(sn):
 			sn.queue_free()
 	_traps.clear()
-	_trap_rearm_timers.clear()
 
 	for pos: Vector2i in _doors:
 		var sp: Sprite2D = _doors[pos].get("sprite")
@@ -561,24 +554,6 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 		# Animation plays asynchronously — does not block player input
 		if is_instance_valid(sprite_node):
 			_play_trap_animation(sprite_node)
-		# Queue re-arm for spike-type traps
-		if REARMABLE_TRAPS.has(trap["name"]):
-			_trap_rearm_timers[pos] = REARM_TURNS
-
-func _tick_trap_rearm() -> void:
-	var to_rearm: Array[Vector2i] = []
-	for pos: Vector2i in _trap_rearm_timers:
-		_trap_rearm_timers[pos] -= 1
-		if _trap_rearm_timers[pos] <= 0:
-			to_rearm.append(pos)
-	for pos: Vector2i in to_rearm:
-		_trap_rearm_timers.erase(pos)
-		if _traps.has(pos):
-			_traps[pos]["triggered"] = false
-			var sp: Sprite2D = _traps[pos].get("sprite_node")
-			if is_instance_valid(sp):
-				sp.modulate = Color(1.0, 1.0, 1.0, 0.5)  # Back to active state
-				sp.region_rect = Rect2(0, 0, 32, 32)       # Reset to first frame
 
 func reveal_trap(pos: Vector2i) -> bool:
 	if not _traps.has(pos):
@@ -640,7 +615,7 @@ func _push_entity(entity: Node2D, push_dir: Vector2i, distance: int, trap_sprite
 			break
 		current = nxt
 	if is_instance_valid(trap_sprite):
-		await _play_trap_animation(trap_sprite)
+		_play_trap_animation(trap_sprite)  # fires async — simultaneous with movement
 	if current != e.grid_pos:
 		await e.move_to(current, 0.15)
 	if not is_instance_valid(entity):
