@@ -40,7 +40,7 @@ func _setup_animations() -> void:
 	_add_anim(frames, "run",  KNIGHT_PATH + "knight_m_run_anim_f%d.png",  4, false, 16.0)
 	_add_anim(frames, "hit",  KNIGHT_PATH + "knight_m_hit_anim_f%d.png",  1, false, 8.0)
 	$AnimatedSprite2D.sprite_frames = frames
-	$AnimatedSprite2D.offset = Vector2(0, -8)
+	$AnimatedSprite2D.offset = Vector2(0, -11)
 	$AnimatedSprite2D.play("idle")
 
 func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
@@ -97,6 +97,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		var clicked: Vector2i = Vector2i(int(world_pos.x / TILE_SIZE), int(world_pos.y / TILE_SIZE))
 		if clicked == grid_pos:
 			return
+		# Click on open door while adjacent → close it
+		if _dungeon_floor.has_door_at(clicked) and _dungeon_floor.is_door_open(clicked):
+			var diff: Vector2i = clicked - grid_pos
+			if maxi(abs(diff.x), abs(diff.y)) <= 1:
+				TurnManager.begin_player_action()
+				_dungeon_floor.close_door(clicked)
+				_dungeon_floor.update_fog(grid_pos)
+				TurnManager.on_player_action_complete()
+				return
 		# Clicking on an enemy → chase and attack
 		var enemy_clicked: Enemy = _dungeon_floor.get_enemy_at(clicked)
 		if enemy_clicked != null:

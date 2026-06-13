@@ -244,34 +244,64 @@ static func _is_connected(data: DungeonData) -> bool:
 
 
 static func _place_chasms(data: DungeonData, rng: RandomNumberGenerator) -> void:
+	# Chasms are rare — 40% chance to skip entirely
+	if rng.randf() < 0.40:
+		return
+	# Only in large rooms
+	var large_rooms: Array = []
 	for room_entry in data.rooms:
 		var r: Rect2i = room_entry
-		if r.size.x < 4 or r.size.y < 4:
-			continue
-		var max_chasms: int = int(r.size.x * r.size.y * 0.10)
-		if max_chasms <= 0:
-			continue
-		var candidates: Array = []
-		for y: int in range(r.position.y + 1, r.position.y + r.size.y - 1):
-			for x: int in range(r.position.x + 1, r.position.x + r.size.x - 1):
+		if r.size.x >= 7 and r.size.y >= 7:
+			large_rooms.append(r)
+	if large_rooms.is_empty():
+		return
+	# Pick 1–2 rooms for chasm clusters
+	for i: int in range(large_rooms.size() - 1, 0, -1):
+		var j: int = rng.randi_range(0, i)
+		var tmp = large_rooms[i]; large_rooms[i] = large_rooms[j]; large_rooms[j] = tmp
+	var num_clusters: int = rng.randi_range(1, mini(2, large_rooms.size()))
+	var dirs4: Array = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0)]
+	for ci: int in num_clusters:
+		var r: Rect2i = large_rooms[ci]
+		# Seed 2+ tiles from room edges
+		var inner: Array = []
+		for y: int in range(r.position.y + 2, r.position.y + r.size.y - 2):
+			for x: int in range(r.position.x + 2, r.position.x + r.size.x - 2):
 				var pos: Vector2i = Vector2i(x, y)
-				if pos == data.player_start or pos == data.stairs_pos:
+				if pos != data.player_start and pos != data.stairs_pos and data.grid[y][x] == DungeonData.TileType.FLOOR:
+					inner.append(pos)
+		if inner.is_empty():
+			continue
+		var seed: Vector2i = inner[rng.randi_range(0, inner.size() - 1)]
+		var max_size: int = rng.randi_range(5, 10)
+		var queue: Array = [seed]
+		var placed: Array = []
+		data.grid[seed.y][seed.x] = DungeonData.TileType.CHASM
+		placed.append(seed)
+		while not queue.is_empty() and placed.size() < max_size:
+			var cur: Vector2i = queue.pop_front()
+			for _d in dirs4:
+				var d: Vector2i = _d
+				if placed.size() >= max_size:
+					break
+				var nxt: Vector2i = cur + d
+				if nxt == data.player_start or nxt == data.stairs_pos:
 					continue
-				if data.grid[y][x] == DungeonData.TileType.FLOOR:
-					candidates.append(pos)
-		for i: int in range(candidates.size() - 1, 0, -1):
-			var j: int = rng.randi_range(0, i)
-			var tmp = candidates[i]; candidates[i] = candidates[j]; candidates[j] = tmp
-		var placed: int = 0
-		for cand in candidates:
-			if placed >= max_chasms:
-				break
-			var cp: Vector2i = cand
-			data.grid[cp.y][cp.x] = DungeonData.TileType.CHASM
-			if _is_connected(data):
-				placed += 1
-			else:
-				data.grid[cp.y][cp.x] = DungeonData.TileType.FLOOR
+				if data.grid[nxt.y][nxt.x] != DungeonData.TileType.FLOOR:
+					continue
+				# Stay 2+ tiles from room edges
+				if nxt.x <= r.position.x + 1 or nxt.x >= r.position.x + r.size.x - 2 \
+				   or nxt.y <= r.position.y + 1 or nxt.y >= r.position.y + r.size.y - 2:
+					continue
+				if rng.randf() < 0.65:
+					data.grid[nxt.y][nxt.x] = DungeonData.TileType.CHASM
+					placed.append(nxt)
+					queue.append(nxt)
+		# Revert whole cluster if it blocks connectivity
+		if not _is_connected(data):
+			for p in placed:
+				var pv: Vector2i = p
+				data.grid[pv.y][pv.x] = DungeonData.TileType.FLOOR
 
 
 static func _place_water_mud(data: DungeonData, rng: RandomNumberGenerator) -> void:

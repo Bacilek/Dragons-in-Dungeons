@@ -276,6 +276,13 @@ func _update_enemy_visibility(player_pos: Vector2i, r2: int) -> void:
 			var dy := enemy.grid_pos.y - player_pos.y
 			enemy.visible = (dx * dx + dy * dy) <= r2 and has_line_of_sight(player_pos, enemy.grid_pos)
 
+func _blocks_los(bx: int, by: int) -> bool:
+	var t: DungeonData.TileType = _data.get_tile(bx, by)
+	if t == DungeonData.TileType.WALL or t == DungeonData.TileType.GRASS or t == DungeonData.TileType.CHASM:
+		return true
+	var pos := Vector2i(bx, by)
+	return _doors.has(pos) and not _doors[pos]["is_open"]
+
 func has_line_of_sight(from: Vector2i, to: Vector2i) -> bool:
 	var x: int = from.x
 	var y: int = from.y
@@ -286,6 +293,8 @@ func has_line_of_sight(from: Vector2i, to: Vector2i) -> bool:
 	var err: int = dx - dy
 	while x != to.x or y != to.y:
 		var e2: int = 2 * err
+		var old_x: int = x
+		var old_y: int = y
 		if e2 > -dy:
 			err -= dy
 			x += sx
@@ -294,12 +303,12 @@ func has_line_of_sight(from: Vector2i, to: Vector2i) -> bool:
 			y += sy
 		if x == to.x and y == to.y:
 			break
-		var t: DungeonData.TileType = _data.get_tile(x, y)
-		if t == DungeonData.TileType.WALL or t == DungeonData.TileType.GRASS or t == DungeonData.TileType.CHASM:
+		if _blocks_los(x, y):
 			return false
-		# Closed doors also block LOS
-		if _doors.has(Vector2i(x, y)) and not _doors[Vector2i(x, y)]["is_open"]:
-			return false
+		# Diagonal step: also check shoulder tiles so doors/walls can't be seen around
+		if x != old_x and y != old_y:
+			if _blocks_los(x, old_y) or _blocks_los(old_x, y):
+				return false
 	return true
 
 # ── Pathfinding ───────────────────────────────────────────────────────────────
@@ -673,15 +682,19 @@ func _play_trap_animation(sprite_node: Sprite2D) -> void:
 
 func _spawn_doors() -> void:
 	var cardinal: Array[Vector2i] = [Vector2i(1,0), Vector2i(-1,0), Vector2i(0,1), Vector2i(0,-1)]
-	var door_candidates: Dictionary = {}  # Vector2i → bool (deduplicate)
+	var door_candidates: Array = []  # Array[Vector2i], preserves per-room limit
 
 	for room_entry in _data.rooms:
 		var r: Rect2i = room_entry
 		var added_for_room: int = 0
 
-		# Check perimeter tiles of this room (1 tile inside the edge)
+		# Check perimeter tiles of this room
 		for y: int in range(r.position.y, r.position.y + r.size.y):
+			if added_for_room >= 2:
+				break
 			for x: int in range(r.position.x, r.position.x + r.size.x):
+				if added_for_room >= 2:
+					break
 				# Only border tiles of the room rect
 				if x != r.position.x and x != r.position.x + r.size.x - 1 \
 				   and y != r.position.y and y != r.position.y + r.size.y - 1:
@@ -691,14 +704,22 @@ func _spawn_doors() -> void:
 					continue
 				if pos == _data.player_start or pos == _data.stairs_pos:
 					continue
-				# Check if any neighbor outside this room is FLOOR (= corridor entry)
+				# Check if any neighbor outside this room is FLOOR and that corridor is 1 tile wide
 				for d: Vector2i in cardinal:
 					var out: Vector2i = pos + d
 					if r.has_point(out):
 						continue
-					if _data.get_tile(out.x, out.y) == DungeonData.TileType.FLOOR:
-						door_candidates[pos] = true
-						break
+					if _data.get_tile(out.x, out.y) != DungeonData.TileType.FLOOR:
+						continue
+					# Perpendicular directions — corridor must be narrow at this junction
+					var perp1: Vector2i = Vector2i(-d.y, d.x)
+					var perp2: Vector2i = Vector2i(d.y, -d.x)
+					var narrow: bool = _data.get_tile((out + perp1).x, (out + perp1).y) != DungeonData.TileType.FLOOR \
+						and _data.get_tile((out + perp2).x, (out + perp2).y) != DungeonData.TileType.FLOOR
+					if narrow and not door_candidates.has(pos):
+						door_candidates.append(pos)
+						added_for_room += 1
+					break
 
 	# Place doors with 65% probability, max 2 per room is handled by room perimeter size
 	var tex_closed: Texture2D = null
@@ -736,7 +757,21 @@ func open_door(pos: Vector2i) -> void:
 	var sp: Sprite2D = _doors[pos]["sprite"]
 	if is_instance_valid(sp):
 		sp.texture = _doors[pos]["tex_open"]
-	# Re-run fog so the now-open door's LOS is revealed
+	if _player != null:
+		update_fog(_player.grid_pos)
+
+func close_door(pos: Vector2i) -> void:
+	if not _doors.has(pos) or not _doors[pos]["is_open"]:
+		return
+	if _player != null and _player.grid_pos == pos:
+		return
+	for e: Enemy in _enemies:
+		if is_instance_valid(e) and e.grid_pos == pos:
+			return
+	_doors[pos]["is_open"] = false
+	var sp: Sprite2D = _doors[pos]["sprite"]
+	if is_instance_valid(sp):
+		sp.texture = _doors[pos]["tex_closed"]
 	if _player != null:
 		update_fog(_player.grid_pos)
 
