@@ -60,6 +60,8 @@ static func generate(seed_val: int, floor_num: int) -> DungeonData:
 	)
 	data.grid[data.stairs_pos.y][data.stairs_pos.x] = DungeonData.TileType.STAIRS_DOWN
 
+	_place_pillars(data, rng)
+
 	return data
 
 
@@ -176,3 +178,63 @@ static func _collect_rooms(node: BSPNode, rooms: Array) -> void:
 		_collect_rooms(node.left_child, rooms)
 	if node.right_child:
 		_collect_rooms(node.right_child, rooms)
+
+
+static func _place_pillars(data: DungeonData, rng: RandomNumberGenerator) -> void:
+	for room_entry in data.rooms:
+		var r: Rect2i = room_entry
+		if r.size.x < 7 or r.size.y < 7:
+			continue
+
+		# Inner zone: at least 2 tiles from every room edge — avoids corridor mouths
+		var candidates: Array = []
+		for y: int in range(r.position.y + 2, r.position.y + r.size.y - 2):
+			for x: int in range(r.position.x + 2, r.position.x + r.size.x - 2):
+				candidates.append(Vector2i(x, y))
+
+		# Fisher-Yates shuffle using the seeded rng
+		for i: int in range(candidates.size() - 1, 0, -1):
+			var j: int = rng.randi_range(0, i)
+			var tmp = candidates[i]
+			candidates[i] = candidates[j]
+			candidates[j] = tmp
+
+		var max_p: int = clampi(r.size.x * r.size.y / 40, 1, 4)
+		var placed: Array = []
+
+		for cand in candidates:
+			if placed.size() >= max_p:
+				break
+			var cp: Vector2i = cand
+			# Enforce minimum Chebyshev spacing of 3 between pillars
+			var too_close: bool = false
+			for prev in placed:
+				var pp: Vector2i = prev
+				if maxi(abs(cp.x - pp.x), abs(cp.y - pp.y)) < 3:
+					too_close = true
+					break
+			if too_close:
+				continue
+			# Place pillar and verify stairs remain reachable; revert if not
+			data.grid[cp.y][cp.x] = DungeonData.TileType.WALL
+			if _is_connected(data):
+				placed.append(cp)
+			else:
+				data.grid[cp.y][cp.x] = DungeonData.TileType.FLOOR
+
+
+static func _is_connected(data: DungeonData) -> bool:
+	var visited: Dictionary = {}
+	var queue: Array = [data.player_start]
+	visited[data.player_start] = true
+	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0)]
+	while not queue.is_empty():
+		var cur: Vector2i = queue.pop_front()
+		if cur == data.stairs_pos:
+			return true
+		for d: Vector2i in dirs:
+			var nxt: Vector2i = cur + d
+			if not visited.has(nxt) and data.is_walkable(nxt):
+				visited[nxt] = true
+				queue.append(nxt)
+	return false

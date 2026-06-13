@@ -189,10 +189,12 @@ func update_fog(player_pos: Vector2i) -> void:
 		for x: int in _data.width:
 			var dx: int = x - player_pos.x
 			var dy: int = y - player_pos.y
-			if dx * dx + dy * dy <= r2:
-				_explored[Vector2i(x, y)] = true
+			var tile_pos := Vector2i(x, y)
+			var in_fov: bool = (dx * dx + dy * dy <= r2) and has_line_of_sight(player_pos, tile_pos)
+			if in_fov:
+				_explored[tile_pos] = true
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0))
-			elif _explored.get(Vector2i(x, y), false):
+			elif _explored.get(tile_pos, false):
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0.65))
 			else:
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 1.0))
@@ -204,7 +206,7 @@ func _update_enemy_visibility(player_pos: Vector2i, r2: int) -> void:
 		if is_instance_valid(enemy):
 			var dx := enemy.grid_pos.x - player_pos.x
 			var dy := enemy.grid_pos.y - player_pos.y
-			enemy.visible = (dx * dx + dy * dy) <= r2
+			enemy.visible = (dx * dx + dy * dy) <= r2 and has_line_of_sight(player_pos, enemy.grid_pos)
 
 func is_walkable(pos: Vector2i) -> bool:
 	return _data.is_walkable(pos)
