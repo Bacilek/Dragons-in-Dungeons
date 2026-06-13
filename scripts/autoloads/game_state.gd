@@ -68,7 +68,7 @@ func add_item(item: Item) -> bool:
 			player_inventory[i] = item
 			inventory_changed.emit()
 			return true
-	log("[color=red]Your bag is full![/color]")
+	combat_message.emit("[color=red]Your bag is full![/color]")
 	return false
 
 func log(msg: String) -> void:
