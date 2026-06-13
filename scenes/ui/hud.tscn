@@ -176,3 +176,69 @@ offset_right = 160.0
 offset_bottom = 150.0
 text = "EXP: 0 / 10"
 theme_override_font_sizes/font_size = 10
+
+[node name="ActionBar" type="Panel" parent="."]
+anchor_right = 1.0
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_top = -52.0
+
+[node name="ItemSlot0" type="Button" parent="ActionBar"]
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 48.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 8
+clip_text = true
+
+[node name="ItemSlot1" type="Button" parent="ActionBar"]
+offset_left = 52.0
+offset_top = 4.0
+offset_right = 96.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 8
+clip_text = true
+
+[node name="ItemSlot2" type="Button" parent="ActionBar"]
+offset_left = 100.0
+offset_top = 4.0
+offset_right = 144.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 8
+clip_text = true
+
+[node name="ItemSlot3" type="Button" parent="ActionBar"]
+offset_left = 148.0
+offset_top = 4.0
+offset_right = 192.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 8
+clip_text = true
+
+[node name="ItemSlot4" type="Button" parent="ActionBar"]
+offset_left = 196.0
+offset_top = 4.0
+offset_right = 240.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 8
+clip_text = true
+
+[node name="WaitButton" type="Button" parent="ActionBar"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -148.0
+offset_top = 4.0
+offset_right = -76.0
+offset_bottom = 48.0
+text = "Wait (.)"
+theme_override_font_sizes/font_size = 10
+
+[node name="SearchButton" type="Button" parent="ActionBar"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -72.0
+offset_top = 4.0
+offset_right = 0.0
+offset_bottom = 48.0
+text = "Search (s)"
+theme_override_font_sizes/font_size = 10

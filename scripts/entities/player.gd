@@ -19,6 +19,7 @@ func _ready() -> void:
 	z_index = 3
 	_setup_animations()
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
+	GameState.player_action_requested.connect(_on_action_requested)
 	TurnManager.player_turn_started.connect(_on_turn_started)
 
 func _on_player_hp_changed(_c: int, _m: int) -> void:
@@ -297,8 +298,22 @@ func _flash_hit(target: Entity) -> void:
 	tween.tween_property(target, "modulate", Color(1.8, 0.3, 0.3), 0.05)
 	tween.tween_property(target, "modulate", Color(1.0, 1.0, 1.0), 0.1)
 
+func _on_action_requested(action_name: String) -> void:
+	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
+		return
+	match action_name:
+		"wait":   _wait_action()
+		"search": _search_action()
+
 func _wait_action() -> void:
 	TurnManager.begin_player_action()
+	if _dungeon_floor != null:
+		_dungeon_floor.update_fog(grid_pos)
+	TurnManager.on_player_action_complete()
+
+func _search_action() -> void:
+	TurnManager.begin_player_action()
+	GameState.log("You search your surroundings... [color=gray]nothing found.[/color]")
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
