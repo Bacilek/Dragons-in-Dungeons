@@ -217,6 +217,8 @@ func is_walkable_for_enemy(pos: Vector2i) -> bool:
 	for e in _enemies:
 		if is_instance_valid(e) and e.grid_pos == pos:
 			return false
+	if _traps.has(pos):
+		return false
 	return true
 
 func get_enemy_at(pos: Vector2i) -> Enemy:
@@ -363,7 +365,8 @@ func _spawn_traps() -> void:
 			sprite.region_rect = Rect2(0, 0, frame_size, frame_size)
 			sprite.scale = Vector2(float(TILE_SIZE) / float(frame_size), float(TILE_SIZE) / float(frame_size))
 			sprite.position = Vector2(wall_pos.x * TILE_SIZE + TILE_SIZE * 0.5, wall_pos.y * TILE_SIZE + TILE_SIZE * 0.5)
-			sprite.rotation = atan2(float(push_dir.y), float(push_dir.x))
+			# Sprite faces down at 0°; subtract PI/2 to map push_dir to correct facing
+			sprite.rotation = atan2(float(push_dir.y), float(push_dir.x)) - PI / 2.0
 			sprite.z_index = 1
 			sprite.modulate.a = 0.5
 			entities.add_child(sprite)
