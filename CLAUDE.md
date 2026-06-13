@@ -45,11 +45,18 @@ World position = `pos * TILE_SIZE + TILE_SIZE / 2` (centered on tile). `TILE_SIZ
 
 ## Sprite Assets
 
-All character sprites are individual 16×16 PNGs under `sprites/0x72_DungeonTilesetII_v1.7/frames/`. Naming pattern: `{character}_{anim}_f{n}.png`. Available characters: `knight_m`, `knight_f`, `orc_warrior`, `masked_orc` (each with `idle`/`run` 4-frame and `hit` 1-frame). Dungeon tiles: `floor_1.png`, `wall_mid.png`, `floor_stairs.png`. **Use `wall_mid.png` for walls, NOT `wall_top_mid.png`** — the `_top_` variant is just a thin horizontal bar at the bottom edge of the frame; it makes walls appear shifted down and creates visual confusion about tile boundaries. `SpriteFrames` are built in `_setup_animations()` in each entity script — no `.tres` import files needed.
+Sprites from the 0x72 DungeonTilesetII pack are organized into subdirectories under `sprites/`:
+- `sprites/characters/` — all character animation frames. Naming: `{character}_{anim}_f{n}.png`. Available characters: `knight_m`, `knight_f`, `orc_warrior`, `masked_orc` and many others (each with `idle`/`run` 4-frame and optional `hit` 1-frame).
+- `sprites/tiles/` — dungeon floor/wall/stair tiles: `floor_1.png`, `wall_mid.png`, `floor_stairs.png`, etc. **Use `wall_mid.png` for walls, NOT `wall_top_mid.png`** — the `_top_` variant is a thin horizontal bar that shifts walls down visually.
+- `sprites/objects/` — props and pickups: chests, coins, flasks, doors, bomb, skull, ui hearts, etc.
+- `sprites/weapons/` — weapon sprites: `weapon_anime_sword.png` and many others.
+- `sprites/tilesets/` — full atlas sheets: `0x72_DungeonTilesetII_v1.7.png`, `atlas_*.png`.
+
+`SpriteFrames` are built in `_setup_animations()` in each entity script — no `.tres` import files needed.
 
 ## Git Workflow
 
-After every feature, fix, or meaningful change: `git add`, `git commit`, `git push origin main`. No need to ask — always commit and push as part of finishing any task.
+After every feature, fix, or meaningful change: `git add`, `git commit`, then push. No need to ask — always commit and push as part of finishing any task. **From a worktree** (sessions run in `.claude/worktrees/*`), use `git push origin HEAD:main` instead of `git push origin main`, because the worktree is on a separate branch and the plain command silently no-ops.
 
 ## Key Conventions
 
