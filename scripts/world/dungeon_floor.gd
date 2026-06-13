@@ -11,8 +11,8 @@ const TILE_SPRITES_PATH := "res://sprites/tiles/"
 const ENEMY_COUNT_MIN: int = 3
 const ENEMY_COUNT_MAX: int = 5
 const FOV_RADIUS: int = 6
-const TRAP_COUNT_MIN: int = 1
-const TRAP_COUNT_MAX: int = 3
+const TRAP_COUNT_MIN: int = 4
+const TRAP_COUNT_MAX: int = 7
 const TRAP_PATH := "res://sprites/Traps/"
 
 const TRAP_POOL: Array = [
@@ -267,7 +267,7 @@ func _spawn_traps() -> void:
 				continue
 			if pos == _data.player_start or pos == _data.stairs_pos:
 				continue
-			if maxi(abs(pos.x - _data.player_start.x), abs(pos.y - _data.player_start.y)) < 3:
+			if maxi(abs(pos.x - _data.player_start.x), abs(pos.y - _data.player_start.y)) < 2:
 				continue
 			candidates.append(pos)
 	candidates.shuffle()
@@ -275,8 +275,12 @@ func _spawn_traps() -> void:
 	for i: int in count:
 		var trap_type: Dictionary = TRAP_POOL[randi() % TRAP_POOL.size()]
 		var pos: Vector2i = candidates[i]
+		var tex: Texture2D = load(TRAP_PATH + trap_type["sprite"])
+		if tex == null:
+			print("TRAP: failed to load ", TRAP_PATH + trap_type["sprite"])
+			continue
 		var sprite := Sprite2D.new()
-		sprite.texture = load(TRAP_PATH + trap_type["sprite"])
+		sprite.texture = tex
 		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
 		sprite.z_index = 1
@@ -289,6 +293,7 @@ func _spawn_traps() -> void:
 			"sprite_node": sprite,
 			"revealed": false,
 		}
+	GameState.log("[color=gray]Floor has %d hidden traps.[/color]" % _traps.size())
 
 func get_trap_at(pos: Vector2i) -> Dictionary:
 	return _traps.get(pos, {})
