@@ -695,8 +695,15 @@ func _spawn_doors() -> void:
 						and _data.get_tile((out + perp2).x, (out + perp2).y) != DungeonData.TileType.FLOOR
 					# Place door at the corridor tile (out), not the room border (pos)
 					if narrow and not door_candidates.has(out):
-						door_candidates.append(out)
-						added_for_room += 1
+						# Reject if within 2 tiles of any existing door (prevents adjacent doors in short corridors)
+						var too_close: bool = false
+						for ex: Vector2i in door_candidates:
+							if maxi(abs(out.x - ex.x), abs(out.y - ex.y)) <= 2:
+								too_close = true
+								break
+						if not too_close:
+							door_candidates.append(out)
+							added_for_room += 1
 					break
 
 	# Place doors with 65% probability, max 2 per room is handled by room perimeter size

@@ -53,6 +53,9 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 
 # Cardinal + diagonal movement via per-frame key sampling so two held cardinals = diagonal
 func _process(_delta: float) -> void:
+	if GameState.inventory_open:
+		_last_move_dir = Vector2i.ZERO
+		return
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 		_last_move_dir = Vector2i.ZERO
 		return
@@ -76,6 +79,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		var key := event as InputEventKey
 		if not key.pressed or key.echo:
+			return
+		# I key toggles inventory regardless of turn phase
+		if key.physical_keycode == KEY_I:
+			GameState.inventory_toggle.emit()
+			return
+		if GameState.inventory_open:
 			return
 		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 			return

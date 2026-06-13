@@ -18,6 +18,8 @@ enum CharacterClass { FIGHTER, ROGUE, WIZARD, CLERIC }
 @export var armor_class: int = 10
 @export var proficiency_bonus: int = 2
 
+@export var base_min_damage: int = 1
+@export var base_max_damage: int = 4
 @export var min_damage: int = 1
 @export var max_damage: int = 4
 @export var armor: int = 0

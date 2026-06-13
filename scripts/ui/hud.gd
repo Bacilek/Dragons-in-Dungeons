@@ -46,6 +46,10 @@ func _ready() -> void:
 	_update_exp_bar(s.experience, s.exp_to_next(), s.character_level)
 	_refresh_inventory()
 
+	# Inventory overlay — add as sibling CanvasLayer so it floats above HUD
+	var overlay_script = load("res://scripts/ui/inventory_overlay.gd")
+	get_tree().root.call_deferred("add_child", overlay_script.new())
+
 # ── Signal handlers ───────────────────────────────────────────────────────────
 
 func _on_floor_changed(new_floor: int) -> void:
@@ -90,7 +94,7 @@ func _on_search_pressed() -> void:
 	GameState.player_action_requested.emit("search")
 
 func _on_slot_pressed(slot_index: int) -> void:
-	var raw = GameState.player_inventory[slot_index]
+	var raw = GameState.player_quickbar[slot_index]
 	if raw == null:
 		return
 	GameState.use_item(raw as Item)
@@ -112,7 +116,7 @@ func _update_exp_bar(exp: int, exp_needed: int, level: int) -> void:
 
 func _refresh_inventory() -> void:
 	for i: int in SLOT_COUNT:
-		var raw = GameState.player_inventory[i]
+		var raw = GameState.player_quickbar[i]
 		var slot: Button = _item_slots[i]
 		if raw == null:
 			slot.text = ""
