@@ -282,6 +282,9 @@ func _spawn_traps() -> void:
 		var sprite := Sprite2D.new()
 		sprite.texture = tex
 		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		sprite.region_enabled = true
+		sprite.region_rect = Rect2(0, 0, 32, 32)
+		sprite.scale = Vector2(0.5, 0.5)
 		sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
 		sprite.z_index = 1
 		sprite.modulate.a = 0.5
