@@ -59,7 +59,7 @@ func take_turn() -> void:
 	var dy: int = player.grid_pos.y - grid_pos.y
 	var dist_sq: int = dx * dx + dy * dy
 
-	if dist_sq <= FOV_RADIUS * FOV_RADIUS:
+	if dist_sq <= FOV_RADIUS * FOV_RADIUS and _dungeon_floor.has_line_of_sight(grid_pos, player.grid_pos):
 		if maxi(abs(dx), abs(dy)) == 1:
 			_attack_player(player)
 			return
@@ -69,6 +69,11 @@ func take_turn() -> void:
 			$AnimatedSprite2D.play("run")
 			await move_to(grid_pos + step, 0.04 if TurnManager.fast_mode else 0.08)
 			$AnimatedSprite2D.play("idle")
+			var trap_c: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
+			if not trap_c.is_empty():
+				await _dungeon_floor.trigger_trap(grid_pos, self)
+				if not is_instance_valid(self) or stats.is_dead():
+					return
 			return
 
 	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
@@ -81,6 +86,11 @@ func take_turn() -> void:
 			$AnimatedSprite2D.play("run")
 			await move_to(target, 0.04 if TurnManager.fast_mode else 0.08)
 			$AnimatedSprite2D.play("idle")
+			var trap_r: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
+			if not trap_r.is_empty():
+				await _dungeon_floor.trigger_trap(grid_pos, self)
+				if not is_instance_valid(self) or stats.is_dead():
+					return
 			return
 
 func _chase_step(dx: int, dy: int) -> Vector2i:

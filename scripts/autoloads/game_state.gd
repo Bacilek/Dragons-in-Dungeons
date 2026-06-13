@@ -84,16 +84,28 @@ func equip(item: Item) -> void:
 func use_item(item: Item) -> void:
 	match item.item_type:
 		Item.Type.POTION:
-			var before: int = player_stats.current_hp
-			heal(item.heal_amount)
-			var healed: int = player_stats.current_hp - before
-			if healed > 0:
-				combat_message.emit("[color=green]You drink [b]%s[/b] and recover %d HP.[/color]" % [item.item_name, healed])
-			else:
-				combat_message.emit("[color=gray]Already at full health.[/color]")
-			remove_item(item)
+			if item.heal_amount > 0:
+				var before: int = player_stats.current_hp
+				heal(item.heal_amount)
+				var healed: int = player_stats.current_hp - before
+				if healed > 0:
+					combat_message.emit("[color=green]You drink [b]%s[/b] and recover %d HP.[/color]" % [item.item_name, healed])
+				else:
+					combat_message.emit("[color=gray]Already at full health.[/color]")
+			if item.str_bonus > 0:
+				player_stats.min_damage += item.str_bonus
+				player_stats.max_damage += item.str_bonus
+				combat_message.emit("[color=yellow]You drink [b]%s[/b]. Your attacks surge with power! (+%d ATK)[/color]" % [item.item_name, item.str_bonus])
+			consume_one(item)
 		Item.Type.WEAPON, Item.Type.ARMOR:
 			equip(item)
+
+func consume_one(item: Item) -> void:
+	if item.quantity > 1:
+		item.quantity -= 1
+		inventory_changed.emit()
+	else:
+		remove_item(item)
 
 func remove_item(item: Item) -> void:
 	for i: int in INVENTORY_SIZE:

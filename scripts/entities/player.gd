@@ -160,7 +160,7 @@ func _execute_queued_path() -> void:
 				_check_pickup()
 				var trap_c: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 				if not trap_c.is_empty():
-					_dungeon_floor.trigger_trap(grid_pos)
+					await _dungeon_floor.trigger_trap(grid_pos, self)
 					_target_enemy = null
 					break
 
@@ -204,7 +204,7 @@ func _execute_queued_path() -> void:
 			_check_pickup()
 			var trap_p: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 			if not trap_p.is_empty():
-				_dungeon_floor.trigger_trap(grid_pos)
+				await _dungeon_floor.trigger_trap(grid_pos, self)
 				_queued_path.clear()
 				break
 
@@ -257,7 +257,7 @@ func _try_move(dir: Vector2i) -> void:
 		_check_pickup()
 		var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 		if not trap.is_empty():
-			_dungeon_floor.trigger_trap(grid_pos)
+			await _dungeon_floor.trigger_trap(grid_pos, self)
 	TurnManager.on_player_action_complete()
 	if is_stairs:
 		_dungeon_floor.on_player_reached_stairs.call_deferred()
@@ -288,27 +288,44 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 func _show_sword_slash(dir: Vector2i) -> void:
 	var attack_angle := atan2(float(dir.y), float(dir.x))
 
-	# Pivot sits at the player's center; the sword sprite hangs off it so
-	# rotating the pivot swings the sword in an arc around the player.
+	# Arc width and speed scale with weapon tier (bonus_damage)
+	var bonus: int = 0
+	var weapon_path: String = SWORD_SPRITE
+	if GameState.equipped_weapon != null:
+		bonus = GameState.equipped_weapon.bonus_damage
+		if GameState.equipped_weapon.icon_path != "":
+			weapon_path = GameState.equipped_weapon.icon_path
+
+	var start_off: float
+	var end_off: float
+	var dur: float
+	match bonus:
+		1:   start_off = 55.0;  end_off = 38.0;  dur = 0.14
+		2:   start_off = 75.0;  end_off = 50.0;  dur = 0.18
+		3:   start_off = 88.0;  end_off = 60.0;  dur = 0.20
+		4:   start_off = 95.0;  end_off = 68.0;  dur = 0.22
+		5:   start_off = 105.0; end_off = 78.0;  dur = 0.26
+		_:   start_off = 60.0;  end_off = 42.0;  dur = 0.15
+
 	var pivot := Node2D.new()
 	pivot.position = _tile_center(grid_pos)
 	pivot.z_index = 5
-	pivot.rotation = attack_angle - deg_to_rad(75.0)
+	pivot.rotation = attack_angle - deg_to_rad(start_off)
 
 	var slash := Sprite2D.new()
-	slash.texture = load(SWORD_SPRITE)
+	slash.texture = load(weapon_path)
 	slash.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	slash.position = Vector2(12.0, 0.0)
-	# weapon_anime_sword.png points upper-right at ~45°; rotate to point right.
+	# All 0x72 weapon sprites point upper-right (~45°); rotate to point right.
 	slash.rotation = -PI * 0.25
 
 	pivot.add_child(slash)
 	get_parent().add_child(pivot)
 
 	var tween := pivot.create_tween()
-	tween.tween_property(pivot, "rotation", attack_angle + deg_to_rad(50.0), 0.18) \
+	tween.tween_property(pivot, "rotation", attack_angle + deg_to_rad(end_off), dur) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tween.parallel().tween_property(slash, "modulate:a", 0.0, 0.07).set_delay(0.11)
+	tween.parallel().tween_property(slash, "modulate:a", 0.0, dur * 0.4).set_delay(dur * 0.6)
 	tween.tween_callback(pivot.queue_free)
 
 func _flash_hit(target: Entity) -> void:

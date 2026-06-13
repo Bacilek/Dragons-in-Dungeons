@@ -18,11 +18,11 @@ const TRAP_COUNT_MAX: int = 7
 const TRAP_PATH := "res://sprites/Traps/"
 
 const TRAP_POOL: Array = [
-	{"name": "Bear Trap",  "sprite": "Bear_Trap.png",       "damage": 5, "msg": "The bear trap snaps shut on you!"},
-	{"name": "Fire Trap",  "sprite": "Fire_Trap.png",        "damage": 8, "msg": "Jets of flame engulf you!"},
-	{"name": "Spike Trap", "sprite": "Spike Trap.png",       "damage": 6, "msg": "Spikes shoot up from the floor!"},
-	{"name": "Pit Spikes", "sprite": "Pit_Trap_Spikes.png",  "damage": 7, "msg": "You fall into a spike pit!"},
-	{"name": "Push Trap",  "sprite": "Push_Trap_Front.png",  "damage": 4, "msg": "An explosion blasts you back!"},
+	{"name": "Bear Trap",  "sprite": "Bear_Trap.png",       "damage": 5, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
+	{"name": "Fire Trap",  "sprite": "Fire_Trap.png",        "damage": 8, "msg": "Jets of flame engulf you!",        "wall_trap": false},
+	{"name": "Spike Trap", "sprite": "Spike Trap.png",       "damage": 6, "msg": "Spikes shoot up from the floor!", "wall_trap": false},
+	{"name": "Pit Spikes", "sprite": "Pit_Trap_Spikes.png",  "damage": 7, "msg": "You fall into a spike pit!",       "wall_trap": false},
+	{"name": "Piston",     "sprite": "Push_Trap_Front.png",  "damage": 0, "msg": "A piston blasts you!",             "wall_trap": true},
 ]
 
 # item_type: 0=WEAPON 1=ARMOR 2=POTION  (matches Item.Type enum)
@@ -33,8 +33,8 @@ const ITEM_POOL: Array = [
 	{"name": "Knight Sword",  "type": 0, "icon": "weapon_knight_sword.png",   "src": "weapons", "bonus_dmg": 3, "heal": 0,  "fmin": 4, "fmax": 8,  "desc": "+3 damage"},
 	{"name": "Golden Sword",  "type": 0, "icon": "weapon_golden_sword.png",   "src": "weapons", "bonus_dmg": 4, "heal": 0,  "fmin": 6, "fmax": 10, "desc": "+4 damage"},
 	{"name": "Lavish Sword",  "type": 0, "icon": "weapon_lavish_sword.png",   "src": "weapons", "bonus_dmg": 5, "heal": 0,  "fmin": 8, "fmax": 10, "desc": "+5 damage"},
-	{"name": "Health Potion", "type": 2, "icon": "flask_red.png",              "src": "objects", "bonus_dmg": 0, "heal": 10, "fmin": 1, "fmax": 7,  "desc": "Restores 10 HP"},
-	{"name": "Healing Flask", "type": 2, "icon": "flask_big_red.png",          "src": "objects", "bonus_dmg": 0, "heal": 20, "fmin": 4, "fmax": 10, "desc": "Restores 20 HP"},
+	{"name": "Health Potion",   "type": 2, "icon": "flask_red.png",    "src": "objects", "bonus_dmg": 0, "heal": 10, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 10 HP"},
+	{"name": "Strength Potion","type": 2, "icon": "flask_big_yellow.png","src": "objects","bonus_dmg": 2, "heal": 0,  "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
 ]
 
 const ENEMY_POOL: Array = [
@@ -285,7 +285,10 @@ func on_player_reached_stairs() -> void:
 	_load_floor()
 
 func _spawn_traps() -> void:
-	var candidates: Array = []
+	var floor_cands: Array = []
+	var wall_cands: Array = []  # {floor_pos, wall_pos, push_dir}
+	var cardinal: Array[Vector2i] = [Vector2i(1,0), Vector2i(-1,0), Vector2i(0,1), Vector2i(0,-1)]
+
 	for y: int in _data.height:
 		for x: int in _data.width:
 			var pos: Vector2i = Vector2i(x, y)
@@ -295,15 +298,33 @@ func _spawn_traps() -> void:
 				continue
 			if maxi(abs(pos.x - _data.player_start.x), abs(pos.y - _data.player_start.y)) < 2:
 				continue
-			candidates.append(pos)
-	candidates.shuffle()
-	var count: int = mini(randi_range(TRAP_COUNT_MIN, TRAP_COUNT_MAX), candidates.size())
-	for i: int in count:
-		var trap_type: Dictionary = TRAP_POOL[randi() % TRAP_POOL.size()]
-		var pos: Vector2i = candidates[i]
-		var tex: Texture2D = load(TRAP_PATH + trap_type["sprite"])
+			floor_cands.append(pos)
+			for d: Vector2i in cardinal:
+				var wp: Vector2i = pos + d
+				if _data.get_tile(wp.x, wp.y) == DungeonData.TileType.WALL:
+					wall_cands.append({"floor_pos": pos, "wall_pos": wp, "push_dir": Vector2i(-d.x, -d.y)})
+					break
+
+	floor_cands.shuffle()
+	wall_cands.shuffle()
+
+	var floor_pool: Array = []
+	var wall_pool: Array = []
+	for entry in TRAP_POOL:
+		var t: Dictionary = entry
+		if t.get("wall_trap", false):
+			wall_pool.append(t)
+		else:
+			floor_pool.append(t)
+
+	var used: Dictionary = {}
+	var floor_count: int = mini(randi_range(TRAP_COUNT_MIN, TRAP_COUNT_MAX), floor_cands.size())
+	for i: int in floor_count:
+		var t: Dictionary = floor_pool[randi() % floor_pool.size()]
+		var pos: Vector2i = floor_cands[i]
+		used[pos] = true
+		var tex: Texture2D = load(TRAP_PATH + t["sprite"])
 		if tex == null:
-			print("TRAP: failed to load ", TRAP_PATH + trap_type["sprite"])
 			continue
 		var sprite := Sprite2D.new()
 		sprite.texture = tex
@@ -315,33 +336,131 @@ func _spawn_traps() -> void:
 		sprite.z_index = 1
 		sprite.modulate.a = 0.5
 		entities.add_child(sprite)
-		_traps[pos] = {
-			"name": trap_type["name"],
-			"damage": trap_type["damage"],
-			"msg": trap_type["msg"],
-			"sprite_node": sprite,
-			"revealed": false,
-		}
+		_traps[pos] = {"name": t["name"], "damage": t["damage"], "msg": t["msg"],
+					   "sprite_node": sprite, "revealed": false, "is_push": false}
+
+	if not wall_pool.is_empty():
+		var valid_wc: Array = []
+		for wc in wall_cands:
+			var wcd: Dictionary = wc
+			if not used.has(wcd["floor_pos"]):
+				valid_wc.append(wcd)
+		var push_count: int = mini(randi_range(2, 3), valid_wc.size())
+		for i: int in push_count:
+			var wcd: Dictionary = valid_wc[i]
+			var t: Dictionary = wall_pool[randi() % wall_pool.size()]
+			var floor_pos: Vector2i = wcd["floor_pos"]
+			var wall_pos: Vector2i  = wcd["wall_pos"]
+			var push_dir: Vector2i  = wcd["push_dir"]
+			var tex: Texture2D = load(TRAP_PATH + t["sprite"])
+			if tex == null:
+				continue
+			var frame_size: int = tex.get_height()
+			var sprite := Sprite2D.new()
+			sprite.texture = tex
+			sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			sprite.region_enabled = true
+			sprite.region_rect = Rect2(0, 0, frame_size, frame_size)
+			sprite.scale = Vector2(float(TILE_SIZE) / float(frame_size), float(TILE_SIZE) / float(frame_size))
+			sprite.position = Vector2(wall_pos.x * TILE_SIZE + TILE_SIZE * 0.5, wall_pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+			sprite.rotation = atan2(float(push_dir.y), float(push_dir.x))
+			sprite.z_index = 1
+			sprite.modulate.a = 0.5
+			entities.add_child(sprite)
+			_traps[floor_pos] = {"name": t["name"], "damage": 0, "msg": t["msg"],
+								 "sprite_node": sprite, "revealed": false, "is_push": true,
+								 "push_dir": push_dir}
+
 	GameState.log("[color=gray]Floor has %d hidden traps.[/color]" % _traps.size())
 
 func get_trap_at(pos: Vector2i) -> Dictionary:
 	return _traps.get(pos, {})
 
-func trigger_trap(pos: Vector2i) -> void:
+func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 	if not _traps.has(pos):
 		return
 	var trap: Dictionary = _traps[pos]
-	var sprite_node: Sprite2D = trap["sprite_node"]
+	var sprite_node: Sprite2D = trap.get("sprite_node") as Sprite2D
 	if is_instance_valid(sprite_node):
 		sprite_node.modulate.a = 1.0
-	var base_dmg: int = trap["damage"] + GameState.current_floor / 2
-	var actual: int = GameState.player_stats.take_damage(base_dmg)
-	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
-	GameState.log("[color=red]%s[/color] You take [color=yellow]%d[/color] damage!" % [trap["msg"], actual])
-	GameState.check_player_death()
 	_traps.erase(pos)
-	if is_instance_valid(sprite_node):
-		_play_trap_animation(sprite_node)
+
+	var target: Node2D
+	if entity != null:
+		target = entity
+	elif _player != null:
+		target = _player
+
+	if trap.get("is_push", false):
+		await _push_entity(target, trap["push_dir"], 2, sprite_node)
+	else:
+		var dmg: int = trap["damage"] + GameState.current_floor / 2
+		_apply_trap_damage(target, dmg, trap["msg"])
+		if is_instance_valid(sprite_node):
+			_play_trap_animation(sprite_node)
+
+func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
+	if entity is Player:
+		var actual: int = GameState.player_stats.take_damage(damage)
+		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
+		GameState.log("[color=red]%s[/color] You take [color=yellow]%d[/color] damage!" % [msg, actual])
+		GameState.check_player_death()
+	elif entity is Enemy:
+		var e: Enemy = entity as Enemy
+		var actual: int = e.stats.take_damage(damage)
+		e.update_hp_bar()
+		GameState.log("[color=orange]%s[/color] triggers a trap for [color=yellow]%d[/color] damage!" % [e.display_name, actual])
+		if e.stats.is_dead():
+			GameState.log("[color=orange]%s[/color] [color=gray]is killed by a trap.[/color]" % e.display_name)
+			GameState.gain_exp(e.exp_reward)
+			remove_enemy(e)
+			e.die()
+
+func _push_entity(entity: Node2D, push_dir: Vector2i, distance: int, trap_sprite: Sprite2D = null) -> void:
+	if not is_instance_valid(entity):
+		if is_instance_valid(trap_sprite):
+			_play_trap_animation(trap_sprite)
+		return
+	var e: Entity = entity as Entity
+	var current: Vector2i = e.grid_pos
+	var hit_wall: bool = false
+	for _i: int in distance:
+		var nxt: Vector2i = current + push_dir
+		if not _data.is_walkable(nxt):
+			hit_wall = true
+			break
+		if entity is Player and get_enemy_at(nxt) != null:
+			hit_wall = true
+			break
+		if entity is Enemy and _player != null and _player.grid_pos == nxt:
+			hit_wall = true
+			break
+		current = nxt
+	if is_instance_valid(trap_sprite):
+		_play_trap_animation(trap_sprite)
+	if current != e.grid_pos:
+		await e.move_to(current, 0.15)
+	if not is_instance_valid(entity):
+		return
+	var push_dmg: int = 2 + GameState.current_floor / 2
+	if hit_wall:
+		push_dmg += 4
+	var wall_str: String = " into a wall" if hit_wall else ""
+	if entity is Player:
+		var actual: int = GameState.player_stats.take_damage(push_dmg)
+		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
+		GameState.log("[color=red]You are blasted%s for [color=yellow]%d[/color] damage![/color]" % [wall_str, actual])
+		GameState.check_player_death()
+	elif entity is Enemy:
+		var enemy: Enemy = entity as Enemy
+		var actual: int = enemy.stats.take_damage(push_dmg)
+		enemy.update_hp_bar()
+		GameState.log("[color=orange]%s[/color] is blasted%s for [color=yellow]%d[/color] damage!" % [enemy.display_name, wall_str, actual])
+		if enemy.stats.is_dead():
+			GameState.log("[color=orange]%s[/color] [color=gray]is killed![/color]" % enemy.display_name)
+			GameState.gain_exp(enemy.exp_reward)
+			remove_enemy(enemy)
+			enemy.die()
 
 func _play_trap_animation(sprite_node: Sprite2D) -> void:
 	var tex: Texture2D = sprite_node.texture
@@ -411,6 +530,7 @@ func _spawn_items() -> void:
 		item.item_type = d["type"] as Item.Type
 		item.bonus_damage = d["bonus_dmg"]
 		item.heal_amount = d["heal"]
+		item.str_bonus = d.get("str_bonus", 0)
 		item.floor_min = d["fmin"]
 		item.floor_max = d["fmax"]
 		item.description = d["desc"]
@@ -432,6 +552,28 @@ func _spawn_items() -> void:
 
 func get_item_at(pos: Vector2i) -> Item:
 	return _floor_items.get(pos, null) as Item
+
+func has_line_of_sight(from: Vector2i, to: Vector2i) -> bool:
+	var x: int = from.x
+	var y: int = from.y
+	var dx: int = abs(to.x - x)
+	var dy: int = abs(to.y - y)
+	var sx: int = 1 if x < to.x else -1
+	var sy: int = 1 if y < to.y else -1
+	var err: int = dx - dy
+	while x != to.x or y != to.y:
+		var e2: int = 2 * err
+		if e2 > -dy:
+			err -= dy
+			x += sx
+		if e2 < dx:
+			err += dx
+			y += sy
+		if x == to.x and y == to.y:
+			break
+		if _data.get_tile(x, y) == DungeonData.TileType.WALL:
+			return false
+	return true
 
 func remove_floor_item(pos: Vector2i) -> void:
 	if _floor_item_sprites.has(pos):
