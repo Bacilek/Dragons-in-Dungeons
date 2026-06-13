@@ -739,6 +739,10 @@ func _spawn_doors() -> void:
 		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
 		sprite.z_index = 1
+		# Scale sprite to exactly one tile
+		if tex_closed != null:
+			var ts: Vector2 = tex_closed.get_size()
+			sprite.scale = Vector2(float(TILE_SIZE) / ts.x, float(TILE_SIZE) / ts.y)
 		entities.add_child(sprite)
 		_doors[pos] = {"is_open": false, "sprite": sprite, "tex_open": tex_open, "tex_closed": tex_closed}
 
