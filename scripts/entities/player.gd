@@ -148,7 +148,7 @@ func _execute_queued_path() -> void:
 			TurnManager.begin_player_action()
 			$AnimatedSprite2D.flip_h = dir.x < 0
 			$AnimatedSprite2D.play("run")
-			move_to(next, 0.05)
+			move_to(next, 0.08)
 			if _dungeon_floor != null:
 				_dungeon_floor.update_fog(grid_pos)
 			TurnManager.on_player_action_complete()
@@ -184,7 +184,7 @@ func _execute_queued_path() -> void:
 		TurnManager.begin_player_action()
 		$AnimatedSprite2D.flip_h = dir.x < 0
 		$AnimatedSprite2D.play("run")
-		move_to(next, 0.05)
+		move_to(next, 0.08)
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
 		TurnManager.on_player_action_complete()
