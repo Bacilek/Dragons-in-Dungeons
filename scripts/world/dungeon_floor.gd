@@ -11,6 +11,17 @@ const TILE_SPRITES_PATH := "res://sprites/tiles/"
 const ENEMY_COUNT_MIN: int = 3
 const ENEMY_COUNT_MAX: int = 5
 const FOV_RADIUS: int = 6
+const TRAP_COUNT_MIN: int = 1
+const TRAP_COUNT_MAX: int = 3
+const TRAP_PATH := "res://sprites/Traps/"
+
+const TRAP_POOL: Array = [
+	{"name": "Bear Trap",  "sprite": "Bear_Trap.png",       "damage": 5, "msg": "The bear trap snaps shut on you!"},
+	{"name": "Fire Trap",  "sprite": "Fire_Trap.png",        "damage": 8, "msg": "Jets of flame engulf you!"},
+	{"name": "Spike Trap", "sprite": "Spike Trap.png",       "damage": 6, "msg": "Spikes shoot up from the floor!"},
+	{"name": "Pit Spikes", "sprite": "Pit_Trap_Spikes.png",  "damage": 7, "msg": "You fall into a spike pit!"},
+	{"name": "Push Trap",  "sprite": "Push_Trap_Front.png",  "damage": 4, "msg": "An explosion blasts you back!"},
+]
 
 const ENEMY_POOL: Array = [
 	{"display_name": "Tiny Zombie", "sprite": "tiny_zombie", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 3,  "hp": 5,  "hp_per_floor": 1, "dmg_min": 1, "dmg_max": 3, "armor": 0, "exp": 4},
@@ -31,6 +42,7 @@ const ENEMY_POOL: Array = [
 var _data: DungeonData
 var _player: Player
 var _enemies: Array[Enemy] = []
+var _traps: Dictionary = {}   # Vector2i → {name, damage, msg, sprite_node, revealed}
 
 var _fog_image: Image
 var _fog_texture: ImageTexture
@@ -57,13 +69,17 @@ func _add_tile_source(tile_set: TileSet, source_id: int, path: String) -> void:
 	tile_set.add_source(atlas, source_id)
 
 func _load_floor() -> void:
-	# Clean up enemies from previous floor
 	for e in _enemies:
 		if is_instance_valid(e):
 			e.queue_free()
 	_enemies.clear()
 	TurnManager.clear_enemies()
 	TurnManager.reset()
+	for pos: Vector2i in _traps:
+		var sn: Sprite2D = _traps[pos].get("sprite_node")
+		if sn != null and is_instance_valid(sn):
+			sn.queue_free()
+	_traps.clear()
 
 	_data = DungeonGenerator.generate(GameState.run_seed, GameState.current_floor)
 
@@ -90,6 +106,7 @@ func _load_floor() -> void:
 	_player.set_grid_pos(_data.player_start)
 
 	_spawn_enemies()
+	_spawn_traps()
 	_setup_fog()
 	update_fog(_data.player_start)
 
@@ -240,3 +257,76 @@ func get_visible_enemies() -> Array[Enemy]:
 func on_player_reached_stairs() -> void:
 	GameState.advance_floor()
 	_load_floor()
+
+func _spawn_traps() -> void:
+	var candidates: Array = []
+	for y: int in _data.height:
+		for x: int in _data.width:
+			var pos: Vector2i = Vector2i(x, y)
+			if _data.get_tile(x, y) != DungeonData.TileType.FLOOR:
+				continue
+			if pos == _data.player_start or pos == _data.stairs_pos:
+				continue
+			if maxi(abs(pos.x - _data.player_start.x), abs(pos.y - _data.player_start.y)) < 3:
+				continue
+			candidates.append(pos)
+	candidates.shuffle()
+	var count: int = mini(randi_range(TRAP_COUNT_MIN, TRAP_COUNT_MAX), candidates.size())
+	for i: int in count:
+		var trap_type: Dictionary = TRAP_POOL[randi() % TRAP_POOL.size()]
+		var pos: Vector2i = candidates[i]
+		var sprite := Sprite2D.new()
+		sprite.texture = load(TRAP_PATH + trap_type["sprite"])
+		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+		sprite.z_index = 1
+		sprite.modulate.a = 0.0
+		entities.add_child(sprite)
+		_traps[pos] = {
+			"name": trap_type["name"],
+			"damage": trap_type["damage"],
+			"msg": trap_type["msg"],
+			"sprite_node": sprite,
+			"revealed": false,
+		}
+
+func get_trap_at(pos: Vector2i) -> Dictionary:
+	return _traps.get(pos, {})
+
+func trigger_trap(pos: Vector2i) -> void:
+	if not _traps.has(pos):
+		return
+	var trap: Dictionary = _traps[pos]
+	var sprite_node: Sprite2D = trap["sprite_node"]
+	if is_instance_valid(sprite_node):
+		sprite_node.modulate.a = 1.0
+	var base_dmg: int = trap["damage"] + GameState.current_floor / 2
+	var actual: int = GameState.player_stats.take_damage(base_dmg)
+	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
+	GameState.log("[color=red]%s[/color] You take [color=yellow]%d[/color] damage!" % [trap["msg"], actual])
+	GameState.check_player_death()
+	if is_instance_valid(sprite_node):
+		sprite_node.queue_free()
+	_traps.erase(pos)
+
+func reveal_trap(pos: Vector2i) -> bool:
+	if not _traps.has(pos):
+		return false
+	var trap: Dictionary = _traps[pos]
+	if trap.get("revealed", false):
+		return false
+	trap["revealed"] = true
+	var sprite_node: Sprite2D = trap["sprite_node"]
+	if is_instance_valid(sprite_node):
+		sprite_node.modulate.a = 1.0
+	return true
+
+func search_around(pos: Vector2i) -> int:
+	var found: int = 0
+	for dy: int in range(-1, 2):
+		for dx: int in range(-1, 2):
+			if dx == 0 and dy == 0:
+				continue
+			if reveal_trap(pos + Vector2i(dx, dy)):
+				found += 1
+	return found

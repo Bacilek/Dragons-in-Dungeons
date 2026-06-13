@@ -156,6 +156,13 @@ func _execute_queued_path() -> void:
 			await move_completed
 			$AnimatedSprite2D.play("idle")
 
+			if _dungeon_floor != null:
+				var trap_c: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
+				if not trap_c.is_empty():
+					_dungeon_floor.trigger_trap(grid_pos)
+					_target_enemy = null
+					break
+
 			if _has_new_enemy_in_fov(fov_snapshot):
 				_target_enemy = null
 				break
@@ -191,6 +198,13 @@ func _execute_queued_path() -> void:
 		TurnManager.on_player_action_complete()
 		await move_completed
 		$AnimatedSprite2D.play("idle")
+
+		if _dungeon_floor != null:
+			var trap_p: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
+			if not trap_p.is_empty():
+				_dungeon_floor.trigger_trap(grid_pos)
+				_queued_path.clear()
+				break
 
 		if is_stairs:
 			_dungeon_floor.on_player_reached_stairs.call_deferred()
@@ -238,6 +252,9 @@ func _try_move(dir: Vector2i) -> void:
 	$AnimatedSprite2D.play("idle")
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
+		var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
+		if not trap.is_empty():
+			_dungeon_floor.trigger_trap(grid_pos)
 	TurnManager.on_player_action_complete()
 	if is_stairs:
 		_dungeon_floor.on_player_reached_stairs.call_deferred()
@@ -312,8 +329,13 @@ func _wait_action() -> void:
 	TurnManager.on_player_action_complete()
 
 func _search_action() -> void:
+	if _dungeon_floor == null:
+		return
 	TurnManager.begin_player_action()
-	GameState.log("You search your surroundings... [color=gray]nothing found.[/color]")
-	if _dungeon_floor != null:
-		_dungeon_floor.update_fog(grid_pos)
+	var found: int = _dungeon_floor.search_around(grid_pos)
+	if found > 0:
+		GameState.log("[color=cyan]You search the area and reveal %d trap(s)![/color]" % found)
+	else:
+		GameState.log("[color=gray]You search the area. Nothing found.[/color]")
+	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
