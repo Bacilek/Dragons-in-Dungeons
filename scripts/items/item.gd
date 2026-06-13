@@ -8,6 +8,11 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY }
 @export var quantity: int = 1
 @export var description: String = ""
 @export var icon_path: String = ""
+@export var bonus_damage: int = 0
+@export var bonus_ac: int = 0
+@export var heal_amount: int = 0
+@export var floor_min: int = 1
+@export var floor_max: int = 10
 
 func get_display_name() -> String:
 	if quantity > 1:

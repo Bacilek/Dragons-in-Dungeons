@@ -27,6 +27,7 @@ func _ready() -> void:
 	GameState.player_exp_changed.connect(_on_player_exp_changed)
 	GameState.player_leveled_up.connect(_on_player_leveled_up)
 	GameState.player_died.connect(_on_player_died)
+	GameState.player_won.connect(_on_player_won)
 	GameState.combat_message.connect(_on_combat_message)
 	GameState.inventory_changed.connect(_refresh_inventory)
 	portrait.pressed.connect(_on_portrait_pressed)
@@ -67,6 +68,10 @@ func _on_player_died() -> void:
 	var game_over: PackedScene = preload("res://scenes/ui/game_over.tscn")
 	get_tree().root.add_child(game_over.instantiate())
 
+func _on_player_won() -> void:
+	var win_screen: PackedScene = preload("res://scenes/ui/win.tscn")
+	get_tree().root.add_child(win_screen.instantiate())
+
 func _on_combat_message(msg: String) -> void:
 	_log_messages.push_back(msg)
 	if _log_messages.size() > MAX_LOG_MESSAGES:
@@ -85,11 +90,10 @@ func _on_search_pressed() -> void:
 	GameState.player_action_requested.emit("search")
 
 func _on_slot_pressed(slot_index: int) -> void:
-	var item = GameState.player_inventory[slot_index]
-	if item == null:
+	var raw = GameState.player_inventory[slot_index]
+	if raw == null:
 		return
-	var it := item as Item
-	GameState.log("[color=cyan]%s[/color] — %s" % [it.item_name, it.description])
+	GameState.use_item(raw as Item)
 
 # ── Bar updates ───────────────────────────────────────────────────────────────
 

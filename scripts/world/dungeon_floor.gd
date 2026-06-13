@@ -7,6 +7,8 @@ const SOURCE_FLOOR: int = 0
 const SOURCE_WALL: int = 1
 const SOURCE_STAIRS: int = 2
 const TILE_SPRITES_PATH := "res://sprites/tiles/"
+const WEAPONS_PATH := "res://sprites/weapons/"
+const OBJECTS_PATH := "res://sprites/objects/"
 
 const ENEMY_COUNT_MIN: int = 3
 const ENEMY_COUNT_MAX: int = 5
@@ -21,6 +23,18 @@ const TRAP_POOL: Array = [
 	{"name": "Spike Trap", "sprite": "Spike Trap.png",       "damage": 6, "msg": "Spikes shoot up from the floor!"},
 	{"name": "Pit Spikes", "sprite": "Pit_Trap_Spikes.png",  "damage": 7, "msg": "You fall into a spike pit!"},
 	{"name": "Push Trap",  "sprite": "Push_Trap_Front.png",  "damage": 4, "msg": "An explosion blasts you back!"},
+]
+
+# item_type: 0=WEAPON 1=ARMOR 2=POTION  (matches Item.Type enum)
+const ITEM_POOL: Array = [
+	{"name": "Rusty Sword",   "type": 0, "icon": "weapon_rusty_sword.png",   "src": "weapons", "bonus_dmg": 1, "heal": 0,  "fmin": 1, "fmax": 3,  "desc": "+1 damage"},
+	{"name": "Short Sword",   "type": 0, "icon": "weapon_knife.png",          "src": "weapons", "bonus_dmg": 1, "heal": 0,  "fmin": 1, "fmax": 4,  "desc": "+1 damage"},
+	{"name": "Sword",         "type": 0, "icon": "weapon_regular_sword.png",  "src": "weapons", "bonus_dmg": 2, "heal": 0,  "fmin": 2, "fmax": 6,  "desc": "+2 damage"},
+	{"name": "Knight Sword",  "type": 0, "icon": "weapon_knight_sword.png",   "src": "weapons", "bonus_dmg": 3, "heal": 0,  "fmin": 4, "fmax": 8,  "desc": "+3 damage"},
+	{"name": "Golden Sword",  "type": 0, "icon": "weapon_golden_sword.png",   "src": "weapons", "bonus_dmg": 4, "heal": 0,  "fmin": 6, "fmax": 10, "desc": "+4 damage"},
+	{"name": "Lavish Sword",  "type": 0, "icon": "weapon_lavish_sword.png",   "src": "weapons", "bonus_dmg": 5, "heal": 0,  "fmin": 8, "fmax": 10, "desc": "+5 damage"},
+	{"name": "Health Potion", "type": 2, "icon": "flask_red.png",              "src": "objects", "bonus_dmg": 0, "heal": 10, "fmin": 1, "fmax": 7,  "desc": "Restores 10 HP"},
+	{"name": "Healing Flask", "type": 2, "icon": "flask_big_red.png",          "src": "objects", "bonus_dmg": 0, "heal": 20, "fmin": 4, "fmax": 10, "desc": "Restores 20 HP"},
 ]
 
 const ENEMY_POOL: Array = [
@@ -43,6 +57,9 @@ var _data: DungeonData
 var _player: Player
 var _enemies: Array[Enemy] = []
 var _traps: Dictionary = {}   # Vector2i → {name, damage, msg, sprite_node, revealed}
+
+var _floor_items: Dictionary = {}         # Vector2i → Item
+var _floor_item_sprites: Dictionary = {}  # Vector2i → Sprite2D
 
 var _fog_image: Image
 var _fog_texture: ImageTexture
@@ -80,6 +97,12 @@ func _load_floor() -> void:
 		if sn != null and is_instance_valid(sn):
 			sn.queue_free()
 	_traps.clear()
+	for pos: Vector2i in _floor_item_sprites:
+		var sn: Sprite2D = _floor_item_sprites[pos]
+		if is_instance_valid(sn):
+			sn.queue_free()
+	_floor_items.clear()
+	_floor_item_sprites.clear()
 
 	_data = DungeonGenerator.generate(GameState.run_seed, GameState.current_floor)
 
@@ -107,6 +130,7 @@ func _load_floor() -> void:
 
 	_spawn_enemies()
 	_spawn_traps()
+	_spawn_items()
 	_setup_fog()
 	update_fog(_data.player_start)
 
@@ -256,6 +280,8 @@ func get_visible_enemies() -> Array[Enemy]:
 
 func on_player_reached_stairs() -> void:
 	GameState.advance_floor()
+	if GameState.current_floor > 10:
+		return
 	_load_floor()
 
 func _spawn_traps() -> void:
@@ -313,9 +339,23 @@ func trigger_trap(pos: Vector2i) -> void:
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 	GameState.log("[color=red]%s[/color] You take [color=yellow]%d[/color] damage!" % [trap["msg"], actual])
 	GameState.check_player_death()
-	if is_instance_valid(sprite_node):
-		sprite_node.queue_free()
 	_traps.erase(pos)
+	if is_instance_valid(sprite_node):
+		_play_trap_animation(sprite_node)
+
+func _play_trap_animation(sprite_node: Sprite2D) -> void:
+	var tex: Texture2D = sprite_node.texture
+	if tex == null:
+		sprite_node.queue_free()
+		return
+	var frame_count: int = int(tex.get_width()) / 32
+	if frame_count <= 1:
+		sprite_node.queue_free()
+		return
+	for f: int in range(1, frame_count):
+		sprite_node.region_rect = Rect2(f * 32, 0, 32, 32)
+		await get_tree().create_timer(0.07).timeout
+	sprite_node.queue_free()
 
 func reveal_trap(pos: Vector2i) -> bool:
 	if not _traps.has(pos):
@@ -338,3 +378,65 @@ func search_around(pos: Vector2i) -> int:
 			if reveal_trap(pos + Vector2i(dx, dy)):
 				found += 1
 	return found
+
+func _spawn_items() -> void:
+	var eligible: Array = []
+	for entry in ITEM_POOL:
+		var d: Dictionary = entry
+		if GameState.current_floor >= d["fmin"] and GameState.current_floor <= d["fmax"]:
+			eligible.append(d)
+	if eligible.is_empty():
+		return
+
+	var candidates: Array = []
+	for y: int in _data.height:
+		for x: int in _data.width:
+			var pos: Vector2i = Vector2i(x, y)
+			if _data.get_tile(x, y) != DungeonData.TileType.FLOOR:
+				continue
+			if pos == _data.player_start or pos == _data.stairs_pos:
+				continue
+			if _traps.has(pos):
+				continue
+			candidates.append(pos)
+	candidates.shuffle()
+
+	var count: int = mini(randi_range(2, 3), candidates.size())
+	for i: int in count:
+		var d: Dictionary = eligible[randi() % eligible.size()]
+		var pos: Vector2i = candidates[i]
+
+		var item := Item.new()
+		item.item_name = d["name"]
+		item.item_type = d["type"] as Item.Type
+		item.bonus_damage = d["bonus_dmg"]
+		item.heal_amount = d["heal"]
+		item.floor_min = d["fmin"]
+		item.floor_max = d["fmax"]
+		item.description = d["desc"]
+		var base_path: String = WEAPONS_PATH if d["src"] == "weapons" else OBJECTS_PATH
+		item.icon_path = "res://sprites/%s/%s" % [d["src"], d["icon"]]
+
+		var tex: Texture2D = load(base_path + d["icon"])
+		if tex == null:
+			continue
+		var sprite := Sprite2D.new()
+		sprite.texture = tex
+		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+		sprite.z_index = 1
+		entities.add_child(sprite)
+
+		_floor_items[pos] = item
+		_floor_item_sprites[pos] = sprite
+
+func get_item_at(pos: Vector2i) -> Item:
+	return _floor_items.get(pos, null) as Item
+
+func remove_floor_item(pos: Vector2i) -> void:
+	if _floor_item_sprites.has(pos):
+		var sn: Sprite2D = _floor_item_sprites[pos]
+		if is_instance_valid(sn):
+			sn.queue_free()
+		_floor_item_sprites.erase(pos)
+	_floor_items.erase(pos)

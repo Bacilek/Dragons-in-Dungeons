@@ -157,6 +157,7 @@ func _execute_queued_path() -> void:
 			$AnimatedSprite2D.play("idle")
 
 			if _dungeon_floor != null:
+				_check_pickup()
 				var trap_c: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 				if not trap_c.is_empty():
 					_dungeon_floor.trigger_trap(grid_pos)
@@ -200,6 +201,7 @@ func _execute_queued_path() -> void:
 		$AnimatedSprite2D.play("idle")
 
 		if _dungeon_floor != null:
+			_check_pickup()
 			var trap_p: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 			if not trap_p.is_empty():
 				_dungeon_floor.trigger_trap(grid_pos)
@@ -252,6 +254,7 @@ func _try_move(dir: Vector2i) -> void:
 	$AnimatedSprite2D.play("idle")
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
+		_check_pickup()
 		var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 		if not trap.is_empty():
 			_dungeon_floor.trigger_trap(grid_pos)
@@ -321,6 +324,21 @@ func _on_action_requested(action_name: String) -> void:
 	match action_name:
 		"wait":   _wait_action()
 		"search": _search_action()
+
+func _check_pickup() -> void:
+	if _dungeon_floor == null:
+		return
+	var item: Item = _dungeon_floor.get_item_at(grid_pos)
+	if item == null:
+		return
+	_dungeon_floor.remove_floor_item(grid_pos)
+	var is_first_weapon: bool = item.item_type == Item.Type.WEAPON and GameState.equipped_weapon == null
+	GameState.add_item(item)
+	if is_first_weapon:
+		GameState.equip(item)
+		GameState.log("[color=cyan]You pick up [b]%s[/b] and equip it.[/color]" % item.item_name)
+	else:
+		GameState.log("[color=cyan]You pick up [b]%s[/b].[/color]" % item.item_name)
 
 func _wait_action() -> void:
 	TurnManager.begin_player_action()
