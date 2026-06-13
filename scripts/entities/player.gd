@@ -293,7 +293,7 @@ func _try_move(dir: Vector2i) -> void:
 		_check_pickup()
 		var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 		if not trap.is_empty():
-			await _dungeon_floor.trigger_trap(grid_pos, self)
+			await _dungeon_floor.trigger_trap(grid_pos, self)  # push trap still awaits; others return instantly
 	TurnManager.on_player_action_complete()
 	if is_stairs:
 		_dungeon_floor.on_player_reached_stairs.call_deferred()

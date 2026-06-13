@@ -455,7 +455,9 @@ func _spawn_traps() -> void:
 			for d: Vector2i in cardinal:
 				var wp: Vector2i = pos + d
 				if _data.get_tile(wp.x, wp.y) == DungeonData.TileType.WALL:
-					wall_cands.append({"floor_pos": pos, "wall_pos": wp, "push_dir": Vector2i(-d.x, -d.y)})
+					# Same bypass check as floor traps — piston must not block the only path
+					if _bfs_reachable(_data.player_start, _data.stairs_pos, [pos]):
+						wall_cands.append({"floor_pos": pos, "wall_pos": wp, "push_dir": Vector2i(-d.x, -d.y)})
 					break
 
 	floor_cands.shuffle()
@@ -515,7 +517,7 @@ func _spawn_traps() -> void:
 			sprite.region_enabled = true
 			sprite.region_rect = Rect2(0, 0, frame_size, frame_size)
 			sprite.scale = Vector2(float(TILE_SIZE) / float(frame_size), float(TILE_SIZE) / float(frame_size))
-			sprite.position = Vector2(wall_pos.x * TILE_SIZE + TILE_SIZE * 0.5, wall_pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+			sprite.position = Vector2(floor_pos.x * TILE_SIZE + TILE_SIZE * 0.5, floor_pos.y * TILE_SIZE + TILE_SIZE * 0.5)
 			sprite.rotation = atan2(float(push_dir.y), float(push_dir.x)) - PI / 2.0
 			sprite.z_index = 1
 			sprite.modulate.a = 0.5
@@ -556,9 +558,9 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 			sprite_node.modulate = Color(0.25, 0.25, 0.25, 0.85)  # Dark = spent
 		var dmg: int = trap["damage"] + GameState.current_floor / 2
 		_apply_trap_damage(target, dmg, trap["msg"])
-		# Play animation (without freeing sprite — trap persists visually)
+		# Animation plays asynchronously — does not block player input
 		if is_instance_valid(sprite_node):
-			await _play_trap_animation(sprite_node)
+			_play_trap_animation(sprite_node)
 		# Queue re-arm for spike-type traps
 		if REARMABLE_TRAPS.has(trap["name"]):
 			_trap_rearm_timers[pos] = REARM_TURNS
@@ -716,8 +718,9 @@ func _spawn_doors() -> void:
 					var perp2: Vector2i = Vector2i(d.y, -d.x)
 					var narrow: bool = _data.get_tile((out + perp1).x, (out + perp1).y) != DungeonData.TileType.FLOOR \
 						and _data.get_tile((out + perp2).x, (out + perp2).y) != DungeonData.TileType.FLOOR
-					if narrow and not door_candidates.has(pos):
-						door_candidates.append(pos)
+					# Place door at the corridor tile (out), not the room border (pos)
+					if narrow and not door_candidates.has(out):
+						door_candidates.append(out)
 						added_for_room += 1
 					break
 

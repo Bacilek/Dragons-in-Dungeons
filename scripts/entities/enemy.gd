@@ -112,12 +112,17 @@ func take_turn() -> void:
 				_wake_up()
 				last_known_player_pos = player.grid_pos
 				await _act_toward(player)
+			else:
+				# Spend the turn doing nothing — keeps turn rhythm consistent
+				await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 
 		Behavior.STATIONARY:
 			if can_see:
 				last_known_player_pos = player.grid_pos
 				behavior = Behavior.CHASING
 				await _act_toward(player)
+			else:
+				await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 
 		Behavior.ROAMING:
 			if can_see:
