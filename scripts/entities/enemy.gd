@@ -1,7 +1,7 @@
 class_name Enemy
 extends Entity
 
-const SPRITES_PATH := "res://sprites/0x72_DungeonTilesetII_v1.7/frames/"
+const SPRITES_PATH := "res://sprites/characters/"
 const FOV_RADIUS: int = 6
 
 var _dungeon_floor: Node

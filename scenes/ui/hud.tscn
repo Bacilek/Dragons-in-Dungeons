@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/hud.gd" id="1"]
-[ext_resource type="Texture2D" path="res://sprites/0x72_DungeonTilesetII_v1.7/frames/knight_m_idle_anim_f0.png" id="2"]
+[ext_resource type="Texture2D" path="res://sprites/characters/knight_m_idle_anim_f0.png" id="2"]
 
 [node name="HUD" type="CanvasLayer"]
 layer = 10

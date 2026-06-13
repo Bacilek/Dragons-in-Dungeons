@@ -1,8 +1,8 @@
 class_name Player
 extends Entity
 
-const KNIGHT_PATH := "res://sprites/0x72_DungeonTilesetII_v1.7/frames/"
-const SWORD_SPRITE := "res://sprites/0x72_DungeonTilesetII_v1.7/frames/weapon_anime_sword.png"
+const KNIGHT_PATH := "res://sprites/characters/"
+const SWORD_SPRITE := "res://sprites/weapons/weapon_anime_sword.png"
 
 var _dungeon_floor: Node
 

@@ -6,7 +6,7 @@ const ATLAS_ORIGIN := Vector2i(0, 0)
 const SOURCE_FLOOR: int = 0
 const SOURCE_WALL: int = 1
 const SOURCE_STAIRS: int = 2
-const SPRITES_PATH := "res://sprites/0x72_DungeonTilesetII_v1.7/frames/"
+const TILE_SPRITES_PATH := "res://sprites/tiles/"
 
 const ENEMY_COUNT_MIN: int = 3
 const ENEMY_COUNT_MAX: int = 5
@@ -44,9 +44,9 @@ func _ready() -> void:
 func _setup_tileset() -> void:
 	var tile_set := TileSet.new()
 	tile_set.tile_size = Vector2i(TILE_SIZE, TILE_SIZE)
-	_add_tile_source(tile_set, SOURCE_FLOOR,  SPRITES_PATH + "floor_1.png")
-	_add_tile_source(tile_set, SOURCE_WALL,   SPRITES_PATH + "wall_mid.png")
-	_add_tile_source(tile_set, SOURCE_STAIRS, SPRITES_PATH + "floor_stairs.png")
+	_add_tile_source(tile_set, SOURCE_FLOOR,  TILE_SPRITES_PATH + "floor_1.png")
+	_add_tile_source(tile_set, SOURCE_WALL,   TILE_SPRITES_PATH + "wall_mid.png")
+	_add_tile_source(tile_set, SOURCE_STAIRS, TILE_SPRITES_PATH + "floor_stairs.png")
 	tilemap.tile_set = tile_set
 
 func _add_tile_source(tile_set: TileSet, source_id: int, path: String) -> void:
