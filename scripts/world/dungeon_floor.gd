@@ -280,7 +280,7 @@ func _spawn_traps() -> void:
 		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
 		sprite.z_index = 1
-		sprite.modulate.a = 0.0
+		sprite.modulate.a = 0.5
 		entities.add_child(sprite)
 		_traps[pos] = {
 			"name": trap_type["name"],
