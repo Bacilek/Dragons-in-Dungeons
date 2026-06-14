@@ -26,6 +26,7 @@ var _hunger_label: Label
 var _poison_icon: ColorRect
 var _burning_icon: ColorRect
 var _bleeding_icon: ColorRect
+var _slowed_icon: ColorRect
 var _inventory_overlay_ref: Node = null
 var _debug_panel_ref: Node = null
 
@@ -85,13 +86,15 @@ func _ready() -> void:
 	$StatsPanel.add_child(_hunger_label)
 	_update_hunger_label()
 
-	# Status icons (poison = green, burning = orange, bleeding = red) below portrait
-	_poison_icon  = _make_status_dot(Color(0.20, 0.85, 0.35), Vector2(2.0, 2.0))
-	_burning_icon = _make_status_dot(Color(1.00, 0.45, 0.10), Vector2(14.0, 2.0))
+	# Status icons (poison=green, burning=orange, bleeding=red, slowed=brown) below portrait
+	_poison_icon   = _make_status_dot(Color(0.20, 0.85, 0.35), Vector2(2.0,  2.0))
+	_burning_icon  = _make_status_dot(Color(1.00, 0.45, 0.10), Vector2(14.0, 2.0))
 	_bleeding_icon = _make_status_dot(Color(0.80, 0.0,  0.0),  Vector2(26.0, 2.0))
+	_slowed_icon   = _make_status_dot(Color(0.55, 0.35, 0.10), Vector2(38.0, 2.0))
 	$StatsPanel.add_child(_poison_icon)
 	$StatsPanel.add_child(_burning_icon)
 	$StatsPanel.add_child(_bleeding_icon)
+	$StatsPanel.add_child(_slowed_icon)
 	_update_status_icons()
 
 	# Inventory overlay — add as sibling CanvasLayer so it floats above HUD
@@ -129,6 +132,8 @@ func _update_status_icons() -> void:
 		_burning_icon.visible = GameState.player_stats.burning_turns > 0
 	if _bleeding_icon != null:
 		_bleeding_icon.visible = GameState.player_stats.bleeding_turns > 0
+	if _slowed_icon != null:
+		_slowed_icon.visible = GameState.player_stats.slowed_turns > 0
 
 func _make_status_dot(color: Color, offset: Vector2) -> ColorRect:
 	var dot := ColorRect.new()

@@ -40,7 +40,7 @@ Entity (CharacterBody2D)   ← grid_pos, move_to() 0.08s tween, _tile_center()
 World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: floor items=1, enemies=1, player=3, fog=2, damage labels=10. Blood decals: z=0.
 
 ### D&D stats (`scripts/entities/stats.gd`)
-`Stats` extends `Resource`. `modifier(score)` = `floor((score-10)/2)`. `apply_class_defaults()` sets scores and derives `max_hp`, `armor_class`, `proficiency_bonus=2`. Classes: FIGHTER (d10), ROGUE (d8), WIZARD (d6), CLERIC (d8). Status fields: `poison_turns`, `burning_turns`, `bleeding_turns`. `tick_status() -> int` ticks all three and returns total dmg.
+`Stats` extends `Resource`. `modifier(score)` = `floor((score-10)/2)`. `apply_class_defaults()` sets scores and derives `max_hp`, `armor_class`, `proficiency_bonus=2`. Classes: FIGHTER (d10), ROGUE (d8), WIZARD (d6), CLERIC (d8). Status fields: `poison_turns`, `burning_turns`, `bleeding_turns`, `slowed_turns`. `tick_status() -> int` ticks all four and returns total dmg (slowed deals no damage, just decrements). HUD status dots: green=poison, orange=burning, red=bleeding, brown=slowed. Spike Trap: reusable, bleeding 5 turns. Bear Trap: slowed 20 turns (each movement costs 2 turns like mud/water).
 
 ### Item system (`scripts/items/item.gd`)
 `Item.Type` enum: `WEAPON=0, ARMOR=1, POTION=2, SCROLL=3, FOOD=4, GOLD=5, KEY=6, TOOL=7`. Key fields: `item_name`, `item_type`, `quantity`, `icon_path`, `heal_amount`, `bonus_damage`, `bonus_ac`, `str_bonus`. `get_display_name()` appends `×N` if quantity > 1.
@@ -49,7 +49,7 @@ World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: flo
 `GameState.hunger` (0–1000). Thresholds: >600 SATIATED, >200 HUNGRY, else STARVING. Depletes 1/turn. Starvation damage: 1 HP every 10 turns at hunger=0. HP regen disabled while Starving. Eat food: `GameState.use_item(item)` → `restore_hunger(heal_amount)`.
 
 ### Trap system (in DungeonFloor)
-`_traps: Dictionary` maps `Vector2i → {name, damage, msg, sprite_node, revealed, triggered, is_push, reusable?, push_dir?, wall_pos?}`. Key functions: `trigger_trap(pos)`, `reveal_trap(pos)`, `disarm_trap(pos)`, `search_around(pos) -> int`. Piston traps: only detectable from the push side (`search_around` filters by `-push_dir`). Spike Trap: reusable. Bear Trap: bleeding 5 turns. Fire Trap: burning 4 turns.
+`_traps: Dictionary` maps `Vector2i → {name, damage, msg, sprite_node, revealed, triggered, is_push, reusable?, push_dir?, wall_pos?}`. Key functions: `trigger_trap(pos)`, `reveal_trap(pos)`, `disarm_trap(pos)`, `search_around(pos) -> int`. Piston traps: only detectable from the push side (`search_around` filters by `-push_dir`). Spike Trap: reusable, applies bleeding 5 turns. Bear Trap: applies slowed 20 turns. Fire Trap: burning 4 turns.
 
 ### Door system (in DungeonFloor)
 `_doors: Dictionary` maps `Vector2i → {is_open: bool, sprite: Sprite2D}`. Auto-opens when entity steps on tile, auto-closes when entity leaves. Enemies open doors and walk through in same turn. Functions: `has_door_at(pos)`, `is_door_open(pos)`, `open_door(pos)`, `close_door(pos)`.

@@ -320,16 +320,21 @@ static func _place_water_mud(data: DungeonData, rng: RandomNumberGenerator) -> v
 	if all_floor.is_empty():
 		return
 	var dirs4: Array = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0)]
-	var num_clusters: int = rng.randi_range(2, 4)
-	for _c: int in num_clusters:
+	# Place dedicated water clusters (1-2) then mud clusters (1-2) — both always appear
+	var water_count: int = rng.randi_range(1, 2)
+	var mud_count: int   = rng.randi_range(1, 2)
+	var schedule: Array = []
+	for _w: int in water_count:
+		schedule.append(DungeonData.TileType.WATER)
+	for _m: int in mud_count:
+		schedule.append(DungeonData.TileType.MUD)
+	for tile_type: DungeonData.TileType in schedule:
 		if all_floor.is_empty():
 			break
 		var seed_idx: int = rng.randi_range(0, all_floor.size() - 1)
 		var seed: Vector2i = all_floor[seed_idx]
 		if data.grid[seed.y][seed.x] != DungeonData.TileType.FLOOR:
 			continue
-		var is_water: bool = rng.randi() % 2 == 0
-		var tile_type: DungeonData.TileType = DungeonData.TileType.WATER if is_water else DungeonData.TileType.MUD
 		var max_size: int = rng.randi_range(4, 9)
 		var queue: Array = [seed]
 		var placed_count: int = 0

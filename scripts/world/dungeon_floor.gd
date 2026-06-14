@@ -643,11 +643,16 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 			GameState.player_stats.burning_turns = 4
 			GameState.player_status_changed.emit()
 			GameState.game_log("[color=orange]You are burning! (4 turns)[/color]")
-		# Bear Trap applies bleeding (5 turns, 1 dmg/turn)
-		if trap["name"] == "Bear Trap" and target is Player:
+		# Spike Trap applies bleeding (5 turns, 1 dmg/turn)
+		if trap["name"] == "Spike Trap" and target is Player:
 			GameState.player_stats.bleeding_turns = 5
 			GameState.player_status_changed.emit()
 			GameState.game_log("[color=red]You are bleeding! (5 turns)[/color]")
+		# Bear Trap slows movement for 20 turns (each step costs 2 turns)
+		if trap["name"] == "Bear Trap" and target is Player:
+			GameState.player_stats.slowed_turns = 20
+			GameState.player_status_changed.emit()
+			GameState.game_log("[color=yellow]Your leg is caught! Slowed for 20 turns.[/color]")
 		# Animation plays asynchronously — does not block player input
 		if is_instance_valid(sprite_node):
 			_play_trap_animation(sprite_node)
@@ -745,6 +750,9 @@ func search_around(pos: Vector2i) -> int:
 
 func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
 	if entity is Player:
+		if GameState.invincible:
+			GameState.game_log("[color=red]%s[/color] [color=gray](invincible)[/color]" % msg)
+			return
 		var actual: int = GameState.player_stats.take_damage(damage)
 		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 		GameState.game_log("[color=red]%s[/color] You take [color=yellow]%d[/color] damage!" % [msg, actual])

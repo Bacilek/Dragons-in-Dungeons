@@ -327,9 +327,10 @@ func _execute_queued_path() -> void:
 			_queued_path.clear()
 			break
 
-		# Difficult terrain: water/mud costs 2 turns — stop queued path and waste a turn
+		# Difficult terrain or slowed: costs 2 turns — stop queued path and waste a turn
 		var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
-		if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
+		if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD \
+				or GameState.player_stats.slowed_turns > 0:
 			_queued_path.clear()
 			if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
 				await TurnManager.player_turn_started
@@ -393,9 +394,10 @@ func _try_move(dir: Vector2i) -> void:
 	if is_stairs:
 		_dungeon_floor.on_player_reached_stairs.call_deferred()
 		return
-	# Difficult terrain: water/mud costs 2 turns per step
+	# Difficult terrain or slowed: costs 2 turns per step
 	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
-	if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
+	if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD \
+			or GameState.player_stats.slowed_turns > 0:
 		await TurnManager.player_turn_started
 		TurnManager.begin_player_action()
 		_dungeon_floor.update_fog(grid_pos)

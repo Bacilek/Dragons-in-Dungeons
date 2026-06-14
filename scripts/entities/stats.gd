@@ -29,6 +29,7 @@ enum CharacterClass { FIGHTER, ROGUE, WIZARD, CLERIC }
 var poison_turns: int = 0
 var burning_turns: int = 0
 var bleeding_turns: int = 0
+var slowed_turns: int = 0
 
 func exp_for_level(lv: int) -> int:
 	return lv * 10
@@ -85,6 +86,8 @@ func tick_status() -> int:
 	if bleeding_turns > 0:
 		dmg += 1
 		bleeding_turns -= 1
+	if slowed_turns > 0:
+		slowed_turns -= 1
 	return dmg
 
 func apply_class_defaults() -> void:

@@ -213,6 +213,9 @@ func _preferred_steps(dx: int, dy: int) -> Array[Vector2i]:
 	return steps
 
 func _attack_player(_player: Player) -> void:
+	if GameState.invincible:
+		GameState.game_log("[color=tomato]%s[/color] strikes you — [color=gray]blocked (invincible)[/color]" % display_name)
+		return
 	var dmg: int = stats.roll_damage()
 	var actual: int = GameState.player_stats.take_damage(dmg)
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
