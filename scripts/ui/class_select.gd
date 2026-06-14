@@ -1,7 +1,7 @@
 extends CanvasLayer
 
 const CARD_W: int = 148
-const CARD_H: int = 230
+const CARD_H: int = 342
 const CARD_GAP: int = 18
 const CHAR_PATH := "res://sprites/characters/"
 
@@ -146,9 +146,27 @@ func _build_card(data: Dictionary, pos: Vector2) -> void:
 	desc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(desc_lbl)
 
+	var sep2 := HSeparator.new()
+	sep2.position = Vector2(10.0, 202.0)
+	sep2.size = Vector2(CARD_W - 20.0, 2.0)
+	sep2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(sep2)
+
+	var s: Stats = _make_class_stats(data["cls"] as int)
+	var stat_rows: Array = [
+		["STR", s.strength,     s.str_modifier()],
+		["DEX", s.dexterity,    s.dex_modifier()],
+		["CON", s.constitution, s.con_modifier()],
+		["INT", s.intelligence, s.int_modifier()],
+		["WIS", s.wisdom,       s.wis_modifier()],
+		["CHA", s.charisma,     s.cha_modifier()],
+	]
+	for i: int in stat_rows.size():
+		_add_stat_row(card, 208.0 + i * 16.0, stat_rows[i][0], stat_rows[i][1], stat_rows[i][2])
+
 	var btn := Button.new()
 	btn.text = "Select"
-	btn.position = Vector2(22.0, 196.0)
+	btn.position = Vector2(22.0, 310.0)
 	btn.size = Vector2(CARD_W - 44.0, 26.0)
 	var btn_normal := StyleBoxFlat.new()
 	btn_normal.bg_color = (data["color"] as Color) * 0.35
@@ -164,6 +182,45 @@ func _build_card(data: Dictionary, pos: Vector2) -> void:
 	btn.add_theme_font_size_override("font_size", 10)
 	btn.pressed.connect(_on_class_selected.bind(data["cls"] as int))
 	card.add_child(btn)
+
+func _make_class_stats(cls_idx: int) -> Stats:
+	var s := Stats.new()
+	s.character_class = cls_idx as Stats.CharacterClass
+	s.apply_class_defaults()
+	return s
+
+func _add_stat_row(parent: Control, y: float, stat_name: String, score: int, mod_val: int) -> void:
+	var name_lbl := Label.new()
+	name_lbl.text = stat_name
+	name_lbl.position = Vector2(14.0, y)
+	name_lbl.size = Vector2(30.0, 14.0)
+	name_lbl.add_theme_font_size_override("font_size", 10)
+	name_lbl.add_theme_color_override("font_color", Color(0.62, 0.60, 0.56))
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(name_lbl)
+
+	var score_lbl := Label.new()
+	score_lbl.text = str(score)
+	score_lbl.position = Vector2(54.0, y)
+	score_lbl.size = Vector2(24.0, 14.0)
+	score_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	score_lbl.add_theme_font_size_override("font_size", 10)
+	score_lbl.add_theme_color_override("font_color", Color(0.92, 0.88, 0.72))
+	score_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(score_lbl)
+
+	var mod_lbl := Label.new()
+	mod_lbl.text = "(%+d)" % mod_val
+	mod_lbl.position = Vector2(84.0, y)
+	mod_lbl.size = Vector2(50.0, 14.0)
+	mod_lbl.add_theme_font_size_override("font_size", 10)
+	var mod_color: Color
+	if mod_val > 0:   mod_color = Color(0.40, 0.85, 0.45)
+	elif mod_val < 0: mod_color = Color(0.85, 0.38, 0.32)
+	else:             mod_color = Color(0.50, 0.50, 0.55)
+	mod_lbl.add_theme_color_override("font_color", mod_color)
+	mod_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(mod_lbl)
 
 func _on_class_selected(cls_idx: int) -> void:
 	GameState.player_stats.character_class = cls_idx as Stats.CharacterClass
