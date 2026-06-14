@@ -226,9 +226,9 @@ clip_text = true
 [node name="WaitButton" type="Button" parent="ActionBar"]
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -148.0
+offset_left = -224.0
 offset_top = 4.0
-offset_right = -76.0
+offset_right = -152.0
 offset_bottom = 48.0
 text = "Wait (.)"
 theme_override_font_sizes/font_size = 10
@@ -236,9 +236,18 @@ theme_override_font_sizes/font_size = 10
 [node name="SearchButton" type="Button" parent="ActionBar"]
 anchor_left = 1.0
 anchor_right = 1.0
+offset_left = -148.0
+offset_top = 4.0
+offset_right = -76.0
+offset_bottom = 48.0
+text = "Search (s)"
+theme_override_font_sizes/font_size = 10
+[node name="InteractButton" type="Button" parent="ActionBar"]
+anchor_left = 1.0
+anchor_right = 1.0
 offset_left = -72.0
 offset_top = 4.0
 offset_right = 0.0
 offset_bottom = 48.0
-text = "Search (s)"
+text = "Interact (f)"
 theme_override_font_sizes/font_size = 10

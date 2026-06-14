@@ -11,6 +11,7 @@ extends CanvasLayer
 @onready var stats_popup: Panel       = $StatsPopup
 @onready var wait_button: Button      = $ActionBar/WaitButton
 @onready var search_button: Button    = $ActionBar/SearchButton
+@onready var interact_button: Button  = $ActionBar/InteractButton
 
 const BAR_W: float    = 174.0
 const HP_BAR_H: float = 15.0
@@ -38,6 +39,7 @@ func _ready() -> void:
 	portrait.pressed.connect(_on_portrait_pressed)
 	wait_button.pressed.connect(_on_wait_pressed)
 	search_button.pressed.connect(_on_search_pressed)
+	interact_button.pressed.connect(_on_interact_pressed)
 
 	for i: int in SLOT_COUNT:
 		var slot: Button = get_node("ActionBar/ItemSlot%d" % i)
@@ -149,6 +151,9 @@ func _on_wait_pressed() -> void:
 
 func _on_search_pressed() -> void:
 	GameState.player_action_requested.emit("search")
+
+func _on_interact_pressed() -> void:
+	GameState.player_action_requested.emit("interact")
 
 func _on_slot_pressed(slot_index: int) -> void:
 	var raw = GameState.player_quickbar[slot_index]

@@ -15,6 +15,7 @@ const SOURCE_DOOR_OPEN:   int = 8
 const TILE_SPRITES_PATH := "res://sprites/tiles/"
 const WEAPONS_PATH := "res://sprites/weapons/"
 const OBJECTS_PATH := "res://sprites/objects/"
+const ITEMS_PATH   := "res://sprites/items/Sprites trial/"
 
 const ENEMY_COUNT_MIN: int = 3
 const ENEMY_COUNT_MAX: int = 5
@@ -39,11 +40,10 @@ const ITEM_POOL: Array = [
 	{"name": "Knight Sword",   "type": 0, "icon": "weapon_knight_sword.png",    "src": "weapons", "bonus_dmg": 3, "heal": 0,   "str_bonus": 0, "fmin": 4, "fmax": 8,  "desc": "+3 damage"},
 	{"name": "Golden Sword",   "type": 0, "icon": "weapon_golden_sword.png",    "src": "weapons", "bonus_dmg": 4, "heal": 0,   "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "+4 damage"},
 	{"name": "Lavish Sword",   "type": 0, "icon": "weapon_lavish_sword.png",    "src": "weapons", "bonus_dmg": 5, "heal": 0,   "str_bonus": 0, "fmin": 8, "fmax": 10, "desc": "+5 damage"},
-	{"name": "Health Potion",  "type": 2, "icon": "flask_red.png",              "src": "objects", "bonus_dmg": 0, "heal": 10,  "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 10 HP"},
-	{"name": "Strength Potion","type": 2, "icon": "flask_big_yellow.png",       "src": "objects", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
-	# Food — replenishes hunger. Replace icons with food_ration.png / food_meat.png when available.
-	{"name": "Ration",         "type": 4, "icon": "food_ration.png",            "src": "objects", "bonus_dmg": 0, "heal": 100, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Fills you up"},
-	{"name": "Mystery Meat",   "type": 4, "icon": "food_meat.png",              "src": "objects", "bonus_dmg": 0, "heal": 60,  "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Better than nothing"},
+	{"name": "Health Potion",  "type": 2, "icon": "Potions/Health/HealthPotionMedium.png", "src": "items", "bonus_dmg": 0, "heal": 10,  "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 10 HP"},
+	{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png",    "src": "items", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
+	{"name": "Ration",         "type": 4, "icon": "Food/MeatCooked.png",                  "src": "items", "bonus_dmg": 0, "heal": 100, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Fills you up"},
+	{"name": "Mystery Meat",   "type": 4, "icon": "Food/Meat.png",                        "src": "items", "bonus_dmg": 0, "heal": 60,  "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Better than nothing"},
 ]
 
 const BOSS_POOL: Array = [
@@ -907,10 +907,13 @@ func _spawn_items() -> void:
 		item.floor_min = d["fmin"]
 		item.floor_max = d["fmax"]
 		item.description = d["desc"]
-		item.icon_path = "res://sprites/%s/%s" % [d["src"], d["icon"]]
-
-		var base_path: String = WEAPONS_PATH if d["src"] == "weapons" else OBJECTS_PATH
+		var base_path: String
+		match d["src"]:
+			"weapons": base_path = WEAPONS_PATH
+			"items":   base_path = ITEMS_PATH
+			_:         base_path = OBJECTS_PATH
 		var icon_path: String = base_path + d["icon"]
+		item.icon_path = icon_path
 		var tex: Texture2D
 		if ResourceLoader.exists(icon_path):
 			tex = load(icon_path)

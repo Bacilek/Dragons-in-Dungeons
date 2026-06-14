@@ -141,6 +141,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_Z, KEY_KP_1: _try_move(Vector2i(-1, 1))
 			KEY_C, KEY_KP_3: _try_move(Vector2i(1, 1))
 			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _wait_action()
+			KEY_F: _interact_action()
 
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -457,8 +458,9 @@ func _on_action_requested(action_name: String) -> void:
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 		return
 	match action_name:
-		"wait":   _wait_action()
-		"search": _search_action()
+		"wait":     _wait_action()
+		"search":   _search_action()
+		"interact": _interact_action()
 
 func _check_pickup() -> void:
 	if _dungeon_floor == null:
@@ -492,6 +494,34 @@ func _search_action() -> void:
 		GameState.game_log("[color=gray]You search the area. Nothing found.[/color]")
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
+
+func _interact_action() -> void:
+	if _dungeon_floor == null:
+		return
+	var dirs8: Array[Vector2i] = [
+		Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
+		Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)
+	]
+	# Priority 1: revealed trap
+	for d: Vector2i in dirs8:
+		var pos: Vector2i = grid_pos + d
+		var trap: Dictionary = _dungeon_floor.get_trap_at(pos)
+		if not trap.is_empty() and trap.get("revealed", false):
+			_attempt_disarm(pos)
+			return
+	# Priority 2: door — toggle open/close
+	for d: Vector2i in dirs8:
+		var pos: Vector2i = grid_pos + d
+		if _dungeon_floor.has_door_at(pos):
+			TurnManager.begin_player_action()
+			if _dungeon_floor.is_door_open(pos):
+				_dungeon_floor.close_door(pos)
+			else:
+				_dungeon_floor.open_door(pos)
+			_dungeon_floor.update_fog(grid_pos)
+			TurnManager.on_player_action_complete()
+			return
+	GameState.game_log("[color=gray]Nothing to interact with nearby.[/color]")
 
 func _find_thief_tools() -> Item:
 	for i: int in GameState.QUICKBAR_SIZE:
