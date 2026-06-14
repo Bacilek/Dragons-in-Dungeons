@@ -1,7 +1,7 @@
 class_name Stats
 extends Resource
 
-enum CharacterClass { FIGHTER, ROGUE, WIZARD, CLERIC }
+enum CharacterClass { BARBARIAN, RANGER, WIZARD, CLERIC }
 
 @export var strength: int = 10
 @export var dexterity: int = 10
@@ -10,7 +10,7 @@ enum CharacterClass { FIGHTER, ROGUE, WIZARD, CLERIC }
 @export var wisdom: int = 10
 @export var charisma: int = 10
 
-@export var character_class: CharacterClass = CharacterClass.FIGHTER
+@export var character_class: CharacterClass = CharacterClass.BARBARIAN
 @export var character_level: int = 1
 
 @export var max_hp: int = 10
@@ -43,11 +43,20 @@ func gain_exp(amount: int) -> bool:
 	while experience >= exp_for_level(character_level):
 		experience -= exp_for_level(character_level)
 		character_level += 1
-		max_hp += 5
-		current_hp = mini(current_hp + 5, max_hp)
+		var hp_gain: int = _hp_per_level()
+		max_hp += hp_gain
+		current_hp = mini(current_hp + hp_gain, max_hp)
 		strength += 1
 		leveled = true
 	return leveled
+
+func _hp_per_level() -> int:
+	match character_class:
+		CharacterClass.BARBARIAN: return 7 + con_modifier()
+		CharacterClass.RANGER:    return 6 + con_modifier()
+		CharacterClass.WIZARD:    return 4 + con_modifier()
+		CharacterClass.CLERIC:    return 5 + con_modifier()
+		_:                        return 5 + con_modifier()
 
 func modifier(score: int) -> int:
 	return floori((score - 10) / 2.0)
@@ -92,14 +101,14 @@ func tick_status() -> int:
 
 func apply_class_defaults() -> void:
 	match character_class:
-		CharacterClass.FIGHTER:
+		CharacterClass.BARBARIAN:
 			strength = 16; constitution = 14; dexterity = 12
-			intelligence = 10; wisdom = 10; charisma = 8
-			max_hp = 10 + modifier(constitution)   # Fighter HD d10
-		CharacterClass.ROGUE:
-			dexterity = 16; intelligence = 14; constitution = 12
-			strength = 10; wisdom = 10; charisma = 8
-			max_hp = 8 + modifier(constitution)    # Rogue HD d8
+			intelligence = 8; wisdom = 10; charisma = 10
+			max_hp = 12 + modifier(constitution)   # Barbarian HD d12
+		CharacterClass.RANGER:
+			dexterity = 16; wisdom = 14; constitution = 12
+			strength = 10; intelligence = 10; charisma = 8
+			max_hp = 10 + modifier(constitution)   # Ranger HD d10
 		CharacterClass.WIZARD:
 			intelligence = 16; dexterity = 14; wisdom = 12
 			constitution = 10; strength = 8; charisma = 10

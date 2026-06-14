@@ -7,21 +7,21 @@ const CHAR_PATH := "res://sprites/characters/"
 
 const CLASS_DATA: Array = [
 	{
-		"cls":    0,  # Stats.CharacterClass.FIGHTER
-		"name":   "Fighter",
+		"cls":    0,  # Stats.CharacterClass.BARBARIAN
+		"name":   "Barbarian",
 		"sprite": CHAR_PATH + "knight_m_idle_anim_f0.png",
-		"hd":     "d10 HD",
-		"hp":     "12 HP",
-		"desc":   "A warrior hardened by\nbattle. High HP and\nsteady damage output.",
+		"hd":     "d12 HD",
+		"hp":     "14 HP",
+		"desc":   "Raging warrior of\nimmense strength.\nHighest HP, hits hardest.",
 		"color":  Color(0.90, 0.60, 0.20),
 	},
 	{
-		"cls":    1,  # Stats.CharacterClass.ROGUE
-		"name":   "Rogue",
+		"cls":    1,  # Stats.CharacterClass.RANGER
+		"name":   "Ranger",
 		"sprite": CHAR_PATH + "elf_m_idle_anim_f0.png",
-		"hd":     "d8 HD",
-		"hp":     "9 HP",
-		"desc":   "Swift and cunning.\nHigh DEX grants better\nArmor Class.",
+		"hd":     "d10 HD",
+		"hp":     "11 HP",
+		"desc":   "Swift hunter of the wilds.\nHigh DEX grants the\nbest Armor Class.",
 		"color":  Color(0.50, 0.85, 0.50),
 	},
 	{
@@ -29,8 +29,8 @@ const CLASS_DATA: Array = [
 		"name":   "Wizard",
 		"sprite": CHAR_PATH + "wizzard_m_idle_anim_f0.png",
 		"hd":     "d6 HD",
-		"hp":     "7 HP",
-		"desc":   "Frail but intelligent.\nBenefits most from\nscrolls and wands.",
+		"hp":     "6 HP",
+		"desc":   "Frail but brilliant.\nBenefits most from\nscrolls and wands.",
 		"color":  Color(0.50, 0.65, 1.00),
 	},
 	{

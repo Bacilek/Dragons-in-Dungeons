@@ -161,13 +161,14 @@ func recalculate_stats() -> void:
 	s.min_damage = s.base_min_damage
 	s.max_damage = s.base_max_damage
 	s.armor = 0
+	s.armor_class = 10 + s.dex_modifier()
 	for slot_name: String in equipment:
 		var it: Item = equipment[slot_name] as Item
 		if it == null:
 			continue
 		s.min_damage += it.bonus_damage
 		s.max_damage += it.bonus_damage
-		s.armor += it.bonus_ac
+		s.armor_class += it.bonus_ac
 
 func move_item(src: String, src_idx: int, src_slot: String,
 			   dest: String, dest_idx: int, dest_slot: String) -> void:

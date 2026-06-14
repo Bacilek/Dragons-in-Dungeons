@@ -61,10 +61,10 @@ func _on_turn_started() -> void:
 func _setup_animations() -> void:
 	var char_name: String
 	match GameState.player_stats.character_class:
-		Stats.CharacterClass.ROGUE:   char_name = "elf_m"
+		Stats.CharacterClass.RANGER:  char_name = "elf_m"
 		Stats.CharacterClass.WIZARD:  char_name = "wizzard_m"
 		Stats.CharacterClass.CLERIC:  char_name = "dwarf_m"
-		_:                            char_name = "knight_m"   # FIGHTER default
+		_:                            char_name = "knight_m"   # BARBARIAN default
 	var base: String = KNIGHT_PATH + char_name + "_"
 	var frames := SpriteFrames.new()
 	_add_anim(frames, "idle", base + "idle_anim_f%d.png", 4, true,  8.0)
@@ -422,14 +422,25 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	$AnimatedSprite2D.play("idle")
 
 	_show_sword_slash(dir)
-	_flash_hit(enemy)
 
+	# D&D attack roll: d20 + STR modifier + weapon bonus vs enemy AC
+	var str_mod: int = stats.str_modifier()
+	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if GameState.equipped_weapon != null else 0
+	var roll: int = randi_range(1, 20) + str_mod + weapon_bonus
+	if roll < enemy.stats.armor_class:
+		GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		if _dungeon_floor != null:
+			_dungeon_floor.update_fog(grid_pos)
+		TurnManager.on_player_action_complete()
+		return
+
+	_flash_hit(enemy)
 	var dmg: int = stats.roll_damage()
 	var actual: int = enemy.stats.take_damage(dmg)
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
-	GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg." % [enemy.display_name, actual])
+	GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 	if enemy.stats.is_dead():
 		GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
 		GameState.gain_exp(enemy.exp_reward)
