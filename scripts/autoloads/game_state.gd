@@ -12,9 +12,13 @@ signal equipment_changed()
 signal inventory_toggle()
 signal player_action_requested(action_name: String)
 signal class_chosen(chosen_class: Stats.CharacterClass)
+signal hunger_changed(value: int)
 
 const QUICKBAR_SIZE: int = 5
 const INVENTORY_SIZE: int = 24
+
+enum HungerState { SATIATED, HUNGRY, STARVING }
+const MAX_HUNGER: int = 250
 
 var current_floor: int = 1
 var player_stats: Stats
@@ -22,6 +26,12 @@ var run_seed: int = 0
 var is_game_over: bool = false
 var inventory_open: bool = false
 var class_selected: bool = false
+var hunger: int = MAX_HUNGER
+var hunger_state: HungerState:
+	get:
+		if hunger > 150: return HungerState.SATIATED
+		if hunger > 50:  return HungerState.HUNGRY
+		return HungerState.STARVING
 
 var player_quickbar: Array = []   # 5 slots shown in HUD action bar
 var player_inventory: Array = []  # 24-slot bag
@@ -47,6 +57,7 @@ func start_new_run() -> void:
 	is_game_over = false
 	inventory_open = false
 	class_selected = false
+	hunger = MAX_HUNGER
 	player_stats = Stats.new()
 	player_stats.apply_class_defaults()  # defaults until class select overrides
 	player_quickbar.clear()
@@ -208,6 +219,10 @@ func use_item(item: Item) -> void:
 				recalculate_stats()
 				combat_message.emit("[color=yellow]You drink [b]%s[/b]. Your attacks surge! (+%d ATK)[/color]" % [item.item_name, item.str_bonus])
 			consume_one(item)
+		Item.Type.FOOD:
+			restore_hunger(item.heal_amount)
+			log("[color=green]You eat [b]%s[/b]. Not so hungry anymore.[/color]" % item.item_name)
+			consume_one(item)
 		Item.Type.WEAPON, Item.Type.ARMOR:
 			equip(item)
 
@@ -252,3 +267,25 @@ func _add_to_bags_silent(item: Item) -> void:
 
 func log(msg: String) -> void:
 	combat_message.emit(msg)
+
+# ── Hunger ────────────────────────────────────────────────────────────────────
+
+func deplete_hunger() -> void:
+	if is_game_over:
+		return
+	hunger = maxi(0, hunger - 1)
+	hunger_changed.emit(hunger)
+	if hunger == 0:
+		take_damage_raw(1)
+		log("[color=red]You are starving![/color]")
+
+func restore_hunger(amount: int) -> void:
+	hunger = mini(MAX_HUNGER, hunger + amount)
+	hunger_changed.emit(hunger)
+
+func take_damage_raw(amount: int) -> void:
+	if is_game_over:
+		return
+	player_stats.take_damage(amount)
+	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
+	check_player_death()

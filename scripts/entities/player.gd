@@ -39,6 +39,7 @@ func _on_player_hp_changed(_c: int, _m: int) -> void:
 	update_hp_bar()
 
 func _on_turn_started() -> void:
+	GameState.deplete_hunger()
 	_regen_counter += 1
 	if _regen_counter < REGEN_TURNS:
 		return

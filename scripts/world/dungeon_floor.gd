@@ -31,16 +31,19 @@ const TRAP_POOL: Array = [
 	{"name": "Piston",     "sprite": "Push_Trap_Front.png",  "damage": 0, "msg": "A piston blasts you!",             "wall_trap": true},
 ]
 
-# item_type: 0=WEAPON 1=ARMOR 2=POTION  (matches Item.Type enum)
+# item_type: 0=WEAPON 1=ARMOR 2=POTION 4=FOOD  (matches Item.Type enum)
 const ITEM_POOL: Array = [
-	{"name": "Rusty Sword",    "type": 0, "icon": "weapon_rusty_sword.png",    "src": "weapons", "bonus_dmg": 1, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 3,  "desc": "+1 damage"},
-	{"name": "Short Sword",    "type": 0, "icon": "weapon_knife.png",           "src": "weapons", "bonus_dmg": 1, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 4,  "desc": "+1 damage"},
-	{"name": "Sword",          "type": 0, "icon": "weapon_regular_sword.png",   "src": "weapons", "bonus_dmg": 2, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 6,  "desc": "+2 damage"},
-	{"name": "Knight Sword",   "type": 0, "icon": "weapon_knight_sword.png",    "src": "weapons", "bonus_dmg": 3, "heal": 0, "str_bonus": 0, "fmin": 4, "fmax": 8,  "desc": "+3 damage"},
-	{"name": "Golden Sword",   "type": 0, "icon": "weapon_golden_sword.png",    "src": "weapons", "bonus_dmg": 4, "heal": 0, "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "+4 damage"},
-	{"name": "Lavish Sword",   "type": 0, "icon": "weapon_lavish_sword.png",    "src": "weapons", "bonus_dmg": 5, "heal": 0, "str_bonus": 0, "fmin": 8, "fmax": 10, "desc": "+5 damage"},
-	{"name": "Health Potion",  "type": 2, "icon": "flask_red.png",              "src": "objects", "bonus_dmg": 0, "heal": 10, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 10 HP"},
-	{"name": "Strength Potion","type": 2, "icon": "flask_big_yellow.png",       "src": "objects", "bonus_dmg": 2, "heal": 0,  "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
+	{"name": "Rusty Sword",    "type": 0, "icon": "weapon_rusty_sword.png",    "src": "weapons", "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 3,  "desc": "+1 damage"},
+	{"name": "Short Sword",    "type": 0, "icon": "weapon_knife.png",           "src": "weapons", "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 4,  "desc": "+1 damage"},
+	{"name": "Sword",          "type": 0, "icon": "weapon_regular_sword.png",   "src": "weapons", "bonus_dmg": 2, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 6,  "desc": "+2 damage"},
+	{"name": "Knight Sword",   "type": 0, "icon": "weapon_knight_sword.png",    "src": "weapons", "bonus_dmg": 3, "heal": 0,   "str_bonus": 0, "fmin": 4, "fmax": 8,  "desc": "+3 damage"},
+	{"name": "Golden Sword",   "type": 0, "icon": "weapon_golden_sword.png",    "src": "weapons", "bonus_dmg": 4, "heal": 0,   "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "+4 damage"},
+	{"name": "Lavish Sword",   "type": 0, "icon": "weapon_lavish_sword.png",    "src": "weapons", "bonus_dmg": 5, "heal": 0,   "str_bonus": 0, "fmin": 8, "fmax": 10, "desc": "+5 damage"},
+	{"name": "Health Potion",  "type": 2, "icon": "flask_red.png",              "src": "objects", "bonus_dmg": 0, "heal": 10,  "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 10 HP"},
+	{"name": "Strength Potion","type": 2, "icon": "flask_big_yellow.png",       "src": "objects", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
+	# Food — replenishes hunger. Replace icons with food_ration.png / food_meat.png when available.
+	{"name": "Ration",         "type": 4, "icon": "food_ration.png",            "src": "objects", "bonus_dmg": 0, "heal": 100, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Fills you up"},
+	{"name": "Mystery Meat",   "type": 4, "icon": "food_meat.png",              "src": "objects", "bonus_dmg": 0, "heal": 60,  "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Better than nothing"},
 ]
 
 const ENEMY_POOL: Array = [
@@ -840,9 +843,14 @@ func _spawn_items() -> void:
 		item.icon_path = "res://sprites/%s/%s" % [d["src"], d["icon"]]
 
 		var base_path: String = WEAPONS_PATH if d["src"] == "weapons" else OBJECTS_PATH
-		var tex: Texture2D = load(base_path + d["icon"])
-		if tex == null:
-			continue
+		var icon_path: String = base_path + d["icon"]
+		var tex: Texture2D
+		if ResourceLoader.exists(icon_path):
+			tex = load(icon_path)
+		else:
+			var fallback_img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
+			fallback_img.fill(Color(0.80, 0.55, 0.15))
+			tex = ImageTexture.create_from_image(fallback_img)
 		var sprite := Sprite2D.new()
 		sprite.texture = tex
 		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST

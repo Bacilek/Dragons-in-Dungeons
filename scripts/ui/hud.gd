@@ -20,6 +20,7 @@ const SLOT_COUNT: int = 5
 var _item_slots: Array[Button] = []
 var _log_messages: Array[String] = []
 const MAX_LOG_MESSAGES: int = 15
+var _hunger_label: Label
 
 func _ready() -> void:
 	GameState.floor_changed.connect(_on_floor_changed)
@@ -30,6 +31,7 @@ func _ready() -> void:
 	GameState.player_won.connect(_on_player_won)
 	GameState.combat_message.connect(_on_combat_message)
 	GameState.inventory_changed.connect(_refresh_inventory)
+	GameState.hunger_changed.connect(_on_hunger_changed)
 	portrait.pressed.connect(_on_portrait_pressed)
 	wait_button.pressed.connect(_on_wait_pressed)
 	search_button.pressed.connect(_on_search_pressed)
@@ -46,6 +48,14 @@ func _ready() -> void:
 	_update_exp_bar(s.experience, s.exp_to_next(), s.character_level)
 	_refresh_inventory()
 
+	# Hunger label — created programmatically below the HP bar
+	_hunger_label = Label.new()
+	_hunger_label.add_theme_font_size_override("font_size", 9)
+	_hunger_label.position = hp_fill.position + Vector2(0.0, HP_BAR_H + 1.0)
+	_hunger_label.size = Vector2(BAR_W, 12.0)
+	$StatsPanel.add_child(_hunger_label)
+	_update_hunger_label()
+
 	# Inventory overlay — add as sibling CanvasLayer so it floats above HUD
 	var overlay_script = load("res://scripts/ui/inventory_overlay.gd")
 	get_tree().root.call_deferred("add_child", overlay_script.new())
@@ -55,6 +65,22 @@ func _ready() -> void:
 	get_tree().root.call_deferred("add_child", cs_script.new())
 
 # ── Signal handlers ───────────────────────────────────────────────────────────
+
+func _on_hunger_changed(_value: int) -> void:
+	_update_hunger_label()
+
+func _update_hunger_label() -> void:
+	if _hunger_label == null:
+		return
+	match GameState.hunger_state:
+		GameState.HungerState.SATIATED:
+			_hunger_label.text = ""
+		GameState.HungerState.HUNGRY:
+			_hunger_label.text = "Hungry"
+			_hunger_label.add_theme_color_override("font_color", Color(1.0, 0.80, 0.15))
+		GameState.HungerState.STARVING:
+			_hunger_label.text = "Starving!"
+			_hunger_label.add_theme_color_override("font_color", Color(1.0, 0.20, 0.20))
 
 func _on_floor_changed(new_floor: int) -> void:
 	floor_label.text = "Floor: %d" % new_floor
