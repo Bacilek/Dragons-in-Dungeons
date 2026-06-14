@@ -11,6 +11,9 @@ var _path_executing: bool = false
 var _last_move_dir := Vector2i.ZERO
 var _target_enemy: Enemy = null
 
+var _key_held: bool = false                   # true while a movement key is continuously held
+var _held_fov_snapshot: Array[Enemy] = []     # enemies visible when key was first pressed
+
 var _regen_counter: int = 0
 const REGEN_TURNS: int = 6
 
@@ -61,6 +64,7 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 func _process(_delta: float) -> void:
 	if GameState.is_game_over or GameState.inventory_open:
 		_last_move_dir = Vector2i.ZERO
+		_key_held = false
 		return
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 		_last_move_dir = Vector2i.ZERO
@@ -74,6 +78,18 @@ func _process(_delta: float) -> void:
 	var dir := Vector2i(dx, dy)
 	if dir == Vector2i.ZERO:
 		_last_move_dir = Vector2i.ZERO
+		_key_held = false
+		_held_fov_snapshot = []
+		return
+	# Fresh press (key was not held before): snapshot current FOV as baseline
+	if not _key_held:
+		_key_held = true
+		_held_fov_snapshot = _dungeon_floor.get_visible_enemies() if _dungeon_floor != null else []
+	# Continuing to hold: stop if a new enemy entered FOV since the key was pressed
+	elif _has_new_enemy_in_fov(_held_fov_snapshot):
+		_last_move_dir = Vector2i.ZERO
+		_key_held = false
+		_held_fov_snapshot = []
 		return
 	if dir == _last_move_dir:
 		return

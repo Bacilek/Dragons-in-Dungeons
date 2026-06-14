@@ -209,6 +209,8 @@ static func _place_pillars(data: DungeonData, rng: RandomNumberGenerator) -> voi
 			if placed.size() >= max_p:
 				break
 			var cp: Vector2i = cand
+			if cp == data.player_start or cp == data.stairs_pos:
+				continue
 			# Enforce minimum Chebyshev spacing of 3 between pillars
 			var too_close: bool = false
 			for prev in placed:
