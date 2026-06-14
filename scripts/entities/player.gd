@@ -426,8 +426,10 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# D&D attack roll: d20 + STR modifier + weapon bonus vs enemy AC
 	var str_mod: int = stats.str_modifier()
 	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if GameState.equipped_weapon != null else 0
-	var roll: int = randi_range(1, 20) + str_mod + weapon_bonus
-	if roll < enemy.stats.armor_class:
+	var die: int = randi_range(1, 20)
+	var roll: int = die + str_mod + weapon_bonus
+	var is_crit: bool = die == 20
+	if not is_crit and roll < enemy.stats.armor_class:
 		GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
@@ -436,11 +438,16 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 
 	_flash_hit(enemy)
 	var dmg: int = stats.roll_damage()
+	if is_crit:
+		dmg *= 2
 	var actual: int = enemy.stats.take_damage(dmg)
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
-	GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+	if is_crit:
+		GameState.game_log("[color=red]CRITICAL HIT![/color] You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20=[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+	else:
+		GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 	if enemy.stats.is_dead():
 		GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
 		GameState.gain_exp(enemy.exp_reward)

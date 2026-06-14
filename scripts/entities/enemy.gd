@@ -216,17 +216,24 @@ func _attack_player(_player: Player) -> void:
 		return
 	# D&D attack roll: d20 + floor-scaled bonus vs player AC
 	var attack_bonus: int = GameState.current_floor / 3
-	var roll: int = randi_range(1, 20) + attack_bonus
+	var die: int = randi_range(1, 20)
+	var roll: int = die + attack_bonus
 	var player_ac: int = GameState.player_stats.armor_class
-	if roll < player_ac:
+	var is_crit: bool = die == 20
+	if not is_crit and roll < player_ac:
 		GameState.game_log("[color=tomato]%s[/color] attacks but [color=gray]misses[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [display_name, attack_bonus, roll, player_ac])
 		return
 	var dmg: int = stats.roll_damage()
+	if is_crit:
+		dmg *= 2
 	var actual: int = GameState.player_stats.take_damage(dmg)
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(_player.position, actual, true)
-	GameState.game_log("[color=tomato]%s[/color] hits you for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [display_name, actual, attack_bonus, roll, player_ac])
+	if is_crit:
+		GameState.game_log("[color=tomato]%s[/color] [color=red]CRITICAL HIT![/color] for [color=yellow]%d[/color] dmg. (d20=[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [display_name, actual, attack_bonus, roll, player_ac])
+	else:
+		GameState.game_log("[color=tomato]%s[/color] hits you for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [display_name, actual, attack_bonus, roll, player_ac])
 	# Orc Shaman applies poison on hit
 	if display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
 		GameState.player_stats.poison_turns = 3
