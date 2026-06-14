@@ -20,7 +20,13 @@ func _ready() -> void:
 	_setup_animations()
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
+	GameState.player_died.connect(_on_player_died)
 	TurnManager.player_turn_started.connect(_on_turn_started)
+
+func _on_player_died() -> void:
+	visible = false
+	_queued_path.clear()
+	_path_executing = false
 
 func _on_player_hp_changed(_c: int, _m: int) -> void:
 	update_hp_bar()
@@ -53,7 +59,7 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 
 # Cardinal + diagonal movement via per-frame key sampling so two held cardinals = diagonal
 func _process(_delta: float) -> void:
-	if GameState.inventory_open:
+	if GameState.is_game_over or GameState.inventory_open:
 		_last_move_dir = Vector2i.ZERO
 		return
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
@@ -76,6 +82,8 @@ func _process(_delta: float) -> void:
 	_try_move(dir)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if GameState.is_game_over:
+		return
 	if event is InputEventKey:
 		var key := event as InputEventKey
 		if not key.pressed or key.echo:

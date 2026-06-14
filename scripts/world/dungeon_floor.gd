@@ -448,8 +448,13 @@ func _spawn_traps() -> void:
 			for d: Vector2i in cardinal:
 				var wp: Vector2i = pos + d
 				if _data.get_tile(wp.x, wp.y) == DungeonData.TileType.WALL:
-					# Same bypass check as floor traps — piston must not block the only path
-					if _bfs_reachable(_data.player_start, _data.stairs_pos, [pos]):
+					# Piston only goes into open areas — skip 1-wide corridors where player can't step aside
+					var perp1: Vector2i = Vector2i(-d.y, d.x)
+					var perp2: Vector2i = Vector2i(d.y, -d.x)
+					var is_narrow: bool = \
+						_data.get_tile((pos + perp1).x, (pos + perp1).y) != DungeonData.TileType.FLOOR \
+						and _data.get_tile((pos + perp2).x, (pos + perp2).y) != DungeonData.TileType.FLOOR
+					if not is_narrow and _bfs_reachable(_data.player_start, _data.stairs_pos, [pos]):
 						wall_cands.append({"floor_pos": pos, "wall_pos": wp, "push_dir": Vector2i(-d.x, -d.y)})
 					break
 
