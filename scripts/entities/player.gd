@@ -144,12 +144,25 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
-		if mb.button_index != MOUSE_BUTTON_LEFT or not mb.pressed:
+		if not mb.pressed:
 			return
 		if _dungeon_floor == null:
 			return
 		var world_pos: Vector2 = get_global_mouse_position()
 		var clicked: Vector2i = Vector2i(int(world_pos.x / TILE_SIZE), int(world_pos.y / TILE_SIZE))
+
+		if mb.button_index == MOUSE_BUTTON_RIGHT:
+			if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
+				return
+			var trap: Dictionary = _dungeon_floor.get_trap_at(clicked)
+			if not trap.is_empty() and trap.get("revealed", false):
+				var diff: Vector2i = clicked - grid_pos
+				if maxi(abs(diff.x), abs(diff.y)) <= 1:
+					_attempt_disarm(clicked)
+			return
+
+		if mb.button_index != MOUSE_BUTTON_LEFT:
+			return
 		if clicked == grid_pos:
 			return
 		# Clicking on an enemy → chase and attack
@@ -477,5 +490,40 @@ func _search_action() -> void:
 		GameState.game_log("[color=cyan]You search the area and reveal %d trap(s)![/color]" % found)
 	else:
 		GameState.game_log("[color=gray]You search the area. Nothing found.[/color]")
+	_dungeon_floor.update_fog(grid_pos)
+	TurnManager.on_player_action_complete()
+
+func _find_thief_tools() -> Item:
+	for i: int in GameState.QUICKBAR_SIZE:
+		var it: Item = GameState.player_quickbar[i] as Item
+		if it != null and it.item_name == "Thief Tools":
+			return it
+	for i: int in GameState.INVENTORY_SIZE:
+		var it: Item = GameState.player_inventory[i] as Item
+		if it != null and it.item_name == "Thief Tools":
+			return it
+	return null
+
+func _attempt_disarm(trap_pos: Vector2i) -> void:
+	var tools: Item = _find_thief_tools()
+	if tools == null:
+		GameState.game_log("[color=red]You need Thief Tools to disarm traps![/color]")
+		return
+
+	TurnManager.begin_player_action()
+	var roll: int = randi_range(1, 20)
+	var dex_mod: int = GameState.player_stats.dex_modifier()
+	var total: int = roll + dex_mod
+	const DC: int = 10
+	var trap: Dictionary = _dungeon_floor.get_trap_at(trap_pos)
+	var trap_name: String = trap.get("name", "trap")
+
+	if total >= DC:
+		GameState.game_log("[color=green]Disarmed [b]%s[/b]! (d20 %d+%d=%d vs DC %d)[/color]" % [trap_name, roll, dex_mod, total, DC])
+		_dungeon_floor.disarm_trap(trap_pos)
+	else:
+		GameState.game_log("[color=red]Failed to disarm [b]%s[/b] (d20 %d+%d=%d vs DC %d) — Thief Tools lost![/color]" % [trap_name, roll, dex_mod, total, DC])
+		GameState.consume_one(tools)
+
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()

@@ -79,7 +79,7 @@ func tick_status() -> int:
 		dmg += 1 + poison_turns / 3
 		poison_turns -= 1
 	if burning_turns > 0:
-		dmg += 2
+		dmg += character_level
 		burning_turns -= 1
 	return dmg
 

@@ -1,7 +1,7 @@
 class_name Item
 extends Resource
 
-enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY }
+enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 
 @export var item_name: String = ""
 @export var item_type: Type = Type.POTION

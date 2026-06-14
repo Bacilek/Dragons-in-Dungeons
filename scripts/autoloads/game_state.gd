@@ -19,7 +19,7 @@ const QUICKBAR_SIZE: int = 5
 const INVENTORY_SIZE: int = 24
 
 enum HungerState { SATIATED, HUNGRY, STARVING }
-const MAX_HUNGER: int = 250
+const MAX_HUNGER: int = 1000
 
 var current_floor: int = 1
 var player_stats: Stats
@@ -30,8 +30,8 @@ var class_selected: bool = false
 var hunger: int = MAX_HUNGER
 var hunger_state: HungerState:
 	get:
-		if hunger > 150: return HungerState.SATIATED
-		if hunger > 50:  return HungerState.HUNGRY
+		if hunger > 600: return HungerState.SATIATED
+		if hunger > 200: return HungerState.HUNGRY
 		return HungerState.STARVING
 
 var player_quickbar: Array = []   # 5 slots shown in HUD action bar
@@ -69,6 +69,24 @@ func start_new_run() -> void:
 		player_inventory.append(null)
 	for key: String in equipment:
 		equipment[key] = null
+	_give_starting_items()
+
+func _give_starting_items() -> void:
+	var ration := Item.new()
+	ration.item_name = "Ration"
+	ration.item_type = Item.Type.FOOD
+	ration.heal_amount = 100
+	ration.icon_path = "res://sprites/objects/food_ration.png"
+	ration.description = "Fills you up"
+	ration.quantity = 3
+	add_item(ration)
+
+	var tools := Item.new()
+	tools.item_name = "Thief Tools"
+	tools.item_type = Item.Type.TOOL
+	tools.description = "Right-click a revealed trap to attempt disarm (DEX vs DC 10). Consumed on failure."
+	tools.quantity = 3
+	add_item(tools)
 
 func advance_floor() -> void:
 	current_floor += 1
@@ -226,6 +244,8 @@ func use_item(item: Item) -> void:
 			consume_one(item)
 		Item.Type.WEAPON, Item.Type.ARMOR:
 			equip(item)
+		Item.Type.TOOL:
+			combat_message.emit("[color=gray]Thief Tools — right-click a revealed trap to disarm it.[/color]")
 
 func consume_one(item: Item) -> void:
 	if item.quantity > 1:

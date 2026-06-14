@@ -651,6 +651,17 @@ func reveal_trap(pos: Vector2i) -> bool:
 		sprite_node.modulate.a = 1.0
 	return true
 
+func disarm_trap(pos: Vector2i) -> void:
+	if not _traps.has(pos):
+		return
+	var sprite_node: Sprite2D = _traps[pos].get("sprite_node")
+	if sprite_node != null and is_instance_valid(sprite_node):
+		sprite_node.modulate = Color(0.5, 0.5, 0.5, 0.4)
+		var tw := sprite_node.create_tween()
+		tw.tween_property(sprite_node, "modulate:a", 0.0, 0.5)
+		tw.tween_callback(sprite_node.queue_free)
+	_traps.erase(pos)
+
 func search_around(pos: Vector2i) -> int:
 	var found: int = 0
 	for dy: int in range(-1, 2):
