@@ -11,7 +11,8 @@ var _path_executing: bool = false
 var _last_move_dir := Vector2i.ZERO
 var _target_enemy: Enemy = null
 
-var _key_held: bool = false   # true while a movement key is continuously held
+var _prev_dir: Vector2i = Vector2i.ZERO  # direction held in the previous WAITING_FOR_INPUT frame
+var _interrupted: bool = false           # set when enemy seen mid-hold; cleared only on key release
 
 var _regen_counter: int = 0
 const REGEN_TURNS: int = 6
@@ -62,8 +63,9 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 # Cardinal + diagonal movement via per-frame key sampling so two held cardinals = diagonal
 func _process(_delta: float) -> void:
 	if GameState.is_game_over or GameState.inventory_open:
+		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
-		_key_held = false
+		_interrupted = false
 		return
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 		_last_move_dir = Vector2i.ZERO
@@ -76,18 +78,23 @@ func _process(_delta: float) -> void:
 	if Input.is_physical_key_pressed(KEY_RIGHT) or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_KP_6): dx += 1
 	var dir := Vector2i(dx, dy)
 	if dir == Vector2i.ZERO:
+		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
-		_key_held = false
+		_interrupted = false
 		return
-	if not _key_held:
-		# Fresh press — allow the first move unconditionally
-		_key_held = true
-	else:
-		# Continuing to hold — stop if any enemy is currently visible
-		if _dungeon_floor != null and not _dungeon_floor.get_visible_enemies().is_empty():
-			_last_move_dir = Vector2i.ZERO
-			_key_held = false
-			return
+	if _prev_dir == Vector2i.ZERO:
+		# Fresh key press — always allow, clear any old interrupt
+		_interrupted = false
+	elif _interrupted:
+		# Key still physically held after interrupt — block until finger lifted
+		_prev_dir = dir
+		return
+	elif _dungeon_floor != null and not _dungeon_floor.get_visible_enemies().is_empty():
+		# Continuing hold, enemy in FOV — interrupt
+		_interrupted = true
+		_prev_dir = dir
+		return
+	_prev_dir = dir
 	if dir == _last_move_dir:
 		return
 	_last_move_dir = dir
