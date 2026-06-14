@@ -166,15 +166,12 @@ func _act_toward(player: Player) -> void:
 			await _move_step(step, next_pos)
 			return
 
-# Roaming random walk — skips grass tiles (enemies don't prioritize them).
 func _do_random_walk() -> void:
 	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
 			Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]
 	dirs.shuffle()
 	for dir: Vector2i in dirs:
 		var target: Vector2i = grid_pos + dir
-		if _dungeon_floor.get_tile_type(target) == DungeonData.TileType.GRASS:
-			continue
 		if _dungeon_floor.has_door_at(target):
 			continue  # Don't bother opening doors while roaming
 		if _dungeon_floor.is_walkable_for_enemy(target):
