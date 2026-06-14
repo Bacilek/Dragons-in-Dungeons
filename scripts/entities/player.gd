@@ -356,6 +356,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var dmg: int = stats.roll_damage()
 	var actual: int = enemy.stats.take_damage(dmg)
 	enemy.update_hp_bar()
+	if _dungeon_floor != null:
+		_dungeon_floor.show_damage(enemy.position, actual, false)
 	GameState.log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg." % [enemy.display_name, actual])
 	if enemy.stats.is_dead():
 		GameState.log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)

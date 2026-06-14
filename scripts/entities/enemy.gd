@@ -212,5 +212,7 @@ func _attack_player(_player: Player) -> void:
 	var dmg: int = stats.roll_damage()
 	var actual: int = GameState.player_stats.take_damage(dmg)
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
+	if _dungeon_floor != null:
+		_dungeon_floor.show_damage(_player.position, actual, true)
 	GameState.log("[color=tomato]%s[/color] strikes you for [color=yellow]%d[/color] dmg." % [display_name, actual])
 	GameState.check_player_death()

@@ -372,6 +372,19 @@ func remove_enemy(enemy: Enemy) -> void:
 	_enemies.erase(enemy)
 	TurnManager.unregister_enemy(enemy)
 
+func show_damage(world_pos: Vector2, amount: int, is_player_hit: bool) -> void:
+	var lbl := Label.new()
+	lbl.text = "-%d" % amount
+	lbl.add_theme_font_size_override("font_size", 8)
+	lbl.add_theme_color_override("font_color", Color(1.0, 0.25, 0.25) if is_player_hit else Color(1.0, 0.9, 0.3))
+	lbl.z_index = 10
+	lbl.position = world_pos - Vector2(4.0, 14.0)
+	$Entities.add_child(lbl)
+	var tw := lbl.create_tween()
+	tw.tween_property(lbl, "position", lbl.position + Vector2(0.0, -20.0), 0.9)
+	tw.parallel().tween_property(lbl, "modulate:a", 0.0, 0.9)
+	tw.tween_callback(lbl.queue_free)
+
 func get_visible_enemies() -> Array[Enemy]:
 	var result: Array[Enemy] = []
 	if _player == null:
@@ -594,11 +607,13 @@ func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
 		var actual: int = GameState.player_stats.take_damage(damage)
 		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 		GameState.log("[color=red]%s[/color] You take [color=yellow]%d[/color] damage!" % [msg, actual])
+		show_damage(entity.position, actual, true)
 		GameState.check_player_death()
 	elif entity is Enemy:
 		var e: Enemy = entity as Enemy
 		var actual: int = e.stats.take_damage(damage)
 		e.update_hp_bar()
+		show_damage(e.position, actual, false)
 		GameState.log("[color=orange]%s[/color] triggers a trap for [color=yellow]%d[/color] damage!" % [e.display_name, actual])
 		if e.stats.is_dead():
 			GameState.log("[color=orange]%s[/color] [color=gray]is killed by a trap.[/color]" % e.display_name)
