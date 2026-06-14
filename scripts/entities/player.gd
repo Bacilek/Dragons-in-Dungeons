@@ -14,8 +14,10 @@ var _target_enemy: Enemy = null
 var _prev_dir: Vector2i = Vector2i.ZERO  # direction held in the previous WAITING_FOR_INPUT frame
 var _interrupted: bool = false           # set when enemy seen mid-hold; cleared only on key release
 
+var _throw_item: Item = null
+
 var _regen_counter: int = 0
-const REGEN_TURNS: int = 6
+const REGEN_TURNS: int = 10
 
 func _ready() -> void:
 	stats = GameState.player_stats
@@ -23,6 +25,7 @@ func _ready() -> void:
 	_setup_animations()
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
+	GameState.player_throw_primed.connect(_on_throw_primed)
 	GameState.player_died.connect(_on_player_died)
 	GameState.class_chosen.connect(_on_class_chosen)
 	TurnManager.player_turn_started.connect(_on_turn_started)
@@ -51,7 +54,8 @@ func _on_turn_started() -> void:
 		return
 	_regen_counter = 0
 	var s: Stats = GameState.player_stats
-	if s.current_hp < s.max_hp and not GameState.is_game_over:
+	if s.current_hp < s.max_hp and not GameState.is_game_over \
+			and GameState.hunger_state != GameState.HungerState.STARVING:
 		GameState.heal(1)
 
 func _setup_animations() -> void:
@@ -132,6 +136,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if GameState.inventory_open:
 			return
+		if key.physical_keycode == KEY_ESCAPE:
+			if _throw_item != null:
+				_throw_item = null
+				GameState.game_log("[color=gray]Throw cancelled.[/color]")
+			return
 		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 			return
 		_queued_path.clear()
@@ -142,6 +151,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_C, KEY_KP_3: _try_move(Vector2i(1, 1))
 			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _wait_action()
 			KEY_F: _interact_action()
+			KEY_CTRL: _search_action()
+			KEY_1: _use_quickbar_slot(0)
+			KEY_2: _use_quickbar_slot(1)
+			KEY_3: _use_quickbar_slot(2)
+			KEY_4: _use_quickbar_slot(3)
+			KEY_5: _use_quickbar_slot(4)
+			KEY_6: _use_quickbar_slot(5)
+			KEY_7: _use_quickbar_slot(6)
+			KEY_8: _use_quickbar_slot(7)
+			KEY_9: _use_quickbar_slot(8)
 
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -153,17 +172,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		var clicked: Vector2i = Vector2i(int(world_pos.x / TILE_SIZE), int(world_pos.y / TILE_SIZE))
 
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
-			if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
-				return
-			var trap: Dictionary = _dungeon_floor.get_trap_at(clicked)
-			if not trap.is_empty() and trap.get("revealed", false):
-				var diff: Vector2i = clicked - grid_pos
-				if maxi(abs(diff.x), abs(diff.y)) <= 1:
-					_attempt_disarm(clicked)
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
+				_interact_action()
 			return
 
 		if mb.button_index != MOUSE_BUTTON_LEFT:
 			return
+
+		# Throw mode — consume left-click for the toss
+		if _throw_item != null:
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
+				_do_throw(clicked)
+			else:
+				_throw_item = null
+			return
+
 		if clicked == grid_pos:
 			return
 		# Clicking on an enemy → chase and attack
@@ -229,6 +252,7 @@ func _execute_queued_path() -> void:
 			if _dungeon_floor != null:
 				if _dungeon_floor.has_door_at(prev_c):
 					_dungeon_floor.close_door(prev_c)
+				_leave_blood_trail(prev_c)
 				if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 					_dungeon_floor.destroy_grass(grid_pos)
 				_check_pickup()
@@ -282,6 +306,7 @@ func _execute_queued_path() -> void:
 		if _dungeon_floor != null:
 			if _dungeon_floor.has_door_at(prev_p):
 				_dungeon_floor.close_door(prev_p)
+			_leave_blood_trail(prev_p)
 			if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 				_dungeon_floor.destroy_grass(grid_pos)
 				_dungeon_floor.update_fog(grid_pos)
@@ -355,6 +380,7 @@ func _try_move(dir: Vector2i) -> void:
 	if _dungeon_floor != null:
 		if _dungeon_floor.has_door_at(prev_pos):
 			_dungeon_floor.close_door(prev_pos)
+		_leave_blood_trail(prev_pos)
 		# Destroy grass before fog update so our own tile doesn't block sight
 		if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 			_dungeon_floor.destroy_grass(grid_pos)
@@ -395,11 +421,23 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
 		GameState.gain_exp(enemy.exp_reward)
 		var was_boss: bool = enemy.is_boss
-		var boss_pos: Vector2i = enemy.grid_pos
+		var kill_pos: Vector2i = enemy.grid_pos
+		var killed_name: String = enemy.display_name
 		_dungeon_floor.remove_enemy(enemy)
 		enemy.die()
 		if was_boss:
-			_dungeon_floor.drop_boss_loot(boss_pos)
+			_dungeon_floor.drop_boss_loot(kill_pos)
+		# 20% Rotten Meat drop from undead humanoids
+		const UNDEAD_NAMES: Array = ["Tiny Zombie", "Goblin", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
+		if killed_name in UNDEAD_NAMES and randf() < 0.20:
+			var rotten := Item.new()
+			rotten.item_name = "Rotten Meat"
+			rotten.item_type = Item.Type.FOOD
+			rotten.heal_amount = 20
+			rotten.icon_path = "res://sprites/items/Sprites trial/Food/Meat.png"
+			rotten.description = "Throw into fire to cook. Raw: minimal nutrition + 3 turns poison."
+			_dungeon_floor.place_item_on_floor(kill_pos, rotten)
+			GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
@@ -555,5 +593,51 @@ func _attempt_disarm(trap_pos: Vector2i) -> void:
 		GameState.game_log("[color=red]Failed to disarm [b]%s[/b] (d20 %d+%d=%d vs DC %d) — Thief Tools lost![/color]" % [trap_name, roll, dex_mod, total, DC])
 		GameState.consume_one(tools)
 
+	_dungeon_floor.update_fog(grid_pos)
+	TurnManager.on_player_action_complete()
+
+func _use_quickbar_slot(idx: int) -> void:
+	if idx < 0 or idx >= GameState.QUICKBAR_SIZE:
+		return
+	var raw = GameState.player_quickbar[idx]
+	if raw == null:
+		return
+	GameState.use_item(raw as Item)
+
+func _leave_blood_trail(pos: Vector2i) -> void:
+	if _dungeon_floor != null and GameState.player_stats.bleeding_turns > 0:
+		_dungeon_floor.place_blood_decal(pos)
+
+func _on_throw_primed(item: Item) -> void:
+	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
+		return
+	_throw_item = item
+	GameState.game_log("[color=yellow]Throw [b]%s[/b] — left-click target tile. [Esc] to cancel.[/color]" % item.item_name)
+
+func _do_throw(pos: Vector2i) -> void:
+	var item: Item = _throw_item
+	_throw_item = null
+	if _dungeon_floor == null:
+		return
+	TurnManager.begin_player_action()
+	var trap: Dictionary = _dungeon_floor.get_trap_at(pos)
+	var is_fire: bool = not trap.is_empty() and trap.get("name", "") == "Fire Trap"
+	if is_fire and item.item_name == "Rotten Meat":
+		GameState.consume_one(item)
+		var cooked: Item = _dungeon_floor.cook_rotten_meat(pos)
+		if not GameState.add_item(cooked):
+			_dungeon_floor.place_item_on_floor(grid_pos, cooked)
+		GameState.game_log("[color=orange]You throw the meat into the fire — it sizzles and cooks! [b]Cooked Meat[/b] obtained.[/color]")
+	else:
+		var dropped := Item.new()
+		dropped.item_name = item.item_name
+		dropped.item_type = item.item_type
+		dropped.heal_amount = item.heal_amount
+		dropped.icon_path = item.icon_path
+		dropped.description = item.description
+		dropped.quantity = 1
+		GameState.consume_one(item)
+		_dungeon_floor.place_item_on_floor(pos, dropped)
+		GameState.game_log("[color=gray]You throw [b]%s[/b].[/color]" % dropped.item_name)
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()

@@ -11,15 +11,19 @@ signal inventory_changed()
 signal equipment_changed()
 signal inventory_toggle()
 signal player_action_requested(action_name: String)
+signal player_throw_primed(item: Item)
 signal class_chosen(chosen_class: Stats.CharacterClass)
 signal hunger_changed(value: int)
 signal player_status_changed()
 
-const QUICKBAR_SIZE: int = 5
+const QUICKBAR_SIZE: int = 9
 const INVENTORY_SIZE: int = 24
 
 enum HungerState { SATIATED, HUNGRY, STARVING }
 const MAX_HUNGER: int = 1000
+
+const STARVE_INTERVAL: int = 10
+var _starvation_tick: int = 0
 
 var current_floor: int = 1
 var player_stats: Stats
@@ -59,6 +63,7 @@ func start_new_run() -> void:
 	inventory_open = false
 	class_selected = false
 	hunger = MAX_HUNGER
+	_starvation_tick = 0
 	player_stats = Stats.new()
 	player_stats.apply_class_defaults()  # defaults until class select overrides
 	player_quickbar.clear()
@@ -75,7 +80,7 @@ func _give_starting_items() -> void:
 	var ration := Item.new()
 	ration.item_name = "Ration"
 	ration.item_type = Item.Type.FOOD
-	ration.heal_amount = 100
+	ration.heal_amount = 200
 	ration.icon_path = "res://sprites/items/Sprites trial/Food/MeatCooked.png"
 	ration.description = "Fills you up"
 	ration.quantity = 3
@@ -240,8 +245,14 @@ func use_item(item: Item) -> void:
 				combat_message.emit("[color=yellow]You drink [b]%s[/b]. Your attacks surge! (+%d ATK)[/color]" % [item.item_name, item.str_bonus])
 			consume_one(item)
 		Item.Type.FOOD:
-			restore_hunger(item.heal_amount)
-			game_log("[color=green]You eat [b]%s[/b]. Not so hungry anymore.[/color]" % item.item_name)
+			if item.item_name == "Rotten Meat":
+				restore_hunger(item.heal_amount)
+				player_stats.poison_turns = maxi(player_stats.poison_turns, 3)
+				player_status_changed.emit()
+				game_log("[color=red]You choke down the rotten meat. You feel sick! (Poisoned 3 turns)[/color]")
+			else:
+				restore_hunger(item.heal_amount)
+				game_log("[color=green]You eat [b]%s[/b]. Not so hungry anymore.[/color]" % item.item_name)
 			consume_one(item)
 		Item.Type.WEAPON, Item.Type.ARMOR:
 			equip(item)
@@ -298,8 +309,13 @@ func deplete_hunger() -> void:
 	hunger = maxi(0, hunger - 1)
 	hunger_changed.emit(hunger)
 	if hunger == 0:
-		take_damage_raw(1)
-		game_log("[color=red]You are starving![/color]")
+		_starvation_tick += 1
+		if _starvation_tick >= STARVE_INTERVAL:
+			_starvation_tick = 0
+			take_damage_raw(1)
+			game_log("[color=red]You are starving![/color]")
+	else:
+		_starvation_tick = 0
 
 func restore_hunger(amount: int) -> void:
 	hunger = mini(MAX_HUNGER, hunger + amount)

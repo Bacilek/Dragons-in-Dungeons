@@ -25,9 +25,9 @@ const TRAP_COUNT_MAX: int = 7
 const TRAP_PATH := "res://sprites/Traps/"
 
 const TRAP_POOL: Array = [
-	{"name": "Bear Trap",  "sprite": "Bear_Trap.png",       "damage": 5, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
+	{"name": "Bear Trap",  "sprite": "Bear_Trap.png",       "damage": 0, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
 	{"name": "Fire Trap",  "sprite": "Fire_Trap.png",        "damage": 8, "msg": "Jets of flame engulf you!",        "wall_trap": false},
-	{"name": "Spike Trap", "sprite": "Spike Trap.png",       "damage": 6, "msg": "Spikes shoot up from the floor!", "wall_trap": false},
+	{"name": "Spike Trap", "sprite": "Spike Trap.png",       "damage": 6, "msg": "Spikes shoot up from the floor!", "wall_trap": false, "reusable": true},
 	{"name": "Pit Spikes", "sprite": "Pit_Trap_Spikes.png",  "damage": 7, "msg": "You fall into a spike pit!",       "wall_trap": false},
 	{"name": "Piston",     "sprite": "Push_Trap_Front.png",  "damage": 0, "msg": "A piston blasts you!",             "wall_trap": true},
 ]
@@ -42,8 +42,8 @@ const ITEM_POOL: Array = [
 	{"name": "Lavish Sword",   "type": 0, "icon": "weapon_lavish_sword.png",    "src": "weapons", "bonus_dmg": 5, "heal": 0,   "str_bonus": 0, "fmin": 8, "fmax": 10, "desc": "+5 damage"},
 	{"name": "Health Potion",  "type": 2, "icon": "Potions/Health/HealthPotionMedium.png", "src": "items", "bonus_dmg": 0, "heal": 10,  "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 10 HP"},
 	{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png",    "src": "items", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
-	{"name": "Ration",         "type": 4, "icon": "Food/MeatCooked.png",                  "src": "items", "bonus_dmg": 0, "heal": 100, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Fills you up"},
-	{"name": "Mystery Meat",   "type": 4, "icon": "Food/Meat.png",                        "src": "items", "bonus_dmg": 0, "heal": 60,  "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Better than nothing"},
+	{"name": "Ration",         "type": 4, "icon": "Food/MeatCooked.png",                  "src": "items", "bonus_dmg": 0, "heal": 200, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Fills you up"},
+	{"name": "Mystery Meat",   "type": 4, "icon": "Food/Meat.png",                        "src": "items", "bonus_dmg": 0, "heal": 120, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Better than nothing"},
 ]
 
 const BOSS_POOL: Array = [
@@ -589,14 +589,16 @@ func _spawn_traps() -> void:
 			sprite.region_enabled = true
 			sprite.region_rect = Rect2(0, 0, frame_size, frame_size)
 			sprite.scale = Vector2(float(TILE_SIZE) / float(frame_size), float(TILE_SIZE) / float(frame_size))
-			sprite.position = Vector2(floor_pos.x * TILE_SIZE + TILE_SIZE * 0.5, floor_pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+			# Visually embed piston 6px into the wall
+			var wall_offset: Vector2 = Vector2(-push_dir.x, -push_dir.y) * 6.0
+			sprite.position = Vector2(floor_pos.x * TILE_SIZE + TILE_SIZE * 0.5, floor_pos.y * TILE_SIZE + TILE_SIZE * 0.5) + wall_offset
 			sprite.rotation = atan2(float(push_dir.y), float(push_dir.x)) - PI / 2.0
 			sprite.z_index = 1
 			sprite.modulate.a = 0.5
 			entities.add_child(sprite)
 			_traps[floor_pos] = {"name": t["name"], "damage": 0, "msg": t["msg"],
 								 "sprite_node": sprite, "revealed": false, "is_push": true,
-								 "push_dir": push_dir, "triggered": false}
+								 "push_dir": push_dir, "wall_pos": wall_pos, "triggered": false}
 
 	GameState.game_log("[color=gray]Floor has %d hidden traps.[/color]" % _traps.size())
 
@@ -625,9 +627,11 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 		if is_instance_valid(sprite_node):
 			sprite_node.modulate = Color(1.0, 1.0, 1.0, 0.5)
 	else:
-		trap["triggered"] = true
-		if is_instance_valid(sprite_node):
-			sprite_node.modulate = Color(0.25, 0.25, 0.25, 0.85)  # Dark = spent
+		var is_reusable: bool = trap.get("reusable", false)
+		if not is_reusable:
+			trap["triggered"] = true
+			if is_instance_valid(sprite_node):
+				sprite_node.modulate = Color(0.25, 0.25, 0.25, 0.85)  # Dark = spent
 		var dmg: int = trap["damage"] + GameState.current_floor / 2
 		_apply_trap_damage(target, dmg, trap["msg"])
 		# Fire Trap applies burning
@@ -635,6 +639,11 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 			GameState.player_stats.burning_turns = 4
 			GameState.player_status_changed.emit()
 			GameState.game_log("[color=orange]You are burning! (4 turns)[/color]")
+		# Bear Trap applies bleeding (5 turns, 1 dmg/turn)
+		if trap["name"] == "Bear Trap" and target is Player:
+			GameState.player_stats.bleeding_turns = 5
+			GameState.player_status_changed.emit()
+			GameState.game_log("[color=red]You are bleeding! (5 turns)[/color]")
 		# Animation plays asynchronously — does not block player input
 		if is_instance_valid(sprite_node):
 			_play_trap_animation(sprite_node)
@@ -662,13 +671,71 @@ func disarm_trap(pos: Vector2i) -> void:
 		tw.tween_callback(sprite_node.queue_free)
 	_traps.erase(pos)
 
+func place_item_on_floor(pos: Vector2i, item: Item) -> void:
+	var target: Vector2i = pos
+	if _floor_items.has(target):
+		for d: Vector2i in [Vector2i(1,0), Vector2i(-1,0), Vector2i(0,1), Vector2i(0,-1)]:
+			var alt: Vector2i = pos + d
+			if _data.is_walkable(alt) and not _floor_items.has(alt):
+				target = alt
+				break
+	var tex: Texture2D
+	if item.icon_path != "" and ResourceLoader.exists(item.icon_path):
+		tex = load(item.icon_path)
+	else:
+		var fallback_img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
+		fallback_img.fill(Color(0.80, 0.55, 0.15))
+		tex = ImageTexture.create_from_image(fallback_img)
+	var sprite := Sprite2D.new()
+	sprite.texture = tex
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.position = Vector2(target.x * TILE_SIZE + TILE_SIZE * 0.5, target.y * TILE_SIZE + TILE_SIZE * 0.5)
+	sprite.z_index = 1
+	entities.add_child(sprite)
+	_floor_items[target] = item
+	_floor_item_sprites[target] = sprite
+
+func place_blood_decal(pos: Vector2i) -> void:
+	var img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
+	for py: int in TILE_SIZE:
+		for px: int in TILE_SIZE:
+			var cx: float = float(px) - TILE_SIZE * 0.5 + 0.5
+			var cy: float = float(py) - TILE_SIZE * 0.5 + 0.5
+			if cx * cx + cy * cy < 36.0:
+				img.set_pixel(px, py, Color(0.55, 0.0, 0.0, 0.65))
+	var tex := ImageTexture.create_from_image(img)
+	var sprite := Sprite2D.new()
+	sprite.texture = tex
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+	sprite.z_index = 0
+	entities.add_child(sprite)
+
+func cook_rotten_meat(trap_pos: Vector2i) -> Item:
+	disarm_trap(trap_pos)
+	var cooked := Item.new()
+	cooked.item_name = "Cooked Meat"
+	cooked.item_type = Item.Type.FOOD
+	cooked.heal_amount = 150
+	cooked.icon_path = "res://sprites/items/Sprites trial/Food/MeatCooked.png"
+	cooked.description = "Roasted over a fire trap."
+	return cooked
+
 func search_around(pos: Vector2i) -> int:
 	var found: int = 0
 	for dy: int in range(-1, 2):
 		for dx: int in range(-1, 2):
 			if dx == 0 and dy == 0:
 				continue
-			if reveal_trap(pos + Vector2i(dx, dy)):
+			var trap_pos: Vector2i = pos + Vector2i(dx, dy)
+			if _traps.has(trap_pos):
+				var trap: Dictionary = _traps[trap_pos]
+				if trap.get("is_push", false):
+					var push_dir: Vector2i = trap.get("push_dir", Vector2i.ZERO)
+					# Piston only detectable from the push side (player faces the wall)
+					if Vector2i(dx, dy) != -push_dir:
+						continue
+			if reveal_trap(trap_pos):
 				found += 1
 	return found
 
@@ -946,23 +1013,15 @@ func drop_boss_loot(pos: Vector2i) -> void:
 	var loot_pool: Array = []
 	if GameState.current_floor >= 8:
 		loot_pool = [
-			{"name": "Lavish Sword",  "type": 0, "icon": "weapon_lavish_sword.png",  "src": "weapons", "bonus_dmg": 5, "heal": 0, "str_bonus": 0, "fmin": 8, "fmax": 10, "desc": "+5 damage"},
-			{"name": "Golden Sword",  "type": 0, "icon": "weapon_golden_sword.png",  "src": "weapons", "bonus_dmg": 4, "heal": 0, "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "+4 damage"},
+			{"name": "Lavish Sword",   "type": 0, "icon": "weapon_lavish_sword.png",  "src": "weapons", "bonus_dmg": 5, "heal": 0, "str_bonus": 0, "fmin": 8, "fmax": 10, "desc": "+5 damage"},
+			{"name": "Golden Sword",   "type": 0, "icon": "weapon_golden_sword.png",  "src": "weapons", "bonus_dmg": 4, "heal": 0, "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "+4 damage"},
 		]
 	else:
 		loot_pool = [
-			{"name": "Knight Sword",  "type": 0, "icon": "weapon_knight_sword.png",  "src": "weapons", "bonus_dmg": 3, "heal": 0, "str_bonus": 0, "fmin": 4, "fmax": 8,  "desc": "+3 damage"},
-			{"name": "Strength Potion","type": 2, "icon": "flask_big_yellow.png",     "src": "objects", "bonus_dmg": 2, "heal": 0, "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
+			{"name": "Knight Sword",   "type": 0, "icon": "weapon_knight_sword.png",  "src": "weapons", "bonus_dmg": 3, "heal": 0, "str_bonus": 0, "fmin": 4, "fmax": 8,  "desc": "+3 damage"},
+			{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png", "src": "items", "bonus_dmg": 2, "heal": 0, "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
 		]
 	var d: Dictionary = loot_pool[randi() % loot_pool.size()]
-
-	var drop_pos: Vector2i = pos
-	if _floor_items.has(drop_pos):
-		for off: Vector2i in [Vector2i(1,0), Vector2i(-1,0), Vector2i(0,1), Vector2i(0,-1)]:
-			var alt: Vector2i = pos + off
-			if _data.is_walkable(alt) and not _floor_items.has(alt):
-				drop_pos = alt
-				break
 
 	var item := Item.new()
 	item.item_name = d["name"]
@@ -973,25 +1032,9 @@ func drop_boss_loot(pos: Vector2i) -> void:
 	item.floor_min = d["fmin"]
 	item.floor_max = d["fmax"]
 	item.description = d["desc"]
-	item.icon_path = "res://sprites/%s/%s" % [d["src"], d["icon"]]
-
-	var base_path: String = WEAPONS_PATH if d["src"] == "weapons" else OBJECTS_PATH
-	var icon_path: String = base_path + d["icon"]
-	var tex: Texture2D
-	if ResourceLoader.exists(icon_path):
-		tex = load(icon_path)
-	else:
-		var fallback_img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
-		fallback_img.fill(Color(0.90, 0.70, 0.10))
-		tex = ImageTexture.create_from_image(fallback_img)
-
-	var sprite := Sprite2D.new()
-	sprite.texture = tex
-	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	sprite.position = Vector2(drop_pos.x * TILE_SIZE + TILE_SIZE * 0.5, drop_pos.y * TILE_SIZE + TILE_SIZE * 0.5)
-	sprite.z_index = 1
-	entities.add_child(sprite)
-
-	_floor_items[drop_pos] = item
-	_floor_item_sprites[drop_pos] = sprite
+	match d["src"]:
+		"weapons": item.icon_path = WEAPONS_PATH + d["icon"]
+		"items":   item.icon_path = ITEMS_PATH + d["icon"]
+		_:         item.icon_path = OBJECTS_PATH + d["icon"]
+	place_item_on_floor(pos, item)
 	GameState.game_log("[color=yellow][b]The boss dropped [/b][color=white]%s[/color][b]![/b][/color]" % item.item_name)

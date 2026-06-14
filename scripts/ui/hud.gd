@@ -16,14 +16,16 @@ extends CanvasLayer
 const BAR_W: float    = 174.0
 const HP_BAR_H: float = 15.0
 const EXP_BAR_H: float = 12.0
-const SLOT_COUNT: int = 5
+const SLOT_COUNT: int = 9
 
 var _item_slots: Array[Button] = []
+var _slot_qty_labels: Array[Label] = []
 var _log_messages: Array[String] = []
 const MAX_LOG_MESSAGES: int = 15
 var _hunger_label: Label
 var _poison_icon: ColorRect
 var _burning_icon: ColorRect
+var _bleeding_icon: ColorRect
 
 func _ready() -> void:
 	GameState.floor_changed.connect(_on_floor_changed)
@@ -45,6 +47,26 @@ func _ready() -> void:
 		var slot: Button = get_node("ActionBar/ItemSlot%d" % i)
 		_item_slots.append(slot)
 		slot.pressed.connect(_on_slot_pressed.bind(i))
+		slot.gui_input.connect(_on_slot_gui_input.bind(i))
+		# Small quantity badge in bottom-right corner
+		var qty_lbl := Label.new()
+		qty_lbl.add_theme_font_size_override("font_size", 8)
+		qty_lbl.add_theme_color_override("font_color", Color.WHITE)
+		qty_lbl.add_theme_color_override("font_shadow_color", Color.BLACK)
+		qty_lbl.add_theme_constant_override("shadow_offset_x", 1)
+		qty_lbl.add_theme_constant_override("shadow_offset_y", 1)
+		qty_lbl.text = ""
+		qty_lbl.anchor_left = 1.0
+		qty_lbl.anchor_right = 1.0
+		qty_lbl.anchor_top = 1.0
+		qty_lbl.anchor_bottom = 1.0
+		qty_lbl.offset_left = -22.0
+		qty_lbl.offset_top = -13.0
+		qty_lbl.offset_right = -2.0
+		qty_lbl.offset_bottom = -1.0
+		qty_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slot.add_child(qty_lbl)
+		_slot_qty_labels.append(qty_lbl)
 	_apply_slot_styles()
 
 	var s: Stats = GameState.player_stats
@@ -61,11 +83,13 @@ func _ready() -> void:
 	$StatsPanel.add_child(_hunger_label)
 	_update_hunger_label()
 
-	# Status icons (poison = green dot, burning = orange dot) below portrait
-	_poison_icon = _make_status_dot(Color(0.20, 0.85, 0.35), Vector2(2.0, 2.0))
+	# Status icons (poison = green, burning = orange, bleeding = red) below portrait
+	_poison_icon  = _make_status_dot(Color(0.20, 0.85, 0.35), Vector2(2.0, 2.0))
 	_burning_icon = _make_status_dot(Color(1.00, 0.45, 0.10), Vector2(14.0, 2.0))
+	_bleeding_icon = _make_status_dot(Color(0.80, 0.0,  0.0),  Vector2(26.0, 2.0))
 	$StatsPanel.add_child(_poison_icon)
 	$StatsPanel.add_child(_burning_icon)
+	$StatsPanel.add_child(_bleeding_icon)
 	_update_status_icons()
 
 	# Inventory overlay — add as sibling CanvasLayer so it floats above HUD
@@ -89,6 +113,8 @@ func _update_status_icons() -> void:
 		_poison_icon.visible = GameState.player_stats.poison_turns > 0
 	if _burning_icon != null:
 		_burning_icon.visible = GameState.player_stats.burning_turns > 0
+	if _bleeding_icon != null:
+		_bleeding_icon.visible = GameState.player_stats.bleeding_turns > 0
 
 func _make_status_dot(color: Color, offset: Vector2) -> ColorRect:
 	var dot := ColorRect.new()
@@ -161,6 +187,19 @@ func _on_slot_pressed(slot_index: int) -> void:
 		return
 	GameState.use_item(raw as Item)
 
+func _on_slot_gui_input(event: InputEvent, slot_index: int) -> void:
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
+		get_viewport().set_input_as_handled()
+		var raw = GameState.player_quickbar[slot_index]
+		if raw == null:
+			return
+		var it := raw as Item
+		if it.item_type == Item.Type.FOOD:
+			GameState.player_throw_primed.emit(it)
+
 # ── Bar updates ───────────────────────────────────────────────────────────────
 
 func _update_hp_bar(current_hp: int, max_hp: int) -> void:
@@ -180,15 +219,18 @@ func _refresh_inventory() -> void:
 	for i: int in SLOT_COUNT:
 		var raw = GameState.player_quickbar[i]
 		var slot: Button = _item_slots[i]
+		var qty_lbl: Label = _slot_qty_labels[i]
 		if raw == null:
 			slot.text = ""
 			slot.icon = null
+			qty_lbl.text = ""
 		else:
 			var it := raw as Item
-			slot.text = it.get_display_name()
+			slot.text = ""
 			if it.icon_path != "":
 				slot.icon = load(it.icon_path)
 				slot.expand_icon = true
+			qty_lbl.text = "×%d" % it.quantity if it.quantity > 1 else ""
 
 func _apply_slot_styles() -> void:
 	for slot: Button in _item_slots:

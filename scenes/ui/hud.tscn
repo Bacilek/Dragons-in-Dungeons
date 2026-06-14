@@ -223,6 +223,38 @@ offset_bottom = 48.0
 theme_override_font_sizes/font_size = 8
 clip_text = true
 
+[node name="ItemSlot5" type="Button" parent="ActionBar"]
+offset_left = 244.0
+offset_top = 4.0
+offset_right = 288.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 8
+clip_text = true
+
+[node name="ItemSlot6" type="Button" parent="ActionBar"]
+offset_left = 292.0
+offset_top = 4.0
+offset_right = 336.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 8
+clip_text = true
+
+[node name="ItemSlot7" type="Button" parent="ActionBar"]
+offset_left = 340.0
+offset_top = 4.0
+offset_right = 384.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 8
+clip_text = true
+
+[node name="ItemSlot8" type="Button" parent="ActionBar"]
+offset_left = 388.0
+offset_top = 4.0
+offset_right = 432.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 8
+clip_text = true
+
 [node name="WaitButton" type="Button" parent="ActionBar"]
 anchor_left = 1.0
 anchor_right = 1.0
@@ -230,7 +262,7 @@ offset_left = -224.0
 offset_top = 4.0
 offset_right = -152.0
 offset_bottom = 48.0
-text = "Wait (.)"
+text = "Wait (Space)"
 theme_override_font_sizes/font_size = 10
 
 [node name="SearchButton" type="Button" parent="ActionBar"]
@@ -240,8 +272,9 @@ offset_left = -148.0
 offset_top = 4.0
 offset_right = -76.0
 offset_bottom = 48.0
-text = "Search (s)"
+text = "Search (Ctrl)"
 theme_override_font_sizes/font_size = 10
+
 [node name="InteractButton" type="Button" parent="ActionBar"]
 anchor_left = 1.0
 anchor_right = 1.0
@@ -249,5 +282,5 @@ offset_left = -72.0
 offset_top = 4.0
 offset_right = 0.0
 offset_bottom = 48.0
-text = "Interact (f)"
+text = "Interact (RMB)"
 theme_override_font_sizes/font_size = 10

@@ -160,10 +160,8 @@ func _act_toward(player: Player) -> void:
 
 	for step: Vector2i in _preferred_steps(tdx, tdy):
 		var next_pos: Vector2i = grid_pos + step
-		# Open door and spend this turn
 		if _dungeon_floor.has_door_at(next_pos) and not _dungeon_floor.is_door_open(next_pos):
 			_dungeon_floor.open_door(next_pos)
-			return
 		if _dungeon_floor.is_walkable_for_enemy(next_pos):
 			await _move_step(step, next_pos)
 			return
