@@ -11,8 +11,7 @@ var _path_executing: bool = false
 var _last_move_dir := Vector2i.ZERO
 var _target_enemy: Enemy = null
 
-var _key_held: bool = false                   # true while a movement key is continuously held
-var _held_fov_snapshot: Array[Enemy] = []     # enemies visible when key was first pressed
+var _key_held: bool = false   # true while a movement key is continuously held
 
 var _regen_counter: int = 0
 const REGEN_TURNS: int = 6
@@ -79,18 +78,16 @@ func _process(_delta: float) -> void:
 	if dir == Vector2i.ZERO:
 		_last_move_dir = Vector2i.ZERO
 		_key_held = false
-		_held_fov_snapshot = []
 		return
-	# Fresh press (key was not held before): snapshot current FOV as baseline
 	if not _key_held:
+		# Fresh press — allow the first move unconditionally
 		_key_held = true
-		_held_fov_snapshot = _dungeon_floor.get_visible_enemies() if _dungeon_floor != null else []
-	# Continuing to hold: stop if a new enemy entered FOV since the key was pressed
-	elif _has_new_enemy_in_fov(_held_fov_snapshot):
-		_last_move_dir = Vector2i.ZERO
-		_key_held = false
-		_held_fov_snapshot = []
-		return
+	else:
+		# Continuing to hold — stop if any enemy is currently visible
+		if _dungeon_floor != null and not _dungeon_floor.get_visible_enemies().is_empty():
+			_last_move_dir = Vector2i.ZERO
+			_key_held = false
+			return
 	if dir == _last_move_dir:
 		return
 	_last_move_dir = dir
