@@ -955,11 +955,12 @@ func _spawn_items() -> void:
 	for y: int in _data.height:
 		for x: int in _data.width:
 			var pos: Vector2i = Vector2i(x, y)
-			if _data.get_tile(x, y) != DungeonData.TileType.FLOOR:
+			var tile: DungeonData.TileType = _data.get_tile(x, y)
+			if tile != DungeonData.TileType.FLOOR and tile != DungeonData.TileType.MUD:
 				continue
 			if pos == _data.player_start or pos == _data.stairs_pos:
 				continue
-			if _traps.has(pos):
+			if _traps.has(pos) or _doors.has(pos):
 				continue
 			candidates.append(pos)
 	candidates.shuffle()
