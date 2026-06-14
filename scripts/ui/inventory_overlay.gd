@@ -135,11 +135,11 @@ func _build_quickbar_section() -> void:
 	sep.position = Vector2(10, PANEL_H - 88); sep.size = Vector2(PANEL_W - 20, 2)
 	_panel.add_child(sep)
 	_add_label(_panel, "Quickbar", Vector2(12, PANEL_H - 80), 11, Color(0.7, 0.7, 0.8))
-	# 5 slots centered horizontally
-	var total_w: int = 5 * STEP - SLOT_GAP
+	# 9 slots centered horizontally
+	var total_w: int = 9 * STEP - SLOT_GAP
 	var origin_x: float = (PANEL_W - total_w) / 2.0
 	var origin_y: float = PANEL_H - 65.0
-	for i: int in 5:
+	for i: int in 9:
 		var slot := _make_slot()
 		slot.position = Vector2(origin_x + i * STEP, origin_y)
 		slot.set_meta("source", "quickbar")
