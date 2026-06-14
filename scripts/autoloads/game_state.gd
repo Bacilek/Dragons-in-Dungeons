@@ -222,7 +222,7 @@ func use_item(item: Item) -> void:
 			consume_one(item)
 		Item.Type.FOOD:
 			restore_hunger(item.heal_amount)
-			log("[color=green]You eat [b]%s[/b]. Not so hungry anymore.[/color]" % item.item_name)
+			game_log("[color=green]You eat [b]%s[/b]. Not so hungry anymore.[/color]" % item.item_name)
 			consume_one(item)
 		Item.Type.WEAPON, Item.Type.ARMOR:
 			equip(item)
@@ -266,7 +266,7 @@ func _add_to_bags_silent(item: Item) -> void:
 			player_inventory[i] = item
 			return
 
-func log(msg: String) -> void:
+func game_log(msg: String) -> void:
 	combat_message.emit(msg)
 
 # ── Hunger ────────────────────────────────────────────────────────────────────
@@ -278,7 +278,7 @@ func deplete_hunger() -> void:
 	hunger_changed.emit(hunger)
 	if hunger == 0:
 		take_damage_raw(1)
-		log("[color=red]You are starving![/color]")
+		game_log("[color=red]You are starving![/color]")
 
 func restore_hunger(amount: int) -> void:
 	hunger = mini(MAX_HUNGER, hunger + amount)

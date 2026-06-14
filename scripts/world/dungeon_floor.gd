@@ -498,7 +498,7 @@ func _spawn_boss() -> void:
 	boss.set_grid_pos(boss_pos)
 	_enemies.append(boss)
 	TurnManager.register_enemy(boss)
-	GameState.log("[color=red][b]You sense a terrifying presence...[/b][/color]")
+	GameState.game_log("[color=red][b]You sense a terrifying presence...[/b][/color]")
 
 # ── Trap system ───────────────────────────────────────────────────────────────
 
@@ -598,7 +598,7 @@ func _spawn_traps() -> void:
 								 "sprite_node": sprite, "revealed": false, "is_push": true,
 								 "push_dir": push_dir, "triggered": false}
 
-	GameState.log("[color=gray]Floor has %d hidden traps.[/color]" % _traps.size())
+	GameState.game_log("[color=gray]Floor has %d hidden traps.[/color]" % _traps.size())
 
 func get_trap_at(pos: Vector2i) -> Dictionary:
 	return _traps.get(pos, {})
@@ -634,7 +634,7 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 		if trap["name"] == "Fire Trap" and target is Player:
 			GameState.player_stats.burning_turns = 4
 			GameState.player_status_changed.emit()
-			GameState.log("[color=orange]You are burning! (4 turns)[/color]")
+			GameState.game_log("[color=orange]You are burning! (4 turns)[/color]")
 		# Animation plays asynchronously — does not block player input
 		if is_instance_valid(sprite_node):
 			_play_trap_animation(sprite_node)
@@ -665,7 +665,7 @@ func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
 	if entity is Player:
 		var actual: int = GameState.player_stats.take_damage(damage)
 		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
-		GameState.log("[color=red]%s[/color] You take [color=yellow]%d[/color] damage!" % [msg, actual])
+		GameState.game_log("[color=red]%s[/color] You take [color=yellow]%d[/color] damage!" % [msg, actual])
 		show_damage(entity.position, actual, true)
 		GameState.check_player_death()
 	elif entity is Enemy:
@@ -673,9 +673,9 @@ func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
 		var actual: int = e.stats.take_damage(damage)
 		e.update_hp_bar()
 		show_damage(e.position, actual, false)
-		GameState.log("[color=orange]%s[/color] triggers a trap for [color=yellow]%d[/color] damage!" % [e.display_name, actual])
+		GameState.game_log("[color=orange]%s[/color] triggers a trap for [color=yellow]%d[/color] damage!" % [e.display_name, actual])
 		if e.stats.is_dead():
-			GameState.log("[color=orange]%s[/color] [color=gray]is killed by a trap.[/color]" % e.display_name)
+			GameState.game_log("[color=orange]%s[/color] [color=gray]is killed by a trap.[/color]" % e.display_name)
 			GameState.gain_exp(e.exp_reward)
 			remove_enemy(e)
 			e.die()
@@ -713,15 +713,15 @@ func _push_entity(entity: Node2D, push_dir: Vector2i, distance: int, trap_sprite
 	if entity is Player:
 		var actual: int = GameState.player_stats.take_damage(push_dmg)
 		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
-		GameState.log("[color=red]You are blasted%s for [color=yellow]%d[/color] damage![/color]" % [wall_str, actual])
+		GameState.game_log("[color=red]You are blasted%s for [color=yellow]%d[/color] damage![/color]" % [wall_str, actual])
 		GameState.check_player_death()
 	elif entity is Enemy:
 		var enemy: Enemy = entity as Enemy
 		var actual: int = enemy.stats.take_damage(push_dmg)
 		enemy.update_hp_bar()
-		GameState.log("[color=orange]%s[/color] is blasted%s for [color=yellow]%d[/color] damage!" % [enemy.display_name, wall_str, actual])
+		GameState.game_log("[color=orange]%s[/color] is blasted%s for [color=yellow]%d[/color] damage!" % [enemy.display_name, wall_str, actual])
 		if enemy.stats.is_dead():
-			GameState.log("[color=orange]%s[/color] [color=gray]is killed![/color]" % enemy.display_name)
+			GameState.game_log("[color=orange]%s[/color] [color=gray]is killed![/color]" % enemy.display_name)
 			GameState.gain_exp(enemy.exp_reward)
 			remove_enemy(enemy)
 			enemy.die()
@@ -980,4 +980,4 @@ func drop_boss_loot(pos: Vector2i) -> void:
 
 	_floor_items[drop_pos] = item
 	_floor_item_sprites[drop_pos] = sprite
-	GameState.log("[color=yellow][b]The boss dropped [/b][color=white]%s[/color][b]![/b][/color]" % item.item_name)
+	GameState.game_log("[color=yellow][b]The boss dropped [/b][color=white]%s[/color][b]![/b][/color]" % item.item_name)

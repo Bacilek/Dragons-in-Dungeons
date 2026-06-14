@@ -376,9 +376,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
-	GameState.log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg." % [enemy.display_name, actual])
+	GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg." % [enemy.display_name, actual])
 	if enemy.stats.is_dead():
-		GameState.log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
+		GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
 		GameState.gain_exp(enemy.exp_reward)
 		var was_boss: bool = enemy.is_boss
 		var boss_pos: Vector2i = enemy.grid_pos
@@ -458,9 +458,9 @@ func _check_pickup() -> void:
 	GameState.add_item(item)
 	if is_first_weapon:
 		GameState.equip(item)
-		GameState.log("[color=cyan]You pick up [b]%s[/b] and equip it.[/color]" % item.item_name)
+		GameState.game_log("[color=cyan]You pick up [b]%s[/b] and equip it.[/color]" % item.item_name)
 	else:
-		GameState.log("[color=cyan]You pick up [b]%s[/b].[/color]" % item.item_name)
+		GameState.game_log("[color=cyan]You pick up [b]%s[/b].[/color]" % item.item_name)
 
 func _wait_action() -> void:
 	TurnManager.begin_player_action()
@@ -474,8 +474,8 @@ func _search_action() -> void:
 	TurnManager.begin_player_action()
 	var found: int = _dungeon_floor.search_around(grid_pos)
 	if found > 0:
-		GameState.log("[color=cyan]You search the area and reveal %d trap(s)![/color]" % found)
+		GameState.game_log("[color=cyan]You search the area and reveal %d trap(s)![/color]" % found)
 	else:
-		GameState.log("[color=gray]You search the area. Nothing found.[/color]")
+		GameState.game_log("[color=gray]You search the area. Nothing found.[/color]")
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
