@@ -380,8 +380,12 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if enemy.stats.is_dead():
 		GameState.log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
 		GameState.gain_exp(enemy.exp_reward)
+		var was_boss: bool = enemy.is_boss
+		var boss_pos: Vector2i = enemy.grid_pos
 		_dungeon_floor.remove_enemy(enemy)
 		enemy.die()
+		if was_boss:
+			_dungeon_floor.drop_boss_loot(boss_pos)
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()

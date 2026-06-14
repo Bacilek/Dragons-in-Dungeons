@@ -60,6 +60,9 @@ static func generate(seed_val: int, floor_num: int) -> DungeonData:
 	)
 	data.grid[data.stairs_pos.y][data.stairs_pos.x] = DungeonData.TileType.STAIRS_DOWN
 
+	if floor_num % 5 == 0:
+		data.boss_room = farthest_room
+
 	_place_pillars(data, rng)
 	_place_chasms(data, rng)
 	_place_water_mud(data, rng)

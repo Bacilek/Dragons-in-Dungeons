@@ -46,6 +46,13 @@ const ITEM_POOL: Array = [
 	{"name": "Mystery Meat",   "type": 4, "icon": "food_meat.png",              "src": "objects", "bonus_dmg": 0, "heal": 60,  "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Better than nothing"},
 ]
 
+const BOSS_POOL: Array = [
+	{"display_name": "Big Demon",   "sprite": "big_demon",   "idle_frames": 4, "run_frames": 4, "floor": 5,  "hp": 80,  "hp_per_floor": 0, "dmg_min": 8,  "dmg_max": 14, "armor": 3, "exp": 100},
+	{"display_name": "Necromancer", "sprite": "necromancer", "idle_frames": 4, "run_frames": 4, "floor": 10, "hp": 120, "hp_per_floor": 0, "dmg_min": 10, "dmg_max": 18, "armor": 4, "exp": 200,
+	 "idle_fmt": "res://sprites/characters/necromancer_anim_f%d.png",
+	 "run_fmt":  "res://sprites/characters/necromancer_anim_f%d.png"},
+]
+
 const ENEMY_POOL: Array = [
 	{"display_name": "Tiny Zombie", "sprite": "tiny_zombie", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 3,  "hp": 5,  "hp_per_floor": 1, "dmg_min": 1, "dmg_max": 3, "armor": 0, "exp": 4},
 	{"display_name": "Orc Warrior", "sprite": "orc_warrior", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 5,  "hp": 8,  "hp_per_floor": 2, "dmg_min": 1, "dmg_max": 4, "armor": 0, "exp": 8},
@@ -411,12 +418,16 @@ func on_player_reached_stairs() -> void:
 # ── Enemy spawning ────────────────────────────────────────────────────────────
 
 func _spawn_enemies() -> void:
+	var is_boss_floor: bool = GameState.current_floor % 5 == 0 and _data.boss_room.has_area()
+
 	var candidates: Array = []
 	for y: int in _data.height:
 		for x: int in _data.width:
 			var pos: Vector2i = Vector2i(x, y)
 			if _data.get_tile(x, y) == DungeonData.TileType.FLOOR:
 				if pos != _data.player_start and pos != _data.stairs_pos:
+					if is_boss_floor and _data.boss_room.has_point(pos):
+						continue  # reserve boss room for the boss
 					candidates.append(pos)
 	candidates.shuffle()
 
@@ -448,6 +459,46 @@ func _spawn_enemies() -> void:
 		enemy.set_grid_pos(candidates[i])
 		_enemies.append(enemy)
 		TurnManager.register_enemy(enemy)
+
+	if is_boss_floor:
+		_spawn_boss()
+
+func _spawn_boss() -> void:
+	var floor_num: int = GameState.current_floor
+	var boss_data: Dictionary = {}
+	for b in BOSS_POOL:
+		var bd: Dictionary = b
+		if bd["floor"] == floor_num:
+			boss_data = bd
+			break
+	if boss_data.is_empty():
+		return
+
+	var enemy_scene: PackedScene = preload("res://scenes/game/enemy.tscn")
+	var boss: Enemy = enemy_scene.instantiate() as Enemy
+	boss.configure(boss_data)
+	boss.is_boss = true
+	boss.initial_behavior = Enemy.Behavior.CHASING
+
+	# Place at room center, shift 1 tile up if center == stairs
+	var center: Vector2i = Vector2i(
+		_data.boss_room.position.x + _data.boss_room.size.x / 2,
+		_data.boss_room.position.y + _data.boss_room.size.y / 2
+	)
+	var boss_pos: Vector2i = center
+	if boss_pos == _data.stairs_pos:
+		for d: Vector2i in [Vector2i(0,-2), Vector2i(0,2), Vector2i(-2,0), Vector2i(2,0)]:
+			var candidate: Vector2i = center + d
+			if _data.is_walkable(candidate) and candidate != _data.player_start:
+				boss_pos = candidate
+				break
+
+	boss._dungeon_floor = self
+	entities.add_child(boss)
+	boss.set_grid_pos(boss_pos)
+	_enemies.append(boss)
+	TurnManager.register_enemy(boss)
+	GameState.log("[color=red][b]You sense a terrifying presence...[/b][/color]")
 
 # ── Trap system ───────────────────────────────────────────────────────────────
 
@@ -876,3 +927,57 @@ func remove_floor_item(pos: Vector2i) -> void:
 			sn.queue_free()
 		_floor_item_sprites.erase(pos)
 	_floor_items.erase(pos)
+
+func drop_boss_loot(pos: Vector2i) -> void:
+	var loot_pool: Array = []
+	if GameState.current_floor >= 8:
+		loot_pool = [
+			{"name": "Lavish Sword",  "type": 0, "icon": "weapon_lavish_sword.png",  "src": "weapons", "bonus_dmg": 5, "heal": 0, "str_bonus": 0, "fmin": 8, "fmax": 10, "desc": "+5 damage"},
+			{"name": "Golden Sword",  "type": 0, "icon": "weapon_golden_sword.png",  "src": "weapons", "bonus_dmg": 4, "heal": 0, "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "+4 damage"},
+		]
+	else:
+		loot_pool = [
+			{"name": "Knight Sword",  "type": 0, "icon": "weapon_knight_sword.png",  "src": "weapons", "bonus_dmg": 3, "heal": 0, "str_bonus": 0, "fmin": 4, "fmax": 8,  "desc": "+3 damage"},
+			{"name": "Strength Potion","type": 2, "icon": "flask_big_yellow.png",     "src": "objects", "bonus_dmg": 2, "heal": 0, "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
+		]
+	var d: Dictionary = loot_pool[randi() % loot_pool.size()]
+
+	var drop_pos: Vector2i = pos
+	if _floor_items.has(drop_pos):
+		for off: Vector2i in [Vector2i(1,0), Vector2i(-1,0), Vector2i(0,1), Vector2i(0,-1)]:
+			var alt: Vector2i = pos + off
+			if _data.is_walkable(alt) and not _floor_items.has(alt):
+				drop_pos = alt
+				break
+
+	var item := Item.new()
+	item.item_name = d["name"]
+	item.item_type = d["type"] as Item.Type
+	item.bonus_damage = d["bonus_dmg"]
+	item.heal_amount = d["heal"]
+	item.str_bonus = d.get("str_bonus", 0)
+	item.floor_min = d["fmin"]
+	item.floor_max = d["fmax"]
+	item.description = d["desc"]
+	item.icon_path = "res://sprites/%s/%s" % [d["src"], d["icon"]]
+
+	var base_path: String = WEAPONS_PATH if d["src"] == "weapons" else OBJECTS_PATH
+	var icon_path: String = base_path + d["icon"]
+	var tex: Texture2D
+	if ResourceLoader.exists(icon_path):
+		tex = load(icon_path)
+	else:
+		var fallback_img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
+		fallback_img.fill(Color(0.90, 0.70, 0.10))
+		tex = ImageTexture.create_from_image(fallback_img)
+
+	var sprite := Sprite2D.new()
+	sprite.texture = tex
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.position = Vector2(drop_pos.x * TILE_SIZE + TILE_SIZE * 0.5, drop_pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+	sprite.z_index = 1
+	entities.add_child(sprite)
+
+	_floor_items[drop_pos] = item
+	_floor_item_sprites[drop_pos] = sprite
+	GameState.log("[color=yellow][b]The boss dropped [/b][color=white]%s[/color][b]![/b][/color]" % item.item_name)

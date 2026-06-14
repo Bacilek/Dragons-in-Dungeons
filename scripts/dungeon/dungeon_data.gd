@@ -7,6 +7,7 @@ var grid: Array = []        # grid[y][x] → TileType int
 var rooms: Array = []       # Array[Rect2i]
 var player_start: Vector2i = Vector2i.ZERO
 var stairs_pos: Vector2i = Vector2i.ZERO
+var boss_room: Rect2i = Rect2i()  # valid only on boss floors (floor % 5 == 0)
 var width: int = 0
 var height: int = 0
 

@@ -12,6 +12,7 @@ var display_name: String = "Enemy"
 var exp_reward: int = 5
 var _type: Dictionary = {}
 
+var is_boss: bool = false
 var initial_behavior: Behavior = Behavior.SLEEPING
 var behavior: Behavior = Behavior.SLEEPING
 var last_known_player_pos: Vector2i = Vector2i(-1, -1)
@@ -47,9 +48,11 @@ func _setup_animations() -> void:
 	var prefix: String = _type.get("sprite", "orc_warrior")
 	var idle_n: int    = _type.get("idle_frames", 4)
 	var run_n: int     = _type.get("run_frames", 4)
+	var idle_fmt: String = _type.get("idle_fmt", SPRITES_PATH + prefix + "_idle_anim_f%d.png")
+	var run_fmt: String  = _type.get("run_fmt",  SPRITES_PATH + prefix + "_run_anim_f%d.png")
 	var frames := SpriteFrames.new()
-	_add_anim(frames, "idle", SPRITES_PATH + prefix + "_idle_anim_f%d.png", idle_n, true,  8.0)
-	_add_anim(frames, "run",  SPRITES_PATH + prefix + "_run_anim_f%d.png",  run_n, false, 16.0)
+	_add_anim(frames, "idle", idle_fmt, idle_n, true,  8.0)
+	_add_anim(frames, "run",  run_fmt,  run_n, false, 16.0)
 	$AnimatedSprite2D.sprite_frames = frames
 	$AnimatedSprite2D.offset = Vector2(0, -8)
 	$AnimatedSprite2D.play("idle")
