@@ -49,7 +49,7 @@ func _reposition() -> void:
 
 func _build_main_panel() -> void:
 	_main_panel = Panel.new()
-	_main_panel.visible = false
+	_main_panel.visible = true
 	_main_panel.size = Vector2(PANEL_W, PANEL_H)
 	_main_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_style_panel(_main_panel, Color(0.07, 0.06, 0.06, 0.96), Color(0.85, 0.20, 0.20))
