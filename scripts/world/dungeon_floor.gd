@@ -592,16 +592,20 @@ func _spawn_traps() -> void:
 			sprite.region_enabled = true
 			sprite.region_rect = Rect2(0, 0, frame_size, frame_size)
 			sprite.scale = Vector2(float(TILE_SIZE) / float(frame_size), float(TILE_SIZE) / float(frame_size))
-			# Visually embed piston 6px into the wall
+			# Sprite stays visually embedded 6px into the wall (floor_pos side)
 			var wall_offset: Vector2 = Vector2(-push_dir.x, -push_dir.y) * 6.0
 			sprite.position = Vector2(floor_pos.x * TILE_SIZE + TILE_SIZE * 0.5, floor_pos.y * TILE_SIZE + TILE_SIZE * 0.5) + wall_offset
 			sprite.rotation = atan2(float(push_dir.y), float(push_dir.x)) - PI / 2.0
 			sprite.z_index = 1
 			sprite.modulate.a = 0.5
 			entities.add_child(sprite)
-			_traps[floor_pos] = {"name": t["name"], "damage": 0, "msg": t["msg"],
-								 "sprite_node": sprite, "revealed": false, "is_push": true,
-								 "push_dir": push_dir, "wall_pos": wall_pos, "triggered": false}
+			# Detection/trigger tile is 1 tile deeper into the room so diagonal search works
+			var detect_pos: Vector2i = floor_pos + push_dir
+			if _data.get_tile(detect_pos.x, detect_pos.y) != DungeonData.TileType.FLOOR:
+				detect_pos = floor_pos  # fallback if room is too narrow
+			_traps[detect_pos] = {"name": t["name"], "damage": 0, "msg": t["msg"],
+								  "sprite_node": sprite, "revealed": false, "is_push": true,
+								  "push_dir": push_dir, "wall_pos": wall_pos, "triggered": false}
 
 	GameState.game_log("[color=gray]Floor has %d hidden traps.[/color]" % _traps.size())
 
@@ -637,9 +641,9 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 
 	if is_push:
 		await _push_entity(target, trap["push_dir"], 2, sprite_node)
-		# Push traps are always reusable — restore semi-visible active state
+		# Stay fully visible if already revealed, otherwise return to semi-hidden
 		if is_instance_valid(sprite_node):
-			sprite_node.modulate = Color(1.0, 1.0, 1.0, 0.5)
+			sprite_node.modulate = Color(1.0, 1.0, 1.0, 1.0 if trap.get("revealed", false) else 0.5)
 	else:
 		var is_reusable: bool = trap.get("reusable", false)
 		if not is_reusable:
@@ -748,12 +752,6 @@ func search_around(pos: Vector2i) -> int:
 				continue
 			var trap_pos: Vector2i = pos + Vector2i(dx, dy)
 			if _traps.has(trap_pos):
-				var trap: Dictionary = _traps[trap_pos]
-				if trap.get("is_push", false):
-					var push_dir: Vector2i = trap.get("push_dir", Vector2i.ZERO)
-					# Piston only detectable from the push side (player faces the wall)
-					if Vector2i(dx, dy) != -push_dir:
-						continue
 			if reveal_trap(trap_pos):
 				found += 1
 	return found

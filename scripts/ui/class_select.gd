@@ -1,7 +1,7 @@
 extends CanvasLayer
 
 const CARD_W: int = 148
-const CARD_H: int = 342
+const CARD_H: int = 376
 const CARD_GAP: int = 18
 const CHAR_PATH := "res://sprites/characters/"
 
@@ -164,9 +164,43 @@ func _build_card(data: Dictionary, pos: Vector2) -> void:
 	for i: int in stat_rows.size():
 		_add_stat_row(card, 208.0 + i * 16.0, stat_rows[i][0], stat_rows[i][1], stat_rows[i][2])
 
+	var sep3 := HSeparator.new()
+	sep3.position = Vector2(10.0, 306.0)
+	sep3.size = Vector2(CARD_W - 20.0, 2.0)
+	sep3.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(sep3)
+
+	var ac_lbl := Label.new()
+	ac_lbl.text = "AC"
+	ac_lbl.position = Vector2(14.0, 312.0)
+	ac_lbl.size = Vector2(30.0, 14.0)
+	ac_lbl.add_theme_font_size_override("font_size", 10)
+	ac_lbl.add_theme_color_override("font_color", Color(0.62, 0.60, 0.56))
+	ac_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(ac_lbl)
+
+	var ac_val := Label.new()
+	ac_val.text = str(s.armor_class)
+	ac_val.position = Vector2(54.0, 312.0)
+	ac_val.size = Vector2(24.0, 14.0)
+	ac_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ac_val.add_theme_font_size_override("font_size", 10)
+	ac_val.add_theme_color_override("font_color", Color(0.60, 0.85, 1.00))
+	ac_val.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(ac_val)
+
+	var ac_note := Label.new()
+	ac_note.text = "(10+DEX)"
+	ac_note.position = Vector2(84.0, 312.0)
+	ac_note.size = Vector2(56.0, 14.0)
+	ac_note.add_theme_font_size_override("font_size", 9)
+	ac_note.add_theme_color_override("font_color", Color(0.45, 0.45, 0.50))
+	ac_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(ac_note)
+
 	var btn := Button.new()
 	btn.text = "Select"
-	btn.position = Vector2(22.0, 310.0)
+	btn.position = Vector2(22.0, 342.0)
 	btn.size = Vector2(CARD_W - 44.0, 26.0)
 	var btn_normal := StyleBoxFlat.new()
 	btn_normal.bg_color = (data["color"] as Color) * 0.35
