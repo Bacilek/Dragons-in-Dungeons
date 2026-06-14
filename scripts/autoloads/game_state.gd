@@ -11,6 +11,7 @@ signal inventory_changed()
 signal equipment_changed()
 signal inventory_toggle()
 signal player_action_requested(action_name: String)
+signal class_chosen(chosen_class: Stats.CharacterClass)
 
 const QUICKBAR_SIZE: int = 5
 const INVENTORY_SIZE: int = 24
@@ -20,6 +21,7 @@ var player_stats: Stats
 var run_seed: int = 0
 var is_game_over: bool = false
 var inventory_open: bool = false
+var class_selected: bool = false
 
 var player_quickbar: Array = []   # 5 slots shown in HUD action bar
 var player_inventory: Array = []  # 24-slot bag
@@ -44,8 +46,9 @@ func start_new_run() -> void:
 	current_floor = 1
 	is_game_over = false
 	inventory_open = false
+	class_selected = false
 	player_stats = Stats.new()
-	player_stats.apply_class_defaults()
+	player_stats.apply_class_defaults()  # defaults until class select overrides
 	player_quickbar.clear()
 	for _i: int in QUICKBAR_SIZE:
 		player_quickbar.append(null)

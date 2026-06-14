@@ -24,12 +24,16 @@ func _ready() -> void:
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
 	GameState.player_died.connect(_on_player_died)
+	GameState.class_chosen.connect(_on_class_chosen)
 	TurnManager.player_turn_started.connect(_on_turn_started)
 
 func _on_player_died() -> void:
 	visible = false
 	_queued_path.clear()
 	_path_executing = false
+
+func _on_class_chosen(_cls: Stats.CharacterClass) -> void:
+	_setup_animations()
 
 func _on_player_hp_changed(_c: int, _m: int) -> void:
 	update_hp_bar()
@@ -44,10 +48,17 @@ func _on_turn_started() -> void:
 		GameState.heal(1)
 
 func _setup_animations() -> void:
+	var char_name: String
+	match GameState.player_stats.character_class:
+		Stats.CharacterClass.ROGUE:   char_name = "elf_m"
+		Stats.CharacterClass.WIZARD:  char_name = "wizzard_m"
+		Stats.CharacterClass.CLERIC:  char_name = "dwarf_m"
+		_:                            char_name = "knight_m"   # FIGHTER default
+	var base: String = KNIGHT_PATH + char_name + "_"
 	var frames := SpriteFrames.new()
-	_add_anim(frames, "idle", KNIGHT_PATH + "knight_m_idle_anim_f%d.png", 4, true,  8.0)
-	_add_anim(frames, "run",  KNIGHT_PATH + "knight_m_run_anim_f%d.png",  4, false, 16.0)
-	_add_anim(frames, "hit",  KNIGHT_PATH + "knight_m_hit_anim_f%d.png",  1, false, 8.0)
+	_add_anim(frames, "idle", base + "idle_anim_f%d.png", 4, true,  8.0)
+	_add_anim(frames, "run",  base + "run_anim_f%d.png",  4, false, 16.0)
+	_add_anim(frames, "hit",  base + "hit_anim_f%d.png",  1, false, 8.0)
 	$AnimatedSprite2D.sprite_frames = frames
 	$AnimatedSprite2D.offset = Vector2(0, -11)
 	$AnimatedSprite2D.play("idle")
@@ -62,7 +73,7 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 
 # Cardinal + diagonal movement via per-frame key sampling so two held cardinals = diagonal
 func _process(_delta: float) -> void:
-	if GameState.is_game_over or GameState.inventory_open:
+	if GameState.is_game_over or GameState.inventory_open or not GameState.class_selected:
 		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
 		_interrupted = false
@@ -102,7 +113,7 @@ func _process(_delta: float) -> void:
 	_try_move(dir)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if GameState.is_game_over:
+	if GameState.is_game_over or not GameState.class_selected:
 		return
 	if event is InputEventKey:
 		var key := event as InputEventKey

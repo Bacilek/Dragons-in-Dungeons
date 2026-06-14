@@ -50,6 +50,10 @@ func _ready() -> void:
 	var overlay_script = load("res://scripts/ui/inventory_overlay.gd")
 	get_tree().root.call_deferred("add_child", overlay_script.new())
 
+	# Class select screen — shown once per run before the first move
+	var cs_script = load("res://scripts/ui/class_select.gd")
+	get_tree().root.call_deferred("add_child", cs_script.new())
+
 # ── Signal handlers ───────────────────────────────────────────────────────────
 
 func _on_floor_changed(new_floor: int) -> void:
