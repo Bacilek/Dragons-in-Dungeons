@@ -374,8 +374,15 @@ func remove_enemy(enemy: Enemy) -> void:
 
 func get_visible_enemies() -> Array[Enemy]:
 	var result: Array[Enemy] = []
+	if _player == null:
+		return result
+	var r2: int = FOV_RADIUS * FOV_RADIUS
 	for e: Enemy in _enemies:
-		if is_instance_valid(e) and e.visible:
+		if not is_instance_valid(e):
+			continue
+		var dx: int = e.grid_pos.x - _player.grid_pos.x
+		var dy: int = e.grid_pos.y - _player.grid_pos.y
+		if dx * dx + dy * dy <= r2 and has_line_of_sight(_player.grid_pos, e.grid_pos):
 			result.append(e)
 	return result
 
