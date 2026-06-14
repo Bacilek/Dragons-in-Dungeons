@@ -579,6 +579,11 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 			sprite_node.modulate = Color(0.25, 0.25, 0.25, 0.85)  # Dark = spent
 		var dmg: int = trap["damage"] + GameState.current_floor / 2
 		_apply_trap_damage(target, dmg, trap["msg"])
+		# Fire Trap applies burning
+		if trap["name"] == "Fire Trap" and target is Player:
+			GameState.player_stats.burning_turns = 4
+			GameState.player_status_changed.emit()
+			GameState.log("[color=orange]You are burning! (4 turns)[/color]")
 		# Animation plays asynchronously — does not block player input
 		if is_instance_valid(sprite_node):
 			_play_trap_animation(sprite_node)

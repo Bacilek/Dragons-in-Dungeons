@@ -40,6 +40,12 @@ func _on_player_hp_changed(_c: int, _m: int) -> void:
 
 func _on_turn_started() -> void:
 	GameState.deplete_hunger()
+	var status_dmg: int = GameState.player_stats.tick_status()
+	if status_dmg > 0:
+		GameState.take_damage_raw(status_dmg)
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(position, status_dmg, true)
+		GameState.player_status_changed.emit()
 	_regen_counter += 1
 	if _regen_counter < REGEN_TURNS:
 		return

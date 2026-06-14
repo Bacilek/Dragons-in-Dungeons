@@ -26,6 +26,9 @@ enum CharacterClass { FIGHTER, ROGUE, WIZARD, CLERIC }
 
 @export var experience: int = 0
 
+var poison_turns: int = 0
+var burning_turns: int = 0
+
 func exp_for_level(lv: int) -> int:
 	return lv * 10
 
@@ -69,6 +72,16 @@ func take_damage(amount: int) -> int:
 
 func is_dead() -> bool:
 	return current_hp <= 0
+
+func tick_status() -> int:
+	var dmg: int = 0
+	if poison_turns > 0:
+		dmg += 1 + poison_turns / 3
+		poison_turns -= 1
+	if burning_turns > 0:
+		dmg += 2
+		burning_turns -= 1
+	return dmg
 
 func apply_class_defaults() -> void:
 	match character_class:

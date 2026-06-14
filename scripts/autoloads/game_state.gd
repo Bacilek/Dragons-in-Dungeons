@@ -13,6 +13,7 @@ signal inventory_toggle()
 signal player_action_requested(action_name: String)
 signal class_chosen(chosen_class: Stats.CharacterClass)
 signal hunger_changed(value: int)
+signal player_status_changed()
 
 const QUICKBAR_SIZE: int = 5
 const INVENTORY_SIZE: int = 24

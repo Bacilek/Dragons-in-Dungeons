@@ -215,4 +215,9 @@ func _attack_player(_player: Player) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(_player.position, actual, true)
 	GameState.log("[color=tomato]%s[/color] strikes you for [color=yellow]%d[/color] dmg." % [display_name, actual])
+	# Orc Shaman applies poison on hit
+	if display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
+		GameState.player_stats.poison_turns = 3
+		GameState.player_status_changed.emit()
+		GameState.log("[color=lime]You are poisoned! (3 turns)[/color]")
 	GameState.check_player_death()

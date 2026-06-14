@@ -21,6 +21,8 @@ var _item_slots: Array[Button] = []
 var _log_messages: Array[String] = []
 const MAX_LOG_MESSAGES: int = 15
 var _hunger_label: Label
+var _poison_icon: ColorRect
+var _burning_icon: ColorRect
 
 func _ready() -> void:
 	GameState.floor_changed.connect(_on_floor_changed)
@@ -32,6 +34,7 @@ func _ready() -> void:
 	GameState.combat_message.connect(_on_combat_message)
 	GameState.inventory_changed.connect(_refresh_inventory)
 	GameState.hunger_changed.connect(_on_hunger_changed)
+	GameState.player_status_changed.connect(_on_status_changed)
 	portrait.pressed.connect(_on_portrait_pressed)
 	wait_button.pressed.connect(_on_wait_pressed)
 	search_button.pressed.connect(_on_search_pressed)
@@ -56,6 +59,13 @@ func _ready() -> void:
 	$StatsPanel.add_child(_hunger_label)
 	_update_hunger_label()
 
+	# Status icons (poison = green dot, burning = orange dot) below portrait
+	_poison_icon = _make_status_dot(Color(0.20, 0.85, 0.35), Vector2(2.0, 2.0))
+	_burning_icon = _make_status_dot(Color(1.00, 0.45, 0.10), Vector2(14.0, 2.0))
+	$StatsPanel.add_child(_poison_icon)
+	$StatsPanel.add_child(_burning_icon)
+	_update_status_icons()
+
 	# Inventory overlay — add as sibling CanvasLayer so it floats above HUD
 	var overlay_script = load("res://scripts/ui/inventory_overlay.gd")
 	get_tree().root.call_deferred("add_child", overlay_script.new())
@@ -68,6 +78,23 @@ func _ready() -> void:
 
 func _on_hunger_changed(_value: int) -> void:
 	_update_hunger_label()
+
+func _on_status_changed() -> void:
+	_update_status_icons()
+
+func _update_status_icons() -> void:
+	if _poison_icon != null:
+		_poison_icon.visible = GameState.player_stats.poison_turns > 0
+	if _burning_icon != null:
+		_burning_icon.visible = GameState.player_stats.burning_turns > 0
+
+func _make_status_dot(color: Color, offset: Vector2) -> ColorRect:
+	var dot := ColorRect.new()
+	dot.color = color
+	dot.size = Vector2(8.0, 8.0)
+	dot.position = portrait.position + offset
+	dot.visible = false
+	return dot
 
 func _update_hunger_label() -> void:
 	if _hunger_label == null:
