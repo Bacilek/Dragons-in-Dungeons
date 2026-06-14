@@ -15,6 +15,7 @@ signal player_throw_primed(item: Item)
 signal class_chosen(chosen_class: Stats.CharacterClass)
 signal hunger_changed(value: int)
 signal player_status_changed()
+signal debug_jump_floor(floor_num: int)
 
 const QUICKBAR_SIZE: int = 9
 const INVENTORY_SIZE: int = 24
@@ -31,6 +32,7 @@ var run_seed: int = 0
 var is_game_over: bool = false
 var inventory_open: bool = false
 var class_selected: bool = false
+var invincible: bool = false
 var hunger: int = MAX_HUNGER
 var hunger_state: HungerState:
 	get:
@@ -62,6 +64,7 @@ func start_new_run() -> void:
 	is_game_over = false
 	inventory_open = false
 	class_selected = false
+	invincible = false
 	hunger = MAX_HUNGER
 	_starvation_tick = 0
 	player_stats = Stats.new()
@@ -101,7 +104,7 @@ func advance_floor() -> void:
 		player_won.emit()
 
 func check_player_death() -> void:
-	if player_stats.is_dead() and not is_game_over:
+	if player_stats.is_dead() and not is_game_over and not invincible:
 		is_game_over = true
 		player_died.emit()
 
@@ -322,8 +325,14 @@ func restore_hunger(amount: int) -> void:
 	hunger_changed.emit(hunger)
 
 func take_damage_raw(amount: int) -> void:
-	if is_game_over:
+	if is_game_over or invincible:
 		return
 	player_stats.take_damage(amount)
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 	check_player_death()
+
+func debug_jump_to_floor(n: int) -> void:
+	is_game_over = false
+	current_floor = n
+	floor_changed.emit(current_floor)
+	debug_jump_floor.emit(n)

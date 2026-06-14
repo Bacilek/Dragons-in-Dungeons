@@ -38,16 +38,17 @@ func _safe_refresh() -> void:
 	if visible:
 		_refresh()
 
-func _unhandled_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
 	if not visible:
 		return
-	if event is InputEventKey:
-		var key := event as InputEventKey
-		if key.pressed and not key.echo:
-			if key.physical_keycode == KEY_I or key.physical_keycode == KEY_ESCAPE:
-				visible = false
-				GameState.inventory_open = false
-				get_viewport().set_input_as_handled()
+	if not (event is InputEventKey):
+		return
+	var key := event as InputEventKey
+	if key.pressed and not key.echo:
+		if key.physical_keycode == KEY_I or key.physical_keycode == KEY_ESCAPE:
+			get_viewport().set_input_as_handled()
+			visible = false
+			GameState.inventory_open = false
 
 func _process(_delta: float) -> void:
 	if not visible or not _dragging:

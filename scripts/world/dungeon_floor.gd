@@ -86,6 +86,10 @@ var _explored: Dictionary = {}
 func _ready() -> void:
 	_setup_tileset()
 	_load_floor()
+	GameState.debug_jump_floor.connect(_on_debug_jump_floor)
+
+func _on_debug_jump_floor(_n: int) -> void:
+	_load_floor()
 
 func _setup_tileset() -> void:
 	var tile_set := TileSet.new()

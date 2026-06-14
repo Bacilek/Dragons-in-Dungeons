@@ -26,6 +26,8 @@ var _hunger_label: Label
 var _poison_icon: ColorRect
 var _burning_icon: ColorRect
 var _bleeding_icon: ColorRect
+var _inventory_overlay_ref: Node = null
+var _debug_panel_ref: Node = null
 
 func _ready() -> void:
 	GameState.floor_changed.connect(_on_floor_changed)
@@ -94,11 +96,23 @@ func _ready() -> void:
 
 	# Inventory overlay — add as sibling CanvasLayer so it floats above HUD
 	var overlay_script = load("res://scripts/ui/inventory_overlay.gd")
-	get_tree().root.call_deferred("add_child", overlay_script.new())
+	_inventory_overlay_ref = overlay_script.new()
+	get_tree().root.call_deferred("add_child", _inventory_overlay_ref)
 
 	# Class select screen — shown once per run before the first move
 	var cs_script = load("res://scripts/ui/class_select.gd")
 	get_tree().root.call_deferred("add_child", cs_script.new())
+
+	# Debug panel
+	var dbg_script = load("res://scripts/ui/debug_panel.gd")
+	_debug_panel_ref = dbg_script.new()
+	get_tree().root.call_deferred("add_child", _debug_panel_ref)
+
+func _exit_tree() -> void:
+	if _inventory_overlay_ref != null and is_instance_valid(_inventory_overlay_ref):
+		_inventory_overlay_ref.queue_free()
+	if _debug_panel_ref != null and is_instance_valid(_debug_panel_ref):
+		_debug_panel_ref.queue_free()
 
 # ── Signal handlers ───────────────────────────────────────────────────────────
 
