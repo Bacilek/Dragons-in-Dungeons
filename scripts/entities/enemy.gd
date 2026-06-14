@@ -184,12 +184,15 @@ func _do_random_walk() -> void:
 			return
 
 func _move_step(step: Vector2i, next_pos: Vector2i) -> void:
+	var prev_pos: Vector2i = grid_pos
 	$AnimatedSprite2D.flip_h = step.x < 0
 	$AnimatedSprite2D.play("run")
 	await move_to(next_pos, 0.04 if TurnManager.fast_mode else 0.08)
 	if not is_instance_valid(self):
 		return
 	$AnimatedSprite2D.play("idle")
+	if _dungeon_floor.has_door_at(prev_pos):
+		_dungeon_floor.close_door(prev_pos)
 	if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 		_dungeon_floor.destroy_grass(grid_pos)
 	var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)

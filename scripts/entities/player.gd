@@ -152,15 +152,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		var clicked: Vector2i = Vector2i(int(world_pos.x / TILE_SIZE), int(world_pos.y / TILE_SIZE))
 		if clicked == grid_pos:
 			return
-		# Click on open door while adjacent → close it
-		if _dungeon_floor.has_door_at(clicked) and _dungeon_floor.is_door_open(clicked):
-			var diff: Vector2i = clicked - grid_pos
-			if maxi(abs(diff.x), abs(diff.y)) <= 1:
-				TurnManager.begin_player_action()
-				_dungeon_floor.close_door(clicked)
-				_dungeon_floor.update_fog(grid_pos)
-				TurnManager.on_player_action_complete()
-				return
 		# Clicking on an enemy → chase and attack
 		var enemy_clicked: Enemy = _dungeon_floor.get_enemy_at(clicked)
 		if enemy_clicked != null:
@@ -210,6 +201,7 @@ func _execute_queued_path() -> void:
 			# One step closer
 			var next: Vector2i = chase_path[0]
 			var dir: Vector2i = next - grid_pos
+			var prev_c: Vector2i = grid_pos
 			TurnManager.begin_player_action()
 			$AnimatedSprite2D.flip_h = dir.x < 0
 			$AnimatedSprite2D.play("run")
@@ -221,6 +213,8 @@ func _execute_queued_path() -> void:
 			$AnimatedSprite2D.play("idle")
 
 			if _dungeon_floor != null:
+				if _dungeon_floor.has_door_at(prev_c):
+					_dungeon_floor.close_door(prev_c)
 				if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 					_dungeon_floor.destroy_grass(grid_pos)
 				_check_pickup()
@@ -259,6 +253,7 @@ func _execute_queued_path() -> void:
 			break
 
 		var is_stairs: bool = _dungeon_floor.get_tile_type(next) == DungeonData.TileType.STAIRS_DOWN
+		var prev_p: Vector2i = grid_pos
 
 		TurnManager.begin_player_action()
 		$AnimatedSprite2D.flip_h = dir.x < 0
@@ -271,6 +266,8 @@ func _execute_queued_path() -> void:
 		$AnimatedSprite2D.play("idle")
 
 		if _dungeon_floor != null:
+			if _dungeon_floor.has_door_at(prev_p):
+				_dungeon_floor.close_door(prev_p)
 			if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 				_dungeon_floor.destroy_grass(grid_pos)
 				_dungeon_floor.update_fog(grid_pos)
@@ -335,12 +332,15 @@ func _try_move(dir: Vector2i) -> void:
 
 	var is_stairs: bool = _dungeon_floor.get_tile_type(target) == DungeonData.TileType.STAIRS_DOWN
 
+	var prev_pos: Vector2i = grid_pos
 	TurnManager.begin_player_action()
 	$AnimatedSprite2D.flip_h = dir.x < 0
 	$AnimatedSprite2D.play("run")
 	await move_to(target)
 	$AnimatedSprite2D.play("idle")
 	if _dungeon_floor != null:
+		if _dungeon_floor.has_door_at(prev_pos):
+			_dungeon_floor.close_door(prev_pos)
 		# Destroy grass before fog update so our own tile doesn't block sight
 		if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 			_dungeon_floor.destroy_grass(grid_pos)
