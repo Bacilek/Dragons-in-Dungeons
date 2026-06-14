@@ -27,7 +27,6 @@ const TRAP_PATH := "res://sprites/Traps/"
 const TRAP_POOL: Array = [
 	{"name": "Bear Trap",  "sprite": "Bear_Trap.png",       "damage": 0, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
 	{"name": "Fire Trap",  "sprite": "Fire_Trap.png",        "damage": 8, "msg": "Jets of flame engulf you!",        "wall_trap": false},
-	{"name": "Spike Trap", "sprite": "Spike Trap.png",       "damage": 6, "msg": "Spikes shoot up from the floor!", "wall_trap": false, "reusable": true},
 	{"name": "Pit Spikes", "sprite": "Pit_Trap_Spikes.png",  "damage": 7, "msg": "You fall into a spike pit!",       "wall_trap": false, "reusable": true},
 	{"name": "Piston",     "sprite": "Push_Trap_Front.png",  "damage": 0, "msg": "A piston blasts you!",             "wall_trap": true},
 ]
@@ -615,15 +614,26 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 	var trap: Dictionary = _traps[pos]
 	var is_push: bool = trap.get("is_push", false)
 
-	# Non-push traps that are already triggered: skip (single-use or awaiting re-arm)
+	# Single-use traps already spent: skip
 	if trap.get("triggered", false) and not is_push:
 		return
 
+	# Always reveal when triggered by anyone
+	trap["revealed"] = true
 	var sprite_node: Sprite2D = trap.get("sprite_node") as Sprite2D
 	if is_instance_valid(sprite_node):
-		sprite_node.modulate = Color(1.0, 1.0, 1.0, 1.0)  # Fully reveal on trigger
+		sprite_node.modulate = Color(1.0, 1.0, 1.0, 1.0)
 
 	var target: Node2D = entity if entity != null else _player
+
+	# Acrobacy check for the player: 1d20 + DEX mod vs DC (10 + floor)
+	if target is Player:
+		var dex_mod: int = GameState.player_stats.dex_modifier()
+		var roll: int = randi_range(1, 20) + dex_mod
+		var dc: int = 10 + GameState.current_floor
+		if roll >= dc:
+			GameState.game_log("[color=cyan]You spot the [b]%s[/b] and dodge! (d20%+d=[color=yellow]%d[/color] vs DC %d)[/color]" % [trap["name"], dex_mod, roll, dc])
+			return
 
 	if is_push:
 		await _push_entity(target, trap["push_dir"], 2, sprite_node)
@@ -643,8 +653,8 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 			GameState.player_stats.burning_turns = 4
 			GameState.player_status_changed.emit()
 			GameState.game_log("[color=orange]You are burning! (4 turns)[/color]")
-		# Spike Trap and Pit Spikes apply bleeding (5 turns, 1 dmg/turn)
-		if (trap["name"] == "Spike Trap" or trap["name"] == "Pit Spikes") and target is Player:
+		# Pit Spikes apply bleeding (5 turns, 1 dmg/turn)
+		if trap["name"] == "Pit Spikes" and target is Player:
 			GameState.player_stats.bleeding_turns = 5
 			GameState.player_status_changed.emit()
 			GameState.game_log("[color=red]You are bleeding! (5 turns)[/color]")
