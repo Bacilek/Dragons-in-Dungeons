@@ -10,6 +10,7 @@ var _panel: Panel
 var _bag_slots: Array[Control]    = []
 var _qb_slots:  Array[Control]    = []
 var _eq_slots:  Dictionary        = {}   # slot_name → Control
+var _tooltip_label: Label         = null
 
 # Drag state (manual drag — no Godot built-in drag API)
 var _dragging:       bool    = false
@@ -97,6 +98,14 @@ func _build_ui() -> void:
 	_build_equipment_section()
 	_build_bag_section()
 	_build_quickbar_section()
+
+	_tooltip_label = Label.new()
+	_tooltip_label.position = Vector2(10, PANEL_H - 30)
+	_tooltip_label.size = Vector2(PANEL_W - 20, 14)
+	_tooltip_label.add_theme_font_size_override("font_size", 11)
+	_tooltip_label.add_theme_color_override("font_color", Color(0.95, 0.88, 0.60))
+	_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_panel.add_child(_tooltip_label)
 
 	_add_label(_panel, "I / Esc  •  Right-click: use/equip  •  Drag to move",
 		Vector2(10, PANEL_H - 16), 9, Color(0.4, 0.4, 0.4))
@@ -188,6 +197,8 @@ func _make_slot(eq_type: String = "") -> Control:
 	slot.add_child(cnt)
 
 	slot.gui_input.connect(func(ev: InputEvent): _on_slot_input(ev, slot))
+	slot.mouse_entered.connect(func(): _on_slot_hover(slot))
+	slot.mouse_exited.connect(func(): _on_slot_hover_end())
 	return slot
 
 func _eq_display(name: String) -> String:
@@ -285,6 +296,16 @@ func _right_click(slot: Control) -> void:
 		var item: Item = _slot_item(slot)
 		if item != null:
 			GameState.use_item(item)
+
+func _on_slot_hover(slot: Control) -> void:
+	if _tooltip_label == null:
+		return
+	var item: Item = _slot_item(slot)
+	_tooltip_label.text = item.get_display_name() if item != null else ""
+
+func _on_slot_hover_end() -> void:
+	if _tooltip_label != null:
+		_tooltip_label.text = ""
 
 func _slot_item(slot: Control) -> Item:
 	match slot.get_meta("source", ""):
