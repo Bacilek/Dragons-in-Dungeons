@@ -751,7 +751,6 @@ func search_around(pos: Vector2i) -> int:
 			if dx == 0 and dy == 0:
 				continue
 			var trap_pos: Vector2i = pos + Vector2i(dx, dy)
-			if _traps.has(trap_pos):
 			if reveal_trap(trap_pos):
 				found += 1
 	return found
