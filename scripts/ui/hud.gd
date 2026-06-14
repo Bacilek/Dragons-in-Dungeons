@@ -21,7 +21,7 @@ const SLOT_COUNT: int = 9
 var _item_slots: Array[Button] = []
 var _slot_qty_labels: Array[Label] = []
 var _log_messages: Array[String] = []
-const MAX_LOG_MESSAGES: int = 15
+const MAX_LOG_MESSAGES: int = 25
 var _hunger_label: Label
 var _poison_icon: ColorRect
 var _burning_icon: ColorRect

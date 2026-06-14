@@ -115,12 +115,14 @@ func heal(amount: int) -> void:
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 
 func gain_exp(amount: int) -> void:
+	var old_max_hp: int = player_stats.max_hp
 	var leveled_up := player_stats.gain_exp(amount)
 	player_exp_changed.emit(player_stats.experience, player_stats.exp_to_next(), player_stats.character_level)
 	if leveled_up:
 		player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 		player_leveled_up.emit(player_stats.character_level)
-		combat_message.emit("[color=yellow]Level up! You are now level %d. (+5 HP, +1 STR)[/color]" % player_stats.character_level)
+		var hp_gained: int = player_stats.max_hp - old_max_hp
+		combat_message.emit("[color=yellow]Level up! You are now level %d. (+%d max HP)[/color]" % [player_stats.character_level, hp_gained])
 
 # ── Equipment ─────────────────────────────────────────────────────────────────
 

@@ -46,7 +46,6 @@ func gain_exp(amount: int) -> bool:
 		var hp_gain: int = _hp_per_level()
 		max_hp += hp_gain
 		current_hp = mini(current_hp + hp_gain, max_hp)
-		strength += 1
 		leveled = true
 	return leveled
 

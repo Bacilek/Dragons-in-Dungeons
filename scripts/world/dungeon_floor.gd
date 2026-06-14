@@ -28,7 +28,7 @@ const TRAP_POOL: Array = [
 	{"name": "Bear Trap",  "sprite": "Bear_Trap.png",       "damage": 0, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
 	{"name": "Fire Trap",  "sprite": "Fire_Trap.png",        "damage": 8, "msg": "Jets of flame engulf you!",        "wall_trap": false},
 	{"name": "Spike Trap", "sprite": "Spike Trap.png",       "damage": 6, "msg": "Spikes shoot up from the floor!", "wall_trap": false, "reusable": true},
-	{"name": "Pit Spikes", "sprite": "Pit_Trap_Spikes.png",  "damage": 7, "msg": "You fall into a spike pit!",       "wall_trap": false},
+	{"name": "Pit Spikes", "sprite": "Pit_Trap_Spikes.png",  "damage": 7, "msg": "You fall into a spike pit!",       "wall_trap": false, "reusable": true},
 	{"name": "Piston",     "sprite": "Push_Trap_Front.png",  "damage": 0, "msg": "A piston blasts you!",             "wall_trap": true},
 ]
 
@@ -285,7 +285,7 @@ func _update_enemy_visibility(player_pos: Vector2i, r2: int) -> void:
 
 func _blocks_los(bx: int, by: int) -> bool:
 	var t: DungeonData.TileType = _data.get_tile(bx, by)
-	if t == DungeonData.TileType.WALL or t == DungeonData.TileType.GRASS or t == DungeonData.TileType.CHASM:
+	if t == DungeonData.TileType.WALL or t == DungeonData.TileType.GRASS:
 		return true
 	var pos := Vector2i(bx, by)
 	return _doors.has(pos) and not _doors[pos]["is_open"]
@@ -643,8 +643,8 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 			GameState.player_stats.burning_turns = 4
 			GameState.player_status_changed.emit()
 			GameState.game_log("[color=orange]You are burning! (4 turns)[/color]")
-		# Spike Trap applies bleeding (5 turns, 1 dmg/turn)
-		if trap["name"] == "Spike Trap" and target is Player:
+		# Spike Trap and Pit Spikes apply bleeding (5 turns, 1 dmg/turn)
+		if (trap["name"] == "Spike Trap" or trap["name"] == "Pit Spikes") and target is Player:
 			GameState.player_stats.bleeding_turns = 5
 			GameState.player_status_changed.emit()
 			GameState.game_log("[color=red]You are bleeding! (5 turns)[/color]")
