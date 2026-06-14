@@ -33,6 +33,7 @@ var is_game_over: bool = false
 var inventory_open: bool = false
 var class_selected: bool = false
 var invincible: bool = false
+var noclip: bool = false
 var hunger: int = MAX_HUNGER
 var hunger_state: HungerState:
 	get:
@@ -65,6 +66,7 @@ func start_new_run() -> void:
 	inventory_open = false
 	class_selected = false
 	invincible = false
+	noclip = false
 	hunger = MAX_HUNGER
 	_starvation_tick = 0
 	player_stats = Stats.new()

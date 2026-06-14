@@ -1,7 +1,7 @@
 extends CanvasLayer
 
 const PANEL_W:  int = 200
-const PANEL_H:  int = 130
+const PANEL_H:  int = 160
 const FLOOR_SW: int = 234
 const FLOOR_SH: int = 96
 const ITEMS_SW: int = 390
@@ -25,10 +25,11 @@ const ALL_ITEMS: Array = [
 	{"name": "Thief Tools",     "type": 7, "src": "items",   "icon": "Misc/KeyIron.png",                      "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Disarm traps"},
 ]
 
-var _main_panel:  Panel
-var _floor_sub:   Panel
-var _items_sub:   Panel
-var _inv_check:   CheckBox
+var _main_panel:    Panel
+var _floor_sub:     Panel
+var _items_sub:     Panel
+var _inv_check:     CheckBox
+var _noclip_check:  CheckBox
 
 func _ready() -> void:
 	layer = 25
@@ -70,14 +71,22 @@ func _build_main_panel() -> void:
 	_inv_check.toggled.connect(_on_invincible_toggled)
 	_main_panel.add_child(_inv_check)
 
+	_noclip_check = CheckBox.new()
+	_noclip_check.text = "Noclip"
+	_noclip_check.position = Vector2(6.0, 58.0)
+	_noclip_check.size = Vector2(PANEL_W - 12.0, 28.0)
+	_noclip_check.add_theme_font_size_override("font_size", 11)
+	_noclip_check.toggled.connect(_on_noclip_toggled)
+	_main_panel.add_child(_noclip_check)
+
 	var jump_btn := _make_btn("Jump to Floor...", Color(0.25, 0.60, 1.0))
-	jump_btn.position = Vector2(6.0, 62.0)
+	jump_btn.position = Vector2(6.0, 90.0)
 	jump_btn.size = Vector2(PANEL_W - 12.0, 26.0)
 	jump_btn.pressed.connect(_on_jump_pressed)
 	_main_panel.add_child(jump_btn)
 
 	var items_btn := _make_btn("Give Item...", Color(0.35, 0.80, 0.35))
-	items_btn.position = Vector2(6.0, 92.0)
+	items_btn.position = Vector2(6.0, 122.0)
 	items_btn.size = Vector2(PANEL_W - 12.0, 26.0)
 	items_btn.pressed.connect(_on_items_pressed)
 	_main_panel.add_child(items_btn)
@@ -240,6 +249,11 @@ func _on_invincible_toggled(pressed: bool) -> void:
 	GameState.invincible = pressed
 	GameState.game_log("[color=%s][DEBUG] Invincible %s[/color]" % [
 		"red" if pressed else "gray", "ON" if pressed else "OFF"])
+
+func _on_noclip_toggled(pressed: bool) -> void:
+	GameState.noclip = pressed
+	GameState.game_log("[color=%s][DEBUG] Noclip %s[/color]" % [
+		"cyan" if pressed else "gray", "ON" if pressed else "OFF"])
 
 func _on_jump_pressed() -> void:
 	_floor_sub.visible = not _floor_sub.visible

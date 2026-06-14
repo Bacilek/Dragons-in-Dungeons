@@ -111,7 +111,7 @@ func _process(_delta: float) -> void:
 		# Key still physically held after interrupt — block until finger lifted
 		_prev_dir = dir
 		return
-	elif _dungeon_floor != null and not _dungeon_floor.get_visible_enemies().is_empty():
+	elif not GameState.noclip and _dungeon_floor != null and not _dungeon_floor.get_visible_enemies().is_empty():
 		# Continuing hold, enemy in FOV — interrupt
 		_interrupted = true
 		_prev_dir = dir
@@ -275,20 +275,26 @@ func _execute_queued_path() -> void:
 		_queued_path.remove_at(0)
 		var dir: Vector2i = next - grid_pos
 
-		var enemy_there: Enemy = _dungeon_floor.get_enemy_at(next)
-		if enemy_there != null:
-			_bump_attack(enemy_there, dir)
-			if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
-				await TurnManager.player_turn_started
-			break
+		if GameState.noclip:
+			# Noclip: reject only off-grid VOID tiles
+			if _dungeon_floor.get_tile_type(next) == DungeonData.TileType.VOID:
+				_queued_path.clear()
+				break
+		else:
+			var enemy_there: Enemy = _dungeon_floor.get_enemy_at(next)
+			if enemy_there != null:
+				_bump_attack(enemy_there, dir)
+				if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
+					await TurnManager.player_turn_started
+				break
 
-		# Open closed door for free — movement continues in the same turn
-		if _dungeon_floor.has_door_at(next) and not _dungeon_floor.is_door_open(next):
-			_dungeon_floor.open_door(next)
+			# Open closed door for free — movement continues in the same turn
+			if _dungeon_floor.has_door_at(next) and not _dungeon_floor.is_door_open(next):
+				_dungeon_floor.open_door(next)
 
-		if not _dungeon_floor.is_walkable(next):
-			_queued_path.clear()
-			break
+			if not _dungeon_floor.is_walkable(next):
+				_queued_path.clear()
+				break
 
 		var is_stairs: bool = _dungeon_floor.get_tile_type(next) == DungeonData.TileType.STAIRS_DOWN
 		var prev_p: Vector2i = grid_pos
@@ -346,7 +352,7 @@ func _execute_queued_path() -> void:
 	_path_executing = false
 
 func _has_new_enemy_in_fov(snapshot: Array[Enemy]) -> bool:
-	if _dungeon_floor == null:
+	if _dungeon_floor == null or GameState.noclip:
 		return false
 	for e: Enemy in _dungeon_floor.get_visible_enemies():
 		if e not in snapshot:
@@ -358,17 +364,22 @@ func _try_move(dir: Vector2i) -> void:
 		return
 	var target: Vector2i = grid_pos + dir
 
-	var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
-	if enemy != null:
-		_bump_attack(enemy, dir)
-		return
+	if GameState.noclip:
+		# Noclip: skip enemy attack and walkability — only reject off-grid VOID
+		if _dungeon_floor.get_tile_type(target) == DungeonData.TileType.VOID:
+			return
+	else:
+		var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
+		if enemy != null:
+			_bump_attack(enemy, dir)
+			return
 
-	# Open closed door for free — movement continues in the same turn
-	if _dungeon_floor.has_door_at(target) and not _dungeon_floor.is_door_open(target):
-		_dungeon_floor.open_door(target)
+		# Open closed door for free — movement continues in the same turn
+		if _dungeon_floor.has_door_at(target) and not _dungeon_floor.is_door_open(target):
+			_dungeon_floor.open_door(target)
 
-	if not _dungeon_floor.is_walkable(target):
-		return
+		if not _dungeon_floor.is_walkable(target):
+			return
 
 	var is_stairs: bool = _dungeon_floor.get_tile_type(target) == DungeonData.TileType.STAIRS_DOWN
 
