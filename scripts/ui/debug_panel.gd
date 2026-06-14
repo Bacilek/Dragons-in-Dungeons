@@ -253,7 +253,6 @@ func _on_items_pressed() -> void:
 
 func _on_floor_selected(floor_num: int) -> void:
 	_floor_sub.visible = false
-	_main_panel.visible = false
 	GameState.game_log("[color=cyan][DEBUG] Jumping to floor %d…[/color]" % floor_num)
 	GameState.debug_jump_to_floor(floor_num)
 
