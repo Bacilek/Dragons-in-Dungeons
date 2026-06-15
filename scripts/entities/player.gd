@@ -19,15 +19,15 @@ var _throw_item: Item = null
 var _inspect_mode: bool = false
 var _last_search_request: float = -999.0
 var _rest_interrupt_shown: bool = false
+var _traps_in_proximity: Array[Vector2i] = []
 
 # FOV snapshots for advantage (surprise attack) detection
 var _fov_prev_turn: Array[Enemy] = []  # visible enemies at START of previous player turn
 var _fov_this_turn: Array[Enemy] = []  # visible enemies at START of current player turn
 
-var _camera: Camera2D
+@onready var _camera: Camera2D = $Camera2D
 const ZOOM_MIN: float = 1.0
 const ZOOM_MAX: float = 5.0
-const ZOOM_DEFAULT: float = 3.0
 const ZOOM_STEP: float = 0.25
 
 func _ready() -> void:
@@ -40,12 +40,6 @@ func _ready() -> void:
 	GameState.player_died.connect(_on_player_died)
 	GameState.class_chosen.connect(_on_class_chosen)
 	TurnManager.player_turn_started.connect(_on_turn_started)
-
-	_camera = Camera2D.new()
-	_camera.zoom = Vector2(ZOOM_DEFAULT, ZOOM_DEFAULT)
-	_camera.position_smoothing_enabled = true
-	_camera.position_smoothing_speed = 8.0
-	add_child(_camera)
 
 func _on_player_died() -> void:
 	visible = false
@@ -745,17 +739,23 @@ func _passive_trap_check() -> void:
 		return
 	var wis_mod: int = GameState.player_stats.wis_modifier()
 	var dc: int = maxi(8, 8 + GameState.current_floor / 2)
+	var now_in_range: Array[Vector2i] = []
 	for trap_pos: Vector2i in _dungeon_floor.get_unrevealed_traps():
 		var diff: Vector2i = trap_pos - grid_pos
-		if maxi(absi(diff.x), absi(diff.y)) <= 2:
-			var die: int = randi_range(1, 20)
-			if die + wis_mod >= dc:
-				_dungeon_floor.reveal_trap(trap_pos)
-				if _queued_path.size() > 0:
-					_queued_path.clear()
-					GameState.game_log("[color=yellow]You notice something suspicious nearby and stop cautiously.[/color]")
-				else:
-					GameState.game_log("[color=yellow]You notice something suspicious on the floor.[/color]")
+		if maxi(absi(diff.x), absi(diff.y)) > 2:
+			continue
+		now_in_range.append(trap_pos)
+		if trap_pos in _traps_in_proximity:
+			continue  # already knew it was near — don't re-roll
+		var die: int = randi_range(1, 20)
+		if die + wis_mod >= dc:
+			_dungeon_floor.reveal_trap(trap_pos)
+			if _queued_path.size() > 0:
+				_queued_path.clear()
+				GameState.game_log("[color=yellow]You notice something suspicious nearby and stop cautiously.[/color]")
+			else:
+				GameState.game_log("[color=yellow]You notice something suspicious on the floor.[/color]")
+	_traps_in_proximity = now_in_range
 
 func _interact_action() -> void:
 	if _dungeon_floor == null:
@@ -835,6 +835,10 @@ func _leave_blood_trail(pos: Vector2i) -> void:
 func _has_advantage(enemy: Enemy) -> bool:
 	if enemy.behavior == Enemy.Behavior.SLEEPING:
 		return true
+	# Enemy already chasing us — no surprise, even if briefly off-screen
+	if enemy.behavior == Enemy.Behavior.CHASING:
+		return false
+	# STATIONARY / ROAMING: ADV only on the turn they first enter our FOV
 	return not (enemy in _fov_prev_turn)
 
 func _show_surprise_mark(enemy: Enemy) -> void:
