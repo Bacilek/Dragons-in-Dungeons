@@ -3,6 +3,7 @@ extends Entity
 
 const KNIGHT_PATH := "res://sprites/characters/"
 const SWORD_SPRITE := "res://sprites/weapons/weapon_anime_sword.png"
+const UNDEAD_NAMES: Array = ["Tiny Zombie", "Goblin", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
 
 var _dungeon_floor: Node
 
@@ -486,26 +487,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		else:
 			GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 	if enemy.stats.is_dead():
-		GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
-		GameState.gain_exp(enemy.exp_reward)
-		var was_boss: bool = enemy.is_boss
-		var kill_pos: Vector2i = enemy.grid_pos
-		var killed_name: String = enemy.display_name
-		_dungeon_floor.remove_enemy(enemy)
-		enemy.die()
-		if was_boss:
-			_dungeon_floor.drop_boss_loot(kill_pos)
-		# 20% Rotten Meat drop from undead humanoids
-		const UNDEAD_NAMES: Array = ["Tiny Zombie", "Goblin", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
-		if killed_name in UNDEAD_NAMES and randf() < 0.20:
-			var rotten := Item.new()
-			rotten.item_name = "Rotten Meat"
-			rotten.item_type = Item.Type.FOOD
-			rotten.heal_amount = 20
-			rotten.icon_path = "res://sprites/items/Food/Meat.png"
-			rotten.description = "Throw into fire to cook. Raw: minimal nutrition + 3 turns poison."
-			_dungeon_floor.place_item_on_floor(kill_pos, rotten)
-			GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)
+		_finish_kill(enemy)
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
@@ -559,6 +541,26 @@ func _flash_hit(target: Entity) -> void:
 	var tween := target.create_tween()
 	tween.tween_property(target, "modulate", Color(1.8, 0.3, 0.3), 0.05)
 	tween.tween_property(target, "modulate", Color(1.0, 1.0, 1.0), 0.1)
+
+func _finish_kill(enemy: Enemy) -> void:
+	GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
+	GameState.gain_exp(enemy.exp_reward)
+	var was_boss: bool = enemy.is_boss
+	var kill_pos: Vector2i = enemy.grid_pos
+	var killed_name: String = enemy.display_name
+	_dungeon_floor.remove_enemy(enemy)
+	enemy.die()
+	if was_boss:
+		_dungeon_floor.drop_boss_loot(kill_pos)
+	if killed_name in UNDEAD_NAMES and randf() < 0.20:
+		var rotten := Item.new()
+		rotten.item_name = "Rotten Meat"
+		rotten.item_type = Item.Type.FOOD
+		rotten.heal_amount = 20
+		rotten.icon_path = "res://sprites/items/Food/Meat.png"
+		rotten.description = "Throw into fire to cook. Raw: minimal nutrition + 3 turns poison."
+		_dungeon_floor.place_item_on_floor(kill_pos, rotten)
+		GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)
 
 func _on_action_requested(action_name: String) -> void:
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
@@ -781,25 +783,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 			GameState.game_log("You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
 
 	if enemy.stats.is_dead():
-		GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
-		GameState.gain_exp(enemy.exp_reward)
-		var was_boss: bool = enemy.is_boss
-		var kill_pos: Vector2i = enemy.grid_pos
-		var killed_name: String = enemy.display_name
-		_dungeon_floor.remove_enemy(enemy)
-		enemy.die()
-		if was_boss:
-			_dungeon_floor.drop_boss_loot(kill_pos)
-		const UNDEAD_NAMES: Array = ["Tiny Zombie", "Goblin", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
-		if killed_name in UNDEAD_NAMES and randf() < 0.20:
-			var rotten := Item.new()
-			rotten.item_name = "Rotten Meat"
-			rotten.item_type = Item.Type.FOOD
-			rotten.heal_amount = 20
-			rotten.icon_path = "res://sprites/items/Food/Meat.png"
-			rotten.description = "Throw into fire to cook. Raw: minimal nutrition + 3 turns poison."
-			_dungeon_floor.place_item_on_floor(kill_pos, rotten)
-			GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)
+		_finish_kill(enemy)
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
