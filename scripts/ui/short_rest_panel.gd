@@ -179,14 +179,10 @@ func _on_rest() -> void:
 		total_heal += maxi(1, randi_range(1, sides) + con_mod)
 	GameState.hit_dice -= _dice_to_spend
 	GameState.short_rests_remaining -= 1
-	var before_hp: int = GameState.player_stats.current_hp
-	GameState.heal(total_heal)
-	var actual: int = GameState.player_stats.current_hp - before_hp
-	var rests_left: int = GameState.short_rests_remaining
-	GameState.game_log("[color=cyan]Short rest: spent %d d%d — healed [b]+%d HP[/b]. (%d rest%s left this floor)[/color]" % [
-		_dice_to_spend, sides, actual,
-		rests_left, "s" if rests_left != 1 else "",
-	])
+	GameState.short_rest_pending_heal = total_heal
+	GameState.short_rest_active = true
+	GameState.short_rest_turns_remaining = 5
+	GameState.game_log("[color=cyan]You settle in for a short rest... (5 turns)[/color]")
 	GameState.short_rest_changed.emit()
 	_close()
 

@@ -18,6 +18,7 @@ var _interrupted: bool = false           # set when enemy seen mid-hold; cleared
 var _throw_item: Item = null
 var _inspect_mode: bool = false
 var _last_search_request: float = -999.0
+var _rest_interrupt_shown: bool = false
 
 # FOV snapshots for advantage (surprise attack) detection
 var _fov_prev_turn: Array[Enemy] = []  # visible enemies at START of previous player turn
@@ -63,6 +64,34 @@ func _on_turn_started() -> void:
 	if _dungeon_floor != null:
 		_fov_prev_turn = _fov_this_turn
 		_fov_this_turn = _dungeon_floor.get_visible_enemies()
+
+	# Short rest in progress — player waits in place
+	if GameState.short_rest_active:
+		if GameState.short_rest_open:
+			# Interrupt prompt still showing — wait another turn (enemies move)
+			_do_rest_wait_turn()
+			return
+		if not _fov_this_turn.is_empty() and not _rest_interrupt_shown:
+			_rest_interrupt_shown = true
+			GameState.short_rest_open = true
+			var panel_script = load("res://scripts/ui/rest_interrupt_panel.gd")
+			get_tree().root.call_deferred("add_child", panel_script.new())
+			_do_rest_wait_turn()
+			return
+		GameState.short_rest_turns_remaining -= 1
+		if GameState.short_rest_turns_remaining > 0:
+			GameState.game_log("[color=gray]Resting... (%d turn(s) remaining)[/color]" % GameState.short_rest_turns_remaining)
+		else:
+			var healed: int = GameState.short_rest_pending_heal
+			GameState.heal(healed)
+			GameState.game_log("[color=cyan]You finish your short rest and recover [b]+%d HP[/b].[/color]" % healed)
+			GameState.short_rest_active = false
+			GameState.short_rest_pending_heal = 0
+			_rest_interrupt_shown = false
+			GameState.short_rest_changed.emit()
+		_do_rest_wait_turn()
+		return
+
 	GameState.deplete_hunger()
 	var status_dmg: int = GameState.player_stats.tick_status()
 	if status_dmg > 0:
@@ -160,7 +189,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			if not GameState.short_rest_open:
 				GameState.inventory_toggle.emit()
 			return
-		if GameState.inventory_open or GameState.short_rest_open:
+		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
 			if _inspect_mode:
@@ -208,6 +237,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 
 		if mb.button_index != MOUSE_BUTTON_LEFT:
+			return
+
+		if GameState.short_rest_active or GameState.short_rest_open:
 			return
 
 		# Inspect mode — show info about clicked tile
@@ -636,6 +668,12 @@ func _wait_action() -> void:
 	TurnManager.begin_player_action()
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
+	TurnManager.on_player_action_complete()
+
+func _do_rest_wait_turn() -> void:
+	if _dungeon_floor != null:
+		_dungeon_floor.update_fog(grid_pos)
+	TurnManager.begin_player_action()
 	TurnManager.on_player_action_complete()
 
 func _handle_search_request() -> void:
