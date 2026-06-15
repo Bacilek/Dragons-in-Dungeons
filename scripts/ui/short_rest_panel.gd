@@ -105,6 +105,7 @@ func _build_ui() -> void:
 	cancel_btn.size = Vector2(160.0, 36.0)
 	cancel_btn.position = Vector2(18.0, 188.0)
 	cancel_btn.add_theme_font_size_override("font_size", 12)
+	cancel_btn.focus_mode = Control.FOCUS_NONE
 	cancel_btn.pressed.connect(_close)
 	panel.add_child(cancel_btn)
 
@@ -131,6 +132,7 @@ func _style_btn(btn: Button, font_size: int = 12) -> void:
 	hover.set_corner_radius_all(4)
 	btn.add_theme_stylebox_override("hover", hover)
 	btn.add_theme_font_size_override("font_size", font_size)
+	btn.focus_mode = Control.FOCUS_NONE
 
 func _style_rest_btn() -> void:
 	var normal := StyleBoxFlat.new()

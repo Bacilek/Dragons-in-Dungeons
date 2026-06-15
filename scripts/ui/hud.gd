@@ -33,6 +33,7 @@ var _hit_dice_label: Label
 var _compass_panel: Panel
 var _compass_arrow_label: Label
 var _compass_dist_label: Label
+var _stairs_found_this_floor: bool = false
 
 const CLASS_PORTRAIT: Dictionary = {
 	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/knight_m_idle_anim_f0.png",
@@ -200,12 +201,15 @@ func _update_status_icons() -> void:
 		_slowed_icon.visible = GameState.player_stats.slowed_turns > 0
 
 func _on_stairs_discovered() -> void:
+	_stairs_found_this_floor = true
 	if _compass_panel != null:
 		_compass_panel.visible = true
 	_update_compass()
 
 func _update_compass() -> void:
 	if _compass_panel == null or not _compass_panel.visible:
+		return
+	if not _stairs_found_this_floor:
 		return
 	var diff: Vector2i = GameState.current_stairs_pos - GameState.player_grid_pos
 	if diff == Vector2i.ZERO:
@@ -270,8 +274,13 @@ func _on_floor_changed(new_floor: int) -> void:
 	_log_messages.clear()
 	log_label.text = ""
 	_update_hit_dice_label()
+	_stairs_found_this_floor = false
 	if _compass_panel != null:
-		_compass_panel.visible = false
+		_compass_panel.visible = true
+		if _compass_arrow_label != null:
+			_compass_arrow_label.text = "?"
+		if _compass_dist_label != null:
+			_compass_dist_label.text = "find it"
 
 func _on_player_hp_changed(current_hp: int, max_hp: int) -> void:
 	_update_hp_bar(current_hp, max_hp)

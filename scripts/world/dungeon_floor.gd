@@ -300,10 +300,10 @@ func update_fog(player_pos: Vector2i) -> void:
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 1.0))
 	_fog_texture.update(_fog_image)
 	_update_enemy_visibility(player_pos, r2)
-	if not stairs_was_known and _explored.get(_data.stairs_pos, false):
-		GameState.stairs_discovered.emit()
 	if _see_all_active:
 		_apply_see_all()
+	if not stairs_was_known and _explored.get(_data.stairs_pos, false):
+		GameState.stairs_discovered.emit()
 
 func _on_debug_see_all(active: bool) -> void:
 	_see_all_active = active
@@ -314,6 +314,7 @@ func _apply_see_all() -> void:
 	for y: int in _data.height:
 		for x: int in _data.width:
 			if _data.get_tile(x, y) != DungeonData.TileType.VOID:
+				_explored[Vector2i(x, y)] = true
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0))
 	_fog_texture.update(_fog_image)
 	for e: Enemy in _enemies:

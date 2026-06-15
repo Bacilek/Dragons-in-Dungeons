@@ -71,6 +71,7 @@ func _build_main_panel() -> void:
 	_inv_check.position = Vector2(6.0, 30.0)
 	_inv_check.size = Vector2(PANEL_W - 12.0, 32.0)
 	_inv_check.add_theme_font_size_override("font_size", 13)
+	_inv_check.focus_mode = Control.FOCUS_NONE
 	_inv_check.toggled.connect(_on_invincible_toggled)
 	_main_panel.add_child(_inv_check)
 
@@ -79,6 +80,7 @@ func _build_main_panel() -> void:
 	_noclip_check.position = Vector2(6.0, 66.0)
 	_noclip_check.size = Vector2(PANEL_W - 12.0, 32.0)
 	_noclip_check.add_theme_font_size_override("font_size", 13)
+	_noclip_check.focus_mode = Control.FOCUS_NONE
 	_noclip_check.toggled.connect(_on_noclip_toggled)
 	_main_panel.add_child(_noclip_check)
 
@@ -238,6 +240,7 @@ func _make_btn(text: String, col: Color) -> Button:
 	btn.add_theme_stylebox_override("normal", n)
 	btn.add_theme_stylebox_override("hover",  h)
 	btn.add_theme_color_override("font_color", Color.WHITE)
+	btn.focus_mode = Control.FOCUS_NONE
 	return btn
 
 # ── Input ─────────────────────────────────────────────────────────────────────

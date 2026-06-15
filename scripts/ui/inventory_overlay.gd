@@ -261,7 +261,7 @@ func _finish_drag() -> void:
 	for slot: Control in _all_slots():
 		if slot == _drag_src_ctrl:
 			continue
-		if slot.get_rect().has_point(local_mouse):
+		if Rect2(slot.position, Vector2(SLOT_SIZE, SLOT_SIZE)).has_point(local_mouse):
 			dest = slot
 			break
 	if dest != null:
