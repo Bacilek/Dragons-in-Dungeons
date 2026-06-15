@@ -10,8 +10,9 @@ const SOURCE_CHASM:       int = 3
 const SOURCE_WATER:       int = 4
 const SOURCE_MUD:         int = 5
 const SOURCE_GRASS:       int = 6
-const SOURCE_DOOR_CLOSED: int = 7
-const SOURCE_DOOR_OPEN:   int = 8
+const SOURCE_DOOR_CLOSED:    int = 7
+const SOURCE_DOOR_OPEN:      int = 8
+const SOURCE_TRAMPLED_GRASS: int = 9
 const TILE_SPRITES_PATH := "res://sprites/tiles/"
 const WEAPONS_PATH := "res://sprites/weapons/"
 const OBJECTS_PATH := "res://sprites/objects/"
@@ -104,8 +105,9 @@ func _setup_tileset() -> void:
 	_add_tile_from_atlas(tile_set, SOURCE_WATER, "res://sprites/tiles/WaterRockDirt.png", 32, 0, Color(0.10, 0.30, 0.72))
 	_add_tile_from_atlas(tile_set, SOURCE_MUD,   "res://sprites/tiles/WaterRockDirt.png",  0, 0, Color(0.30, 0.18, 0.08))
 	_add_tile_from_atlas(tile_set, SOURCE_GRASS, "res://sprites/tiles/Grass.png",          0, 0, Color(0.10, 0.42, 0.10))
-	_add_tile_source_or_color(tile_set, SOURCE_DOOR_CLOSED, OBJECTS_PATH + "doors_leaf_closed.png", Color(0.5, 0.3, 0.1))
-	_add_tile_source_or_color(tile_set, SOURCE_DOOR_OPEN,   OBJECTS_PATH + "doors_leaf_open.png",   Color(0.3, 0.2, 0.05))
+	_add_tile_source_or_color(tile_set, SOURCE_DOOR_CLOSED,    OBJECTS_PATH + "doors_leaf_closed.png", Color(0.5, 0.3, 0.1))
+	_add_tile_source_or_color(tile_set, SOURCE_DOOR_OPEN,      OBJECTS_PATH + "doors_leaf_open.png",   Color(0.3, 0.2, 0.05))
+	_add_tile_source_or_color(tile_set, SOURCE_TRAMPLED_GRASS, TILE_SPRITES_PATH + "Grass_trampled.png", Color(0.38, 0.30, 0.10))
 	tilemap.tile_set = tile_set
 
 func _add_tile_source(tile_set: TileSet, source_id: int, path: String) -> void:
@@ -195,6 +197,8 @@ func _load_floor() -> void:
 					tilemap.set_cell(Vector2i(x, y), SOURCE_MUD, ATLAS_ORIGIN)
 				DungeonData.TileType.GRASS:
 					tilemap.set_cell(Vector2i(x, y), SOURCE_GRASS, ATLAS_ORIGIN)
+				DungeonData.TileType.TRAMPLED_GRASS:
+					tilemap.set_cell(Vector2i(x, y), SOURCE_TRAMPLED_GRASS, ATLAS_ORIGIN)
 
 	if _player == null:
 		var player_scene: PackedScene = preload("res://scenes/game/player.tscn")
@@ -962,8 +966,8 @@ func close_door(pos: Vector2i) -> void:
 func destroy_grass(pos: Vector2i) -> void:
 	if _data.get_tile(pos.x, pos.y) != DungeonData.TileType.GRASS:
 		return
-	_data.grid[pos.y][pos.x] = DungeonData.TileType.FLOOR
-	tilemap.set_cell(pos, SOURCE_FLOOR, ATLAS_ORIGIN)
+	_data.grid[pos.y][pos.x] = DungeonData.TileType.TRAMPLED_GRASS
+	tilemap.set_cell(pos, SOURCE_TRAMPLED_GRASS, ATLAS_ORIGIN)
 
 # ── Items ─────────────────────────────────────────────────────────────────────
 

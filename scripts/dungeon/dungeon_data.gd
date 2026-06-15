@@ -1,7 +1,7 @@
 class_name DungeonData
 extends Resource
 
-enum TileType { VOID = 0, FLOOR = 1, WALL = 2, STAIRS_DOWN = 3, CHASM = 4, WATER = 5, MUD = 6, GRASS = 7 }
+enum TileType { VOID = 0, FLOOR = 1, WALL = 2, STAIRS_DOWN = 3, CHASM = 4, WATER = 5, MUD = 6, GRASS = 7, TRAMPLED_GRASS = 8 }
 
 var grid: Array = []        # grid[y][x] → TileType int
 var rooms: Array = []       # Array[Rect2i]
@@ -19,4 +19,5 @@ func get_tile(x: int, y: int) -> TileType:
 func is_walkable(pos: Vector2i) -> bool:
 	var t: TileType = get_tile(pos.x, pos.y)
 	return t == TileType.FLOOR or t == TileType.STAIRS_DOWN \
-		or t == TileType.WATER or t == TileType.MUD or t == TileType.GRASS
+		or t == TileType.WATER or t == TileType.MUD or t == TileType.GRASS \
+		or t == TileType.TRAMPLED_GRASS
