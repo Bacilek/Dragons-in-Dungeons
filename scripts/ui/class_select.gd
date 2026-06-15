@@ -59,7 +59,7 @@ func _build_ui() -> void:
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(dim)
 
-	var vp := get_viewport_rect().size
+	var vp: Vector2 = get_viewport().get_visible_rect().size
 	var total_w: float = CLASS_DATA.size() * CARD_W + (CLASS_DATA.size() - 1) * CARD_GAP
 	var origin_x: float = (vp.x - total_w) / 2.0
 	var origin_y: float = (vp.y - CARD_H) / 2.0
