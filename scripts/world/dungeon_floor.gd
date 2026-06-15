@@ -602,10 +602,7 @@ func _spawn_traps() -> void:
 			sprite.z_index = 1
 			sprite.modulate.a = 0.5
 			entities.add_child(sprite)
-			# Detection/trigger tile is 1 tile deeper into the room so diagonal search works
-			var detect_pos: Vector2i = floor_pos + push_dir
-			if _data.get_tile(detect_pos.x, detect_pos.y) != DungeonData.TileType.FLOOR:
-				detect_pos = floor_pos  # fallback if room is too narrow
+			var detect_pos: Vector2i = floor_pos
 			_traps[detect_pos] = {"name": t["name"], "damage": 0, "msg": t["msg"],
 								  "sprite_node": sprite, "revealed": false, "is_push": true,
 								  "push_dir": push_dir, "wall_pos": wall_pos, "triggered": false}
