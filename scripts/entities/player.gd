@@ -502,7 +502,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			rotten.item_name = "Rotten Meat"
 			rotten.item_type = Item.Type.FOOD
 			rotten.heal_amount = 20
-			rotten.icon_path = "res://sprites/items/Sprites trial/Food/Meat.png"
+			rotten.icon_path = "res://sprites/items/Food/Meat.png"
 			rotten.description = "Throw into fire to cook. Raw: minimal nutrition + 3 turns poison."
 			_dungeon_floor.place_item_on_floor(kill_pos, rotten)
 			GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)
@@ -796,7 +796,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 			rotten.item_name = "Rotten Meat"
 			rotten.item_type = Item.Type.FOOD
 			rotten.heal_amount = 20
-			rotten.icon_path = "res://sprites/items/Sprites trial/Food/Meat.png"
+			rotten.icon_path = "res://sprites/items/Food/Meat.png"
 			rotten.description = "Throw into fire to cook. Raw: minimal nutrition + 3 turns poison."
 			_dungeon_floor.place_item_on_floor(kill_pos, rotten)
 			GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)

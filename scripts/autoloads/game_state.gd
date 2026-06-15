@@ -93,7 +93,7 @@ func _give_starting_items() -> void:
 	ration.item_name = "Ration"
 	ration.item_type = Item.Type.FOOD
 	ration.heal_amount = 200
-	ration.icon_path = "res://sprites/items/Sprites trial/Food/MeatCooked.png"
+	ration.icon_path = "res://sprites/items/Food/MeatCooked.png"
 	ration.description = "Fills you up"
 	ration.quantity = 3
 	add_item(ration)
@@ -101,7 +101,7 @@ func _give_starting_items() -> void:
 	var tools := Item.new()
 	tools.item_name = "Thief Tools"
 	tools.item_type = Item.Type.TOOL
-	tools.icon_path = "res://sprites/items/Sprites trial/Misc/KeyIron.png"
+	tools.icon_path = "res://sprites/items/Misc/KeyIron.png"
 	tools.description = "Interact (F) near a revealed trap to disarm. Consumed on failure."
 	tools.quantity = 3
 	add_item(tools)

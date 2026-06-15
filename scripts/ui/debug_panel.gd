@@ -8,7 +8,7 @@ const ITEMS_SW: int = 390
 const ITEMS_SH: int = 370
 
 const WEAPONS_PATH := "res://sprites/weapons/"
-const ITEMS_PATH   := "res://sprites/items/Sprites trial/"
+const ITEMS_PATH   := "res://sprites/items/"
 
 const ALL_ITEMS: Array = [
 	{"name": "Rusty Sword",     "type": 0, "src": "weapons", "icon": "weapon_rusty_sword.png",                "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "desc": "+1 damage"},

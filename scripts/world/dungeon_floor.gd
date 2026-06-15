@@ -15,14 +15,14 @@ const SOURCE_DOOR_OPEN:   int = 8
 const TILE_SPRITES_PATH := "res://sprites/tiles/"
 const WEAPONS_PATH := "res://sprites/weapons/"
 const OBJECTS_PATH := "res://sprites/objects/"
-const ITEMS_PATH   := "res://sprites/items/Sprites trial/"
+const ITEMS_PATH   := "res://sprites/items/"
 
 const ENEMY_COUNT_MIN: int = 3
 const ENEMY_COUNT_MAX: int = 5
 const FOV_RADIUS: int = 6
 const TRAP_COUNT_MIN: int = 4
 const TRAP_COUNT_MAX: int = 7
-const TRAP_PATH := "res://sprites/Traps/"
+const TRAP_PATH := "res://sprites/traps/"
 
 const TRAP_POOL: Array = [
 	{"name": "Bear Trap",  "sprite": "Bear_Trap.png",       "damage": 0, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
@@ -101,9 +101,9 @@ func _setup_tileset() -> void:
 	_add_tile_source(tile_set, SOURCE_STAIRS, TILE_SPRITES_PATH + "floor_stairs.png")
 	# New tile types — extract from atlas sheets or use solid-color fallbacks
 	_add_tile_source_or_color(tile_set, SOURCE_CHASM, TILE_SPRITES_PATH + "hole.png", Color(0.06, 0.04, 0.08))
-	_add_tile_from_atlas(tile_set, SOURCE_WATER, "res://sprites/WaterRockDirt.png", 32, 0, Color(0.10, 0.30, 0.72))
-	_add_tile_from_atlas(tile_set, SOURCE_MUD,   "res://sprites/WaterRockDirt.png",  0, 0, Color(0.30, 0.18, 0.08))
-	_add_tile_from_atlas(tile_set, SOURCE_GRASS, "res://sprites/Grass.png",          0, 0, Color(0.10, 0.42, 0.10))
+	_add_tile_from_atlas(tile_set, SOURCE_WATER, "res://sprites/tiles/WaterRockDirt.png", 32, 0, Color(0.10, 0.30, 0.72))
+	_add_tile_from_atlas(tile_set, SOURCE_MUD,   "res://sprites/tiles/WaterRockDirt.png",  0, 0, Color(0.30, 0.18, 0.08))
+	_add_tile_from_atlas(tile_set, SOURCE_GRASS, "res://sprites/tiles/Grass.png",          0, 0, Color(0.10, 0.42, 0.10))
 	_add_tile_source_or_color(tile_set, SOURCE_DOOR_CLOSED, OBJECTS_PATH + "doors_leaf_closed.png", Color(0.5, 0.3, 0.1))
 	_add_tile_source_or_color(tile_set, SOURCE_DOOR_OPEN,   OBJECTS_PATH + "doors_leaf_open.png",   Color(0.3, 0.2, 0.05))
 	tilemap.tile_set = tile_set
@@ -749,7 +749,7 @@ func cook_rotten_meat(trap_pos: Vector2i) -> Item:
 	cooked.item_name = "Cooked Meat"
 	cooked.item_type = Item.Type.FOOD
 	cooked.heal_amount = 150
-	cooked.icon_path = "res://sprites/items/Sprites trial/Food/MeatCooked.png"
+	cooked.icon_path = "res://sprites/items/Food/MeatCooked.png"
 	cooked.description = "Roasted over a fire trap."
 	return cooked
 
