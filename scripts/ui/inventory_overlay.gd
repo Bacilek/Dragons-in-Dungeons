@@ -55,7 +55,7 @@ func _process(_delta: float) -> void:
 	if not visible or not _dragging:
 		return
 	if _drag_icon != null:
-		_drag_icon.position = get_viewport().get_mouse_position() - Vector2(16.0, 16.0)
+		_drag_icon.position = get_viewport().get_mouse_position() - Vector2(SLOT_SIZE / 2.0, SLOT_SIZE / 2.0)
 	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		_finish_drag()
 
@@ -244,24 +244,24 @@ func _start_drag(slot: Control) -> void:
 	_drag_src_sname = slot.get_meta("slot_name", "")
 	# Floating icon (direct child of CanvasLayer → screen-space position)
 	_drag_icon = TextureRect.new()
-	_drag_icon.custom_minimum_size = Vector2(32, 32)
-	_drag_icon.size = Vector2(32, 32)
+	_drag_icon.custom_minimum_size = Vector2(SLOT_SIZE, SLOT_SIZE)
+	_drag_icon.size = Vector2(SLOT_SIZE, SLOT_SIZE)
 	_drag_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_drag_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_drag_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if item.icon_path != "" and ResourceLoader.exists(item.icon_path):
 		_drag_icon.texture = load(item.icon_path)
-	_drag_icon.position = get_viewport().get_mouse_position() - Vector2(16, 16)
+	_drag_icon.position = get_viewport().get_mouse_position() - Vector2(SLOT_SIZE / 2.0, SLOT_SIZE / 2.0)
 	add_child(_drag_icon)
 
 func _finish_drag() -> void:
 	_dragging = false
-	var mouse_pos: Vector2 = get_viewport().get_mouse_position()
+	var local_mouse: Vector2 = _panel.get_local_mouse_position()
 	var dest: Control = null
 	for slot: Control in _all_slots():
 		if slot == _drag_src_ctrl:
 			continue
-		if slot.get_global_rect().has_point(mouse_pos):
+		if slot.get_rect().has_point(local_mouse):
 			dest = slot
 			break
 	if dest != null:

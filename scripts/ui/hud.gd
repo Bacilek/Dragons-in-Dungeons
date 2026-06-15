@@ -13,9 +13,9 @@ extends CanvasLayer
 @onready var search_button: Button    = $ActionBar/SearchButton
 @onready var interact_button: Button  = $ActionBar/InteractButton
 
-const BAR_W: float    = 266.0
-const HP_BAR_H: float = 22.0
-const EXP_BAR_H: float = 16.0
+const BAR_W: float    = 320.0
+const HP_BAR_H: float = 28.0
+const EXP_BAR_H: float = 20.0
 const SLOT_COUNT: int = 9
 
 var _item_slots: Array[Button] = []
@@ -79,8 +79,8 @@ func _ready() -> void:
 		qty_lbl.anchor_right = 1.0
 		qty_lbl.anchor_top = 1.0
 		qty_lbl.anchor_bottom = 1.0
-		qty_lbl.offset_left = -28.0
-		qty_lbl.offset_top = -16.0
+		qty_lbl.offset_left = -32.0
+		qty_lbl.offset_top = -18.0
 		qty_lbl.offset_right = -2.0
 		qty_lbl.offset_bottom = -1.0
 		qty_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -104,9 +104,9 @@ func _ready() -> void:
 
 	# Status icons (poison=green, burning=orange, bleeding=red, slowed=brown) below portrait
 	_poison_icon   = _make_status_dot(Color(0.20, 0.85, 0.35), Vector2(2.0,  2.0))
-	_burning_icon  = _make_status_dot(Color(1.00, 0.45, 0.10), Vector2(14.0, 2.0))
-	_bleeding_icon = _make_status_dot(Color(0.80, 0.0,  0.0),  Vector2(26.0, 2.0))
-	_slowed_icon   = _make_status_dot(Color(0.55, 0.35, 0.10), Vector2(38.0, 2.0))
+	_burning_icon  = _make_status_dot(Color(1.00, 0.45, 0.10), Vector2(16.0, 2.0))
+	_bleeding_icon = _make_status_dot(Color(0.80, 0.0,  0.0),  Vector2(30.0, 2.0))
+	_slowed_icon   = _make_status_dot(Color(0.55, 0.35, 0.10), Vector2(44.0, 2.0))
 	$StatsPanel.add_child(_poison_icon)
 	$StatsPanel.add_child(_burning_icon)
 	$StatsPanel.add_child(_bleeding_icon)
@@ -115,10 +115,10 @@ func _ready() -> void:
 
 	# Hit dice label below level label
 	_hit_dice_label = Label.new()
-	_hit_dice_label.add_theme_font_size_override("font_size", 10)
+	_hit_dice_label.add_theme_font_size_override("font_size", 11)
 	_hit_dice_label.add_theme_color_override("font_color", Color(0.75, 0.85, 1.0))
-	_hit_dice_label.position = Vector2(4.0, 76.0)
-	_hit_dice_label.size = Vector2(48.0, 14.0)
+	_hit_dice_label.position = Vector2(4.0, 84.0)
+	_hit_dice_label.size = Vector2(64.0, 14.0)
 	_hit_dice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	$StatsPanel.add_child(_hit_dice_label)
 	_update_hit_dice_label()
@@ -127,37 +127,37 @@ func _ready() -> void:
 	_compass_panel = Panel.new()
 	_compass_panel.anchor_left = 1.0
 	_compass_panel.anchor_right = 1.0
-	_compass_panel.offset_left = -90.0
+	_compass_panel.offset_left = -114.0
 	_compass_panel.offset_top = 4.0
 	_compass_panel.offset_right = -4.0
-	_compass_panel.offset_bottom = 68.0
+	_compass_panel.offset_bottom = 84.0
 	_compass_panel.visible = false
 	add_child(_compass_panel)
 
 	var title_lbl := Label.new()
 	title_lbl.text = "Stairs"
-	title_lbl.add_theme_font_size_override("font_size", 11)
+	title_lbl.add_theme_font_size_override("font_size", 12)
 	title_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.4))
 	title_lbl.position = Vector2(0.0, 2.0)
-	title_lbl.size = Vector2(86.0, 16.0)
+	title_lbl.size = Vector2(110.0, 18.0)
 	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_compass_panel.add_child(title_lbl)
 
 	_compass_arrow_label = Label.new()
 	_compass_arrow_label.text = "?"
-	_compass_arrow_label.add_theme_font_size_override("font_size", 28)
+	_compass_arrow_label.add_theme_font_size_override("font_size", 36)
 	_compass_arrow_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
-	_compass_arrow_label.position = Vector2(0.0, 17.0)
-	_compass_arrow_label.size = Vector2(86.0, 34.0)
+	_compass_arrow_label.position = Vector2(0.0, 20.0)
+	_compass_arrow_label.size = Vector2(110.0, 44.0)
 	_compass_arrow_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_compass_panel.add_child(_compass_arrow_label)
 
 	_compass_dist_label = Label.new()
 	_compass_dist_label.text = ""
-	_compass_dist_label.add_theme_font_size_override("font_size", 10)
+	_compass_dist_label.add_theme_font_size_override("font_size", 11)
 	_compass_dist_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	_compass_dist_label.position = Vector2(0.0, 52.0)
-	_compass_dist_label.size = Vector2(86.0, 14.0)
+	_compass_dist_label.position = Vector2(0.0, 64.0)
+	_compass_dist_label.size = Vector2(110.0, 14.0)
 	_compass_dist_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_compass_panel.add_child(_compass_dist_label)
 
@@ -235,7 +235,7 @@ func _update_compass() -> void:
 func _make_status_dot(color: Color, offset: Vector2) -> ColorRect:
 	var dot := ColorRect.new()
 	dot.color = color
-	dot.size = Vector2(10.0, 10.0)
+	dot.size = Vector2(12.0, 12.0)
 	dot.position = portrait.position + offset
 	dot.visible = false
 	return dot

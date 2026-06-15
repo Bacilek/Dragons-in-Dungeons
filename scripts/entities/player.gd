@@ -34,7 +34,6 @@ var _is_panning: bool = false
 var _pan_start_mouse: Vector2 = Vector2.ZERO
 var _pan_start_cam: Vector2 = Vector2.ZERO
 
-var _hold_start_fov: Array[Enemy] = []  # FOV snapshot when key-hold began
 
 func _ready() -> void:
 	stats = GameState.player_stats
@@ -147,15 +146,13 @@ func _process(_delta: float) -> void:
 		_interrupted = false
 		return
 	if _prev_dir == Vector2i.ZERO:
-		# Fresh key press — snapshot FOV so hold can detect new arrivals
 		_interrupted = false
-		_hold_start_fov = _fov_this_turn.duplicate()
 	elif _interrupted:
 		# Key still physically held after interrupt — block until finger lifted
 		_prev_dir = dir
 		return
-	elif not GameState.noclip and _has_new_enemy_in_fov(_hold_start_fov):
-		# New enemy entered FOV since hold started — interrupt
+	elif not GameState.noclip and not _fov_this_turn.is_empty():
+		# Any enemy visible — interrupt hold movement
 		_interrupted = true
 		_prev_dir = dir
 		return
@@ -299,7 +296,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _execute_queued_path() -> void:
 	_path_executing = true
-	TurnManager.fast_mode = true
+	TurnManager.fast_mode = not TurnManager.has_any_enemy()
 	_reset_camera_offset()
 	var fov_snapshot: Array[Enemy] = _dungeon_floor.get_visible_enemies()
 

@@ -22,6 +22,7 @@ signal short_rest_completed
 signal short_rest_aborted
 signal camera_recenter_requested
 signal debug_reveal_all
+signal debug_see_all(active: bool)
 
 const QUICKBAR_SIZE: int = 9
 const INVENTORY_SIZE: int = 24

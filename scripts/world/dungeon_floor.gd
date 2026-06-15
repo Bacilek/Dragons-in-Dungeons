@@ -20,7 +20,7 @@ const ITEMS_PATH   := "res://sprites/items/"
 
 const ENEMY_COUNT_MIN: int = 3
 const ENEMY_COUNT_MAX: int = 5
-const FOV_RADIUS: int = 6
+const FOV_RADIUS: int = 7
 const TRAP_COUNT_MIN: int = 4
 const TRAP_COUNT_MAX: int = 7
 const TRAP_PATH := "res://sprites/traps/"
@@ -87,6 +87,7 @@ var _fog_image: Image
 var _fog_texture: ImageTexture
 var _fog_sprite: Sprite2D
 var _explored: Dictionary = {}
+var _see_all_active: bool = false
 
 func _ready() -> void:
 	_setup_tileset()
@@ -226,9 +227,12 @@ func _load_floor() -> void:
 	_spawn_doors()
 	_spawn_items()
 	_setup_fog()
+	_see_all_active = false
 	update_fog(_data.player_start)
 	if not GameState.debug_reveal_all.is_connected(reveal_all):
 		GameState.debug_reveal_all.connect(reveal_all)
+	if not GameState.debug_see_all.is_connected(_on_debug_see_all):
+		GameState.debug_see_all.connect(_on_debug_see_all)
 
 # ── Tilemap queries ───────────────────────────────────────────────────────────
 
@@ -298,6 +302,25 @@ func update_fog(player_pos: Vector2i) -> void:
 	_update_enemy_visibility(player_pos, r2)
 	if not stairs_was_known and _explored.get(_data.stairs_pos, false):
 		GameState.stairs_discovered.emit()
+	if _see_all_active:
+		_apply_see_all()
+
+func _on_debug_see_all(active: bool) -> void:
+	_see_all_active = active
+	if _player != null:
+		update_fog(_player.grid_pos)
+
+func _apply_see_all() -> void:
+	for y: int in _data.height:
+		for x: int in _data.width:
+			if _data.get_tile(x, y) != DungeonData.TileType.VOID:
+				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0))
+	_fog_texture.update(_fog_image)
+	for e: Enemy in _enemies:
+		if is_instance_valid(e):
+			e.visible = true
+	for trap_pos: Vector2i in _traps.keys():
+		reveal_trap(trap_pos)
 
 func reveal_all() -> void:
 	for y: int in _data.height:
@@ -934,8 +957,8 @@ func _spawn_doors() -> void:
 					# Perpendicular directions — corridor must be narrow at this junction
 					var perp1: Vector2i = Vector2i(-d.y, d.x)
 					var perp2: Vector2i = Vector2i(d.y, -d.x)
-					var narrow: bool = _data.get_tile((out + perp1).x, (out + perp1).y) != DungeonData.TileType.FLOOR \
-						and _data.get_tile((out + perp2).x, (out + perp2).y) != DungeonData.TileType.FLOOR
+					var narrow: bool = _data.get_tile((out + perp1).x, (out + perp1).y) == DungeonData.TileType.WALL \
+						and _data.get_tile((out + perp2).x, (out + perp2).y) == DungeonData.TileType.WALL
 					# Place door at the corridor tile (out), not the room border (pos)
 					if narrow and not door_candidates.has(out):
 						# Reject if within 2 tiles of any existing door (prevents adjacent doors in short corridors)

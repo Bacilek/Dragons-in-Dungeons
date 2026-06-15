@@ -1,7 +1,7 @@
 extends CanvasLayer
 
-const PANEL_W:  int = 200
-const PANEL_H:  int = 190
+const PANEL_W:  int = 280
+const PANEL_H:  int = 214
 const FLOOR_SW: int = 234
 const FLOOR_SH: int = 96
 const ITEMS_SW: int = 390
@@ -59,7 +59,7 @@ func _build_main_panel() -> void:
 	_style_panel(_main_panel, Color(0.07, 0.06, 0.06, 0.96), Color(0.85, 0.20, 0.20))
 	add_child(_main_panel)
 
-	_add_label(_main_panel, "DEBUG  [F3]", 8, 6, 10, Color(1.0, 0.35, 0.35))
+	_add_label(_main_panel, "DEBUG  [F3]", 8, 6, 12, Color(1.0, 0.35, 0.35))
 
 	var sep := HSeparator.new()
 	sep.position = Vector2(6.0, 24.0)
@@ -69,35 +69,36 @@ func _build_main_panel() -> void:
 	_inv_check = CheckBox.new()
 	_inv_check.text = "Invincible"
 	_inv_check.position = Vector2(6.0, 30.0)
-	_inv_check.size = Vector2(PANEL_W - 12.0, 28.0)
-	_inv_check.add_theme_font_size_override("font_size", 11)
+	_inv_check.size = Vector2(PANEL_W - 12.0, 32.0)
+	_inv_check.add_theme_font_size_override("font_size", 13)
 	_inv_check.toggled.connect(_on_invincible_toggled)
 	_main_panel.add_child(_inv_check)
 
 	_noclip_check = CheckBox.new()
 	_noclip_check.text = "Noclip"
-	_noclip_check.position = Vector2(6.0, 58.0)
-	_noclip_check.size = Vector2(PANEL_W - 12.0, 28.0)
-	_noclip_check.add_theme_font_size_override("font_size", 11)
+	_noclip_check.position = Vector2(6.0, 66.0)
+	_noclip_check.size = Vector2(PANEL_W - 12.0, 32.0)
+	_noclip_check.add_theme_font_size_override("font_size", 13)
 	_noclip_check.toggled.connect(_on_noclip_toggled)
 	_main_panel.add_child(_noclip_check)
 
 	var jump_btn := _make_btn("Jump to Floor...", Color(0.25, 0.60, 1.0))
-	jump_btn.position = Vector2(6.0, 90.0)
-	jump_btn.size = Vector2(PANEL_W - 12.0, 26.0)
+	jump_btn.position = Vector2(6.0, 104.0)
+	jump_btn.size = Vector2(PANEL_W - 12.0, 30.0)
 	jump_btn.pressed.connect(_on_jump_pressed)
 	_main_panel.add_child(jump_btn)
 
 	var items_btn := _make_btn("Give Item...", Color(0.35, 0.80, 0.35))
-	items_btn.position = Vector2(6.0, 122.0)
-	items_btn.size = Vector2(PANEL_W - 12.0, 26.0)
+	items_btn.position = Vector2(6.0, 140.0)
+	items_btn.size = Vector2(PANEL_W - 12.0, 30.0)
 	items_btn.pressed.connect(_on_items_pressed)
 	_main_panel.add_child(items_btn)
 
 	var see_all_btn := _make_btn("See All", Color(0.80, 0.60, 0.20))
-	see_all_btn.position = Vector2(6.0, 154.0)
-	see_all_btn.size = Vector2(PANEL_W - 12.0, 26.0)
-	see_all_btn.pressed.connect(func(): GameState.debug_reveal_all.emit())
+	see_all_btn.position = Vector2(6.0, 176.0)
+	see_all_btn.size = Vector2(PANEL_W - 12.0, 30.0)
+	see_all_btn.toggle_mode = true
+	see_all_btn.toggled.connect(func(on: bool): GameState.debug_see_all.emit(on))
 	_main_panel.add_child(see_all_btn)
 
 func _build_floor_sub() -> void:
@@ -223,7 +224,7 @@ func _add_label(parent: Control, text: String, x: float, y: float,
 func _make_btn(text: String, col: Color) -> Button:
 	var btn := Button.new()
 	btn.text = text
-	btn.add_theme_font_size_override("font_size", 10)
+	btn.add_theme_font_size_override("font_size", 12)
 	var n := StyleBoxFlat.new()
 	n.bg_color = col * 0.28
 	n.set_border_width_all(1)
