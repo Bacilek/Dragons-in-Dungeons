@@ -1,8 +1,8 @@
 extends CanvasLayer
 
-const CARD_W: int = 148
-const CARD_H: int = 376
-const CARD_GAP: int = 18
+const CARD_W: int = 200
+const CARD_H: int = 500
+const CARD_GAP: int = 24
 const CHAR_PATH := "res://sprites/characters/"
 
 const CLASS_DATA: Array = [
@@ -105,51 +105,51 @@ func _build_card(data: Dictionary, pos: Vector2) -> void:
 		icon.texture = load(sprite_path)
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	icon.position = Vector2(float(CARD_W) / 2.0 - 36.0, 14.0)
-	icon.size = Vector2(72.0, 72.0)
+	icon.position = Vector2(float(CARD_W) / 2.0 - 50.0, 18.0)
+	icon.size = Vector2(100.0, 100.0)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(icon)
 
 	var name_lbl := Label.new()
 	name_lbl.text = data["name"]
-	name_lbl.add_theme_font_size_override("font_size", 14)
+	name_lbl.add_theme_font_size_override("font_size", 18)
 	name_lbl.add_theme_color_override("font_color", data["color"])
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_lbl.position = Vector2(0.0, 92.0)
-	name_lbl.size = Vector2(CARD_W, 22.0)
+	name_lbl.position = Vector2(0.0, 124.0)
+	name_lbl.size = Vector2(CARD_W, 28.0)
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(name_lbl)
 
 	var hd_lbl := Label.new()
 	hd_lbl.text = "%s  •  %s" % [data["hd"], data["hp"]]
-	hd_lbl.add_theme_font_size_override("font_size", 9)
+	hd_lbl.add_theme_font_size_override("font_size", 12)
 	hd_lbl.add_theme_color_override("font_color", Color(0.62, 0.82, 0.62))
 	hd_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hd_lbl.position = Vector2(0.0, 116.0)
-	hd_lbl.size = Vector2(CARD_W, 14.0)
+	hd_lbl.position = Vector2(0.0, 156.0)
+	hd_lbl.size = Vector2(CARD_W, 18.0)
 	hd_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(hd_lbl)
 
 	var sep := HSeparator.new()
-	sep.position = Vector2(10.0, 136.0)
-	sep.size = Vector2(CARD_W - 20.0, 2.0)
+	sep.position = Vector2(12.0, 180.0)
+	sep.size = Vector2(CARD_W - 24.0, 2.0)
 	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(sep)
 
 	var desc_lbl := Label.new()
 	desc_lbl.text = data["desc"]
-	desc_lbl.add_theme_font_size_override("font_size", 9)
+	desc_lbl.add_theme_font_size_override("font_size", 12)
 	desc_lbl.add_theme_color_override("font_color", Color(0.68, 0.68, 0.68))
 	desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc_lbl.position = Vector2(8.0, 142.0)
-	desc_lbl.size = Vector2(CARD_W - 16.0, 56.0)
+	desc_lbl.position = Vector2(10.0, 186.0)
+	desc_lbl.size = Vector2(CARD_W - 20.0, 80.0)
 	desc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(desc_lbl)
 
 	var sep2 := HSeparator.new()
-	sep2.position = Vector2(10.0, 202.0)
-	sep2.size = Vector2(CARD_W - 20.0, 2.0)
+	sep2.position = Vector2(12.0, 272.0)
+	sep2.size = Vector2(CARD_W - 24.0, 2.0)
 	sep2.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(sep2)
 
@@ -163,46 +163,46 @@ func _build_card(data: Dictionary, pos: Vector2) -> void:
 		["CHA", s.charisma,     s.cha_modifier()],
 	]
 	for i: int in stat_rows.size():
-		_add_stat_row(card, 208.0 + i * 16.0, stat_rows[i][0], stat_rows[i][1], stat_rows[i][2])
+		_add_stat_row(card, 278.0 + i * 20.0, stat_rows[i][0], stat_rows[i][1], stat_rows[i][2])
 
 	var sep3 := HSeparator.new()
-	sep3.position = Vector2(10.0, 306.0)
-	sep3.size = Vector2(CARD_W - 20.0, 2.0)
+	sep3.position = Vector2(12.0, 402.0)
+	sep3.size = Vector2(CARD_W - 24.0, 2.0)
 	sep3.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(sep3)
 
 	var ac_lbl := Label.new()
 	ac_lbl.text = "AC"
-	ac_lbl.position = Vector2(14.0, 312.0)
-	ac_lbl.size = Vector2(30.0, 14.0)
-	ac_lbl.add_theme_font_size_override("font_size", 10)
+	ac_lbl.position = Vector2(18.0, 408.0)
+	ac_lbl.size = Vector2(38.0, 18.0)
+	ac_lbl.add_theme_font_size_override("font_size", 13)
 	ac_lbl.add_theme_color_override("font_color", Color(0.62, 0.60, 0.56))
 	ac_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(ac_lbl)
 
 	var ac_val := Label.new()
 	ac_val.text = str(s.armor_class)
-	ac_val.position = Vector2(54.0, 312.0)
-	ac_val.size = Vector2(24.0, 14.0)
+	ac_val.position = Vector2(62.0, 408.0)
+	ac_val.size = Vector2(30.0, 18.0)
 	ac_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ac_val.add_theme_font_size_override("font_size", 10)
+	ac_val.add_theme_font_size_override("font_size", 13)
 	ac_val.add_theme_color_override("font_color", Color(0.60, 0.85, 1.00))
 	ac_val.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(ac_val)
 
 	var ac_note := Label.new()
 	ac_note.text = "(10+DEX)"
-	ac_note.position = Vector2(84.0, 312.0)
-	ac_note.size = Vector2(56.0, 14.0)
-	ac_note.add_theme_font_size_override("font_size", 9)
+	ac_note.position = Vector2(98.0, 408.0)
+	ac_note.size = Vector2(82.0, 18.0)
+	ac_note.add_theme_font_size_override("font_size", 11)
 	ac_note.add_theme_color_override("font_color", Color(0.45, 0.45, 0.50))
 	ac_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(ac_note)
 
 	var btn := Button.new()
 	btn.text = "Select"
-	btn.position = Vector2(22.0, 342.0)
-	btn.size = Vector2(CARD_W - 44.0, 26.0)
+	btn.position = Vector2(26.0, 456.0)
+	btn.size = Vector2(CARD_W - 52.0, 32.0)
 	var btn_normal := StyleBoxFlat.new()
 	btn_normal.bg_color = (data["color"] as Color) * 0.35
 	btn_normal.set_border_width_all(1)
@@ -214,7 +214,7 @@ func _build_card(data: Dictionary, pos: Vector2) -> void:
 	btn.add_theme_stylebox_override("normal", btn_normal)
 	btn.add_theme_stylebox_override("hover",  btn_hover)
 	btn.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
-	btn.add_theme_font_size_override("font_size", 10)
+	btn.add_theme_font_size_override("font_size", 13)
 	btn.pressed.connect(_on_class_selected.bind(data["cls"] as int))
 	card.add_child(btn)
 
@@ -227,28 +227,28 @@ func _make_class_stats(cls_idx: int) -> Stats:
 func _add_stat_row(parent: Control, y: float, stat_name: String, score: int, mod_val: int) -> void:
 	var name_lbl := Label.new()
 	name_lbl.text = stat_name
-	name_lbl.position = Vector2(14.0, y)
-	name_lbl.size = Vector2(30.0, 14.0)
-	name_lbl.add_theme_font_size_override("font_size", 10)
+	name_lbl.position = Vector2(18.0, y)
+	name_lbl.size = Vector2(40.0, 18.0)
+	name_lbl.add_theme_font_size_override("font_size", 13)
 	name_lbl.add_theme_color_override("font_color", Color(0.62, 0.60, 0.56))
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(name_lbl)
 
 	var score_lbl := Label.new()
 	score_lbl.text = str(score)
-	score_lbl.position = Vector2(54.0, y)
-	score_lbl.size = Vector2(24.0, 14.0)
+	score_lbl.position = Vector2(68.0, y)
+	score_lbl.size = Vector2(30.0, 18.0)
 	score_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	score_lbl.add_theme_font_size_override("font_size", 10)
+	score_lbl.add_theme_font_size_override("font_size", 13)
 	score_lbl.add_theme_color_override("font_color", Color(0.92, 0.88, 0.72))
 	score_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(score_lbl)
 
 	var mod_lbl := Label.new()
 	mod_lbl.text = "(%+d)" % mod_val
-	mod_lbl.position = Vector2(84.0, y)
-	mod_lbl.size = Vector2(50.0, 14.0)
-	mod_lbl.add_theme_font_size_override("font_size", 10)
+	mod_lbl.position = Vector2(106.0, y)
+	mod_lbl.size = Vector2(70.0, 18.0)
+	mod_lbl.add_theme_font_size_override("font_size", 13)
 	var mod_color: Color
 	if mod_val > 0:   mod_color = Color(0.40, 0.85, 0.45)
 	elif mod_val < 0: mod_color = Color(0.85, 0.38, 0.32)
