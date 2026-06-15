@@ -22,7 +22,10 @@ const ALL_ITEMS: Array = [
 	{"name": "Ration",          "type": 4, "src": "items",   "icon": "Food/MeatCooked.png",                   "bonus_dmg": 0, "heal": 200, "str_bonus": 0, "desc": "Fills you up"},
 	{"name": "Mystery Meat",    "type": 4, "src": "items",   "icon": "Food/Meat.png",                         "bonus_dmg": 0, "heal": 120, "str_bonus": 0, "desc": "Better than nothing"},
 	{"name": "Rotten Meat",     "type": 4, "src": "items",   "icon": "Food/Meat.png",                         "bonus_dmg": 0, "heal": 20,  "str_bonus": 0, "desc": "Throw into fire to cook"},
-	{"name": "Thief Tools",     "type": 7, "src": "items",   "icon": "Misc/KeyIron.png",                      "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Disarm traps"},
+	{"name": "Thief Tools",      "type": 7, "src": "items",   "icon": "Misc/KeyIron.png",                         "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Disarm traps",               "qty": 3},
+	{"name": "Short Bow",        "type": 0, "src": "items",   "icon": "Weapons/BowArrow.png",                     "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "desc": "Ranged DEX, range 6",        "is_ranged": true, "range": 6},
+	{"name": "Crossbow",         "type": 0, "src": "items",   "icon": "Weapons/BowArrowGold.png",                 "bonus_dmg": 3, "heal": 0,   "str_bonus": 0, "desc": "Ranged DEX, range 8",        "is_ranged": true, "range": 8},
+	{"name": "Throwing Daggers", "type": 0, "src": "items",   "icon": "Weapons/Throwing/Shuriken.png",            "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Ranged DEX, range 4, ×3 uses","is_ranged": true, "range": 4, "consumes": true, "qty": 3},
 ]
 
 var _main_panel:    Panel
@@ -276,12 +279,15 @@ func _on_give_item(d: Dictionary) -> void:
 	item.item_type   = d["type"] as Item.Type
 	item.bonus_damage = d["bonus_dmg"]
 	item.heal_amount = d["heal"]
-	item.str_bonus   = d.get("str_bonus", 0)
+	item.str_bonus          = d.get("str_bonus", 0)
+	item.is_ranged          = d.get("is_ranged", false)
+	item.range              = d.get("range", 0)
+	item.consumes_on_ranged = d.get("consumes", false)
 	item.description = d["desc"]
 	match d["src"]:
 		"weapons": item.icon_path = WEAPONS_PATH + d["icon"]
 		"items":   item.icon_path = ITEMS_PATH   + d["icon"]
-	item.quantity = 3 if d["name"] == "Thief Tools" else 1
+	item.quantity = d.get("qty", 1)
 	if not GameState.add_item(item):
 		GameState.game_log("[color=red][DEBUG] Inventory full — cannot give %s[/color]" % d["name"])
 	else:

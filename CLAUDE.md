@@ -88,3 +88,4 @@ After every feature/fix: `git add`, `git commit`, `git push origin HEAD:main`. N
 - **GDScript types**: always explicit (`var x: int`, `Array[Enemy]`, `for y: int in n`). Untyped arrays/loops cause parser errors on `:=` expressions.
 - **Item spawn paths**: `match d["src"]: "weapons" → WEAPONS_PATH, "items" → ITEMS_PATH, _ → OBJECTS_PATH`.
 - **Status effects**: set `player_stats.{poison/burning/bleeding}_turns = N`, then `player_status_changed.emit()`. `tick_status()` is called once per turn in `_on_turn_started()`.
+- **New item**: whenever a new item is added to `ITEM_POOL` in `dungeon_floor.gd`, also add a matching entry to `ALL_ITEMS` in `scripts/ui/debug_panel.gd` so it appears in the debug Give Item browser. Mirror all relevant fields (`is_ranged`, `range`, `consumes`, `qty`, etc.) and update `_on_give_item` if new Item fields are introduced.
