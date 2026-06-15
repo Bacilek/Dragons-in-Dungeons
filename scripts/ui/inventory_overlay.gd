@@ -1,10 +1,10 @@
 extends CanvasLayer
 
-const SLOT_SIZE: int = 48
-const SLOT_GAP: int  = 3
-const STEP:      int = SLOT_SIZE + SLOT_GAP   # 51
-const PANEL_W:   int = 700
-const PANEL_H:   int = 360
+const SLOT_SIZE: int = 60
+const SLOT_GAP: int  = 4
+const STEP:      int = SLOT_SIZE + SLOT_GAP   # 64
+const PANEL_W:   int = 820
+const PANEL_H:   int = 460
 
 var _panel: Panel
 var _bag_slots: Array[Control]    = []
@@ -89,7 +89,7 @@ func _build_ui() -> void:
 	_panel.add_theme_stylebox_override("panel", ps)
 	add_child(_panel)
 
-	_add_label(_panel, "INVENTORY", Vector2(12, 10), 15, Color(0.9, 0.85, 0.6))
+	_add_label(_panel, "INVENTORY", Vector2(14, 10), 18, Color(0.9, 0.85, 0.6))
 
 	var sep0 := HSeparator.new()
 	sep0.position = Vector2(10, 34); sep0.size = Vector2(PANEL_W - 20, 2)
@@ -100,18 +100,18 @@ func _build_ui() -> void:
 	_build_quickbar_section()
 
 	_tooltip_label = Label.new()
-	_tooltip_label.position = Vector2(10, PANEL_H - 30)
-	_tooltip_label.size = Vector2(PANEL_W - 20, 14)
-	_tooltip_label.add_theme_font_size_override("font_size", 11)
+	_tooltip_label.position = Vector2(10, PANEL_H - 44)
+	_tooltip_label.size = Vector2(PANEL_W - 20, 18)
+	_tooltip_label.add_theme_font_size_override("font_size", 14)
 	_tooltip_label.add_theme_color_override("font_color", Color(0.95, 0.88, 0.60))
 	_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(_tooltip_label)
 
 	_add_label(_panel, "I / Esc  •  Right-click: use/equip  •  Drag to move",
-		Vector2(10, PANEL_H - 16), 9, Color(0.4, 0.4, 0.4))
+		Vector2(10, PANEL_H - 24), 11, Color(0.4, 0.4, 0.4))
 
 func _build_equipment_section() -> void:
-	_add_label(_panel, "Equipment", Vector2(12, 42), 11, Color(0.7, 0.7, 0.8))
+	_add_label(_panel, "Equipment", Vector2(14, 42), 14, Color(0.7, 0.7, 0.8))
 	# 3-column × 4-row silhouette; empty strings = visual gap
 	var layout: Array = [
 		["head",       1, 0],
@@ -119,7 +119,7 @@ func _build_equipment_section() -> void:
 		["gloves",     0, 2],                    ["boots",      2, 2],
 		["trinket",    1, 3],
 	]
-	var origin := Vector2(12, 58)
+	var origin := Vector2(14, 68)
 	for entry in layout:
 		var sn: String = entry[0]; var c: int = entry[1]; var r: int = entry[2]
 		var slot := _make_slot(sn)
@@ -130,8 +130,8 @@ func _build_equipment_section() -> void:
 		_eq_slots[sn] = slot
 
 func _build_bag_section() -> void:
-	_add_label(_panel, "Bag  (24)", Vector2(282, 42), 11, Color(0.7, 0.7, 0.8))
-	var origin := Vector2(282, 58)
+	_add_label(_panel, "Bag  (24)", Vector2(350, 42), 14, Color(0.7, 0.7, 0.8))
+	var origin := Vector2(350, 68)
 	for i: int in 24:
 		var slot := _make_slot()
 		slot.position = origin + Vector2((i % 6) * STEP, (i / 6) * STEP)
@@ -142,13 +142,13 @@ func _build_bag_section() -> void:
 
 func _build_quickbar_section() -> void:
 	var sep := HSeparator.new()
-	sep.position = Vector2(10, PANEL_H - 88); sep.size = Vector2(PANEL_W - 20, 2)
+	sep.position = Vector2(10, PANEL_H - 108); sep.size = Vector2(PANEL_W - 20, 2)
 	_panel.add_child(sep)
-	_add_label(_panel, "Quickbar", Vector2(12, PANEL_H - 80), 11, Color(0.7, 0.7, 0.8))
+	_add_label(_panel, "Quickbar", Vector2(14, PANEL_H - 100), 14, Color(0.7, 0.7, 0.8))
 	# 9 slots centered horizontally
 	var total_w: int = 9 * STEP - SLOT_GAP
 	var origin_x: float = (PANEL_W - total_w) / 2.0
-	var origin_y: float = PANEL_H - 65.0
+	var origin_y: float = PANEL_H - 82.0
 	for i: int in 9:
 		var slot := _make_slot()
 		slot.position = Vector2(origin_x + i * STEP, origin_y)
@@ -171,10 +171,10 @@ func _make_slot(eq_type: String = "") -> Control:
 		var tl := Label.new()
 		tl.name = "TypeLabel"
 		tl.text = _eq_display(eq_type)
-		tl.add_theme_font_size_override("font_size", 7)
+		tl.add_theme_font_size_override("font_size", 9)
 		tl.add_theme_color_override("font_color", Color(0.48, 0.48, 0.56))
 		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		tl.position = Vector2(0, SLOT_SIZE - 12); tl.size = Vector2(SLOT_SIZE, 12)
+		tl.position = Vector2(0, SLOT_SIZE - 14); tl.size = Vector2(SLOT_SIZE, 14)
 		tl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		slot.add_child(tl)
 
@@ -183,16 +183,16 @@ func _make_slot(eq_type: String = "") -> Control:
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	icon.position = Vector2(4, 3)
-	icon.size = Vector2(SLOT_SIZE - 8, SLOT_SIZE - (15 if eq_type != "" else 6))
+	icon.position = Vector2(4, 4)
+	icon.size = Vector2(SLOT_SIZE - 8, SLOT_SIZE - (18 if eq_type != "" else 8))
 	slot.add_child(icon)
 
 	var cnt := Label.new()
 	cnt.name = "Count"
-	cnt.add_theme_font_size_override("font_size", 8)
+	cnt.add_theme_font_size_override("font_size", 10)
 	cnt.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
 	cnt.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	cnt.position = Vector2(1, 2); cnt.size = Vector2(SLOT_SIZE - 2, 11)
+	cnt.position = Vector2(1, 2); cnt.size = Vector2(SLOT_SIZE - 2, 14)
 	cnt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	slot.add_child(cnt)
 

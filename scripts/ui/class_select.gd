@@ -59,13 +59,18 @@ func _build_ui() -> void:
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(dim)
 
+	var vp := get_viewport_rect().size
+	var total_w: float = CLASS_DATA.size() * CARD_W + (CLASS_DATA.size() - 1) * CARD_GAP
+	var origin_x: float = (vp.x - total_w) / 2.0
+	var origin_y: float = (vp.y - CARD_H) / 2.0
+
 	var title := Label.new()
 	title.text = "Choose Your Class"
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", Color(0.95, 0.85, 0.50))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.position = Vector2(0.0, 72.0)
-	title.size = Vector2(1280.0, 36.0)
+	title.position = Vector2(0.0, origin_y - 64.0)
+	title.size = Vector2(vp.x, 36.0)
 	add_child(title)
 
 	var sub := Label.new()
@@ -73,13 +78,9 @@ func _build_ui() -> void:
 	sub.add_theme_font_size_override("font_size", 11)
 	sub.add_theme_color_override("font_color", Color(0.55, 0.52, 0.44))
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.position = Vector2(0.0, 104.0)
-	sub.size = Vector2(1280.0, 18.0)
+	sub.position = Vector2(0.0, origin_y - 28.0)
+	sub.size = Vector2(vp.x, 18.0)
 	add_child(sub)
-
-	var total_w: float = CLASS_DATA.size() * CARD_W + (CLASS_DATA.size() - 1) * CARD_GAP
-	var origin_x: float = (1280.0 - total_w) / 2.0
-	var origin_y: float = 136.0
 
 	for i: int in CLASS_DATA.size():
 		_build_card(CLASS_DATA[i], Vector2(origin_x + i * (CARD_W + CARD_GAP), origin_y))

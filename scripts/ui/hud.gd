@@ -13,9 +13,9 @@ extends CanvasLayer
 @onready var search_button: Button    = $ActionBar/SearchButton
 @onready var interact_button: Button  = $ActionBar/InteractButton
 
-const BAR_W: float    = 174.0
-const HP_BAR_H: float = 15.0
-const EXP_BAR_H: float = 12.0
+const BAR_W: float    = 266.0
+const HP_BAR_H: float = 22.0
+const EXP_BAR_H: float = 16.0
 const SLOT_COUNT: int = 9
 
 var _item_slots: Array[Button] = []
@@ -69,7 +69,7 @@ func _ready() -> void:
 		slot.gui_input.connect(_on_slot_gui_input.bind(i))
 		# Small quantity badge in bottom-right corner
 		var qty_lbl := Label.new()
-		qty_lbl.add_theme_font_size_override("font_size", 8)
+		qty_lbl.add_theme_font_size_override("font_size", 11)
 		qty_lbl.add_theme_color_override("font_color", Color.WHITE)
 		qty_lbl.add_theme_color_override("font_shadow_color", Color.BLACK)
 		qty_lbl.add_theme_constant_override("shadow_offset_x", 1)
@@ -79,8 +79,8 @@ func _ready() -> void:
 		qty_lbl.anchor_right = 1.0
 		qty_lbl.anchor_top = 1.0
 		qty_lbl.anchor_bottom = 1.0
-		qty_lbl.offset_left = -22.0
-		qty_lbl.offset_top = -13.0
+		qty_lbl.offset_left = -28.0
+		qty_lbl.offset_top = -16.0
 		qty_lbl.offset_right = -2.0
 		qty_lbl.offset_bottom = -1.0
 		qty_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -96,9 +96,9 @@ func _ready() -> void:
 
 	# Hunger label — created programmatically below the HP bar
 	_hunger_label = Label.new()
-	_hunger_label.add_theme_font_size_override("font_size", 9)
+	_hunger_label.add_theme_font_size_override("font_size", 12)
 	_hunger_label.position = hp_fill.position + Vector2(0.0, HP_BAR_H + 1.0)
-	_hunger_label.size = Vector2(BAR_W, 12.0)
+	_hunger_label.size = Vector2(BAR_W, 14.0)
 	$StatsPanel.add_child(_hunger_label)
 	_update_hunger_label()
 
@@ -115,10 +115,10 @@ func _ready() -> void:
 
 	# Hit dice label below level label
 	_hit_dice_label = Label.new()
-	_hit_dice_label.add_theme_font_size_override("font_size", 7)
+	_hit_dice_label.add_theme_font_size_override("font_size", 10)
 	_hit_dice_label.add_theme_color_override("font_color", Color(0.75, 0.85, 1.0))
-	_hit_dice_label.position = Vector2(4.0, 54.0)
-	_hit_dice_label.size = Vector2(36.0, 12.0)
+	_hit_dice_label.position = Vector2(4.0, 76.0)
+	_hit_dice_label.size = Vector2(48.0, 14.0)
 	_hit_dice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	$StatsPanel.add_child(_hit_dice_label)
 	_update_hit_dice_label()
@@ -127,37 +127,37 @@ func _ready() -> void:
 	_compass_panel = Panel.new()
 	_compass_panel.anchor_left = 1.0
 	_compass_panel.anchor_right = 1.0
-	_compass_panel.offset_left = -62.0
+	_compass_panel.offset_left = -90.0
 	_compass_panel.offset_top = 4.0
 	_compass_panel.offset_right = -4.0
-	_compass_panel.offset_bottom = 48.0
+	_compass_panel.offset_bottom = 68.0
 	_compass_panel.visible = false
 	add_child(_compass_panel)
 
 	var title_lbl := Label.new()
 	title_lbl.text = "Stairs"
-	title_lbl.add_theme_font_size_override("font_size", 8)
+	title_lbl.add_theme_font_size_override("font_size", 11)
 	title_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.4))
 	title_lbl.position = Vector2(0.0, 2.0)
-	title_lbl.size = Vector2(58.0, 12.0)
+	title_lbl.size = Vector2(86.0, 16.0)
 	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_compass_panel.add_child(title_lbl)
 
 	_compass_arrow_label = Label.new()
 	_compass_arrow_label.text = "?"
-	_compass_arrow_label.add_theme_font_size_override("font_size", 20)
+	_compass_arrow_label.add_theme_font_size_override("font_size", 28)
 	_compass_arrow_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
-	_compass_arrow_label.position = Vector2(0.0, 12.0)
-	_compass_arrow_label.size = Vector2(58.0, 24.0)
+	_compass_arrow_label.position = Vector2(0.0, 17.0)
+	_compass_arrow_label.size = Vector2(86.0, 34.0)
 	_compass_arrow_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_compass_panel.add_child(_compass_arrow_label)
 
 	_compass_dist_label = Label.new()
 	_compass_dist_label.text = ""
-	_compass_dist_label.add_theme_font_size_override("font_size", 7)
+	_compass_dist_label.add_theme_font_size_override("font_size", 10)
 	_compass_dist_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	_compass_dist_label.position = Vector2(0.0, 35.0)
-	_compass_dist_label.size = Vector2(58.0, 10.0)
+	_compass_dist_label.position = Vector2(0.0, 52.0)
+	_compass_dist_label.size = Vector2(86.0, 14.0)
 	_compass_dist_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_compass_panel.add_child(_compass_dist_label)
 
@@ -235,7 +235,7 @@ func _update_compass() -> void:
 func _make_status_dot(color: Color, offset: Vector2) -> ColorRect:
 	var dot := ColorRect.new()
 	dot.color = color
-	dot.size = Vector2(8.0, 8.0)
+	dot.size = Vector2(10.0, 10.0)
 	dot.position = portrait.position + offset
 	dot.visible = false
 	return dot
