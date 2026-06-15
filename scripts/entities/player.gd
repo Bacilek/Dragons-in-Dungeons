@@ -21,6 +21,12 @@ var _throw_item: Item = null
 var _fov_prev_turn: Array[Enemy] = []  # visible enemies at START of previous player turn
 var _fov_this_turn: Array[Enemy] = []  # visible enemies at START of current player turn
 
+var _camera: Camera2D
+const ZOOM_MIN: float = 1.0
+const ZOOM_MAX: float = 5.0
+const ZOOM_DEFAULT: float = 3.0
+const ZOOM_STEP: float = 0.25
+
 func _ready() -> void:
 	stats = GameState.player_stats
 	z_index = 3
@@ -31,6 +37,12 @@ func _ready() -> void:
 	GameState.player_died.connect(_on_player_died)
 	GameState.class_chosen.connect(_on_class_chosen)
 	TurnManager.player_turn_started.connect(_on_turn_started)
+
+	_camera = Camera2D.new()
+	_camera.zoom = Vector2(ZOOM_DEFAULT, ZOOM_DEFAULT)
+	_camera.position_smoothing_enabled = true
+	_camera.position_smoothing_speed = 8.0
+	add_child(_camera)
 
 func _on_player_died() -> void:
 	visible = false
@@ -122,6 +134,18 @@ func _process(_delta: float) -> void:
 	_try_move(dir)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.pressed and _camera != null:
+			var current_zoom: float = _camera.zoom.x
+			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+				_camera.zoom = Vector2.ONE * clampf(current_zoom + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
+				get_viewport().set_input_as_handled()
+				return
+			elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				_camera.zoom = Vector2.ONE * clampf(current_zoom - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
+				get_viewport().set_input_as_handled()
+				return
 	if GameState.is_game_over or not GameState.class_selected:
 		return
 	if event is InputEventKey:
