@@ -92,7 +92,7 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 
 # Cardinal + diagonal movement via per-frame key sampling so two held cardinals = diagonal
 func _process(_delta: float) -> void:
-	if GameState.is_game_over or GameState.inventory_open or not GameState.class_selected:
+	if GameState.is_game_over or GameState.inventory_open or GameState.short_rest_open or not GameState.class_selected:
 		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
 		_interrupted = false
@@ -138,11 +138,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		var key := event as InputEventKey
 		if not key.pressed or key.echo:
 			return
-		# I key toggles inventory regardless of turn phase
+		# I key toggles inventory regardless of turn phase (blocked during short rest)
 		if key.physical_keycode == KEY_I:
-			GameState.inventory_toggle.emit()
+			if not GameState.short_rest_open:
+				GameState.inventory_toggle.emit()
 			return
-		if GameState.inventory_open:
+		if GameState.inventory_open or GameState.short_rest_open:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
 			if _throw_item != null:
@@ -160,6 +161,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _wait_action()
 			KEY_F: _interact_action()
 			KEY_CTRL: _search_action()
+			KEY_ALT: _open_short_rest()
 			KEY_1: _use_quickbar_slot(0)
 			KEY_2: _use_quickbar_slot(1)
 			KEY_3: _use_quickbar_slot(2)
@@ -860,3 +862,11 @@ func _do_throw(pos: Vector2i) -> void:
 		GameState.game_log("[color=gray]You throw [b]%s[/b].[/color]" % dropped.item_name)
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
+
+func _open_short_rest() -> void:
+	if GameState.short_rests_remaining <= 0:
+		GameState.game_log("[color=gray]No short rests remaining on this floor. Descend to refresh.[/color]")
+		return
+	GameState.short_rest_open = true
+	var panel_script = load("res://scripts/ui/short_rest_panel.gd")
+	get_tree().root.add_child(panel_script.new())

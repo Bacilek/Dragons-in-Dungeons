@@ -16,6 +16,7 @@ signal class_chosen(chosen_class: Stats.CharacterClass)
 signal hunger_changed(value: int)
 signal player_status_changed()
 signal debug_jump_floor(floor_num: int)
+signal short_rest_changed
 
 const QUICKBAR_SIZE: int = 9
 const INVENTORY_SIZE: int = 24
@@ -34,6 +35,9 @@ var inventory_open: bool = false
 var class_selected: bool = false
 var invincible: bool = false
 var noclip: bool = false
+var hit_dice: int = 1
+var short_rests_remaining: int = 2
+var short_rest_open: bool = false
 var hunger: int = MAX_HUNGER
 var hunger_state: HungerState:
 	get:
@@ -67,6 +71,9 @@ func start_new_run() -> void:
 	class_selected = false
 	invincible = false
 	noclip = false
+	short_rest_open = false
+	hit_dice = 1
+	short_rests_remaining = 2
 	hunger = MAX_HUNGER
 	_starvation_tick = 0
 	player_stats = Stats.new()
@@ -101,9 +108,20 @@ func _give_starting_items() -> void:
 
 func advance_floor() -> void:
 	current_floor += 1
+	hit_dice = player_stats.character_level
+	short_rests_remaining = 2
+	short_rest_changed.emit()
 	floor_changed.emit(current_floor)
 	if current_floor > 10:
 		player_won.emit()
+
+func hit_die_sides() -> int:
+	match player_stats.character_class:
+		Stats.CharacterClass.BARBARIAN: return 12
+		Stats.CharacterClass.RANGER:    return 10
+		Stats.CharacterClass.CLERIC:    return 8
+		Stats.CharacterClass.WIZARD:    return 6
+		_:                              return 8
 
 func check_player_death() -> void:
 	if player_stats.is_dead() and not is_game_over and not invincible:
