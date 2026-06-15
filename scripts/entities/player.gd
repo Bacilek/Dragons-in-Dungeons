@@ -840,7 +840,7 @@ func _do_throw(pos: Vector2i) -> void:
 		return
 	TurnManager.begin_player_action()
 	var trap: Dictionary = _dungeon_floor.get_trap_at(pos)
-	var is_fire: bool = not trap.is_empty() and trap.get("name", "") == "Fire Trap"
+	var is_fire: bool = not trap.is_empty() and trap.get("name", "") == "Fire Trap" and trap.get("revealed", false)
 	if is_fire and item.item_name == "Rotten Meat":
 		GameState.consume_one(item)
 		var cooked: Item = _dungeon_floor.cook_rotten_meat(pos)

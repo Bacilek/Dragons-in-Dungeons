@@ -735,7 +735,16 @@ func place_blood_decal(pos: Vector2i) -> void:
 	entities.add_child(sprite)
 
 func cook_rotten_meat(trap_pos: Vector2i) -> Item:
-	disarm_trap(trap_pos)
+	if _traps.has(trap_pos):
+		var trap: Dictionary = _traps[trap_pos]
+		var sprite_node: Sprite2D = trap.get("sprite_node") as Sprite2D
+		_traps.erase(trap_pos)
+		if sprite_node != null and is_instance_valid(sprite_node):
+			var tw := sprite_node.create_tween()
+			tw.tween_property(sprite_node, "modulate", Color(2.5, 1.5, 0.1, 1.0), 0.08)
+			tw.tween_property(sprite_node, "modulate", Color(1.5, 0.7, 0.05, 1.0), 0.12)
+			tw.tween_property(sprite_node, "modulate:a", 0.0, 0.25)
+			tw.tween_callback(sprite_node.queue_free)
 	var cooked := Item.new()
 	cooked.item_name = "Cooked Meat"
 	cooked.item_type = Item.Type.FOOD
