@@ -839,6 +839,12 @@ func get_unrevealed_traps() -> Array[Vector2i]:
 func is_explored(pos: Vector2i) -> bool:
 	return _explored.get(pos, false)
 
+func get_room_centers() -> Array[Vector2i]:
+	var centers: Array[Vector2i] = []
+	for r: Rect2i in _data.rooms:
+		centers.append(r.get_center())
+	return centers
+
 func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
 	if entity is Player:
 		if GameState.invincible:

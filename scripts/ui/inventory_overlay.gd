@@ -160,6 +160,7 @@ func _build_quickbar_section() -> void:
 func _make_slot(eq_type: String = "") -> Control:
 	var slot := Panel.new()
 	slot.custom_minimum_size = Vector2(SLOT_SIZE, SLOT_SIZE)
+	slot.size = Vector2(SLOT_SIZE, SLOT_SIZE)
 	slot.mouse_filter = Control.MOUSE_FILTER_STOP
 	var sbox := StyleBoxFlat.new()
 	sbox.bg_color = Color(0.11, 0.11, 0.15, 0.95)

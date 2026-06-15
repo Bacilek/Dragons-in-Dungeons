@@ -33,6 +33,7 @@ const ZOOM_STEP: float = 0.25
 var _is_panning: bool = false
 var _pan_start_mouse: Vector2 = Vector2.ZERO
 var _pan_start_cam: Vector2 = Vector2.ZERO
+var _click_start_screen_pos: Vector2 = Vector2(-1.0, -1.0)
 
 
 func _ready() -> void:
@@ -236,9 +237,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_8: _use_quickbar_slot(7)
 			KEY_9: _use_quickbar_slot(8)
 
+	elif event is InputEventMouseMotion:
+		if _click_start_screen_pos.x >= 0.0 and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			var motion := event as InputEventMouseMotion
+			if motion.position.distance_to(_click_start_screen_pos) > 8.0:
+				_queued_path.clear()
+				_target_enemy = null
+				_click_start_screen_pos = Vector2(-1.0, -1.0)
+
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if not mb.pressed:
+			_click_start_screen_pos = Vector2(-1.0, -1.0)
 			return
 		if _dungeon_floor == null:
 			return
@@ -252,6 +262,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 		if mb.button_index != MOUSE_BUTTON_LEFT:
 			return
+
+		_click_start_screen_pos = mb.position
 
 		if GameState.short_rest_active or GameState.short_rest_open:
 			return

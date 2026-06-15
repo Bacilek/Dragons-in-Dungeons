@@ -17,6 +17,9 @@ var initial_behavior: Behavior = Behavior.SLEEPING
 var behavior: Behavior = Behavior.SLEEPING
 var last_known_player_pos: Vector2i = Vector2i(-1, -1)
 
+var _roam_target: Vector2i = Vector2i(-1, -1)
+var _roam_path: Array[Vector2i] = []
+
 var _zzz_label: Label
 var _zzz_tween: Tween
 
@@ -132,9 +135,11 @@ func take_turn() -> void:
 			if can_see:
 				last_known_player_pos = player.grid_pos
 				behavior = Behavior.CHASING
+				_roam_path.clear()
+				_roam_target = Vector2i(-1, -1)
 				await _act_toward(player)
 			else:
-				await _do_random_walk()
+				await _do_roam_walk()
 
 		Behavior.CHASING:
 			if can_see:
@@ -146,6 +151,8 @@ func take_turn() -> void:
 			if not can_see and last_known_player_pos != Vector2i(-1, -1) and grid_pos == last_known_player_pos:
 				behavior = Behavior.ROAMING
 				last_known_player_pos = Vector2i(-1, -1)
+				_roam_path.clear()
+				_roam_target = Vector2i(-1, -1)
 
 # Attack if adjacent to player; otherwise step toward last known / player position.
 func _act_toward(player: Player) -> void:
@@ -177,17 +184,50 @@ func _act_toward(player: Player) -> void:
 		if _dungeon_floor.is_walkable_for_enemy(next_pos):
 			await _move_step(step, next_pos)
 
-func _do_random_walk() -> void:
+func _pick_roam_target() -> Vector2i:
+	var centers: Array[Vector2i] = _dungeon_floor.get_room_centers()
+	centers.shuffle()
+	for c: Vector2i in centers:
+		if maxi(absi(c.x - grid_pos.x), absi(c.y - grid_pos.y)) < 4:
+			continue
+		if _dungeon_floor.is_walkable_for_enemy(c):
+			return c
+	return Vector2i(-1, -1)
+
+func _do_roam_walk() -> void:
+	if _roam_path.is_empty() or grid_pos == _roam_target:
+		_roam_target = _pick_roam_target()
+		if _roam_target == Vector2i(-1, -1):
+			await _do_random_step()
+			return
+		_roam_path = _bfs_to(_roam_target)
+		if _roam_path.is_empty():
+			_roam_target = Vector2i(-1, -1)
+			await _do_random_step()
+			return
+	var next_pos: Vector2i = _roam_path[0]
+	if not _dungeon_floor.is_walkable_for_enemy(next_pos):
+		_roam_path.clear()
+		_roam_target = Vector2i(-1, -1)
+		await _do_random_step()
+		return
+	_roam_path.remove_at(0)
+	if _dungeon_floor.has_door_at(next_pos) and not _dungeon_floor.is_door_open(next_pos):
+		_dungeon_floor.open_door(next_pos)
+	await _move_step(next_pos - grid_pos, next_pos)
+
+func _do_random_step() -> void:
 	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
 			Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]
 	dirs.shuffle()
 	for dir: Vector2i in dirs:
 		var target: Vector2i = grid_pos + dir
 		if _dungeon_floor.has_door_at(target):
-			continue  # Don't bother opening doors while roaming
+			continue
 		if _dungeon_floor.is_walkable_for_enemy(target):
 			await _move_step(dir, target)
 			return
+	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 
 func _move_step(step: Vector2i, next_pos: Vector2i) -> void:
 	var prev_pos: Vector2i = grid_pos
