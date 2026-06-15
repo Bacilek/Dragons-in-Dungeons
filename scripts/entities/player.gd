@@ -19,6 +19,10 @@ var _throw_item: Item = null
 var _regen_counter: int = 0
 const REGEN_TURNS: int = 10
 
+# FOV snapshots for advantage (surprise attack) detection
+var _fov_prev_turn: Array[Enemy] = []  # visible enemies at START of previous player turn
+var _fov_this_turn: Array[Enemy] = []  # visible enemies at START of current player turn
+
 func _ready() -> void:
 	stats = GameState.player_stats
 	z_index = 3
@@ -42,6 +46,10 @@ func _on_player_hp_changed(_c: int, _m: int) -> void:
 	update_hp_bar()
 
 func _on_turn_started() -> void:
+	# Rotate FOV snapshots: prev ← this ← current visible
+	if _dungeon_floor != null:
+		_fov_prev_turn = _fov_this_turn
+		_fov_this_turn = _dungeon_floor.get_visible_enemies()
 	GameState.deplete_hunger()
 	var status_dmg: int = GameState.player_stats.tick_status()
 	if status_dmg > 0:
@@ -436,19 +444,28 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	_show_sword_slash(dir)
 
 	# D&D attack roll: d20 + STR modifier + weapon bonus vs enemy AC
+	# Advantage (2d20 higher) when target is sleeping or entered FOV this turn
 	var str_mod: int = stats.str_modifier()
 	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if GameState.equipped_weapon != null else 0
-	var die: int = randi_range(1, 20)
+	var adv: bool = _has_advantage(enemy)
+	var die1: int = randi_range(1, 20)
+	var die2: int = randi_range(1, 20) if adv else die1
+	var die: int = maxi(die1, die2) if adv else die1
 	var roll: int = die + str_mod + weapon_bonus
 	var is_crit: bool = die == 20
 	if not is_crit and roll < enemy.stats.armor_class:
-		GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		if adv:
+			GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		else:
+			GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
 		TurnManager.on_player_action_complete()
 		return
 
 	_flash_hit(enemy)
+	if adv:
+		_show_surprise_mark(enemy)
 	var dmg: int = stats.roll_damage()
 	if is_crit:
 		dmg *= 2
@@ -457,9 +474,15 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
 	if is_crit:
-		GameState.game_log("[color=red]CRITICAL HIT![/color] You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20=[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		if adv:
+			GameState.game_log("[color=red]CRITICAL HIT![/color] You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		else:
+			GameState.game_log("[color=red]CRITICAL HIT![/color] You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20=[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 	else:
-		GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		if adv:
+			GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, die, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		else:
+			GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 	if enemy.stats.is_dead():
 		GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
 		GameState.gain_exp(enemy.exp_reward)
@@ -650,6 +673,26 @@ func _use_quickbar_slot(idx: int) -> void:
 func _leave_blood_trail(pos: Vector2i) -> void:
 	if _dungeon_floor != null and GameState.player_stats.bleeding_turns > 0:
 		_dungeon_floor.place_blood_decal(pos)
+
+func _has_advantage(enemy: Enemy) -> bool:
+	if enemy.behavior == Enemy.Behavior.SLEEPING:
+		return true
+	return not (enemy in _fov_prev_turn)
+
+func _show_surprise_mark(enemy: Enemy) -> void:
+	if not is_instance_valid(enemy):
+		return
+	var lbl := Label.new()
+	lbl.text = "!"
+	lbl.add_theme_font_size_override("font_size", 20)
+	lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.0))
+	lbl.position = enemy.position + Vector2(-4.0, -26.0)
+	lbl.z_index = 10
+	get_parent().add_child(lbl)
+	var tween := lbl.create_tween()
+	tween.tween_property(lbl, "position:y", lbl.position.y - 10.0, 0.7)
+	tween.parallel().tween_property(lbl, "modulate:a", 0.0, 0.7).set_delay(0.3)
+	tween.tween_callback(lbl.queue_free)
 
 func _is_in_ranged_range(enemy: Enemy) -> bool:
 	var weapon: Item = GameState.equipped_weapon
