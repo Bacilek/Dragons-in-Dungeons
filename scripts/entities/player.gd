@@ -17,9 +17,6 @@ var _interrupted: bool = false           # set when enemy seen mid-hold; cleared
 
 var _throw_item: Item = null
 
-var _regen_counter: int = 0
-const REGEN_TURNS: int = 10
-
 # FOV snapshots for advantage (surprise attack) detection
 var _fov_prev_turn: Array[Enemy] = []  # visible enemies at START of previous player turn
 var _fov_this_turn: Array[Enemy] = []  # visible enemies at START of current player turn
@@ -58,14 +55,6 @@ func _on_turn_started() -> void:
 		if _dungeon_floor != null:
 			_dungeon_floor.show_damage(position, status_dmg, true)
 		GameState.player_status_changed.emit()
-	_regen_counter += 1
-	if _regen_counter < REGEN_TURNS:
-		return
-	_regen_counter = 0
-	var s: Stats = GameState.player_stats
-	if s.current_hp < s.max_hp and not GameState.is_game_over \
-			and GameState.hunger_state != GameState.HungerState.STARVING:
-		GameState.heal(1)
 
 func _setup_animations() -> void:
 	var char_name: String
@@ -448,8 +437,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 
 	# D&D attack roll: d20 + STR modifier + weapon bonus vs enemy AC
 	# Advantage (2d20 higher) when target is sleeping or entered FOV this turn
+	var is_unarmed: bool = GameState.equipped_weapon == null
 	var str_mod: int = stats.str_modifier()
-	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if GameState.equipped_weapon != null else 0
+	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if not is_unarmed else 0
 	var adv: bool = _has_advantage(enemy)
 	var die1: int = randi_range(1, 20)
 	var die2: int = randi_range(1, 20) if adv else die1
@@ -457,7 +447,12 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var roll: int = die + str_mod + weapon_bonus
 	var is_crit: bool = die == 20
 	if not is_crit and roll < enemy.stats.armor_class:
-		if adv:
+		if is_unarmed:
+			if adv:
+				GameState.game_log("You punch at [color=orange]%s[/color] but [color=gray]miss[/color]! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, str_mod, roll, enemy.stats.armor_class])
+			else:
+				GameState.game_log("You punch at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, str_mod, roll, enemy.stats.armor_class])
+		elif adv:
 			GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 		else:
 			GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
@@ -477,12 +472,22 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
 	if is_crit:
-		if adv:
+		if is_unarmed:
+			if adv:
+				GameState.game_log("[color=red]CRITICAL HIT![/color] You punch [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, str_mod, roll, enemy.stats.armor_class])
+			else:
+				GameState.game_log("[color=red]CRITICAL HIT![/color] You punch [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20=[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod, roll, enemy.stats.armor_class])
+		elif adv:
 			GameState.game_log("[color=red]CRITICAL HIT![/color] You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 		else:
 			GameState.game_log("[color=red]CRITICAL HIT![/color] You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20=[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 	else:
-		if adv:
+		if is_unarmed:
+			if adv:
+				GameState.game_log("You punch [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, die, str_mod, roll, enemy.stats.armor_class])
+			else:
+				GameState.game_log("You punch [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod, roll, enemy.stats.armor_class])
+		elif adv:
 			GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, die, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 		else:
 			GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
@@ -493,6 +498,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	TurnManager.on_player_action_complete()
 
 func _show_sword_slash(dir: Vector2i) -> void:
+	if GameState.equipped_weapon == null:
+		return
+
 	var attack_angle := atan2(float(dir.y), float(dir.x))
 
 	# Arc width and speed scale with weapon tier (bonus_damage)

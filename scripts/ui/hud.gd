@@ -29,6 +29,14 @@ var _bleeding_icon: ColorRect
 var _slowed_icon: ColorRect
 var _inventory_overlay_ref: Node = null
 var _debug_panel_ref: Node = null
+var _hit_dice_label: Label
+
+const CLASS_PORTRAIT: Dictionary = {
+	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/knight_m_idle_anim_f0.png",
+	Stats.CharacterClass.RANGER:    "res://sprites/characters/elf_m_idle_anim_f0.png",
+	Stats.CharacterClass.WIZARD:    "res://sprites/characters/wizzard_m_idle_anim_f0.png",
+	Stats.CharacterClass.CLERIC:    "res://sprites/characters/dwarf_m_idle_anim_f0.png",
+}
 
 func _ready() -> void:
 	GameState.floor_changed.connect(_on_floor_changed)
@@ -41,6 +49,8 @@ func _ready() -> void:
 	GameState.inventory_changed.connect(_refresh_inventory)
 	GameState.hunger_changed.connect(_on_hunger_changed)
 	GameState.player_status_changed.connect(_on_status_changed)
+	GameState.class_chosen.connect(_on_class_chosen)
+	GameState.short_rest_changed.connect(_update_hit_dice_label)
 	portrait.pressed.connect(_on_portrait_pressed)
 	wait_button.pressed.connect(_on_wait_pressed)
 	search_button.pressed.connect(_on_search_pressed)
@@ -96,6 +106,16 @@ func _ready() -> void:
 	$StatsPanel.add_child(_bleeding_icon)
 	$StatsPanel.add_child(_slowed_icon)
 	_update_status_icons()
+
+	# Hit dice label below level label
+	_hit_dice_label = Label.new()
+	_hit_dice_label.add_theme_font_size_override("font_size", 7)
+	_hit_dice_label.add_theme_color_override("font_color", Color(0.75, 0.85, 1.0))
+	_hit_dice_label.position = Vector2(4.0, 54.0)
+	_hit_dice_label.size = Vector2(36.0, 12.0)
+	_hit_dice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	$StatsPanel.add_child(_hit_dice_label)
+	_update_hit_dice_label()
 
 	# Inventory overlay — add as sibling CanvasLayer so it floats above HUD
 	var overlay_script = load("res://scripts/ui/inventory_overlay.gd")
@@ -156,10 +176,23 @@ func _update_hunger_label() -> void:
 			_hunger_label.text = "Starving!"
 			_hunger_label.add_theme_color_override("font_color", Color(1.0, 0.20, 0.20))
 
+func _on_class_chosen(cls: Stats.CharacterClass) -> void:
+	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/knight_m_idle_anim_f0.png")
+	portrait.texture_normal = load(path)
+	_update_hit_dice_label()
+
+func _update_hit_dice_label() -> void:
+	if _hit_dice_label == null:
+		return
+	var sides: int = GameState.hit_die_sides()
+	var available: int = GameState.hit_dice
+	_hit_dice_label.text = "d%d:%d" % [sides, available]
+
 func _on_floor_changed(new_floor: int) -> void:
 	floor_label.text = "Floor: %d" % new_floor
 	_log_messages.clear()
 	log_label.text = ""
+	_update_hit_dice_label()
 
 func _on_player_hp_changed(current_hp: int, max_hp: int) -> void:
 	_update_hp_bar(current_hp, max_hp)

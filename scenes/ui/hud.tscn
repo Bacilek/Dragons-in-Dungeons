@@ -11,7 +11,7 @@ script = ExtResource("1")
 offset_left = 4.0
 offset_top = 4.0
 offset_right = 224.0
-offset_bottom = 60.0
+offset_bottom = 74.0
 
 [node name="Portrait" type="TextureButton" parent="StatsPanel"]
 offset_left = 4.0

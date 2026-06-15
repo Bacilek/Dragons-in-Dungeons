@@ -570,7 +570,8 @@ func _spawn_traps() -> void:
 		sprite.modulate.a = 0.5
 		entities.add_child(sprite)
 		_traps[pos] = {"name": t["name"], "damage": t["damage"], "msg": t["msg"],
-					   "sprite_node": sprite, "revealed": false, "is_push": false, "triggered": false}
+					   "sprite_node": sprite, "revealed": false, "is_push": false, "triggered": false,
+					   "reusable": t.get("reusable", false)}
 
 	if not wall_pool.is_empty():
 		var valid_wc: Array = []
