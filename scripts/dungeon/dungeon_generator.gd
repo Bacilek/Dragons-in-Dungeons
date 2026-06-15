@@ -28,6 +28,8 @@ static func generate(seed_val: int, floor_num: int) -> DungeonData:
 	_carve_rooms(root, data)
 	_connect_bsp(root, data)
 	_collect_rooms(root, data.rooms)
+	_add_room_extensions(data, rng)
+	_add_extra_corridors(data, rng)
 
 	if data.rooms.is_empty():
 		var fallback := Rect2i(10, 10, 10, 10)
@@ -392,3 +394,51 @@ static func _place_grass_clusters(data: DungeonData, rng: RandomNumberGenerator)
 					data.grid[nxt.y][nxt.x] = DungeonData.TileType.GRASS
 					placed_count += 1
 					queue.append(nxt)
+
+
+static func _add_room_extensions(data: DungeonData, rng: RandomNumberGenerator) -> void:
+	for room_entry in data.rooms:
+		var r: Rect2i = room_entry
+		if rng.randf() >= 0.40:
+			continue
+		var side: int = rng.randi_range(0, 3)
+		var ext_w: int = rng.randi_range(2, mini(4, maxi(2, r.size.x - 2)))
+		var ext_h: int = rng.randi_range(2, 3)
+		var ext: Rect2i
+		match side:
+			0:  # North
+				var x: int = r.position.x + rng.randi_range(1, maxi(1, r.size.x - ext_w - 1))
+				ext = Rect2i(x, r.position.y - ext_h, ext_w, ext_h)
+			1:  # South
+				var x: int = r.position.x + rng.randi_range(1, maxi(1, r.size.x - ext_w - 1))
+				ext = Rect2i(x, r.position.y + r.size.y, ext_w, ext_h)
+			2:  # West
+				var y: int = r.position.y + rng.randi_range(1, maxi(1, r.size.y - ext_h - 1))
+				ext = Rect2i(r.position.x - ext_w, y, ext_w, ext_h)
+			_:  # East
+				var y: int = r.position.y + rng.randi_range(1, maxi(1, r.size.y - ext_h - 1))
+				ext = Rect2i(r.position.x + r.size.x, y, ext_w, ext_h)
+		ext = ext.intersection(Rect2i(1, 1, GRID_WIDTH - 2, GRID_HEIGHT - 2))
+		if ext.size.x > 0 and ext.size.y > 0:
+			_carve_rect(ext, data)
+
+
+static func _add_extra_corridors(data: DungeonData, rng: RandomNumberGenerator) -> void:
+	if data.rooms.size() < 3:
+		return
+	var num_extra: int = rng.randi_range(2, 3)
+	for _i: int in num_extra:
+		for _attempt: int in 8:
+			var ai: int = rng.randi_range(0, data.rooms.size() - 1)
+			var bi: int = rng.randi_range(0, data.rooms.size() - 1)
+			if ai == bi:
+				continue
+			var ra: Rect2i = data.rooms[ai]
+			var rb: Rect2i = data.rooms[bi]
+			var ca := Vector2i(ra.position.x + ra.size.x / 2, ra.position.y + ra.size.y / 2)
+			var cb := Vector2i(rb.position.x + rb.size.x / 2, rb.position.y + rb.size.y / 2)
+			# Carve via the corner point (vertical-first L-shape for variety)
+			var corner := Vector2i(ca.x, cb.y)
+			_carve_corridor(ca, corner, data)
+			_carve_corridor(corner, cb, data)
+			break
