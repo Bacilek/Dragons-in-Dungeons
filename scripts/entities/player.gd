@@ -54,8 +54,9 @@ func _on_player_hp_changed(_c: int, _m: int) -> void:
 
 func _on_turn_started() -> void:
 	GameState.player_grid_pos = grid_pos
-	# Rotate FOV snapshots: prev ← this ← current visible
+	# Refresh visibility after enemy turns, then snapshot FOV
 	if _dungeon_floor != null:
+		_dungeon_floor.update_fog(grid_pos)
 		_fov_prev_turn = _fov_this_turn
 		_fov_this_turn = _dungeon_floor.get_visible_enemies()
 
@@ -638,9 +639,10 @@ func _on_action_requested(action_name: String) -> void:
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 		return
 	match action_name:
-		"wait":     _wait_action()
-		"search":   _handle_search_request()
-		"interact": _interact_action()
+		"wait":             _wait_action()
+		"search":           _handle_search_request()
+		"interact":         _interact_action()
+		"short_rest_begin": _do_rest_wait_turn()
 
 func _check_pickup() -> void:
 	if _dungeon_floor == null:

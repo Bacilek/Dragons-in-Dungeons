@@ -12,6 +12,8 @@ var _hp_bar: HealthBarNode
 func _setup_hp_bar() -> void:
 	_hp_bar = HealthBarNode.new()
 	_hp_bar.position = Vector2(0.0, -20.0)
+	_hp_bar.z_index = 10
+	_hp_bar.z_as_relative = false
 	add_child(_hp_bar)
 
 func update_hp_bar() -> void:

@@ -184,6 +184,7 @@ func _on_rest() -> void:
 	GameState.short_rest_turns_remaining = 5
 	GameState.game_log("[color=cyan]You settle in for a short rest... (5 turns)[/color]")
 	GameState.short_rest_changed.emit()
+	GameState.player_action_requested.emit("short_rest_begin")
 	_close()
 
 func _close() -> void:
