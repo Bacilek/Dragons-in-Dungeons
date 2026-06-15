@@ -16,6 +16,8 @@ var _prev_dir: Vector2i = Vector2i.ZERO  # direction held in the previous WAITIN
 var _interrupted: bool = false           # set when enemy seen mid-hold; cleared only on key release
 
 var _throw_item: Item = null
+var _inspect_mode: bool = false
+var _last_search_request: float = -999.0
 
 # FOV snapshots for advantage (surprise attack) detection
 var _fov_prev_turn: Array[Enemy] = []  # visible enemies at START of previous player turn
@@ -161,6 +163,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if GameState.inventory_open or GameState.short_rest_open:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
+			if _inspect_mode:
+				_inspect_mode = false
+				GameState.game_log("[color=gray]Inspect cancelled.[/color]")
+				return
 			if _throw_item != null:
 				_throw_item = null
 				GameState.game_log("[color=gray]Throw cancelled.[/color]")
@@ -175,7 +181,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_C, KEY_KP_3: _try_move(Vector2i(1, 1))
 			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _wait_action()
 			KEY_F: _interact_action()
-			KEY_CTRL: _search_action()
+			KEY_CTRL: _handle_search_request()
 			KEY_ALT: _open_short_rest()
 			KEY_1: _use_quickbar_slot(0)
 			KEY_2: _use_quickbar_slot(1)
@@ -202,6 +208,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 
 		if mb.button_index != MOUSE_BUTTON_LEFT:
+			return
+
+		# Inspect mode — show info about clicked tile
+		if _inspect_mode:
+			_inspect_mode = false
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT:
+				_do_inspect(clicked)
 			return
 
 		# Throw mode — consume left-click for the toss
@@ -434,6 +447,7 @@ func _try_move(dir: Vector2i) -> void:
 		if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 			_dungeon_floor.destroy_grass(grid_pos)
 		_dungeon_floor.update_fog(grid_pos)
+		_passive_trap_check()
 		_check_pickup()
 		var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 		if not trap.is_empty():
@@ -600,7 +614,7 @@ func _on_action_requested(action_name: String) -> void:
 		return
 	match action_name:
 		"wait":     _wait_action()
-		"search":   _search_action()
+		"search":   _handle_search_request()
 		"interact": _interact_action()
 
 func _check_pickup() -> void:
@@ -624,17 +638,87 @@ func _wait_action() -> void:
 		_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
 
+func _handle_search_request() -> void:
+	var now: float = Time.get_ticks_msec() / 1000.0
+	if now - _last_search_request < 0.5:
+		# Double press — trigger actual search
+		_inspect_mode = false
+		_last_search_request = -999.0
+		_search_action()
+	else:
+		# First press — enter inspect mode
+		_last_search_request = now
+		_inspect_mode = true
+		GameState.game_log("[color=cyan]Inspect — left-click any visible tile for info. [Esc] to cancel. Press Ctrl/Search again to search area.[/color]")
+
 func _search_action() -> void:
 	if _dungeon_floor == null:
 		return
 	TurnManager.begin_player_action()
-	var found: int = _dungeon_floor.search_around(grid_pos)
-	if found > 0:
-		GameState.game_log("[color=cyan]You search the area and reveal %d trap(s)![/color]" % found)
+	var wis_mod: int = GameState.player_stats.wis_modifier()
+	var dc: int = maxi(10, 10 + GameState.current_floor / 3)
+	var die1: int = randi_range(1, 20)
+	var die2: int = randi_range(1, 20)
+	var roll: int = maxi(die1, die2) + wis_mod
+	if roll >= dc:
+		var found: int = _dungeon_floor.search_around(grid_pos)
+		if found > 0:
+			GameState.game_log("[color=cyan]You search carefully and reveal %d trap(s)! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs DC %d)[/color]" % [found, die1, die2, maxi(die1, die2), wis_mod, roll, dc])
+		else:
+			GameState.game_log("[color=gray]You search but find nothing suspicious. (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs DC %d)[/color]" % [die1, die2, maxi(die1, die2), wis_mod, roll, dc])
 	else:
-		GameState.game_log("[color=gray]You search the area. Nothing found.[/color]")
+		GameState.game_log("[color=gray]You search but notice nothing. (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs DC %d)[/color]" % [die1, die2, maxi(die1, die2), wis_mod, roll, dc])
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
+
+func _do_inspect(pos: Vector2i) -> void:
+	if _dungeon_floor == null:
+		return
+	if not _dungeon_floor.is_explored(pos):
+		GameState.game_log("[color=gray]You haven't explored that area.[/color]")
+		return
+	var enemy: Enemy = _dungeon_floor.get_enemy_at(pos)
+	if enemy != null and enemy.visible:
+		GameState.game_log("[color=orange]%s[/color] — HP: %d/%d, AC: %d" % [enemy.display_name, enemy.stats.current_hp, enemy.stats.max_hp, enemy.stats.armor_class])
+		return
+	var trap: Dictionary = _dungeon_floor.get_trap_at(pos)
+	if not trap.is_empty() and trap.get("revealed", false):
+		GameState.game_log("[color=orange]%s[/color] — revealed trap" % trap.get("name", "Trap"))
+		return
+	var floor_item: Item = _dungeon_floor.get_item_at(pos)
+	if floor_item != null:
+		GameState.game_log("[color=cyan]%s[/color] — on the floor" % floor_item.get_display_name())
+		return
+	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(pos)
+	var tile_name: String
+	match tile_t:
+		DungeonData.TileType.FLOOR:          tile_name = "Stone floor"
+		DungeonData.TileType.WALL:           tile_name = "Stone wall"
+		DungeonData.TileType.STAIRS_DOWN:    tile_name = "Stairs leading down"
+		DungeonData.TileType.CHASM:          tile_name = "Chasm — deadly fall"
+		DungeonData.TileType.WATER:          tile_name = "Water — slows movement"
+		DungeonData.TileType.MUD:            tile_name = "Mud — slows movement"
+		DungeonData.TileType.GRASS:          tile_name = "Tall grass — blocks line of sight"
+		DungeonData.TileType.TRAMPLED_GRASS: tile_name = "Trampled grass"
+		_:                                   tile_name = "Unknown"
+	GameState.game_log("[color=gray]%s.[/color]" % tile_name)
+
+func _passive_trap_check() -> void:
+	if _dungeon_floor == null:
+		return
+	var wis_mod: int = GameState.player_stats.wis_modifier()
+	var dc: int = maxi(8, 8 + GameState.current_floor / 2)
+	for trap_pos: Vector2i in _dungeon_floor.get_unrevealed_traps():
+		var diff: Vector2i = trap_pos - grid_pos
+		if maxi(absi(diff.x), absi(diff.y)) <= 2:
+			var die: int = randi_range(1, 20)
+			if die + wis_mod >= dc:
+				_dungeon_floor.reveal_trap(trap_pos)
+				if _queued_path.size() > 0:
+					_queued_path.clear()
+					GameState.game_log("[color=yellow]You notice something suspicious nearby and stop cautiously.[/color]")
+				else:
+					GameState.game_log("[color=yellow]You notice something suspicious on the floor.[/color]")
 
 func _interact_action() -> void:
 	if _dungeon_floor == null:

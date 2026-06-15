@@ -763,16 +763,26 @@ func cook_rotten_meat(trap_pos: Vector2i) -> Item:
 	cooked.description = "Roasted over a fire trap."
 	return cooked
 
-func search_around(pos: Vector2i) -> int:
+func search_around(pos: Vector2i, radius: int = 2) -> int:
 	var found: int = 0
-	for dy: int in range(-1, 2):
-		for dx: int in range(-1, 2):
+	for dy: int in range(-radius, radius + 1):
+		for dx: int in range(-radius, radius + 1):
 			if dx == 0 and dy == 0:
 				continue
 			var trap_pos: Vector2i = pos + Vector2i(dx, dy)
 			if reveal_trap(trap_pos):
 				found += 1
 	return found
+
+func get_unrevealed_traps() -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for pos: Vector2i in _traps:
+		if not _traps[pos].get("revealed", false):
+			result.append(pos)
+	return result
+
+func is_explored(pos: Vector2i) -> bool:
+	return _explored.get(pos, false)
 
 func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
 	if entity is Player:
