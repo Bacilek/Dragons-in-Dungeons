@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://irk7sbll7xto"
-path="res://.godot/imported/StoneBlock.png-fb1a54f0c99a569be61f9a214836bbde.ctex"
+path="res://.godot/imported/StoneBlock.png-8662c937bc1380f57eb525712a3b0c75.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Materials/StoneBlock.png"
-dest_files=["res://.godot/imported/StoneBlock.png-fb1a54f0c99a569be61f9a214836bbde.ctex"]
+source_file="res://sprites/items/Materials/StoneBlock.png"
+dest_files=["res://.godot/imported/StoneBlock.png-8662c937bc1380f57eb525712a3b0c75.ctex"]
 
 [params]
 

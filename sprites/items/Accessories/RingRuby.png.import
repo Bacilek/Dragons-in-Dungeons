@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bejkbviq0cehe"
-path="res://.godot/imported/RingRuby.png-30d1eb427f1b817283e2381b7dca0a75.ctex"
+path="res://.godot/imported/RingRuby.png-7be5871a12a93406e2051adda408e06f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Accessories/RingRuby.png"
-dest_files=["res://.godot/imported/RingRuby.png-30d1eb427f1b817283e2381b7dca0a75.ctex"]
+source_file="res://sprites/items/Accessories/RingRuby.png"
+dest_files=["res://.godot/imported/RingRuby.png-7be5871a12a93406e2051adda408e06f.ctex"]
 
 [params]
 

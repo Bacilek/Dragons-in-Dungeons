@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bsy2drhl8pq7p"
-path="res://.godot/imported/ArrowGold.png-674a8c27216104803119a426e1ac057e.ctex"
+path="res://.godot/imported/ArrowGold.png-830f36e2453e759bcac147ba298693fe.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Ammo/ArrowGold.png"
-dest_files=["res://.godot/imported/ArrowGold.png-674a8c27216104803119a426e1ac057e.ctex"]
+source_file="res://sprites/items/Ammo/ArrowGold.png"
+dest_files=["res://.godot/imported/ArrowGold.png-830f36e2453e759bcac147ba298693fe.ctex"]
 
 [params]
 

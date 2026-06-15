@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cwdbbjw7w8pqr"
-path="res://.godot/imported/ManaPotionMedium.png-515ec300bce3348fa91db6957c84fd48.ctex"
+path="res://.godot/imported/ManaPotionMedium.png-5bf4689ed149556266db872b88701e85.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Potions/Mana/ManaPotionMedium.png"
-dest_files=["res://.godot/imported/ManaPotionMedium.png-515ec300bce3348fa91db6957c84fd48.ctex"]
+source_file="res://sprites/items/Potions/Mana/ManaPotionMedium.png"
+dest_files=["res://.godot/imported/ManaPotionMedium.png-5bf4689ed149556266db872b88701e85.ctex"]
 
 [params]
 

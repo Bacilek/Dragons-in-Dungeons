@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cy5s8dwhki4b6"
-path="res://.godot/imported/OreIron.png-a36ad0de7a04e3a4eacff13cbf950fcd.ctex"
+path="res://.godot/imported/OreIron.png-9665ca7abfd34a064e8f1763524a5769.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Materials/OreIron.png"
-dest_files=["res://.godot/imported/OreIron.png-a36ad0de7a04e3a4eacff13cbf950fcd.ctex"]
+source_file="res://sprites/items/Materials/OreIron.png"
+dest_files=["res://.godot/imported/OreIron.png-9665ca7abfd34a064e8f1763524a5769.ctex"]
 
 [params]
 

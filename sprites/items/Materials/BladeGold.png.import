@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b8w4h5q8x6fqn"
-path="res://.godot/imported/BladeGold.png-509ba04016a0f388ca5069b62bd1fe5a.ctex"
+path="res://.godot/imported/BladeGold.png-149221cf2777cb7f63f59ac893b9ef78.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Materials/BladeGold.png"
-dest_files=["res://.godot/imported/BladeGold.png-509ba04016a0f388ca5069b62bd1fe5a.ctex"]
+source_file="res://sprites/items/Materials/BladeGold.png"
+dest_files=["res://.godot/imported/BladeGold.png-149221cf2777cb7f63f59ac893b9ef78.ctex"]
 
 [params]
 

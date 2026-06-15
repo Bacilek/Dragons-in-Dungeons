@@ -1,7 +1,7 @@
 extends CanvasLayer
 
 const PANEL_W:  int = 200
-const PANEL_H:  int = 160
+const PANEL_H:  int = 190
 const FLOOR_SW: int = 234
 const FLOOR_SH: int = 96
 const ITEMS_SW: int = 390
@@ -93,6 +93,12 @@ func _build_main_panel() -> void:
 	items_btn.size = Vector2(PANEL_W - 12.0, 26.0)
 	items_btn.pressed.connect(_on_items_pressed)
 	_main_panel.add_child(items_btn)
+
+	var see_all_btn := _make_btn("See All", Color(0.80, 0.60, 0.20))
+	see_all_btn.position = Vector2(6.0, 154.0)
+	see_all_btn.size = Vector2(PANEL_W - 12.0, 26.0)
+	see_all_btn.pressed.connect(func(): GameState.debug_reveal_all.emit())
+	_main_panel.add_child(see_all_btn)
 
 func _build_floor_sub() -> void:
 	_floor_sub = Panel.new()

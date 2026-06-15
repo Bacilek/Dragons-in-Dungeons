@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://smnyvooogir5"
-path="res://.godot/imported/EyeRed.png-f0eeaa6d261246b04466478884f30e3d.ctex"
+path="res://.godot/imported/EyeRed.png-74bb7e6a471f90dd2d1cb4556a2c7149.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Ingredients/EyeRed.png"
-dest_files=["res://.godot/imported/EyeRed.png-f0eeaa6d261246b04466478884f30e3d.ctex"]
+source_file="res://sprites/items/Ingredients/EyeRed.png"
+dest_files=["res://.godot/imported/EyeRed.png-74bb7e6a471f90dd2d1cb4556a2c7149.ctex"]
 
 [params]
 

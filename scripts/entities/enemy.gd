@@ -167,6 +167,16 @@ func _act_toward(player: Player) -> void:
 			await _move_step(step, next_pos)
 			return
 
+	# Greedy failed — BFS fallback to navigate around obstacles
+	var bfs_path: Array[Vector2i] = _bfs_to(target)
+	if not bfs_path.is_empty():
+		var next_pos: Vector2i = bfs_path[0]
+		var step: Vector2i = next_pos - grid_pos
+		if _dungeon_floor.has_door_at(next_pos) and not _dungeon_floor.is_door_open(next_pos):
+			_dungeon_floor.open_door(next_pos)
+		if _dungeon_floor.is_walkable_for_enemy(next_pos):
+			await _move_step(step, next_pos)
+
 func _do_random_walk() -> void:
 	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
 			Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]
@@ -209,6 +219,27 @@ func _preferred_steps(dx: int, dy: int) -> Array[Vector2i]:
 		if sy != 0: steps.append(Vector2i(0, sy))
 		if sx != 0: steps.append(Vector2i(sx, 0))
 	return steps
+
+func _bfs_to(target: Vector2i) -> Array[Vector2i]:
+	var queue: Array[Vector2i] = [grid_pos]
+	var came: Dictionary = {grid_pos: grid_pos}
+	var limit: int = 0
+	while not queue.is_empty() and limit < 200:
+		limit += 1
+		var cur: Vector2i = queue.pop_front()
+		if cur == target:
+			var path: Array[Vector2i] = []
+			while cur != grid_pos:
+				path.push_front(cur)
+				cur = came[cur]
+			return path
+		for d: Vector2i in [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
+				Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]:
+			var nxt: Vector2i = cur + d
+			if not came.has(nxt) and (_dungeon_floor.is_walkable_for_enemy(nxt) or nxt == target):
+				came[nxt] = cur
+				queue.append(nxt)
+	return []
 
 func _attack_player(_player: Player) -> void:
 	if GameState.invincible:

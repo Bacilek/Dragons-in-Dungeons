@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cv131alq3sdc8"
-path="res://.godot/imported/MushroomRed.png-a94a7840c16577d1d7b21f6c2c9ab0ef.ctex"
+path="res://.godot/imported/MushroomRed.png-a85f851f995d76da98c6767af25591ce.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Ingredients/MushroomRed.png"
-dest_files=["res://.godot/imported/MushroomRed.png-a94a7840c16577d1d7b21f6c2c9ab0ef.ctex"]
+source_file="res://sprites/items/Ingredients/MushroomRed.png"
+dest_files=["res://.godot/imported/MushroomRed.png-a85f851f995d76da98c6767af25591ce.ctex"]
 
 [params]
 

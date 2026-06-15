@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ccw8ydpa8fv5g"
-path="res://.godot/imported/Leaves.png-bd2c456d9d805cf2a5e984f861a45b43.ctex"
+path="res://.godot/imported/Leaves.png-165dce5d4facf8e8e60a188eecd175b9.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Ingredients/Leaves.png"
-dest_files=["res://.godot/imported/Leaves.png-bd2c456d9d805cf2a5e984f861a45b43.ctex"]
+source_file="res://sprites/items/Ingredients/Leaves.png"
+dest_files=["res://.godot/imported/Leaves.png-165dce5d4facf8e8e60a188eecd175b9.ctex"]
 
 [params]
 

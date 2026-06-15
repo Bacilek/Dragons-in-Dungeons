@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cotwcwn3y4m7"
-path="res://.godot/imported/KeyGold.png-f31efdce7cf48027b5d8fce258d4e162.ctex"
+path="res://.godot/imported/KeyGold.png-170fc48dca37906d3050e653b77bb042.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Misc/KeyGold.png"
-dest_files=["res://.godot/imported/KeyGold.png-f31efdce7cf48027b5d8fce258d4e162.ctex"]
+source_file="res://sprites/items/Misc/KeyGold.png"
+dest_files=["res://.godot/imported/KeyGold.png-170fc48dca37906d3050e653b77bb042.ctex"]
 
 [params]
 

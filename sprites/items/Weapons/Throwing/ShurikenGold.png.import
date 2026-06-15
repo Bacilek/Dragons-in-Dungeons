@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bx2l6y448c4ut"
-path="res://.godot/imported/ShurikenGold.png-328e0eb7de11441760762e448e838b62.ctex"
+path="res://.godot/imported/ShurikenGold.png-9c8b47a4c674e6f08f09fc4c0fe2de19.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Weapons/Throwing/ShurikenGold.png"
-dest_files=["res://.godot/imported/ShurikenGold.png-328e0eb7de11441760762e448e838b62.ctex"]
+source_file="res://sprites/items/Weapons/Throwing/ShurikenGold.png"
+dest_files=["res://.godot/imported/ShurikenGold.png-9c8b47a4c674e6f08f09fc4c0fe2de19.ctex"]
 
 [params]
 

@@ -23,6 +23,12 @@ func unregister_enemy(enemy: Node) -> void:
 func clear_enemies() -> void:
 	_enemies.clear()
 
+func has_any_enemy() -> bool:
+	for e in _enemies:
+		if is_instance_valid(e):
+			return true
+	return false
+
 func begin_player_action() -> void:
 	phase = Phase.RESOLVING_PLAYER
 

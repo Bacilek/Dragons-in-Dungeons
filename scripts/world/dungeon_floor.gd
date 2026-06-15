@@ -227,6 +227,8 @@ func _load_floor() -> void:
 	_spawn_items()
 	_setup_fog()
 	update_fog(_data.player_start)
+	if not GameState.debug_reveal_all.is_connected(reveal_all):
+		GameState.debug_reveal_all.connect(reveal_all)
 
 # ── Tilemap queries ───────────────────────────────────────────────────────────
 
@@ -297,6 +299,19 @@ func update_fog(player_pos: Vector2i) -> void:
 	if not stairs_was_known and _explored.get(_data.stairs_pos, false):
 		GameState.stairs_discovered.emit()
 
+func reveal_all() -> void:
+	for y: int in _data.height:
+		for x: int in _data.width:
+			if _data.get_tile(x, y) != DungeonData.TileType.VOID:
+				_explored[Vector2i(x, y)] = true
+				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0))
+	_fog_texture.update(_fog_image)
+	for enemy in _enemies:
+		if is_instance_valid(enemy):
+			enemy.visible = true
+	for pos: Vector2i in _traps.keys():
+		reveal_trap(pos)
+
 func _update_enemy_visibility(player_pos: Vector2i, r2: int) -> void:
 	for enemy in _enemies:
 		if is_instance_valid(enemy):
@@ -335,7 +350,7 @@ func has_line_of_sight(from: Vector2i, to: Vector2i) -> bool:
 			return false
 		# Diagonal step: also check shoulder tiles so doors/walls can't be seen around
 		if x != old_x and y != old_y:
-			if _blocks_los(x, old_y) or _blocks_los(old_x, y):
+			if _blocks_los(x, old_y) and _blocks_los(old_x, y):
 				return false
 	return true
 
@@ -451,6 +466,8 @@ func _spawn_enemies() -> void:
 			var pos: Vector2i = Vector2i(x, y)
 			if _data.get_tile(x, y) == DungeonData.TileType.FLOOR:
 				if pos != _data.player_start and pos != _data.stairs_pos:
+					if _data.start_room.has_area() and _data.start_room.grow(1).has_point(pos):
+						continue  # keep starting room safe
 					if is_boss_floor and _data.boss_room.has_point(pos):
 						continue  # reserve boss room for the boss
 					candidates.append(pos)
@@ -539,6 +556,8 @@ func _spawn_traps() -> void:
 				continue
 			if pos == _data.player_start or pos == _data.stairs_pos:
 				continue
+			if _data.start_room.has_area() and _data.start_room.grow(1).has_point(pos):
+				continue  # keep starting room safe
 			if maxi(abs(pos.x - _data.player_start.x), abs(pos.y - _data.player_start.y)) < 2:
 				continue
 			# Only place floor traps where there's an alternate path (bypass check)
@@ -553,8 +572,10 @@ func _spawn_traps() -> void:
 					var is_narrow: bool = \
 						_data.get_tile((pos + perp1).x, (pos + perp1).y) != DungeonData.TileType.FLOOR \
 						and _data.get_tile((pos + perp2).x, (pos + perp2).y) != DungeonData.TileType.FLOOR
-					if not is_narrow and _bfs_reachable(_data.player_start, _data.stairs_pos, [pos]):
-						wall_cands.append({"floor_pos": pos, "wall_pos": wp, "push_dir": Vector2i(-d.x, -d.y)})
+					var push_d: Vector2i = Vector2i(-d.x, -d.y)
+					var land: Vector2i = pos + push_d
+					if not is_narrow and _data.is_walkable(land) and _bfs_reachable(_data.player_start, _data.stairs_pos, [pos]):
+						wall_cands.append({"floor_pos": pos, "wall_pos": wp, "push_dir": push_d})
 					break
 
 	floor_cands.shuffle()

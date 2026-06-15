@@ -30,6 +30,10 @@ const ZOOM_MIN: float = 1.0
 const ZOOM_MAX: float = 5.0
 const ZOOM_STEP: float = 0.25
 
+var _is_panning: bool = false
+var _pan_start_mouse: Vector2 = Vector2.ZERO
+var _pan_start_cam: Vector2 = Vector2.ZERO
+
 func _ready() -> void:
 	stats = GameState.player_stats
 	z_index = 3
@@ -39,6 +43,7 @@ func _ready() -> void:
 	GameState.player_throw_primed.connect(_on_throw_primed)
 	GameState.player_died.connect(_on_player_died)
 	GameState.class_chosen.connect(_on_class_chosen)
+	GameState.camera_recenter_requested.connect(_reset_camera_offset)
 	TurnManager.player_turn_started.connect(_on_turn_started)
 
 func _on_player_died() -> void:
@@ -63,9 +68,7 @@ func _on_turn_started() -> void:
 	# Short rest in progress — player waits in place
 	if GameState.short_rest_active:
 		if GameState.short_rest_open:
-			# Interrupt prompt still showing — wait another turn (enemies move)
-			_do_rest_wait_turn()
-			return
+			return  # Panel open — freeze until player clicks Continue/Abort
 		if not _fov_this_turn.is_empty() and not _rest_interrupt_shown:
 			_rest_interrupt_shown = true
 			GameState.short_rest_open = true
@@ -148,7 +151,7 @@ func _process(_delta: float) -> void:
 		# Key still physically held after interrupt — block until finger lifted
 		_prev_dir = dir
 		return
-	elif not GameState.noclip and _dungeon_floor != null and not _dungeon_floor.get_visible_enemies().is_empty():
+	elif not GameState.noclip and TurnManager.has_any_enemy():
 		# Continuing hold, enemy in FOV — interrupt
 		_interrupted = true
 		_prev_dir = dir
@@ -160,16 +163,33 @@ func _process(_delta: float) -> void:
 	_queued_path.clear()
 	_try_move(dir)
 
+func _reset_camera_offset() -> void:
+	if _camera != null:
+		_camera.position = Vector2.ZERO
+	_is_panning = false
+
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and _camera != null:
 		var mb := event as InputEventMouseButton
-		if mb.pressed:
+		if mb.button_index == MOUSE_BUTTON_MIDDLE:
+			if mb.pressed:
+				_is_panning = true
+				_pan_start_mouse = mb.position
+				_pan_start_cam = _camera.position
+			else:
+				_is_panning = false
+			get_viewport().set_input_as_handled()
+		elif mb.pressed:
 			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
 				_camera.zoom = Vector2.ONE * clampf(_camera.zoom.x + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
 				get_viewport().set_input_as_handled()
 			elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 				_camera.zoom = Vector2.ONE * clampf(_camera.zoom.x - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
 				get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and _is_panning and _camera != null:
+		var motion := event as InputEventMouseMotion
+		_camera.position = _pan_start_cam + (motion.position - _pan_start_mouse) / _camera.zoom.x
+		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if GameState.is_game_over or not GameState.class_selected:
@@ -277,6 +297,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _execute_queued_path() -> void:
 	_path_executing = true
 	TurnManager.fast_mode = true
+	_reset_camera_offset()
 	var fov_snapshot: Array[Enemy] = _dungeon_floor.get_visible_enemies()
 
 	while true:
@@ -438,6 +459,7 @@ func _has_new_enemy_in_fov(snapshot: Array[Enemy]) -> bool:
 func _try_move(dir: Vector2i) -> void:
 	if _dungeon_floor == null:
 		return
+	_reset_camera_offset()
 	var target: Vector2i = grid_pos + dir
 
 	if GameState.noclip:
@@ -837,9 +859,6 @@ func _leave_blood_trail(pos: Vector2i) -> void:
 func _has_advantage(enemy: Enemy) -> bool:
 	if enemy.behavior == Enemy.Behavior.SLEEPING:
 		return true
-	# Enemy already chasing us — no surprise, even if briefly off-screen
-	if enemy.behavior == Enemy.Behavior.CHASING:
-		return false
 	# STATIONARY / ROAMING: ADV only on the turn they first enter our FOV
 	return not (enemy in _fov_prev_turn)
 

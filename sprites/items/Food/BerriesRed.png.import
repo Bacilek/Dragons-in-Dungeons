@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bcuvnouc28v3p"
-path="res://.godot/imported/BerriesRed.png-78319108ceaa8baa99ef8518cf0686d7.ctex"
+path="res://.godot/imported/BerriesRed.png-032e1cd6ea47f99d5c1ccf402d5280f0.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Food/BerriesRed.png"
-dest_files=["res://.godot/imported/BerriesRed.png-78319108ceaa8baa99ef8518cf0686d7.ctex"]
+source_file="res://sprites/items/Food/BerriesRed.png"
+dest_files=["res://.godot/imported/BerriesRed.png-032e1cd6ea47f99d5c1ccf402d5280f0.ctex"]
 
 [params]
 

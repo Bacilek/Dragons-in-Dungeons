@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://5m4kanuyl1ey"
-path="res://.godot/imported/CharmSapphireGold.png-c194e7f1c4d81bb1155d7a68a373d8af.ctex"
+path="res://.godot/imported/CharmSapphireGold.png-879d5b031109881933a49160f2c2b16a.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Accessories/CharmSapphireGold.png"
-dest_files=["res://.godot/imported/CharmSapphireGold.png-c194e7f1c4d81bb1155d7a68a373d8af.ctex"]
+source_file="res://sprites/items/Accessories/CharmSapphireGold.png"
+dest_files=["res://.godot/imported/CharmSapphireGold.png-879d5b031109881933a49160f2c2b16a.ctex"]
 
 [params]
 

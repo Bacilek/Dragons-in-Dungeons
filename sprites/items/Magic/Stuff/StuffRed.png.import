@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ckkg0o1f5vgvv"
-path="res://.godot/imported/StuffRed.png-dffa0297a30855a74fecfd7ae898bf18.ctex"
+path="res://.godot/imported/StuffRed.png-4791b1e6ed36856c283d372243a859aa.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Magic/Stuff/StuffRed.png"
-dest_files=["res://.godot/imported/StuffRed.png-dffa0297a30855a74fecfd7ae898bf18.ctex"]
+source_file="res://sprites/items/Magic/Stuff/StuffRed.png"
+dest_files=["res://.godot/imported/StuffRed.png-4791b1e6ed36856c283d372243a859aa.ctex"]
 
 [params]
 

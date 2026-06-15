@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://brhk54uek1ifs"
-path="res://.godot/imported/FlowerPink.png-771173a31ffada6d5cb46637138229ef.ctex"
+path="res://.godot/imported/FlowerPink.png-de116bee731a3c82987e13485ec34aed.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Ingredients/FlowerPink.png"
-dest_files=["res://.godot/imported/FlowerPink.png-771173a31ffada6d5cb46637138229ef.ctex"]
+source_file="res://sprites/items/Ingredients/FlowerPink.png"
+dest_files=["res://.godot/imported/FlowerPink.png-de116bee731a3c82987e13485ec34aed.ctex"]
 
 [params]
 

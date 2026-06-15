@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bykgfbqarqgb"
-path="res://.godot/imported/Bear_Trap.png-20019b32d4029f3aea269c8460c2f827.ctex"
+uid="uid://bnt6iaouxmh3f"
+path="res://.godot/imported/Bear_Trap.png-38f7ac926522923e84d3ec54dd6965fc.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/Traps/Bear_Trap.png"
-dest_files=["res://.godot/imported/Bear_Trap.png-20019b32d4029f3aea269c8460c2f827.ctex"]
+source_file="res://sprites/traps/Bear_Trap.png"
+dest_files=["res://.godot/imported/Bear_Trap.png-38f7ac926522923e84d3ec54dd6965fc.ctex"]
 
 [params]
 

@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://2hdv83qasxju"
-path="res://.godot/imported/RingRubyGold.png-e548f7592382d37224b9605bfee615bf.ctex"
+path="res://.godot/imported/RingRubyGold.png-377dbf9a018c09ca51b30b35d1bc4665.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Accessories/RingRubyGold.png"
-dest_files=["res://.godot/imported/RingRubyGold.png-e548f7592382d37224b9605bfee615bf.ctex"]
+source_file="res://sprites/items/Accessories/RingRubyGold.png"
+dest_files=["res://.godot/imported/RingRubyGold.png-377dbf9a018c09ca51b30b35d1bc4665.ctex"]
 
 [params]
 

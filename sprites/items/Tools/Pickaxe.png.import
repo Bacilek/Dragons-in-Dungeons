@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://30qmd234c1c5"
-path="res://.godot/imported/Pickaxe.png-d74aa30dab6989cf2517557934d9dcd5.ctex"
+path="res://.godot/imported/Pickaxe.png-c5e6d1e3f9a70ea2f39cfe25ec80dc4f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Tools/Pickaxe.png"
-dest_files=["res://.godot/imported/Pickaxe.png-d74aa30dab6989cf2517557934d9dcd5.ctex"]
+source_file="res://sprites/items/Tools/Pickaxe.png"
+dest_files=["res://.godot/imported/Pickaxe.png-c5e6d1e3f9a70ea2f39cfe25ec80dc4f.ctex"]
 
 [params]
 

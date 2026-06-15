@@ -7,7 +7,8 @@ func _ready() -> void:
 func _build_ui() -> void:
 	var panel := Panel.new()
 	panel.size = Vector2(260.0, 96.0)
-	panel.position = Vector2(640.0 - 130.0, 360.0 - 48.0)
+	var vp := get_viewport().get_visible_rect().size
+	panel.position = (vp - panel.size) * 0.5
 	var sbox := StyleBoxFlat.new()
 	sbox.bg_color = Color(0.12, 0.06, 0.06, 0.97)
 	sbox.set_border_width_all(2)
@@ -57,6 +58,7 @@ func _build_ui() -> void:
 func _on_continue() -> void:
 	GameState.short_rest_open = false
 	queue_free()
+	GameState.player_action_requested.emit("short_rest_begin")
 
 func _on_abort() -> void:
 	GameState.short_rest_active = false

@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://qpdfohsfpusx"
-path="res://.godot/imported/CharmRuby.png-85c09bba38c36af9782b1c1d2e6a3e3d.ctex"
+path="res://.godot/imported/CharmRuby.png-da4770503ac150c65d637b41c4211994.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Accessories/CharmRuby.png"
-dest_files=["res://.godot/imported/CharmRuby.png-85c09bba38c36af9782b1c1d2e6a3e3d.ctex"]
+source_file="res://sprites/items/Accessories/CharmRuby.png"
+dest_files=["res://.godot/imported/CharmRuby.png-da4770503ac150c65d637b41c4211994.ctex"]
 
 [params]
 

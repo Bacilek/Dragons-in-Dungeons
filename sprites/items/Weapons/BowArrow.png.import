@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://orqw644y384q"
-path="res://.godot/imported/BowArrow.png-a0a2cbd84191e73f9f66726d17a9a293.ctex"
+path="res://.godot/imported/BowArrow.png-c1197a69b2723c08948bd106580b8ce4.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Weapons/BowArrow.png"
-dest_files=["res://.godot/imported/BowArrow.png-a0a2cbd84191e73f9f66726d17a9a293.ctex"]
+source_file="res://sprites/items/Weapons/BowArrow.png"
+dest_files=["res://.godot/imported/BowArrow.png-c1197a69b2723c08948bd106580b8ce4.ctex"]
 
 [params]
 

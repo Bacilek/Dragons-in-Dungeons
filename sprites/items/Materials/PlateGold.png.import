@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://berelqb77dwds"
-path="res://.godot/imported/PlateGold.png-3566564a37c37de18061b0a7201fe25f.ctex"
+path="res://.godot/imported/PlateGold.png-abc2a57b4fa7b49cf1cac7d0250fd38e.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Materials/PlateGold.png"
-dest_files=["res://.godot/imported/PlateGold.png-3566564a37c37de18061b0a7201fe25f.ctex"]
+source_file="res://sprites/items/Materials/PlateGold.png"
+dest_files=["res://.godot/imported/PlateGold.png-abc2a57b4fa7b49cf1cac7d0250fd38e.ctex"]
 
 [params]
 

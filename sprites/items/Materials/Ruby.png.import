@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://eofjehdoubuf"
-path="res://.godot/imported/Ruby.png-250743153afee2168c4064ceba53b58b.ctex"
+path="res://.godot/imported/Ruby.png-166eb35010a4af620603af1d660f03da.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Materials/Ruby.png"
-dest_files=["res://.godot/imported/Ruby.png-250743153afee2168c4064ceba53b58b.ctex"]
+source_file="res://sprites/items/Materials/Ruby.png"
+dest_files=["res://.godot/imported/Ruby.png-166eb35010a4af620603af1d660f03da.ctex"]
 
 [params]
 

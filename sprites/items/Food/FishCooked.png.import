@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bagayo2m2wln5"
-path="res://.godot/imported/FishCooked.png-86e2390d14504267f00bc3ea3f5c1c80.ctex"
+path="res://.godot/imported/FishCooked.png-e14fb5d8dbeb01947402a1984d2d48c6.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Food/FishCooked.png"
-dest_files=["res://.godot/imported/FishCooked.png-86e2390d14504267f00bc3ea3f5c1c80.ctex"]
+source_file="res://sprites/items/Food/FishCooked.png"
+dest_files=["res://.godot/imported/FishCooked.png-e14fb5d8dbeb01947402a1984d2d48c6.ctex"]
 
 [params]
 

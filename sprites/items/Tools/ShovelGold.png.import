@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b6nhvex8a2cin"
-path="res://.godot/imported/ShovelGold.png-a7efd127bb10005ae52751eaaf3f1212.ctex"
+path="res://.godot/imported/ShovelGold.png-2f651e6116e1e41541095dd8d10f1a13.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Tools/ShovelGold.png"
-dest_files=["res://.godot/imported/ShovelGold.png-a7efd127bb10005ae52751eaaf3f1212.ctex"]
+source_file="res://sprites/items/Tools/ShovelGold.png"
+dest_files=["res://.godot/imported/ShovelGold.png-2f651e6116e1e41541095dd8d10f1a13.ctex"]
 
 [params]
 

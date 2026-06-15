@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://sdlm21x5y2ig"
-path="res://.godot/imported/RingSapphireGold.png-c64fa3c672659c798170e669cf1bfd52.ctex"
+path="res://.godot/imported/RingSapphireGold.png-1ef473a687c5c0235c8b0e2d3b8682b2.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Accessories/RingSapphireGold.png"
-dest_files=["res://.godot/imported/RingSapphireGold.png-c64fa3c672659c798170e669cf1bfd52.ctex"]
+source_file="res://sprites/items/Accessories/RingSapphireGold.png"
+dest_files=["res://.godot/imported/RingSapphireGold.png-1ef473a687c5c0235c8b0e2d3b8682b2.ctex"]
 
 [params]
 

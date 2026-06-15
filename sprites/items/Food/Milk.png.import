@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://jyk4333cn77c"
-path="res://.godot/imported/Milk.png-3540e8d28043c510aab5e7e8e8e55326.ctex"
+path="res://.godot/imported/Milk.png-91cc476d61aa9716baed0fc482570c74.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Food/Milk.png"
-dest_files=["res://.godot/imported/Milk.png-3540e8d28043c510aab5e7e8e8e55326.ctex"]
+source_file="res://sprites/items/Food/Milk.png"
+dest_files=["res://.godot/imported/Milk.png-91cc476d61aa9716baed0fc482570c74.ctex"]
 
 [params]
 

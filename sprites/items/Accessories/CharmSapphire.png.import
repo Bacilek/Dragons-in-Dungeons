@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://eennxn8rjgoe"
-path="res://.godot/imported/CharmSapphire.png-42f5f80c051f3e8356a3bf944ea7435a.ctex"
+path="res://.godot/imported/CharmSapphire.png-b3fce67a468137c2fac729659212822a.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Accessories/CharmSapphire.png"
-dest_files=["res://.godot/imported/CharmSapphire.png-42f5f80c051f3e8356a3bf944ea7435a.ctex"]
+source_file="res://sprites/items/Accessories/CharmSapphire.png"
+dest_files=["res://.godot/imported/CharmSapphire.png-b3fce67a468137c2fac729659212822a.ctex"]
 
 [params]
 

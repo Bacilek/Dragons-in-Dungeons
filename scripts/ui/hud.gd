@@ -57,6 +57,7 @@ func _ready() -> void:
 	GameState.stairs_discovered.connect(_on_stairs_discovered)
 	TurnManager.player_turn_started.connect(_update_compass)
 	portrait.pressed.connect(_on_portrait_pressed)
+	portrait.focus_mode = Control.FOCUS_NONE
 	wait_button.pressed.connect(_on_wait_pressed)
 	search_button.pressed.connect(_on_search_pressed)
 	interact_button.pressed.connect(_on_interact_pressed)
@@ -301,6 +302,7 @@ func _on_portrait_pressed() -> void:
 	stats_popup.visible = not stats_popup.visible
 	if stats_popup.visible:
 		_refresh_popup()
+	GameState.camera_recenter_requested.emit()
 
 func _on_wait_pressed() -> void:
 	GameState.player_action_requested.emit("wait")

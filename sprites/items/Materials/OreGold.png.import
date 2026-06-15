@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dm255qnvblutl"
-path="res://.godot/imported/OreGold.png-4cab8cf4c1a7b380bb6891a1b8ceaae0.ctex"
+path="res://.godot/imported/OreGold.png-dd518e52145ae4ba75783ada02de141d.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Materials/OreGold.png"
-dest_files=["res://.godot/imported/OreGold.png-4cab8cf4c1a7b380bb6891a1b8ceaae0.ctex"]
+source_file="res://sprites/items/Materials/OreGold.png"
+dest_files=["res://.godot/imported/OreGold.png-dd518e52145ae4ba75783ada02de141d.ctex"]
 
 [params]
 

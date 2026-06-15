@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://djlbgnn2bpngt"
-path="res://.godot/imported/MorgensternGold.png-7a71bb153c8d45d1450805286d13328b.ctex"
+path="res://.godot/imported/MorgensternGold.png-dcaf7be01a2aab19bc3a6a58fc679223.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Weapons/MorgensternGold.png"
-dest_files=["res://.godot/imported/MorgensternGold.png-7a71bb153c8d45d1450805286d13328b.ctex"]
+source_file="res://sprites/items/Weapons/MorgensternGold.png"
+dest_files=["res://.godot/imported/MorgensternGold.png-dcaf7be01a2aab19bc3a6a58fc679223.ctex"]
 
 [params]
 

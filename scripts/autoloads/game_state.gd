@@ -20,6 +20,8 @@ signal short_rest_changed
 signal stairs_discovered
 signal short_rest_completed
 signal short_rest_aborted
+signal camera_recenter_requested
+signal debug_reveal_all
 
 const QUICKBAR_SIZE: int = 9
 const INVENTORY_SIZE: int = 24

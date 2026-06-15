@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cd6a2k7cy4xag"
-path="res://.godot/imported/Arrow.png-2860994e73459b612bf994228fd42c13.ctex"
+path="res://.godot/imported/Arrow.png-0fdec2a1a09dc7affb21fd978698b8c2.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/Sprites trial/Ammo/Arrow.png"
-dest_files=["res://.godot/imported/Arrow.png-2860994e73459b612bf994228fd42c13.ctex"]
+source_file="res://sprites/items/Ammo/Arrow.png"
+dest_files=["res://.godot/imported/Arrow.png-0fdec2a1a09dc7affb21fd978698b8c2.ctex"]
 
 [params]
 

@@ -23,7 +23,8 @@ func _build_ui() -> void:
 
 	var panel := Panel.new()
 	panel.size = Vector2(274.0, 192.0)
-	panel.position = Vector2(640.0 - 137.0, 360.0 - 96.0)
+	var vp := get_viewport().get_visible_rect().size
+	panel.position = (vp - panel.size) * 0.5
 	var sbox := StyleBoxFlat.new()
 	sbox.bg_color = Color(0.07, 0.08, 0.13, 0.97)
 	sbox.set_border_width_all(2)

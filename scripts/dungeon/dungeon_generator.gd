@@ -36,8 +36,12 @@ static func generate(seed_val: int, floor_num: int) -> DungeonData:
 		_carve_rect(fallback, data)
 		data.rooms.append(fallback)
 
-	# Player start = center of first room
+	# Player start = center of smallest room (most constrained, interesting start)
 	var start_room: Rect2i = data.rooms[0]
+	for room: Rect2i in data.rooms:
+		if room.get_area() < start_room.get_area():
+			start_room = room
+	data.start_room = start_room
 	data.player_start = Vector2i(
 		start_room.position.x + start_room.size.x / 2,
 		start_room.position.y + start_room.size.y / 2
