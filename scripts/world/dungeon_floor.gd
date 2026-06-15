@@ -72,6 +72,8 @@ const ENEMY_POOL: Array = [
 @onready var tilemap: TileMapLayer = $TileMap
 @onready var entities: Node2D = $Entities
 
+var _grass_layer: TileMapLayer
+
 var _data: DungeonData
 var _player: Player
 var _enemies: Array[Enemy] = []
@@ -109,6 +111,10 @@ func _setup_tileset() -> void:
 	_add_tile_source_or_color(tile_set, SOURCE_DOOR_OPEN,      OBJECTS_PATH + "doors_leaf_open.png",   Color(0.3, 0.2, 0.05))
 	_add_tile_from_atlas(tile_set, SOURCE_TRAMPLED_GRASS, "res://sprites/tiles/Grass.png", 352, 192, Color(0.38, 0.30, 0.10))
 	tilemap.tile_set = tile_set
+	_grass_layer = TileMapLayer.new()
+	_grass_layer.tile_set = tile_set
+	_grass_layer.z_index = 0
+	add_child(_grass_layer)
 
 func _add_tile_source(tile_set: TileSet, source_id: int, path: String) -> void:
 	var atlas := TileSetAtlasSource.new()
@@ -180,25 +186,29 @@ func _load_floor() -> void:
 	_data = DungeonGenerator.generate(GameState.run_seed, GameState.current_floor)
 
 	tilemap.clear()
+	_grass_layer.clear()
 	for y: int in _data.height:
 		for x: int in _data.width:
+			var pos := Vector2i(x, y)
 			match _data.grid[y][x] as DungeonData.TileType:
 				DungeonData.TileType.FLOOR:
-					tilemap.set_cell(Vector2i(x, y), SOURCE_FLOOR, ATLAS_ORIGIN)
+					tilemap.set_cell(pos, SOURCE_FLOOR, ATLAS_ORIGIN)
 				DungeonData.TileType.WALL:
-					tilemap.set_cell(Vector2i(x, y), SOURCE_WALL, ATLAS_ORIGIN)
+					tilemap.set_cell(pos, SOURCE_WALL, ATLAS_ORIGIN)
 				DungeonData.TileType.STAIRS_DOWN:
-					tilemap.set_cell(Vector2i(x, y), SOURCE_STAIRS, ATLAS_ORIGIN)
+					tilemap.set_cell(pos, SOURCE_STAIRS, ATLAS_ORIGIN)
 				DungeonData.TileType.CHASM:
-					tilemap.set_cell(Vector2i(x, y), SOURCE_CHASM, ATLAS_ORIGIN)
+					tilemap.set_cell(pos, SOURCE_CHASM, ATLAS_ORIGIN)
 				DungeonData.TileType.WATER:
-					tilemap.set_cell(Vector2i(x, y), SOURCE_WATER, ATLAS_ORIGIN)
+					tilemap.set_cell(pos, SOURCE_WATER, ATLAS_ORIGIN)
 				DungeonData.TileType.MUD:
-					tilemap.set_cell(Vector2i(x, y), SOURCE_MUD, ATLAS_ORIGIN)
+					tilemap.set_cell(pos, SOURCE_MUD, ATLAS_ORIGIN)
 				DungeonData.TileType.GRASS:
-					tilemap.set_cell(Vector2i(x, y), SOURCE_GRASS, ATLAS_ORIGIN)
+					tilemap.set_cell(pos, SOURCE_FLOOR, ATLAS_ORIGIN)
+					_grass_layer.set_cell(pos, SOURCE_GRASS, ATLAS_ORIGIN)
 				DungeonData.TileType.TRAMPLED_GRASS:
-					tilemap.set_cell(Vector2i(x, y), SOURCE_TRAMPLED_GRASS, ATLAS_ORIGIN)
+					tilemap.set_cell(pos, SOURCE_FLOOR, ATLAS_ORIGIN)
+					_grass_layer.set_cell(pos, SOURCE_TRAMPLED_GRASS, ATLAS_ORIGIN)
 
 	if _player == null:
 		var player_scene: PackedScene = preload("res://scenes/game/player.tscn")
@@ -982,7 +992,7 @@ func destroy_grass(pos: Vector2i) -> void:
 	if _data.get_tile(pos.x, pos.y) != DungeonData.TileType.GRASS:
 		return
 	_data.grid[pos.y][pos.x] = DungeonData.TileType.TRAMPLED_GRASS
-	tilemap.set_cell(pos, SOURCE_TRAMPLED_GRASS, ATLAS_ORIGIN)
+	_grass_layer.set_cell(pos, SOURCE_TRAMPLED_GRASS, ATLAS_ORIGIN)
 
 # ── Items ─────────────────────────────────────────────────────────────────────
 

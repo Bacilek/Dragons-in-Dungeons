@@ -165,19 +165,18 @@ func _process(_delta: float) -> void:
 	_queued_path.clear()
 	_try_move(dir)
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton:
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and _camera != null:
 		var mb := event as InputEventMouseButton
-		if mb.pressed and _camera != null:
-			var current_zoom: float = _camera.zoom.x
+		if mb.pressed:
 			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-				_camera.zoom = Vector2.ONE * clampf(current_zoom + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
+				_camera.zoom = Vector2.ONE * clampf(_camera.zoom.x + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
 				get_viewport().set_input_as_handled()
-				return
 			elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-				_camera.zoom = Vector2.ONE * clampf(current_zoom - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
+				_camera.zoom = Vector2.ONE * clampf(_camera.zoom.x - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
 				get_viewport().set_input_as_handled()
-				return
+
+func _unhandled_input(event: InputEvent) -> void:
 	if GameState.is_game_over or not GameState.class_selected:
 		return
 	if event is InputEventKey:
