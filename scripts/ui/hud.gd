@@ -30,6 +30,9 @@ var _slowed_icon: ColorRect
 var _inventory_overlay_ref: Node = null
 var _debug_panel_ref: Node = null
 var _hit_dice_label: Label
+var _compass_panel: Panel
+var _compass_arrow_label: Label
+var _compass_dist_label: Label
 
 const CLASS_PORTRAIT: Dictionary = {
 	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/knight_m_idle_anim_f0.png",
@@ -51,6 +54,8 @@ func _ready() -> void:
 	GameState.player_status_changed.connect(_on_status_changed)
 	GameState.class_chosen.connect(_on_class_chosen)
 	GameState.short_rest_changed.connect(_update_hit_dice_label)
+	GameState.stairs_discovered.connect(_on_stairs_discovered)
+	TurnManager.player_turn_started.connect(_update_compass)
 	portrait.pressed.connect(_on_portrait_pressed)
 	wait_button.pressed.connect(_on_wait_pressed)
 	search_button.pressed.connect(_on_search_pressed)
@@ -117,6 +122,44 @@ func _ready() -> void:
 	$StatsPanel.add_child(_hit_dice_label)
 	_update_hit_dice_label()
 
+	# Stairs compass — top-right corner, hidden until stairs discovered
+	_compass_panel = Panel.new()
+	_compass_panel.anchor_left = 1.0
+	_compass_panel.anchor_right = 1.0
+	_compass_panel.offset_left = -62.0
+	_compass_panel.offset_top = 4.0
+	_compass_panel.offset_right = -4.0
+	_compass_panel.offset_bottom = 48.0
+	_compass_panel.visible = false
+	add_child(_compass_panel)
+
+	var title_lbl := Label.new()
+	title_lbl.text = "Stairs"
+	title_lbl.add_theme_font_size_override("font_size", 8)
+	title_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.4))
+	title_lbl.position = Vector2(0.0, 2.0)
+	title_lbl.size = Vector2(58.0, 12.0)
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_compass_panel.add_child(title_lbl)
+
+	_compass_arrow_label = Label.new()
+	_compass_arrow_label.text = "?"
+	_compass_arrow_label.add_theme_font_size_override("font_size", 20)
+	_compass_arrow_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
+	_compass_arrow_label.position = Vector2(0.0, 12.0)
+	_compass_arrow_label.size = Vector2(58.0, 24.0)
+	_compass_arrow_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_compass_panel.add_child(_compass_arrow_label)
+
+	_compass_dist_label = Label.new()
+	_compass_dist_label.text = ""
+	_compass_dist_label.add_theme_font_size_override("font_size", 7)
+	_compass_dist_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	_compass_dist_label.position = Vector2(0.0, 35.0)
+	_compass_dist_label.size = Vector2(58.0, 10.0)
+	_compass_dist_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_compass_panel.add_child(_compass_dist_label)
+
 	# Inventory overlay — add as sibling CanvasLayer so it floats above HUD
 	var overlay_script = load("res://scripts/ui/inventory_overlay.gd")
 	_inventory_overlay_ref = overlay_script.new()
@@ -154,6 +197,39 @@ func _update_status_icons() -> void:
 		_bleeding_icon.visible = GameState.player_stats.bleeding_turns > 0
 	if _slowed_icon != null:
 		_slowed_icon.visible = GameState.player_stats.slowed_turns > 0
+
+func _on_stairs_discovered() -> void:
+	if _compass_panel != null:
+		_compass_panel.visible = true
+	_update_compass()
+
+func _update_compass() -> void:
+	if _compass_panel == null or not _compass_panel.visible:
+		return
+	var diff: Vector2i = GameState.current_stairs_pos - GameState.player_grid_pos
+	if diff == Vector2i.ZERO:
+		_compass_arrow_label.text = "★"
+		_compass_dist_label.text = "here!"
+		return
+	# Pick arrow character from 8 directions (dx/dy sign + which axis dominates)
+	var ax: int = absi(diff.x)
+	var ay: int = absi(diff.y)
+	var arrow: String
+	if ax > ay * 2:
+		arrow = "→" if diff.x > 0 else "←"
+	elif ay > ax * 2:
+		arrow = "↓" if diff.y > 0 else "↑"
+	elif diff.x > 0 and diff.y > 0:
+		arrow = "↘"
+	elif diff.x > 0 and diff.y < 0:
+		arrow = "↗"
+	elif diff.x < 0 and diff.y > 0:
+		arrow = "↙"
+	else:
+		arrow = "↖"
+	_compass_arrow_label.text = arrow
+	var dist: int = maxi(ax, ay)
+	_compass_dist_label.text = "%d tiles" % dist
 
 func _make_status_dot(color: Color, offset: Vector2) -> ColorRect:
 	var dot := ColorRect.new()
@@ -193,6 +269,8 @@ func _on_floor_changed(new_floor: int) -> void:
 	_log_messages.clear()
 	log_label.text = ""
 	_update_hit_dice_label()
+	if _compass_panel != null:
+		_compass_panel.visible = false
 
 func _on_player_hp_changed(current_hp: int, max_hp: int) -> void:
 	_update_hp_bar(current_hp, max_hp)

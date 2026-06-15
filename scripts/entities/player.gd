@@ -56,6 +56,7 @@ func _on_player_hp_changed(_c: int, _m: int) -> void:
 	update_hp_bar()
 
 func _on_turn_started() -> void:
+	GameState.player_grid_pos = grid_pos
 	# Rotate FOV snapshots: prev ← this ← current visible
 	if _dungeon_floor != null:
 		_fov_prev_turn = _fov_this_turn

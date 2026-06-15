@@ -208,6 +208,8 @@ func _load_floor() -> void:
 	_player._dungeon_floor = self
 	_player.stats = GameState.player_stats
 	_player.set_grid_pos(_data.player_start)
+	GameState.player_grid_pos = _data.player_start
+	GameState.current_stairs_pos = _data.stairs_pos
 
 	_spawn_enemies()
 	_spawn_traps()
@@ -266,6 +268,7 @@ func _setup_fog() -> void:
 
 func update_fog(player_pos: Vector2i) -> void:
 	var r2: int = FOV_RADIUS * FOV_RADIUS
+	var stairs_was_known: bool = _explored.get(_data.stairs_pos, false)
 	for y: int in _data.height:
 		for x: int in _data.width:
 			var dx: int = x - player_pos.x
@@ -281,6 +284,8 @@ func update_fog(player_pos: Vector2i) -> void:
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 1.0))
 	_fog_texture.update(_fog_image)
 	_update_enemy_visibility(player_pos, r2)
+	if not stairs_was_known and _explored.get(_data.stairs_pos, false):
+		GameState.stairs_discovered.emit()
 
 func _update_enemy_visibility(player_pos: Vector2i, r2: int) -> void:
 	for enemy in _enemies:

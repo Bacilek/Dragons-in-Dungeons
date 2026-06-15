@@ -17,6 +17,7 @@ signal hunger_changed(value: int)
 signal player_status_changed()
 signal debug_jump_floor(floor_num: int)
 signal short_rest_changed
+signal stairs_discovered
 
 const QUICKBAR_SIZE: int = 9
 const INVENTORY_SIZE: int = 24
@@ -38,6 +39,8 @@ var noclip: bool = false
 var hit_dice: int = 1
 var short_rests_remaining: int = 2
 var short_rest_open: bool = false
+var player_grid_pos: Vector2i = Vector2i.ZERO
+var current_stairs_pos: Vector2i = Vector2i.ZERO
 var hunger: int = MAX_HUNGER
 var hunger_state: HungerState:
 	get:
