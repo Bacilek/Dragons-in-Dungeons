@@ -715,12 +715,23 @@ func _ranged_attack(enemy: Enemy) -> void:
 
 	var dex_mod: int = stats.dex_modifier()
 	var weapon_bonus: int = weapon.bonus_damage if weapon != null else 0
-	# Disadvantage: roll 2d20, take the lower
+	# Advantage: target sleeping or just entered FOV this turn
+	var adv: bool = _has_advantage(enemy)
+	# Disadvantage: ranged weapon fired at melee range (Chebyshev distance 1)
+	var d_vec: Vector2i = enemy.grid_pos - grid_pos
+	var disadv: bool = maxi(abs(d_vec.x), abs(d_vec.y)) <= 1
+	# adv + disadv cancel each other → normal 1d20
 	var die1: int = randi_range(1, 20)
-	var die2: int = randi_range(1, 20)
-	var die: int = mini(die1, die2)
+	var die2: int = die1
+	var die: int = die1
+	if adv and not disadv:
+		die2 = randi_range(1, 20)
+		die = maxi(die1, die2)
+	elif disadv and not adv:
+		die2 = randi_range(1, 20)
+		die = mini(die1, die2)
 	var roll: int = die + dex_mod + weapon_bonus
-	var is_crit: bool = die == 20  # only if both dice are 20
+	var is_crit: bool = die == 20
 
 	# Consume throwing weapon before resolving hit (it was thrown regardless)
 	if weapon != null and weapon.consumes_on_ranged:
@@ -733,13 +744,20 @@ func _ranged_attack(enemy: Enemy) -> void:
 			GameState.game_log("[color=gray]Last throwing dagger used.[/color]")
 
 	if not is_crit and roll < enemy.stats.armor_class:
-		GameState.game_log("You shoot at [color=orange]%s[/color] but [color=gray]miss[/color]! (disadv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		if adv and not disadv:
+			GameState.game_log("You shoot at [color=orange]%s[/color] but [color=gray]miss[/color]! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		elif disadv and not adv:
+			GameState.game_log("You shoot at [color=orange]%s[/color] but [color=gray]miss[/color]! (disadv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		else:
+			GameState.game_log("You shoot at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
 		TurnManager.on_player_action_complete()
 		return
 
 	_flash_hit(enemy)
+	if adv and not disadv:
+		_show_surprise_mark(enemy)
 	var dmg: int = stats.roll_damage()
 	if is_crit:
 		dmg *= 2
@@ -748,9 +766,17 @@ func _ranged_attack(enemy: Enemy) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
 	if is_crit:
-		GameState.game_log("[color=red]CRITICAL HIT![/color] You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (disadv [20,20]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		if adv and not disadv:
+			GameState.game_log("[color=red]CRITICAL HIT![/color] You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		else:
+			GameState.game_log("[color=red]CRITICAL HIT![/color] You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20=[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
 	else:
-		GameState.game_log("You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (disadv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		if adv and not disadv:
+			GameState.game_log("You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		elif disadv and not adv:
+			GameState.game_log("You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (disadv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		else:
+			GameState.game_log("You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
 
 	if enemy.stats.is_dead():
 		GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
