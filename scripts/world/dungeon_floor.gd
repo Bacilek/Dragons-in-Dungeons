@@ -43,6 +43,9 @@ const ITEM_POOL: Array = [
 	{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png",    "src": "items", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
 	{"name": "Ration",         "type": 4, "icon": "Food/MeatCooked.png",                  "src": "items", "bonus_dmg": 0, "heal": 200, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Fills you up"},
 	{"name": "Mystery Meat",   "type": 4, "icon": "Food/Meat.png",                        "src": "items", "bonus_dmg": 0, "heal": 120, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Better than nothing"},
+	{"name": "Short Bow",      "type": 0, "icon": "Weapons/BowArrow.png",                 "src": "items", "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 6,  "desc": "Ranged, DEX-based. Range 6.", "is_ranged": true, "range": 6},
+	{"name": "Crossbow",       "type": 0, "icon": "Weapons/BowArrowGold.png",             "src": "items", "bonus_dmg": 3, "heal": 0,   "str_bonus": 0, "fmin": 5, "fmax": 10, "desc": "Ranged, DEX-based. Range 8.", "is_ranged": true, "range": 8},
+	{"name": "Throwing Daggers","type": 0,"icon": "Weapons/Throwing/Shuriken.png",        "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 8,  "desc": "Ranged, DEX-based. Range 4. Consumed on throw.", "is_ranged": true, "range": 4, "consumes": true, "qty": 3},
 ]
 
 const BOSS_POOL: Array = [
@@ -991,6 +994,10 @@ func _spawn_items() -> void:
 		item.bonus_damage = d["bonus_dmg"]
 		item.heal_amount = d["heal"]
 		item.str_bonus = d.get("str_bonus", 0)
+		item.is_ranged = d.get("is_ranged", false)
+		item.range = d.get("range", 0)
+		item.consumes_on_ranged = d.get("consumes", false)
+		item.quantity = d.get("qty", 1)
 		item.floor_min = d["fmin"]
 		item.floor_max = d["fmax"]
 		item.description = d["desc"]

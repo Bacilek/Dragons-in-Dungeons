@@ -189,9 +189,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 		if clicked == grid_pos:
 			return
-		# Clicking on an enemy → chase and attack
+		# Clicking on an enemy → ranged attack if in range+LOS, otherwise chase
 		var enemy_clicked: Enemy = _dungeon_floor.get_enemy_at(clicked)
 		if enemy_clicked != null:
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing \
+					and _is_in_ranged_range(enemy_clicked):
+				_ranged_attack(enemy_clicked)
+				return
 			_target_enemy = enemy_clicked
 			_queued_path.clear()
 			if not _path_executing:
@@ -221,13 +225,21 @@ func _execute_queued_path() -> void:
 				_target_enemy = null
 				break
 
+			# Ranged: shoot if in range + LOS, then stop chasing
+			if _is_in_ranged_range(_target_enemy):
+				_ranged_attack(_target_enemy)
+				_target_enemy = null
+				if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
+					await TurnManager.player_turn_started
+				break
+
 			var chase_path: Array[Vector2i] = _dungeon_floor.find_path(grid_pos, _target_enemy.grid_pos)
 			if chase_path.is_empty():
 				_target_enemy = null
 				break
 
 			if chase_path.size() == 1:
-				# Adjacent — attack
+				# Adjacent — melee attack
 				var atk_dir: Vector2i = _target_enemy.grid_pos - grid_pos
 				_bump_attack(_target_enemy, atk_dir)
 				_target_enemy = null
@@ -638,6 +650,110 @@ func _use_quickbar_slot(idx: int) -> void:
 func _leave_blood_trail(pos: Vector2i) -> void:
 	if _dungeon_floor != null and GameState.player_stats.bleeding_turns > 0:
 		_dungeon_floor.place_blood_decal(pos)
+
+func _is_in_ranged_range(enemy: Enemy) -> bool:
+	var weapon: Item = GameState.equipped_weapon
+	if weapon == null or not weapon.is_ranged or _dungeon_floor == null:
+		return false
+	var d: Vector2i = enemy.grid_pos - grid_pos
+	var dist_sq: int = d.x * d.x + d.y * d.y
+	return dist_sq <= weapon.range * weapon.range \
+		and _dungeon_floor.has_line_of_sight(grid_pos, enemy.grid_pos)
+
+func _ranged_attack(enemy: Enemy) -> void:
+	TurnManager.begin_player_action()
+	$AnimatedSprite2D.flip_h = enemy.grid_pos.x < grid_pos.x
+	$AnimatedSprite2D.play("hit")
+	await $AnimatedSprite2D.animation_finished
+	$AnimatedSprite2D.play("idle")
+
+	var weapon: Item = GameState.equipped_weapon
+	_show_projectile(enemy.position, weapon)
+
+	var dex_mod: int = stats.dex_modifier()
+	var weapon_bonus: int = weapon.bonus_damage if weapon != null else 0
+	var die: int = randi_range(1, 20)
+	var roll: int = die + dex_mod + weapon_bonus
+	var is_crit: bool = die == 20
+
+	# Consume throwing weapon before resolving hit (it was thrown regardless)
+	if weapon != null and weapon.consumes_on_ranged:
+		weapon.quantity -= 1
+		GameState.inventory_changed.emit()
+		if weapon.quantity <= 0:
+			GameState.equipment["right_hand"] = null
+			GameState.recalculate_stats()
+			GameState.equipment_changed.emit()
+			GameState.game_log("[color=gray]Last throwing dagger used.[/color]")
+
+	if not is_crit and roll < enemy.stats.armor_class:
+		GameState.game_log("You throw at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		if _dungeon_floor != null:
+			_dungeon_floor.update_fog(grid_pos)
+		TurnManager.on_player_action_complete()
+		return
+
+	_flash_hit(enemy)
+	var dmg: int = stats.roll_damage()
+	if is_crit:
+		dmg *= 2
+	var actual: int = enemy.stats.take_damage(dmg)
+	enemy.update_hp_bar()
+	if _dungeon_floor != null:
+		_dungeon_floor.show_damage(enemy.position, actual, false)
+	if is_crit:
+		GameState.game_log("[color=red]CRITICAL HIT![/color] You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20=[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+	else:
+		GameState.game_log("You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+
+	if enemy.stats.is_dead():
+		GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
+		GameState.gain_exp(enemy.exp_reward)
+		var was_boss: bool = enemy.is_boss
+		var kill_pos: Vector2i = enemy.grid_pos
+		var killed_name: String = enemy.display_name
+		_dungeon_floor.remove_enemy(enemy)
+		enemy.die()
+		if was_boss:
+			_dungeon_floor.drop_boss_loot(kill_pos)
+		const UNDEAD_NAMES: Array = ["Tiny Zombie", "Goblin", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
+		if killed_name in UNDEAD_NAMES and randf() < 0.20:
+			var rotten := Item.new()
+			rotten.item_name = "Rotten Meat"
+			rotten.item_type = Item.Type.FOOD
+			rotten.heal_amount = 20
+			rotten.icon_path = "res://sprites/items/Sprites trial/Food/Meat.png"
+			rotten.description = "Throw into fire to cook. Raw: minimal nutrition + 3 turns poison."
+			_dungeon_floor.place_item_on_floor(kill_pos, rotten)
+			GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)
+	if _dungeon_floor != null:
+		_dungeon_floor.update_fog(grid_pos)
+	TurnManager.on_player_action_complete()
+
+func _show_projectile(target_world_pos: Vector2, weapon: Item) -> void:
+	if weapon == null:
+		return
+	var proj_path: String
+	match weapon.item_name:
+		"Throwing Daggers": proj_path = "res://sprites/weapons/weapon_knife.png"
+		"Crossbow":         proj_path = "res://sprites/weapons/weapon_bow_2.png"
+		_:                  proj_path = "res://sprites/weapons/weapon_bow.png"
+
+	var from: Vector2 = _tile_center(grid_pos)
+	var proj := Sprite2D.new()
+	proj.texture = load(proj_path)
+	proj.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	proj.scale = Vector2(0.5, 0.5)
+	proj.position = from
+	proj.rotation = (target_world_pos - from).angle()
+	proj.z_index = 5
+	get_parent().add_child(proj)
+
+	var dur: float = 0.10
+	var tween := proj.create_tween()
+	tween.tween_property(proj, "position", target_world_pos, dur)
+	tween.parallel().tween_property(proj, "modulate:a", 0.0, dur * 0.3).set_delay(dur * 0.7)
+	tween.tween_callback(proj.queue_free)
 
 func _on_throw_primed(item: Item) -> void:
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:

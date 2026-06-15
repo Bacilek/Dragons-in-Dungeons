@@ -14,6 +14,9 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 @export var str_bonus: int = 0
 @export var floor_min: int = 1
 @export var floor_max: int = 10
+@export var is_ranged: bool = false
+@export var range: int = 0
+@export var consumes_on_ranged: bool = false
 
 func get_display_name() -> String:
 	if quantity > 1:
