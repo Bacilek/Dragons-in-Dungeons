@@ -104,10 +104,10 @@ func _setup_tileset() -> void:
 	_add_tile_source_or_color(tile_set, SOURCE_CHASM, TILE_SPRITES_PATH + "hole.png", Color(0.06, 0.04, 0.08))
 	_add_tile_from_atlas(tile_set, SOURCE_WATER, "res://sprites/tiles/WaterRockDirt.png", 32, 0, Color(0.10, 0.30, 0.72))
 	_add_tile_from_atlas(tile_set, SOURCE_MUD,   "res://sprites/tiles/WaterRockDirt.png",  0, 0, Color(0.30, 0.18, 0.08))
-	_add_tile_from_atlas(tile_set, SOURCE_GRASS, "res://sprites/tiles/Grass.png",          0, 0, Color(0.10, 0.42, 0.10))
+	_add_tile_from_atlas(tile_set, SOURCE_GRASS,         "res://sprites/tiles/Grass.png", 368, 176, Color(0.10, 0.42, 0.10))
 	_add_tile_source_or_color(tile_set, SOURCE_DOOR_CLOSED,    OBJECTS_PATH + "doors_leaf_closed.png", Color(0.5, 0.3, 0.1))
 	_add_tile_source_or_color(tile_set, SOURCE_DOOR_OPEN,      OBJECTS_PATH + "doors_leaf_open.png",   Color(0.3, 0.2, 0.05))
-	_add_tile_source_or_color(tile_set, SOURCE_TRAMPLED_GRASS, TILE_SPRITES_PATH + "Grass_trampled.png", Color(0.38, 0.30, 0.10))
+	_add_tile_from_atlas(tile_set, SOURCE_TRAMPLED_GRASS, "res://sprites/tiles/Grass.png", 352, 192, Color(0.38, 0.30, 0.10))
 	tilemap.tile_set = tile_set
 
 func _add_tile_source(tile_set: TileSet, source_id: int, path: String) -> void:
