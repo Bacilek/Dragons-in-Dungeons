@@ -10,12 +10,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Open `project.godot` in **Godot 4.6 (Mono build)**. Press **F5** to run. No CLI build commands.
 
-**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait. F = interact (traps/doors). Ctrl = search. RMB on world = interact. 1–9 = use quickbar slot 0–8. I = open inventory. Left-click enemy = chase+attack. Left-click floor = pathfind.
+**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait. F = interact (traps/doors). Ctrl = search. Alt = short rest. RMB on world = interact. 1–9 = use quickbar slot 0–8. I = open inventory. Left-click enemy = chase+attack (ranged if weapon in range+LOS). Left-click floor = pathfind. RMB on food in quickbar = throw mode, then LMB = throw. Esc = cancel throw.
 
 ## Architecture
 
 ### Singletons (autoloads)
-- **`GameState`** (`scripts/autoloads/game_state.gd`) — run seed, floor number, player `Stats`, inventory (quickbar 9 slots + bag 24 slots), equipment, hunger. Key signals: `floor_changed`, `player_hp_changed`, `player_exp_changed`, `player_leveled_up`, `player_died`, `player_won`, `combat_message`, `inventory_changed`, `equipment_changed`, `hunger_changed`, `player_status_changed`, `player_throw_primed(item)`, `class_chosen`, `player_action_requested(action_name)`. Call `GameState.game_log(msg)` for combat log — **never call `log()`** (that's GDScript's built-in float math function).
+- **`GameState`** (`scripts/autoloads/game_state.gd`) — run seed, floor number, player `Stats`, inventory (quickbar 9 slots + bag 24 slots), equipment, hunger, short rest state. Key signals: `floor_changed`, `player_hp_changed`, `player_exp_changed`, `player_leveled_up`, `player_died`, `player_won`, `combat_message`, `inventory_changed`, `equipment_changed`, `hunger_changed`, `player_status_changed`, `player_throw_primed(item)`, `class_chosen`, `player_action_requested(action_name)`, `short_rest_changed`. Short rest fields: `hit_dice` (available, refills to `character_level` on `advance_floor()`), `short_rests_remaining` (2/floor), `short_rest_open: bool` (blocks all player input while panel is open). `hit_die_sides() -> int` returns class die (Barbarian 12, Ranger 10, Cleric 8, Wizard 6). Call `GameState.game_log(msg)` for combat log — **never call `log()`** (that's GDScript's built-in float math function).
 - **`TurnManager`** (`scripts/autoloads/turn_manager.gd`) — phase state machine: `WAITING_FOR_INPUT → RESOLVING_PLAYER → RESOLVING_ENEMIES → WAITING_FOR_INPUT`. Player input hard-gated on `phase == WAITING_FOR_INPUT`. New entity: `TurnManager.register_enemy(self)` on spawn, `TurnManager.clear_enemies()` before floor reload.
 
 ### Turn flow
@@ -40,10 +40,16 @@ Entity (CharacterBody2D)   ← grid_pos, move_to() 0.08s tween, _tile_center()
 World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: floor items=1, enemies=1, player=3, fog=2, damage labels=10. Blood decals: z=0.
 
 ### D&D stats (`scripts/entities/stats.gd`)
-`Stats` extends `Resource`. `modifier(score)` = `floor((score-10)/2)`. `apply_class_defaults()` sets scores and derives `max_hp`, `armor_class = 10 + dex_modifier()`, `proficiency_bonus=2`. Classes: BARBARIAN (d12, 12+CON HP, +7+CON/lvl), RANGER (d10, 10+CON HP, +6+CON/lvl), WIZARD (d6, 6+CON HP, +4+CON/lvl), CLERIC (d8, 8+CON HP, +5+CON/lvl). `_hp_per_level()` computes class HP gain per level-up. Status fields: `poison_turns`, `burning_turns`, `bleeding_turns`, `slowed_turns`. `tick_status() -> int` ticks all four and returns total dmg (slowed deals no damage, just decrements). HUD status dots: green=poison, orange=burning, red=bleeding, brown=slowed. Spike Trap: reusable, bleeding 5 turns. Bear Trap: slowed 20 turns (each movement costs 2 turns like mud/water). **Combat**: attack roll = d20 + STR mod + weapon.bonus_damage vs target `armor_class`. Player AC = 10 + DEX mod + armor item `bonus_ac` (recalculated by `GameState.recalculate_stats()`). Enemy AC = type `"ac"` field + floor/5. Enemy attack roll = d20 + floor/3 vs player AC.
+`Stats` extends `Resource`. `modifier(score)` = `floor((score-10)/2)`. `apply_class_defaults()` sets scores and derives `max_hp`, `armor_class = 10 + dex_modifier()`, `proficiency_bonus=2`. Classes: BARBARIAN (d12, 12+CON HP, +7+CON/lvl), RANGER (d10, 10+CON HP, +6+CON/lvl), WIZARD (d6, 6+CON HP, +4+CON/lvl), CLERIC (d8, 8+CON HP, +5+CON/lvl). `_hp_per_level()` computes class HP gain per level-up. Status fields: `poison_turns`, `burning_turns`, `bleeding_turns`, `slowed_turns`. `tick_status() -> int` ticks all four and returns total dmg (slowed deals no damage, just decrements). HUD status dots: green=poison, orange=burning, red=bleeding, brown=slowed. Spike Trap: reusable, bleeding 5 turns. Bear Trap: slowed 20 turns (each movement costs 2 turns like mud/water).
+
+**Combat rolls**: attack roll = d20 + STR mod + weapon.bonus_damage vs target `armor_class`. Player AC = 10 + DEX mod + armor item `bonus_ac` (recalculated by `GameState.recalculate_stats()`). Enemy AC = type `"ac"` field + floor/5. Enemy attack roll = d20 + floor/3 vs player AC. **Critical hit**: natural 20 on d20 = auto-hit + 2× damage (both player and enemies).
+
+**Advantage / Disadvantage**: ADV = roll 2d20 take higher; DISADV = roll 2d20 take lower; ADV+DISADV cancel to 1d20. Player gets ADV when attacking a SLEEPING enemy or an enemy that just entered FOV this round (surprise). DISADV on ranged attacks at Chebyshev distance 1 (melee range). ADV surprise attacks show a yellow "!" floating above the enemy. FOV snapshots: `_fov_prev_turn` / `_fov_this_turn` in `player.gd` — rotated each `player_turn_started`, enemies in `_fov_this_turn` but not `_fov_prev_turn` grant ADV.
+
+**Ranged weapons** (`Item.is_ranged=true`, `Item.range: int`): Short Bow (+1, range 6, DEX, infinite), Crossbow (+3, range 8, DEX, infinite), Throwing Daggers (range 4, DEX, consumable qty 3). Left-click enemy in range+LOS → `_ranged_attack()` (DEX-based, projectile VFX). Chase loop fires when closing to range. `Item.consumes_on_ranged=true` → decrement/unequip on use. Ranged attack uses DISADV at distance 1, otherwise same ADV rules as melee.
 
 ### Item system (`scripts/items/item.gd`)
-`Item.Type` enum: `WEAPON=0, ARMOR=1, POTION=2, SCROLL=3, FOOD=4, GOLD=5, KEY=6, TOOL=7`. Key fields: `item_name`, `item_type`, `quantity`, `icon_path`, `heal_amount`, `bonus_damage`, `bonus_ac`, `str_bonus`. `get_display_name()` appends `×N` if quantity > 1.
+`Item.Type` enum: `WEAPON=0, ARMOR=1, POTION=2, SCROLL=3, FOOD=4, GOLD=5, KEY=6, TOOL=7`. Key fields: `item_name`, `item_type`, `quantity`, `icon_path`, `heal_amount`, `bonus_damage`, `bonus_ac`, `str_bonus`, `is_ranged: bool`, `range: int`, `consumes_on_ranged: bool`. `get_display_name()` appends `×N` if quantity > 1.
 
 ### Hunger system
 `GameState.hunger` (0–1000). Thresholds: >600 SATIATED, >200 HUNGRY, else STARVING. Depletes 1/turn. Starvation damage: 1 HP every 10 turns at hunger=0. HP regen disabled while Starving. Eat food: `GameState.use_item(item)` → `restore_hunger(heal_amount)`.
@@ -55,7 +61,10 @@ World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: flo
 `_doors: Dictionary` maps `Vector2i → {is_open: bool, sprite: Sprite2D}`. Auto-opens when entity steps on tile, auto-closes when entity leaves. Enemies open doors and walk through in same turn. Functions: `has_door_at(pos)`, `is_door_open(pos)`, `open_door(pos)`, `close_door(pos)`.
 
 ### Floor items (in DungeonFloor)
-`_floor_items: Dictionary`, `_floor_item_sprites: Dictionary`. `place_item_on_floor(pos, item)` creates sprite + registers. `pick_up_item(pos) -> Item` removes. `cook_rotten_meat(trap_pos) -> Item` disarms Fire Trap and returns Cooked Meat.
+`_floor_items: Dictionary`, `_floor_item_sprites: Dictionary`. `place_item_on_floor(pos, item)` creates sprite + registers. `pick_up_item(pos) -> Item` removes. `cook_rotten_meat(trap_pos) -> Item` — erases Fire Trap from `_traps`, plays orange flash tween on its sprite, returns Cooked Meat (heal=150). Only triggers from `_do_throw()` when trap `"revealed"` is true.
+
+### Short rest system
+`Alt` key → `player.gd._open_short_rest()` → spawns `scripts/ui/short_rest_panel.gd` (CanvasLayer, layer=25). Panel shows rests remaining, hit dice available, minus/plus picker, heal range preview, Cancel/Rest buttons. Esc closes. On Rest: rolls `_dice_to_spend` × class die + CON mod (min 1 per die), calls `GameState.heal()`, decrements `GameState.hit_dice` and `GameState.short_rests_remaining`. All player input blocked while `GameState.short_rest_open == true`. `advance_floor()` resets `hit_dice = character_level` and `short_rests_remaining = 2`.
 
 ### Throw mechanic
 Right-click food item in HUD quickbar → `GameState.player_throw_primed.emit(item)` → player enters throw mode. Left-click target tile → `_do_throw(pos)`. Rotten Meat + Fire Trap = Cooked Meat. Esc cancels.
