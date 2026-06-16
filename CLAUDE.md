@@ -15,7 +15,7 @@ Open `project.godot` in **Godot 4.6 (Mono build)**. Press **F5** to run. No CLI 
 ## Architecture
 
 ### Singletons (autoloads)
-- **`GameState`** (`scripts/autoloads/game_state.gd`) — run seed, floor number, player `Stats`, inventory (quickbar 9 slots + bag 24 slots), equipment, hunger, short rest state. Key signals: `floor_changed`, `player_hp_changed`, `player_exp_changed`, `player_leveled_up`, `player_died`, `player_won`, `combat_message`, `inventory_changed`, `equipment_changed`, `hunger_changed`, `player_status_changed`, `player_throw_primed(item)`, `class_chosen`, `player_action_requested(action_name)`, `short_rest_changed`. Short rest fields: `hit_dice` (available, refills to `character_level` on `advance_floor()`), `short_rests_remaining` (2/floor), `short_rest_open: bool` (blocks all player input while panel is open). `hit_die_sides() -> int` returns class die (Barbarian 12, Ranger 10, Cleric 8, Wizard 6). Call `GameState.game_log(msg)` for combat log — **never call `log()`** (that's GDScript's built-in float math function).
+- **`GameState`** (`scripts/autoloads/game_state.gd`) — run seed, floor number, player `Stats`, inventory (quickbar 9 slots + bag 24 slots), equipment, hunger, short rest state. Key signals: `floor_changed`, `player_hp_changed`, `player_exp_changed`, `player_leveled_up`, `player_died`, `player_won`, `combat_message`, `inventory_changed`, `equipment_changed`, `hunger_changed`, `player_status_changed`, `player_throw_primed(item)`, `class_chosen`, `player_action_requested(action_name)`, `short_rest_changed`, `stairs_discovered`, `debug_see_all(active: bool)`. Short rest fields: `hit_dice` (available, refills to `character_level` on `advance_floor()`), `short_rests_remaining` (2/floor), `short_rest_open: bool` (blocks all player input while panel is open). `hit_die_sides() -> int` returns class die (Barbarian 12, Ranger 10, Cleric 8, Wizard 6). Call `GameState.game_log(msg)` for combat log — **never call `log()`** (that's GDScript's built-in float math function).
 - **`TurnManager`** (`scripts/autoloads/turn_manager.gd`) — phase state machine: `WAITING_FOR_INPUT → RESOLVING_PLAYER → RESOLVING_ENEMIES → WAITING_FOR_INPUT`. Player input hard-gated on `phase == WAITING_FOR_INPUT`. New entity: `TurnManager.register_enemy(self)` on spawn, `TurnManager.clear_enemies()` before floor reload.
 
 ### Turn flow
@@ -28,8 +28,8 @@ Each turn: hunger depletes 1, status effects tick (`Stats.tick_status()` → dmg
 
 ### Dungeon
 - **`DungeonGenerator.generate(seed, floor_num)`** — pure static, returns `DungeonData`. Seed: `run_seed XOR (floor * 0x9e3779b9)`. BSP depth 5, 48×48 grid, L-shaped corridors.
-- **`DungeonData`** — `grid: Array[Array[int]]` indexed `[y][x]`. `TileType`: `VOID=0, FLOOR=1, WALL=2, STAIRS_DOWN=3, CHASM=4, WATER=5, MUD=6, GRASS=7`. `boss_room: Rect2i` (empty if not boss floor).
-- **`DungeonFloor`** (`scripts/world/dungeon_floor.gd`) — owns TileMapLayer, Entities node, enemy list, fog overlay, traps, doors, floor items. Calls `_load_floor()` on start and stair descent.
+- **`DungeonData`** — `grid: Array[Array[int]]` indexed `[y][x]`. `TileType`: `VOID=0, FLOOR=1, WALL=2, STAIRS_DOWN=3, CHASM=4, WATER=5, MUD=6, GRASS=7`. `boss_room: Rect2i` (empty if not boss floor). `rooms: Array[Rect2i]` — all BSP leaf rooms.
+- **`DungeonFloor`** (`scripts/world/dungeon_floor.gd`) — owns TileMapLayer, Entities node, enemy list, fog overlay, traps, doors, floor items. Calls `_load_floor()` on start and stair descent. Key query methods: `get_room_centers() -> Array[Vector2i]` (room center tiles for enemy roaming), `is_explored(pos) -> bool`, `get_visible_enemies() -> Array[Enemy]`. `FOV_RADIUS = 7`. LogPanel and StatsPanel in HUD use `MOUSE_FILTER_IGNORE` so game-world clicks pass through the overlay.
 
 ### Entity hierarchy
 ```
@@ -37,6 +37,7 @@ Entity (CharacterBody2D)   ← grid_pos, move_to() 0.08s tween, _tile_center()
   ├── Player               ← input, 9-slot quickbar, throw mode, blood trail
   └── Enemy                ← take_turn(), behavior enum (SLEEPING/STATIONARY/ROAMING/CHASING)
 ```
+**Enemy roaming**: ROAMING enemies use waypoint navigation. `_pick_roam_target()` shuffles `DungeonFloor.get_room_centers()`, picks one at Chebyshev distance ≥4 that `is_walkable_for_enemy`. `_do_roam_walk()` follows a cached `_roam_path: Array[Vector2i]` (BFS via `_bfs_to()`); on arrival or blocked path picks a new target; falls back to `_do_random_step()`. `_roam_path`/`_roam_target` are cleared when switching to/from CHASING.
 World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: floor items=1, enemies=1, player=3, fog=2, damage labels=10. Blood decals: z=0.
 
 ### D&D stats (`scripts/entities/stats.gd`)
@@ -64,7 +65,7 @@ World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: flo
 `_floor_items: Dictionary`, `_floor_item_sprites: Dictionary`. `place_item_on_floor(pos, item)` creates sprite + registers. `pick_up_item(pos) -> Item` removes. `cook_rotten_meat(trap_pos) -> Item` — erases Fire Trap from `_traps`, plays orange flash tween on its sprite, returns Cooked Meat (heal=150). Only triggers from `_do_throw()` when trap `"revealed"` is true.
 
 ### Short rest system
-`Alt` key → `player.gd._open_short_rest()` → spawns `scripts/ui/short_rest_panel.gd` (CanvasLayer, layer=25). Panel shows rests remaining, hit dice available, minus/plus picker, heal range preview, Cancel/Rest buttons. Esc closes. On Rest: rolls `_dice_to_spend` × class die + CON mod (min 1 per die), calls `GameState.heal()`, decrements `GameState.hit_dice` and `GameState.short_rests_remaining`. All player input blocked while `GameState.short_rest_open == true`. `advance_floor()` resets `hit_dice = character_level` and `short_rests_remaining = 2`.
+`Alt` key → `player.gd._open_short_rest()` → spawns `scripts/ui/short_rest_panel.gd` (CanvasLayer, layer=25). Panel shows rests remaining, hit dice available, minus/plus picker, heal range preview, Cancel/Rest buttons. Keyboard: ←/A/KP4 = minus, →/D/KP6 = plus, Enter = rest, Esc = close. On Rest: rolls `_dice_to_spend` × class die + CON mod (min 1 per die), calls `GameState.heal()`, decrements `GameState.hit_dice` and `GameState.short_rests_remaining`. All player input blocked while `GameState.short_rest_open == true`. `advance_floor()` resets `hit_dice = character_level` and `short_rests_remaining = 2`. All buttons have `focus_mode = FOCUS_NONE` — keyboard events route to `_unhandled_input`, not button focus.
 
 ### Throw mechanic
 Right-click food item in HUD quickbar → `GameState.player_throw_primed.emit(item)` → player enters throw mode. Left-click target tile → `_do_throw(pos)`. Rotten Meat + Fire Trap = Cooked Meat. Esc cancels.
@@ -98,3 +99,8 @@ After every feature/fix: `git add`, `git commit`, `git push origin HEAD:main`. N
 - **Item spawn paths**: `match d["src"]: "weapons" → WEAPONS_PATH, "items" → ITEMS_PATH, _ → OBJECTS_PATH`.
 - **Status effects**: set `player_stats.{poison/burning/bleeding}_turns = N`, then `player_status_changed.emit()`. `tick_status()` is called once per turn in `_on_turn_started()`.
 - **New item**: whenever a new item is added to `ITEM_POOL` in `dungeon_floor.gd`, also add a matching entry to `ALL_ITEMS` in `scripts/ui/debug_panel.gd` so it appears in the debug Give Item browser. Mirror all relevant fields (`is_ranged`, `range`, `consumes`, `qty`, etc.) and update `_on_give_item` if new Item fields are introduced.
+- **Debug panel** (`scripts/ui/debug_panel.gd`, layer=25, F3): Invincible, Noclip, Jump to Floor, Give Item, See All toggle. See All emits `GameState.debug_see_all(active)` → `_on_debug_see_all()` in DungeonFloor sets `_see_all_active`, updates `_explored` for all non-void tiles (enabling click-to-move), and emits `stairs_discovered`. All debug buttons have `FOCUS_NONE`.
+- **Compass** (in `hud.gd`): always visible from floor start showing "?" / "find it". `_stairs_found_this_floor` flag set by `_on_stairs_discovered()`. `_update_compass()` early-returns until flag is true. Emitted from `update_fog()` (after `_apply_see_all()` so See All also triggers it) and from `_on_debug_see_all(true)`.
+- **Inventory slots**: in non-Container parents, `custom_minimum_size` does NOT set `size` — hit areas remain zero. Always set `slot.size = Vector2(SLOT_SIZE, SLOT_SIZE)` explicitly. `_finish_drag()` uses `Rect2(slot.position, Vector2(SLOT_SIZE, SLOT_SIZE)).has_point(local_mouse)` not `slot.get_rect()`.
+- **Click-vs-drag**: player.gd records `_click_start_screen_pos` on LMB press. `InputEventMouseMotion` in `_unhandled_input` cancels `_queued_path` if mouse moves >8 screen px while button held, so drag gestures don't start pathfinding.
+- **UI mouse filters**: `LogPanel` and `StatsPanel` in `scenes/ui/hud.tscn` use `MOUSE_FILTER_IGNORE` so clicks on the game world pass through the HUD overlay. Interactive children (Buttons) still receive events normally. Do not set these back to STOP — it blocks click-to-move in the lower half of the screen.
