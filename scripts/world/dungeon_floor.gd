@@ -87,8 +87,17 @@ var _fog_image: Image
 var _fog_texture: ImageTexture
 var _fog_sprite: Sprite2D
 var _explored: Dictionary = {}
+var _visible_tiles: Dictionary = {}  # Vector2i → true; current FOV set, reset each update_fog
 var _fov_player_pos: Vector2i = Vector2i(-1, -1)
 var _see_all_active: bool = false
+
+# Octant multiplier tables for recursive shadowcasting (8 octants, Roguebasin standard)
+# X = center.x + dx * _SC_XX[i] + j * _SC_XY[i]
+# Y = center.y + dx * _SC_YX[i] + j * _SC_YY[i]
+const _SC_XX: Array = [1,  0,  0, -1, -1,  0,  0,  1]
+const _SC_XY: Array = [0,  1, -1,  0,  0, -1,  1,  0]
+const _SC_YX: Array = [0,  1,  1,  0,  0, -1, -1,  0]
+const _SC_YY: Array = [1,  0,  0,  1, -1,  0,  0, -1]
 
 func _ready() -> void:
 	_setup_tileset()
@@ -272,6 +281,7 @@ func _setup_fog() -> void:
 	if _fog_sprite != null and is_instance_valid(_fog_sprite):
 		_fog_sprite.queue_free()
 	_explored.clear()
+	_visible_tiles.clear()
 	_fog_image = Image.create(_data.width, _data.height, false, Image.FORMAT_RGBA8)
 	_fog_image.fill(Color(0, 0, 0, 1.0))
 	_fog_texture = ImageTexture.create_from_image(_fog_image)
@@ -285,27 +295,75 @@ func _setup_fog() -> void:
 
 func update_fog(player_pos: Vector2i) -> void:
 	_fov_player_pos = player_pos
-	var r2: int = FOV_RADIUS * FOV_RADIUS
 	var stairs_was_known: bool = _explored.get(_data.stairs_pos, false)
+
+	_visible_tiles = _compute_shadowcast(player_pos)
+
 	for y: int in _data.height:
 		for x: int in _data.width:
-			var dx: int = x - player_pos.x
-			var dy: int = y - player_pos.y
 			var tile_pos := Vector2i(x, y)
-			var in_fov: bool = (dx * dx + dy * dy <= r2) and has_line_of_sight(player_pos, tile_pos)
-			if in_fov:
+			if _visible_tiles.has(tile_pos):
 				_explored[tile_pos] = true
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0))
 			elif _explored.get(tile_pos, false):
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0.65))
 			else:
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 1.0))
+
 	_fog_texture.update(_fog_image)
-	_update_enemy_visibility(player_pos, r2)
+	_update_enemy_visibility()
 	if _see_all_active:
 		_apply_see_all()
 	if not stairs_was_known and _explored.get(_data.stairs_pos, false):
 		GameState.stairs_discovered.emit()
+
+func _compute_shadowcast(center: Vector2i) -> Dictionary:
+	var visible: Dictionary = {}
+	visible[center] = true
+	for i: int in 8:
+		_cast_light(visible, center, FOV_RADIUS, 1, 1.0, 0.0,
+			_SC_XX[i], _SC_XY[i], _SC_YX[i], _SC_YY[i])
+	return visible
+
+func _cast_light(visible: Dictionary, center: Vector2i, radius: int,
+				  row: int, start: float, end: float,
+				  xx: int, xy: int, yx: int, yy: int) -> void:
+	if start < end:
+		return
+	var new_start: float = 0.0
+	var r2: int = radius * radius
+	var blocked: bool = false
+	var j: int = row
+	while j <= radius and not blocked:
+		var dx: int = -j
+		blocked = false
+		while dx <= 0:
+			var x: int = center.x + dx * xx + j * xy
+			var y: int = center.y + dx * yx + j * yy
+			var l_slope: float = (float(dx) - 0.5) / (float(j) + 0.5)
+			var r_slope: float = (float(dx) + 0.5) / (float(j) - 0.5)
+			if start < r_slope:
+				dx += 1
+				continue
+			elif end > l_slope:
+				break
+			if dx * dx + j * j <= r2 and x >= 0 and x < _data.width and y >= 0 and y < _data.height:
+				visible[Vector2i(x, y)] = true
+			if blocked:
+				if _blocks_los(x, y):
+					new_start = r_slope
+				else:
+					blocked = false
+					start = new_start
+			else:
+				if _blocks_los(x, y) and j < radius:
+					blocked = true
+					_cast_light(visible, center, radius, j + 1, start, l_slope, xx, xy, yx, yy)
+					new_start = r_slope
+			dx += 1
+		if blocked:
+			break
+		j += 1
 
 func _on_debug_see_all(active: bool) -> void:
 	_see_all_active = active
@@ -316,7 +374,9 @@ func _apply_see_all() -> void:
 	for y: int in _data.height:
 		for x: int in _data.width:
 			if _data.get_tile(x, y) != DungeonData.TileType.VOID:
-				_explored[Vector2i(x, y)] = true
+				var pos := Vector2i(x, y)
+				_explored[pos] = true
+				_visible_tiles[pos] = true
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0))
 	_fog_texture.update(_fog_image)
 	for e: Enemy in _enemies:
@@ -338,12 +398,10 @@ func reveal_all() -> void:
 	for pos: Vector2i in _traps.keys():
 		reveal_trap(pos)
 
-func _update_enemy_visibility(player_pos: Vector2i, r2: int) -> void:
-	for enemy in _enemies:
+func _update_enemy_visibility() -> void:
+	for enemy: Enemy in _enemies:
 		if is_instance_valid(enemy):
-			var dx := enemy.grid_pos.x - player_pos.x
-			var dy := enemy.grid_pos.y - player_pos.y
-			enemy.visible = (dx * dx + dy * dy) <= r2 and has_line_of_sight(player_pos, enemy.grid_pos)
+			enemy.visible = _visible_tiles.has(enemy.grid_pos)
 
 func _blocks_los(bx: int, by: int) -> bool:
 	var t: DungeonData.TileType = _data.get_tile(bx, by)
@@ -843,11 +901,7 @@ func is_explored(pos: Vector2i) -> bool:
 	return _explored.get(pos, false)
 
 func is_tile_visible(pos: Vector2i) -> bool:
-	if _fov_player_pos.x < 0:
-		return false
-	var dx: int = pos.x - _fov_player_pos.x
-	var dy: int = pos.y - _fov_player_pos.y
-	return (dx * dx + dy * dy <= FOV_RADIUS * FOV_RADIUS) and has_line_of_sight(_fov_player_pos, pos)
+	return _visible_tiles.has(pos)
 
 func get_room_centers() -> Array[Vector2i]:
 	var centers: Array[Vector2i] = []
