@@ -35,6 +35,7 @@ var _lmb_panning: bool = false
 var _pan_start_mouse: Vector2 = Vector2.ZERO
 var _pan_start_cam: Vector2 = Vector2.ZERO
 var _click_start_screen_pos: Vector2 = Vector2(-1.0, -1.0)
+var _pending_click_tile: Vector2i = Vector2i(-1, -1)
 
 
 func _ready() -> void:
@@ -170,6 +171,7 @@ func _reset_camera_offset() -> void:
 		_camera.position = Vector2.ZERO
 	_is_panning = false
 	_lmb_panning = false
+	_pending_click_tile = Vector2i(-1, -1)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and _camera != null:
@@ -192,17 +194,10 @@ func _input(event: InputEvent) -> void:
 				_lmb_panning = false
 				_is_panning = false
 				get_viewport().set_input_as_handled()
-		elif mb.pressed:
-			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-				_camera.zoom = Vector2.ONE * clampf(_camera.zoom.x + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
-				get_viewport().set_input_as_handled()
-			elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-				_camera.zoom = Vector2.ONE * clampf(_camera.zoom.x - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
-				get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _camera != null:
 		if _is_panning:
 			var motion := event as InputEventMouseMotion
-			_camera.position = _pan_start_cam + (motion.position - _pan_start_mouse) / _camera.zoom.x
+			_camera.position = _pan_start_cam - (motion.position - _pan_start_mouse) / _camera.zoom.x
 			get_viewport().set_input_as_handled()
 		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _lmb_panning:
 			var motion := event as InputEventMouseMotion
@@ -214,6 +209,7 @@ func _input(event: InputEvent) -> void:
 				_pan_start_cam = _camera.position
 				_queued_path.clear()
 				_target_enemy = null
+				_pending_click_tile = Vector2i(-1, -1)
 				_click_start_screen_pos = Vector2(-1.0, -1.0)
 				get_viewport().set_input_as_handled()
 
@@ -268,12 +264,52 @@ func _unhandled_input(event: InputEvent) -> void:
 			if motion.position.distance_to(_click_start_screen_pos) > 8.0:
 				_queued_path.clear()
 				_target_enemy = null
+				_pending_click_tile = Vector2i(-1, -1)
 				_click_start_screen_pos = Vector2(-1.0, -1.0)
 
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
+		# Zoom deferred here so ScrollContainers (debug panel) get wheel events via _gui_input first
+		if mb.pressed and _camera != null:
+			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+				_camera.zoom = Vector2.ONE * clampf(_camera.zoom.x + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
+				get_viewport().set_input_as_handled()
+				return
+			elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				_camera.zoom = Vector2.ONE * clampf(_camera.zoom.x - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
+				get_viewport().set_input_as_handled()
+				return
 		if not mb.pressed:
-			_click_start_screen_pos = Vector2(-1.0, -1.0)
+			if mb.button_index == MOUSE_BUTTON_LEFT:
+				_click_start_screen_pos = Vector2(-1.0, -1.0)
+				var pending := _pending_click_tile
+				_pending_click_tile = Vector2i(-1, -1)
+				if _lmb_panning or pending == Vector2i(-1, -1) or _dungeon_floor == null:
+					return
+				if GameState.short_rest_active or GameState.short_rest_open:
+					return
+				if pending == grid_pos:
+					return
+				var enemy_on_tile: Enemy = _dungeon_floor.get_enemy_at(pending)
+				if enemy_on_tile != null:
+					if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing \
+							and _is_in_ranged_range(enemy_on_tile):
+						_ranged_attack(enemy_on_tile)
+						return
+					_target_enemy = enemy_on_tile
+					_queued_path.clear()
+					if not _path_executing:
+						_execute_queued_path()
+					return
+				_target_enemy = null
+				var release_path: Array[Vector2i] = _dungeon_floor.find_path(grid_pos, pending)
+				if release_path.is_empty():
+					return
+				_queued_path = release_path
+				if not _path_executing:
+					_execute_queued_path()
+			else:
+				_click_start_screen_pos = Vector2(-1.0, -1.0)
 			return
 		if _dungeon_floor == null:
 			return
@@ -293,14 +329,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		if GameState.short_rest_active or GameState.short_rest_open:
 			return
 
-		# Inspect mode — show info about clicked tile
+		# Inspect mode — show info about clicked tile (immediate intentional click)
 		if _inspect_mode:
 			_inspect_mode = false
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT:
 				_do_inspect(clicked)
 			return
 
-		# Throw mode — consume left-click for the toss
+		# Throw mode — consume left-click for the toss (immediate intentional click)
 		if _throw_item != null:
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
 				_do_throw(clicked)
@@ -308,28 +344,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_throw_item = null
 			return
 
-		if clicked == grid_pos:
-			return
-		# Clicking on an enemy → ranged attack if in range+LOS, otherwise chase
-		var enemy_clicked: Enemy = _dungeon_floor.get_enemy_at(clicked)
-		if enemy_clicked != null:
-			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing \
-					and _is_in_ranged_range(enemy_clicked):
-				_ranged_attack(enemy_clicked)
-				return
-			_target_enemy = enemy_clicked
-			_queued_path.clear()
-			if not _path_executing:
-				_execute_queued_path()
-			return
-		# Regular floor click → path walk
-		_target_enemy = null
-		var path: Array[Vector2i] = _dungeon_floor.find_path(grid_pos, clicked)
-		if path.is_empty():
-			return
-		_queued_path = path
-		if not _path_executing:
-			_execute_queued_path()
+		# Movement/attack: store tile, execute on release to distinguish from drag
+		_pending_click_tile = clicked
 
 func _execute_queued_path() -> void:
 	_path_executing = true
@@ -769,6 +785,9 @@ func _do_inspect(pos: Vector2i) -> void:
 	if not _dungeon_floor.is_explored(pos):
 		GameState.game_log("[color=gray]You haven't explored that area.[/color]")
 		return
+	if not _dungeon_floor.is_tile_visible(pos):
+		GameState.game_log("[color=gray]You can't see that from here.[/color]")
+		return
 	var enemy: Enemy = _dungeon_floor.get_enemy_at(pos)
 	if enemy != null and enemy.visible:
 		GameState.game_log("[color=orange]%s[/color] — HP: %d/%d, AC: %d" % [enemy.display_name, enemy.stats.current_hp, enemy.stats.max_hp, enemy.stats.armor_class])
@@ -790,7 +809,7 @@ func _do_inspect(pos: Vector2i) -> void:
 		DungeonData.TileType.CHASM:          tile_name = "Chasm — deadly fall"
 		DungeonData.TileType.WATER:          tile_name = "Water — slows movement"
 		DungeonData.TileType.MUD:            tile_name = "Mud — slows movement"
-		DungeonData.TileType.GRASS:          tile_name = "Tall grass"
+		DungeonData.TileType.GRASS:          tile_name = "Tall grass — blocks line of sight"
 		DungeonData.TileType.TRAMPLED_GRASS: tile_name = "Trampled grass"
 		_:                                   tile_name = "Unknown"
 	GameState.game_log("[color=gray]%s.[/color]" % tile_name)
@@ -897,10 +916,7 @@ func _has_advantage(enemy: Enemy) -> bool:
 	if enemy.just_crossed_door:
 		enemy.just_crossed_door = false
 		return true
-	if enemy.behavior == Enemy.Behavior.SLEEPING:
-		return true
-	# STATIONARY / ROAMING: ADV only on the turn they first enter our FOV
-	return not (enemy in _fov_prev_turn)
+	return enemy.behavior == Enemy.Behavior.SLEEPING
 
 func _show_surprise_mark(enemy: Enemy) -> void:
 	if not is_instance_valid(enemy):

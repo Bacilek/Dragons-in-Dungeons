@@ -87,6 +87,7 @@ var _fog_image: Image
 var _fog_texture: ImageTexture
 var _fog_sprite: Sprite2D
 var _explored: Dictionary = {}
+var _fov_player_pos: Vector2i = Vector2i(-1, -1)
 var _see_all_active: bool = false
 
 func _ready() -> void:
@@ -283,6 +284,7 @@ func _setup_fog() -> void:
 	add_child(_fog_sprite)
 
 func update_fog(player_pos: Vector2i) -> void:
+	_fov_player_pos = player_pos
 	var r2: int = FOV_RADIUS * FOV_RADIUS
 	var stairs_was_known: bool = _explored.get(_data.stairs_pos, false)
 	for y: int in _data.height:
@@ -345,7 +347,7 @@ func _update_enemy_visibility(player_pos: Vector2i, r2: int) -> void:
 
 func _blocks_los(bx: int, by: int) -> bool:
 	var t: DungeonData.TileType = _data.get_tile(bx, by)
-	if t == DungeonData.TileType.WALL:
+	if t == DungeonData.TileType.WALL or t == DungeonData.TileType.GRASS:
 		return true
 	var pos := Vector2i(bx, by)
 	return _doors.has(pos) and not _doors[pos]["is_open"]
@@ -839,6 +841,13 @@ func get_unrevealed_traps() -> Array[Vector2i]:
 
 func is_explored(pos: Vector2i) -> bool:
 	return _explored.get(pos, false)
+
+func is_tile_visible(pos: Vector2i) -> bool:
+	if _fov_player_pos.x < 0:
+		return false
+	var dx: int = pos.x - _fov_player_pos.x
+	var dy: int = pos.y - _fov_player_pos.y
+	return (dx * dx + dy * dy <= FOV_RADIUS * FOV_RADIUS) and has_line_of_sight(_fov_player_pos, pos)
 
 func get_room_centers() -> Array[Vector2i]:
 	var centers: Array[Vector2i] = []
