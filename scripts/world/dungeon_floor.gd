@@ -338,10 +338,10 @@ func _cast_light(visible: Dictionary, center: Vector2i, radius: int,
 		var dx: int = -j
 		blocked = false
 		while dx <= 0:
-			var x: int = center.x + dx * xx + j * xy
-			var y: int = center.y + dx * yx + j * yy
-			var l_slope: float = (float(dx) - 0.5) / (float(j) + 0.5)
-			var r_slope: float = (float(dx) + 0.5) / (float(j) - 0.5)
+			var x: int = center.x + dx * xx - j * yx
+			var y: int = center.y + dx * xy - j * yy
+			var l_slope: float = (float(dx) - 0.5) / (-float(j) + 0.5)
+			var r_slope: float = (float(dx) + 0.5) / (-float(j) - 0.5)
 			if start < r_slope:
 				dx += 1
 				continue
