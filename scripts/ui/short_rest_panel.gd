@@ -27,7 +27,7 @@ func _build_ui() -> void:
 	add_child(dim)
 
 	var panel := Panel.new()
-	panel.size = Vector2(400.0, 260.0)
+	panel.size = Vector2(520.0, 340.0)
 	var vp := get_viewport().get_visible_rect().size
 	panel.position = (vp - panel.size) * 0.5
 	var sbox := StyleBoxFlat.new()
@@ -40,85 +40,85 @@ func _build_ui() -> void:
 
 	var title := Label.new()
 	title.text = "Short Rest  [Alt]"
-	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_font_size_override("font_size", 21)
 	title.add_theme_color_override("font_color", Color(0.72, 0.80, 1.0))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size = Vector2(400.0, 28.0)
-	title.position = Vector2(0.0, 12.0)
+	title.size = Vector2(520.0, 36.0)
+	title.position = Vector2(0.0, 14.0)
 	panel.add_child(title)
 
 	var sep1 := HSeparator.new()
-	sep1.position = Vector2(12.0, 44.0)
-	sep1.size = Vector2(376.0, 2.0)
+	sep1.position = Vector2(14.0, 56.0)
+	sep1.size = Vector2(492.0, 2.0)
 	panel.add_child(sep1)
 
 	_rests_label = Label.new()
-	_rests_label.add_theme_font_size_override("font_size", 11)
+	_rests_label.add_theme_font_size_override("font_size", 15)
 	_rests_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.68))
 	_rests_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_rests_label.size = Vector2(400.0, 16.0)
-	_rests_label.position = Vector2(0.0, 50.0)
+	_rests_label.size = Vector2(520.0, 22.0)
+	_rests_label.position = Vector2(0.0, 64.0)
 	panel.add_child(_rests_label)
 
 	_dice_avail_label = Label.new()
-	_dice_avail_label.add_theme_font_size_override("font_size", 11)
+	_dice_avail_label.add_theme_font_size_override("font_size", 15)
 	_dice_avail_label.add_theme_color_override("font_color", Color(0.50, 0.78, 0.50))
 	_dice_avail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_dice_avail_label.size = Vector2(400.0, 16.0)
-	_dice_avail_label.position = Vector2(0.0, 70.0)
+	_dice_avail_label.size = Vector2(520.0, 22.0)
+	_dice_avail_label.position = Vector2(0.0, 90.0)
 	panel.add_child(_dice_avail_label)
 
 	var minus_btn := Button.new()
 	minus_btn.text = "−"
-	minus_btn.size = Vector2(50.0, 50.0)
-	minus_btn.position = Vector2(60.0, 94.0)
-	_style_btn(minus_btn, 20)
+	minus_btn.size = Vector2(65.0, 65.0)
+	minus_btn.position = Vector2(70.0, 120.0)
+	_style_btn(minus_btn, 26)
 	minus_btn.pressed.connect(_on_minus)
 	panel.add_child(minus_btn)
 
 	_dice_label = Label.new()
-	_dice_label.add_theme_font_size_override("font_size", 40)
+	_dice_label.add_theme_font_size_override("font_size", 52)
 	_dice_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.22))
 	_dice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_dice_label.size = Vector2(160.0, 58.0)
-	_dice_label.position = Vector2(120.0, 90.0)
+	_dice_label.size = Vector2(210.0, 74.0)
+	_dice_label.position = Vector2(155.0, 117.0)
 	panel.add_child(_dice_label)
 
 	var plus_btn := Button.new()
 	plus_btn.text = "+"
-	plus_btn.size = Vector2(50.0, 50.0)
-	plus_btn.position = Vector2(290.0, 94.0)
-	_style_btn(plus_btn, 20)
+	plus_btn.size = Vector2(65.0, 65.0)
+	plus_btn.position = Vector2(385.0, 120.0)
+	_style_btn(plus_btn, 26)
 	plus_btn.pressed.connect(_on_plus)
 	panel.add_child(plus_btn)
 
 	_preview_label = Label.new()
-	_preview_label.add_theme_font_size_override("font_size", 10)
+	_preview_label.add_theme_font_size_override("font_size", 13)
 	_preview_label.add_theme_color_override("font_color", Color(0.42, 0.82, 0.42))
 	_preview_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_preview_label.size = Vector2(400.0, 16.0)
-	_preview_label.position = Vector2(0.0, 156.0)
+	_preview_label.size = Vector2(520.0, 22.0)
+	_preview_label.position = Vector2(0.0, 204.0)
 	panel.add_child(_preview_label)
 
 	var sep2 := HSeparator.new()
-	sep2.position = Vector2(12.0, 178.0)
-	sep2.size = Vector2(376.0, 2.0)
+	sep2.position = Vector2(14.0, 232.0)
+	sep2.size = Vector2(492.0, 2.0)
 	panel.add_child(sep2)
 
 	var cancel_btn := Button.new()
 	cancel_btn.text = "Cancel  [Esc]"
-	cancel_btn.size = Vector2(160.0, 36.0)
-	cancel_btn.position = Vector2(18.0, 188.0)
-	cancel_btn.add_theme_font_size_override("font_size", 12)
+	cancel_btn.size = Vector2(208.0, 48.0)
+	cancel_btn.position = Vector2(24.0, 246.0)
+	cancel_btn.add_theme_font_size_override("font_size", 16)
 	cancel_btn.focus_mode = Control.FOCUS_NONE
 	cancel_btn.pressed.connect(_close)
 	panel.add_child(cancel_btn)
 
 	_rest_btn = Button.new()
 	_rest_btn.text = "Rest  [Enter]"
-	_rest_btn.size = Vector2(160.0, 36.0)
-	_rest_btn.position = Vector2(222.0, 188.0)
-	_rest_btn.add_theme_font_size_override("font_size", 12)
+	_rest_btn.size = Vector2(208.0, 48.0)
+	_rest_btn.position = Vector2(288.0, 246.0)
+	_rest_btn.add_theme_font_size_override("font_size", 16)
 	_rest_btn.pressed.connect(_on_rest)
 	_style_rest_btn()
 	panel.add_child(_rest_btn)

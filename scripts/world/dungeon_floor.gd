@@ -545,6 +545,7 @@ func get_player() -> Player:
 func remove_enemy(enemy: Enemy) -> void:
 	_enemies.erase(enemy)
 	TurnManager.unregister_enemy(enemy)
+	close_door(enemy.grid_pos)
 
 func show_damage(world_pos: Vector2, amount: int, is_player_hit: bool) -> void:
 	var lbl := Label.new()
@@ -1139,6 +1140,8 @@ func close_door(pos: Vector2i) -> void:
 	for e: Enemy in _enemies:
 		if is_instance_valid(e) and e.grid_pos == pos:
 			return
+	if _floor_items.has(pos):
+		return
 	_doors[pos]["is_open"] = false
 	var sp: Sprite2D = _doors[pos]["sprite"]
 	if is_instance_valid(sp):

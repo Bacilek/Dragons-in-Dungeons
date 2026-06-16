@@ -575,8 +575,9 @@ func _execute_queued_path() -> void:
 
 		# Difficult terrain or slowed: costs 2 turns — stop queued path and waste a turn
 		var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
-		if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD \
-				or GameState.player_stats.slowed_turns > 0:
+		if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
+			GameState.player_stats.slowed_turns = maxi(1, GameState.player_stats.slowed_turns)
+		if GameState.player_stats.slowed_turns > 0:
 			_queued_path.clear()
 			if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
 				await TurnManager.player_turn_started
@@ -652,8 +653,9 @@ func _try_move(dir: Vector2i) -> void:
 		return
 	# Difficult terrain or slowed: costs 2 turns per step
 	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
-	if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD \
-			or GameState.player_stats.slowed_turns > 0:
+	if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
+		GameState.player_stats.slowed_turns = maxi(1, GameState.player_stats.slowed_turns)
+	if GameState.player_stats.slowed_turns > 0:
 		await TurnManager.player_turn_started
 		TurnManager.begin_player_action()
 		_dungeon_floor.update_fog(grid_pos)
@@ -804,13 +806,18 @@ func _finish_kill(enemy: Enemy) -> void:
 		GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)
 
 func _on_action_requested(action_name: String) -> void:
+	if action_name == "short_rest_begin":
+		if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT:
+			_queued_path.clear()
+			_path_executing = false
+			_do_rest_wait_turn()
+		return
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 		return
 	match action_name:
-		"wait":             _wait_action()
-		"search":           _handle_search_request()
-		"interact":         _interact_action()
-		"short_rest_begin": _do_rest_wait_turn()
+		"wait":     _wait_action()
+		"search":   _handle_search_request()
+		"interact": _interact_action()
 
 func _check_pickup() -> void:
 	if _dungeon_floor == null:
@@ -1186,6 +1193,8 @@ func _do_throw(pos: Vector2i) -> void:
 	if _dungeon_floor == null:
 		return
 	TurnManager.begin_player_action()
+	if _dungeon_floor.has_door_at(pos) and not _dungeon_floor.is_door_open(pos):
+		_dungeon_floor.open_door(pos)
 	var trap: Dictionary = _dungeon_floor.get_trap_at(pos)
 	var is_fire: bool = not trap.is_empty() and trap.get("name", "") == "Fire Trap" and trap.get("revealed", false)
 	if is_fire and item.item_name == "Rotten Meat":

@@ -18,6 +18,7 @@ var behavior: Behavior = Behavior.SLEEPING
 var last_known_player_pos: Vector2i = Vector2i(-1, -1)
 
 var just_crossed_door: bool = false
+var slowed_turns: int = 0
 var _roam_target: Vector2i = Vector2i(-1, -1)
 var _roam_path: Array[Vector2i] = []
 
@@ -103,6 +104,10 @@ func _wake_up() -> void:
 
 func take_turn() -> void:
 	if _dungeon_floor == null:
+		return
+	if slowed_turns > 0:
+		slowed_turns -= 1
+		await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		return
 	var player: Player = _dungeon_floor.get_player()
 	if player == null:
@@ -243,7 +248,10 @@ func _move_step(step: Vector2i, next_pos: Vector2i) -> void:
 		just_crossed_door = true
 	if _dungeon_floor.has_door_at(prev_pos):
 		_dungeon_floor.close_door(prev_pos)
-	if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
+	var tile_type: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
+	if tile_type == DungeonData.TileType.WATER or tile_type == DungeonData.TileType.MUD:
+		slowed_turns = maxi(slowed_turns, 1)
+	if tile_type == DungeonData.TileType.GRASS:
 		_dungeon_floor.destroy_grass(grid_pos)
 	var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 	if not trap.is_empty():

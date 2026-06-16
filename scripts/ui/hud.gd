@@ -14,8 +14,8 @@ extends CanvasLayer
 @onready var interact_button: Button  = $ActionBar/InteractButton
 
 const BAR_W: float    = 320.0
-const HP_BAR_H: float = 28.0
-const EXP_BAR_H: float = 20.0
+const HP_BAR_H: float = 38.0
+const EXP_BAR_H: float = 24.0
 const SLOT_COUNT: int = 9
 
 var _item_slots: Array[Button] = []
