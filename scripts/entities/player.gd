@@ -16,6 +16,7 @@ var _prev_dir: Vector2i = Vector2i.ZERO  # direction held in the previous WAITIN
 var _interrupted: bool = false           # set when enemy seen mid-hold; cleared only on key release
 
 var _throw_item: Item = null
+var _tool_item: Item = null
 var _inspect_mode: bool = false
 var _last_search_request: float = -999.0
 var _rest_interrupt_shown: bool = false
@@ -45,6 +46,7 @@ func _ready() -> void:
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
 	GameState.player_throw_primed.connect(_on_throw_primed)
+	GameState.player_tool_primed.connect(_on_tool_primed)
 	GameState.player_died.connect(_on_player_died)
 	GameState.class_chosen.connect(_on_class_chosen)
 	GameState.camera_recenter_requested.connect(_reset_camera_offset)
@@ -164,6 +166,12 @@ func _process(_delta: float) -> void:
 		return
 	_last_move_dir = dir
 	_queued_path.clear()
+	if _throw_item != null:
+		_throw_item = null
+		GameState.game_log("[color=gray]Throw cancelled.[/color]")
+	if _tool_item != null:
+		_tool_item = null
+		GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 	_try_move(dir)
 
 func _reset_camera_offset() -> void:
@@ -235,15 +243,30 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _throw_item != null:
 				_throw_item = null
 				GameState.game_log("[color=gray]Throw cancelled.[/color]")
+			if _tool_item != null:
+				_tool_item = null
+				GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 			return
 		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 			return
 		_queued_path.clear()
 		match key.physical_keycode:
-			KEY_Q, KEY_KP_7: _try_move(Vector2i(-1, -1))
-			KEY_E, KEY_KP_9: _try_move(Vector2i(1, -1))
-			KEY_Z, KEY_KP_1: _try_move(Vector2i(-1, 1))
-			KEY_C, KEY_KP_3: _try_move(Vector2i(1, 1))
+			KEY_Q, KEY_KP_7:
+				if _throw_item != null: _throw_item = null; GameState.game_log("[color=gray]Throw cancelled.[/color]")
+				if _tool_item != null: _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
+				_try_move(Vector2i(-1, -1))
+			KEY_E, KEY_KP_9:
+				if _throw_item != null: _throw_item = null; GameState.game_log("[color=gray]Throw cancelled.[/color]")
+				if _tool_item != null: _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
+				_try_move(Vector2i(1, -1))
+			KEY_Z, KEY_KP_1:
+				if _throw_item != null: _throw_item = null; GameState.game_log("[color=gray]Throw cancelled.[/color]")
+				if _tool_item != null: _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
+				_try_move(Vector2i(-1, 1))
+			KEY_C, KEY_KP_3:
+				if _throw_item != null: _throw_item = null; GameState.game_log("[color=gray]Throw cancelled.[/color]")
+				if _tool_item != null: _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
+				_try_move(Vector2i(1, 1))
 			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _wait_action()
 			KEY_F: _interact_action()
 			KEY_CTRL: _handle_search_request()
@@ -334,6 +357,19 @@ func _unhandled_input(event: InputEvent) -> void:
 			_inspect_mode = false
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT:
 				_do_inspect(clicked)
+			return
+
+		# Tool targeting mode — click adjacent revealed trap to disarm
+		if _tool_item != null:
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
+				var dist: int = maxi(absi(clicked.x - grid_pos.x), absi(clicked.y - grid_pos.y))
+				if dist <= 1:
+					_tool_item = null
+					_attempt_disarm(clicked)
+				else:
+					GameState.game_log("[color=gray]Too far — click an adjacent tile.[/color]")
+			else:
+				_tool_item = null
 			return
 
 		# Throw mode — consume left-click for the toss (immediate intentional click)
@@ -1051,8 +1087,16 @@ func _show_projectile(target_world_pos: Vector2, weapon: Item) -> void:
 func _on_throw_primed(item: Item) -> void:
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 		return
+	_tool_item = null
 	_throw_item = item
 	GameState.game_log("[color=yellow]Throw [b]%s[/b] — left-click target tile. [Esc] to cancel.[/color]" % item.item_name)
+
+func _on_tool_primed(item: Item) -> void:
+	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
+		return
+	_throw_item = null
+	_tool_item = item
+	GameState.game_log("[color=yellow]Thief Tools — click an adjacent revealed trap to disarm. [Esc] to cancel.[/color]")
 
 func _do_throw(pos: Vector2i) -> void:
 	var item: Item = _throw_item

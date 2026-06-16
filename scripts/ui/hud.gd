@@ -338,8 +338,7 @@ func _on_slot_gui_input(event: InputEvent, slot_index: int) -> void:
 		if raw == null:
 			return
 		var it := raw as Item
-		if it.item_type == Item.Type.FOOD:
-			GameState.player_throw_primed.emit(it)
+		GameState.player_throw_primed.emit(it)
 
 # ── Bar updates ───────────────────────────────────────────────────────────────
 

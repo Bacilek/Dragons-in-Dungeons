@@ -367,6 +367,13 @@ func _cast_light(visible: Dictionary, center: Vector2i, radius: int,
 
 func _on_debug_see_all(active: bool) -> void:
 	_see_all_active = active
+	if not active:
+		for trap_pos: Vector2i in _traps.keys():
+			var trap_d: Dictionary = _traps[trap_pos]
+			if not trap_d.get("revealed", false):
+				var trap_spr: Sprite2D = trap_d.get("sprite_node") as Sprite2D
+				if trap_spr != null and is_instance_valid(trap_spr):
+					trap_spr.modulate = Color(1.0, 1.0, 1.0, 0.0)
 	if _player != null:
 		update_fog(_player.grid_pos)
 
@@ -383,7 +390,12 @@ func _apply_see_all() -> void:
 		if is_instance_valid(e):
 			e.visible = true
 	for trap_pos: Vector2i in _traps.keys():
-		reveal_trap(trap_pos)
+		var trap_d: Dictionary = _traps[trap_pos]
+		if trap_d.get("revealed", false):
+			continue
+		var trap_spr: Sprite2D = trap_d.get("sprite_node") as Sprite2D
+		if trap_spr != null and is_instance_valid(trap_spr):
+			trap_spr.modulate = Color(0.55, 0.75, 1.0, 0.42)
 
 func reveal_all() -> void:
 	for y: int in _data.height:
@@ -691,7 +703,7 @@ func _spawn_traps() -> void:
 		sprite.scale = Vector2(0.5, 0.5)
 		sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
 		sprite.z_index = 1
-		sprite.modulate.a = 0.5
+		sprite.modulate.a = 0.0
 		entities.add_child(sprite)
 		_traps[pos] = {"name": t["name"], "damage": t["damage"], "msg": t["msg"],
 					   "sprite_node": sprite, "revealed": false, "is_push": false, "triggered": false,
@@ -725,7 +737,7 @@ func _spawn_traps() -> void:
 			sprite.position = Vector2(floor_pos.x * TILE_SIZE + TILE_SIZE * 0.5, floor_pos.y * TILE_SIZE + TILE_SIZE * 0.5) + wall_offset
 			sprite.rotation = atan2(float(push_dir.y), float(push_dir.x)) - PI / 2.0
 			sprite.z_index = 1
-			sprite.modulate.a = 0.5
+			sprite.modulate.a = 0.0
 			entities.add_child(sprite)
 			var detect_pos: Vector2i = floor_pos
 			_traps[detect_pos] = {"name": t["name"], "damage": 0, "msg": t["msg"],

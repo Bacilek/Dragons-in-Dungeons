@@ -12,6 +12,7 @@ signal equipment_changed()
 signal inventory_toggle()
 signal player_action_requested(action_name: String)
 signal player_throw_primed(item: Item)
+signal player_tool_primed(item: Item)
 signal class_chosen(chosen_class: Stats.CharacterClass)
 signal hunger_changed(value: int)
 signal player_status_changed()
@@ -113,7 +114,7 @@ func _give_starting_items() -> void:
 	tools.item_name = "Thief Tools"
 	tools.item_type = Item.Type.TOOL
 	tools.icon_path = "res://sprites/items/Misc/KeyIron.png"
-	tools.description = "Interact (F) near a revealed trap to disarm. Consumed on failure."
+	tools.description = "Left-click to use, then click an adjacent revealed trap to disarm. Consumed on failure."
 	tools.quantity = 3
 	add_item(tools)
 
@@ -295,7 +296,7 @@ func use_item(item: Item) -> void:
 		Item.Type.WEAPON, Item.Type.ARMOR:
 			equip(item)
 		Item.Type.TOOL:
-			combat_message.emit("[color=gray]Thief Tools — right-click a revealed trap to disarm it.[/color]")
+			player_tool_primed.emit(item)
 
 func consume_one(item: Item) -> void:
 	if item.quantity > 1:

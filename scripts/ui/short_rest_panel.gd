@@ -19,6 +19,11 @@ func _build_ui() -> void:
 	dim.anchor_right = 1.0
 	dim.anchor_bottom = 1.0
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	dim.gui_input.connect(func(ev: InputEvent) -> void:
+		if ev is InputEventMouseButton:
+			var mb := ev as InputEventMouseButton
+			if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed:
+				_close())
 	add_child(dim)
 
 	var panel := Panel.new()
@@ -204,7 +209,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not key.pressed or key.echo:
 		return
 	match key.physical_keycode:
-		KEY_ESCAPE:
+		KEY_ESCAPE, KEY_ALT:
 			get_viewport().set_input_as_handled()
 			_close()
 		KEY_LEFT, KEY_A, KEY_KP_4:
