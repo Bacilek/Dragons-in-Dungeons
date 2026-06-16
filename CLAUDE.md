@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Open `project.godot` in **Godot 4.6 (Mono build)**. Press **F5** to run. No CLI build commands.
 
-**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait. F = interact (traps/doors). Ctrl = search. Alt = short rest. RMB on world = interact. 1–9 = use quickbar slot 0–8. I = open inventory. Left-click enemy = chase+attack (ranged if weapon in range+LOS). Left-click floor = pathfind. RMB on food in quickbar = throw mode, then LMB = throw. Esc = cancel throw.
+**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait. F = interact (traps/doors). Ctrl = search. Alt = short rest. RMB on world = interact. 1–9 = use quickbar slot 0–8. I = open inventory. Left-click enemy = chase+attack (melee). Shift+left-click enemy/tile = ranged attack (if ranged weapon equipped and in range). Left-click floor = pathfind. RMB on food in quickbar = throw mode, then LMB = throw. Esc = cancel throw.
 
 ## Architecture
 
@@ -47,7 +47,11 @@ World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: flo
 
 **Advantage / Disadvantage**: ADV = roll 2d20 take higher; DISADV = roll 2d20 take lower; ADV+DISADV cancel to 1d20. Player gets ADV when attacking a SLEEPING enemy, or an enemy whose `just_crossed_door == true` (set in `enemy.gd._move_step()` when the enemy steps onto a door tile — consumed one-shot by `_has_advantage()`). DISADV on ranged attacks at Chebyshev distance 1 (melee range). ADV surprise attacks show a yellow "!" floating above the enemy. `_fov_prev_turn` / `_fov_this_turn` in `player.gd` are maintained but no longer grant ADV on their own.
 
-**Ranged weapons** (`Item.is_ranged=true`, `Item.range: int`): Short Bow (+1, range 6, DEX, infinite), Crossbow (+3, range 8, DEX, infinite), Throwing Daggers (range 4, DEX, consumable qty 3). Left-click enemy in range+LOS → `_ranged_attack()` (DEX-based, projectile VFX). Chase loop fires when closing to range. `Item.consumes_on_ranged=true` → decrement/unequip on use. Ranged attack uses DISADV at distance 1, otherwise same ADV rules as melee.
+**Ranged weapons** (`Item.is_ranged=true`, `Item.range: int`): Short Bow (+1, range 6, DEX, infinite), Crossbow (+3, range 8, DEX, infinite), Throwing Daggers (range 4, DEX, consumable qty 3). `Item.consumes_on_ranged=true` → decrement/unequip on use. Ranged attack uses DISADV at distance 1, otherwise same ADV rules as melee.
+
+**Equipment slots**: `GameState.equipment` dict has keys `"melee"` and `"ranged"` (renamed from `right_hand`/`left_hand`). `GameState.equipped_ranged` property returns ranged slot item. `equip()` routes `is_ranged` items automatically to `"ranged"` slot. Inventory overlay labels them Melee/Ranged and enforces slot type (melee rejects ranged items and vice versa).
+
+**Ranged attack flow**: Shift+click enemy or floor tile → fires ranged weapon if `equipped_ranged` exists and target is in range. LMB on enemy within ranged range+LOS → `_ranged_attack()` (DEX-based, projectile VFX). Shift+click any tile (not just enemies) → `_ranged_attack_tile()` for VFX + ammo consumption without requiring an enemy target. Chase always ends in melee (no auto-ranged-when-chasing). **LOS for ranged**: `has_ranged_los()` in `dungeon_floor.gd` — blocks only WALL/VOID, passes through grass/doors/chasms (more permissive than `has_line_of_sight()`). **Hover indicator**: weapon icon shown above hovered enemy — melee icon normally, ranged icon when Shift held and ranged weapon equipped.
 
 ### Item system (`scripts/items/item.gd`)
 `Item.Type` enum: `WEAPON=0, ARMOR=1, POTION=2, SCROLL=3, FOOD=4, GOLD=5, KEY=6, TOOL=7`. Key fields: `item_name`, `item_type`, `quantity`, `icon_path`, `heal_amount`, `bonus_damage`, `bonus_ac`, `str_bonus`, `is_ranged: bool`, `range: int`, `consumes_on_ranged: bool`. `get_display_name()` appends `×N` if quantity > 1.
