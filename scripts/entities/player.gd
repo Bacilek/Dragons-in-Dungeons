@@ -315,9 +315,13 @@ func _unhandled_input(event: InputEvent) -> void:
 					return
 				var enemy_on_tile: Enemy = _dungeon_floor.get_enemy_at(pending)
 				if enemy_on_tile != null:
-					if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing \
-							and _is_in_ranged_range(enemy_on_tile):
-						_ranged_attack(enemy_on_tile)
+					if Input.is_key_pressed(KEY_SHIFT):
+						if GameState.equipped_ranged == null:
+							GameState.game_log("[color=gray]No ranged weapon equipped.[/color]")
+						elif not _is_in_ranged_range(enemy_on_tile):
+							GameState.game_log("[color=gray]%s not in ranged range.[/color]" % enemy_on_tile.display_name)
+						elif TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
+							_ranged_attack(enemy_on_tile)
 						return
 					_target_enemy = enemy_on_tile
 					_queued_path.clear()
@@ -399,14 +403,6 @@ func _execute_queued_path() -> void:
 				_target_enemy = null
 				break
 
-			# Ranged: shoot if in range + LOS, then stop chasing
-			if _is_in_ranged_range(_target_enemy):
-				_ranged_attack(_target_enemy)
-				_target_enemy = null
-				if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
-					await TurnManager.player_turn_started
-				break
-
 			var chase_path: Array[Vector2i] = _dungeon_floor.find_path(grid_pos, _target_enemy.grid_pos)
 			if chase_path.is_empty():
 				_target_enemy = null
@@ -469,7 +465,10 @@ func _execute_queued_path() -> void:
 		else:
 			var enemy_there: Enemy = _dungeon_floor.get_enemy_at(next)
 			if enemy_there != null:
-				_bump_attack(enemy_there, dir)
+				if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
+					_ranged_attack(enemy_there)
+				else:
+					_bump_attack(enemy_there, dir)
 				if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
 					await TurnManager.player_turn_started
 				break
@@ -558,7 +557,10 @@ func _try_move(dir: Vector2i) -> void:
 	else:
 		var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
 		if enemy != null:
-			_bump_attack(enemy, dir)
+			if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
+				_ranged_attack(enemy)
+			else:
+				_bump_attack(enemy, dir)
 			return
 
 		# Open closed door for free — movement continues in the same turn
@@ -970,7 +972,7 @@ func _show_surprise_mark(enemy: Enemy) -> void:
 	tween.tween_callback(lbl.queue_free)
 
 func _is_in_ranged_range(enemy: Enemy) -> bool:
-	var weapon: Item = GameState.equipped_weapon
+	var weapon: Item = GameState.equipped_ranged
 	if weapon == null or not weapon.is_ranged or _dungeon_floor == null:
 		return false
 	var d: Vector2i = enemy.grid_pos - grid_pos
@@ -985,7 +987,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 	await $AnimatedSprite2D.animation_finished
 	$AnimatedSprite2D.play("idle")
 
-	var weapon: Item = GameState.equipped_weapon
+	var weapon: Item = GameState.equipped_ranged
 	_show_projectile(enemy.position, weapon)
 
 	var dex_mod: int = stats.dex_modifier()
@@ -1013,7 +1015,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 		weapon.quantity -= 1
 		GameState.inventory_changed.emit()
 		if weapon.quantity <= 0:
-			GameState.equipment["right_hand"] = null
+			GameState.equipment["ranged"] = null
 			GameState.recalculate_stats()
 			GameState.equipment_changed.emit()
 			GameState.game_log("[color=gray]Last throwing dagger used.[/color]")

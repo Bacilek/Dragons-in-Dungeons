@@ -27,10 +27,11 @@ static func generate(seed_val: int, floor_num: int) -> DungeonData:
 	var root := BSPNode.new(Rect2i(1, 1, GRID_WIDTH - 2, GRID_HEIGHT - 2))
 	_split_bsp(root, 0, rng)
 	_carve_rooms(root, data)
-	_connect_bsp(root, data)
+	var bsp_pairs: Dictionary = {}
+	_connect_bsp(root, data, bsp_pairs)
 	_collect_rooms(root, data.rooms)
 	_add_room_extensions(data, rng)
-	_add_extra_corridors(data, rng)
+	_add_extra_corridors(data, rng, bsp_pairs)
 
 	if data.rooms.is_empty():
 		var fallback := Rect2i(10, 10, 10, 10)
@@ -145,13 +146,20 @@ static func _carve_rect(rect: Rect2i, data: DungeonData) -> void:
 				data.grid[y][x] = DungeonData.TileType.FLOOR
 
 
-static func _connect_bsp(node: BSPNode, data: DungeonData) -> void:
+static func _pair_key(a: Vector2i, b: Vector2i) -> String:
+	if a.x < b.x or (a.x == b.x and a.y <= b.y):
+		return "%d,%d|%d,%d" % [a.x, a.y, b.x, b.y]
+	return "%d,%d|%d,%d" % [b.x, b.y, a.x, a.y]
+
+
+static func _connect_bsp(node: BSPNode, data: DungeonData, bsp_pairs: Dictionary) -> void:
 	if node.is_leaf():
 		return
-	_connect_bsp(node.left_child, data)
-	_connect_bsp(node.right_child, data)
+	_connect_bsp(node.left_child, data, bsp_pairs)
+	_connect_bsp(node.right_child, data, bsp_pairs)
 	var a := _get_room_center(node.left_child)
 	var b := _get_room_center(node.right_child)
+	bsp_pairs[_pair_key(a, b)] = true
 	_carve_corridor(a, b, data)
 
 
@@ -428,7 +436,7 @@ static func _add_room_extensions(data: DungeonData, rng: RandomNumberGenerator) 
 			_carve_rect(ext, data)
 
 
-static func _add_extra_corridors(data: DungeonData, rng: RandomNumberGenerator) -> void:
+static func _add_extra_corridors(data: DungeonData, rng: RandomNumberGenerator, bsp_pairs: Dictionary) -> void:
 	if data.rooms.size() < 3:
 		return
 	var num_extra: int = rng.randi_range(2, 3)
@@ -442,6 +450,8 @@ static func _add_extra_corridors(data: DungeonData, rng: RandomNumberGenerator) 
 			var rb: Rect2i = data.rooms[bi]
 			var ca := Vector2i(ra.position.x + ra.size.x / 2, ra.position.y + ra.size.y / 2)
 			var cb := Vector2i(rb.position.x + rb.size.x / 2, rb.position.y + rb.size.y / 2)
+			if bsp_pairs.has(_pair_key(ca, cb)):
+				continue
 			if abs(ca.x - cb.x) + abs(ca.y - cb.y) < 12:
 				continue
 			# Carve via the corner point (vertical-first L-shape for variety)

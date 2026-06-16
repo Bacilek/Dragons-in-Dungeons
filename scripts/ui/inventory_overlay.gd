@@ -115,7 +115,7 @@ func _build_equipment_section() -> void:
 	# 3-column × 4-row silhouette; empty strings = visual gap
 	var layout: Array = [
 		["head",       1, 0],
-		["left_hand",  0, 1], ["armor",   1, 1], ["right_hand", 2, 1],
+		["ranged",  0, 1], ["armor",   1, 1], ["melee", 2, 1],
 		["gloves",     0, 2],                    ["boots",      2, 2],
 		["trinket",    1, 3],
 	]
@@ -204,8 +204,8 @@ func _make_slot(eq_type: String = "") -> Control:
 
 func _eq_display(name: String) -> String:
 	match name:
-		"right_hand": return "R.Hand"
-		"left_hand":  return "L.Hand"
+		"melee":  return "Melee"
+		"ranged": return "Ranged"
 		"armor":      return "Armor"
 		"gloves":     return "Gloves"
 		"boots":      return "Boots"
@@ -285,7 +285,8 @@ func _do_move(dest: Control) -> void:
 
 func _fits_slot(item: Item, slot_name: String) -> bool:
 	match slot_name:
-		"right_hand", "left_hand": return item.item_type == Item.Type.WEAPON
+		"melee":  return item.item_type == Item.Type.WEAPON and not item.is_ranged
+		"ranged": return item.item_type == Item.Type.WEAPON and item.is_ranged
 		"armor":                   return item.item_type == Item.Type.ARMOR
 		_:                         return false
 

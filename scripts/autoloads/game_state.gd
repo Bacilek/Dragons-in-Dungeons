@@ -62,13 +62,16 @@ var player_quickbar: Array = []   # 5 slots shown in HUD action bar
 var player_inventory: Array = []  # 24-slot bag
 
 var equipment: Dictionary = {
-	"right_hand": null, "left_hand": null, "armor": null,
+	"melee": null, "ranged": null, "armor": null,
 	"boots": null, "gloves": null, "head": null, "trinket": null,
 }
 
 # Convenience read-only properties (backward compat with player.gd)
 var equipped_weapon: Item:
-	get: return equipment.get("right_hand") as Item
+	get: return equipment.get("melee") as Item
+
+var equipped_ranged: Item:
+	get: return equipment.get("ranged") as Item
 
 var equipped_armor: Item:
 	get: return equipment.get("armor") as Item
@@ -155,6 +158,7 @@ func gain_exp(amount: int) -> void:
 		player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 		player_leveled_up.emit(player_stats.character_level)
 		var hp_gained: int = player_stats.max_hp - old_max_hp
+		hit_dice = mini(hit_dice + 1, player_stats.character_level)
 		max_short_rests += 1
 		short_rests_remaining = mini(short_rests_remaining + 1, max_short_rests)
 		combat_message.emit("[color=yellow]Level up! You are now level %d. (+%d max HP, fully restored, +1 short rest)[/color]" % [player_stats.character_level, hp_gained])
@@ -166,7 +170,11 @@ func gain_exp(amount: int) -> void:
 func equip(item: Item, slot_name: String = "") -> void:
 	if slot_name == "":
 		match item.item_type:
-			Item.Type.WEAPON: slot_name = "right_hand"
+			Item.Type.WEAPON:
+				if item.is_ranged:
+					slot_name = "ranged"
+				else:
+					slot_name = "melee"
 			Item.Type.ARMOR:  slot_name = "armor"
 			_: return
 	if not equipment.has(slot_name):
