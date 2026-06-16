@@ -345,7 +345,7 @@ func _update_enemy_visibility(player_pos: Vector2i, r2: int) -> void:
 
 func _blocks_los(bx: int, by: int) -> bool:
 	var t: DungeonData.TileType = _data.get_tile(bx, by)
-	if t == DungeonData.TileType.WALL or t == DungeonData.TileType.GRASS:
+	if t == DungeonData.TileType.WALL:
 		return true
 	var pos := Vector2i(bx, by)
 	return _doors.has(pos) and not _doors[pos]["is_open"]
@@ -803,13 +803,12 @@ func cook_rotten_meat(trap_pos: Vector2i) -> Item:
 	if _traps.has(trap_pos):
 		var trap: Dictionary = _traps[trap_pos]
 		var sprite_node: Sprite2D = trap.get("sprite_node") as Sprite2D
-		_traps.erase(trap_pos)
+		trap["triggered"] = true
 		if sprite_node != null and is_instance_valid(sprite_node):
 			var tw := sprite_node.create_tween()
 			tw.tween_property(sprite_node, "modulate", Color(2.5, 1.5, 0.1, 1.0), 0.08)
 			tw.tween_property(sprite_node, "modulate", Color(1.5, 0.7, 0.05, 1.0), 0.12)
-			tw.tween_property(sprite_node, "modulate:a", 0.0, 0.25)
-			tw.tween_callback(sprite_node.queue_free)
+			tw.tween_property(sprite_node, "modulate", Color(0.25, 0.25, 0.25, 0.85), 0.20)
 	var cooked := Item.new()
 	cooked.item_name = "Cooked Meat"
 	cooked.item_type = Item.Type.FOOD
@@ -825,6 +824,8 @@ func search_around(pos: Vector2i, radius: int = 2) -> int:
 			if dx == 0 and dy == 0:
 				continue
 			var trap_pos: Vector2i = pos + Vector2i(dx, dy)
+			if not has_line_of_sight(pos, trap_pos):
+				continue
 			if reveal_trap(trap_pos):
 				found += 1
 	return found

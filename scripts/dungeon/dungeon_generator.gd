@@ -4,7 +4,8 @@ extends RefCounted
 const GRID_WIDTH: int = 48
 const GRID_HEIGHT: int = 48
 const MIN_ROOM_SIZE: int = 5
-const MAX_DEPTH: int = 5
+const MAX_ROOM_DIM: int = 11
+const MAX_DEPTH: int = 6
 
 static func generate(seed_val: int, floor_num: int) -> DungeonData:
 	var rng := RandomNumberGenerator.new()
@@ -82,10 +83,10 @@ static func _split_bsp(node: BSPNode, depth: int, rng: RandomNumberGenerator) ->
 
 	if depth >= MAX_DEPTH or node.rect.size.x < min_size or node.rect.size.y < min_size:
 		# Leaf — carve a room with random margins inside this rect
-		var margin_x := rng.randi_range(1, maxi(1, node.rect.size.x / 4))
-		var margin_y := rng.randi_range(1, maxi(1, node.rect.size.y / 4))
-		var rw := maxi(MIN_ROOM_SIZE, node.rect.size.x - margin_x * 2)
-		var rh := maxi(MIN_ROOM_SIZE, node.rect.size.y - margin_y * 2)
+		var margin_x := rng.randi_range(2, maxi(2, node.rect.size.x / 4))
+		var margin_y := rng.randi_range(2, maxi(2, node.rect.size.y / 4))
+		var rw := mini(maxi(MIN_ROOM_SIZE, node.rect.size.x - margin_x * 2), MAX_ROOM_DIM)
+		var rh := mini(maxi(MIN_ROOM_SIZE, node.rect.size.y - margin_y * 2), MAX_ROOM_DIM)
 		node.room = Rect2i(
 			node.rect.position.x + margin_x,
 			node.rect.position.y + margin_y,

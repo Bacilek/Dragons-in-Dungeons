@@ -17,6 +17,7 @@ var initial_behavior: Behavior = Behavior.SLEEPING
 var behavior: Behavior = Behavior.SLEEPING
 var last_known_player_pos: Vector2i = Vector2i(-1, -1)
 
+var just_crossed_door: bool = false
 var _roam_target: Vector2i = Vector2i(-1, -1)
 var _roam_path: Array[Vector2i] = []
 
@@ -231,12 +232,15 @@ func _do_random_step() -> void:
 
 func _move_step(step: Vector2i, next_pos: Vector2i) -> void:
 	var prev_pos: Vector2i = grid_pos
+	var stepping_through_door: bool = _dungeon_floor.has_door_at(next_pos)
 	$AnimatedSprite2D.flip_h = step.x < 0
 	$AnimatedSprite2D.play("run")
 	await move_to(next_pos, 0.04 if TurnManager.fast_mode else 0.08)
 	if not is_instance_valid(self):
 		return
 	$AnimatedSprite2D.play("idle")
+	if stepping_through_door:
+		just_crossed_door = true
 	if _dungeon_floor.has_door_at(prev_pos):
 		_dungeon_floor.close_door(prev_pos)
 	if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:

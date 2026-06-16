@@ -31,6 +31,7 @@ const ZOOM_MAX: float = 5.0
 const ZOOM_STEP: float = 0.25
 
 var _is_panning: bool = false
+var _lmb_panning: bool = false
 var _pan_start_mouse: Vector2 = Vector2.ZERO
 var _pan_start_cam: Vector2 = Vector2.ZERO
 var _click_start_screen_pos: Vector2 = Vector2(-1.0, -1.0)
@@ -168,6 +169,7 @@ func _reset_camera_offset() -> void:
 	if _camera != null:
 		_camera.position = Vector2.ZERO
 	_is_panning = false
+	_lmb_panning = false
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and _camera != null:
@@ -180,6 +182,16 @@ func _input(event: InputEvent) -> void:
 			else:
 				_is_panning = false
 			get_viewport().set_input_as_handled()
+		elif mb.button_index == MOUSE_BUTTON_LEFT:
+			if mb.pressed:
+				# Capture pan origin; actual panning activates after 8px threshold in motion handler
+				_pan_start_mouse = mb.position
+				_pan_start_cam = _camera.position
+				_lmb_panning = false
+			elif _lmb_panning:
+				_lmb_panning = false
+				_is_panning = false
+				get_viewport().set_input_as_handled()
 		elif mb.pressed:
 			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
 				_camera.zoom = Vector2.ONE * clampf(_camera.zoom.x + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
@@ -187,10 +199,23 @@ func _input(event: InputEvent) -> void:
 			elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 				_camera.zoom = Vector2.ONE * clampf(_camera.zoom.x - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
 				get_viewport().set_input_as_handled()
-	elif event is InputEventMouseMotion and _is_panning and _camera != null:
-		var motion := event as InputEventMouseMotion
-		_camera.position = _pan_start_cam + (motion.position - _pan_start_mouse) / _camera.zoom.x
-		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and _camera != null:
+		if _is_panning:
+			var motion := event as InputEventMouseMotion
+			_camera.position = _pan_start_cam + (motion.position - _pan_start_mouse) / _camera.zoom.x
+			get_viewport().set_input_as_handled()
+		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _lmb_panning:
+			var motion := event as InputEventMouseMotion
+			if motion.position.distance_to(_pan_start_mouse) > 8.0:
+				_lmb_panning = true
+				_is_panning = true
+				# Reset pan baseline to current position so camera doesn't jump
+				_pan_start_mouse = motion.position
+				_pan_start_cam = _camera.position
+				_queued_path.clear()
+				_target_enemy = null
+				_click_start_screen_pos = Vector2(-1.0, -1.0)
+				get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if GameState.is_game_over or not GameState.class_selected:
@@ -765,7 +790,7 @@ func _do_inspect(pos: Vector2i) -> void:
 		DungeonData.TileType.CHASM:          tile_name = "Chasm — deadly fall"
 		DungeonData.TileType.WATER:          tile_name = "Water — slows movement"
 		DungeonData.TileType.MUD:            tile_name = "Mud — slows movement"
-		DungeonData.TileType.GRASS:          tile_name = "Tall grass — blocks line of sight"
+		DungeonData.TileType.GRASS:          tile_name = "Tall grass"
 		DungeonData.TileType.TRAMPLED_GRASS: tile_name = "Trampled grass"
 		_:                                   tile_name = "Unknown"
 	GameState.game_log("[color=gray]%s.[/color]" % tile_name)
@@ -869,6 +894,9 @@ func _leave_blood_trail(pos: Vector2i) -> void:
 		_dungeon_floor.place_blood_decal(pos)
 
 func _has_advantage(enemy: Enemy) -> bool:
+	if enemy.just_crossed_door:
+		enemy.just_crossed_door = false
+		return true
 	if enemy.behavior == Enemy.Behavior.SLEEPING:
 		return true
 	# STATIONARY / ROAMING: ADV only on the turn they first enter our FOV
@@ -1021,9 +1049,8 @@ func _do_throw(pos: Vector2i) -> void:
 	if is_fire and item.item_name == "Rotten Meat":
 		GameState.consume_one(item)
 		var cooked: Item = _dungeon_floor.cook_rotten_meat(pos)
-		if not GameState.add_item(cooked):
-			_dungeon_floor.place_item_on_floor(grid_pos, cooked)
-		GameState.game_log("[color=orange]You throw the meat into the fire — it sizzles and cooks! [b]Cooked Meat[/b] obtained.[/color]")
+		_dungeon_floor.place_item_on_floor(pos, cooked)
+		GameState.game_log("[color=orange]You throw the meat into the fire — it sizzles and cooks! [b]Cooked Meat[/b] landed where the trap was.[/color]")
 	else:
 		var dropped := Item.new()
 		dropped.item_name = item.item_name
