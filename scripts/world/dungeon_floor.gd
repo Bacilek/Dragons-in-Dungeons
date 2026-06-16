@@ -428,6 +428,28 @@ func _blocks_los(bx: int, by: int) -> bool:
 	var pos := Vector2i(bx, by)
 	return _doors.has(pos) and not _doors[pos]["is_open"]
 
+func _blocks_projectile(bx: int, by: int) -> bool:
+	var t: DungeonData.TileType = _data.get_tile(bx, by)
+	return t == DungeonData.TileType.WALL or t == DungeonData.TileType.VOID
+
+func has_ranged_los(from: Vector2i, to: Vector2i) -> bool:
+	var x: int = from.x; var y: int = from.y
+	var dx: int = abs(to.x - x); var dy: int = abs(to.y - y)
+	var sx: int = 1 if x < to.x else -1
+	var sy: int = 1 if y < to.y else -1
+	var err: int = dx - dy
+	while x != to.x or y != to.y:
+		var e2: int = 2 * err
+		var old_x: int = x; var old_y: int = y
+		if e2 > -dy: err -= dy; x += sx
+		if e2 < dx:  err += dx; y += sy
+		if x == to.x and y == to.y: break
+		if _blocks_projectile(x, y): return false
+		if x != old_x and y != old_y:
+			if _blocks_projectile(x, old_y) and _blocks_projectile(old_x, y):
+				return false
+	return true
+
 func has_line_of_sight(from: Vector2i, to: Vector2i) -> bool:
 	var x: int = from.x
 	var y: int = from.y

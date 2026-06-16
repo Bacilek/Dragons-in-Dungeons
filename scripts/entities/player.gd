@@ -38,6 +38,10 @@ var _pan_start_cam: Vector2 = Vector2.ZERO
 var _click_start_screen_pos: Vector2 = Vector2(-1.0, -1.0)
 var _pending_click_tile: Vector2i = Vector2i(-1, -1)
 
+var _hover_indicator: Sprite2D = null
+var _hover_last_icon_path: String = ""
+var _hover_last_texture: Texture2D = null
+
 
 func _ready() -> void:
 	stats = GameState.player_stats
@@ -130,6 +134,7 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 
 # Cardinal + diagonal movement via per-frame key sampling so two held cardinals = diagonal
 func _process(_delta: float) -> void:
+	_update_hover_indicator()
 	if GameState.is_game_over or GameState.inventory_open or GameState.short_rest_open or not GameState.class_selected:
 		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
@@ -173,6 +178,44 @@ func _process(_delta: float) -> void:
 		_tool_item = null
 		GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 	_try_move(dir)
+
+func _ensure_hover_indicator() -> void:
+	if _hover_indicator != null and is_instance_valid(_hover_indicator):
+		return
+	if _dungeon_floor == null:
+		return
+	_hover_indicator = Sprite2D.new()
+	_hover_indicator.z_index = 12
+	_hover_indicator.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_hover_indicator.scale = Vector2(0.75, 0.75)
+	_hover_indicator.modulate = Color(1.0, 1.0, 1.0, 0.85)
+	_hover_indicator.visible = false
+	_dungeon_floor.add_child(_hover_indicator)
+
+func _update_hover_indicator() -> void:
+	_ensure_hover_indicator()
+	if _hover_indicator == null or _dungeon_floor == null:
+		return
+	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing \
+			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over:
+		_hover_indicator.visible = false
+		return
+	var world_mouse: Vector2 = get_global_mouse_position()
+	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
+	var enemy: Enemy = _dungeon_floor.get_enemy_at(tile)
+	if enemy == null or not is_instance_valid(enemy):
+		_hover_indicator.visible = false
+		return
+	var weapon: Item = GameState.equipped_ranged if Input.is_key_pressed(KEY_SHIFT) else GameState.equipped_weapon
+	if weapon == null:
+		_hover_indicator.visible = false
+		return
+	if weapon.icon_path != _hover_last_icon_path:
+		_hover_last_icon_path = weapon.icon_path
+		_hover_last_texture = load(weapon.icon_path) as Texture2D
+		_hover_indicator.texture = _hover_last_texture
+	_hover_indicator.global_position = enemy.global_position + Vector2(6, -14)
+	_hover_indicator.visible = true
 
 func _reset_camera_offset() -> void:
 	if _camera != null:
@@ -313,16 +356,28 @@ func _unhandled_input(event: InputEvent) -> void:
 					return
 				if pending == grid_pos:
 					return
+				if Input.is_key_pressed(KEY_SHIFT):
+					var rw: Item = GameState.equipped_ranged
+					if rw == null:
+						GameState.game_log("[color=gray]No ranged weapon equipped.[/color]")
+						return
+					if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
+						return
+					var dv: Vector2i = pending - grid_pos
+					if dv.x * dv.x + dv.y * dv.y > rw.range * rw.range:
+						GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % rw.range)
+						return
+					if not _dungeon_floor.has_ranged_los(grid_pos, pending):
+						GameState.game_log("[color=gray]No clear shot to target.[/color]")
+						return
+					var enemy_shift: Enemy = _dungeon_floor.get_enemy_at(pending)
+					if enemy_shift != null:
+						_ranged_attack(enemy_shift)
+					else:
+						_ranged_attack_tile(pending)
+					return
 				var enemy_on_tile: Enemy = _dungeon_floor.get_enemy_at(pending)
 				if enemy_on_tile != null:
-					if Input.is_key_pressed(KEY_SHIFT):
-						if GameState.equipped_ranged == null:
-							GameState.game_log("[color=gray]No ranged weapon equipped.[/color]")
-						elif not _is_in_ranged_range(enemy_on_tile):
-							GameState.game_log("[color=gray]%s not in ranged range.[/color]" % enemy_on_tile.display_name)
-						elif TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
-							_ranged_attack(enemy_on_tile)
-						return
 					_target_enemy = enemy_on_tile
 					_queued_path.clear()
 					if not _path_executing:
@@ -978,7 +1033,7 @@ func _is_in_ranged_range(enemy: Enemy) -> bool:
 	var d: Vector2i = enemy.grid_pos - grid_pos
 	var dist_sq: int = d.x * d.x + d.y * d.y
 	return dist_sq <= weapon.range * weapon.range \
-		and _dungeon_floor.has_line_of_sight(grid_pos, enemy.grid_pos)
+		and _dungeon_floor.has_ranged_los(grid_pos, enemy.grid_pos)
 
 func _ranged_attack(enemy: Enemy) -> void:
 	TurnManager.begin_player_action()
@@ -1085,6 +1140,28 @@ func _show_projectile(target_world_pos: Vector2, weapon: Item) -> void:
 	tween.tween_property(proj, "position", target_world_pos, dur)
 	tween.parallel().tween_property(proj, "modulate:a", 0.0, dur * 0.3).set_delay(dur * 0.7)
 	tween.tween_callback(proj.queue_free)
+
+func _ranged_attack_tile(target_pos: Vector2i) -> void:
+	TurnManager.begin_player_action()
+	$AnimatedSprite2D.flip_h = target_pos.x < grid_pos.x
+	$AnimatedSprite2D.play("hit")
+	await $AnimatedSprite2D.animation_finished
+	$AnimatedSprite2D.play("idle")
+	var weapon: Item = GameState.equipped_ranged
+	var target_world: Vector2 = Vector2(target_pos.x * 16 + 8, target_pos.y * 16 + 8)
+	_show_projectile(target_world, weapon)
+	if weapon != null and weapon.consumes_on_ranged:
+		weapon.quantity -= 1
+		GameState.inventory_changed.emit()
+		if weapon.quantity <= 0:
+			GameState.equipment["ranged"] = null
+			GameState.recalculate_stats()
+			GameState.equipment_changed.emit()
+			GameState.game_log("[color=gray]Last throwing dagger thrown.[/color]")
+	if _dungeon_floor != null:
+		_dungeon_floor.update_fog(grid_pos)
+	TurnManager.on_player_action_complete()
+
 
 func _on_throw_primed(item: Item) -> void:
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
