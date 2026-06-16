@@ -44,8 +44,8 @@ static func generate(seed_val: int, floor_num: int) -> DungeonData:
 			start_room = room
 	data.start_room = start_room
 	data.player_start = Vector2i(
-		start_room.position.x + start_room.size.x / 2,
-		start_room.position.y + start_room.size.y / 2
+		clampi(start_room.position.x + start_room.size.x / 2, 1, data.width - 2),
+		clampi(start_room.position.y + start_room.size.y / 2, 1, data.height - 2)
 	)
 
 	# Stairs = center of room farthest from player start (Manhattan)
@@ -62,8 +62,8 @@ static func generate(seed_val: int, floor_num: int) -> DungeonData:
 			farthest_room = room
 
 	data.stairs_pos = Vector2i(
-		farthest_room.position.x + farthest_room.size.x / 2,
-		farthest_room.position.y + farthest_room.size.y / 2
+		clampi(farthest_room.position.x + farthest_room.size.x / 2, 1, data.width - 2),
+		clampi(farthest_room.position.y + farthest_room.size.y / 2, 1, data.height - 2)
 	)
 	data.grid[data.stairs_pos.y][data.stairs_pos.x] = DungeonData.TileType.STAIRS_DOWN
 
@@ -87,11 +87,11 @@ static func _split_bsp(node: BSPNode, depth: int, rng: RandomNumberGenerator) ->
 		var margin_y := rng.randi_range(2, maxi(2, node.rect.size.y / 4))
 		var rw := mini(maxi(MIN_ROOM_SIZE, node.rect.size.x - margin_x * 2), MAX_ROOM_DIM)
 		var rh := mini(maxi(MIN_ROOM_SIZE, node.rect.size.y - margin_y * 2), MAX_ROOM_DIM)
-		node.room = Rect2i(
-			node.rect.position.x + margin_x,
-			node.rect.position.y + margin_y,
-			rw, rh
-		)
+		var room_x: int = node.rect.position.x + margin_x
+		var room_y: int = node.rect.position.y + margin_y
+		rw = maxi(1, mini(rw, GRID_WIDTH - 1 - room_x))
+		rh = maxi(1, mini(rh, GRID_HEIGHT - 1 - room_y))
+		node.room = Rect2i(room_x, room_y, rw, rh)
 		return
 
 	# Decide split axis based on aspect ratio, randomise when square-ish

@@ -207,7 +207,7 @@ func _input(event: InputEvent) -> void:
 			var motion := event as InputEventMouseMotion
 			_camera.position = _pan_start_cam - (motion.position - _pan_start_mouse) / _camera.zoom.x
 			get_viewport().set_input_as_handled()
-		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _lmb_panning:
+		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _lmb_panning and not GameState.inventory_open:
 			var motion := event as InputEventMouseMotion
 			if motion.position.distance_to(_pan_start_mouse) > 8.0:
 				_lmb_panning = true

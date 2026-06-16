@@ -154,6 +154,8 @@ func gain_exp(amount: int) -> void:
 		var hp_gained: int = player_stats.max_hp - old_max_hp
 		combat_message.emit("[color=yellow]Level up! You are now level %d. (+%d max HP, fully restored)[/color]" % [player_stats.character_level, hp_gained])
 		heal(player_stats.max_hp - player_stats.current_hp)
+		short_rests_remaining = mini(short_rests_remaining + 1, 2)
+		short_rest_changed.emit()
 
 # ── Equipment ─────────────────────────────────────────────────────────────────
 
