@@ -2,6 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Maintenance rule (applies to all sessions)
+After every feature, fix, or refactor that changes architecture, adds a system, or modifies any documented behaviour: **update the relevant sub-directory CLAUDE.md and this root CLAUDE.md without waiting to be asked**. Sub-directory CLAUDE.md files live in `scripts/autoloads/`, `scripts/entities/`, `scripts/world/`, `scripts/ui/`, `scripts/dungeon/`, and `scripts/items/`.
+
 ## Project
 
 **Dragons in Dungeons** — a 2D pixel roguelike built in Godot 4 (GDScript only, Mono build). Pixel Dungeon gameplay loop crossed with D&D 5.5e (2024) mechanics: ability scores, classes, spells. Sprites from 0x72 DungeonTilesetII (CC0, 16×16 px).
@@ -28,7 +31,7 @@ Each turn: hunger depletes 1, status effects tick (`Stats.tick_status()` → dmg
 
 ### Dungeon
 - **`DungeonGenerator.generate(seed, floor_num)`** — pure static, returns `DungeonData`. Seed: `run_seed XOR (floor * 0x9e3779b9)`. BSP depth 5, 48×48 grid, L-shaped corridors.
-- **`DungeonData`** — `grid: Array[Array[int]]` indexed `[y][x]`. `TileType`: `VOID=0, FLOOR=1, WALL=2, STAIRS_DOWN=3, CHASM=4, WATER=5, MUD=6, GRASS=7`. `boss_room: Rect2i` (empty if not boss floor). `rooms: Array[Rect2i]` — all BSP leaf rooms.
+- **`DungeonData`** — `grid: Array[Array[int]]` indexed `[y][x]`. `TileType`: `VOID=0, FLOOR=1, WALL=2, STAIRS_DOWN=3, CHASM=4, WATER=5, MUD=6, GRASS=7, TRAMPLED_GRASS=8`. `boss_room: Rect2i` (empty if not boss floor). `rooms: Array[Rect2i]` — all BSP leaf rooms.
 - **`DungeonFloor`** (`scripts/world/dungeon_floor.gd`) — owns TileMapLayer, Entities node, enemy list, fog overlay, traps, doors, floor items. Calls `_load_floor()` on start and stair descent. Key query methods: `get_room_centers() -> Array[Vector2i]` (room center tiles for enemy roaming), `is_explored(pos) -> bool`, `is_tile_visible(pos) -> bool` (O(1) dict lookup into `_visible_tiles`), `get_visible_enemies() -> Array[Enemy]`. `FOV_RADIUS = 7`. **Player FOV**: recursive shadowcasting (`_compute_shadowcast` → `_cast_light`, 8 octants, Roguebasin multiplier tables) — result stored in `_visible_tiles: Dictionary`. **Enemy/misc LOS**: Bresenham `has_line_of_sight()` (still used by enemy AI, `search_around()`). LogPanel and StatsPanel in HUD use `MOUSE_FILTER_IGNORE` so game-world clicks pass through the overlay.
 
 ### Entity hierarchy
