@@ -82,6 +82,7 @@ var _doors: Dictionary = {}         # Vector2i → {is_open: bool, sprite: Sprit
 
 var _floor_items: Dictionary = {}
 var _floor_item_sprites: Dictionary = {}
+var _blood_decals: Array[Sprite2D] = []
 
 var _fog_image: Image
 var _fog_texture: ImageTexture
@@ -193,6 +194,11 @@ func _load_floor() -> void:
 			sn.queue_free()
 	_floor_items.clear()
 	_floor_item_sprites.clear()
+
+	for spr: Sprite2D in _blood_decals:
+		if is_instance_valid(spr):
+			spr.queue_free()
+	_blood_decals.clear()
 
 	_data = DungeonGenerator.generate(GameState.run_seed, GameState.current_floor)
 
@@ -870,6 +876,7 @@ func place_blood_decal(pos: Vector2i) -> void:
 	sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
 	sprite.z_index = 0
 	entities.add_child(sprite)
+	_blood_decals.append(sprite)
 
 func cook_rotten_meat(trap_pos: Vector2i) -> Item:
 	if _traps.has(trap_pos):
@@ -877,10 +884,14 @@ func cook_rotten_meat(trap_pos: Vector2i) -> Item:
 		var sprite_node: Sprite2D = trap.get("sprite_node") as Sprite2D
 		trap["triggered"] = true
 		if sprite_node != null and is_instance_valid(sprite_node):
+			sprite_node.z_index = 8
 			var tw := sprite_node.create_tween()
 			tw.tween_property(sprite_node, "modulate", Color(2.5, 1.5, 0.1, 1.0), 0.08)
 			tw.tween_property(sprite_node, "modulate", Color(1.5, 0.7, 0.05, 1.0), 0.12)
 			tw.tween_property(sprite_node, "modulate", Color(0.25, 0.25, 0.25, 0.85), 0.20)
+			tw.tween_callback(func() -> void:
+				if is_instance_valid(sprite_node):
+					sprite_node.z_index = 0)
 	var cooked := Item.new()
 	cooked.item_name = "Cooked Meat"
 	cooked.item_type = Item.Type.FOOD

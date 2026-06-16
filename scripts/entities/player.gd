@@ -1088,6 +1088,9 @@ func _on_throw_primed(item: Item) -> void:
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 		return
 	_tool_item = null
+	if _throw_item != null:
+		_throw_item = item
+		return
 	_throw_item = item
 	GameState.game_log("[color=yellow]Throw [b]%s[/b] — left-click target tile. [Esc] to cancel.[/color]" % item.item_name)
 

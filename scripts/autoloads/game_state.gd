@@ -44,6 +44,7 @@ var invincible: bool = false
 var noclip: bool = false
 var hit_dice: int = 1
 var short_rests_remaining: int = 2
+var max_short_rests: int = 2
 var short_rest_open: bool = false
 var short_rest_active: bool = false
 var short_rest_turns_remaining: int = 0
@@ -86,6 +87,7 @@ func start_new_run() -> void:
 	short_rest_open = false
 	hit_dice = 1
 	short_rests_remaining = 2
+	max_short_rests = 2
 	hunger = MAX_HUNGER
 	_starvation_tick = 0
 	player_stats = Stats.new()
@@ -122,6 +124,7 @@ func advance_floor() -> void:
 	current_floor += 1
 	hit_dice = player_stats.character_level
 	short_rests_remaining = 2
+	max_short_rests = 2
 	short_rest_changed.emit()
 	floor_changed.emit(current_floor)
 	if current_floor > 10:
@@ -152,9 +155,10 @@ func gain_exp(amount: int) -> void:
 		player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 		player_leveled_up.emit(player_stats.character_level)
 		var hp_gained: int = player_stats.max_hp - old_max_hp
-		combat_message.emit("[color=yellow]Level up! You are now level %d. (+%d max HP, fully restored)[/color]" % [player_stats.character_level, hp_gained])
+		max_short_rests += 1
+		short_rests_remaining = mini(short_rests_remaining + 1, max_short_rests)
+		combat_message.emit("[color=yellow]Level up! You are now level %d. (+%d max HP, fully restored, +1 short rest)[/color]" % [player_stats.character_level, hp_gained])
 		heal(player_stats.max_hp - player_stats.current_hp)
-		short_rests_remaining = mini(short_rests_remaining + 1, 2)
 		short_rest_changed.emit()
 
 # ── Equipment ─────────────────────────────────────────────────────────────────

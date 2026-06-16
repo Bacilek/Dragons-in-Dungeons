@@ -442,6 +442,8 @@ static func _add_extra_corridors(data: DungeonData, rng: RandomNumberGenerator) 
 			var rb: Rect2i = data.rooms[bi]
 			var ca := Vector2i(ra.position.x + ra.size.x / 2, ra.position.y + ra.size.y / 2)
 			var cb := Vector2i(rb.position.x + rb.size.x / 2, rb.position.y + rb.size.y / 2)
+			if abs(ca.x - cb.x) + abs(ca.y - cb.y) < 12:
+				continue
 			# Carve via the corner point (vertical-first L-shape for variety)
 			var corner := Vector2i(ca.x, cb.y)
 			_carve_corridor(ca, corner, data)
