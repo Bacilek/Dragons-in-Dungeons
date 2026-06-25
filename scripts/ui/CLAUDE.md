@@ -44,8 +44,8 @@ Connects to `GameState` signals only — never poll `GameState` in `_process()`.
 | Short rest panel / Debug panel | 25 |
 
 ### Compass
-Always visible from floor start, shows "?" / "find it" until stairs discovered.
-`_stairs_found_this_floor` flag set by `_on_stairs_discovered()`. `_update_compass()` early-returns until flag is true.
+Hidden at floor start. Appears at **top-center** of screen only when stairs tile enters FOV (`_on_stairs_discovered()` sets `_stairs_found_this_floor = true` and shows panel). Resets (hides) on every floor change.
+`_update_compass()` early-returns until flag is true. Arrow character picked from 8 Unicode directions; shows Chebyshev distance.
 Triggered by `GameState.stairs_discovered` signal (emitted by `DungeonFloor.update_fog()` or See All debug).
 
 ---

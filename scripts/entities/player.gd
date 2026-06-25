@@ -577,6 +577,10 @@ func _execute_queued_path() -> void:
 		var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
 		if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
 			GameState.player_stats.slowed_turns = maxi(1, GameState.player_stats.slowed_turns)
+		if tile_t == DungeonData.TileType.WATER and GameState.player_stats.burning_turns > 0:
+			GameState.player_stats.burning_turns = 0
+			GameState.player_status_changed.emit()
+			GameState.game_log("[color=cyan]The water extinguishes your flames![/color]")
 		if GameState.player_stats.slowed_turns > 0:
 			_queued_path.clear()
 			if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
@@ -655,6 +659,10 @@ func _try_move(dir: Vector2i) -> void:
 	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
 	if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
 		GameState.player_stats.slowed_turns = maxi(1, GameState.player_stats.slowed_turns)
+	if tile_t == DungeonData.TileType.WATER and GameState.player_stats.burning_turns > 0:
+		GameState.player_stats.burning_turns = 0
+		GameState.player_status_changed.emit()
+		GameState.game_log("[color=cyan]The water extinguishes your flames![/color]")
 	if GameState.player_stats.slowed_turns > 0:
 		await TurnManager.player_turn_started
 		TurnManager.begin_player_action()

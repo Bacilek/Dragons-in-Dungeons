@@ -124,13 +124,13 @@ func _ready() -> void:
 	$StatsPanel.add_child(_hit_dice_label)
 	_update_hit_dice_label()
 
-	# Stairs compass — top-right corner, hidden until stairs discovered
+	# Stairs compass — top-center, hidden until stairs discovered
 	_compass_panel = Panel.new()
-	_compass_panel.anchor_left = 1.0
-	_compass_panel.anchor_right = 1.0
-	_compass_panel.offset_left = -114.0
+	_compass_panel.anchor_left = 0.5
+	_compass_panel.anchor_right = 0.5
+	_compass_panel.offset_left = -55.0
 	_compass_panel.offset_top = 4.0
-	_compass_panel.offset_right = -4.0
+	_compass_panel.offset_right = 55.0
 	_compass_panel.offset_bottom = 84.0
 	_compass_panel.visible = false
 	add_child(_compass_panel)
@@ -276,11 +276,7 @@ func _on_floor_changed(new_floor: int) -> void:
 	_update_hit_dice_label()
 	_stairs_found_this_floor = false
 	if _compass_panel != null:
-		_compass_panel.visible = true
-		if _compass_arrow_label != null:
-			_compass_arrow_label.text = "?"
-		if _compass_dist_label != null:
-			_compass_dist_label.text = "find it"
+		_compass_panel.visible = false
 
 func _on_player_hp_changed(current_hp: int, max_hp: int) -> void:
 	_update_hp_bar(current_hp, max_hp)
