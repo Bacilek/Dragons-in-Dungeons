@@ -569,6 +569,7 @@ func _execute_queued_path() -> void:
 				_dungeon_floor.destroy_grass(grid_pos)
 				_dungeon_floor.update_fog(grid_pos)
 			_check_pickup()
+			_try_fill_bottle(grid_pos)
 			var trap_p: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 			if not trap_p.is_empty():
 				await _dungeon_floor.trigger_trap(grid_pos, self)
@@ -660,6 +661,7 @@ func _try_move(dir: Vector2i) -> void:
 		_dungeon_floor.update_fog(grid_pos)
 		_passive_trap_check()
 		_check_pickup()
+		_try_fill_bottle(grid_pos)
 		var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 		if not trap.is_empty():
 			await _dungeon_floor.trigger_trap(grid_pos, self)  # push trap still awaits; others return instantly
@@ -1032,7 +1034,50 @@ func _use_quickbar_slot(idx: int) -> void:
 	var raw = GameState.player_quickbar[idx]
 	if raw == null:
 		return
+	var was_potion: bool = (raw as Item).item_type == Item.Type.POTION
 	GameState.use_item(raw as Item)
+	if was_potion and _dungeon_floor != null:
+		_dungeon_floor.place_item_on_floor(grid_pos, _make_empty_bottle())
+
+func _make_empty_bottle() -> Item:
+	var b := Item.new()
+	b.item_name = "Empty Bottle"
+	b.item_type = Item.Type.TOOL
+	b.icon_path = "res://sprites/items/Materials/BottleSmall.png"
+	b.description = "An empty glass bottle. Fill it from water or mud."
+	return b
+
+func _try_fill_bottle(pos: Vector2i) -> void:
+	if _dungeon_floor == null:
+		return
+	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(pos)
+	if tile_t != DungeonData.TileType.WATER and tile_t != DungeonData.TileType.MUD:
+		return
+	var bottle: Item = _find_item_by_name("Empty Bottle")
+	if bottle == null:
+		return
+	if tile_t == DungeonData.TileType.WATER:
+		bottle.item_name = "Bottle of Water"
+		bottle.icon_path = "res://sprites/items/Materials/BottleMedium.png"
+		bottle.item_type = Item.Type.FOOD
+		bottle.heal_amount = 60
+		bottle.description = "A bottle of dungeon water. Restores some hunger."
+		GameState.game_log("[color=cyan]You fill the bottle with water.[/color]")
+	elif tile_t == DungeonData.TileType.MUD:
+		bottle.item_name = "Bottle of Mud"
+		bottle.icon_path = "res://sprites/items/Materials/BottleSmall.png"
+		bottle.description = "A bottle of foul mud. Maybe useful for something."
+		GameState.game_log("[color=gray]You fill the bottle with mud.[/color]")
+	GameState.inventory_changed.emit()
+
+func _find_item_by_name(item_name: String) -> Item:
+	for slot: Item in GameState.player_quickbar:
+		if slot != null and slot.item_name == item_name:
+			return slot
+	for slot: Item in GameState.player_inventory:
+		if slot != null and slot.item_name == item_name:
+			return slot
+	return null
 
 func _leave_blood_trail(pos: Vector2i) -> void:
 	if _dungeon_floor != null and GameState.player_stats.bleeding_turns > 0:
