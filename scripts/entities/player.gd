@@ -3,6 +3,7 @@ extends Entity
 
 const KNIGHT_PATH := "res://sprites/characters/"
 const SWORD_SPRITE := "res://sprites/weapons/weapon_anime_sword.png"
+const ARROW_SPRITE := "res://sprites/weapons/weapon_arrow.png"
 const UNDEAD_NAMES: Array = ["Tiny Zombie", "Goblin", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
 
 var _dungeon_floor: Node
@@ -55,6 +56,11 @@ func _ready() -> void:
 	GameState.class_chosen.connect(_on_class_chosen)
 	GameState.camera_recenter_requested.connect(_reset_camera_offset)
 	GameState.screen_shake.connect(_screen_shake)
+	GameState.equipment_changed.connect(func():
+		if _throw_item != null:
+			_throw_item = null
+			GameState.game_log("[color=gray]Throw cancelled.[/color]")
+	)
 	TurnManager.player_turn_started.connect(_on_turn_started)
 
 func _on_player_died() -> void:
@@ -412,7 +418,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
-				_interact_action()
+				_throw_item = null
+				_tool_item = null
+				_interact_action(false)
 			return
 
 		if mb.button_index != MOUSE_BUTTON_LEFT:
@@ -982,7 +990,7 @@ func _passive_trap_check() -> void:
 				GameState.game_log("[color=yellow]You notice something suspicious on the floor.[/color]")
 	_traps_in_proximity = now_in_range
 
-func _interact_action() -> void:
+func _interact_action(can_lock: bool = true) -> void:
 	if _dungeon_floor == null:
 		return
 	var dirs8: Array[Vector2i] = [
@@ -1018,7 +1026,7 @@ func _interact_action() -> void:
 			TurnManager.on_player_action_complete()
 			return
 		# F on closed unlocked door: lock if tools available, else open
-		if _find_thief_tools() != null:
+		if can_lock and _find_thief_tools() != null:
 			_attempt_lock_door(pos)
 		else:
 			TurnManager.begin_player_action()
@@ -1267,9 +1275,9 @@ func _show_projectile(target_world_pos: Vector2, weapon: Item) -> void:
 	match weapon.item_name:
 		"Throwing Daggers": proj_path = "res://sprites/weapons/weapon_knife.png"
 		"Crossbow":
-			proj_path = "res://sprites/weapons/weapon_bow_2.png"
+			proj_path = ARROW_SPRITE
 			tumble = true
-		_: proj_path = "res://sprites/weapons/weapon_bow.png"
+		_: proj_path = ARROW_SPRITE
 
 	AudioManager.play("shoot")
 	var tex: Texture2D = load(proj_path)
@@ -1345,6 +1353,19 @@ func _do_throw(pos: Vector2i) -> void:
 	var item: Item = _throw_item
 	_throw_item = null
 	if _dungeon_floor == null:
+		return
+	var _found: bool = false
+	for _s in GameState.player_quickbar:
+		if _s == item:
+			_found = true
+			break
+	if not _found:
+		for _s in GameState.player_inventory:
+			if _s == item:
+				_found = true
+				break
+	if not _found:
+		GameState.game_log("[color=gray]Throw cancelled — item no longer in inventory.[/color]")
 		return
 	TurnManager.begin_player_action()
 	AudioManager.play("throw_item")

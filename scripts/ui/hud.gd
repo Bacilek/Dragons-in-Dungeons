@@ -69,6 +69,7 @@ func _ready() -> void:
 		_item_slots.append(slot)
 		slot.pressed.connect(_on_slot_pressed.bind(i))
 		slot.gui_input.connect(_on_slot_gui_input.bind(i))
+		slot.focus_mode = Control.FOCUS_NONE
 		# Small quantity badge in bottom-right corner
 		var qty_lbl := Label.new()
 		qty_lbl.add_theme_font_size_override("font_size", 11)
