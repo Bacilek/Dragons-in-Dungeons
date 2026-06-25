@@ -5,7 +5,7 @@ extends Node
 
 const AUDIO_PATH := "res://audio/"
 
-const SFX_NAMES: Array[String] = [
+const SFX_NAMES: Array = [
 	"hit_enemy", "miss_enemy", "crit", "crit_fail",
 	"player_hurt", "player_die", "kill_enemy",
 	"shoot", "open_door", "close_door", "lock_door",
@@ -16,8 +16,8 @@ const SFX_NAMES: Array[String] = [
 	"cook_meat", "throw_item", "bottle_fill",
 ]
 
-var _sfx: Dictionary = {}      # name → AudioStreamPlayer
-var _music: AudioStreamPlayer  # looping music track
+var _sfx: Dictionary = {}
+var _music: AudioStreamPlayer
 var _current_music_path: String = ""
 
 func _ready() -> void:
@@ -25,20 +25,20 @@ func _ready() -> void:
 	_music.bus = "Master"
 	_music.volume_db = -8.0
 	add_child(_music)
-	for name: String in SFX_NAMES:
+	for sfx_name: String in SFX_NAMES:
 		var p := AudioStreamPlayer.new()
 		p.bus = "Master"
 		p.volume_db = 0.0
 		add_child(p)
-		var path: String = AUDIO_PATH + name + ".ogg"
+		var path: String = AUDIO_PATH + sfx_name + ".ogg"
 		if ResourceLoader.exists(path):
 			p.stream = load(path)
-		_sfx[name] = p
+		_sfx[sfx_name] = p
 
-func play(name: String) -> void:
-	if not _sfx.has(name):
+func play(sfx_name: String) -> void:
+	if not _sfx.has(sfx_name):
 		return
-	var p: AudioStreamPlayer = _sfx[name]
+	var p: AudioStreamPlayer = _sfx[sfx_name]
 	if p.stream == null:
 		return
 	if p.playing:
