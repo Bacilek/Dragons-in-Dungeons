@@ -309,6 +309,8 @@ func _attack_player(_player: Player) -> void:
 	var dmg: int = stats.roll_damage()
 	if is_crit:
 		dmg *= 2
+		GameState.crit_banner.emit("CRITICAL HIT!", Color(0.95, 0.15, 0.15))
+		GameState.screen_shake.emit(7.0)
 	var actual: int = GameState.player_stats.take_damage(dmg)
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 	if _dungeon_floor != null:

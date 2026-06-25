@@ -54,6 +54,7 @@ func _ready() -> void:
 	GameState.player_died.connect(_on_player_died)
 	GameState.class_chosen.connect(_on_class_chosen)
 	GameState.camera_recenter_requested.connect(_reset_camera_offset)
+	GameState.screen_shake.connect(_screen_shake)
 	TurnManager.player_turn_started.connect(_on_turn_started)
 
 func _on_player_died() -> void:
@@ -223,6 +224,17 @@ func _reset_camera_offset() -> void:
 	_is_panning = false
 	_lmb_panning = false
 	_pending_click_tile = Vector2i(-1, -1)
+
+func _screen_shake(strength: float = 5.0) -> void:
+	if _camera == null:
+		return
+	var t := create_tween()
+	for i: int in 8:
+		t.tween_callback(func():
+			_camera.offset = Vector2(randf_range(-strength, strength), randf_range(-strength, strength))
+		)
+		t.tween_interval(0.035)
+	t.tween_callback(func(): _camera.offset = Vector2.ZERO)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and _camera != null:
@@ -689,7 +701,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var die: int = maxi(die1, die2) if adv else die1
 	var roll: int = die + str_mod + weapon_bonus
 	var is_crit: bool = die == 20
-	if not is_crit and roll < enemy.stats.armor_class:
+	var is_nat_one: bool = die == 1
+	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		if is_unarmed:
 			if adv:
 				GameState.game_log("You punch at [color=orange]%s[/color] but [color=gray]miss[/color]! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, str_mod, roll, enemy.stats.armor_class])
@@ -699,6 +712,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 		else:
 			GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		if is_nat_one:
+			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
+			GameState.screen_shake.emit(2.5)
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
 		TurnManager.on_player_action_complete()
@@ -710,6 +726,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var dmg: int = stats.roll_damage()
 	if is_crit:
 		dmg *= 2
+		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
+		GameState.screen_shake.emit(5.0)
 	var actual: int = enemy.stats.take_damage(dmg)
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
@@ -1079,6 +1097,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 		die = mini(die1, die2)
 	var roll: int = die + dex_mod + weapon_bonus
 	var is_crit: bool = die == 20
+	var is_nat_one: bool = die == 1
 
 	# Consume throwing weapon before resolving hit (it was thrown regardless)
 	if weapon != null and weapon.consumes_on_ranged:
@@ -1090,13 +1109,16 @@ func _ranged_attack(enemy: Enemy) -> void:
 			GameState.equipment_changed.emit()
 			GameState.game_log("[color=gray]Last throwing dagger used.[/color]")
 
-	if not is_crit and roll < enemy.stats.armor_class:
+	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		if adv and not disadv:
 			GameState.game_log("You shoot at [color=orange]%s[/color] but [color=gray]miss[/color]! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
 		elif disadv and not adv:
 			GameState.game_log("You shoot at [color=orange]%s[/color] but [color=gray]miss[/color]! (disadv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
 		else:
 			GameState.game_log("You shoot at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		if is_nat_one:
+			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
+			GameState.screen_shake.emit(2.5)
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
 		TurnManager.on_player_action_complete()
@@ -1108,6 +1130,8 @@ func _ranged_attack(enemy: Enemy) -> void:
 	var dmg: int = stats.roll_damage()
 	if is_crit:
 		dmg *= 2
+		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
+		GameState.screen_shake.emit(5.0)
 	var actual: int = enemy.stats.take_damage(dmg)
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:

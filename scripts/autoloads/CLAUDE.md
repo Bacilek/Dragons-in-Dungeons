@@ -39,6 +39,8 @@ When you add signals, state fields, or change turn flow here, **immediately upda
 | `debug_jump_floor` | `floor_num: int` | debug jump |
 | `debug_reveal_all` | — | reveal map |
 | `debug_see_all` | `active: bool` | F3 See All toggle |
+| `crit_banner` | `text: String, color: Color` | nat 20 / nat 1 overlay banner |
+| `screen_shake` | `strength: float` | camera shake (handled by Player._screen_shake) |
 
 ### Key state fields
 ```
