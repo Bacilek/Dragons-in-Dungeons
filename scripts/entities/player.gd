@@ -542,6 +542,9 @@ func _execute_queued_path() -> void:
 
 			# Open closed door for free — movement continues in the same turn
 			if _dungeon_floor.has_door_at(next) and not _dungeon_floor.is_door_open(next):
+				if _dungeon_floor.is_door_locked(next):
+					_dungeon_floor.unlock_door(next)
+					GameState.game_log("[color=cyan]You unlock the door as you pass through.[/color]")
 				_dungeon_floor.open_door(next)
 
 			if not _dungeon_floor.is_walkable(next):
@@ -638,6 +641,9 @@ func _try_move(dir: Vector2i) -> void:
 
 		# Open closed door for free — movement continues in the same turn
 		if _dungeon_floor.has_door_at(target) and not _dungeon_floor.is_door_open(target):
+			if _dungeon_floor.is_door_locked(target):
+				_dungeon_floor.unlock_door(target)
+				GameState.game_log("[color=cyan]You unlock the door as you pass through.[/color]")
 			_dungeon_floor.open_door(target)
 
 		if not _dungeon_floor.is_walkable(target):
@@ -979,18 +985,36 @@ func _interact_action() -> void:
 		if not trap.is_empty() and trap.get("revealed", false):
 			_attempt_disarm(pos)
 			return
-	# Priority 2: door — toggle open/close
+	# Priority 2: door
 	for d: Vector2i in dirs8:
 		var pos: Vector2i = grid_pos + d
-		if _dungeon_floor.has_door_at(pos):
+		if not _dungeon_floor.has_door_at(pos):
+			continue
+		if _dungeon_floor.is_door_locked(pos):
+			# F on locked door → unlock and open
 			TurnManager.begin_player_action()
-			if _dungeon_floor.is_door_open(pos):
-				_dungeon_floor.close_door(pos)
-			else:
-				_dungeon_floor.open_door(pos)
+			_dungeon_floor.unlock_door(pos)
+			_dungeon_floor.open_door(pos)
+			GameState.game_log("[color=cyan]You unlock the door.[/color]")
 			_dungeon_floor.update_fog(grid_pos)
 			TurnManager.on_player_action_complete()
 			return
+		if _dungeon_floor.is_door_open(pos):
+			# F on open door → close it
+			TurnManager.begin_player_action()
+			_dungeon_floor.close_door(pos)
+			_dungeon_floor.update_fog(grid_pos)
+			TurnManager.on_player_action_complete()
+			return
+		# F on closed unlocked door: lock if tools available, else open
+		if _find_thief_tools() != null:
+			_attempt_lock_door(pos)
+		else:
+			TurnManager.begin_player_action()
+			_dungeon_floor.open_door(pos)
+			_dungeon_floor.update_fog(grid_pos)
+			TurnManager.on_player_action_complete()
+		return
 	GameState.game_log("[color=gray]Nothing to interact with nearby.[/color]")
 
 func _find_thief_tools() -> Item:
@@ -1025,6 +1049,25 @@ func _attempt_disarm(trap_pos: Vector2i) -> void:
 		GameState.game_log("[color=red]Failed to disarm [b]%s[/b] (d20 %d+%d=%d vs DC %d) — Thief Tools lost![/color]" % [trap_name, roll, dex_mod, total, DC])
 		GameState.consume_one(tools)
 
+	_dungeon_floor.update_fog(grid_pos)
+	TurnManager.on_player_action_complete()
+
+func _attempt_lock_door(door_pos: Vector2i) -> void:
+	var tools: Item = _find_thief_tools()
+	if tools == null:
+		GameState.game_log("[color=gray]You need Thief Tools to lock a door.[/color]")
+		return
+	TurnManager.begin_player_action()
+	var dex_mod: int = stats.dex_modifier()
+	var roll: int = randi_range(1, 20)
+	var total: int = roll + dex_mod
+	const LOCK_DC: int = 10
+	if total >= LOCK_DC:
+		_dungeon_floor.lock_door(door_pos)
+		GameState.game_log("[color=green]You lock the door! (d20 %d+%d=%d vs DC %d)[/color]" % [roll, dex_mod, total, LOCK_DC])
+	else:
+		GameState.game_log("[color=red]Failed to lock the door (d20 %d+%d=%d vs DC %d) — Thief Tools lost![/color]" % [roll, dex_mod, total, LOCK_DC])
+		GameState.consume_one(tools)
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
 

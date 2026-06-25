@@ -46,16 +46,22 @@ Piston: `search_around` only detects from the `-push_dir` side.
 ---
 
 ## Doors (`_doors: Dictionary[Vector2i, Dictionary]`)
-Value keys: `is_open: bool, sprite: Sprite2D`
+Value keys: `is_open: bool, locked: bool, sprite: Sprite2D, tex_open, tex_closed`
 
-Auto-opens when an entity steps on the tile; auto-closes when entity leaves. Enemies open and walk through in the same turn.
+Auto-opens when an entity steps on the tile; auto-closes when entity leaves. Enemies open and walk through in the same turn. **Locked doors**: enemies cannot open (blocked); player auto-unlocks by walking through. Purple sprite tint = locked.
 
 ```gdscript
 dungeon_floor.has_door_at(pos) -> bool
-dungeon_floor.is_door_open(pos) -> bool
-dungeon_floor.open_door(pos)
+dungeon_floor.is_door_open(pos) -> bool    # returns false if locked
+dungeon_floor.is_door_locked(pos) -> bool
+dungeon_floor.open_door(pos)               # no-op when locked
 dungeon_floor.close_door(pos)
+dungeon_floor.lock_door(pos)               # purple tint; enemy blocked
+dungeon_floor.unlock_door(pos)             # restores white tint
 ```
+
+**Locking**: F key on adjacent CLOSED UNLOCKED door with Thief Tools → DC 10 DEX Sleight of Hand. Fail consumes Thief Tools.
+**Unlocking**: Player walks into locked door → auto-unlock (free). Or F on locked door → unlock+open (spends action).
 
 ---
 

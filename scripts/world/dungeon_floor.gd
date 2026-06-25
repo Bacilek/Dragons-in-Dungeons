@@ -1112,7 +1112,7 @@ func _spawn_doors() -> void:
 			var ts: Vector2 = tex_closed.get_size()
 			sprite.scale = Vector2(float(TILE_SIZE) / ts.x, float(TILE_SIZE) / ts.y)
 		entities.add_child(sprite)
-		_doors[pos] = {"is_open": false, "sprite": sprite, "tex_open": tex_open, "tex_closed": tex_closed}
+		_doors[pos] = {"is_open": false, "locked": false, "sprite": sprite, "tex_open": tex_open, "tex_closed": tex_closed}
 
 func has_door_at(pos: Vector2i) -> bool:
 	return _doors.has(pos)
@@ -1120,10 +1120,31 @@ func has_door_at(pos: Vector2i) -> bool:
 func is_door_open(pos: Vector2i) -> bool:
 	if not _doors.has(pos):
 		return true
+	if _doors[pos]["locked"]:
+		return false
 	return _doors[pos]["is_open"]
 
+func is_door_locked(pos: Vector2i) -> bool:
+	return _doors.has(pos) and _doors[pos]["locked"]
+
+func lock_door(pos: Vector2i) -> void:
+	if not _doors.has(pos) or _doors[pos]["is_open"] or _doors[pos]["locked"]:
+		return
+	_doors[pos]["locked"] = true
+	var sp: Sprite2D = _doors[pos]["sprite"]
+	if is_instance_valid(sp):
+		sp.modulate = Color(0.55, 0.35, 0.85)  # purple tint = locked
+
+func unlock_door(pos: Vector2i) -> void:
+	if not _doors.has(pos):
+		return
+	_doors[pos]["locked"] = false
+	var sp: Sprite2D = _doors[pos]["sprite"]
+	if is_instance_valid(sp):
+		sp.modulate = Color(1.0, 1.0, 1.0)
+
 func open_door(pos: Vector2i) -> void:
-	if not _doors.has(pos) or _doors[pos]["is_open"]:
+	if not _doors.has(pos) or _doors[pos]["is_open"] or _doors[pos]["locked"]:
 		return
 	_doors[pos]["is_open"] = true
 	var sp: Sprite2D = _doors[pos]["sprite"]
