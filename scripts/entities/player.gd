@@ -1247,26 +1247,43 @@ func _show_projectile(target_world_pos: Vector2, weapon: Item) -> void:
 	if weapon == null:
 		return
 	var proj_path: String
+	var tumble: bool = false
 	match weapon.item_name:
 		"Throwing Daggers": proj_path = "res://sprites/weapons/weapon_knife.png"
-		"Crossbow":         proj_path = "res://sprites/weapons/weapon_bow_2.png"
-		_:                  proj_path = "res://sprites/weapons/weapon_bow.png"
+		"Crossbow":
+			proj_path = "res://sprites/weapons/weapon_bow_2.png"
+			tumble = true
+		_: proj_path = "res://sprites/weapons/weapon_bow.png"
 
+	var tex: Texture2D = load(proj_path)
 	var from: Vector2 = _tile_center(grid_pos)
-	var proj := Sprite2D.new()
-	proj.texture = load(proj_path)
-	proj.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	proj.scale = Vector2(0.5, 0.5)
-	proj.position = from
-	proj.rotation = (target_world_pos - from).angle()
-	proj.z_index = 5
-	get_parent().add_child(proj)
+	var angle: float = (target_world_pos - from).angle()
+	var direction: Vector2 = (target_world_pos - from).normalized()
+	var dur: float = 0.18
 
-	var dur: float = 0.10
-	var tween := proj.create_tween()
-	tween.tween_property(proj, "position", target_world_pos, dur)
-	tween.parallel().tween_property(proj, "modulate:a", 0.0, dur * 0.3).set_delay(dur * 0.7)
-	tween.tween_callback(proj.queue_free)
+	# Ghost trail sprites (i=1,2 trail behind main i=0)
+	const ALPHAS: Array = [1.0, 0.5, 0.22]
+	const DELAYS: Array = [0.0, 0.028, 0.055]
+	for i: int in 3:
+		var sp := Sprite2D.new()
+		sp.texture = tex
+		sp.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		sp.scale = Vector2(0.5, 0.5)
+		sp.position = from - direction * (i * 5.0)
+		sp.rotation = angle
+		sp.z_index = 5 - i
+		sp.modulate.a = ALPHAS[i]
+		get_parent().add_child(sp)
+		var t := sp.create_tween()
+		var d: float = dur - DELAYS[i]
+		if DELAYS[i] > 0.0:
+			t.tween_interval(DELAYS[i])
+		t.tween_property(sp, "position", target_world_pos, d)
+		if tumble:
+			t.parallel().tween_property(sp, "rotation", angle + TAU, d)
+		if i == 0:
+			t.parallel().tween_property(sp, "modulate:a", 0.0, d * 0.3).set_delay(d * 0.7)
+		t.tween_callback(sp.queue_free)
 
 func _ranged_attack_tile(target_pos: Vector2i) -> void:
 	TurnManager.begin_player_action()
