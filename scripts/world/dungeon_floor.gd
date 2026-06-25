@@ -202,6 +202,12 @@ func _load_floor() -> void:
 
 	_data = DungeonGenerator.generate(GameState.run_seed, GameState.current_floor)
 
+	# Music: boss floors get boss theme, others get dungeon ambient
+	if GameState.current_floor % 5 == 0:
+		AudioManager.play_music("res://audio/music_boss.ogg")
+	else:
+		AudioManager.play_music("res://audio/music_dungeon.ogg")
+
 	tilemap.clear()
 	_grass_layer.clear()
 	for y: int in _data.height:
@@ -546,6 +552,7 @@ func remove_enemy(enemy: Enemy) -> void:
 	_enemies.erase(enemy)
 	TurnManager.unregister_enemy(enemy)
 	close_door(enemy.grid_pos)
+	AudioManager.play("kill_enemy")
 
 func show_damage(world_pos: Vector2, amount: int, is_player_hit: bool) -> void:
 	var lbl := Label.new()
@@ -806,6 +813,7 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 			return
 
 	if is_push:
+		AudioManager.play("trap_piston")
 		await _push_entity(target, trap["push_dir"], 2, sprite_node)
 		# Stay fully visible if already revealed, otherwise return to semi-hidden
 		if is_instance_valid(sprite_node):
@@ -820,16 +828,19 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 		_apply_trap_damage(target, dmg, trap["msg"])
 		# Fire Trap applies burning
 		if trap["name"] == "Fire Trap" and target is Player:
+			AudioManager.play("trap_fire")
 			GameState.player_stats.burning_turns = 4
 			GameState.player_status_changed.emit()
 			GameState.game_log("[color=orange]You are burning! (4 turns)[/color]")
 		# Pit Spikes apply bleeding (5 turns, 1 dmg/turn)
 		if trap["name"] == "Pit Spikes" and target is Player:
+			AudioManager.play("trap_spike")
 			GameState.player_stats.bleeding_turns = 5
 			GameState.player_status_changed.emit()
 			GameState.game_log("[color=red]You are bleeding! (5 turns)[/color]")
 		# Bear Trap slows movement for 20 turns (each step costs 2 turns)
 		if trap["name"] == "Bear Trap" and target is Player:
+			AudioManager.play("trap_bear")
 			GameState.player_stats.slowed_turns = 20
 			GameState.player_status_changed.emit()
 			GameState.game_log("[color=yellow]Your leg is caught! Slowed for 20 turns.[/color]")
@@ -902,6 +913,7 @@ func place_blood_decal(pos: Vector2i) -> void:
 	_blood_decals.append(sprite)
 
 func cook_rotten_meat(trap_pos: Vector2i) -> Item:
+	AudioManager.play("cook_meat")
 	if _traps.has(trap_pos):
 		var trap: Dictionary = _traps[trap_pos]
 		var sprite_node: Sprite2D = trap.get("sprite_node") as Sprite2D
@@ -1134,6 +1146,7 @@ func lock_door(pos: Vector2i) -> void:
 	var sp: Sprite2D = _doors[pos]["sprite"]
 	if is_instance_valid(sp):
 		sp.modulate = Color(0.55, 0.35, 0.85)  # purple tint = locked
+	AudioManager.play("lock_door")
 
 func unlock_door(pos: Vector2i) -> void:
 	if not _doors.has(pos):
@@ -1150,6 +1163,7 @@ func open_door(pos: Vector2i) -> void:
 	var sp: Sprite2D = _doors[pos]["sprite"]
 	if is_instance_valid(sp):
 		sp.texture = _doors[pos]["tex_open"]
+	AudioManager.play("open_door")
 	if _player != null:
 		update_fog(_player.grid_pos)
 
@@ -1167,6 +1181,7 @@ func close_door(pos: Vector2i) -> void:
 	var sp: Sprite2D = _doors[pos]["sprite"]
 	if is_instance_valid(sp):
 		sp.texture = _doors[pos]["tex_closed"]
+	AudioManager.play("close_door")
 	if _player != null:
 		update_fog(_player.grid_pos)
 

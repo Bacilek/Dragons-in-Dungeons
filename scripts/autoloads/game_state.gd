@@ -146,6 +146,7 @@ func hit_die_sides() -> int:
 func check_player_death() -> void:
 	if player_stats.is_dead() and not is_game_over and not invincible:
 		is_game_over = true
+		AudioManager.play("player_die")
 		player_died.emit()
 
 func heal(amount: int) -> void:
@@ -285,6 +286,7 @@ func add_item(item: Item) -> bool:
 func use_item(item: Item) -> void:
 	match item.item_type:
 		Item.Type.POTION:
+			AudioManager.play("drink_potion")
 			if item.heal_amount > 0:
 				var before: int = player_stats.current_hp
 				heal(item.heal_amount)
@@ -300,6 +302,7 @@ func use_item(item: Item) -> void:
 				combat_message.emit("[color=yellow]You drink [b]%s[/b]. Your attacks surge! (+%d ATK)[/color]" % [item.item_name, item.str_bonus])
 			consume_one(item)
 		Item.Type.FOOD:
+			AudioManager.play("eat_food")
 			if item.item_name == "Rotten Meat":
 				restore_hunger(item.heal_amount)
 				player_stats.poison_turns = maxi(player_stats.poison_turns, 3)
@@ -361,8 +364,15 @@ func game_log(msg: String) -> void:
 func deplete_hunger() -> void:
 	if is_game_over:
 		return
+	var prev_state: HungerState = hunger_state
 	hunger = maxi(0, hunger - 1)
 	hunger_changed.emit(hunger)
+	var new_state: HungerState = hunger_state
+	if new_state != prev_state:
+		if new_state == HungerState.HUNGRY:
+			AudioManager.play("hungry")
+		elif new_state == HungerState.STARVING:
+			AudioManager.play("starving")
 	if hunger == 0:
 		_starvation_tick += 1
 		if _starvation_tick >= STARVE_INTERVAL:

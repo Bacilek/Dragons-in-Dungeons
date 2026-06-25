@@ -42,6 +42,23 @@ When you add signals, state fields, or change turn flow here, **immediately upda
 | `crit_banner` | `text: String, color: Color` | nat 20 / nat 1 overlay banner |
 | `screen_shake` | `strength: float` | camera shake (handled by Player._screen_shake) |
 
+---
+
+## AudioManager (`audio_manager.gd`)
+Autoload singleton. Drop `.ogg` files into `res://audio/` with these names; missing files are silently ignored.
+
+```gdscript
+AudioManager.play("hit_enemy")          # one-shot SFX
+AudioManager.play_music("res://audio/music_dungeon.ogg")  # looping track
+AudioManager.stop_music()
+```
+
+**SFX names:** `hit_enemy, miss_enemy, crit, crit_fail, player_hurt, player_die, kill_enemy, shoot, open_door, close_door, lock_door, step_grass, step_mud, step_water, step_floor, trap_fire, trap_spike, trap_piston, trap_bear, eat_food, drink_potion, lockpick, hungry, starving, cook_meat, throw_item, bottle_fill`
+
+**Music:** `music_dungeon.ogg` (normal floors), `music_boss.ogg` (boss floors: floor % 5 == 0). Enable **Loop** in Godot import settings for music files.
+
+**Recommended free asset sources:** [kenney.nl](https://kenney.nl/assets) RPG pack, [freesound.org](https://freesound.org) (CC0 filter).
+
 ### Key state fields
 ```
 short_rest_open: bool        # blocks ALL player input while true

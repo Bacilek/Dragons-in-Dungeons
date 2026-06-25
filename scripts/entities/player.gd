@@ -668,6 +668,15 @@ func _try_move(dir: Vector2i) -> void:
 		_passive_trap_check()
 		_check_pickup()
 		_try_fill_bottle(grid_pos)
+		match _dungeon_floor.get_tile_type(grid_pos):
+			DungeonData.TileType.GRASS, DungeonData.TileType.TRAMPLED_GRASS:
+				AudioManager.play("step_grass")
+			DungeonData.TileType.MUD:
+				AudioManager.play("step_mud")
+			DungeonData.TileType.WATER:
+				AudioManager.play("step_water")
+			_:
+				AudioManager.play("step_floor")
 		var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 		if not trap.is_empty():
 			await _dungeon_floor.trigger_trap(grid_pos, self)  # push trap still awaits; others return instantly
@@ -720,6 +729,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
 		else:
 			GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
 			GameState.screen_shake.emit(2.5)
@@ -728,6 +738,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		TurnManager.on_player_action_complete()
 		return
 
+	AudioManager.play("crit" if is_crit else "hit_enemy")
 	_flash_hit(enemy)
 	if adv:
 		_show_surprise_mark(enemy)
@@ -1035,6 +1046,7 @@ func _attempt_disarm(trap_pos: Vector2i) -> void:
 		return
 
 	TurnManager.begin_player_action()
+	AudioManager.play("lockpick")
 	var roll: int = randi_range(1, 20)
 	var dex_mod: int = GameState.player_stats.dex_modifier()
 	var total: int = roll + dex_mod
@@ -1058,6 +1070,7 @@ func _attempt_lock_door(door_pos: Vector2i) -> void:
 		GameState.game_log("[color=gray]You need Thief Tools to lock a door.[/color]")
 		return
 	TurnManager.begin_player_action()
+	AudioManager.play("lockpick")
 	var dex_mod: int = stats.dex_modifier()
 	var roll: int = randi_range(1, 20)
 	var total: int = roll + dex_mod
@@ -1111,6 +1124,7 @@ func _try_fill_bottle(pos: Vector2i) -> void:
 		bottle.icon_path = "res://sprites/items/Materials/BottleSmall.png"
 		bottle.description = "A bottle of foul mud. Maybe useful for something."
 		GameState.game_log("[color=gray]You fill the bottle with mud.[/color]")
+	AudioManager.play("bottle_fill")
 	GameState.inventory_changed.emit()
 
 func _find_item_by_name(item_name: String) -> Item:
@@ -1204,6 +1218,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 			GameState.game_log("You shoot at [color=orange]%s[/color] but [color=gray]miss[/color]! (disadv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
 		else:
 			GameState.game_log("You shoot at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
 			GameState.screen_shake.emit(2.5)
@@ -1212,6 +1227,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 		TurnManager.on_player_action_complete()
 		return
 
+	AudioManager.play("crit" if is_crit else "hit_enemy")
 	_flash_hit(enemy)
 	if adv and not disadv:
 		_show_surprise_mark(enemy)
@@ -1255,6 +1271,7 @@ func _show_projectile(target_world_pos: Vector2, weapon: Item) -> void:
 			tumble = true
 		_: proj_path = "res://sprites/weapons/weapon_bow.png"
 
+	AudioManager.play("shoot")
 	var tex: Texture2D = load(proj_path)
 	var from: Vector2 = _tile_center(grid_pos)
 	var angle: float = (target_world_pos - from).angle()
@@ -1330,6 +1347,7 @@ func _do_throw(pos: Vector2i) -> void:
 	if _dungeon_floor == null:
 		return
 	TurnManager.begin_player_action()
+	AudioManager.play("throw_item")
 	if _dungeon_floor.has_door_at(pos) and not _dungeon_floor.is_door_open(pos):
 		_dungeon_floor.open_door(pos)
 	var trap: Dictionary = _dungeon_floor.get_trap_at(pos)
