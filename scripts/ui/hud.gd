@@ -216,7 +216,7 @@ func _show_crit_banner(text: String, color: Color) -> void:
 	lbl.anchor_top = 0.35
 	lbl.anchor_bottom = 0.65
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var _vp := get_viewport_rect().size
+	var _vp := get_viewport().get_visible_rect().size
 	lbl.pivot_offset = Vector2(_vp.x * 0.5, _vp.y * 0.15)
 	add_child(lbl)
 	var t := create_tween()
