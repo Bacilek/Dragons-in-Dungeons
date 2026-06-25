@@ -61,6 +61,10 @@ func _ready() -> void:
 			_throw_item = null
 			GameState.game_log("[color=gray]Throw cancelled.[/color]")
 	)
+	GameState.potion_drunk.connect(func():
+		if _dungeon_floor != null:
+			_dungeon_floor.place_item_on_floor(grid_pos, _make_empty_bottle())
+	)
 	TurnManager.player_turn_started.connect(_on_turn_started)
 
 func _on_player_died() -> void:
@@ -419,8 +423,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
 				_throw_item = null
+				var had_tool: bool = _tool_item != null
 				_tool_item = null
-				_interact_action(false)
+				_interact_action(had_tool)
 			return
 
 		if mb.button_index != MOUSE_BUTTON_LEFT:
@@ -1083,12 +1088,15 @@ func _attempt_lock_door(door_pos: Vector2i) -> void:
 	var roll: int = randi_range(1, 20)
 	var total: int = roll + dex_mod
 	const LOCK_DC: int = 10
+	var door_world: Vector2 = Vector2(door_pos * TILE_SIZE) + Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
 	if total >= LOCK_DC:
 		_dungeon_floor.lock_door(door_pos)
 		GameState.game_log("[color=green]You lock the door! (d20 %d+%d=%d vs DC %d)[/color]" % [roll, dex_mod, total, LOCK_DC])
+		_show_float_text(door_world, "LOCKED!", Color(0.7, 0.4, 1.0))
 	else:
 		GameState.game_log("[color=red]Failed to lock the door (d20 %d+%d=%d vs DC %d) — Thief Tools lost![/color]" % [roll, dex_mod, total, LOCK_DC])
 		GameState.consume_one(tools)
+		_show_float_text(door_world, "FAIL!", Color(1.0, 0.3, 0.3))
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
 
@@ -1098,10 +1106,7 @@ func _use_quickbar_slot(idx: int) -> void:
 	var raw = GameState.player_quickbar[idx]
 	if raw == null:
 		return
-	var was_potion: bool = (raw as Item).item_type == Item.Type.POTION
 	GameState.use_item(raw as Item)
-	if was_potion and _dungeon_floor != null:
-		_dungeon_floor.place_item_on_floor(grid_pos, _make_empty_bottle())
 
 func _make_empty_bottle() -> Item:
 	var b := Item.new()
@@ -1153,6 +1158,19 @@ func _has_advantage(enemy: Enemy) -> bool:
 		enemy.just_crossed_door = false
 		return true
 	return enemy.behavior == Enemy.Behavior.SLEEPING
+
+func _show_float_text(world_pos: Vector2, text: String, color: Color) -> void:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_color_override("font_color", color)
+	lbl.position = world_pos + Vector2(-16.0, -20.0)
+	lbl.z_index = 10
+	get_parent().add_child(lbl)
+	var tw := lbl.create_tween()
+	tw.tween_property(lbl, "position:y", lbl.position.y - 14.0, 0.9)
+	tw.parallel().tween_property(lbl, "modulate:a", 0.0, 0.9).set_delay(0.35)
+	tw.tween_callback(lbl.queue_free)
 
 func _show_surprise_mark(enemy: Enemy) -> void:
 	if not is_instance_valid(enemy):

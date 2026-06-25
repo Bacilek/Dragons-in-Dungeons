@@ -26,6 +26,7 @@ signal debug_reveal_all
 signal debug_see_all(active: bool)
 signal crit_banner(text: String, color: Color)
 signal screen_shake(strength: float)
+signal potion_drunk
 
 const QUICKBAR_SIZE: int = 9
 const INVENTORY_SIZE: int = 24
@@ -301,6 +302,7 @@ func use_item(item: Item) -> void:
 				recalculate_stats()
 				combat_message.emit("[color=yellow]You drink [b]%s[/b]. Your attacks surge! (+%d ATK)[/color]" % [item.item_name, item.str_bonus])
 			consume_one(item)
+			potion_drunk.emit()
 		Item.Type.FOOD:
 			AudioManager.play("eat_food")
 			if item.item_name == "Rotten Meat":
