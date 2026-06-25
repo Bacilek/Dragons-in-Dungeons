@@ -423,9 +423,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
 				_throw_item = null
-				var had_tool: bool = _tool_item != null
-				_tool_item = null
-				_interact_action(had_tool)
+				if _tool_item != null and _tool_item.item_name == "Empty Bottle":
+					var bottle: Item = _tool_item
+					_tool_item = null
+					_try_fill_bottle(bottle, clicked)
+				else:
+					var had_tool: bool = _tool_item != null
+					_tool_item = null
+					_interact_action(had_tool)
 			return
 
 		if mb.button_index != MOUSE_BUTTON_LEFT:
@@ -585,7 +590,6 @@ func _execute_queued_path() -> void:
 				_dungeon_floor.destroy_grass(grid_pos)
 				_dungeon_floor.update_fog(grid_pos)
 			_check_pickup()
-			_try_fill_bottle(grid_pos)
 			var trap_p: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 			if not trap_p.is_empty():
 				await _dungeon_floor.trigger_trap(grid_pos, self)
@@ -680,7 +684,6 @@ func _try_move(dir: Vector2i) -> void:
 		_dungeon_floor.update_fog(grid_pos)
 		_passive_trap_check()
 		_check_pickup()
-		_try_fill_bottle(grid_pos)
 		match _dungeon_floor.get_tile_type(grid_pos):
 			DungeonData.TileType.GRASS, DungeonData.TileType.TRAMPLED_GRASS:
 				AudioManager.play("step_grass")
@@ -1116,27 +1119,32 @@ func _make_empty_bottle() -> Item:
 	b.description = "An empty glass bottle. Fill it from water or mud."
 	return b
 
-func _try_fill_bottle(pos: Vector2i) -> void:
+func _try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 	if _dungeon_floor == null:
 		return
-	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(pos)
-	if tile_t != DungeonData.TileType.WATER and tile_t != DungeonData.TileType.MUD:
+	var dist: int = maxi(absi(target.x - grid_pos.x), absi(target.y - grid_pos.y))
+	if dist > 1:
+		GameState.game_log("[color=gray]Too far — stand next to water or mud.[/color]")
 		return
-	var bottle: Item = _find_item_by_name("Empty Bottle")
-	if bottle == null:
-		return
+	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(target)
+	TurnManager.begin_player_action()
 	if tile_t == DungeonData.TileType.WATER:
 		bottle.item_name = "Bottle of Water"
 		bottle.icon_path = "res://sprites/items/Materials/BottleMedium.png"
 		bottle.description = "A bottle of dungeon water."
+		AudioManager.play("bottle_fill")
 		GameState.game_log("[color=cyan]You fill the bottle with water.[/color]")
 	elif tile_t == DungeonData.TileType.MUD:
 		bottle.item_name = "Bottle of Mud"
 		bottle.icon_path = "res://sprites/items/Materials/BottleSmall.png"
 		bottle.description = "A bottle of foul mud. Maybe useful for something."
+		AudioManager.play("bottle_fill")
 		GameState.game_log("[color=gray]You fill the bottle with mud.[/color]")
-	AudioManager.play("bottle_fill")
+	else:
+		GameState.game_log("[color=gray]Nothing to fill the bottle with here.[/color]")
 	GameState.inventory_changed.emit()
+	_dungeon_floor.update_fog(grid_pos)
+	TurnManager.on_player_action_complete()
 
 func _find_item_by_name(item_name: String) -> Item:
 	for slot: Item in GameState.player_quickbar:
@@ -1363,7 +1371,10 @@ func _on_tool_primed(item: Item) -> void:
 		return
 	_throw_item = null
 	_tool_item = item
-	GameState.game_log("[color=yellow]Thief Tools — click an adjacent revealed trap to disarm. [Esc] to cancel.[/color]")
+	if item.item_name == "Empty Bottle":
+		GameState.game_log("[color=cyan]Empty Bottle — right-click on adjacent water or mud to fill. [Esc] to cancel.[/color]")
+	else:
+		GameState.game_log("[color=yellow]Thief Tools — click an adjacent revealed trap to disarm. [Esc] to cancel.[/color]")
 
 func _do_throw(pos: Vector2i) -> void:
 	var item: Item = _throw_item
