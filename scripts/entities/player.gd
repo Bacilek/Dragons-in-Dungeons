@@ -62,8 +62,8 @@ func _ready() -> void:
 			GameState.game_log("[color=gray]Throw cancelled.[/color]")
 	)
 	GameState.potion_drunk.connect(func():
-		if _dungeon_floor != null:
-			_dungeon_floor.place_item_on_floor(grid_pos, _make_empty_bottle())
+		if GameState.add_item(_make_empty_bottle()):
+			GameState.game_log("[color=gray]Empty bottle added to your bag.[/color]")
 	)
 	TurnManager.player_turn_started.connect(_on_turn_started)
 
@@ -1128,9 +1128,7 @@ func _try_fill_bottle(pos: Vector2i) -> void:
 	if tile_t == DungeonData.TileType.WATER:
 		bottle.item_name = "Bottle of Water"
 		bottle.icon_path = "res://sprites/items/Materials/BottleMedium.png"
-		bottle.item_type = Item.Type.FOOD
-		bottle.heal_amount = 60
-		bottle.description = "A bottle of dungeon water. Restores some hunger."
+		bottle.description = "A bottle of dungeon water."
 		GameState.game_log("[color=cyan]You fill the bottle with water.[/color]")
 	elif tile_t == DungeonData.TileType.MUD:
 		bottle.item_name = "Bottle of Mud"
