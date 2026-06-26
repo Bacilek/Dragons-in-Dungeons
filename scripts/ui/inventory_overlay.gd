@@ -12,6 +12,11 @@ var _qb_slots:  Array[Control]    = []
 var _eq_slots:  Dictionary        = {}   # slot_name → Control
 var _inv_tooltip: Panel           = null
 var _inv_tooltip_rtl: RichTextLabel = null
+var _inv_glossary_popup: Panel = null
+var _inv_glossary_rtl: RichTextLabel = null
+const KEYWORD_GLOSSARY: Dictionary = {
+	"heavy": "Heavy weapon.\nRequires STR 13+.\nAttacking with STR < 13\nimposes Disadvantage."
+}
 
 # Drag state (manual drag — no Godot built-in drag API)
 var _dragging:       bool    = false
@@ -70,6 +75,13 @@ func _process(_delta: float) -> void:
 		if ty < 4.0:
 			ty = mp.y + 18.0
 		_inv_tooltip.position = Vector2(tx, ty)
+		if _inv_glossary_popup != null and _inv_glossary_popup.visible:
+			var gw: float = _inv_glossary_popup.size.x
+			var gh: float = _inv_glossary_rtl.get_content_height() + 14.0
+			_inv_glossary_rtl.size = Vector2(gw - 16.0, gh - 14.0)
+			_inv_glossary_popup.size = Vector2(gw, gh)
+			var gx: float = clampf(tx + tw + 4.0, 4.0, vp.x - gw - 4.0)
+			_inv_glossary_popup.position = Vector2(gx, ty)
 
 # ── UI construction ───────────────────────────────────────────────────────────
 
@@ -126,8 +138,29 @@ func _build_ui() -> void:
 	_inv_tooltip_rtl.offset_left = 8.0; _inv_tooltip_rtl.offset_top = 6.0
 	_inv_tooltip_rtl.offset_right = -8.0; _inv_tooltip_rtl.offset_bottom = -6.0
 	_inv_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_inv_tooltip_rtl.meta_hover_started.connect(_on_inv_meta_hover_started)
+	_inv_tooltip_rtl.meta_hover_ended.connect(_on_inv_meta_hover_ended)
 	_inv_tooltip.add_child(_inv_tooltip_rtl)
 	add_child(_inv_tooltip)
+	# Keyword glossary popup
+	_inv_glossary_popup = Panel.new()
+	_inv_glossary_popup.visible = false
+	_inv_glossary_popup.z_index = 22
+	_inv_glossary_popup.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var igsb := StyleBoxFlat.new()
+	igsb.bg_color = Color(0.08, 0.07, 0.04, 0.97)
+	igsb.set_border_width_all(1)
+	igsb.border_color = Color(0.75, 0.65, 0.20)
+	igsb.set_corner_radius_all(3)
+	_inv_glossary_popup.add_theme_stylebox_override("panel", igsb)
+	_inv_glossary_rtl = RichTextLabel.new()
+	_inv_glossary_rtl.bbcode_enabled = true
+	_inv_glossary_rtl.fit_content = true
+	_inv_glossary_rtl.offset_left = 8.0; _inv_glossary_rtl.offset_top = 6.0
+	_inv_glossary_rtl.offset_right = -8.0; _inv_glossary_rtl.offset_bottom = -6.0
+	_inv_glossary_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_inv_glossary_popup.add_child(_inv_glossary_rtl)
+	add_child(_inv_glossary_popup)
 
 	_add_label(_panel, "I / Esc  •  Right-click: use/equip  •  Drag to move",
 		Vector2(10, PANEL_H - 24), 11, Color(0.4, 0.4, 0.4))
@@ -337,6 +370,14 @@ func _on_slot_hover(slot: Control) -> void:
 		var type_str: String = " %s" % item.damage_type if not item.damage_type.is_empty() else ""
 		if not die_str.is_empty() or not bonus_str.is_empty():
 			text += "\n%s%s%s%s" % [die_str, sep, bonus_str, type_str]
+		if item.is_ranged:
+			text += "\nrange: %d tiles" % item.range
+		else:
+			text += "\nrange: 1 tile"
+		if item.is_two_handed:
+			text += "\nTwo-handed"
+		if item.is_heavy:
+			text += "\n[url=keyword:heavy]Heavy[/url]"
 	elif item.item_type == Item.Type.POTION or item.item_type == Item.Type.FOOD:
 		if item.heal_dice_count > 0:
 			text += "\n%dd%d+CON HP" % [item.heal_dice_count, item.heal_dice_sides]
@@ -352,6 +393,22 @@ func _on_slot_hover(slot: Control) -> void:
 func _on_slot_hover_end() -> void:
 	if _inv_tooltip != null:
 		_inv_tooltip.visible = false
+	if _inv_glossary_popup != null:
+		_inv_glossary_popup.visible = false
+
+func _on_inv_meta_hover_started(meta: Variant) -> void:
+	var m: String = str(meta)
+	if m.begins_with("keyword:") and _inv_glossary_popup != null:
+		var kw: String = m.substr(8)
+		if KEYWORD_GLOSSARY.has(kw):
+			_inv_glossary_rtl.text = KEYWORD_GLOSSARY[kw]
+			_inv_glossary_rtl.size = Vector2(160.0, 0)
+			_inv_glossary_popup.size = Vector2(168.0, 60)
+			_inv_glossary_popup.visible = true
+
+func _on_inv_meta_hover_ended(_meta: Variant) -> void:
+	if _inv_glossary_popup != null:
+		_inv_glossary_popup.visible = false
 
 func _slot_item(slot: Control) -> Item:
 	match slot.get_meta("source", ""):

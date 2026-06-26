@@ -1,7 +1,7 @@
 extends CanvasLayer
 
 const PANEL_W:   int = 280
-const PANEL_H:   int = 364
+const PANEL_H:   int = 220
 const FLOOR_SW:  int = 234
 const FLOOR_SH:  int = 96
 const ITEMS_SW:  int = 390
@@ -31,15 +31,13 @@ const ALL_ITEMS: Array = [
 	{"name": "Empty Bottle",    "type": 7, "src": "items",   "icon": "Materials/BottleSmall.png",                "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Fill from water or mud"},
 	{"name": "Bottle of Water", "type": 4, "src": "items",   "icon": "Materials/BottleMedium.png",               "bonus_dmg": 0, "heal": 60,  "str_bonus": 0, "desc": "Restores 60 hunger"},
 	{"name": "Bottle of Mud",   "type": 7, "src": "items",   "icon": "Materials/BottleSmall.png",               "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Foul mud. Maybe useful."},
-	{"name": "Greataxe",        "type": 0, "src": "weapons", "icon": "weapon_double_axe.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "1d12 Slashing. Two-handed.", "two_handed": true, "die_min": 1, "die_max": 12, "dmg_type": "Slashing"},
+	{"name": "Greataxe",        "type": 0, "src": "weapons", "icon": "weapon_double_axe.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "die_min": 1, "die_max": 12, "dmg_type": "Slashing"},
 ]
 
 var _main_panel:    Panel
 var _floor_sub:     Panel
 var _items_sub:     Panel
 var _spawn_sub:     Panel
-var _inv_check:     CheckBox
-var _noclip_check:  CheckBox
 var _god_check:     CheckBox
 
 func _ready() -> void:
@@ -87,59 +85,34 @@ func _build_main_panel() -> void:
 	_god_check.toggled.connect(_on_god_mode_toggled)
 	_main_panel.add_child(_god_check)
 
-	_inv_check = CheckBox.new()
-	_inv_check.text = "Invincible"
-	_inv_check.position = Vector2(6.0, 66.0)
-	_inv_check.size = Vector2(PANEL_W - 12.0, 32.0)
-	_inv_check.add_theme_font_size_override("font_size", 13)
-	_inv_check.focus_mode = Control.FOCUS_NONE
-	_inv_check.toggled.connect(_on_invincible_toggled)
-	_main_panel.add_child(_inv_check)
-
-	_noclip_check = CheckBox.new()
-	_noclip_check.text = "Noclip"
-	_noclip_check.position = Vector2(6.0, 102.0)
-	_noclip_check.size = Vector2(PANEL_W - 12.0, 32.0)
-	_noclip_check.add_theme_font_size_override("font_size", 13)
-	_noclip_check.focus_mode = Control.FOCUS_NONE
-	_noclip_check.toggled.connect(_on_noclip_toggled)
-	_main_panel.add_child(_noclip_check)
-
 	var sep2 := HSeparator.new()
-	sep2.position = Vector2(6.0, 138.0)
+	sep2.position = Vector2(6.0, 66.0)
 	sep2.size = Vector2(PANEL_W - 12.0, 4.0)
 	_main_panel.add_child(sep2)
 
 	var jump_btn := _make_btn("Jump to Floor...", Color(0.25, 0.60, 1.0))
-	jump_btn.position = Vector2(6.0, 144.0)
+	jump_btn.position = Vector2(6.0, 72.0)
 	jump_btn.size = Vector2(PANEL_W - 12.0, 30.0)
 	jump_btn.pressed.connect(_on_jump_pressed)
 	_main_panel.add_child(jump_btn)
 
 	var items_btn := _make_btn("Give Item...", Color(0.35, 0.80, 0.35))
-	items_btn.position = Vector2(6.0, 180.0)
+	items_btn.position = Vector2(6.0, 108.0)
 	items_btn.size = Vector2(PANEL_W - 12.0, 30.0)
 	items_btn.pressed.connect(_on_items_pressed)
 	_main_panel.add_child(items_btn)
 
 	var spawn_btn := _make_btn("Spawn Enemy...", Color(0.80, 0.35, 0.70))
-	spawn_btn.position = Vector2(6.0, 216.0)
+	spawn_btn.position = Vector2(6.0, 144.0)
 	spawn_btn.size = Vector2(PANEL_W - 12.0, 30.0)
 	spawn_btn.pressed.connect(_on_spawn_pressed)
 	_main_panel.add_child(spawn_btn)
 
 	var lvlup_btn := _make_btn("Level Up", Color(1.0, 0.75, 0.10))
-	lvlup_btn.position = Vector2(6.0, 252.0)
+	lvlup_btn.position = Vector2(6.0, 180.0)
 	lvlup_btn.size = Vector2(PANEL_W - 12.0, 30.0)
 	lvlup_btn.pressed.connect(_on_level_up_pressed)
 	_main_panel.add_child(lvlup_btn)
-
-	var see_all_btn := _make_btn("See All", Color(0.80, 0.60, 0.20))
-	see_all_btn.position = Vector2(6.0, 288.0)
-	see_all_btn.size = Vector2(PANEL_W - 12.0, 30.0)
-	see_all_btn.toggle_mode = true
-	see_all_btn.toggled.connect(func(on: bool): GameState.debug_see_all.emit(on))
-	_main_panel.add_child(see_all_btn)
 
 func _build_floor_sub() -> void:
 	_floor_sub = Panel.new()
@@ -369,21 +342,9 @@ func _on_god_mode_toggled(pressed: bool) -> void:
 	GameState.god_mode    = pressed
 	GameState.invincible  = pressed
 	GameState.noclip      = pressed
-	_inv_check.set_pressed_no_signal(pressed)
-	_noclip_check.set_pressed_no_signal(pressed)
 	GameState.debug_see_all.emit(pressed)
 	GameState.game_log("[color=%s][DEBUG] God Mode %s[/color]" % [
 		"gold" if pressed else "gray", "ON — all-knowing, untouchable" if pressed else "OFF"])
-
-func _on_invincible_toggled(pressed: bool) -> void:
-	GameState.invincible = pressed
-	GameState.game_log("[color=%s][DEBUG] Invincible %s[/color]" % [
-		"red" if pressed else "gray", "ON" if pressed else "OFF"])
-
-func _on_noclip_toggled(pressed: bool) -> void:
-	GameState.noclip = pressed
-	GameState.game_log("[color=%s][DEBUG] Noclip %s[/color]" % [
-		"cyan" if pressed else "gray", "ON" if pressed else "OFF"])
 
 func _on_jump_pressed() -> void:
 	_floor_sub.visible = not _floor_sub.visible
@@ -433,6 +394,7 @@ func _on_give_item(d: Dictionary) -> void:
 	item.consumes_on_ranged = d.get("consumes", false)
 	item.is_two_handed      = d.get("two_handed", false)
 	item.is_heavy_armor     = d.get("heavy_armor", false)
+	item.is_heavy           = d.get("heavy", false)
 	item.damage_die_min     = d.get("die_min", 0)
 	item.damage_die_max     = d.get("die_max", 0)
 	item.damage_type        = d.get("dmg_type", "")

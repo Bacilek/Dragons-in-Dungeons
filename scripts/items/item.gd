@@ -17,8 +17,9 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 @export var is_ranged: bool = false
 @export var range: int = 0
 @export var consumes_on_ranged: bool = false
-@export var is_two_handed: bool = false   # blocks ranged slot while equipped
+@export var is_two_handed: bool = false
 @export var is_heavy_armor: bool = false  # ends Barbarian Rage immediately on equip
+@export var is_heavy: bool = false        # Heavy: attacking with STR < 13 imposes Disadvantage
 # If > 0, overrides Stats.base_min/max_damage when this weapon is equipped (e.g. 1d12 Greataxe).
 # recalculate_stats() in GameState applies these instead of base_min/max_damage when non-zero.
 @export var damage_die_min: int = 0

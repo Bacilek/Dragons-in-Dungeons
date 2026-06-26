@@ -148,7 +148,8 @@ func _give_barbarian_starting_items() -> void:
 	axe.item_name = "Greataxe"
 	axe.item_type = Item.Type.WEAPON
 	axe.icon_path = "res://sprites/weapons/weapon_double_axe.png"
-	axe.description = "1d12 Slashing. Two-handed (blocks ranged slot). STR-based."
+	axe.description = ""
+	axe.is_heavy = true
 	axe.bonus_damage = 0      # proficiency adds to attack roll, not to damage
 	axe.damage_die_min = 1    # weapon defines its own dice: 1d12
 	axe.damage_die_max = 12
@@ -183,13 +184,9 @@ func add_ability(ability: Ability) -> bool:
 
 func advance_floor() -> void:
 	current_floor += 1
-	hit_dice = player_stats.character_level
 	short_rests_remaining = 2
 	max_short_rests = 2
 	short_rest_changed.emit()
-	# Long rest: refill class ability uses
-	player_stats.rage_uses_remaining = player_stats.rage_uses_max
-	_sync_ability_uses()
 	floor_changed.emit(current_floor)
 	if current_floor > 10:
 		player_won.emit()
@@ -230,15 +227,19 @@ func gain_exp(amount: int) -> void:
 		player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 		player_leveled_up.emit(player_stats.character_level)
 		var hp_gained: int = player_stats.max_hp - old_max_hp
-		hit_dice = mini(hit_dice + 1, player_stats.character_level)
+		hit_dice = player_stats.character_level
+		player_stats.rage_uses_remaining = player_stats.rage_uses_max
+		_sync_ability_uses()
 		max_short_rests += 1
 		short_rests_remaining = mini(short_rests_remaining + 1, max_short_rests)
-		combat_message.emit("[color=yellow]Level up! You are now level %d. (+%d max HP, fully restored, +1 short rest)[/color]" % [player_stats.character_level, hp_gained])
+		combat_message.emit("[color=yellow]Level up! You are now level %d. (+%d max HP, fully restored, +1 hit die)[/color]" % [player_stats.character_level, hp_gained])
 		heal(player_stats.max_hp - player_stats.current_hp)
 		short_rest_changed.emit()
 
 func debug_level_up() -> void:
 	gain_exp(player_stats.exp_to_next())
+	player_stats.experience = 0
+	player_exp_changed.emit(0, player_stats.exp_to_next(), player_stats.character_level)
 
 # ── Equipment ─────────────────────────────────────────────────────────────────
 
@@ -256,20 +257,6 @@ func equip(item: Item, slot_name: String = "", costs_turn: bool = false) -> void
 			_: return
 	if not equipment.has(slot_name):
 		return
-
-	# Two-handed melee blocks the ranged slot
-	if slot_name == "melee" and item.is_two_handed:
-		var ranged_item: Item = equipment["ranged"] as Item
-		if ranged_item != null:
-			_add_to_bags_silent(ranged_item)
-			equipment["ranged"] = null
-			combat_message.emit("[color=gray]Ranged weapon unsheathed — two-handed weapon requires both hands.[/color]")
-	# Cannot equip ranged if two-handed melee is equipped
-	if slot_name == "ranged":
-		var melee_item: Item = equipment["melee"] as Item
-		if melee_item != null and melee_item.is_two_handed:
-			combat_message.emit("[color=red]Can't equip ranged — %s requires both hands.[/color]" % melee_item.item_name)
-			return
 
 	var prev: Item = equipment[slot_name] as Item
 	equipment[slot_name] = item
@@ -401,7 +388,8 @@ func use_item(item: Item) -> void:
 				heal(amount)
 				var healed: int = player_stats.current_hp - before
 				if healed > 0:
-					combat_message.emit("[color=green]You drink [b]%s[/b] — rolled %dd%d+CON(%+d) = %d HP restored.[/color]" % [item.item_name, item.heal_dice_count, item.heal_dice_sides, player_stats.con_modifier(), healed])
+					var _hm: String = "heal:dice=%d,sides=%d,con=%d,total=%d" % [item.heal_dice_count, item.heal_dice_sides, player_stats.con_modifier(), healed]
+					combat_message.emit("[color=green]You drink [b]%s[/b] — [url=%s][color=lime]+%d HP[/color][/url][/color]" % [item.item_name, _hm, healed])
 				else:
 					combat_message.emit("[color=gray]Already at full health.[/color]")
 			elif item.heal_amount > 0:

@@ -49,6 +49,11 @@ var _log_tooltip_visible: bool = false
 # ── Quickbar slot hover tooltip ────────────────────────────────────────────────
 var _qbar_tooltip: Panel = null
 var _qbar_tooltip_rtl: RichTextLabel = null
+var _glossary_popup: Panel = null
+var _glossary_rtl: RichTextLabel = null
+const KEYWORD_GLOSSARY: Dictionary = {
+	"heavy": "Heavy weapon.\nRequires STR 13+.\nAttacking with STR < 13\nimposes Disadvantage."
+}
 
 # ── Extra popup labels (added programmatically to expand the stats popup) ─────
 var _popup_prof_label: Label = null
@@ -638,8 +643,31 @@ func _setup_quickbar_tooltip() -> void:
 	_qbar_tooltip_rtl.offset_right = -8.0
 	_qbar_tooltip_rtl.offset_bottom = -6.0
 	_qbar_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_qbar_tooltip_rtl.meta_hover_started.connect(_on_qbar_meta_hover_started)
+	_qbar_tooltip_rtl.meta_hover_ended.connect(_on_qbar_meta_hover_ended)
 	_qbar_tooltip.add_child(_qbar_tooltip_rtl)
 	add_child(_qbar_tooltip)
+	# Keyword glossary popup (shared by qbar tooltip)
+	_glossary_popup = Panel.new()
+	_glossary_popup.visible = false
+	_glossary_popup.z_index = 32
+	_glossary_popup.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var gsb := StyleBoxFlat.new()
+	gsb.bg_color = Color(0.08, 0.07, 0.04, 0.97)
+	gsb.set_border_width_all(1)
+	gsb.border_color = Color(0.75, 0.65, 0.20)
+	gsb.set_corner_radius_all(3)
+	_glossary_popup.add_theme_stylebox_override("panel", gsb)
+	_glossary_rtl = RichTextLabel.new()
+	_glossary_rtl.bbcode_enabled = true
+	_glossary_rtl.fit_content = true
+	_glossary_rtl.offset_left = 8.0
+	_glossary_rtl.offset_top = 6.0
+	_glossary_rtl.offset_right = -8.0
+	_glossary_rtl.offset_bottom = -6.0
+	_glossary_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_glossary_popup.add_child(_glossary_rtl)
+	add_child(_glossary_popup)
 	# Connect hover signals on each item slot
 	for i: int in SLOT_COUNT:
 		_item_slots[i].mouse_entered.connect(_on_qbar_slot_hover.bind(i))
@@ -671,6 +699,14 @@ func _on_qbar_slot_hover(idx: int) -> void:
 			var type_str: String = " %s" % item.damage_type if not item.damage_type.is_empty() else ""
 			if not die_str.is_empty() or not bonus_str.is_empty():
 				text += "\n%s%s%s%s" % [die_str, sep, bonus_str, type_str]
+			if item.is_ranged:
+				text += "\nrange: %d tiles" % item.range
+			else:
+				text += "\nrange: 1 tile"
+			if item.is_two_handed:
+				text += "\nTwo-handed"
+			if item.is_heavy:
+				text += "\n[url=keyword:heavy]Heavy[/url]"
 		if not item.description.is_empty():
 			text += "\n[color=gray]%s[/color]" % item.description
 	_qbar_tooltip_rtl.text = text
@@ -681,6 +717,22 @@ func _on_qbar_slot_hover(idx: int) -> void:
 func _on_qbar_slot_hover_end() -> void:
 	if _qbar_tooltip != null:
 		_qbar_tooltip.visible = false
+	if _glossary_popup != null:
+		_glossary_popup.visible = false
+
+func _on_qbar_meta_hover_started(meta: Variant) -> void:
+	var m: String = str(meta)
+	if m.begins_with("keyword:") and _glossary_popup != null:
+		var kw: String = m.substr(8)
+		if KEYWORD_GLOSSARY.has(kw):
+			_glossary_rtl.text = KEYWORD_GLOSSARY[kw]
+			_glossary_rtl.size = Vector2(160.0, 0)
+			_glossary_popup.size = Vector2(168.0, 60)
+			_glossary_popup.visible = true
+
+func _on_qbar_meta_hover_ended(_meta: Variant) -> void:
+	if _glossary_popup != null:
+		_glossary_popup.visible = false
 
 # ── Log tooltip ───────────────────────────────────────────────────────────────
 
@@ -734,6 +786,15 @@ func _process(_delta: float) -> void:
 		if ty < 4.0:
 			ty = mp.y + 18.0
 		_qbar_tooltip.position = Vector2(tx, ty)
+	# Glossary popup positioning (appears beside qbar tooltip)
+	if _glossary_popup != null and _glossary_popup.visible:
+		var gw: float = _glossary_popup.size.x
+		var gh: float = _glossary_rtl.get_content_height() + 14.0
+		_glossary_rtl.size = Vector2(gw - 16.0, gh - 14.0)
+		_glossary_popup.size = Vector2(gw, gh)
+		var qpos: Vector2 = _qbar_tooltip.position if _qbar_tooltip != null and _qbar_tooltip.visible else mp
+		var gx: float = clampf(qpos.x + _qbar_tooltip.size.x + 4.0, 4.0, vp.x - gw - 4.0)
+		_glossary_popup.position = Vector2(gx, qpos.y)
 
 func _on_log_meta_hover_started(meta: Variant) -> void:
 	if _log_tooltip == null:
@@ -766,6 +827,7 @@ func _format_tooltip(meta: String) -> String:
 		"hit", "miss":   return _fmt_hit_tooltip(params, false)
 		"rhit", "rmiss": return _fmt_hit_tooltip(params, true)
 		"dmg":           return _fmt_dmg_tooltip(params)
+		"heal":          return _fmt_heal_tooltip(params)
 		"save", "check": return _fmt_save_tooltip(params)
 		"ehit":          return _fmt_ehit_tooltip(params)
 		"edmg":          return _fmt_edmg_tooltip(params)
@@ -788,9 +850,9 @@ func _fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 	var lines: PackedStringArray = []
 	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if n20 else ("  [color=red]✕ FAIL[/color]" if n1 else "")
 	if adv and d1 != d2:
-		lines.append("d20 (adv):  %d vs %d  → took [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
+		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
 	elif disadv and d1 != d2:
-		lines.append("d20 (disadv):  %d vs %d  → took [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
+		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
 	else:
 		lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
 	if stat_mod != 0:
@@ -816,6 +878,8 @@ func _fmt_dmg_tooltip(p: Dictionary) -> String:
 	var roll: int  = int(p.get("roll", "0"))
 	var dmax: int  = int(p.get("dmax", "0"))
 	var wpn: int   = int(p.get("wpn", "0"))
+	var str_mod: int = int(p.get("str", "0"))
+	var dex_mod: int = int(p.get("dex", "0"))
 	var rage: int  = int(p.get("rage", "0"))
 	var crit: bool = p.get("crit", "0") == "1"
 	var final_dmg: int = int(p.get("final", "0"))
@@ -826,12 +890,31 @@ func _fmt_dmg_tooltip(p: Dictionary) -> String:
 		lines.append("damage = [color=yellow]%d[/color]" % roll)
 	if wpn != 0:
 		lines.append("[color=lightblue]%+d[/color]  (weapon bonus)" % wpn)
+	if str_mod != 0:
+		lines.append("[color=lightblue]%+d[/color]  (STR mod)" % str_mod)
+	if dex_mod != 0:
+		lines.append("[color=lightblue]%+d[/color]  (DEX mod)" % dex_mod)
 	if rage != 0:
 		lines.append("[color=red]+%d[/color]  (Rage bonus)" % rage)
 	if crit:
 		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
 	lines.append("─────────────────")
 	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
+	return "\n".join(lines)
+
+func _fmt_heal_tooltip(p: Dictionary) -> String:
+	var dice: int  = int(p.get("dice", "0"))
+	var sides: int = int(p.get("sides", "0"))
+	var con: int   = int(p.get("con", "0"))
+	var total: int = int(p.get("total", "0"))
+	var lines: PackedStringArray = []
+	if dice > 0 and sides > 0:
+		var roll: int = total - con
+		lines.append("%dd%d = [color=lime]%d[/color]" % [dice, sides, roll])
+	if con != 0:
+		lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)
+	lines.append("─────────────────")
+	lines.append("= [color=lime]+%d HP[/color]" % total)
 	return "\n".join(lines)
 
 func _fmt_save_tooltip(p: Dictionary) -> String:

@@ -500,13 +500,17 @@ func _unhandled_input(event: InputEvent) -> void:
 				_do_inspect(clicked)
 			return
 
-		# Tool targeting mode — click adjacent revealed trap to disarm
+		# Tool targeting mode — route by tool type
 		if _tool_item != null:
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
 				var dist: int = maxi(absi(clicked.x - grid_pos.x), absi(clicked.y - grid_pos.y))
 				if dist <= 1:
+					var tool: Item = _tool_item
 					_tool_item = null
-					_attempt_disarm(clicked)
+					if tool.item_name == "Empty Bottle":
+						_try_fill_bottle(tool, clicked)
+					else:
+						_interact_action(clicked)  # Thief Tools: door lock / trap disarm / nothing
 				else:
 					GameState.game_log("[color=gray]Too far — click an adjacent tile.[/color]")
 			else:
@@ -594,22 +598,22 @@ func _execute_queued_path() -> void:
 		_queued_path.remove_at(0)
 		var dir: Vector2i = next - grid_pos
 
+		var enemy_there: Enemy = _dungeon_floor.get_enemy_at(next)
+		if enemy_there != null:
+			if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
+				_ranged_attack(enemy_there)
+			else:
+				_bump_attack(enemy_there, dir)
+			if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
+				await TurnManager.player_turn_started
+			break
+
 		if GameState.noclip:
 			# Noclip: reject only off-grid VOID tiles
 			if _dungeon_floor.get_tile_type(next) == DungeonData.TileType.VOID:
 				_queued_path.clear()
 				break
 		else:
-			var enemy_there: Enemy = _dungeon_floor.get_enemy_at(next)
-			if enemy_there != null:
-				if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
-					_ranged_attack(enemy_there)
-				else:
-					_bump_attack(enemy_there, dir)
-				if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
-					await TurnManager.player_turn_started
-				break
-
 			# Door handling — locked doors distinguish dungeon-generated vs player-set
 			if _dungeon_floor.has_door_at(next) and not _dungeon_floor.is_door_open(next):
 				if _dungeon_floor.is_door_locked(next):
@@ -618,7 +622,7 @@ func _execute_queued_path() -> void:
 						_dungeon_floor.open_door(next)
 						GameState.game_log("[color=cyan]You pass through the door you locked.[/color]")
 					else:
-						GameState.game_log("[color=red]The door is locked. Use [F] with Thief Tools to pick it.[/color]")
+						GameState.game_log("[color=red]The door is locked.[/color]")
 						_queued_path.clear()
 						break
 				else:
@@ -702,19 +706,19 @@ func _try_move(dir: Vector2i) -> void:
 	_reset_camera_offset()
 	var target: Vector2i = grid_pos + dir
 
+	var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
+	if enemy != null:
+		if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
+			_ranged_attack(enemy)
+		else:
+			_bump_attack(enemy, dir)
+		return
+
 	if GameState.noclip:
-		# Noclip: skip enemy attack and walkability — only reject off-grid VOID
+		# Noclip: only reject off-grid VOID
 		if _dungeon_floor.get_tile_type(target) == DungeonData.TileType.VOID:
 			return
 	else:
-		var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
-		if enemy != null:
-			if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
-				_ranged_attack(enemy)
-			else:
-				_bump_attack(enemy, dir)
-			return
-
 		# Door handling — locked doors distinguish dungeon-generated vs player-set
 		if _dungeon_floor.has_door_at(target) and not _dungeon_floor.is_door_open(target):
 			if _dungeon_floor.is_door_locked(target):
@@ -724,8 +728,8 @@ func _try_move(dir: Vector2i) -> void:
 					_dungeon_floor.open_door(target)
 					GameState.game_log("[color=cyan]You pass through the door you locked.[/color]")
 				else:
-					# Dungeon-generated lock — can't walk through; must lockpick with [F]
-					GameState.game_log("[color=red]The door is locked. Use [F] with Thief Tools to pick it.[/color]")
+					# Dungeon-generated lock — can't walk through
+					GameState.game_log("[color=red]The door is locked.[/color]")
 					return
 			else:
 				_dungeon_floor.open_door(target)
@@ -789,7 +793,7 @@ func _activate_rage() -> void:
 		return
 	var ab: Ability = _find_ability("rage")
 	if ab == null or not ab.has_uses():
-		GameState.game_log("[color=red]No Rage uses remaining (resets on floor descent).[/color]")
+		GameState.game_log("[color=red]No Rage uses remaining (resets on level up).[/color]")
 		return
 	_is_raging = true
 	_rage_turns = 0  # must attack this same turn or rage fades at next turn start
@@ -835,9 +839,18 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if not is_unarmed else 0
 	var total_hit_bonus: int = str_mod + prof + weapon_bonus
 	var adv: bool = _has_advantage(enemy)
+	# Heavy weapon penalty: STR < 13 imposes Disadvantage
+	var weapon_item_ref: Item = GameState.equipped_weapon
+	var disadv: bool = weapon_item_ref != null and weapon_item_ref.is_heavy and stats.strength < 13
 	var die1: int = randi_range(1, 20)
-	var die2: int = randi_range(1, 20) if adv else die1
-	var die: int = maxi(die1, die2) if adv else die1
+	var die2: int = die1
+	var die: int = die1
+	if adv and not disadv:
+		die2 = randi_range(1, 20)
+		die = maxi(die1, die2)
+	elif disadv and not adv:
+		die2 = randi_range(1, 20)
+		die = mini(die1, die2)
 	var roll: int = die + total_hit_bonus
 	var is_crit: bool = die == 20
 	var is_nat_one: bool = die == 1
@@ -851,9 +864,10 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var w_dmin: int = GameState.equipped_weapon.damage_die_min if not is_unarmed and GameState.equipped_weapon.damage_die_min > 0 else stats.base_min_damage
 	var w_dmax: int = GameState.equipped_weapon.damage_die_max if not is_unarmed and GameState.equipped_weapon.damage_die_max > 0 else stats.base_max_damage
 	var w_enh: int = weapon_bonus  # weapon.bonus_damage
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,n20=%d,n1=%d" % [
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
 		die, die1, die2, str_mod, prof, w_enh, roll, enemy.stats.armor_class,
-		1 if adv else 0, 1 if is_crit else 0, 1 if is_nat_one else 0]
+		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
+		1 if is_crit else 0, 1 if is_nat_one else 0]
 
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var verb: String = "punch" if is_unarmed else "swing"
@@ -875,7 +889,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 
 	var die_roll: int = randi_range(w_dmin, w_dmax)
 	var rage_bonus: int = 2 if (_is_raging and is_str_weapon) else 0
-	var pre_crit: int = die_roll + w_enh + rage_bonus
+	var pre_crit: int = die_roll + w_enh + rage_bonus + str_mod
 	if is_crit:
 		pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
@@ -885,8 +899,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
 
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,rage=%d,crit=%d,final=%d" % [
-		die_roll, w_dmin, w_dmax, w_enh, rage_bonus, 1 if is_crit else 0, actual]
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,rage=%d,crit=%d,final=%d" % [
+		die_roll, w_dmin, w_dmax, w_enh, str_mod, rage_bonus, 1 if is_crit else 0, actual]
 	var verb: String = "punch" if is_unarmed else "strike"
 	var weapon_item: Item = GameState.equipped_weapon
 	var dmg_type: String = weapon_item.damage_type if weapon_item != null and not weapon_item.damage_type.is_empty() else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
@@ -1335,21 +1349,32 @@ func _try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 		GameState.game_log("[color=gray]Too far — stand next to water or mud.[/color]")
 		return
 	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(target)
+	if tile_t != DungeonData.TileType.WATER and tile_t != DungeonData.TileType.MUD:
+		GameState.game_log("[color=gray]Nothing to fill the bottle with here.[/color]")
+		return
 	TurnManager.begin_player_action()
+	# Nat 1: bottle shatters
+	var fill_roll: int = randi_range(1, 20)
+	if fill_roll == 1:
+		GameState.game_log("[color=red]You fumble — the bottle shatters![/color]")
+		if not GameState.invincible:
+			GameState.consume_one(bottle)
+		GameState.inventory_changed.emit()
+		_dungeon_floor.update_fog(grid_pos)
+		TurnManager.on_player_action_complete()
+		return
 	if tile_t == DungeonData.TileType.WATER:
 		bottle.item_name = "Bottle of Water"
 		bottle.icon_path = "res://sprites/items/Materials/BottleMedium.png"
 		bottle.description = "A bottle of dungeon water."
 		AudioManager.play("bottle_fill")
 		GameState.game_log("[color=cyan]You fill the bottle with water.[/color]")
-	elif tile_t == DungeonData.TileType.MUD:
+	else:
 		bottle.item_name = "Bottle of Mud"
 		bottle.icon_path = "res://sprites/items/Materials/BottleSmall.png"
 		bottle.description = "A bottle of foul mud. Maybe useful for something."
 		AudioManager.play("bottle_fill")
 		GameState.game_log("[color=gray]You fill the bottle with mud.[/color]")
-	else:
-		GameState.game_log("[color=gray]Nothing to fill the bottle with here.[/color]")
 	GameState.inventory_changed.emit()
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
@@ -1475,7 +1500,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 	if adv and not disadv:
 		_show_surprise_mark(enemy)
 	var r_die_roll: int = randi_range(stats.base_min_damage, stats.base_max_damage)
-	var r_pre_crit: int = r_die_roll + r_wpn_enh
+	var r_pre_crit: int = r_die_roll + r_wpn_enh + dex_mod
 	if is_crit:
 		r_pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
@@ -1485,8 +1510,8 @@ func _ranged_attack(enemy: Enemy) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
 
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,rage=0,crit=%d,final=%d" % [
-		r_die_roll, stats.base_min_damage, stats.base_max_damage, r_wpn_enh, 1 if is_crit else 0, actual]
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,dex=%d,rage=0,crit=%d,final=%d" % [
+		r_die_roll, stats.base_min_damage, stats.base_max_damage, r_wpn_enh, dex_mod, 1 if is_crit else 0, actual]
 	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
 	var r_god_hp: String = " [color=gray][%d/%d HP][/color]" % [enemy.stats.current_hp, enemy.stats.max_hp] if GameState.god_mode and not enemy.stats.is_dead() else ""
