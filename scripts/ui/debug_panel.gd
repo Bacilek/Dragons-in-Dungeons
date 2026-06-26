@@ -1,11 +1,13 @@
 extends CanvasLayer
 
-const PANEL_W:  int = 280
-const PANEL_H:  int = 214
-const FLOOR_SW: int = 234
-const FLOOR_SH: int = 96
-const ITEMS_SW: int = 390
-const ITEMS_SH: int = 370
+const PANEL_W:   int = 280
+const PANEL_H:   int = 364
+const FLOOR_SW:  int = 234
+const FLOOR_SH:  int = 96
+const ITEMS_SW:  int = 390
+const ITEMS_SH:  int = 370
+const SPAWN_SW:  int = 320
+const SPAWN_SH:  int = 380
 
 const WEAPONS_PATH := "res://sprites/weapons/"
 const ITEMS_PATH   := "res://sprites/items/"
@@ -29,20 +31,23 @@ const ALL_ITEMS: Array = [
 	{"name": "Empty Bottle",    "type": 7, "src": "items",   "icon": "Materials/BottleSmall.png",                "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Fill from water or mud"},
 	{"name": "Bottle of Water", "type": 4, "src": "items",   "icon": "Materials/BottleMedium.png",               "bonus_dmg": 0, "heal": 60,  "str_bonus": 0, "desc": "Restores 60 hunger"},
 	{"name": "Bottle of Mud",   "type": 7, "src": "items",   "icon": "Materials/BottleSmall.png",               "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Foul mud. Maybe useful."},
-	{"name": "Greataxe",        "type": 0, "src": "weapons", "icon": "weapon_double_axe.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "1d12 Slashing. Two-handed.", "two_handed": true, "die_min": 1, "die_max": 12},
+	{"name": "Greataxe",        "type": 0, "src": "weapons", "icon": "weapon_double_axe.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "1d12 Slashing. Two-handed.", "two_handed": true, "die_min": 1, "die_max": 12, "dmg_type": "Slashing"},
 ]
 
 var _main_panel:    Panel
 var _floor_sub:     Panel
 var _items_sub:     Panel
+var _spawn_sub:     Panel
 var _inv_check:     CheckBox
 var _noclip_check:  CheckBox
+var _god_check:     CheckBox
 
 func _ready() -> void:
 	layer = 25
 	_build_main_panel()
 	_build_floor_sub()
 	_build_items_sub()
+	_build_spawn_sub()
 	call_deferred("_reposition")
 
 # ── Positioning ───────────────────────────────────────────────────────────────
@@ -52,6 +57,7 @@ func _reposition() -> void:
 	_main_panel.position = Vector2(vp_w - PANEL_W - 4.0, 4.0)
 	_floor_sub.position  = Vector2(vp_w - PANEL_W - FLOOR_SW - 8.0, 4.0)
 	_items_sub.position  = Vector2(vp_w - PANEL_W - ITEMS_SW - 8.0, 4.0)
+	_spawn_sub.position  = Vector2(vp_w - PANEL_W - SPAWN_SW - 8.0, 4.0)
 
 # ── Panel builders ────────────────────────────────────────────────────────────
 
@@ -70,9 +76,20 @@ func _build_main_panel() -> void:
 	sep.size = Vector2(PANEL_W - 12.0, 4.0)
 	_main_panel.add_child(sep)
 
+	# God Mode (activates invincible + noclip + see all + god-mode visibility)
+	_god_check = CheckBox.new()
+	_god_check.text = "God Mode"
+	_god_check.position = Vector2(6.0, 30.0)
+	_god_check.size = Vector2(PANEL_W - 12.0, 32.0)
+	_god_check.add_theme_font_size_override("font_size", 13)
+	_god_check.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+	_god_check.focus_mode = Control.FOCUS_NONE
+	_god_check.toggled.connect(_on_god_mode_toggled)
+	_main_panel.add_child(_god_check)
+
 	_inv_check = CheckBox.new()
 	_inv_check.text = "Invincible"
-	_inv_check.position = Vector2(6.0, 30.0)
+	_inv_check.position = Vector2(6.0, 66.0)
 	_inv_check.size = Vector2(PANEL_W - 12.0, 32.0)
 	_inv_check.add_theme_font_size_override("font_size", 13)
 	_inv_check.focus_mode = Control.FOCUS_NONE
@@ -81,27 +98,44 @@ func _build_main_panel() -> void:
 
 	_noclip_check = CheckBox.new()
 	_noclip_check.text = "Noclip"
-	_noclip_check.position = Vector2(6.0, 66.0)
+	_noclip_check.position = Vector2(6.0, 102.0)
 	_noclip_check.size = Vector2(PANEL_W - 12.0, 32.0)
 	_noclip_check.add_theme_font_size_override("font_size", 13)
 	_noclip_check.focus_mode = Control.FOCUS_NONE
 	_noclip_check.toggled.connect(_on_noclip_toggled)
 	_main_panel.add_child(_noclip_check)
 
+	var sep2 := HSeparator.new()
+	sep2.position = Vector2(6.0, 138.0)
+	sep2.size = Vector2(PANEL_W - 12.0, 4.0)
+	_main_panel.add_child(sep2)
+
 	var jump_btn := _make_btn("Jump to Floor...", Color(0.25, 0.60, 1.0))
-	jump_btn.position = Vector2(6.0, 104.0)
+	jump_btn.position = Vector2(6.0, 144.0)
 	jump_btn.size = Vector2(PANEL_W - 12.0, 30.0)
 	jump_btn.pressed.connect(_on_jump_pressed)
 	_main_panel.add_child(jump_btn)
 
 	var items_btn := _make_btn("Give Item...", Color(0.35, 0.80, 0.35))
-	items_btn.position = Vector2(6.0, 140.0)
+	items_btn.position = Vector2(6.0, 180.0)
 	items_btn.size = Vector2(PANEL_W - 12.0, 30.0)
 	items_btn.pressed.connect(_on_items_pressed)
 	_main_panel.add_child(items_btn)
 
+	var spawn_btn := _make_btn("Spawn Enemy...", Color(0.80, 0.35, 0.70))
+	spawn_btn.position = Vector2(6.0, 216.0)
+	spawn_btn.size = Vector2(PANEL_W - 12.0, 30.0)
+	spawn_btn.pressed.connect(_on_spawn_pressed)
+	_main_panel.add_child(spawn_btn)
+
+	var lvlup_btn := _make_btn("Level Up", Color(1.0, 0.75, 0.10))
+	lvlup_btn.position = Vector2(6.0, 252.0)
+	lvlup_btn.size = Vector2(PANEL_W - 12.0, 30.0)
+	lvlup_btn.pressed.connect(_on_level_up_pressed)
+	_main_panel.add_child(lvlup_btn)
+
 	var see_all_btn := _make_btn("See All", Color(0.80, 0.60, 0.20))
-	see_all_btn.position = Vector2(6.0, 176.0)
+	see_all_btn.position = Vector2(6.0, 288.0)
 	see_all_btn.size = Vector2(PANEL_W - 12.0, 30.0)
 	see_all_btn.toggle_mode = true
 	see_all_btn.toggled.connect(func(on: bool): GameState.debug_see_all.emit(on))
@@ -162,7 +196,42 @@ func _build_items_sub() -> void:
 	for d: Dictionary in ALL_ITEMS:
 		vbox.add_child(_make_item_row(d))
 
-# ── Row builder ───────────────────────────────────────────────────────────────
+func _build_spawn_sub() -> void:
+	_spawn_sub = Panel.new()
+	_spawn_sub.visible = false
+	_spawn_sub.size = Vector2(SPAWN_SW, SPAWN_SH)
+	_spawn_sub.mouse_filter = Control.MOUSE_FILTER_STOP
+	_style_panel(_spawn_sub, Color(0.07, 0.05, 0.09, 0.97), Color(0.80, 0.35, 0.70))
+	add_child(_spawn_sub)
+
+	_add_label(_spawn_sub, "Spawn Enemy  —  spawns adjacent to player", 8, 5, 10, Color(0.90, 0.60, 0.90))
+
+	var sep := HSeparator.new()
+	sep.position = Vector2(6.0, 22.0)
+	sep.size = Vector2(SPAWN_SW - 12.0, 4.0)
+	_spawn_sub.add_child(sep)
+
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(6.0, 30.0)
+	scroll.size = Vector2(SPAWN_SW - 12.0, SPAWN_SH - 38.0)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_spawn_sub.add_child(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 3)
+	scroll.add_child(vbox)
+
+	# Regular enemies
+	var dungeon_floor_script = load("res://scripts/world/dungeon_floor.gd")
+	var enemy_pool: Array = dungeon_floor_script.ENEMY_POOL
+	var boss_pool: Array  = dungeon_floor_script.BOSS_POOL
+	for entry: Dictionary in enemy_pool:
+		vbox.add_child(_make_spawn_row(entry, false))
+	for entry: Dictionary in boss_pool:
+		vbox.add_child(_make_spawn_row(entry, true))
+
+# ── Row builders ──────────────────────────────────────────────────────────────
 
 func _make_item_row(d: Dictionary) -> Control:
 	var row := HBoxContainer.new()
@@ -204,6 +273,39 @@ func _make_item_row(d: Dictionary) -> Control:
 	give_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	give_btn.pressed.connect(_on_give_item.bind(d))
 	row.add_child(give_btn)
+
+	return row
+
+func _make_spawn_row(d: Dictionary, is_boss: bool) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.custom_minimum_size = Vector2(0.0, 34.0)
+
+	var info := VBoxContainer.new()
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.size_flags_vertical   = Control.SIZE_SHRINK_CENTER
+	row.add_child(info)
+
+	var name_color: Color = Color(1.0, 0.55, 0.25) if is_boss else Color(0.95, 0.80, 0.90)
+	var name_lbl := Label.new()
+	var floors_str: String = "F%d" % d.get("floor", 0) if is_boss else "F%d–%d" % [d.get("floor_min", 1), d.get("floor_max", 10)]
+	name_lbl.text = "%s  [%s]" % [d.get("display_name", "?"), floors_str]
+	name_lbl.add_theme_font_size_override("font_size", 10)
+	name_lbl.add_theme_color_override("font_color", name_color)
+	info.add_child(name_lbl)
+
+	var stat_lbl := Label.new()
+	stat_lbl.text = "HP %d  Dmg %d–%d  AC %d" % [d.get("hp", 0), d.get("dmg_min", 0), d.get("dmg_max", 0), d.get("ac", 10)]
+	stat_lbl.add_theme_font_size_override("font_size", 8)
+	stat_lbl.add_theme_color_override("font_color", Color(0.55, 0.50, 0.58))
+	info.add_child(stat_lbl)
+
+	var spawn_col: Color = Color(1.0, 0.40, 0.20) if is_boss else Color(0.80, 0.35, 0.70)
+	var spawn_btn := _make_btn("Spawn", spawn_col)
+	spawn_btn.custom_minimum_size = Vector2(58.0, 0.0)
+	spawn_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	spawn_btn.pressed.connect(_on_spawn_enemy.bind(d))
+	row.add_child(spawn_btn)
 
 	return row
 
@@ -259,8 +361,19 @@ func _input(event: InputEvent) -> void:
 		if not _main_panel.visible:
 			_floor_sub.visible = false
 			_items_sub.visible = false
+			_spawn_sub.visible = false
 
 # ── Callbacks ─────────────────────────────────────────────────────────────────
+
+func _on_god_mode_toggled(pressed: bool) -> void:
+	GameState.god_mode    = pressed
+	GameState.invincible  = pressed
+	GameState.noclip      = pressed
+	_inv_check.set_pressed_no_signal(pressed)
+	_noclip_check.set_pressed_no_signal(pressed)
+	GameState.debug_see_all.emit(pressed)
+	GameState.game_log("[color=%s][DEBUG] God Mode %s[/color]" % [
+		"gold" if pressed else "gray", "ON — all-knowing, untouchable" if pressed else "OFF"])
 
 func _on_invincible_toggled(pressed: bool) -> void:
 	GameState.invincible = pressed
@@ -276,16 +389,35 @@ func _on_jump_pressed() -> void:
 	_floor_sub.visible = not _floor_sub.visible
 	if _floor_sub.visible:
 		_items_sub.visible = false
+		_spawn_sub.visible = false
 
 func _on_items_pressed() -> void:
 	_items_sub.visible = not _items_sub.visible
 	if _items_sub.visible:
 		_floor_sub.visible = false
+		_spawn_sub.visible = false
+
+func _on_spawn_pressed() -> void:
+	_spawn_sub.visible = not _spawn_sub.visible
+	if _spawn_sub.visible:
+		_floor_sub.visible = false
+		_items_sub.visible = false
+
+func _on_level_up_pressed() -> void:
+	GameState.debug_level_up()
+	GameState.game_log("[color=gold][DEBUG] Level Up! Now level %d.[/color]" % GameState.player_stats.character_level)
 
 func _on_floor_selected(floor_num: int) -> void:
 	_floor_sub.visible = false
 	GameState.game_log("[color=cyan][DEBUG] Jumping to floor %d…[/color]" % floor_num)
 	GameState.debug_jump_to_floor(floor_num)
+
+func _on_spawn_enemy(type_data: Dictionary) -> void:
+	var dungeon_floor: Node = get_tree().get_first_node_in_group("dungeon_floor")
+	if dungeon_floor == null:
+		GameState.game_log("[color=red][DEBUG] No dungeon floor found[/color]")
+		return
+	dungeon_floor.debug_spawn_enemy(type_data)
 
 func _on_give_item(d: Dictionary) -> void:
 	var item := Item.new()

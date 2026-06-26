@@ -337,7 +337,8 @@ func _attack_player(_player: Player) -> void:
 	var is_crit: bool = die == 20
 	var hit_meta: String = "ehit:die=%d,bonus=%d,total=%d,ac=%d,crit=%d" % [die, attack_bonus, roll, player_ac, 1 if is_crit else 0]
 	if not is_crit and roll < player_ac:
-		GameState.game_log("[color=tomato]%s[/color] [url=%s]misses[/url]!" % [display_name, hit_meta])
+		var miss_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [attack_bonus, roll, player_ac] if GameState.god_mode else ""
+		GameState.game_log("[color=tomato]%s[/color] [url=%s]misses[/url]!%s" % [display_name, hit_meta, miss_suffix])
 		return
 	var dmg_roll: int = stats.roll_damage()
 	var dmg: int = dmg_roll * (2 if is_crit else 1)
@@ -352,10 +353,11 @@ func _attack_player(_player: Player) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(_player.position, actual, true)
 	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,final=%d" % [dmg_roll, stats.min_damage, stats.max_damage, 1 if is_crit else 0, actual]
+	var god_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [attack_bonus, roll, player_ac] if GameState.god_mode else ""
 	if is_crit:
-		GameState.game_log("[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg." % [display_name, hit_meta, dmg_meta, actual])
+		GameState.game_log("[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg.%s" % [display_name, hit_meta, dmg_meta, actual, god_suffix])
 	else:
-		GameState.game_log("[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg." % [display_name, hit_meta, dmg_meta, actual])
+		GameState.game_log("[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg.%s" % [display_name, hit_meta, dmg_meta, actual, god_suffix])
 	# Orc Shaman applies poison on hit
 	if display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
 		GameState.player_stats.poison_turns = 3

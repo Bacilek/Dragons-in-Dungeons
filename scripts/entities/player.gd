@@ -891,10 +891,11 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var weapon_item: Item = GameState.equipped_weapon
 	var dmg_type: String = weapon_item.damage_type if weapon_item != null and not weapon_item.damage_type.is_empty() else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
+	var god_hp: String = " [color=gray][%d/%d HP][/color]" % [enemy.stats.current_hp, enemy.stats.max_hp] if GameState.god_mode and not enemy.stats.is_dead() else ""
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, god_hp])
 	else:
-		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag])
+		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, god_hp])
 
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
@@ -1068,7 +1069,16 @@ func _do_inspect(pos: Vector2i) -> void:
 		return
 	var enemy: Enemy = _dungeon_floor.get_enemy_at(pos)
 	if enemy != null and enemy.visible:
-		GameState.game_log("[color=orange]%s[/color] — HP: %d/%d, AC: %d" % [enemy.display_name, enemy.stats.current_hp, enemy.stats.max_hp, enemy.stats.armor_class])
+		if GameState.god_mode:
+			GameState.game_log("[color=orange]%s[/color] — HP: %d/%d  AC: %d  Dmg: %d–%d  EXP: %d%s" % [
+				enemy.display_name,
+				enemy.stats.current_hp, enemy.stats.max_hp,
+				enemy.stats.armor_class,
+				enemy.stats.min_damage, enemy.stats.max_damage,
+				enemy.exp_reward,
+				"  [color=red]BOSS[/color]" if enemy.is_boss else ""])
+		else:
+			GameState.game_log("[color=orange]%s[/color] — HP: %d/%d, AC: %d" % [enemy.display_name, enemy.stats.current_hp, enemy.stats.max_hp, enemy.stats.armor_class])
 		return
 	var trap: Dictionary = _dungeon_floor.get_trap_at(pos)
 	if not trap.is_empty() and trap.get("revealed", false):
@@ -1479,10 +1489,11 @@ func _ranged_attack(enemy: Enemy) -> void:
 		r_die_roll, stats.base_min_damage, stats.base_max_damage, r_wpn_enh, 1 if is_crit else 0, actual]
 	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
+	var r_god_hp: String = " [color=gray][%d/%d HP][/color]" % [enemy.stats.current_hp, enemy.stats.max_hp] if GameState.god_mode and not enemy.stats.is_dead() else ""
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, r_god_hp])
 	else:
-		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag])
+		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, r_god_hp])
 
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)

@@ -103,6 +103,7 @@ const _SC_YX: Array = [0,  1,  1,  0,  0, -1, -1,  0]
 const _SC_YY: Array = [1,  0,  0,  1, -1,  0,  0, -1]
 
 func _ready() -> void:
+	add_to_group("dungeon_floor")
 	_setup_tileset()
 	_load_floor()
 	GameState.debug_jump_floor.connect(_on_debug_jump_floor)
@@ -694,6 +695,32 @@ func _spawn_boss() -> void:
 	_enemies.append(boss)
 	TurnManager.register_enemy(boss)
 	GameState.game_log("[color=red][b]You sense a terrifying presence...[/b][/color]")
+
+func debug_spawn_enemy(type_data: Dictionary) -> void:
+	var player_pos: Vector2i = GameState.player_grid_pos
+	var dirs: Array[Vector2i] = [
+		Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+		Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)
+	]
+	var spawn_pos: Vector2i = Vector2i(-1, -1)
+	for d: Vector2i in dirs:
+		var p: Vector2i = player_pos + d
+		if is_walkable_for_enemy(p) and get_enemy_at(p) == null:
+			spawn_pos = p
+			break
+	if spawn_pos == Vector2i(-1, -1):
+		GameState.game_log("[color=red][DEBUG] No open tile to spawn %s[/color]" % type_data.get("display_name", "enemy"))
+		return
+	var enemy_scene: PackedScene = preload("res://scenes/game/enemy.tscn")
+	var enemy: Enemy = enemy_scene.instantiate() as Enemy
+	enemy.initial_behavior = Enemy.Behavior.CHASING
+	enemy.configure(type_data)
+	enemy._dungeon_floor = self
+	entities.add_child(enemy)
+	enemy.set_grid_pos(spawn_pos)
+	_enemies.append(enemy)
+	TurnManager.register_enemy(enemy)
+	GameState.game_log("[color=lime][DEBUG] Spawned %s[/color]" % type_data.get("display_name", "enemy"))
 
 # ── Trap system ───────────────────────────────────────────────────────────────
 

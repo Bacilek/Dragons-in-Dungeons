@@ -49,6 +49,7 @@ var inventory_open: bool = false
 var class_selected: bool = false
 var invincible: bool = false
 var noclip: bool = false
+var god_mode: bool = false
 var hit_dice: int = 1
 var short_rests_remaining: int = 2
 var max_short_rests: int = 2
@@ -235,6 +236,9 @@ func gain_exp(amount: int) -> void:
 		combat_message.emit("[color=yellow]Level up! You are now level %d. (+%d max HP, fully restored, +1 short rest)[/color]" % [player_stats.character_level, hp_gained])
 		heal(player_stats.max_hp - player_stats.current_hp)
 		short_rest_changed.emit()
+
+func debug_level_up() -> void:
+	gain_exp(player_stats.exp_to_next())
 
 # ── Equipment ─────────────────────────────────────────────────────────────────
 
