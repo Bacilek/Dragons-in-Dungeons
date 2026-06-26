@@ -48,9 +48,12 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 | Player attack | d20 + STR mod + `weapon.bonus_damage` vs enemy `armor_class` |
 | Enemy attack | d20 + `floor_num / 3` vs player `armor_class` |
 | Player AC | 10 + DEX mod + equipped armor `bonus_ac` (recalc via `GameState.recalculate_stats()`) |
-| Enemy AC | type `"ac"` + `floor_num / 5` |
+| Enemy AC | type `"ac"` + type `"armor"` + `floor_num / 5` (pool `"armor"` folded into AC, not DR) |
 | Critical hit | Natural 20 → auto-hit + 2× damage (both sides) |
+| Fumble | Natural 1 → always misses |
 | Ranged (DEX) | Same formula but uses DEX mod instead of STR |
+
+`Stats.take_damage(dmg) = maxi(1, dmg)` — no damage reduction. `stats.armor` is always 0.
 
 ### Advantage / Disadvantage
 - **ADV**: attacking a SLEEPING enemy; attacking enemy whose `just_crossed_door == true` (consumed one-shot after check)
@@ -80,11 +83,12 @@ GameState.player_status_changed.emit()
 ---
 
 ## Enemy behavior states
-`SLEEPING → STATIONARY → ROAMING → CHASING`
+`SLEEPING → STATIONARY → ROAMING → CHASING → SEARCHING`
 
 **SLEEPING**: shows zzz label. Wakes when player within `WAKE_RADIUS_SQ = 4` (2-tile adjacency).
 **ROAMING**: waypoint BFS. `_pick_roam_target()` shuffles `DungeonFloor.get_room_centers()`, picks tile at Chebyshev ≥ 4. Follows `_roam_path: Array[Vector2i]` via `_bfs_to()`. Falls back to `_do_random_step()` if blocked.
-**CHASING**: follows player directly. Opens doors (sets `just_crossed_door = true` when stepping onto door tile).
+**CHASING**: follows player directly. Opens doors (sets `just_crossed_door = true` when stepping onto door tile). Records `_search_heading` (direction toward player) each turn player is visible.
+**SEARCHING**: entered when CHASING enemy reaches `last_known_player_pos` without LOS. Searches for 7 turns in `_search_heading` direction (BFS to `_search_target = last_known_pos + heading * 5`). If player spotted → CHASING. After 7 turns → ROAMING. Fields: `_search_heading: Vector2i`, `_search_turns_remaining: int`, `_search_target: Vector2i`, `_search_path: Array[Vector2i]`.
 
 `_roam_path` and `_roam_target` are cleared on state transitions.
 

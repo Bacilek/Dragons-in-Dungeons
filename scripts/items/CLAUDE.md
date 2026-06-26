@@ -33,6 +33,12 @@ TOOL   = 7
 | `is_ranged` | bool | if true → routes to `"ranged"` equipment slot |
 | `range` | int | max range in tiles (ranged weapons only) |
 | `consumes_on_ranged` | bool | decrement qty (and unequip at 0) on each ranged use |
+| `damage_type` | String | "Slashing", "Piercing", "Bludgeoning", "" = unknown; shown in attack log |
+| `heal_dice_count` | int | if > 0, use_item rolls N×d(heal_dice_sides)+CON instead of heal_amount |
+| `heal_dice_sides` | int | die sides for dice-based healing (e.g. 4 for d4) |
+| `damage_die_min/max` | int | weapon-specific damage dice; override base_min/max_damage when > 0 |
+| `is_two_handed` | bool | blocks ranged slot while in melee slot |
+| `is_heavy_armor` | bool | ends Barbarian Rage on equip |
 
 ---
 
