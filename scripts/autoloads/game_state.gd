@@ -136,6 +136,8 @@ func _give_starting_items() -> void:
 
 # Called by class_select.gd after player picks a class, replaces generic starting gear.
 func give_class_starting_items() -> void:
+	if equipment.get("melee") != null or player_ability_bar[0] != null:
+		return
 	match player_stats.character_class:
 		Stats.CharacterClass.BARBARIAN:
 			_give_barbarian_starting_items()

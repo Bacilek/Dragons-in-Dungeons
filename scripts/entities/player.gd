@@ -483,7 +483,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				else:
 					var had_tool: bool = _tool_item != null
 					_tool_item = null
-					_interact_action(had_tool)
+					_interact_action(had_tool, clicked)
 			return
 
 		if mb.button_index != MOUSE_BUTTON_LEFT:
@@ -793,7 +793,7 @@ func _activate_rage() -> void:
 		GameState.game_log("[color=red]No Rage uses remaining (resets on floor descent).[/color]")
 		return
 	_is_raging = true
-	_rage_turns = 0
+	_rage_turns = 1  # guarantees at least 2 full turns before rage fades without attacking
 	GameState.is_raging = true
 	ab.uses_remaining -= 1
 	GameState.player_stats.rage_uses_remaining = ab.uses_remaining
@@ -1113,14 +1113,14 @@ func _passive_trap_check() -> void:
 				GameState.game_log("[color=yellow]You notice something suspicious on the floor.[/color]")
 	_traps_in_proximity = now_in_range
 
-func _interact_action(can_lock: bool = true) -> void:
+func _interact_action(can_lock: bool = true, target: Vector2i = Vector2i(-1, -1)) -> void:
 	if _dungeon_floor == null:
 		return
 	var dirs8: Array[Vector2i] = [
 		Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
 		Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)
 	]
-	# Priority 1: revealed trap
+	# Priority 1: revealed trap — always scan all 8 neighbors
 	for d: Vector2i in dirs8:
 		var pos: Vector2i = grid_pos + d
 		var trap: Dictionary = _dungeon_floor.get_trap_at(pos)
@@ -1128,10 +1128,19 @@ func _interact_action(can_lock: bool = true) -> void:
 			_attempt_disarm(pos)
 			return
 	# Priority 2: door
-	for d: Vector2i in dirs8:
-		var pos: Vector2i = grid_pos + d
-		if not _dungeon_floor.has_door_at(pos):
-			continue
+	# When called from RMB (target provided), only interact with that exact tile if adjacent.
+	# When called from F key (no target), scan all 8 neighbors for the first door.
+	var door_candidates: Array[Vector2i] = []
+	if target != Vector2i(-1, -1):
+		var diff: Vector2i = target - grid_pos
+		if abs(diff.x) <= 1 and abs(diff.y) <= 1 and _dungeon_floor.has_door_at(target):
+			door_candidates.append(target)
+	else:
+		for d: Vector2i in dirs8:
+			var pos: Vector2i = grid_pos + d
+			if _dungeon_floor.has_door_at(pos):
+				door_candidates.append(pos)
+	for pos: Vector2i in door_candidates:
 		if _dungeon_floor.is_door_locked(pos):
 			if _dungeon_floor.is_door_player_locked(pos):
 				# Player set this lock — can unlock freely (free action on F)
@@ -1149,13 +1158,13 @@ func _interact_action(can_lock: bool = true) -> void:
 					GameState.game_log("[color=red]Locked. You need Thief Tools to pick this lock.[/color]")
 			return
 		if _dungeon_floor.is_door_open(pos):
-			# F on open door → close it
+			# F/RMB on open door → close it
 			TurnManager.begin_player_action()
 			_dungeon_floor.close_door(pos)
 			_dungeon_floor.update_fog(grid_pos)
 			TurnManager.on_player_action_complete()
 			return
-		# F on closed unlocked door: lock if tools available, else open
+		# Closed unlocked door: lock if tools available, else open
 		if can_lock and _find_thief_tools() != null:
 			_attempt_lock_door(pos)
 		else:

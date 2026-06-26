@@ -50,6 +50,9 @@ var _log_tooltip_visible: bool = false
 var _popup_prof_label: Label = null
 var _popup_dmg_label: Label = null
 var _popup_rage_label: Label = null
+var _popup_int_label: Label = null
+var _popup_wis_label: Label = null
+var _popup_cha_label: Label = null
 
 const CLASS_PORTRAIT: Dictionary = {
 	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/knight_m_idle_anim_f0.png",
@@ -566,14 +569,18 @@ func _apply_slot_styles() -> void:
 # ── Stats popup ───────────────────────────────────────────────────────────────
 
 func _init_popup_extra_labels() -> void:
-	# Expand panel to fit extra rows
-	stats_popup.offset_bottom = stats_popup.offset_bottom + 78.0
+	# Expand panel to fit extra rows (3 original + 3 new ability scores)
+	stats_popup.offset_bottom = stats_popup.offset_bottom + 78.0 + 78.0
 	# Proficiency row
 	_popup_prof_label = _make_popup_label(214.0)
 	# Damage row
 	_popup_dmg_label = _make_popup_label(240.0)
 	# Rage row (Barbarian only — hidden for other classes)
 	_popup_rage_label = _make_popup_label(266.0)
+	# INT / WIS / CHA rows
+	_popup_int_label = _make_popup_label(296.0)
+	_popup_wis_label = _make_popup_label(318.0)
+	_popup_cha_label = _make_popup_label(340.0)
 
 func _make_popup_label(y: float) -> Label:
 	var lbl := Label.new()
@@ -638,6 +645,14 @@ func _refresh_popup() -> void:
 				_popup_rage_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
 		else:
 			_popup_rage_label.visible = false
+
+	# INT / WIS / CHA
+	if _popup_int_label != null:
+		_popup_int_label.text = "INT: %d (%+d)" % [s.intelligence, s.int_modifier()]
+	if _popup_wis_label != null:
+		_popup_wis_label.text = "WIS: %d (%+d)" % [s.wisdom, s.wis_modifier()]
+	if _popup_cha_label != null:
+		_popup_cha_label.text = "CHA: %d (%+d)" % [s.charisma, s.cha_modifier()]
 
 # ── Log tooltip ───────────────────────────────────────────────────────────────
 
