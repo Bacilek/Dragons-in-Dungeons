@@ -61,6 +61,9 @@ var _popup_int_label: Label = null
 var _popup_wis_label: Label = null
 var _popup_cha_label: Label = null
 
+# ── Always-visible AC label in StatsPanel ────────────────────────────────────
+var _ac_label: Label = null
+
 const CLASS_PORTRAIT: Dictionary = {
 	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/knight_m_idle_anim_f0.png",
 	Stats.CharacterClass.RANGER:    "res://sprites/characters/elf_m_idle_anim_f0.png",
@@ -112,7 +115,10 @@ func _ready() -> void:
 	TurnManager.player_turn_started.connect(_update_compass)
 	TurnManager.player_turn_started.connect(_update_status_icons)
 	portrait.pressed.connect(_on_portrait_pressed)
-	portrait.focus_mode = Control.FOCUS_NONE
+	portrait.focus_mode      = Control.FOCUS_NONE
+	wait_button.focus_mode   = Control.FOCUS_NONE
+	search_button.focus_mode = Control.FOCUS_NONE
+	interact_button.focus_mode = Control.FOCUS_NONE
 	wait_button.pressed.connect(_on_wait_pressed)
 	search_button.pressed.connect(_on_search_pressed)
 	interact_button.pressed.connect(_on_interact_pressed)
@@ -217,6 +223,16 @@ func _ready() -> void:
 	$StatsPanel.add_child(_hit_dice_label)
 	_update_hit_dice_label()
 
+	# AC label — always visible to the right of the LevelLabel row
+	_ac_label = Label.new()
+	_ac_label.add_theme_font_size_override("font_size", 12)
+	_ac_label.add_theme_color_override("font_color", Color(0.70, 0.90, 1.0))
+	_ac_label.position = Vector2(72.0, 92.0)
+	_ac_label.size = Vector2(120.0, 16.0)
+	_ac_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$StatsPanel.add_child(_ac_label)
+	_update_ac_label()
+
 	# Stairs compass — top-center, hidden until stairs discovered
 	_compass_panel = Panel.new()
 	_compass_panel.anchor_left = 0.5
@@ -281,9 +297,9 @@ func _ready() -> void:
 	_init_popup_extra_labels()
 
 	# Refresh popup every turn so AC, rage status, etc. stay live
-	TurnManager.player_turn_started.connect(func(): _refresh_popup())
-	GameState.equipment_changed.connect(func(): _refresh_popup())
-	GameState.player_status_changed.connect(func(): _refresh_popup())
+	TurnManager.player_turn_started.connect(func(): _refresh_popup(); _update_ac_label())
+	GameState.equipment_changed.connect(func(): _refresh_popup(); _update_ac_label())
+	GameState.player_status_changed.connect(func(): _refresh_popup(); _update_ac_label())
 
 func _exit_tree() -> void:
 	if _inventory_overlay_ref != null and is_instance_valid(_inventory_overlay_ref):
@@ -457,6 +473,8 @@ func _on_interact_pressed() -> void:
 	GameState.player_action_requested.emit("interact")
 
 func _on_slot_pressed(slot_index: int) -> void:
+	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
+		return
 	if _ability_bar_mode:
 		var raw = GameState.player_ability_bar[slot_index]
 		if raw == null:
@@ -578,15 +596,26 @@ func _apply_slot_styles() -> void:
 # ── Stats popup ───────────────────────────────────────────────────────────────
 
 func _init_popup_extra_labels() -> void:
-	# Compact layout: STR/DEX/CON already at y=58/84/110; add INT/WIS/CHA/Prof below.
-	# Original panel height 220px → expand by 26 to fit Prof at y=214–234.
-	stats_popup.offset_bottom = stats_popup.offset_bottom + 26.0
+	# Compact layout: remove dead space above STR (HPStatLabel is hidden but
+	# occupied y=32–52, leaving a 30px gap). Move fixed nodes up, pack all 6
+	# stats tightly, add a separator, then Prof. Total height ≈ 202px.
+	stats_popup.offset_bottom = 320.0  # was 338+26=364; shrink to 320 → height 202px
+	# Reposition fixed scene labels (STR/DEX/CON) to eliminate the top margin
+	$StatsPopup/StrengthLabel.offset_top = 32.0; $StatsPopup/StrengthLabel.offset_bottom = 52.0
+	$StatsPopup/DexLabel.offset_top      = 54.0; $StatsPopup/DexLabel.offset_bottom      = 74.0
+	$StatsPopup/ConLabel.offset_top      = 76.0; $StatsPopup/ConLabel.offset_bottom      = 96.0
 	# INT / WIS / CHA immediately after CON
-	_popup_int_label = _make_popup_label(136.0)
-	_popup_wis_label = _make_popup_label(162.0)
-	_popup_cha_label = _make_popup_label(188.0)
+	_popup_int_label = _make_popup_label(98.0)
+	_popup_wis_label = _make_popup_label(120.0)
+	_popup_cha_label = _make_popup_label(142.0)
+	# Thin separator before proficiency
+	var sep := HSeparator.new()
+	sep.position = Vector2(10.0, 166.0)
+	sep.size = Vector2(280.0, 4.0)
+	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stats_popup.add_child(sep)
 	# Proficiency bonus
-	_popup_prof_label = _make_popup_label(214.0)
+	_popup_prof_label = _make_popup_label(172.0)
 
 func _make_popup_label(y: float) -> Label:
 	var lbl := Label.new()
@@ -598,6 +627,10 @@ func _make_popup_label(y: float) -> Label:
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stats_popup.add_child(lbl)
 	return lbl
+
+func _update_ac_label() -> void:
+	if _ac_label != null:
+		_ac_label.text = "AC: %d" % GameState.player_stats.armor_class
 
 func _refresh_popup() -> void:
 	if not stats_popup.visible:
@@ -909,7 +942,7 @@ func _fmt_heal_tooltip(p: Dictionary) -> String:
 	var total: int = int(p.get("total", "0"))
 	var lines: PackedStringArray = []
 	if dice > 0 and sides > 0:
-		var roll: int = total - con
+		var roll: int = int(p.get("roll", "0"))
 		lines.append("%dd%d = [color=lime]%d[/color]" % [dice, sides, roll])
 	if con != 0:
 		lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)

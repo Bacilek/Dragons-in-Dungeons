@@ -53,9 +53,10 @@ Triggered by `GameState.stairs_discovered` signal (emitted by `DungeonFloor.upda
 ## Short rest panel (`short_rest_panel.gd`)
 CanvasLayer, layer = 25. Spawned by `player.gd._open_short_rest()`.
 
-Keyboard bindings: ←/A/KP4 = minus dice, →/D/KP6 = plus dice, Enter = rest, Esc = close.
+Keyboard bindings: ←/A/KP4 = minus dice, →/D/KP6 = plus dice, **Space = rest**, Esc = close.
 On Rest: rolls `_dice_to_spend × hit_die_sides() + CON mod` (min 1 per die), heals player, decrements `GameState.hit_dice` and `GameState.short_rests_remaining`.
 Sets `GameState.short_rest_open = true` on open → blocks all player input until closed.
+**Important ordering in `_on_rest()`**: `GameState.short_rest_open = false` and `queue_free()` must be called **before** emitting `player_action_requested("short_rest_begin")` because the signal is synchronous — `_on_turn_started` fires inside the chain and checks `short_rest_open`.
 
 ---
 
@@ -74,6 +75,8 @@ If new `Item` fields are added, also update `_on_give_item()` in this file.
 Equipment slot labels: **Melee** / **Ranged** (keys `"melee"` / `"ranged"` in `GameState.equipment`).
 Slot type enforced: melee slot rejects ranged items and vice versa.
 Quickbar: 9 slots (indices 0–8). Bag: 24 slots.
+
+**Ctrl-freeze tooltip**: pressing Ctrl while hovering an item (tooltip visible) freezes the tooltip in place and switches `_inv_tooltip.mouse_filter = MOUSE_FILTER_STOP` + `_inv_tooltip_rtl.mouse_filter = MOUSE_FILTER_PASS`. This allows `meta_hover_started` to fire for `[url=keyword:X]` links (e.g. "Heavy"), showing the glossary popup. Ctrl again or closing inventory unfreezes. `_unfreeze_tooltip()` helper restores MOUSE_FILTER_IGNORE on both.
 
 ---
 

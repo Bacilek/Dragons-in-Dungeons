@@ -18,6 +18,9 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"heavy": "Heavy weapon.\nRequires STR 13+.\nAttacking with STR < 13\nimposes Disadvantage."
 }
 
+# Tooltip freeze state (Ctrl to freeze, enabling keyword link hover)
+var _tooltip_frozen: bool = false
+
 # Drag state (manual drag — no Godot built-in drag API)
 var _dragging:       bool    = false
 var _drag_item:      Item    = null
@@ -45,6 +48,12 @@ func _safe_refresh() -> void:
 	if visible:
 		_refresh()
 
+func _unfreeze_tooltip() -> void:
+	_tooltip_frozen = false
+	if _inv_tooltip     != null: _inv_tooltip.mouse_filter     = Control.MOUSE_FILTER_IGNORE
+	if _inv_tooltip_rtl != null: _inv_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if _inv_glossary_popup != null: _inv_glossary_popup.visible = false
+
 func _input(event: InputEvent) -> void:
 	if not visible:
 		return
@@ -52,7 +61,17 @@ func _input(event: InputEvent) -> void:
 		return
 	var key := event as InputEventKey
 	if key.pressed and not key.echo:
+		if key.physical_keycode == KEY_CTRL:
+			if _tooltip_frozen:
+				_unfreeze_tooltip()
+			elif _inv_tooltip != null and _inv_tooltip.visible:
+				_tooltip_frozen = true
+				_inv_tooltip.mouse_filter     = Control.MOUSE_FILTER_STOP
+				_inv_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_PASS
+			get_viewport().set_input_as_handled()
+			return
 		if key.physical_keycode == KEY_I or key.physical_keycode == KEY_ESCAPE:
+			_unfreeze_tooltip()
 			get_viewport().set_input_as_handled()
 			visible = false
 			GameState.inventory_open = false
@@ -64,18 +83,25 @@ func _process(_delta: float) -> void:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_finish_drag()
 	if _inv_tooltip != null and _inv_tooltip.visible:
-		var mp: Vector2 = get_viewport().get_mouse_position()
-		var vp: Vector2 = get_viewport().get_visible_rect().size
 		var tw: float = _inv_tooltip.size.x
 		var th: float = _inv_tooltip_rtl.get_content_height() + 14.0
 		_inv_tooltip_rtl.size = Vector2(tw - 16.0, th - 14.0)
 		_inv_tooltip.size = Vector2(tw, th)
-		var tx: float = clampf(mp.x - tw * 0.5, 4.0, vp.x - tw - 4.0)
-		var ty: float = mp.y - th - 14.0
-		if ty < 4.0:
-			ty = mp.y + 18.0
-		_inv_tooltip.position = Vector2(tx, ty)
+		var tx: float
+		var ty: float
+		if not _tooltip_frozen:
+			var mp: Vector2 = get_viewport().get_mouse_position()
+			var vp: Vector2 = get_viewport().get_visible_rect().size
+			tx = clampf(mp.x - tw * 0.5, 4.0, vp.x - tw - 4.0)
+			ty = mp.y - th - 14.0
+			if ty < 4.0:
+				ty = mp.y + 18.0
+			_inv_tooltip.position = Vector2(tx, ty)
+		else:
+			tx = _inv_tooltip.position.x
+			ty = _inv_tooltip.position.y
 		if _inv_glossary_popup != null and _inv_glossary_popup.visible:
+			var vp: Vector2 = get_viewport().get_visible_rect().size
 			var gw: float = _inv_glossary_popup.size.x
 			var gh: float = _inv_glossary_rtl.get_content_height() + 14.0
 			_inv_glossary_rtl.size = Vector2(gw - 16.0, gh - 14.0)
@@ -94,6 +120,7 @@ func _build_ui() -> void:
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	dim.gui_input.connect(func(ev: InputEvent):
 		if ev is InputEventMouseButton and (ev as InputEventMouseButton).pressed:
+			_unfreeze_tooltip()
 			visible = false
 			GameState.inventory_open = false
 	)
@@ -391,6 +418,8 @@ func _on_slot_hover(slot: Control) -> void:
 	_inv_tooltip.visible = true
 
 func _on_slot_hover_end() -> void:
+	if _tooltip_frozen:
+		return
 	if _inv_tooltip != null:
 		_inv_tooltip.visible = false
 	if _inv_glossary_popup != null:

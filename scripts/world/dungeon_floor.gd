@@ -261,6 +261,8 @@ func _load_floor() -> void:
 		GameState.debug_reveal_all.connect(reveal_all)
 	if not GameState.debug_see_all.is_connected(_on_debug_see_all):
 		GameState.debug_see_all.connect(_on_debug_see_all)
+	if GameState.god_mode:
+		_on_debug_see_all(true)
 
 # ── Tilemap queries ───────────────────────────────────────────────────────────
 

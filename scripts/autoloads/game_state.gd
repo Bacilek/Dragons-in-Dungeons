@@ -380,16 +380,17 @@ func use_item(item: Item) -> void:
 			AudioManager.play("drink_potion")
 			if item.heal_dice_count > 0:
 				# Dice-based heal (e.g. 2d4+CON for Health Potion)
-				var amount: int = 0
+				var raw_roll: int = 0
 				for _i: int in item.heal_dice_count:
-					amount += randi_range(1, item.heal_dice_sides)
-				amount = maxi(1, amount + player_stats.con_modifier())
+					raw_roll += randi_range(1, item.heal_dice_sides)
+				var con_mod: int = player_stats.con_modifier()
+				var amount: int = maxi(1, raw_roll + con_mod)
 				var before: int = player_stats.current_hp
 				heal(amount)
 				var healed: int = player_stats.current_hp - before
 				if healed > 0:
-					var _hm: String = "heal:dice=%d,sides=%d,con=%d,total=%d" % [item.heal_dice_count, item.heal_dice_sides, player_stats.con_modifier(), healed]
-					combat_message.emit("[color=green]You drink [b]%s[/b] — [url=%s][color=lime]+%d HP[/color][/url][/color]" % [item.item_name, _hm, healed])
+					var _hm: String = "heal:dice=%d,sides=%d,con=%d,roll=%d,total=%d" % [item.heal_dice_count, item.heal_dice_sides, con_mod, raw_roll, healed]
+					combat_message.emit("You drink [b]%s[/b] and heal [url=%s][color=lime]+%d HP[/color][/url]" % [item.item_name, _hm, healed])
 				else:
 					combat_message.emit("[color=gray]Already at full health.[/color]")
 			elif item.heal_amount > 0:

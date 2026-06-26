@@ -115,7 +115,7 @@ func _build_ui() -> void:
 	panel.add_child(cancel_btn)
 
 	_rest_btn = Button.new()
-	_rest_btn.text = "Rest  [Enter]"
+	_rest_btn.text = "Rest  [Space]"
 	_rest_btn.size = Vector2(208.0, 48.0)
 	_rest_btn.position = Vector2(288.0, 246.0)
 	_rest_btn.add_theme_font_size_override("font_size", 16)
@@ -196,8 +196,12 @@ func _on_rest() -> void:
 	GameState.short_rest_turns_remaining = 5
 	GameState.game_log("[color=cyan]You settle in for a short rest... (5 turns)[/color]")
 	GameState.short_rest_changed.emit()
+	# Close BEFORE emitting "short_rest_begin" — the signal is synchronous and
+	# _on_turn_started fires inside the chain; it must see short_rest_open = false
+	# or it returns early, making the first rest turn require a manual keypress.
+	GameState.short_rest_open = false
+	queue_free()
 	GameState.player_action_requested.emit("short_rest_begin")
-	_close()
 
 func _close() -> void:
 	GameState.short_rest_open = false
@@ -219,7 +223,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_RIGHT, KEY_D, KEY_KP_6:
 			get_viewport().set_input_as_handled()
 			_on_plus()
-		KEY_ENTER, KEY_KP_ENTER:
+		KEY_SPACE:
 			if not _rest_btn.disabled:
 				get_viewport().set_input_as_handled()
 				_on_rest()
