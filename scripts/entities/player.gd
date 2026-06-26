@@ -43,6 +43,19 @@ var _hover_indicator: Sprite2D = null
 var _hover_last_icon_path: String = ""
 var _hover_last_texture: Texture2D = null
 
+# ── Rage state ────────────────────────────────────────────────────────────────
+# _rage_turns: extra full turns of rage remaining after the current one.
+# When rage is activated: set to 0 (lasts only this turn unless extended).
+# Attacking with a STR-based melee weapon adds +1 each time (called each attack).
+# At start of each player turn: if > 0 decrement; if == 0 rage ends.
+# TODO: Also extend by +1 when forcing an enemy saving throw (saving throws not yet implemented).
+# TODO: Also extend by +1 when bonus action is used to maintain rage (bonus actions not yet implemented).
+var _is_raging: bool = false
+var _rage_turns: int = 0  # additional turns of rage beyond the current one
+
+# ── Equip action tracking ─────────────────────────────────────────────────────
+var _pending_equip_turn: bool = false  # set by equip_action_taken signal; consumed in next action gate
+
 
 func _ready() -> void:
 	stats = GameState.player_stats
@@ -56,16 +69,35 @@ func _ready() -> void:
 	GameState.class_chosen.connect(_on_class_chosen)
 	GameState.camera_recenter_requested.connect(_reset_camera_offset)
 	GameState.screen_shake.connect(_screen_shake)
-	GameState.equipment_changed.connect(func():
-		if _throw_item != null:
-			_throw_item = null
-			GameState.game_log("[color=gray]Throw cancelled.[/color]")
-	)
+	GameState.equip_action_taken.connect(_on_equip_action_taken)
+	GameState.equipment_changed.connect(_on_equipment_changed)
 	GameState.potion_drunk.connect(func():
 		if GameState.add_item(_make_empty_bottle()):
 			GameState.game_log("[color=gray]Empty bottle added to your bag.[/color]")
 	)
 	TurnManager.player_turn_started.connect(_on_turn_started)
+
+func _on_equipment_changed() -> void:
+	if _throw_item != null:
+		_throw_item = null
+		GameState.game_log("[color=gray]Throw cancelled.[/color]")
+	# Wearing heavy armor while raging ends rage immediately (D&D 5e rule)
+	if _is_raging:
+		var armor: Item = GameState.equipped_armor
+		if armor != null and armor.is_heavy_armor:
+			_end_rage()
+			GameState.game_log("[color=gray]The heavy armor weighs you down — Rage ends![/color]")
+
+func _on_equip_action_taken() -> void:
+	# Consume 1 turn the next time we have control (may be immediately if WAITING_FOR_INPUT)
+	if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing \
+			and not GameState.short_rest_open and not GameState.short_rest_active:
+		TurnManager.begin_player_action()
+		if _dungeon_floor != null:
+			_dungeon_floor.update_fog(grid_pos)
+		TurnManager.on_player_action_complete()
+	else:
+		_pending_equip_turn = true
 
 func _on_player_died() -> void:
 	visible = false
@@ -85,6 +117,23 @@ func _on_turn_started() -> void:
 		_dungeon_floor.update_fog(grid_pos)
 		_fov_prev_turn = _fov_this_turn
 		_fov_this_turn = _dungeon_floor.get_visible_enemies()
+
+	# Consume a pending equip turn (couldn't be spent last frame)
+	if _pending_equip_turn:
+		_pending_equip_turn = false
+		TurnManager.begin_player_action()
+		if _dungeon_floor != null:
+			_dungeon_floor.update_fog(grid_pos)
+		TurnManager.on_player_action_complete()
+		return
+
+	# Tick rage: decrement extra turns; end rage when they hit 0
+	if _is_raging:
+		if _rage_turns > 0:
+			_rage_turns -= 1
+		else:
+			_end_rage()
+			GameState.game_log("[color=gray]Your Rage fades — you didn't attack last turn.[/color]")
 
 	# Short rest in progress — player waits in place
 	if GameState.short_rest_active:
@@ -311,6 +360,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _tool_item != null:
 				_tool_item = null
 				GameState.game_log("[color=gray]Disarm cancelled.[/color]")
+			return
+		# Tab toggles between item bar and ability bar (valid any time except game over)
+		if key.physical_keycode == KEY_TAB:
+			GameState.player_action_requested.emit("toggle_ability_bar")
 			return
 		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 			return
@@ -714,6 +767,45 @@ func _try_move(dir: Vector2i) -> void:
 		_dungeon_floor.update_fog(grid_pos)
 		TurnManager.on_player_action_complete()
 
+# ── Rage helpers ─────────────────────────────────────────────────────────────
+
+func _activate_rage() -> void:
+	if _is_raging:
+		GameState.game_log("[color=red]You are already raging![/color]")
+		return
+	var ab: Ability = _find_ability("rage")
+	if ab == null or not ab.has_uses():
+		GameState.game_log("[color=red]No Rage uses remaining (resets on floor descent).[/color]")
+		return
+	_is_raging = true
+	_rage_turns = 0
+	GameState.is_raging = true
+	ab.uses_remaining -= 1
+	GameState.player_stats.rage_uses_remaining = ab.uses_remaining
+	GameState.ability_bar_changed.emit()
+	$AnimatedSprite2D.modulate = Color(1.6, 0.55, 0.55)  # red tint
+	GameState.game_log("[color=red]You fly into a RAGE! Damage resistance, +2 STR damage, STR advantage. (%d uses left)[/color]" % ab.uses_remaining)
+	# Rage lasts only this turn unless extended (attacking, saving throw, bonus action)
+	# Consume a turn for the activation itself
+	TurnManager.begin_player_action()
+	if _dungeon_floor != null:
+		_dungeon_floor.update_fog(grid_pos)
+	TurnManager.on_player_action_complete()
+
+func _end_rage() -> void:
+	_is_raging = false
+	_rage_turns = 0
+	GameState.is_raging = false
+	$AnimatedSprite2D.modulate = Color(1.0, 1.0, 1.0)
+
+func _find_ability(ab_id: String) -> Ability:
+	for slot in GameState.player_ability_bar:
+		if slot != null and (slot as Ability).ability_id == ab_id:
+			return slot as Ability
+	return null
+
+# ── Melee attack ─────────────────────────────────────────────────────────────
+
 func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	TurnManager.begin_player_action()
 	$AnimatedSprite2D.flip_h = dir.x < 0
@@ -723,28 +815,31 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 
 	_show_sword_slash(dir)
 
-	# D&D attack roll: d20 + STR modifier + weapon bonus vs enemy AC
-	# Advantage (2d20 higher) when target is sleeping or entered FOV this turn
+	# D&D attack roll: d20 + STR modifier + proficiency bonus + weapon enhancement vs enemy AC
+	# Advantage (2d20 higher) when target is sleeping or entered FOV this turn.
+	# TODO: Barbarian also gets STR check/save advantage while raging — extend to saves when implemented.
 	var is_unarmed: bool = GameState.equipped_weapon == null
 	var str_mod: int = stats.str_modifier()
+	var prof: int = stats.proficiency_bonus  # all melee weapons are proficient for now
 	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if not is_unarmed else 0
+	var total_hit_bonus: int = str_mod + prof + weapon_bonus
 	var adv: bool = _has_advantage(enemy)
 	var die1: int = randi_range(1, 20)
 	var die2: int = randi_range(1, 20) if adv else die1
 	var die: int = maxi(die1, die2) if adv else die1
-	var roll: int = die + str_mod + weapon_bonus
+	var roll: int = die + total_hit_bonus
 	var is_crit: bool = die == 20
 	var is_nat_one: bool = die == 1
+
+	# Rage extends by 1 turn when you successfully attack with a STR-based weapon
+	var is_str_weapon: bool = not is_unarmed and not (GameState.equipped_weapon.is_ranged)
+	if _is_raging and is_str_weapon:
+		_rage_turns += 1
+
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
-		if is_unarmed:
-			if adv:
-				GameState.game_log("You punch at [color=orange]%s[/color] but [color=gray]miss[/color]! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, str_mod, roll, enemy.stats.armor_class])
-			else:
-				GameState.game_log("You punch at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, str_mod, roll, enemy.stats.armor_class])
-		elif adv:
-			GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
-		else:
-			GameState.game_log("You swing at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		var hit_str: String = "adv [%d,%d]→%d+%d=[color=yellow]%d[/color]" % [die1, die2, die, total_hit_bonus, roll] if adv else "d20+%d=[color=yellow]%d[/color]" % [total_hit_bonus, roll]
+		var verb: String = "punch" if is_unarmed else "swing"
+		GameState.game_log("You %s at [color=orange]%s[/color] but [color=gray]miss[/color]! (%s vs AC %d)" % [verb, enemy.display_name, hit_str, enemy.stats.armor_class])
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
@@ -758,35 +853,29 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	_flash_hit(enemy)
 	if adv:
 		_show_surprise_mark(enemy)
+
 	var dmg: int = stats.roll_damage()
+	# Rage bonus: +2 damage with STR-based melee weapons
+	if _is_raging and is_str_weapon:
+		dmg += 2
 	if is_crit:
 		dmg *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
+
 	var actual: int = enemy.stats.take_damage(dmg)
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
+
+	var hit_str: String = "adv [%d,%d]→%d+%d=[color=yellow]%d[/color]" % [die1, die2, die, total_hit_bonus, roll] if adv else "d20+%d=[color=yellow]%d[/color]" % [total_hit_bonus, roll]
+	var verb: String = "punch" if is_unarmed else "strike"
+	var rage_tag: String = " [color=red]+rage[/color]" if (_is_raging and is_str_weapon) else ""
 	if is_crit:
-		if is_unarmed:
-			if adv:
-				GameState.game_log("[color=red]CRITICAL HIT![/color] You punch [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, str_mod, roll, enemy.stats.armor_class])
-			else:
-				GameState.game_log("[color=red]CRITICAL HIT![/color] You punch [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20=[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod, roll, enemy.stats.armor_class])
-		elif adv:
-			GameState.game_log("[color=red]CRITICAL HIT![/color] You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
-		else:
-			GameState.game_log("[color=red]CRITICAL HIT![/color] You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20=[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		GameState.game_log("[color=red]CRITICAL HIT![/color] You %s [color=orange]%s[/color] for [color=yellow]%d[/color] dmg%s. (%s vs AC %d)" % [verb, enemy.display_name, actual, rage_tag, hit_str, enemy.stats.armor_class])
 	else:
-		if is_unarmed:
-			if adv:
-				GameState.game_log("You punch [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, die, str_mod, roll, enemy.stats.armor_class])
-			else:
-				GameState.game_log("You punch [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod, roll, enemy.stats.armor_class])
-		elif adv:
-			GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, die, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
-		else:
-			GameState.game_log("You strike [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, str_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		GameState.game_log("You %s [color=orange]%s[/color] for [color=yellow]%d[/color] dmg%s. (%s vs AC %d)" % [verb, enemy.display_name, actual, rage_tag, hit_str, enemy.stats.armor_class])
+
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
 	if _dungeon_floor != null:
@@ -872,6 +961,14 @@ func _on_action_requested(action_name: String) -> void:
 			_queued_path.clear()
 			_path_executing = false
 			_do_rest_wait_turn()
+		return
+	if action_name == "toggle_ability_bar":
+		_ability_bar_active = not _ability_bar_active
+		return
+	if action_name.begins_with("use_ability_"):
+		var idx: int = action_name.substr(12).to_int()
+		if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
+			_use_ability_slot(idx)
 		return
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 		return
@@ -1106,10 +1203,29 @@ func _attempt_lock_door(door_pos: Vector2i) -> void:
 func _use_quickbar_slot(idx: int) -> void:
 	if idx < 0 or idx >= GameState.QUICKBAR_SIZE:
 		return
+	# Delegate to item bar or ability bar depending on current HUD mode
+	# The HUD manages the visual toggle; player.gd reads _ability_bar_active via signal
+	if _ability_bar_active:
+		_use_ability_slot(idx)
+		return
 	var raw = GameState.player_quickbar[idx]
 	if raw == null:
 		return
 	GameState.use_item(raw as Item)
+
+# Set by HUD when Tab toggles bar mode
+var _ability_bar_active: bool = false
+
+func _use_ability_slot(idx: int) -> void:
+	if idx < 0 or idx >= GameState.ABILITY_BAR_SIZE:
+		return
+	var raw = GameState.player_ability_bar[idx]
+	if raw == null:
+		return
+	var ab := raw as Ability
+	match ab.ability_id:
+		"rage": _activate_rage()
+		_: GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
 
 func _make_empty_bottle() -> Item:
 	var b := Item.new()
@@ -1213,7 +1329,8 @@ func _ranged_attack(enemy: Enemy) -> void:
 	_show_projectile(enemy.position, weapon)
 
 	var dex_mod: int = stats.dex_modifier()
-	var weapon_bonus: int = weapon.bonus_damage if weapon != null else 0
+	var prof: int = stats.proficiency_bonus
+	var weapon_bonus: int = (weapon.bonus_damage if weapon != null else 0) + prof
 	# Advantage: target sleeping or just entered FOV this turn
 	var adv: bool = _has_advantage(enemy)
 	# Disadvantage: ranged weapon fired at melee range (Chebyshev distance 1)

@@ -27,6 +27,7 @@ var _poison_icon: ColorRect
 var _burning_icon: ColorRect
 var _bleeding_icon: ColorRect
 var _slowed_icon: ColorRect
+var _rage_icon: ColorRect        # red dot shown while raging
 var _inventory_overlay_ref: Node = null
 var _debug_panel_ref: Node = null
 var _hit_dice_label: Label
@@ -35,12 +36,42 @@ var _compass_arrow_label: Label
 var _compass_dist_label: Label
 var _stairs_found_this_floor: bool = false
 
+# ── Ability bar toggle ────────────────────────────────────────────────────────
+var _ability_bar_mode: bool = false  # false = items, true = abilities
+var _bar_mode_label: Label           # shows "ITEMS" / "ABILITIES [Tab]"
+var _slot_use_labels: Array[Label] = []  # ability uses remaining badges
+
 const CLASS_PORTRAIT: Dictionary = {
 	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/knight_m_idle_anim_f0.png",
 	Stats.CharacterClass.RANGER:    "res://sprites/characters/elf_m_idle_anim_f0.png",
 	Stats.CharacterClass.WIZARD:    "res://sprites/characters/wizzard_m_idle_anim_f0.png",
 	Stats.CharacterClass.CLERIC:    "res://sprites/characters/dwarf_m_idle_anim_f0.png",
 }
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		var key := event as InputEventKey
+		if key.pressed and not key.echo and key.physical_keycode == KEY_TAB:
+			if not GameState.is_game_over and GameState.class_selected:
+				_toggle_ability_bar()
+				get_viewport().set_input_as_handled()
+
+func _toggle_ability_bar() -> void:
+	_ability_bar_mode = not _ability_bar_mode
+	_update_bar_mode_label()
+	_refresh_inventory()
+	# Notify player.gd so 1–9 hotkeys route to ability bar
+	GameState.player_action_requested.emit("toggle_ability_bar")
+
+func _update_bar_mode_label() -> void:
+	if _bar_mode_label == null:
+		return
+	if _ability_bar_mode:
+		_bar_mode_label.text = "[TAB] ABILITIES"
+		_bar_mode_label.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
+	else:
+		_bar_mode_label.text = "[TAB] ITEMS"
+		_bar_mode_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.60))
 
 func _ready() -> void:
 	GameState.floor_changed.connect(_on_floor_changed)
@@ -51,6 +82,7 @@ func _ready() -> void:
 	GameState.player_won.connect(_on_player_won)
 	GameState.combat_message.connect(_on_combat_message)
 	GameState.inventory_changed.connect(_refresh_inventory)
+	GameState.ability_bar_changed.connect(_refresh_inventory)
 	GameState.hunger_changed.connect(_on_hunger_changed)
 	GameState.player_status_changed.connect(_on_status_changed)
 	GameState.class_chosen.connect(_on_class_chosen)
@@ -58,6 +90,7 @@ func _ready() -> void:
 	GameState.stairs_discovered.connect(_on_stairs_discovered)
 	GameState.crit_banner.connect(_show_crit_banner)
 	TurnManager.player_turn_started.connect(_update_compass)
+	TurnManager.player_turn_started.connect(_update_status_icons)
 	portrait.pressed.connect(_on_portrait_pressed)
 	portrait.focus_mode = Control.FOCUS_NONE
 	wait_button.pressed.connect(_on_wait_pressed)
@@ -105,16 +138,54 @@ func _ready() -> void:
 	$StatsPanel.add_child(_hunger_label)
 	_update_hunger_label()
 
-	# Status icons (poison=green, burning=orange, bleeding=red, slowed=brown) below portrait
+	# Status icons (poison=green, burning=orange, bleeding=red, slowed=brown, rage=crimson) below portrait
 	_poison_icon   = _make_status_dot(Color(0.20, 0.85, 0.35), Vector2(2.0,  2.0))
 	_burning_icon  = _make_status_dot(Color(1.00, 0.45, 0.10), Vector2(16.0, 2.0))
 	_bleeding_icon = _make_status_dot(Color(0.80, 0.0,  0.0),  Vector2(30.0, 2.0))
 	_slowed_icon   = _make_status_dot(Color(0.55, 0.35, 0.10), Vector2(44.0, 2.0))
+	_rage_icon     = _make_status_dot(Color(1.00, 0.10, 0.10), Vector2(58.0, 2.0))
 	$StatsPanel.add_child(_poison_icon)
 	$StatsPanel.add_child(_burning_icon)
 	$StatsPanel.add_child(_bleeding_icon)
 	$StatsPanel.add_child(_slowed_icon)
+	$StatsPanel.add_child(_rage_icon)
 	_update_status_icons()
+
+	# Bar mode label — anchored to bottom, just above the action bar (which sits at bottom -90px)
+	_bar_mode_label = Label.new()
+	_bar_mode_label.add_theme_font_size_override("font_size", 10)
+	_bar_mode_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bar_mode_label.anchor_left = 0.0
+	_bar_mode_label.anchor_right = 1.0
+	_bar_mode_label.anchor_top = 1.0
+	_bar_mode_label.anchor_bottom = 1.0
+	_bar_mode_label.offset_top = -104.0   # ActionBar top is at -90; label sits 14px above that
+	_bar_mode_label.offset_bottom = -90.0
+	_bar_mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	add_child(_bar_mode_label)
+	_update_bar_mode_label()
+
+	# Use-count badges for ability slots (separate from item qty labels)
+	for _i: int in SLOT_COUNT:
+		var use_lbl := Label.new()
+		use_lbl.add_theme_font_size_override("font_size", 11)
+		use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2))
+		use_lbl.add_theme_color_override("font_shadow_color", Color.BLACK)
+		use_lbl.add_theme_constant_override("shadow_offset_x", 1)
+		use_lbl.add_theme_constant_override("shadow_offset_y", 1)
+		use_lbl.text = ""
+		use_lbl.anchor_left = 1.0
+		use_lbl.anchor_right = 1.0
+		use_lbl.anchor_top = 1.0
+		use_lbl.anchor_bottom = 1.0
+		use_lbl.offset_left = -32.0
+		use_lbl.offset_top = -18.0
+		use_lbl.offset_right = -2.0
+		use_lbl.offset_bottom = -1.0
+		use_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		use_lbl.visible = false
+		_item_slots[_i].add_child(use_lbl)
+		_slot_use_labels.append(use_lbl)
 
 	# Hit dice label below level label
 	_hit_dice_label = Label.new()
@@ -201,6 +272,8 @@ func _update_status_icons() -> void:
 		_bleeding_icon.visible = GameState.player_stats.bleeding_turns > 0
 	if _slowed_icon != null:
 		_slowed_icon.visible = GameState.player_stats.slowed_turns > 0
+	if _rage_icon != null:
+		_rage_icon.visible = GameState.is_raging
 
 func _show_crit_banner(text: String, color: Color) -> void:
 	var lbl := Label.new()
@@ -348,6 +421,13 @@ func _on_interact_pressed() -> void:
 	GameState.player_action_requested.emit("interact")
 
 func _on_slot_pressed(slot_index: int) -> void:
+	if _ability_bar_mode:
+		var raw = GameState.player_ability_bar[slot_index]
+		if raw == null:
+			return
+		# Delegate actual use to player.gd via action_requested mechanism
+		GameState.player_action_requested.emit("use_ability_%d" % slot_index)
+		return
 	var raw = GameState.player_quickbar[slot_index]
 	if raw == null:
 		return
@@ -359,6 +439,8 @@ func _on_slot_gui_input(event: InputEvent, slot_index: int) -> void:
 	var mb := event as InputEventMouseButton
 	if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
 		get_viewport().set_input_as_handled()
+		if _ability_bar_mode:
+			return  # no RMB action for ability slots
 		var raw = GameState.player_quickbar[slot_index]
 		if raw == null:
 			return
@@ -381,10 +463,18 @@ func _update_exp_bar(exp: int, exp_needed: int, level: int) -> void:
 # ── Inventory ─────────────────────────────────────────────────────────────────
 
 func _refresh_inventory() -> void:
+	if _ability_bar_mode:
+		_refresh_ability_bar()
+	else:
+		_refresh_item_bar()
+
+func _refresh_item_bar() -> void:
 	for i: int in SLOT_COUNT:
 		var raw = GameState.player_quickbar[i]
 		var slot: Button = _item_slots[i]
 		var qty_lbl: Label = _slot_qty_labels[i]
+		if _slot_use_labels.size() > i:
+			_slot_use_labels[i].visible = false
 		if raw == null:
 			slot.text = ""
 			slot.icon = null
@@ -396,6 +486,35 @@ func _refresh_inventory() -> void:
 				slot.icon = load(it.icon_path)
 				slot.expand_icon = true
 			qty_lbl.text = "×%d" % it.quantity if it.quantity > 1 else ""
+
+func _refresh_ability_bar() -> void:
+	for i: int in SLOT_COUNT:
+		var raw = GameState.player_ability_bar[i]
+		var slot: Button = _item_slots[i]
+		var qty_lbl: Label = _slot_qty_labels[i]
+		qty_lbl.text = ""
+		if _slot_use_labels.size() > i:
+			_slot_use_labels[i].visible = false
+		if raw == null:
+			slot.text = ""
+			slot.icon = null
+		else:
+			var ab := raw as Ability
+			slot.text = ""
+			if ab.icon_path != "":
+				slot.icon = load(ab.icon_path)
+				slot.expand_icon = true
+			else:
+				slot.text = ab.ability_name.left(4)
+			if _slot_use_labels.size() > i:
+				var use_lbl: Label = _slot_use_labels[i]
+				use_lbl.visible = true
+				use_lbl.text = "%d/%d" % [ab.uses_remaining, ab.uses_max]
+				# Grey out when no uses left
+				var clr: Color = Color(1.0, 0.7, 0.2) if ab.uses_remaining > 0 else Color(0.5, 0.5, 0.5)
+				use_lbl.add_theme_color_override("font_color", clr)
+			# Grey tint on exhausted abilities
+			slot.modulate = Color(1.0, 1.0, 1.0) if ab.uses_remaining > 0 else Color(0.5, 0.5, 0.5)
 
 func _apply_slot_styles() -> void:
 	for slot: Button in _item_slots:

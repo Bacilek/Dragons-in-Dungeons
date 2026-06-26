@@ -27,8 +27,12 @@ signal debug_see_all(active: bool)
 signal crit_banner(text: String, color: Color)
 signal screen_shake(strength: float)
 signal potion_drunk
+signal ability_bar_changed()
+# Emitted when equip/unequip is done intentionally (costs 1 turn). Not emitted on auto-pickup.
+signal equip_action_taken()
 
 const QUICKBAR_SIZE: int = 9
+const ABILITY_BAR_SIZE: int = 9
 const INVENTORY_SIZE: int = 24
 
 enum HungerState { SATIATED, HUNGRY, STARVING }
@@ -61,7 +65,8 @@ var hunger_state: HungerState:
 		if hunger > 200: return HungerState.HUNGRY
 		return HungerState.STARVING
 
-var player_quickbar: Array = []   # 5 slots shown in HUD action bar
+var player_quickbar: Array = []   # 9 item slots shown in HUD action bar
+var player_ability_bar: Array = [] # 9 ability slots (Tab to switch)
 var player_inventory: Array = []  # 24-slot bag
 
 var equipment: Dictionary = {
@@ -101,6 +106,9 @@ func start_new_run() -> void:
 	player_quickbar.clear()
 	for _i: int in QUICKBAR_SIZE:
 		player_quickbar.append(null)
+	player_ability_bar.clear()
+	for _i: int in ABILITY_BAR_SIZE:
+		player_ability_bar.append(null)
 	player_inventory.clear()
 	for _i: int in INVENTORY_SIZE:
 		player_inventory.append(null)
@@ -126,15 +134,71 @@ func _give_starting_items() -> void:
 	tools.quantity = 3
 	add_item(tools)
 
+# Called by class_select.gd after player picks a class, replaces generic starting gear.
+func give_class_starting_items() -> void:
+	match player_stats.character_class:
+		Stats.CharacterClass.BARBARIAN:
+			_give_barbarian_starting_items()
+
+func _give_barbarian_starting_items() -> void:
+	var axe := Item.new()
+	axe.item_name = "Greataxe"
+	axe.item_type = Item.Type.WEAPON
+	axe.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	axe.description = "1d12 Slashing. Two-handed (blocks ranged slot). STR-based."
+	axe.bonus_damage = 0      # proficiency adds to attack roll, not to damage
+	axe.damage_die_min = 1    # weapon defines its own dice: 1d12
+	axe.damage_die_max = 12
+	axe.floor_min = 1
+	axe.floor_max = 10
+	axe.is_ranged = false
+	axe.is_two_handed = true
+	# Equip silently (no turn cost, no turn consumed — startup)
+	equipment["melee"] = axe
+	recalculate_stats()
+	equipment_changed.emit()
+
+	# Rage ability in slot 0 of ability bar
+	var rage := Ability.new()
+	rage.ability_id = "rage"
+	rage.ability_name = "Rage"
+	rage.description = "2 uses/long rest. Resistance to all damage (half, rounded down). +2 STR weapon damage. STR checks/saves with advantage. Lasts 1 round; extended by attacking, forcing saves, or using a bonus action to maintain. Ends if heavy armor worn."
+	rage.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	rage.uses_remaining = player_stats.rage_uses_remaining
+	rage.uses_max = player_stats.rage_uses_max
+	add_ability(rage)
+
+func add_ability(ability: Ability) -> bool:
+	for i: int in ABILITY_BAR_SIZE:
+		if player_ability_bar[i] == null:
+			player_ability_bar[i] = ability
+			ability_bar_changed.emit()
+			return true
+	game_log("[color=red]Ability bar is full![/color]")
+	return false
+
 func advance_floor() -> void:
 	current_floor += 1
 	hit_dice = player_stats.character_level
 	short_rests_remaining = 2
 	max_short_rests = 2
 	short_rest_changed.emit()
+	# Long rest: refill class ability uses
+	player_stats.rage_uses_remaining = player_stats.rage_uses_max
+	_sync_ability_uses()
 	floor_changed.emit(current_floor)
 	if current_floor > 10:
 		player_won.emit()
+
+# Keeps ability resource uses_remaining in sync with player_stats after a long rest.
+func _sync_ability_uses() -> void:
+	for slot in player_ability_bar:
+		if slot == null:
+			continue
+		var ab := slot as Ability
+		if ab.ability_id == "rage":
+			ab.uses_remaining = player_stats.rage_uses_remaining
+	ability_bar_changed.emit()
 
 func hit_die_sides() -> int:
 	match player_stats.character_class:
@@ -171,7 +235,9 @@ func gain_exp(amount: int) -> void:
 
 # ── Equipment ─────────────────────────────────────────────────────────────────
 
-func equip(item: Item, slot_name: String = "") -> void:
+# costs_turn: if true, emits equip_action_taken so player.gd consumes 1 turn.
+# Pass false for auto-equip on pickup and startup.
+func equip(item: Item, slot_name: String = "", costs_turn: bool = false) -> void:
 	if slot_name == "":
 		match item.item_type:
 			Item.Type.WEAPON:
@@ -183,6 +249,21 @@ func equip(item: Item, slot_name: String = "") -> void:
 			_: return
 	if not equipment.has(slot_name):
 		return
+
+	# Two-handed melee blocks the ranged slot
+	if slot_name == "melee" and item.is_two_handed:
+		var ranged_item: Item = equipment["ranged"] as Item
+		if ranged_item != null:
+			_add_to_bags_silent(ranged_item)
+			equipment["ranged"] = null
+			combat_message.emit("[color=gray]Ranged weapon unsheathed — two-handed weapon requires both hands.[/color]")
+	# Cannot equip ranged if two-handed melee is equipped
+	if slot_name == "ranged":
+		var melee_item: Item = equipment["melee"] as Item
+		if melee_item != null and melee_item.is_two_handed:
+			combat_message.emit("[color=red]Can't equip ranged — %s requires both hands.[/color]" % melee_item.item_name)
+			return
+
 	var prev: Item = equipment[slot_name] as Item
 	equipment[slot_name] = item
 	_remove_from_bags(item)
@@ -192,8 +273,10 @@ func equip(item: Item, slot_name: String = "") -> void:
 	combat_message.emit("[color=cyan]Equipped [b]%s[/b].[/color]" % item.item_name)
 	equipment_changed.emit()
 	inventory_changed.emit()
+	if costs_turn and class_selected:
+		equip_action_taken.emit()
 
-func unequip(slot_name: String) -> void:
+func unequip(slot_name: String, costs_turn: bool = false) -> void:
 	if not equipment.has(slot_name):
 		return
 	var item: Item = equipment[slot_name] as Item
@@ -204,21 +287,30 @@ func unequip(slot_name: String) -> void:
 		recalculate_stats()
 		combat_message.emit("[color=cyan]Unequipped [b]%s[/b].[/color]" % item.item_name)
 		equipment_changed.emit()
+		if costs_turn and class_selected:
+			equip_action_taken.emit()
 	else:
 		combat_message.emit("[color=red]No bag space to unequip %s![/color]" % item.item_name)
 
 func recalculate_stats() -> void:
 	var s: Stats = player_stats
-	s.min_damage = s.base_min_damage
-	s.max_damage = s.base_max_damage
 	s.armor = 0
-	s.armor_class = 10 + s.dex_modifier()
+	var has_armor: bool = (equipment.get("armor") as Item) != null
+	s.recalc_ac(has_armor)
+	# Start from weapon's own damage die if it defines one, else base stats
+	var melee: Item = equipment.get("melee") as Item
+	if melee != null and melee.damage_die_min > 0:
+		s.min_damage = melee.damage_die_min + melee.bonus_damage
+		s.max_damage = melee.damage_die_max + melee.bonus_damage
+	else:
+		s.min_damage = s.base_min_damage + (melee.bonus_damage if melee != null else 0)
+		s.max_damage = s.base_max_damage + (melee.bonus_damage if melee != null else 0)
 	for slot_name: String in equipment:
 		var it: Item = equipment[slot_name] as Item
 		if it == null:
 			continue
-		s.min_damage += it.bonus_damage
-		s.max_damage += it.bonus_damage
+		if slot_name == "melee":
+			continue  # already handled above
 		s.armor_class += it.bonus_ac
 
 func move_item(src: String, src_idx: int, src_slot: String,
@@ -232,6 +324,10 @@ func move_item(src: String, src_idx: int, src_slot: String,
 	recalculate_stats()
 	equipment_changed.emit()
 	inventory_changed.emit()
+	# Drag-drop into/from equipment slot costs 1 turn
+	var touches_equip: bool = (src == "equipment" or dest == "equipment")
+	if touches_equip and class_selected:
+		equip_action_taken.emit()
 
 func _get_slot_item(source: String, idx: int, slot_name: String) -> Item:
 	match source:
@@ -315,7 +411,7 @@ func use_item(item: Item) -> void:
 				game_log("[color=green]You eat [b]%s[/b]. Not so hungry anymore.[/color]" % item.item_name)
 			consume_one(item)
 		Item.Type.WEAPON, Item.Type.ARMOR:
-			equip(item)
+			equip(item, "", true)  # intentional equip from bag/quickbar costs 1 turn
 		Item.Type.TOOL:
 			player_tool_primed.emit(item)
 
@@ -388,10 +484,19 @@ func restore_hunger(amount: int) -> void:
 	hunger = mini(MAX_HUNGER, hunger + amount)
 	hunger_changed.emit(hunger)
 
-func take_damage_raw(amount: int) -> void:
+# is_raging is set by player.gd and read here to apply damage resistance.
+var is_raging: bool = false
+
+func take_damage_raw(amount: int, ignore_rage: bool = false) -> void:
 	if is_game_over or invincible:
 		return
-	player_stats.take_damage(amount)
+	var final_amount: int = amount
+	# Rage: resistance to all physical damage (half, rounded down).
+	# TODO: Once enemies have damage types (Bludgeoning/Piercing/Slashing), restrict resistance
+	# to only those three types instead of all damage. For now all melee damage counts.
+	if is_raging and not ignore_rage:
+		final_amount = amount / 2
+	player_stats.take_damage(final_amount)
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 	check_player_death()
 

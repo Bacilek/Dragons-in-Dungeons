@@ -293,7 +293,7 @@ func _fits_slot(item: Item, slot_name: String) -> bool:
 func _right_click(slot: Control) -> void:
 	var source: String = slot.get_meta("source", "")
 	if source == "equipment":
-		GameState.unequip(slot.get_meta("slot_name", ""))
+		GameState.unequip(slot.get_meta("slot_name", ""), true)
 	else:
 		var item: Item = _slot_item(slot)
 		if item != null:

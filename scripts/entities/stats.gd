@@ -3,6 +3,18 @@ extends Resource
 
 enum CharacterClass { BARBARIAN, RANGER, WIZARD, CLERIC }
 
+# --- Save proficiency flags (Barbarian: STR + CON) ---
+# TODO: When spell saving throws are implemented, check `save_prof_str` / `save_prof_con`
+# for Barbarian advantage on STR saves and automatic proficiency on both.
+# Barbarian save proficiencies: Strength, Constitution.
+# Other classes: Ranger = DEX+STR, Wizard = INT+WIS, Cleric = WIS+CHA.
+var save_prof_str: bool = false
+var save_prof_con: bool = false
+var save_prof_dex: bool = false
+var save_prof_int: bool = false
+var save_prof_wis: bool = false
+var save_prof_cha: bool = false
+
 @export var strength: int = 10
 @export var dexterity: int = 10
 @export var constitution: int = 10
@@ -16,7 +28,10 @@ enum CharacterClass { BARBARIAN, RANGER, WIZARD, CLERIC }
 @export var max_hp: int = 10
 @export var current_hp: int = 10
 @export var armor_class: int = 10
-@export var proficiency_bonus: int = 2
+
+# Proficiency bonus scales per D&D 5e: +2 at levels 1–4, +3 at 5–8, +4 at 9–12, etc.
+var proficiency_bonus: int:
+	get: return 2 + (character_level - 1) / 4
 
 @export var base_min_damage: int = 1
 @export var base_max_damage: int = 4
@@ -25,6 +40,11 @@ enum CharacterClass { BARBARIAN, RANGER, WIZARD, CLERIC }
 @export var armor: int = 0
 
 @export var experience: int = 0
+
+# Rage uses (Barbarian only). Reset to max on long rest (advance_floor in GameState).
+# TODO: When multiple classes get abilities, move per-class resources to a separate struct.
+var rage_uses_remaining: int = 0
+var rage_uses_max: int = 2
 
 var poison_turns: int = 0
 var burning_turns: int = 0
@@ -98,24 +118,43 @@ func tick_status() -> int:
 		slowed_turns -= 1
 	return dmg
 
+# Recalculates armor_class based on what is equipped.
+# Called externally by GameState.recalculate_stats().
+# Barbarian unarmored defense: if no armor equipped, AC = 10 + DEX + CON instead of 10 + DEX.
+func recalc_ac(has_armor_equipped: bool) -> void:
+	if character_class == CharacterClass.BARBARIAN and not has_armor_equipped:
+		armor_class = 10 + dex_modifier() + con_modifier()
+	else:
+		armor_class = 10 + dex_modifier()
+
 func apply_class_defaults() -> void:
 	match character_class:
 		CharacterClass.BARBARIAN:
 			strength = 16; constitution = 14; dexterity = 12
 			intelligence = 8; wisdom = 10; charisma = 10
 			max_hp = 12 + modifier(constitution)   # Barbarian HD d12
+			rage_uses_remaining = 2
+			rage_uses_max = 2
+			save_prof_str = true
+			save_prof_con = true
 		CharacterClass.RANGER:
 			dexterity = 16; wisdom = 14; constitution = 12
 			strength = 10; intelligence = 10; charisma = 8
 			max_hp = 10 + modifier(constitution)   # Ranger HD d10
+			save_prof_str = true
+			save_prof_dex = true
 		CharacterClass.WIZARD:
 			intelligence = 16; dexterity = 14; wisdom = 12
 			constitution = 10; strength = 8; charisma = 10
 			max_hp = 6 + modifier(constitution)    # Wizard HD d6
+			save_prof_int = true
+			save_prof_wis = true
 		CharacterClass.CLERIC:
 			wisdom = 16; constitution = 14; strength = 12
 			dexterity = 10; intelligence = 10; charisma = 8
 			max_hp = 8 + modifier(constitution)    # Cleric HD d8
+			save_prof_wis = true
+			save_prof_cha = true
 	current_hp = max_hp
-	armor_class = 10 + modifier(dexterity)
-	proficiency_bonus = 2
+	# Barbarian starts with no armor → unarmored defense (DEX + CON)
+	recalc_ac(false)

@@ -191,7 +191,12 @@ func _build_card(data: Dictionary, pos: Vector2) -> void:
 	card.add_child(ac_val)
 
 	var ac_note := Label.new()
-	ac_note.text = "(10+DEX)"
+	var ac_formula: String
+	if (data["cls"] as int) == 0:  # Barbarian: unarmored defense
+		ac_formula = "(10+DEX+CON)"
+	else:
+		ac_formula = "(10+DEX)"
+	ac_note.text = ac_formula
 	ac_note.position = Vector2(98.0, 408.0)
 	ac_note.size = Vector2(82.0, 18.0)
 	ac_note.add_theme_font_size_override("font_size", 11)
@@ -260,6 +265,7 @@ func _add_stat_row(parent: Control, y: float, stat_name: String, score: int, mod
 func _on_class_selected(cls_idx: int) -> void:
 	GameState.player_stats.character_class = cls_idx as Stats.CharacterClass
 	GameState.player_stats.apply_class_defaults()
+	GameState.give_class_starting_items()
 	GameState.class_selected = true
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 	GameState.class_chosen.emit(GameState.player_stats.character_class)

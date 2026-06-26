@@ -17,6 +17,12 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 @export var is_ranged: bool = false
 @export var range: int = 0
 @export var consumes_on_ranged: bool = false
+@export var is_two_handed: bool = false   # blocks ranged slot while equipped
+@export var is_heavy_armor: bool = false  # ends Barbarian Rage immediately on equip
+# If > 0, overrides Stats.base_min/max_damage when this weapon is equipped (e.g. 1d12 Greataxe).
+# recalculate_stats() in GameState applies these instead of base_min/max_damage when non-zero.
+@export var damage_die_min: int = 0
+@export var damage_die_max: int = 0
 
 func get_display_name() -> String:
 	if quantity > 1:
