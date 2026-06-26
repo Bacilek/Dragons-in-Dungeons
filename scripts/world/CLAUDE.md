@@ -46,9 +46,9 @@ Piston: `search_around` only detects from the `-push_dir` side.
 ---
 
 ## Doors (`_doors: Dictionary[Vector2i, Dictionary]`)
-Value keys: `is_open: bool, locked: bool, sprite: Sprite2D, tex_open, tex_closed`
+Value keys: `is_open: bool, locked: bool, sprite: Sprite2D, tex_open, tex_closed, lock_icon?: Sprite2D`
 
-Auto-opens when an entity steps on the tile; auto-closes when entity leaves. Enemies open and walk through in the same turn. **Locked doors**: enemies cannot open (blocked); player auto-unlocks by walking through. Purple sprite tint = locked.
+Auto-opens when an entity steps on the tile; auto-closes when entity leaves. Enemies open and walk through in the same turn. **Locked doors**: enemies cannot open (blocked); player auto-unlocks by walking through. Purple sprite tint + small key icon = locked.
 
 ```gdscript
 dungeon_floor.has_door_at(pos) -> bool
@@ -56,11 +56,12 @@ dungeon_floor.is_door_open(pos) -> bool    # returns false if locked
 dungeon_floor.is_door_locked(pos) -> bool
 dungeon_floor.open_door(pos)               # no-op when locked
 dungeon_floor.close_door(pos)
-dungeon_floor.lock_door(pos)               # purple tint; enemy blocked
-dungeon_floor.unlock_door(pos)             # restores white tint
+dungeon_floor.lock_door(pos)               # purple tint + lock icon; enemy blocked
+dungeon_floor.unlock_door(pos)             # restores white tint, removes lock icon
 ```
 
-**Locking**: F key on adjacent CLOSED UNLOCKED door with Thief Tools → DC 10 DEX Sleight of Hand. Fail consumes Thief Tools.
+**Generation-time locking**: `_spawn_locked_doors()` runs after `_spawn_items()`. Picks 1 door per floor whose removal doesn't disconnect spawn from stairs (`_bfs_reachable` validation). Places 2–3 reward items from `ITEM_POOL` in the room behind the locked door. Uses `_bfs_collect()` to find tiles unreachable without that door.
+**Player locking**: F key on adjacent CLOSED UNLOCKED door with Thief Tools → DC 10 DEX Sleight of Hand. Fail consumes Thief Tools.
 **Unlocking**: Player walks into locked door → auto-unlock (free). Or F on locked door → unlock+open (spends action).
 
 ---
@@ -77,10 +78,15 @@ dungeon_floor.cook_rotten_meat(trap_pos: Vector2i) -> Item  # erases Fire Trap, 
 
 ## Spawning
 ```gdscript
-_spawn_enemies()   # pulls from ENEMY_POOL filtered by floor range, registers with TurnManager
-_spawn_boss()      # floor % 5 == 0 → picks from BOSS_POOL
-_spawn_items()     # pulls from ITEM_POOL
-_spawn_traps()     # places traps by type
+_spawn_enemies()        # pulls from ENEMY_POOL filtered by floor range, registers with TurnManager
+_spawn_boss()           # floor % 5 == 0 → picks from BOSS_POOL
+_spawn_items()          # 2-3 random items from ITEM_POOL; calls _build_floor_item()
+_spawn_traps()          # places traps by type
+_spawn_locked_doors()   # locks 1 door/floor that doesn't block spawn→stairs; places 2-3 rewards inside
+```
+Item helper:
+```gdscript
+_build_floor_item(pos: Vector2i, d: Dictionary)  # shared by _spawn_items() and _spawn_locked_doors()
 ```
 Item spawn path lookup:
 ```gdscript
