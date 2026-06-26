@@ -41,6 +41,16 @@ var _ability_bar_mode: bool = false  # false = items, true = abilities
 var _bar_mode_label: Label           # shows "ITEMS" / "ABILITIES [Tab]"
 var _slot_use_labels: Array[Label] = []  # ability uses remaining badges
 
+# ── Log tooltip ───────────────────────────────────────────────────────────────
+var _log_tooltip: Panel = null
+var _log_tooltip_rtl: RichTextLabel = null
+var _log_tooltip_visible: bool = false
+
+# ── Extra popup labels (added programmatically to expand the stats popup) ─────
+var _popup_prof_label: Label = null
+var _popup_dmg_label: Label = null
+var _popup_rage_label: Label = null
+
 const CLASS_PORTRAIT: Dictionary = {
 	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/knight_m_idle_anim_f0.png",
 	Stats.CharacterClass.RANGER:    "res://sprites/characters/elf_m_idle_anim_f0.png",
@@ -248,6 +258,20 @@ func _ready() -> void:
 	var dbg_script = load("res://scripts/ui/debug_panel.gd")
 	_debug_panel_ref = dbg_script.new()
 	get_tree().root.call_deferred("add_child", _debug_panel_ref)
+
+	# Log tooltip — hover over [url=...]...[/url] tags to see combat breakdowns
+	_setup_log_tooltip()
+	log_label.mouse_filter = Control.MOUSE_FILTER_PASS  # allow hover events while passing clicks through
+	log_label.meta_hover_started.connect(_on_log_meta_hover_started)
+	log_label.meta_hover_ended.connect(_on_log_meta_hover_ended)
+
+	# Extra stat popup labels (expand panel height, add rows for prof/dmg/rage)
+	_init_popup_extra_labels()
+
+	# Refresh popup every turn so AC, rage status, etc. stay live
+	TurnManager.player_turn_started.connect(func(): _refresh_popup())
+	GameState.equipment_changed.connect(func(): _refresh_popup())
+	GameState.player_status_changed.connect(func(): _refresh_popup())
 
 func _exit_tree() -> void:
 	if _inventory_overlay_ref != null and is_instance_valid(_inventory_overlay_ref):
@@ -541,6 +565,27 @@ func _apply_slot_styles() -> void:
 
 # ── Stats popup ───────────────────────────────────────────────────────────────
 
+func _init_popup_extra_labels() -> void:
+	# Expand panel to fit extra rows
+	stats_popup.offset_bottom = stats_popup.offset_bottom + 78.0
+	# Proficiency row
+	_popup_prof_label = _make_popup_label(214.0)
+	# Damage row
+	_popup_dmg_label = _make_popup_label(240.0)
+	# Rage row (Barbarian only — hidden for other classes)
+	_popup_rage_label = _make_popup_label(266.0)
+
+func _make_popup_label(y: float) -> Label:
+	var lbl := Label.new()
+	lbl.offset_left = 10.0
+	lbl.offset_top = y
+	lbl.offset_right = 300.0
+	lbl.offset_bottom = y + 20.0
+	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stats_popup.add_child(lbl)
+	return lbl
+
 func _refresh_popup() -> void:
 	if not stats_popup.visible:
 		return
@@ -549,6 +594,205 @@ func _refresh_popup() -> void:
 	$StatsPopup/StrengthLabel.text  = "STR: %d (%+d)" % [s.strength, s.str_modifier()]
 	$StatsPopup/DexLabel.text       = "DEX: %d (%+d)" % [s.dexterity, s.dex_modifier()]
 	$StatsPopup/ConLabel.text       = "CON: %d (%+d)" % [s.constitution, s.con_modifier()]
-	$StatsPopup/ACLabel.text        = "AC: %d" % s.armor_class
 	$StatsPopup/LevelStatLabel.text = "Level: %d" % s.character_level
 	$StatsPopup/ExpStatLabel.text   = "EXP: %d / %d" % [s.experience, s.exp_to_next()]
+
+	# AC with formula — Barbarian unarmored defense shows CON contribution
+	var has_armor: bool = (GameState.equipment.get("armor") as Item) != null
+	var ac_formula: String
+	if s.character_class == Stats.CharacterClass.BARBARIAN and not has_armor:
+		ac_formula = "  (10%+d DEX%+d CON)" % [s.dex_modifier(), s.con_modifier()]
+	else:
+		var armor_item: Item = GameState.equipment.get("armor") as Item
+		var ac_bonus: int = armor_item.bonus_ac if armor_item != null else 0
+		ac_formula = "  (10%+d DEX%s)" % [s.dex_modifier(), "+%d armor" % ac_bonus if ac_bonus > 0 else ""]
+	$StatsPopup/ACLabel.text = "AC: %d%s" % [s.armor_class, ac_formula]
+
+	# Proficiency bonus
+	if _popup_prof_label != null:
+		_popup_prof_label.text = "Prof: +%d  (L%d–%d)" % [s.proficiency_bonus, (s.proficiency_bonus - 2) * 4 + 1, (s.proficiency_bonus - 1) * 4]
+
+	# Damage range — show weapon die if equipped
+	if _popup_dmg_label != null:
+		var melee: Item = GameState.equipment.get("melee") as Item
+		if melee != null:
+			var dmin: int = melee.damage_die_min if melee.damage_die_min > 0 else s.base_min_damage
+			var dmax: int = melee.damage_die_max if melee.damage_die_max > 0 else s.base_max_damage
+			var enh: int = melee.bonus_damage
+			if enh > 0:
+				_popup_dmg_label.text = "Dmg: 1d%d+%d  (%s)" % [dmax, enh, melee.item_name]
+			else:
+				_popup_dmg_label.text = "Dmg: 1d%d  (%s)" % [dmax, melee.item_name]
+		else:
+			_popup_dmg_label.text = "Dmg: unarmed (%d–%d)" % [s.base_min_damage, s.base_max_damage]
+
+	# Rage status — Barbarian only
+	if _popup_rage_label != null:
+		if s.character_class == Stats.CharacterClass.BARBARIAN:
+			_popup_rage_label.visible = true
+			if GameState.is_raging:
+				_popup_rage_label.text = "Rage: ACTIVE (%d uses left)" % s.rage_uses_remaining
+				_popup_rage_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+			else:
+				_popup_rage_label.text = "Rage: %d/%d uses" % [s.rage_uses_remaining, s.rage_uses_max]
+				_popup_rage_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+		else:
+			_popup_rage_label.visible = false
+
+# ── Log tooltip ───────────────────────────────────────────────────────────────
+
+func _setup_log_tooltip() -> void:
+	_log_tooltip = Panel.new()
+	_log_tooltip.visible = false
+	_log_tooltip.z_index = 30
+	_log_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.05, 0.09, 0.97)
+	sb.set_border_width_all(1)
+	sb.border_color = Color(0.55, 0.50, 0.35)
+	sb.set_corner_radius_all(3)
+	_log_tooltip.add_theme_stylebox_override("panel", sb)
+	_log_tooltip_rtl = RichTextLabel.new()
+	_log_tooltip_rtl.bbcode_enabled = true
+	_log_tooltip_rtl.fit_content = true
+	_log_tooltip_rtl.offset_left = 8.0
+	_log_tooltip_rtl.offset_top = 6.0
+	_log_tooltip_rtl.offset_right = -8.0
+	_log_tooltip_rtl.offset_bottom = -6.0
+	_log_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_log_tooltip_rtl.add_theme_font_size_override("font_size", 12)
+	_log_tooltip.add_child(_log_tooltip_rtl)
+	add_child(_log_tooltip)
+
+const _TOOLTIP_W: float = 220.0
+
+func _process(_delta: float) -> void:
+	if _log_tooltip == null or not _log_tooltip_visible:
+		return
+	# Resize panel to fit content (RTL fit_content gives us the height)
+	var content_h: float = _log_tooltip_rtl.get_content_height()
+	_log_tooltip_rtl.size = Vector2(_TOOLTIP_W - 16.0, content_h)
+	_log_tooltip.size = Vector2(_TOOLTIP_W, content_h + 14.0)
+	# Position above cursor, clamped to viewport
+	var mp: Vector2 = get_viewport().get_mouse_position()
+	var th: float = _log_tooltip.size.y
+	var vp: Vector2 = get_viewport().get_visible_rect().size
+	var tx: float = clampf(mp.x - _TOOLTIP_W * 0.5, 4.0, vp.x - _TOOLTIP_W - 4.0)
+	var ty: float = mp.y - th - 14.0
+	if ty < 4.0:
+		ty = mp.y + 18.0
+	_log_tooltip.position = Vector2(tx, ty)
+
+func _on_log_meta_hover_started(meta: Variant) -> void:
+	if _log_tooltip == null:
+		return
+	var tooltip_text: String = _format_tooltip(str(meta))
+	if tooltip_text.is_empty():
+		return
+	_log_tooltip_rtl.text = tooltip_text
+	_log_tooltip_rtl.size = Vector2(_TOOLTIP_W - 16.0, 0)
+	_log_tooltip.size = Vector2(_TOOLTIP_W, 60)
+	_log_tooltip_visible = true
+	_log_tooltip.visible = true
+
+func _on_log_meta_hover_ended(_meta: Variant) -> void:
+	_log_tooltip_visible = false
+	if _log_tooltip != null:
+		_log_tooltip.visible = false
+
+func _format_tooltip(meta: String) -> String:
+	var colon: int = meta.find(":")
+	if colon < 0:
+		return ""
+	var kind: String = meta.substr(0, colon)
+	var params: Dictionary = {}
+	for kv: String in meta.substr(colon + 1).split(","):
+		var eq: int = kv.find("=")
+		if eq >= 0:
+			params[kv.substr(0, eq)] = kv.substr(eq + 1)
+	match kind:
+		"hit", "miss":   return _fmt_hit_tooltip(params, false)
+		"rhit", "rmiss": return _fmt_hit_tooltip(params, true)
+		"dmg":           return _fmt_dmg_tooltip(params)
+		"save", "check": return _fmt_save_tooltip(params)
+	return ""
+
+func _fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
+	var die: int    = int(p.get("die", "0"))
+	var stat_mod: int = int(p.get("dex" if is_ranged else "str", "0"))
+	var prof: int   = int(p.get("prof", "0"))
+	var wpn: int    = int(p.get("wpn", "0"))
+	var total: int  = int(p.get("total", "0"))
+	var ac: int     = int(p.get("ac", "0"))
+	var adv: bool   = p.get("adv", "0") == "1"
+	var disadv: bool = p.get("disadv", "0") == "1"
+	var n20: bool   = p.get("n20", "0") == "1"
+	var n1: bool    = p.get("n1", "0") == "1"
+	var stat_name: String = "DEX" if is_ranged else "STR"
+	var lines: PackedStringArray = []
+	var die_label: String = "d20"
+	if adv:   die_label = "d20 (adv)"
+	elif disadv: die_label = "d20 (disadv)"
+	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if n20 else ("  [color=red]✕ FAIL[/color]" if n1 else "")
+	lines.append("%s = [color=yellow]%d[/color]%s" % [die_label, die, die_suffix])
+	if stat_mod != 0:
+		lines.append("[color=lightblue]%+d[/color]  (%s mod)" % [stat_mod, stat_name])
+	if prof != 0:
+		lines.append("[color=lightblue]+%d[/color]  (Proficiency)" % prof)
+	if wpn != 0:
+		lines.append("[color=lightblue]%+d[/color]  (weapon)" % wpn)
+	lines.append("─────────────────")
+	var vs: String
+	if n20:
+		vs = "[color=gold]CRITICAL HIT[/color]"
+	elif n1:
+		vs = "[color=red]CRITICAL FAIL[/color]"
+	elif total >= ac:
+		vs = "[color=green]HIT[/color]"
+	else:
+		vs = "[color=red]MISS[/color]"
+	lines.append("= [color=yellow]%d[/color] vs AC %d  →  %s" % [total, ac, vs])
+	return "\n".join(lines)
+
+func _fmt_dmg_tooltip(p: Dictionary) -> String:
+	var roll: int  = int(p.get("roll", "0"))
+	var dmax: int  = int(p.get("dmax", "0"))
+	var wpn: int   = int(p.get("wpn", "0"))
+	var rage: int  = int(p.get("rage", "0"))
+	var crit: bool = p.get("crit", "0") == "1"
+	var final_dmg: int = int(p.get("final", "0"))
+	var lines: PackedStringArray = []
+	if dmax > 0:
+		lines.append("1d%d = [color=yellow]%d[/color]" % [dmax, roll])
+	else:
+		lines.append("damage = [color=yellow]%d[/color]" % roll)
+	if wpn != 0:
+		lines.append("[color=lightblue]%+d[/color]  (weapon bonus)" % wpn)
+	if rage != 0:
+		lines.append("[color=red]+%d[/color]  (Rage bonus)" % rage)
+	if crit:
+		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
+	lines.append("─────────────────")
+	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
+	return "\n".join(lines)
+
+func _fmt_save_tooltip(p: Dictionary) -> String:
+	var die: int   = int(p.get("die", "0"))
+	var mod: int   = int(p.get("mod", "0"))
+	var prof: int  = int(p.get("prof", "0"))
+	var total: int = int(p.get("total", "0"))
+	var dc: int    = int(p.get("dc", "0"))
+	var stat: String = p.get("stat", "DEX")
+	var passed: bool = p.get("pass", "0") == "1"
+	var lines: PackedStringArray = []
+	lines.append("d20 = [color=yellow]%d[/color]" % die)
+	if mod != 0:
+		lines.append("[color=lightblue]%+d[/color]  (%s mod)" % [mod, stat])
+	if prof != 0:
+		lines.append("[color=lightblue]+%d[/color]  (Proficiency, %s save)" % [prof, stat])
+	else:
+		lines.append("[color=gray]+0[/color]  (not proficient in %s save)" % stat)
+	lines.append("─────────────────")
+	var result: String = "[color=green]SUCCESS[/color]" if passed else "[color=red]FAIL[/color]"
+	lines.append("= [color=yellow]%d[/color] vs DC %d  →  %s" % [total, dc, result])
+	return "\n".join(lines)

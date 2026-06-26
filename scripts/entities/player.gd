@@ -611,12 +611,19 @@ func _execute_queued_path() -> void:
 					await TurnManager.player_turn_started
 				break
 
-			# Open closed door for free — movement continues in the same turn
+			# Door handling — locked doors distinguish dungeon-generated vs player-set
 			if _dungeon_floor.has_door_at(next) and not _dungeon_floor.is_door_open(next):
 				if _dungeon_floor.is_door_locked(next):
-					_dungeon_floor.unlock_door(next)
-					GameState.game_log("[color=cyan]You unlock the door as you pass through.[/color]")
-				_dungeon_floor.open_door(next)
+					if _dungeon_floor.is_door_player_locked(next):
+						_dungeon_floor.unlock_door(next)
+						_dungeon_floor.open_door(next)
+						GameState.game_log("[color=cyan]You pass through the door you locked.[/color]")
+					else:
+						GameState.game_log("[color=red]The door is locked. Use [F] with Thief Tools to pick it.[/color]")
+						_queued_path.clear()
+						break
+				else:
+					_dungeon_floor.open_door(next)
 
 			if not _dungeon_floor.is_walkable(next):
 				_queued_path.clear()
@@ -709,12 +716,20 @@ func _try_move(dir: Vector2i) -> void:
 				_bump_attack(enemy, dir)
 			return
 
-		# Open closed door for free — movement continues in the same turn
+		# Door handling — locked doors distinguish dungeon-generated vs player-set
 		if _dungeon_floor.has_door_at(target) and not _dungeon_floor.is_door_open(target):
 			if _dungeon_floor.is_door_locked(target):
-				_dungeon_floor.unlock_door(target)
-				GameState.game_log("[color=cyan]You unlock the door as you pass through.[/color]")
-			_dungeon_floor.open_door(target)
+				if _dungeon_floor.is_door_player_locked(target):
+					# Player set this lock — walk through freely (you know it)
+					_dungeon_floor.unlock_door(target)
+					_dungeon_floor.open_door(target)
+					GameState.game_log("[color=cyan]You pass through the door you locked.[/color]")
+				else:
+					# Dungeon-generated lock — can't walk through; must lockpick with [F]
+					GameState.game_log("[color=red]The door is locked. Use [F] with Thief Tools to pick it.[/color]")
+					return
+			else:
+				_dungeon_floor.open_door(target)
 
 		if not _dungeon_floor.is_walkable(target):
 			return
@@ -784,13 +799,9 @@ func _activate_rage() -> void:
 	GameState.player_stats.rage_uses_remaining = ab.uses_remaining
 	GameState.ability_bar_changed.emit()
 	$AnimatedSprite2D.modulate = Color(1.6, 0.55, 0.55)  # red tint
-	GameState.game_log("[color=red]You fly into a RAGE! Damage resistance, +2 STR damage, STR advantage. (%d uses left)[/color]" % ab.uses_remaining)
-	# Rage lasts only this turn unless extended (attacking, saving throw, bonus action)
-	# Consume a turn for the activation itself
-	TurnManager.begin_player_action()
-	if _dungeon_floor != null:
-		_dungeon_floor.update_fog(grid_pos)
-	TurnManager.on_player_action_complete()
+	GameState.game_log("[color=red]You fly into a RAGE! Damage resistance, +2 STR damage. (%d uses left)[/color]" % ab.uses_remaining)
+	# Rage is a free action (bonus action in D&D) — does NOT consume the turn.
+	# Lasts 1 turn unless extended by attacking with a STR melee weapon (+1 per attack).
 
 func _end_rage() -> void:
 	_is_raging = false
@@ -836,10 +847,18 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if _is_raging and is_str_weapon:
 		_rage_turns += 1
 
+	# Compute damage breakdown for tooltip (separate die vs enhancement vs rage)
+	var w_dmin: int = GameState.equipped_weapon.damage_die_min if not is_unarmed and GameState.equipped_weapon.damage_die_min > 0 else stats.base_min_damage
+	var w_dmax: int = GameState.equipped_weapon.damage_die_max if not is_unarmed and GameState.equipped_weapon.damage_die_max > 0 else stats.base_max_damage
+	var w_enh: int = weapon_bonus  # weapon.bonus_damage
+	var hit_meta: String = "hit:die=%d,str=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,n20=%d,n1=%d" % [
+		die, str_mod, prof, w_enh, roll, enemy.stats.armor_class,
+		1 if adv else 0, 1 if is_crit else 0, 1 if is_nat_one else 0]
+
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
-		var hit_str: String = "adv [%d,%d]→%d+%d=[color=yellow]%d[/color]" % [die1, die2, die, total_hit_bonus, roll] if adv else "d20+%d=[color=yellow]%d[/color]" % [total_hit_bonus, roll]
 		var verb: String = "punch" if is_unarmed else "swing"
-		GameState.game_log("You %s at [color=orange]%s[/color] but [color=gray]miss[/color]! (%s vs AC %d)" % [verb, enemy.display_name, hit_str, enemy.stats.armor_class])
+		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
+		GameState.game_log("You %s at [color=orange]%s[/color] — [url=%s]%s[/url]." % [verb, enemy.display_name, hit_meta, miss_color])
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
@@ -854,27 +873,26 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if adv:
 		_show_surprise_mark(enemy)
 
-	var dmg: int = stats.roll_damage()
-	# Rage bonus: +2 damage with STR-based melee weapons
-	if _is_raging and is_str_weapon:
-		dmg += 2
+	var die_roll: int = randi_range(w_dmin, w_dmax)
+	var rage_bonus: int = 2 if (_is_raging and is_str_weapon) else 0
+	var pre_crit: int = die_roll + w_enh + rage_bonus
 	if is_crit:
-		dmg *= 2
+		pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
-
-	var actual: int = enemy.stats.take_damage(dmg)
+	var actual: int = enemy.stats.take_damage(pre_crit)
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
 
-	var hit_str: String = "adv [%d,%d]→%d+%d=[color=yellow]%d[/color]" % [die1, die2, die, total_hit_bonus, roll] if adv else "d20+%d=[color=yellow]%d[/color]" % [total_hit_bonus, roll]
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,rage=%d,crit=%d,final=%d" % [
+		die_roll, w_dmin, w_dmax, w_enh, rage_bonus, 1 if is_crit else 0, actual]
 	var verb: String = "punch" if is_unarmed else "strike"
-	var rage_tag: String = " [color=red]+rage[/color]" if (_is_raging and is_str_weapon) else ""
+	var rage_tag: String = " [color=red](rage)[/color]" if rage_bonus > 0 else ""
 	if is_crit:
-		GameState.game_log("[color=red]CRITICAL HIT![/color] You %s [color=orange]%s[/color] for [color=yellow]%d[/color] dmg%s. (%s vs AC %d)" % [verb, enemy.display_name, actual, rage_tag, hit_str, enemy.stats.armor_class])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url] dmg%s." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, rage_tag])
 	else:
-		GameState.game_log("You %s [color=orange]%s[/color] for [color=yellow]%d[/color] dmg%s. (%s vs AC %d)" % [verb, enemy.display_name, actual, rage_tag, hit_str, enemy.stats.armor_class])
+		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url] dmg%s." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, rage_tag])
 
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
@@ -1115,13 +1133,20 @@ func _interact_action(can_lock: bool = true) -> void:
 		if not _dungeon_floor.has_door_at(pos):
 			continue
 		if _dungeon_floor.is_door_locked(pos):
-			# F on locked door → unlock and open
-			TurnManager.begin_player_action()
-			_dungeon_floor.unlock_door(pos)
-			_dungeon_floor.open_door(pos)
-			GameState.game_log("[color=cyan]You unlock the door.[/color]")
-			_dungeon_floor.update_fog(grid_pos)
-			TurnManager.on_player_action_complete()
+			if _dungeon_floor.is_door_player_locked(pos):
+				# Player set this lock — can unlock freely (free action on F)
+				TurnManager.begin_player_action()
+				_dungeon_floor.unlock_door(pos)
+				_dungeon_floor.open_door(pos)
+				GameState.game_log("[color=cyan]You unlock your own lock and open the door.[/color]")
+				_dungeon_floor.update_fog(grid_pos)
+				TurnManager.on_player_action_complete()
+			else:
+				# Dungeon-generated lock — attempt to pick with Thief Tools
+				if _find_thief_tools() != null:
+					_attempt_disarm_lock(pos)
+				else:
+					GameState.game_log("[color=red]Locked. You need Thief Tools to pick this lock.[/color]")
 			return
 		if _dungeon_floor.is_door_open(pos):
 			# F on open door → close it
@@ -1160,18 +1185,22 @@ func _attempt_disarm(trap_pos: Vector2i) -> void:
 
 	TurnManager.begin_player_action()
 	AudioManager.play("lockpick")
-	var roll: int = randi_range(1, 20)
-	var dex_mod: int = GameState.player_stats.dex_modifier()
-	var total: int = roll + dex_mod
+	var s: Stats = GameState.player_stats
+	var die: int = randi_range(1, 20)
+	var dex_mod: int = s.dex_modifier()
+	var has_prof: bool = s.save_prof_dex
+	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
+	var total: int = die + dex_mod + prof_bonus
 	const DC: int = 10
 	var trap: Dictionary = _dungeon_floor.get_trap_at(trap_pos)
 	var trap_name: String = trap.get("name", "trap")
+	var check_meta: String = "check:stat=DEX,die=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d" % [die, dex_mod, prof_bonus, total, DC, 1 if total >= DC else 0]
 
 	if total >= DC:
-		GameState.game_log("[color=green]Disarmed [b]%s[/b]! (d20 %d+%d=%d vs DC %d)[/color]" % [trap_name, roll, dex_mod, total, DC])
+		GameState.game_log("[color=green]Disarmed [b]%s[/b]! [url=%s]%d vs DC %d[/url][/color]" % [trap_name, check_meta, total, DC])
 		_dungeon_floor.disarm_trap(trap_pos)
 	else:
-		GameState.game_log("[color=red]Failed to disarm [b]%s[/b] (d20 %d+%d=%d vs DC %d) — Thief Tools lost![/color]" % [trap_name, roll, dex_mod, total, DC])
+		GameState.game_log("[color=red]Failed to disarm [b]%s[/b]! [url=%s]%d vs DC %d[/url] — Thief Tools lost![/color]" % [trap_name, check_meta, total, DC])
 		GameState.consume_one(tools)
 
 	_dungeon_floor.update_fog(grid_pos)
@@ -1185,16 +1214,46 @@ func _attempt_lock_door(door_pos: Vector2i) -> void:
 	TurnManager.begin_player_action()
 	AudioManager.play("lockpick")
 	var dex_mod: int = stats.dex_modifier()
-	var roll: int = randi_range(1, 20)
-	var total: int = roll + dex_mod
+	var die: int = randi_range(1, 20)
+	var total: int = die + dex_mod
 	const LOCK_DC: int = 10
 	var door_world: Vector2 = Vector2(door_pos * TILE_SIZE) + Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
+	var check_meta: String = "check:stat=DEX,die=%d,mod=%d,prof=0,total=%d,dc=%d,pass=%d" % [die, dex_mod, total, LOCK_DC, 1 if total >= LOCK_DC else 0]
 	if total >= LOCK_DC:
-		_dungeon_floor.lock_door(door_pos)
-		GameState.game_log("[color=green]You lock the door! (d20 %d+%d=%d vs DC %d)[/color]" % [roll, dex_mod, total, LOCK_DC])
+		_dungeon_floor.lock_door(door_pos, true)  # by_player=true
+		GameState.game_log("[color=green]You lock the door! [url=%s]%d vs DC %d[/url][/color]" % [check_meta, total, LOCK_DC])
 		_show_float_text(door_world, "LOCKED!", Color(0.7, 0.4, 1.0))
 	else:
-		GameState.game_log("[color=red]Failed to lock the door (d20 %d+%d=%d vs DC %d) — Thief Tools lost![/color]" % [roll, dex_mod, total, LOCK_DC])
+		GameState.game_log("[color=red]Failed to lock the door [url=%s]%d vs DC %d[/url] — Thief Tools lost![/color]" % [check_meta, total, LOCK_DC])
+		GameState.consume_one(tools)
+		_show_float_text(door_world, "FAIL!", Color(1.0, 0.3, 0.3))
+	_dungeon_floor.update_fog(grid_pos)
+	TurnManager.on_player_action_complete()
+
+# Attempt to pick a dungeon-locked door with Thief Tools (DEX check, no prof for non-DEX-save classes)
+func _attempt_disarm_lock(door_pos: Vector2i) -> void:
+	var tools: Item = _find_thief_tools()
+	if tools == null:
+		GameState.game_log("[color=red]You need Thief Tools to pick this lock.[/color]")
+		return
+	TurnManager.begin_player_action()
+	AudioManager.play("lockpick")
+	var s: Stats = GameState.player_stats
+	var dex_mod: int = s.dex_modifier()
+	var has_prof: bool = s.save_prof_dex  # proficiency only with DEX save proficiency
+	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
+	var die: int = randi_range(1, 20)
+	var total: int = die + dex_mod + prof_bonus
+	var dc: int = 10 + GameState.current_floor / 3
+	var check_meta: String = "check:stat=DEX,die=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d" % [die, dex_mod, prof_bonus, total, dc, 1 if total >= dc else 0]
+	var door_world: Vector2 = Vector2(door_pos * TILE_SIZE) + Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
+	if total >= dc:
+		_dungeon_floor.unlock_door(door_pos)
+		_dungeon_floor.open_door(door_pos)
+		GameState.game_log("[color=green]You pick the lock! [url=%s]%d vs DC %d[/url][/color]" % [check_meta, total, dc])
+		_show_float_text(door_world, "UNLOCKED!", Color(0.4, 1.0, 0.5))
+	else:
+		GameState.game_log("[color=red]Failed to pick the lock [url=%s]%d vs DC %d[/url] — Thief Tools lost![/color]" % [check_meta, total, dc])
 		GameState.consume_one(tools)
 		_show_float_text(door_world, "FAIL!", Color(1.0, 0.3, 0.3))
 	_dungeon_floor.update_fog(grid_pos)
@@ -1360,13 +1419,15 @@ func _ranged_attack(enemy: Enemy) -> void:
 			GameState.equipment_changed.emit()
 			GameState.game_log("[color=gray]Last throwing dagger used.[/color]")
 
+	var r_wpn_enh: int = weapon.bonus_damage if weapon != null else 0
+	var hit_meta: String = "rhit:die=%d,dex=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
+		die, dex_mod, prof, r_wpn_enh, roll, enemy.stats.armor_class,
+		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
+		1 if is_crit else 0, 1 if is_nat_one else 0]
+
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
-		if adv and not disadv:
-			GameState.game_log("You shoot at [color=orange]%s[/color] but [color=gray]miss[/color]! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
-		elif disadv and not adv:
-			GameState.game_log("You shoot at [color=orange]%s[/color] but [color=gray]miss[/color]! (disadv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
-		else:
-			GameState.game_log("You shoot at [color=orange]%s[/color] but [color=gray]miss[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
+		GameState.game_log("You shoot at [color=orange]%s[/color] — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
@@ -1380,27 +1441,23 @@ func _ranged_attack(enemy: Enemy) -> void:
 	_flash_hit(enemy)
 	if adv and not disadv:
 		_show_surprise_mark(enemy)
-	var dmg: int = stats.roll_damage()
+	var r_die_roll: int = randi_range(stats.base_min_damage, stats.base_max_damage)
+	var r_pre_crit: int = r_die_roll + r_wpn_enh
 	if is_crit:
-		dmg *= 2
+		r_pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
-	var actual: int = enemy.stats.take_damage(dmg)
+	var actual: int = enemy.stats.take_damage(r_pre_crit)
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
+
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,rage=0,crit=%d,final=%d" % [
+		r_die_roll, stats.base_min_damage, stats.base_max_damage, r_wpn_enh, 1 if is_crit else 0, actual]
 	if is_crit:
-		if adv and not disadv:
-			GameState.game_log("[color=red]CRITICAL HIT![/color] You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
-		else:
-			GameState.game_log("[color=red]CRITICAL HIT![/color] You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20=[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url] dmg." % [hit_meta, enemy.display_name, dmg_meta, actual])
 	else:
-		if adv and not disadv:
-			GameState.game_log("You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
-		elif disadv and not adv:
-			GameState.game_log("You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (disadv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, die1, die2, die, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
-		else:
-			GameState.game_log("You shoot [color=orange]%s[/color] for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [enemy.display_name, actual, dex_mod + weapon_bonus, roll, enemy.stats.armor_class])
+		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url] dmg." % [hit_meta, enemy.display_name, dmg_meta, actual])
 
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)

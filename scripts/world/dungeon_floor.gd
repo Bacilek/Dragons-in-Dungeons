@@ -824,14 +824,22 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 
 	var target: Node2D = entity if entity != null else _player
 
-	# Acrobacy check for the player: 1d20 + DEX mod vs DC (10 + floor)
+	# DEX saving throw for player: 1d20 + DEX mod + prof (only if DEX save proficiency) vs DC
 	if target is Player:
-		var dex_mod: int = GameState.player_stats.dex_modifier()
-		var roll: int = randi_range(1, 20) + dex_mod
+		var s: Stats = GameState.player_stats
+		var dex_mod: int = s.dex_modifier()
+		var has_prof: bool = s.save_prof_dex
+		var prof_bonus: int = s.proficiency_bonus if has_prof else 0
+		var die: int = randi_range(1, 20)
+		var roll: int = die + dex_mod + prof_bonus
 		var dc: int = 10 + GameState.current_floor
+		var save_meta: String = "save:stat=DEX,die=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d" % [
+			die, dex_mod, prof_bonus, roll, dc, 1 if roll >= dc else 0]
 		if roll >= dc:
-			GameState.game_log("[color=cyan]You spot the [b]%s[/b] and dodge! (d20%+d=[color=yellow]%d[/color] vs DC %d)[/color]" % [trap["name"], dex_mod, roll, dc])
+			GameState.game_log("[color=cyan]You dodge [b]%s[/b]! [url=%s]%d vs DC %d[/url][/color]" % [trap["name"], save_meta, roll, dc])
 			return
+		else:
+			GameState.game_log("[color=orange]%s triggered! [url=%s]%d vs DC %d[/url][/color]" % [trap["name"], save_meta, roll, dc])
 
 	if is_push:
 		AudioManager.play("trap_piston")
@@ -1145,7 +1153,7 @@ func _spawn_doors() -> void:
 			var ts: Vector2 = tex_closed.get_size()
 			sprite.scale = Vector2(float(TILE_SIZE) / ts.x, float(TILE_SIZE) / ts.y)
 		entities.add_child(sprite)
-		_doors[pos] = {"is_open": false, "locked": false, "sprite": sprite, "tex_open": tex_open, "tex_closed": tex_closed}
+		_doors[pos] = {"is_open": false, "locked": false, "player_locked": false, "sprite": sprite, "tex_open": tex_open, "tex_closed": tex_closed}
 
 func has_door_at(pos: Vector2i) -> bool:
 	return _doors.has(pos)
@@ -1160,6 +1168,9 @@ func is_door_open(pos: Vector2i) -> bool:
 func is_door_locked(pos: Vector2i) -> bool:
 	return _doors.has(pos) and _doors[pos]["locked"]
 
+func is_door_player_locked(pos: Vector2i) -> bool:
+	return _doors.has(pos) and _doors[pos].get("player_locked", false)
+
 func _add_lock_icon_at(pos: Vector2i) -> void:
 	if _lock_icon_tex == null or _doors[pos].has("lock_icon"):
 		return
@@ -1172,10 +1183,11 @@ func _add_lock_icon_at(pos: Vector2i) -> void:
 	entities.add_child(icon)
 	_doors[pos]["lock_icon"] = icon
 
-func lock_door(pos: Vector2i) -> void:
+func lock_door(pos: Vector2i, by_player: bool = false) -> void:
 	if not _doors.has(pos) or _doors[pos]["is_open"] or _doors[pos]["locked"]:
 		return
 	_doors[pos]["locked"] = true
+	_doors[pos]["player_locked"] = by_player
 	var sp: Sprite2D = _doors[pos]["sprite"]
 	if is_instance_valid(sp):
 		sp.modulate = Color(0.55, 0.35, 0.85)  # purple tint = locked
@@ -1341,8 +1353,9 @@ func _spawn_locked_doors() -> void:
 		if reward_candidates.is_empty():
 			continue
 
-		# Lock the door (no audio at generation time)
+		# Lock the door (no audio at generation time; dungeon-generated = not player_locked)
 		_doors[pos]["locked"] = true
+		_doors[pos]["player_locked"] = false
 		var sp: Sprite2D = _doors[pos]["sprite"]
 		if is_instance_valid(sp):
 			sp.modulate = Color(0.55, 0.35, 0.85)
