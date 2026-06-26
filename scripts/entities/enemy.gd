@@ -182,7 +182,7 @@ func take_turn() -> void:
 				if not _search_path.is_empty():
 					var next: Vector2i = _search_path[0]
 					_search_path = _search_path.slice(1)
-					await _move_step(next)
+					await _move_step(next - grid_pos, next)
 				else:
 					await _do_random_step()
 			else:
