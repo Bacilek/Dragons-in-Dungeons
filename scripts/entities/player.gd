@@ -510,7 +510,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					if tool.item_name == "Empty Bottle":
 						_try_fill_bottle(tool, clicked)
 					else:
-						_interact_action(clicked)  # Thief Tools: door lock / trap disarm / nothing
+						_interact_action(true, clicked)  # Thief Tools: door lock / trap disarm / nothing
 				else:
 					GameState.game_log("[color=gray]Too far — click an adjacent tile.[/color]")
 			else:
