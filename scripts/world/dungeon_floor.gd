@@ -47,6 +47,7 @@ const ITEM_POOL: Array = [
 	{"name": "Short Bow",      "type": 0, "icon": "Weapons/BowArrow.png",                 "src": "items", "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 6,  "desc": "Ranged, DEX-based. Range 6.", "is_ranged": true, "range": 6},
 	{"name": "Crossbow",       "type": 0, "icon": "Weapons/BowArrowGold.png",             "src": "items", "bonus_dmg": 3, "heal": 0,   "str_bonus": 0, "fmin": 5, "fmax": 10, "desc": "Ranged, DEX-based. Range 8.", "is_ranged": true, "range": 8},
 	{"name": "Throwing Daggers","type": 0,"icon": "Weapons/Throwing/Shuriken.png",        "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 8,  "desc": "Ranged, DEX-based. Range 4. Consumed on throw.", "is_ranged": true, "range": 4, "consumes": true, "qty": 3},
+	{"name": "Thief Tools",    "type": 7, "icon": "Misc/KeyIron.png",                    "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Disarm traps, lock doors. Consumed on failure.", "qty": 2},
 ]
 
 const BOSS_POOL: Array = [
@@ -83,6 +84,7 @@ var _doors: Dictionary = {}         # Vector2i → {is_open: bool, sprite: Sprit
 var _floor_items: Dictionary = {}
 var _floor_item_sprites: Dictionary = {}
 var _blood_decals: Array[Sprite2D] = []
+var _lock_icon_tex: Texture2D = null
 
 var _fog_image: Image
 var _fog_texture: ImageTexture
@@ -244,10 +246,13 @@ func _load_floor() -> void:
 	GameState.player_grid_pos = _data.player_start
 	GameState.current_stairs_pos = _data.stairs_pos
 
+	if ResourceLoader.exists(ITEMS_PATH + "Misc/KeyIron.png"):
+		_lock_icon_tex = load(ITEMS_PATH + "Misc/KeyIron.png")
 	_spawn_enemies()
 	_spawn_traps()
 	_spawn_doors()
 	_spawn_items()
+	_spawn_locked_doors()
 	_setup_fog()
 	_see_all_active = false
 	update_fog(_data.player_start)
@@ -536,6 +541,22 @@ func _bfs_reachable(from: Vector2i, to: Vector2i, exclude: Array) -> bool:
 				visited[nxt] = true
 				queue.append(nxt)
 	return false
+
+func _bfs_collect(from: Vector2i, exclude: Array) -> Dictionary:
+	var visited: Dictionary = {}
+	var queue: Array = [from]
+	visited[from] = true
+	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0)]
+	while not queue.is_empty():
+		var cur: Vector2i = queue.pop_front()
+		for d: Vector2i in dirs:
+			var nxt: Vector2i = cur + d
+			if visited.has(nxt) or exclude.has(nxt):
+				continue
+			if _data.is_walkable(nxt):
+				visited[nxt] = true
+				queue.append(nxt)
+	return visited
 
 # ── Enemy management ──────────────────────────────────────────────────────────
 
@@ -1139,6 +1160,18 @@ func is_door_open(pos: Vector2i) -> bool:
 func is_door_locked(pos: Vector2i) -> bool:
 	return _doors.has(pos) and _doors[pos]["locked"]
 
+func _add_lock_icon_at(pos: Vector2i) -> void:
+	if _lock_icon_tex == null or _doors[pos].has("lock_icon"):
+		return
+	var icon := Sprite2D.new()
+	icon.texture = _lock_icon_tex
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + 3.0)
+	icon.scale = Vector2(0.5, 0.5)
+	icon.z_index = 3
+	entities.add_child(icon)
+	_doors[pos]["lock_icon"] = icon
+
 func lock_door(pos: Vector2i) -> void:
 	if not _doors.has(pos) or _doors[pos]["is_open"] or _doors[pos]["locked"]:
 		return
@@ -1146,6 +1179,7 @@ func lock_door(pos: Vector2i) -> void:
 	var sp: Sprite2D = _doors[pos]["sprite"]
 	if is_instance_valid(sp):
 		sp.modulate = Color(0.55, 0.35, 0.85)  # purple tint = locked
+	_add_lock_icon_at(pos)
 	AudioManager.play("lock_door")
 
 func unlock_door(pos: Vector2i) -> void:
@@ -1155,6 +1189,11 @@ func unlock_door(pos: Vector2i) -> void:
 	var sp: Sprite2D = _doors[pos]["sprite"]
 	if is_instance_valid(sp):
 		sp.modulate = Color(1.0, 1.0, 1.0)
+	if _doors[pos].has("lock_icon"):
+		var icon: Node = _doors[pos]["lock_icon"]
+		if is_instance_valid(icon):
+			icon.queue_free()
+		_doors[pos].erase("lock_icon")
 
 func open_door(pos: Vector2i) -> void:
 	if not _doors.has(pos) or _doors[pos]["is_open"] or _doors[pos]["locked"]:
@@ -1195,6 +1234,43 @@ func destroy_grass(pos: Vector2i) -> void:
 
 # ── Items ─────────────────────────────────────────────────────────────────────
 
+func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
+	var item := Item.new()
+	item.item_name = d["name"]
+	item.item_type = d["type"] as Item.Type
+	item.bonus_damage = d["bonus_dmg"]
+	item.heal_amount = d["heal"]
+	item.str_bonus = d.get("str_bonus", 0)
+	item.is_ranged = d.get("is_ranged", false)
+	item.range = d.get("range", 0)
+	item.consumes_on_ranged = d.get("consumes", false)
+	item.quantity = d.get("qty", 1)
+	item.floor_min = d["fmin"]
+	item.floor_max = d["fmax"]
+	item.description = d["desc"]
+	var base_path: String
+	match d["src"]:
+		"weapons": base_path = WEAPONS_PATH
+		"items":   base_path = ITEMS_PATH
+		_:         base_path = OBJECTS_PATH
+	var icon_path: String = base_path + d["icon"]
+	item.icon_path = icon_path
+	var tex: Texture2D
+	if ResourceLoader.exists(icon_path):
+		tex = load(icon_path)
+	else:
+		var fallback_img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
+		fallback_img.fill(Color(0.80, 0.55, 0.15))
+		tex = ImageTexture.create_from_image(fallback_img)
+	var sprite := Sprite2D.new()
+	sprite.texture = tex
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+	sprite.z_index = 1
+	entities.add_child(sprite)
+	_floor_items[pos] = item
+	_floor_item_sprites[pos] = sprite
+
 func _spawn_items() -> void:
 	var eligible: Array = []
 	for entry in ITEM_POOL:
@@ -1221,44 +1297,65 @@ func _spawn_items() -> void:
 	var count: int = mini(randi_range(2, 3), candidates.size())
 	for i: int in count:
 		var d: Dictionary = eligible[randi() % eligible.size()]
-		var pos: Vector2i = candidates[i]
+		_build_floor_item(candidates[i], d)
 
-		var item := Item.new()
-		item.item_name = d["name"]
-		item.item_type = d["type"] as Item.Type
-		item.bonus_damage = d["bonus_dmg"]
-		item.heal_amount = d["heal"]
-		item.str_bonus = d.get("str_bonus", 0)
-		item.is_ranged = d.get("is_ranged", false)
-		item.range = d.get("range", 0)
-		item.consumes_on_ranged = d.get("consumes", false)
-		item.quantity = d.get("qty", 1)
-		item.floor_min = d["fmin"]
-		item.floor_max = d["fmax"]
-		item.description = d["desc"]
-		var base_path: String
-		match d["src"]:
-			"weapons": base_path = WEAPONS_PATH
-			"items":   base_path = ITEMS_PATH
-			_:         base_path = OBJECTS_PATH
-		var icon_path: String = base_path + d["icon"]
-		item.icon_path = icon_path
-		var tex: Texture2D
-		if ResourceLoader.exists(icon_path):
-			tex = load(icon_path)
-		else:
-			var fallback_img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
-			fallback_img.fill(Color(0.80, 0.55, 0.15))
-			tex = ImageTexture.create_from_image(fallback_img)
-		var sprite := Sprite2D.new()
-		sprite.texture = tex
-		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
-		sprite.z_index = 1
-		entities.add_child(sprite)
+func _spawn_locked_doors() -> void:
+	if _doors.is_empty():
+		return
+	var eligible: Array = []
+	for entry: Dictionary in ITEM_POOL:
+		if GameState.current_floor >= entry["fmin"] and GameState.current_floor <= entry["fmax"]:
+			eligible.append(entry)
+	if eligible.is_empty():
+		return
 
-		_floor_items[pos] = item
-		_floor_item_sprites[pos] = sprite
+	var door_positions: Array = _doors.keys()
+	door_positions.shuffle()
+
+	for pos: Vector2i in door_positions:
+		# Skip already-locked doors (shouldn't happen at gen time, but be safe)
+		if _doors[pos]["locked"]:
+			continue
+		# Critical path check: player must still reach stairs without this door
+		if not _bfs_reachable(_data.player_start, _data.stairs_pos, [pos]):
+			continue
+
+		# Find tiles behind this door (unreachable from start when door is blocked)
+		var reachable: Dictionary = _bfs_collect(_data.player_start, [pos])
+		var reward_candidates: Array[Vector2i] = []
+		for room: Rect2i in _data.rooms:
+			var rc: Vector2i = Vector2i(room.get_center())
+			if reachable.has(rc):
+				continue
+			for ry: int in range(room.position.y, room.position.y + room.size.y):
+				for rx: int in range(room.position.x, room.position.x + room.size.x):
+					var rp: Vector2i = Vector2i(rx, ry)
+					if _data.get_tile(rx, ry) != DungeonData.TileType.FLOOR:
+						continue
+					if rp == _data.stairs_pos or rp == _data.player_start:
+						continue
+					if _traps.has(rp) or _floor_items.has(rp) or _doors.has(rp):
+						continue
+					reward_candidates.append(rp)
+
+		if reward_candidates.is_empty():
+			continue
+
+		# Lock the door (no audio at generation time)
+		_doors[pos]["locked"] = true
+		var sp: Sprite2D = _doors[pos]["sprite"]
+		if is_instance_valid(sp):
+			sp.modulate = Color(0.55, 0.35, 0.85)
+		_add_lock_icon_at(pos)
+
+		# Spawn 2–3 reward items in the locked room
+		reward_candidates.shuffle()
+		var count: int = mini(randi_range(2, 3), reward_candidates.size())
+		for i: int in count:
+			var d: Dictionary = eligible[randi() % eligible.size()]
+			_build_floor_item(reward_candidates[i], d)
+
+		break  # max 1 locked door per floor
 
 func get_item_at(pos: Vector2i) -> Item:
 	return _floor_items.get(pos, null) as Item
