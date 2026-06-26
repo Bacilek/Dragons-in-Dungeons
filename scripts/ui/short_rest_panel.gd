@@ -188,7 +188,8 @@ func _on_rest() -> void:
 	var total_heal: int = 0
 	for _i: int in _dice_to_spend:
 		total_heal += maxi(1, randi_range(1, sides) + con_mod)
-	GameState.hit_dice -= _dice_to_spend
+	if not GameState.invincible:
+		GameState.hit_dice -= _dice_to_spend
 	GameState.short_rests_remaining -= 1
 	GameState.short_rest_pending_heal = total_heal
 	GameState.short_rest_active = true

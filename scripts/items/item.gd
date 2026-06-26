@@ -23,6 +23,9 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 # recalculate_stats() in GameState applies these instead of base_min/max_damage when non-zero.
 @export var damage_die_min: int = 0
 @export var damage_die_max: int = 0
+@export var damage_type: String = ""   # "Slashing", "Piercing", "Bludgeoning", "" = unknown
+@export var heal_dice_count: int = 0   # if > 0, roll N dice of heal_dice_sides + CON instead of heal_amount
+@export var heal_dice_sides: int = 0
 
 func get_display_name() -> String:
 	if quantity > 1:

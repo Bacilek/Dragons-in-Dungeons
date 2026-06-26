@@ -386,7 +386,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				if _tool_item != null: _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 				_try_move(Vector2i(1, 1))
 			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _wait_action()
-			KEY_F: _interact_action()
 			KEY_CTRL: _handle_search_request()
 			KEY_ALT: _open_short_rest()
 			KEY_1: _use_quickbar_slot(0)
@@ -793,9 +792,10 @@ func _activate_rage() -> void:
 		GameState.game_log("[color=red]No Rage uses remaining (resets on floor descent).[/color]")
 		return
 	_is_raging = true
-	_rage_turns = 1  # guarantees at least 2 full turns before rage fades without attacking
+	_rage_turns = 0  # must attack this same turn or rage fades at next turn start
 	GameState.is_raging = true
-	ab.uses_remaining -= 1
+	if not GameState.invincible:
+		ab.uses_remaining -= 1
 	GameState.player_stats.rage_uses_remaining = ab.uses_remaining
 	GameState.ability_bar_changed.emit()
 	$AnimatedSprite2D.modulate = Color(1.6, 0.55, 0.55)  # red tint
@@ -851,8 +851,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var w_dmin: int = GameState.equipped_weapon.damage_die_min if not is_unarmed and GameState.equipped_weapon.damage_die_min > 0 else stats.base_min_damage
 	var w_dmax: int = GameState.equipped_weapon.damage_die_max if not is_unarmed and GameState.equipped_weapon.damage_die_max > 0 else stats.base_max_damage
 	var w_enh: int = weapon_bonus  # weapon.bonus_damage
-	var hit_meta: String = "hit:die=%d,str=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,n20=%d,n1=%d" % [
-		die, str_mod, prof, w_enh, roll, enemy.stats.armor_class,
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,n20=%d,n1=%d" % [
+		die, die1, die2, str_mod, prof, w_enh, roll, enemy.stats.armor_class,
 		1 if adv else 0, 1 if is_crit else 0, 1 if is_nat_one else 0]
 
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
@@ -888,11 +888,13 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,rage=%d,crit=%d,final=%d" % [
 		die_roll, w_dmin, w_dmax, w_enh, rage_bonus, 1 if is_crit else 0, actual]
 	var verb: String = "punch" if is_unarmed else "strike"
-	var rage_tag: String = " [color=red](rage)[/color]" if rage_bonus > 0 else ""
+	var weapon_item: Item = GameState.equipped_weapon
+	var dmg_type: String = weapon_item.damage_type if weapon_item != null and not weapon_item.damage_type.is_empty() else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
+	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url] dmg%s." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, rage_tag])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag])
 	else:
-		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url] dmg%s." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, rage_tag])
+		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag])
 
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
@@ -1120,9 +1122,18 @@ func _interact_action(can_lock: bool = true, target: Vector2i = Vector2i(-1, -1)
 		Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
 		Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)
 	]
-	# Priority 1: revealed trap — always scan all 8 neighbors
-	for d: Vector2i in dirs8:
-		var pos: Vector2i = grid_pos + d
+	# Priority 1: revealed trap
+	# When called from RMB with a target tile, only check that exact tile.
+	# When called from keyboard/debug (no target), scan all 8 neighbors.
+	var trap_tiles: Array[Vector2i] = []
+	if target != Vector2i(-1, -1):
+		var diff: Vector2i = target - grid_pos
+		if abs(diff.x) <= 1 and abs(diff.y) <= 1:
+			trap_tiles.append(target)
+	else:
+		for d: Vector2i in dirs8:
+			trap_tiles.append(grid_pos + d)
+	for pos: Vector2i in trap_tiles:
 		var trap: Dictionary = _dungeon_floor.get_trap_at(pos)
 		if not trap.is_empty() and trap.get("revealed", false):
 			_attempt_disarm(pos)
@@ -1209,8 +1220,9 @@ func _attempt_disarm(trap_pos: Vector2i) -> void:
 		GameState.game_log("[color=green]Disarmed [b]%s[/b]! [url=%s]%d vs DC %d[/url][/color]" % [trap_name, check_meta, total, DC])
 		_dungeon_floor.disarm_trap(trap_pos)
 	else:
-		GameState.game_log("[color=red]Failed to disarm [b]%s[/b]! [url=%s]%d vs DC %d[/url] — Thief Tools lost![/color]" % [trap_name, check_meta, total, DC])
-		GameState.consume_one(tools)
+		GameState.game_log("[color=red]Failed to disarm [b]%s[/b]! [url=%s]%d vs DC %d[/url]%s[/color]" % [trap_name, check_meta, total, DC, " — Thief Tools lost!" if not GameState.invincible else ""])
+		if not GameState.invincible:
+			GameState.consume_one(tools)
 
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
@@ -1233,8 +1245,9 @@ func _attempt_lock_door(door_pos: Vector2i) -> void:
 		GameState.game_log("[color=green]You lock the door! [url=%s]%d vs DC %d[/url][/color]" % [check_meta, total, LOCK_DC])
 		_show_float_text(door_world, "LOCKED!", Color(0.7, 0.4, 1.0))
 	else:
-		GameState.game_log("[color=red]Failed to lock the door [url=%s]%d vs DC %d[/url] — Thief Tools lost![/color]" % [check_meta, total, LOCK_DC])
-		GameState.consume_one(tools)
+		GameState.game_log("[color=red]Failed to lock the door [url=%s]%d vs DC %d[/url]%s[/color]" % [check_meta, total, LOCK_DC, " — Thief Tools lost!" if not GameState.invincible else ""])
+		if not GameState.invincible:
+			GameState.consume_one(tools)
 		_show_float_text(door_world, "FAIL!", Color(1.0, 0.3, 0.3))
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
@@ -1262,8 +1275,9 @@ func _attempt_disarm_lock(door_pos: Vector2i) -> void:
 		GameState.game_log("[color=green]You pick the lock! [url=%s]%d vs DC %d[/url][/color]" % [check_meta, total, dc])
 		_show_float_text(door_world, "UNLOCKED!", Color(0.4, 1.0, 0.5))
 	else:
-		GameState.game_log("[color=red]Failed to pick the lock [url=%s]%d vs DC %d[/url] — Thief Tools lost![/color]" % [check_meta, total, dc])
-		GameState.consume_one(tools)
+		GameState.game_log("[color=red]Failed to pick the lock [url=%s]%d vs DC %d[/url]%s[/color]" % [check_meta, total, dc, " — Thief Tools lost!" if not GameState.invincible else ""])
+		if not GameState.invincible:
+			GameState.consume_one(tools)
 		_show_float_text(door_world, "FAIL!", Color(1.0, 0.3, 0.3))
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
@@ -1419,7 +1433,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 	var is_nat_one: bool = die == 1
 
 	# Consume throwing weapon before resolving hit (it was thrown regardless)
-	if weapon != null and weapon.consumes_on_ranged:
+	if weapon != null and weapon.consumes_on_ranged and not GameState.invincible:
 		weapon.quantity -= 1
 		GameState.inventory_changed.emit()
 		if weapon.quantity <= 0:
@@ -1429,8 +1443,8 @@ func _ranged_attack(enemy: Enemy) -> void:
 			GameState.game_log("[color=gray]Last throwing dagger used.[/color]")
 
 	var r_wpn_enh: int = weapon.bonus_damage if weapon != null else 0
-	var hit_meta: String = "rhit:die=%d,dex=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
-		die, dex_mod, prof, r_wpn_enh, roll, enemy.stats.armor_class,
+	var hit_meta: String = "rhit:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
+		die, die1, die2, dex_mod, prof, r_wpn_enh, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
 		1 if is_crit else 0, 1 if is_nat_one else 0]
 
@@ -1463,10 +1477,12 @@ func _ranged_attack(enemy: Enemy) -> void:
 
 	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,rage=0,crit=%d,final=%d" % [
 		r_die_roll, stats.base_min_damage, stats.base_max_damage, r_wpn_enh, 1 if is_crit else 0, actual]
+	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
+	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url] dmg." % [hit_meta, enemy.display_name, dmg_meta, actual])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag])
 	else:
-		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url] dmg." % [hit_meta, enemy.display_name, dmg_meta, actual])
+		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag])
 
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
@@ -1526,7 +1542,7 @@ func _ranged_attack_tile(target_pos: Vector2i) -> void:
 	var weapon: Item = GameState.equipped_ranged
 	var target_world: Vector2 = Vector2(target_pos.x * 16 + 8, target_pos.y * 16 + 8)
 	_show_projectile(target_world, weapon)
-	if weapon != null and weapon.consumes_on_ranged:
+	if weapon != null and weapon.consumes_on_ranged and not GameState.invincible:
 		weapon.quantity -= 1
 		GameState.inventory_changed.emit()
 		if weapon.quantity <= 0:

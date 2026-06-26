@@ -10,7 +10,8 @@ var _panel: Panel
 var _bag_slots: Array[Control]    = []
 var _qb_slots:  Array[Control]    = []
 var _eq_slots:  Dictionary        = {}   # slot_name → Control
-var _tooltip_label: Label         = null
+var _inv_tooltip: Panel           = null
+var _inv_tooltip_rtl: RichTextLabel = null
 
 # Drag state (manual drag — no Godot built-in drag API)
 var _dragging:       bool    = false
@@ -99,13 +100,23 @@ func _build_ui() -> void:
 	_build_bag_section()
 	_build_quickbar_section()
 
-	_tooltip_label = Label.new()
-	_tooltip_label.position = Vector2(10, PANEL_H - 44)
-	_tooltip_label.size = Vector2(PANEL_W - 20, 18)
-	_tooltip_label.add_theme_font_size_override("font_size", 14)
-	_tooltip_label.add_theme_color_override("font_color", Color(0.95, 0.88, 0.60))
-	_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_panel.add_child(_tooltip_label)
+	_inv_tooltip = Panel.new()
+	_inv_tooltip.visible = false
+	_inv_tooltip.z_index = 20
+	_inv_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tsb := StyleBoxFlat.new()
+	tsb.bg_color = Color(0.05, 0.05, 0.09, 0.97)
+	tsb.set_border_width_all(1); tsb.border_color = Color(0.55, 0.50, 0.35)
+	tsb.set_corner_radius_all(3)
+	_inv_tooltip.add_theme_stylebox_override("panel", tsb)
+	_inv_tooltip_rtl = RichTextLabel.new()
+	_inv_tooltip_rtl.bbcode_enabled = true
+	_inv_tooltip_rtl.fit_content = true
+	_inv_tooltip_rtl.offset_left = 8.0; _inv_tooltip_rtl.offset_top = 6.0
+	_inv_tooltip_rtl.offset_right = -8.0; _inv_tooltip_rtl.offset_bottom = -6.0
+	_inv_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_inv_tooltip.add_child(_inv_tooltip_rtl)
+	add_child(_inv_tooltip)
 
 	_add_label(_panel, "I / Esc  •  Right-click: use/equip  •  Drag to move",
 		Vector2(10, PANEL_H - 24), 11, Color(0.4, 0.4, 0.4))
@@ -299,15 +310,52 @@ func _right_click(slot: Control) -> void:
 		if item != null:
 			GameState.use_item(item)
 
+func _process(_delta: float) -> void:
+	if _inv_tooltip == null or not _inv_tooltip.visible:
+		return
+	var mp: Vector2 = get_viewport().get_mouse_position()
+	var vp: Vector2 = get_viewport().get_visible_rect().size
+	var tw: float = _inv_tooltip.size.x
+	var th: float = _inv_tooltip_rtl.get_content_height() + 14.0
+	_inv_tooltip_rtl.size = Vector2(tw - 16.0, th - 14.0)
+	_inv_tooltip.size = Vector2(tw, th)
+	var tx: float = clampf(mp.x - tw * 0.5, 4.0, vp.x - tw - 4.0)
+	var ty: float = mp.y - th - 14.0
+	if ty < 4.0:
+		ty = mp.y + 18.0
+	_inv_tooltip.position = Vector2(tx, ty)
+
 func _on_slot_hover(slot: Control) -> void:
-	if _tooltip_label == null:
+	if _inv_tooltip == null:
 		return
 	var item: Item = _slot_item(slot)
-	_tooltip_label.text = item.get_display_name() if item != null else ""
+	if item == null:
+		_inv_tooltip.visible = false
+		return
+	var text: String = "[b]%s[/b]" % item.item_name
+	if item.item_type == Item.Type.WEAPON:
+		var die_max: int = item.damage_die_max if item.damage_die_max > 0 else 0
+		var die_str: String = "1d%d" % die_max if die_max > 0 else ""
+		var bonus_str: String = "+%d" % item.bonus_damage if item.bonus_damage > 0 else ""
+		var sep: String = " " if not die_str.is_empty() and not bonus_str.is_empty() else ""
+		var type_str: String = " %s" % item.damage_type if not item.damage_type.is_empty() else ""
+		if not die_str.is_empty() or not bonus_str.is_empty():
+			text += "\n%s%s%s%s" % [die_str, sep, bonus_str, type_str]
+	elif item.item_type == Item.Type.POTION or item.item_type == Item.Type.FOOD:
+		if item.heal_dice_count > 0:
+			text += "\n%dd%d+CON HP" % [item.heal_dice_count, item.heal_dice_sides]
+		elif item.heal_amount > 0:
+			text += "\n+%d HP" % item.heal_amount
+	if not item.description.is_empty():
+		text += "\n[color=gray]%s[/color]" % item.description
+	_inv_tooltip_rtl.text = text
+	_inv_tooltip_rtl.size = Vector2(172.0, 0)
+	_inv_tooltip.size = Vector2(180.0, 60)
+	_inv_tooltip.visible = true
 
 func _on_slot_hover_end() -> void:
-	if _tooltip_label != null:
-		_tooltip_label.text = ""
+	if _inv_tooltip != null:
+		_inv_tooltip.visible = false
 
 func _slot_item(slot: Control) -> Item:
 	match slot.get_meta("source", ""):

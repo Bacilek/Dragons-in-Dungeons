@@ -155,6 +155,7 @@ func _give_barbarian_starting_items() -> void:
 	axe.floor_max = 10
 	axe.is_ranged = false
 	axe.is_two_handed = true
+	axe.damage_type = "Slashing"
 	# Equip silently (no turn cost, no turn consumed — startup)
 	equipment["melee"] = axe
 	recalculate_stats()
@@ -386,7 +387,20 @@ func use_item(item: Item) -> void:
 	match item.item_type:
 		Item.Type.POTION:
 			AudioManager.play("drink_potion")
-			if item.heal_amount > 0:
+			if item.heal_dice_count > 0:
+				# Dice-based heal (e.g. 2d4+CON for Health Potion)
+				var amount: int = 0
+				for _i: int in item.heal_dice_count:
+					amount += randi_range(1, item.heal_dice_sides)
+				amount = maxi(1, amount + player_stats.con_modifier())
+				var before: int = player_stats.current_hp
+				heal(amount)
+				var healed: int = player_stats.current_hp - before
+				if healed > 0:
+					combat_message.emit("[color=green]You drink [b]%s[/b] — rolled %dd%d+CON(%+d) = %d HP restored.[/color]" % [item.item_name, item.heal_dice_count, item.heal_dice_sides, player_stats.con_modifier(), healed])
+				else:
+					combat_message.emit("[color=gray]Already at full health.[/color]")
+			elif item.heal_amount > 0:
 				var before: int = player_stats.current_hp
 				heal(item.heal_amount)
 				var healed: int = player_stats.current_hp - before
@@ -399,7 +413,8 @@ func use_item(item: Item) -> void:
 				player_stats.base_max_damage += item.str_bonus
 				recalculate_stats()
 				combat_message.emit("[color=yellow]You drink [b]%s[/b]. Your attacks surge! (+%d ATK)[/color]" % [item.item_name, item.str_bonus])
-			consume_one(item)
+			if not invincible:
+				consume_one(item)
 			potion_drunk.emit()
 		Item.Type.FOOD:
 			AudioManager.play("eat_food")

@@ -96,7 +96,7 @@ func roll_damage() -> int:
 	return randi_range(min_damage, max_damage)
 
 func take_damage(amount: int) -> int:
-	var actual: int = maxi(1, amount - armor)
+	var actual: int = maxi(1, amount)
 	current_hp -= actual
 	return actual
 

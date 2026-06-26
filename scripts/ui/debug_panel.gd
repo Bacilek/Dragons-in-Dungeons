@@ -17,7 +17,7 @@ const ALL_ITEMS: Array = [
 	{"name": "Knight Sword",    "type": 0, "src": "weapons", "icon": "weapon_knight_sword.png",               "bonus_dmg": 3, "heal": 0,   "str_bonus": 0, "desc": "+3 damage"},
 	{"name": "Golden Sword",    "type": 0, "src": "weapons", "icon": "weapon_golden_sword.png",               "bonus_dmg": 4, "heal": 0,   "str_bonus": 0, "desc": "+4 damage"},
 	{"name": "Lavish Sword",    "type": 0, "src": "weapons", "icon": "weapon_lavish_sword.png",               "bonus_dmg": 5, "heal": 0,   "str_bonus": 0, "desc": "+5 damage"},
-	{"name": "Health Potion",   "type": 2, "src": "items",   "icon": "Potions/Health/HealthPotionMedium.png", "bonus_dmg": 0, "heal": 10,  "str_bonus": 0, "desc": "Restores 10 HP"},
+	{"name": "Health Potion",   "type": 2, "src": "items",   "icon": "Potions/Health/HealthPotionMedium.png", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Restores 2d4+CON HP", "heal_dice": 2, "heal_sides": 4},
 	{"name": "Strength Potion", "type": 2, "src": "items",   "icon": "Potions/Mana/ManaPotionMedium.png",     "bonus_dmg": 0, "heal": 0,   "str_bonus": 2, "desc": "+2 ATK (permanent)"},
 	{"name": "Ration",          "type": 4, "src": "items",   "icon": "Food/MeatCooked.png",                   "bonus_dmg": 0, "heal": 200, "str_bonus": 0, "desc": "Fills you up"},
 	{"name": "Mystery Meat",    "type": 4, "src": "items",   "icon": "Food/Meat.png",                         "bonus_dmg": 0, "heal": 120, "str_bonus": 0, "desc": "Better than nothing"},
@@ -292,7 +292,9 @@ func _on_give_item(d: Dictionary) -> void:
 	item.item_name   = d["name"]
 	item.item_type   = d["type"] as Item.Type
 	item.bonus_damage = d["bonus_dmg"]
-	item.heal_amount = d["heal"]
+	item.heal_amount        = d["heal"]
+	item.heal_dice_count    = d.get("heal_dice", 0)
+	item.heal_dice_sides    = d.get("heal_sides", 0)
 	item.str_bonus          = d.get("str_bonus", 0)
 	item.is_ranged          = d.get("is_ranged", false)
 	item.range              = d.get("range", 0)
@@ -301,6 +303,7 @@ func _on_give_item(d: Dictionary) -> void:
 	item.is_heavy_armor     = d.get("heavy_armor", false)
 	item.damage_die_min     = d.get("die_min", 0)
 	item.damage_die_max     = d.get("die_max", 0)
+	item.damage_type        = d.get("dmg_type", "")
 	item.description = d["desc"]
 	match d["src"]:
 		"weapons": item.icon_path = WEAPONS_PATH + d["icon"]

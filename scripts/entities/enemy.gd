@@ -1,7 +1,7 @@
 class_name Enemy
 extends Entity
 
-enum Behavior { SLEEPING, STATIONARY, ROAMING, CHASING }
+enum Behavior { SLEEPING, STATIONARY, ROAMING, CHASING, SEARCHING }
 
 const SPRITES_PATH := "res://sprites/characters/"
 const FOV_RADIUS: int = 6
@@ -21,6 +21,11 @@ var just_crossed_door: bool = false
 var slowed_turns: int = 0
 var _roam_target: Vector2i = Vector2i(-1, -1)
 var _roam_path: Array[Vector2i] = []
+# Search state — used when enemy loses sight of player after chasing
+var _search_heading: Vector2i = Vector2i(0, 0)
+var _search_turns_remaining: int = 0
+var _search_target: Vector2i = Vector2i(-1, -1)
+var _search_path: Array[Vector2i] = []
 
 var _zzz_label: Label
 var _zzz_tween: Tween
@@ -45,8 +50,8 @@ func _apply_stats() -> void:
 	stats.max_hp      = _type.get("hp", 8)      + (f - 1) * _type.get("hp_per_floor", 2)
 	stats.min_damage  = _type.get("dmg_min", 1) + (f - 1) / 3
 	stats.max_damage  = _type.get("dmg_max", 4) + (f - 1) / 2
-	stats.armor       = _type.get("armor", 0)   + f / 5
-	stats.armor_class = _type.get("ac", 10)     + f / 5
+	stats.armor       = 0
+	stats.armor_class = _type.get("ac", 10) + _type.get("armor", 0) + f / 5
 	stats.current_hp  = stats.max_hp
 	exp_reward        = _type.get("exp", 5)
 
@@ -150,13 +155,40 @@ func take_turn() -> void:
 		Behavior.CHASING:
 			if can_see:
 				last_known_player_pos = player.grid_pos
+				# Record the direction toward the player so we can search that way if we lose sight
+				_search_heading = Vector2i(sign(dx), sign(dy))
 			await _act_toward(player)
 			if not is_instance_valid(self) or stats.is_dead():
 				return
-			# Reached last known position without spotting player — go back to roaming
+			# Reached last known position without spotting player — enter search mode
 			if not can_see and last_known_player_pos != Vector2i(-1, -1) and grid_pos == last_known_player_pos:
-				behavior = Behavior.ROAMING
+				behavior = Behavior.SEARCHING
+				_search_turns_remaining = 7
+				_search_target = last_known_player_pos + _search_heading * 5
+				_search_path.clear()
 				last_known_player_pos = Vector2i(-1, -1)
+
+		Behavior.SEARCHING:
+			if can_see:
+				# Found the player — resume chasing
+				behavior = Behavior.CHASING
+				last_known_player_pos = player.grid_pos
+				_search_heading = Vector2i(sign(dx), sign(dy))
+				await _act_toward(player)
+			elif _search_turns_remaining > 0:
+				_search_turns_remaining -= 1
+				if _search_path.is_empty() or grid_pos == _search_target:
+					_search_path = _bfs_to(_search_target)
+				if not _search_path.is_empty():
+					var next: Vector2i = _search_path[0]
+					_search_path = _search_path.slice(1)
+					await _move_step(next)
+				else:
+					await _do_random_step()
+			else:
+				behavior = Behavior.ROAMING
+				_search_target = Vector2i(-1, -1)
+				_search_path.clear()
 				_roam_path.clear()
 				_roam_target = Vector2i(-1, -1)
 
@@ -303,12 +335,13 @@ func _attack_player(_player: Player) -> void:
 	var roll: int = die + attack_bonus
 	var player_ac: int = GameState.player_stats.armor_class
 	var is_crit: bool = die == 20
+	var hit_meta: String = "ehit:die=%d,bonus=%d,total=%d,ac=%d,crit=%d" % [die, attack_bonus, roll, player_ac, 1 if is_crit else 0]
 	if not is_crit and roll < player_ac:
-		GameState.game_log("[color=tomato]%s[/color] attacks but [color=gray]misses[/color]! (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [display_name, attack_bonus, roll, player_ac])
+		GameState.game_log("[color=tomato]%s[/color] [url=%s]misses[/url]!" % [display_name, hit_meta])
 		return
-	var dmg: int = stats.roll_damage()
+	var dmg_roll: int = stats.roll_damage()
+	var dmg: int = dmg_roll * (2 if is_crit else 1)
 	if is_crit:
-		dmg *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(0.95, 0.15, 0.15))
 		GameState.screen_shake.emit(7.0)
 		AudioManager.play("crit")
@@ -318,10 +351,11 @@ func _attack_player(_player: Player) -> void:
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(_player.position, actual, true)
+	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,final=%d" % [dmg_roll, stats.min_damage, stats.max_damage, 1 if is_crit else 0, actual]
 	if is_crit:
-		GameState.game_log("[color=tomato]%s[/color] [color=red]CRITICAL HIT![/color] for [color=yellow]%d[/color] dmg. (d20=[color=red]20[/color]+%d=[color=yellow]%d[/color] vs AC %d)" % [display_name, actual, attack_bonus, roll, player_ac])
+		GameState.game_log("[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg." % [display_name, hit_meta, dmg_meta, actual])
 	else:
-		GameState.game_log("[color=tomato]%s[/color] hits you for [color=yellow]%d[/color] dmg. (d20+%d=[color=yellow]%d[/color] vs AC %d)" % [display_name, actual, attack_bonus, roll, player_ac])
+		GameState.game_log("[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg." % [display_name, hit_meta, dmg_meta, actual])
 	# Orc Shaman applies poison on hit
 	if display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
 		GameState.player_stats.poison_turns = 3
