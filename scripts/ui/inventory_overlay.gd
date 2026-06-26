@@ -53,12 +53,23 @@ func _input(event: InputEvent) -> void:
 			GameState.inventory_open = false
 
 func _process(_delta: float) -> void:
-	if not visible or not _dragging:
-		return
-	if _drag_icon != null:
-		_drag_icon.position = get_viewport().get_mouse_position() - Vector2(SLOT_SIZE / 2.0, SLOT_SIZE / 2.0)
-	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		_finish_drag()
+	if visible and _dragging:
+		if _drag_icon != null:
+			_drag_icon.position = get_viewport().get_mouse_position() - Vector2(SLOT_SIZE / 2.0, SLOT_SIZE / 2.0)
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			_finish_drag()
+	if _inv_tooltip != null and _inv_tooltip.visible:
+		var mp: Vector2 = get_viewport().get_mouse_position()
+		var vp: Vector2 = get_viewport().get_visible_rect().size
+		var tw: float = _inv_tooltip.size.x
+		var th: float = _inv_tooltip_rtl.get_content_height() + 14.0
+		_inv_tooltip_rtl.size = Vector2(tw - 16.0, th - 14.0)
+		_inv_tooltip.size = Vector2(tw, th)
+		var tx: float = clampf(mp.x - tw * 0.5, 4.0, vp.x - tw - 4.0)
+		var ty: float = mp.y - th - 14.0
+		if ty < 4.0:
+			ty = mp.y + 18.0
+		_inv_tooltip.position = Vector2(tx, ty)
 
 # ── UI construction ───────────────────────────────────────────────────────────
 
@@ -309,21 +320,6 @@ func _right_click(slot: Control) -> void:
 		var item: Item = _slot_item(slot)
 		if item != null:
 			GameState.use_item(item)
-
-func _process(_delta: float) -> void:
-	if _inv_tooltip == null or not _inv_tooltip.visible:
-		return
-	var mp: Vector2 = get_viewport().get_mouse_position()
-	var vp: Vector2 = get_viewport().get_visible_rect().size
-	var tw: float = _inv_tooltip.size.x
-	var th: float = _inv_tooltip_rtl.get_content_height() + 14.0
-	_inv_tooltip_rtl.size = Vector2(tw - 16.0, th - 14.0)
-	_inv_tooltip.size = Vector2(tw, th)
-	var tx: float = clampf(mp.x - tw * 0.5, 4.0, vp.x - tw - 4.0)
-	var ty: float = mp.y - th - 14.0
-	if ty < 4.0:
-		ty = mp.y + 18.0
-	_inv_tooltip.position = Vector2(tx, ty)
 
 func _on_slot_hover(slot: Control) -> void:
 	if _inv_tooltip == null:
