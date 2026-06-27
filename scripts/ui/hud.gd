@@ -1032,13 +1032,19 @@ func _fmt_save_tooltip(p: Dictionary) -> String:
 
 func _fmt_ehit_tooltip(p: Dictionary) -> String:
 	var die: int    = int(p.get("die", "0"))
+	var d1: int     = int(p.get("d1", str(die)))
+	var d2: int     = int(p.get("d2", str(die)))
 	var bonus: int  = int(p.get("bonus", "0"))
 	var total: int  = int(p.get("total", "0"))
 	var ac: int     = int(p.get("ac", "0"))
 	var crit: bool  = p.get("crit", "0") == "1"
+	var adv: bool   = p.get("adv", "0") == "1"
 	var lines: PackedStringArray = []
 	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if crit else ""
-	lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
+	if adv and d1 != d2:
+		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
+	else:
+		lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
 	if bonus != 0:
 		lines.append("[color=lightblue]%+d[/color]  (attack bonus)" % bonus)
 	lines.append("─────────────────")

@@ -333,15 +333,18 @@ func _attack_player(_player: Player) -> void:
 	# Reckless Attack: if player has it active, enemies gain advantage (roll 2d20 take higher).
 	var attack_bonus: int = GameState.current_floor / 3
 	var die1: int = randi_range(1, 20)
+	var die2: int = die1
 	var die: int = die1
 	if GameState.reckless_attack_active:
-		var die2: int = randi_range(1, 20)
+		die2 = randi_range(1, 20)
 		die = maxi(die1, die2)
 	var roll: int = die + attack_bonus
 	var player_ac: int = GameState.player_stats.armor_class
 	var is_crit: bool = die == 20
 	var reckless_tag: String = " [color=yellow](Reckless)[/color]" if GameState.reckless_attack_active else ""
-	var hit_meta: String = "ehit:die=%d,bonus=%d,total=%d,ac=%d,crit=%d" % [die, attack_bonus, roll, player_ac, 1 if is_crit else 0]
+	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d" % [
+		die, die1, die2, attack_bonus, roll, player_ac,
+		1 if is_crit else 0, 1 if GameState.reckless_attack_active else 0]
 	if not is_crit and roll < player_ac:
 		var miss_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [attack_bonus, roll, player_ac] if GameState.god_mode else ""
 		GameState.game_log("[color=tomato]%s[/color] [url=%s]misses[/url]!%s%s" % [display_name, hit_meta, reckless_tag, miss_suffix])

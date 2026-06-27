@@ -547,20 +547,21 @@ func _execute_queued_path() -> void:
 	TurnManager.fast_mode = not TurnManager.has_any_enemy()
 	_reset_camera_offset()
 
-	# Extra Attack: only allow an adjacent melee strike — no movement.
+	# Extra Attack: only allow an attack (melee or ranged) — no movement.
 	if _extra_attack_mode:
 		var atk_enemy: Enemy = null
 		if _target_enemy != null and is_instance_valid(_target_enemy) and not _target_enemy.stats.is_dead():
-			var d: Vector2i = _target_enemy.grid_pos - grid_pos
-			if maxi(absi(d.x), absi(d.y)) == 1:
-				atk_enemy = _target_enemy
+			atk_enemy = _target_enemy
 		elif not _queued_path.is_empty():
 			var nxt: Vector2i = _queued_path[0]
 			atk_enemy = _dungeon_floor.get_enemy_at(nxt) if _dungeon_floor != null else null
 		if atk_enemy != null:
-			_bump_attack(atk_enemy, atk_enemy.grid_pos - grid_pos)
+			if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
+				_ranged_attack(atk_enemy)
+			else:
+				_bump_attack(atk_enemy, atk_enemy.grid_pos - grid_pos)
 		else:
-			GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy! (Space to skip)[/color]")
+			GameState.game_log("[color=yellow]Extra Attack — attack an enemy! (Space to skip)[/color]")
 		_target_enemy = null
 		_queued_path.clear()
 		TurnManager.fast_mode = false
@@ -743,7 +744,7 @@ func _try_move(dir: Vector2i) -> void:
 
 	var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
 	if enemy != null:
-		if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null and not _extra_attack_mode:
+		if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
 			_ranged_attack(enemy)
 		else:
 			_bump_attack(enemy, dir)
@@ -770,7 +771,7 @@ func _try_move(dir: Vector2i) -> void:
 
 	# Extra Attack mode: movement is not allowed — player must attack.
 	if _extra_attack_mode:
-		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy! (Space to skip)[/color]")
+		GameState.game_log("[color=yellow]Extra Attack — attack an enemy! (Space to skip)[/color]")
 		return
 
 	if GameState.noclip:
@@ -969,7 +970,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			GameState.screen_shake.emit(2.5)
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
-		_handle_post_attack_turn(is_str_weapon)
+		_handle_post_attack_turn()
 		return
 
 	AudioManager.play("crit" if is_crit else "hit_enemy")
@@ -1005,13 +1006,13 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_finish_kill(enemy)
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
-	_handle_post_attack_turn(is_str_weapon)
+	_handle_post_attack_turn()
 
-func _handle_post_attack_turn(is_str_melee: bool) -> void:
-	# Extra Attack (Barbarian Lv5): first STR melee attack of the turn doesn't end it.
+func _handle_post_attack_turn() -> void:
+	# Extra Attack (Barbarian Lv5): any attack (melee or ranged) grants a second attack.
 	# Phase is set back to WAITING_FOR_INPUT without running enemy turns.
-	# Second attack (or Esc to forfeit) then calls on_player_action_complete normally.
-	if stats.extra_attack and is_str_melee and not _extra_attack_mode:
+	# Second attack or Space (forfeit) then calls on_player_action_complete normally.
+	if stats.extra_attack and not _extra_attack_mode:
 		_extra_attack_mode = true
 		TurnManager.phase = TurnManager.Phase.WAITING_FOR_INPUT
 		GameState.game_log("[color=yellow]Extra Attack! Attack again or Space to skip.[/color]")
@@ -1611,7 +1612,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 			GameState.screen_shake.emit(2.5)
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
-		TurnManager.on_player_action_complete()
+		_handle_post_attack_turn()
 		return
 
 	AudioManager.play("crit" if is_crit else "hit_enemy")
@@ -1643,7 +1644,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 		_finish_kill(enemy)
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
-	TurnManager.on_player_action_complete()
+	_handle_post_attack_turn()
 
 func _show_projectile(target_world_pos: Vector2, weapon: Item) -> void:
 	if weapon == null:
@@ -1707,7 +1708,7 @@ func _ranged_attack_tile(target_pos: Vector2i) -> void:
 			GameState.game_log("[color=gray]Last throwing dagger thrown.[/color]")
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
-	TurnManager.on_player_action_complete()
+	_handle_post_attack_turn()
 
 
 func _on_throw_primed(item: Item) -> void:
