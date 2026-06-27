@@ -872,8 +872,8 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 		var roll: int = die + dex_mod + prof_bonus
 		var dc: int = 10 + GameState.current_floor
 		var adv_tag: String = " [color=gray](Danger Sense)[/color]" if s.danger_sense else ""
-		var save_meta: String = "save:stat=DEX,die=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d" % [
-			die, dex_mod, prof_bonus, roll, dc, 1 if roll >= dc else 0]
+		var save_meta: String = "save:stat=DEX,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [
+			die, die1, die2, dex_mod, prof_bonus, roll, dc, 1 if roll >= dc else 0, 1 if s.danger_sense else 0]
 		if roll >= dc:
 			GameState.game_log("[color=cyan]You dodge [b]%s[/b]!%s [url=%s]%d vs DC %d[/url][/color]" % [trap["name"], adv_tag, save_meta, roll, dc])
 			return

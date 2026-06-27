@@ -199,6 +199,7 @@ func _sync_ability_uses() -> void:
 		var ab := slot as Ability
 		if ab.ability_id == "rage":
 			ab.uses_remaining = player_stats.rage_uses_remaining
+			ab.uses_max = player_stats.rage_uses_max
 	ability_bar_changed.emit()
 
 func hit_die_sides() -> int:
@@ -499,6 +500,8 @@ func restore_hunger(amount: int) -> void:
 var is_raging: bool = false
 # reckless_attack_active is set by player.gd; enemies read it to gain ADV on their attacks.
 var reckless_attack_active: bool = false
+# Set true after first reckless attack this turn — locks the toggle and blocks ADV on 2nd attack.
+var reckless_locked_this_turn: bool = false
 
 func take_damage_raw(amount: int, ignore_rage: bool = false) -> void:
 	if is_game_over or invincible:

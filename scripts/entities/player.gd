@@ -124,6 +124,8 @@ func _on_turn_started() -> void:
 	GameState.player_grid_pos = grid_pos
 	# Extra Attack mode is only valid within one action sequence; clear on next real turn start.
 	_extra_attack_mode = false
+	# Reckless lock clears each turn — toggle becomes available again.
+	GameState.reckless_locked_this_turn = false
 	# Refresh visibility after enemy turns, then snapshot FOV
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
@@ -362,13 +364,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
-			if _extra_attack_mode:
-				# Forfeit Extra Attack — end turn so enemies can act.
-				_extra_attack_mode = false
-				if _dungeon_floor != null:
-					_dungeon_floor.update_fog(grid_pos)
-				TurnManager.on_player_action_complete()
-				return
 			if _inspect_mode:
 				_inspect_mode = false
 				GameState.game_log("[color=gray]Inspect cancelled.[/color]")
@@ -565,7 +560,7 @@ func _execute_queued_path() -> void:
 		if atk_enemy != null:
 			_bump_attack(atk_enemy, atk_enemy.grid_pos - grid_pos)
 		else:
-			GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy! (Esc to skip)[/color]")
+			GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy! (Space to skip)[/color]")
 		_target_enemy = null
 		_queued_path.clear()
 		TurnManager.fast_mode = false
@@ -754,9 +749,28 @@ func _try_move(dir: Vector2i) -> void:
 			_bump_attack(enemy, dir)
 		return
 
+	# Thief Tools primed + door bump = lock/unlock action instead of movement.
+	if _tool_item != null and _tool_item.item_name == "Thief Tools" and _dungeon_floor.has_door_at(target):
+		_tool_item = null
+		if _dungeon_floor.is_door_open(target):
+			_attempt_lock_door(target)
+		elif _dungeon_floor.is_door_locked(target):
+			if _dungeon_floor.is_door_player_locked(target):
+				TurnManager.begin_player_action()
+				_dungeon_floor.unlock_door(target)
+				_dungeon_floor.open_door(target)
+				GameState.game_log("[color=cyan]You unlock the door you set.[/color]")
+				_dungeon_floor.update_fog(grid_pos)
+				TurnManager.on_player_action_complete()
+			else:
+				_attempt_disarm_lock(target)
+		else:
+			_attempt_lock_door(target)
+		return
+
 	# Extra Attack mode: movement is not allowed — player must attack.
 	if _extra_attack_mode:
-		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy! (Esc to skip)[/color]")
+		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy! (Space to skip)[/color]")
 		return
 
 	if GameState.noclip:
@@ -836,6 +850,9 @@ func _activate_reckless() -> void:
 	var ab: Ability = _find_ability("reckless_attack")
 	if ab == null:
 		return
+	if GameState.reckless_locked_this_turn:
+		GameState.game_log("[color=gray]Reckless committed this turn — toggle available next turn.[/color]")
+		return
 	_reckless_active = not _reckless_active
 	ab.is_active = _reckless_active
 	GameState.reckless_attack_active = _reckless_active
@@ -898,11 +915,24 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var prof: int = stats.proficiency_bonus  # all melee weapons are proficient for now
 	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if not is_unarmed else 0
 	var total_hit_bonus: int = str_mod + prof + weapon_bonus
-	# Advantage sources: sleeping target, surprise (just crossed door), Reckless Attack toggle
-	var adv: bool = _has_advantage(enemy) or (_reckless_active and is_str_weapon)
+	# Advantage sources are counted; net ADV count vs DISADV count decides outcome.
+	# Two ADV sources + one DISADV = net +1 = ADV (house rule: count beats cancel).
+	var adv_count: int = 0
+	var disadv_count: int = 0
+	if _has_advantage(enemy): adv_count += 1
+	# Reckless only gives ADV on the FIRST melee attack per turn (locked after first use).
+	var reckless_gives_adv: bool = _reckless_active and is_str_weapon and not GameState.reckless_locked_this_turn
+	if reckless_gives_adv: adv_count += 1
 	# Heavy weapon penalty: STR < 13 imposes Disadvantage
 	var weapon_item_ref: Item = GameState.equipped_weapon
-	var disadv: bool = weapon_item_ref != null and weapon_item_ref.is_heavy and stats.strength < 13
+	if weapon_item_ref != null and weapon_item_ref.is_heavy and stats.strength < 13: disadv_count += 1
+	var net: int = adv_count - disadv_count
+	var adv: bool = net > 0
+	var disadv: bool = net < 0
+	# Commit Reckless: lock toggle for rest of turn so it can't be toggled off mid-round.
+	if reckless_gives_adv:
+		GameState.reckless_locked_this_turn = true
+		GameState.ability_bar_changed.emit()
 	var die1: int = randi_range(1, 20)
 	var die2: int = die1
 	var die: int = die1
@@ -984,7 +1014,7 @@ func _handle_post_attack_turn(is_str_melee: bool) -> void:
 	if stats.extra_attack and is_str_melee and not _extra_attack_mode:
 		_extra_attack_mode = true
 		TurnManager.phase = TurnManager.Phase.WAITING_FOR_INPUT
-		GameState.game_log("[color=yellow]Extra Attack! Attack again or Esc to skip.[/color]")
+		GameState.game_log("[color=yellow]Extra Attack! Attack again or Space to skip.[/color]")
 		return
 	_extra_attack_mode = false
 	TurnManager.on_player_action_complete()
@@ -1101,7 +1131,11 @@ func _check_pickup() -> void:
 
 func _wait_action() -> void:
 	if _extra_attack_mode:
-		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy! (Esc to skip)[/color]")
+		# Space forfeits the Extra Attack and ends the turn normally.
+		_extra_attack_mode = false
+		if _dungeon_floor != null:
+			_dungeon_floor.update_fog(grid_pos)
+		TurnManager.on_player_action_complete()
 		return
 	TurnManager.begin_player_action()
 	if _dungeon_floor != null:
@@ -1116,7 +1150,7 @@ func _do_rest_wait_turn() -> void:
 
 func _handle_search_request() -> void:
 	if _extra_attack_mode:
-		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Esc to skip)[/color]")
+		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Space to skip)[/color]")
 		return
 	var now: float = Time.get_ticks_msec() / 1000.0
 	if now - _last_search_request < 0.5:
@@ -1393,7 +1427,7 @@ func _use_quickbar_slot(idx: int) -> void:
 		_use_ability_slot(idx)
 		return
 	if _extra_attack_mode:
-		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Esc to skip)[/color]")
+		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Space to skip)[/color]")
 		return
 	var raw = GameState.player_quickbar[idx]
 	if raw == null:
@@ -1739,7 +1773,7 @@ func _do_throw(pos: Vector2i) -> void:
 
 func _open_short_rest() -> void:
 	if _extra_attack_mode:
-		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Esc to skip)[/color]")
+		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Space to skip)[/color]")
 		return
 	if GameState.short_rests_remaining <= 0:
 		GameState.game_log("[color=gray]No short rests remaining on this floor. Descend to refresh.[/color]")

@@ -565,16 +565,22 @@ func _refresh_ability_bar() -> void:
 				var use_lbl: Label = _slot_use_labels[i]
 				use_lbl.visible = true
 				if ab.uses_max == 0:
-					# Infinite / passive: show ON when active toggle, ∞ otherwise
-					use_lbl.text = "ON" if ab.is_active else "∞"
-					var clr: Color = Color(1.0, 0.5, 0.0) if ab.is_active else Color(0.5, 0.5, 0.5)
-					use_lbl.add_theme_color_override("font_color", clr)
+					# Passive / infinite: show "passive" for Danger Sense, empty for toggles.
+					match ab.ability_id:
+						"danger_sense":
+							use_lbl.text = "passive"
+							use_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+						_:
+							use_lbl.text = ""
 				else:
 					use_lbl.text = "%d/%d" % [ab.uses_remaining, ab.uses_max]
 					var clr: Color = Color(1.0, 0.7, 0.2) if ab.uses_remaining > 0 else Color(0.5, 0.5, 0.5)
 					use_lbl.add_theme_color_override("font_color", clr)
-			# Active toggle = orange tint; exhausted = grey; normal = white
-			if ab.is_active:
+			# Modulate: locked-reckless = darker gray; active toggle = orange; exhausted = gray; else white
+			var reckless_locked: bool = ab.ability_id == "reckless_attack" and GameState.reckless_locked_this_turn
+			if reckless_locked:
+				slot.modulate = Color(0.45, 0.45, 0.45)
+			elif ab.is_active:
 				slot.modulate = Color(1.0, 0.55, 0.1)
 			elif ab.uses_remaining > 0 or ab.uses_max == 0:
 				slot.modulate = Color(1.0, 1.0, 1.0)
@@ -1001,14 +1007,20 @@ func _fmt_heal_tooltip(p: Dictionary) -> String:
 
 func _fmt_save_tooltip(p: Dictionary) -> String:
 	var die: int   = int(p.get("die", "0"))
+	var d1: int    = int(p.get("d1", str(die)))
+	var d2: int    = int(p.get("d2", str(die)))
 	var mod: int   = int(p.get("mod", "0"))
 	var prof: int  = int(p.get("prof", "0"))
 	var total: int = int(p.get("total", "0"))
 	var dc: int    = int(p.get("dc", "0"))
 	var stat: String = p.get("stat", "DEX")
 	var passed: bool = p.get("pass", "0") == "1"
+	var adv: bool  = p.get("adv", "0") == "1"
 	var lines: PackedStringArray = []
-	lines.append("d20 = [color=yellow]%d[/color]" % die)
+	if adv and d1 != d2:
+		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
+	else:
+		lines.append("d20 = [color=yellow]%d[/color]" % die)
 	if mod != 0:
 		lines.append("[color=lightblue]%+d[/color]  (%s mod)" % [mod, stat])
 	if prof != 0:
