@@ -916,7 +916,9 @@ func _fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 	var die: int    = int(p.get("die", "0"))
 	var d1: int     = int(p.get("d1", str(die)))
 	var d2: int     = int(p.get("d2", str(die)))
-	var stat_mod: int = int(p.get("dex" if is_ranged else "str", "0"))
+	# Ranged uses dex=; melee uses str=; Monk unarmed melee also uses dex= (no str= key).
+	var use_dex: bool = is_ranged or p.has("dex")
+	var stat_mod: int = int(p.get("dex" if use_dex else "str", "0"))
 	var prof: int   = int(p.get("prof", "0"))
 	var wpn: int    = int(p.get("wpn", "0"))
 	var total: int  = int(p.get("total", "0"))
@@ -925,7 +927,7 @@ func _fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 	var disadv: bool = p.get("disadv", "0") == "1"
 	var n20: bool   = p.get("n20", "0") == "1"
 	var n1: bool    = p.get("n1", "0") == "1"
-	var stat_name: String = "DEX" if is_ranged else "STR"
+	var stat_name: String = "DEX" if use_dex else "STR"
 	var lines: PackedStringArray = []
 	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if n20 else ("  [color=red]✕ FAIL[/color]" if n1 else "")
 	if adv and d1 != d2:
