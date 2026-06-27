@@ -50,7 +50,9 @@ func _safe_refresh() -> void:
 
 func _unfreeze_tooltip() -> void:
 	_tooltip_frozen = false
-	if _inv_tooltip     != null: _inv_tooltip.mouse_filter     = Control.MOUSE_FILTER_IGNORE
+	if _inv_tooltip != null:
+		_inv_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_inv_tooltip.visible = false
 	if _inv_tooltip_rtl != null: _inv_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if _inv_glossary_popup != null: _inv_glossary_popup.visible = false
 
@@ -382,6 +384,8 @@ func _right_click(slot: Control) -> void:
 			GameState.use_item(item)
 
 func _on_slot_hover(slot: Control) -> void:
+	if _tooltip_frozen:
+		return
 	if _inv_tooltip == null:
 		return
 	var item: Item = _slot_item(slot)
@@ -412,6 +416,7 @@ func _on_slot_hover(slot: Control) -> void:
 			text += "\n+%d HP" % item.heal_amount
 	if not item.description.is_empty():
 		text += "\n[color=gray]%s[/color]" % item.description
+	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
 	_inv_tooltip_rtl.text = text
 	_inv_tooltip_rtl.size = Vector2(172.0, 0)
 	_inv_tooltip.size = Vector2(180.0, 60)

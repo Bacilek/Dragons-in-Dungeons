@@ -189,6 +189,10 @@ func _load_floor() -> void:
 		var sp: Sprite2D = _doors[pos].get("sprite")
 		if sp != null and is_instance_valid(sp):
 			sp.queue_free()
+		if _doors[pos].has("lock_icon"):
+			var icon: Node = _doors[pos]["lock_icon"]
+			if is_instance_valid(icon):
+				icon.queue_free()
 	_doors.clear()
 
 	for pos: Vector2i in _floor_item_sprites:
@@ -1208,7 +1212,7 @@ func _add_lock_icon_at(pos: Vector2i) -> void:
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + 3.0)
 	icon.scale = Vector2(0.5, 0.5)
-	icon.z_index = 3
+	icon.z_index = 1
 	entities.add_child(icon)
 	_doors[pos]["lock_icon"] = icon
 

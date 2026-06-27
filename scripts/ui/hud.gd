@@ -49,6 +49,7 @@ var _log_tooltip_visible: bool = false
 # ── Quickbar slot hover tooltip ────────────────────────────────────────────────
 var _qbar_tooltip: Panel = null
 var _qbar_tooltip_rtl: RichTextLabel = null
+var _qbar_tooltip_frozen: bool = false
 var _glossary_popup: Panel = null
 var _glossary_rtl: RichTextLabel = null
 const KEYWORD_GLOSSARY: Dictionary = {
@@ -657,6 +658,30 @@ func _refresh_popup() -> void:
 
 # ── Quickbar hover tooltip ─────────────────────────────────────────────────────
 
+func _unfreeze_qbar_tooltip() -> void:
+	_qbar_tooltip_frozen = false
+	if _qbar_tooltip != null:
+		_qbar_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_qbar_tooltip.visible = false
+	if _qbar_tooltip_rtl != null:
+		_qbar_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if _glossary_popup != null:
+		_glossary_popup.visible = false
+
+func _input(event: InputEvent) -> void:
+	if not (event is InputEventKey):
+		return
+	var key := event as InputEventKey
+	if key.pressed and not key.echo and key.physical_keycode == KEY_CTRL:
+		if _qbar_tooltip_frozen:
+			_unfreeze_qbar_tooltip()
+			get_viewport().set_input_as_handled()
+		elif _qbar_tooltip != null and _qbar_tooltip.visible:
+			_qbar_tooltip_frozen = true
+			_qbar_tooltip.mouse_filter     = Control.MOUSE_FILTER_STOP
+			_qbar_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_PASS
+			get_viewport().set_input_as_handled()
+
 func _setup_quickbar_tooltip() -> void:
 	_qbar_tooltip = Panel.new()
 	_qbar_tooltip.visible = false
@@ -707,6 +732,8 @@ func _setup_quickbar_tooltip() -> void:
 		_item_slots[i].mouse_exited.connect(_on_qbar_slot_hover_end)
 
 func _on_qbar_slot_hover(idx: int) -> void:
+	if _qbar_tooltip_frozen:
+		return
 	if _qbar_tooltip == null:
 		return
 	var bar: Array = GameState.player_ability_bar if _ability_bar_mode else GameState.player_quickbar
@@ -742,12 +769,15 @@ func _on_qbar_slot_hover(idx: int) -> void:
 				text += "\n[url=keyword:heavy]Heavy[/url]"
 		if not item.description.is_empty():
 			text += "\n[color=gray]%s[/color]" % item.description
+	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
 	_qbar_tooltip_rtl.text = text
 	_qbar_tooltip_rtl.size = Vector2(172.0, 0)
 	_qbar_tooltip.size = Vector2(180.0, 60)
 	_qbar_tooltip.visible = true
 
 func _on_qbar_slot_hover_end() -> void:
+	if _qbar_tooltip_frozen:
+		return
 	if _qbar_tooltip != null:
 		_qbar_tooltip.visible = false
 	if _glossary_popup != null:
@@ -944,10 +974,19 @@ func _fmt_heal_tooltip(p: Dictionary) -> String:
 	if dice > 0 and sides > 0:
 		var roll: int = int(p.get("roll", "0"))
 		lines.append("%dd%d = [color=lime]%d[/color]" % [dice, sides, roll])
-	if con != 0:
-		lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)
-	lines.append("─────────────────")
-	lines.append("= [color=lime]+%d HP[/color]" % total)
+		if con != 0:
+			lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)
+		lines.append("─────────────────")
+		var uncapped: int = maxi(1, roll + con)
+		if total < uncapped:
+			lines.append("= [color=gray]+%d HP[/color]  →  [color=lime]+%d HP[/color] healed" % [uncapped, total])
+		else:
+			lines.append("= [color=lime]+%d HP[/color]" % total)
+	else:
+		if con != 0:
+			lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)
+			lines.append("─────────────────")
+		lines.append("= [color=lime]+%d HP[/color]" % total)
 	return "\n".join(lines)
 
 func _fmt_save_tooltip(p: Dictionary) -> String:
