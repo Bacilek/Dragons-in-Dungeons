@@ -852,8 +852,8 @@ func _activate_reckless() -> void:
 	var ab: Ability = _find_ability("reckless_attack")
 	if ab == null:
 		return
-	if GameState.reckless_locked_this_turn:
-		GameState.game_log("[color=gray]Reckless committed this turn — toggle available next turn.[/color]")
+	if GameState.reckless_locked_this_turn or _extra_attack_mode:
+		GameState.game_log("[color=gray]Reckless Attack can only be toggled before your first attack.[/color]")
 		return
 	_reckless_active = not _reckless_active
 	ab.is_active = _reckless_active
