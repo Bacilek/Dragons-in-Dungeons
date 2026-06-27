@@ -34,13 +34,13 @@ const CLASS_DATA: Array = [
 		"color":  Color(0.50, 0.65, 1.00),
 	},
 	{
-		"cls":    3,  # Stats.CharacterClass.CLERIC
-		"name":   "Cleric",
+		"cls":    3,  # Stats.CharacterClass.MONK
+		"name":   "Monk",
 		"sprite": CHAR_PATH + "dwarf_m_idle_anim_f0.png",
 		"hd":     "d8 HD",
-		"hp":     "10 HP",
-		"desc":   "Blessed by the gods.\nHigh WIS and steady\nHP regeneration.",
-		"color":  Color(1.00, 0.80, 0.40),
+		"hp":     "9 HP",
+		"desc":   "Master of martial arts.\nDEX unarmed strikes + bonus\naction fist every attack.",
+		"color":  Color(0.60, 0.90, 1.00),
 	},
 ]
 
@@ -194,6 +194,8 @@ func _build_card(data: Dictionary, pos: Vector2) -> void:
 	var ac_formula: String
 	if (data["cls"] as int) == 0:  # Barbarian: unarmored defense
 		ac_formula = "(10+DEX+CON)"
+	elif (data["cls"] as int) == 3:  # Monk: unarmored defense
+		ac_formula = "(10+DEX+WIS)"
 	else:
 		ac_formula = "(10+DEX)"
 	ac_note.text = ac_formula

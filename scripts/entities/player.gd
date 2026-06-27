@@ -63,6 +63,12 @@ var _reckless_active: bool = false
 # Player MUST attack again (or press Esc to forfeit and end the turn normally).
 var _extra_attack_mode: bool = false
 
+# ── Bonus Action state (Monk Martial Arts) ────────────────────────────────────
+# After a Monk unarmed main-action strike: phase returns to WAITING_FOR_INPUT.
+# Player may make one bonus-action unarmed strike or press Space to forfeit.
+# Named "bonus_action" because future features (ki points, etc.) will also spend it.
+var _bonus_action_mode: bool = false
+
 # ── Equip action tracking ─────────────────────────────────────────────────────
 var _pending_equip_turn: bool = false  # set by equip_action_taken signal; consumed in next action gate
 
@@ -122,8 +128,9 @@ func _on_player_hp_changed(_c: int, _m: int) -> void:
 
 func _on_turn_started() -> void:
 	GameState.player_grid_pos = grid_pos
-	# Extra Attack mode is only valid within one action sequence; clear on next real turn start.
+	# Extra Attack / Bonus Action modes are only valid within one action sequence.
 	_extra_attack_mode = false
+	_bonus_action_mode = false
 	# Reckless lock clears each turn — toggle becomes available again.
 	GameState.reckless_locked_this_turn = false
 	GameState.ability_bar_changed.emit()
@@ -188,7 +195,7 @@ func _setup_animations() -> void:
 	match GameState.player_stats.character_class:
 		Stats.CharacterClass.RANGER:  char_name = "elf_m"
 		Stats.CharacterClass.WIZARD:  char_name = "wizzard_m"
-		Stats.CharacterClass.CLERIC:  char_name = "dwarf_m"
+		Stats.CharacterClass.MONK:    char_name = "dwarf_m"
 		_:                            char_name = "knight_m"   # BARBARIAN default
 	var base: String = KNIGHT_PATH + char_name + "_"
 	var frames := SpriteFrames.new()
@@ -569,6 +576,24 @@ func _execute_queued_path() -> void:
 		_path_executing = false
 		return
 
+	# Bonus Action (Monk Martial Arts): only allow unarmed strike — no movement.
+	if _bonus_action_mode:
+		var atk_enemy: Enemy = null
+		if _target_enemy != null and is_instance_valid(_target_enemy) and not _target_enemy.stats.is_dead():
+			atk_enemy = _target_enemy
+		elif not _queued_path.is_empty():
+			var nxt: Vector2i = _queued_path[0]
+			atk_enemy = _dungeon_floor.get_enemy_at(nxt) if _dungeon_floor != null else null
+		if atk_enemy != null:
+			_bump_attack(atk_enemy, atk_enemy.grid_pos - grid_pos)
+		else:
+			GameState.game_log("[color=yellow]Martial Arts — bonus strike! Attack again or Space to skip.[/color]")
+		_target_enemy = null
+		_queued_path.clear()
+		TurnManager.fast_mode = false
+		_path_executing = false
+		return
+
 	var fov_snapshot: Array[Enemy] = _dungeon_floor.get_visible_enemies()
 
 	while true:
@@ -774,6 +799,9 @@ func _try_move(dir: Vector2i) -> void:
 	if _extra_attack_mode:
 		GameState.game_log("[color=yellow]Extra Attack — attack an enemy! (Space to skip)[/color]")
 		return
+	if _bonus_action_mode:
+		GameState.game_log("[color=yellow]Martial Arts — bonus strike! Attack again or Space to skip.[/color]")
+		return
 
 	if GameState.noclip:
 		# Noclip: only reject off-grid VOID
@@ -908,15 +936,19 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 
 	_show_sword_slash(dir)
 
-	# D&D attack roll: d20 + STR modifier + proficiency bonus + weapon enhancement vs enemy AC
+	# D&D attack roll: d20 + modifier + proficiency bonus + weapon enhancement vs enemy AC
 	# Advantage (2d20 higher) when target is sleeping or entered FOV this turn.
-	# TODO: Barbarian also gets STR check/save advantage while raging — extend to saves when implemented.
+	# Monk unarmed: uses DEX for both attack roll and damage. Others: STR.
 	var is_unarmed: bool = GameState.equipped_weapon == null
+	var is_monk_unarmed: bool = is_unarmed and stats.character_class == Stats.CharacterClass.MONK
 	var is_str_weapon: bool = not is_unarmed and not (GameState.equipped_weapon.is_ranged)
 	var str_mod: int = stats.str_modifier()
+	var dex_mod: int = stats.dex_modifier()
 	var prof: int = stats.proficiency_bonus  # all melee weapons are proficient for now
 	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if not is_unarmed else 0
-	var total_hit_bonus: int = str_mod + prof + weapon_bonus
+	# Monk unarmed uses DEX; everyone else uses STR for melee attack roll.
+	var attack_mod: int = dex_mod if is_monk_unarmed else str_mod
+	var total_hit_bonus: int = attack_mod + prof + weapon_bonus
 	# Advantage sources are counted; net ADV count vs DISADV count decides outcome.
 	# Two ADV sources + one DISADV = net +1 = ADV (house rule: count beats cancel).
 	var adv_count: int = 0
@@ -953,25 +985,36 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_rage_turns += 1
 
 	# Compute damage breakdown for tooltip (separate die vs enhancement vs rage)
-	var w_dmin: int = GameState.equipped_weapon.damage_die_min if not is_unarmed and GameState.equipped_weapon.damage_die_min > 0 else stats.base_min_damage
-	var w_dmax: int = GameState.equipped_weapon.damage_die_max if not is_unarmed and GameState.equipped_weapon.damage_die_max > 0 else stats.base_max_damage
+	var w_dmin: int
+	var w_dmax: int
+	if is_monk_unarmed:
+		w_dmin = 1
+		w_dmax = stats.martial_arts_die_sides
+	elif not is_unarmed and GameState.equipped_weapon.damage_die_min > 0:
+		w_dmin = GameState.equipped_weapon.damage_die_min
+		w_dmax = GameState.equipped_weapon.damage_die_max
+	else:
+		w_dmin = stats.base_min_damage
+		w_dmax = stats.base_max_damage
 	var w_enh: int = weapon_bonus  # weapon.bonus_damage
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
-		die, die1, die2, str_mod, prof, w_enh, roll, enemy.stats.armor_class,
+	# Use dex= key for Monk unarmed so the HUD tooltip labels it correctly.
+	var mod_key: String = "dex" if is_monk_unarmed else "str"
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
+		die, die1, die2, mod_key, attack_mod, prof, w_enh, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
 		1 if is_crit else 0, 1 if is_nat_one else 0]
 
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
-		var verb: String = "punch" if is_unarmed else "swing"
+		var miss_verb: String = "strike at" if is_monk_unarmed else ("punch" if is_unarmed else "swing")
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
-		GameState.game_log("You %s at [color=orange]%s[/color] — [url=%s]%s[/url]." % [verb, enemy.display_name, hit_meta, miss_color])
+		GameState.game_log("You %s [color=orange]%s[/color] — [url=%s]%s[/url]." % [miss_verb, enemy.display_name, hit_meta, miss_color])
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
 			GameState.screen_shake.emit(2.5)
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
-		_handle_post_attack_turn()
+		_handle_post_attack_turn(is_monk_unarmed)
 		return
 
 	AudioManager.play("crit" if is_crit else "hit_enemy")
@@ -981,7 +1024,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 
 	var die_roll: int = randi_range(w_dmin, w_dmax)
 	var rage_bonus: int = 2 if (_is_raging and is_str_weapon) else 0
-	var pre_crit: int = die_roll + w_enh + rage_bonus + str_mod
+	# Monk unarmed uses DEX for damage; all others use STR.
+	var dmg_mod: int = dex_mod if is_monk_unarmed else str_mod
+	var pre_crit: int = die_roll + w_enh + rage_bonus + dmg_mod
 	if is_crit:
 		pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
@@ -991,9 +1036,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
 
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,rage=%d,crit=%d,final=%d" % [
-		die_roll, w_dmin, w_dmax, w_enh, str_mod, rage_bonus, 1 if is_crit else 0, actual]
-	var verb: String = "punch" if is_unarmed else "strike"
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,rage=%d,crit=%d,final=%d" % [
+		die_roll, w_dmin, w_dmax, w_enh, mod_key, dmg_mod, rage_bonus, 1 if is_crit else 0, actual]
+	var verb: String = "strike" if is_monk_unarmed else ("punch" if is_unarmed else "strike")
 	var weapon_item: Item = GameState.equipped_weapon
 	var dmg_type: String = weapon_item.damage_type if weapon_item != null and not weapon_item.damage_type.is_empty() else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
@@ -1007,18 +1052,25 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_finish_kill(enemy)
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
-	_handle_post_attack_turn()
+	_handle_post_attack_turn(is_monk_unarmed)
 
-func _handle_post_attack_turn() -> void:
-	# Extra Attack (Barbarian Lv5): any attack (melee or ranged) grants a second attack.
+func _handle_post_attack_turn(from_monk_unarmed: bool = false) -> void:
+	# Extra Attack (Barbarian Lv5): any melee/ranged attack grants a second attack.
 	# Phase is set back to WAITING_FOR_INPUT without running enemy turns.
-	# Second attack or Space (forfeit) then calls on_player_action_complete normally.
+	# Second attack or Space (forfeit) calls on_player_action_complete normally.
 	if stats.extra_attack and not _extra_attack_mode:
 		_extra_attack_mode = true
 		TurnManager.phase = TurnManager.Phase.WAITING_FOR_INPUT
 		GameState.game_log("[color=yellow]Extra Attack! Attack again or Space to skip.[/color]")
 		return
+	# Monk Martial Arts (Lv1): unarmed main-action attack grants a bonus-action unarmed strike.
+	if from_monk_unarmed and not _bonus_action_mode:
+		_bonus_action_mode = true
+		TurnManager.phase = TurnManager.Phase.WAITING_FOR_INPUT
+		GameState.game_log("[color=cyan]Martial Arts — bonus strike! Attack again or Space to skip.[/color]")
+		return
 	_extra_attack_mode = false
+	_bonus_action_mode = false
 	TurnManager.on_player_action_complete()
 
 func _show_sword_slash(dir: Vector2i) -> void:
@@ -1140,6 +1192,14 @@ func _wait_action() -> void:
 			_dungeon_floor.update_fog(grid_pos)
 		TurnManager.on_player_action_complete()
 		return
+	if _bonus_action_mode:
+		# Space forfeits the Monk bonus-action strike and ends the turn normally.
+		_bonus_action_mode = false
+		GameState.game_log("[color=gray]You skipped the bonus action strike.[/color]")
+		if _dungeon_floor != null:
+			_dungeon_floor.update_fog(grid_pos)
+		TurnManager.on_player_action_complete()
+		return
 	TurnManager.begin_player_action()
 	GameState.game_log("[color=gray]You skipped a turn.[/color]")
 	if _dungeon_floor != null:
@@ -1155,6 +1215,9 @@ func _do_rest_wait_turn() -> void:
 func _handle_search_request() -> void:
 	if _extra_attack_mode:
 		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Space to skip)[/color]")
+		return
+	if _bonus_action_mode:
+		GameState.game_log("[color=yellow]Martial Arts — bonus strike first! (Space to skip)[/color]")
 		return
 	var now: float = Time.get_ticks_msec() / 1000.0
 	if now - _last_search_request < 0.5:
@@ -1433,6 +1496,9 @@ func _use_quickbar_slot(idx: int) -> void:
 	if _extra_attack_mode:
 		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Space to skip)[/color]")
 		return
+	if _bonus_action_mode:
+		GameState.game_log("[color=yellow]Martial Arts — bonus strike first! (Space to skip)[/color]")
+		return
 	var raw = GameState.player_quickbar[idx]
 	if raw == null:
 		return
@@ -1449,10 +1515,12 @@ func _use_ability_slot(idx: int) -> void:
 		return
 	var ab := raw as Ability
 	match ab.ability_id:
-		"rage":             _activate_rage()
-		"reckless_attack":  _activate_reckless()
-		"danger_sense":     GameState.game_log("[color=gray]Danger Sense is passive — no activation needed.[/color]")
-		_:                  GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
+		"rage":                    _activate_rage()
+		"reckless_attack":         _activate_reckless()
+		"danger_sense":            GameState.game_log("[color=gray]Danger Sense is passive — no activation needed.[/color]")
+		"unarmored_defense_monk":  GameState.game_log("[color=gray]Unarmored Defense is passive — active when unarmored (AC = 10+DEX+WIS).[/color]")
+		"martial_arts":            GameState.game_log("[color=gray]Martial Arts is passive — attack unarmed to trigger a bonus-action strike.[/color]")
+		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
 
 func _make_empty_bottle() -> Item:
 	var b := Item.new()
@@ -1778,6 +1846,9 @@ func _do_throw(pos: Vector2i) -> void:
 func _open_short_rest() -> void:
 	if _extra_attack_mode:
 		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Space to skip)[/color]")
+		return
+	if _bonus_action_mode:
+		GameState.game_log("[color=yellow]Martial Arts — bonus strike first! (Space to skip)[/color]")
 		return
 	if GameState.short_rests_remaining <= 0:
 		GameState.game_log("[color=gray]No short rests remaining on this floor. Descend to refresh.[/color]")

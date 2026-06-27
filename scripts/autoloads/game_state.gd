@@ -142,6 +142,8 @@ func give_class_starting_items() -> void:
 	match player_stats.character_class:
 		Stats.CharacterClass.BARBARIAN:
 			_give_barbarian_starting_items()
+		Stats.CharacterClass.MONK:
+			_give_monk_starting_items()
 
 func _give_barbarian_starting_items() -> void:
 	var axe := Item.new()
@@ -172,6 +174,35 @@ func _give_barbarian_starting_items() -> void:
 	rage.uses_remaining = player_stats.rage_uses_remaining
 	rage.uses_max = player_stats.rage_uses_max
 	add_ability(rage)
+
+func _give_monk_starting_items() -> void:
+	# Monks start unarmed — fists are their weapons.
+	# Unarmored Defense passive
+	var ud := Ability.new()
+	ud.ability_id = "unarmored_defense_monk"
+	ud.ability_name = "Unarmored Defense"
+	ud.description = "Passive: AC = 10 + DEX + WIS while wearing no armor."
+	ud.icon_path = "res://sprites/items/Misc/KeyIron.png"
+	ud.uses_remaining = 0
+	ud.uses_max = 0
+	add_ability(ud)
+	# Martial Arts passive — die scales with level (1d6 → 1d8 → 1d10 → 1d12)
+	var ma := Ability.new()
+	ma.ability_id = "martial_arts"
+	ma.ability_name = "Martial Arts"
+	ma.description = "Passive: Unarmed strikes use DEX + 1d6. After a main-action unarmed strike, make a free bonus-action unarmed strike. Die scales at levels 5/11/17."
+	ma.icon_path = "res://sprites/items/Misc/KeyIron.png"
+	ma.uses_remaining = 0
+	ma.uses_max = 0
+	add_ability(ma)
+	recalculate_stats()
+	equipment_changed.emit()
+
+func _find_ability_by_id(id: String) -> Ability:
+	for slot in player_ability_bar:
+		if slot != null and (slot as Ability).ability_id == id:
+			return slot as Ability
+	return null
 
 func add_ability(ability: Ability) -> bool:
 	for i: int in ABILITY_BAR_SIZE:
@@ -206,7 +237,7 @@ func hit_die_sides() -> int:
 	match player_stats.character_class:
 		Stats.CharacterClass.BARBARIAN: return 12
 		Stats.CharacterClass.RANGER:    return 10
-		Stats.CharacterClass.CLERIC:    return 8
+		Stats.CharacterClass.MONK:      return 8
 		Stats.CharacterClass.WIZARD:    return 6
 		_:                              return 8
 
@@ -237,6 +268,7 @@ func gain_exp(amount: int) -> void:
 		heal(player_stats.max_hp - player_stats.current_hp)
 		short_rest_changed.emit()
 		_apply_barbarian_level_features(player_stats.character_level)
+		_apply_monk_level_features(player_stats.character_level)
 
 func debug_level_up() -> void:
 	gain_exp(player_stats.exp_to_next())
@@ -553,6 +585,22 @@ func _apply_barbarian_level_features(level: int) -> void:
 		5:
 			player_stats.extra_attack = true
 			combat_message.emit("[color=cyan]Level 5 Barbarian: [b]Extra Attack[/b]! Your first melee attack no longer ends your turn.[/color]")
+
+func _apply_monk_level_features(level: int) -> void:
+	if player_stats.character_class != Stats.CharacterClass.MONK:
+		return
+	var die_sides: int = player_stats.martial_arts_die_sides
+	match level:
+		4:
+			player_stats.dexterity += 2
+			recalculate_stats()
+			combat_message.emit("[color=cyan]Level 4 Monk: DEX +2 (now [b]%d[/b], modifier +%d)![/color]" % [player_stats.dexterity, player_stats.dex_modifier()])
+		5, 11, 17:
+			var ma: Ability = _find_ability_by_id("martial_arts")
+			if ma != null:
+				ma.description = "Passive: Unarmed strikes use DEX + 1d%d. Bonus-action unarmed strike after main-action attack. Die scales at levels 5/11/17." % die_sides
+			ability_bar_changed.emit()
+			combat_message.emit("[color=cyan]Level %d Monk: Martial Arts die increased to [b]1d%d[/b]![/color]" % [level, die_sides])
 
 func debug_jump_to_floor(n: int) -> void:
 	is_game_over = false

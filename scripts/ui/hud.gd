@@ -69,7 +69,7 @@ const CLASS_PORTRAIT: Dictionary = {
 	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/knight_m_idle_anim_f0.png",
 	Stats.CharacterClass.RANGER:    "res://sprites/characters/elf_m_idle_anim_f0.png",
 	Stats.CharacterClass.WIZARD:    "res://sprites/characters/wizzard_m_idle_anim_f0.png",
-	Stats.CharacterClass.CLERIC:    "res://sprites/characters/dwarf_m_idle_anim_f0.png",
+	Stats.CharacterClass.MONK:      "res://sprites/characters/dwarf_m_idle_anim_f0.png",
 }
 
 func _unhandled_input(event: InputEvent) -> void:

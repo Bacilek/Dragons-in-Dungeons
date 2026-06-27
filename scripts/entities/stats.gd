@@ -1,13 +1,12 @@
 class_name Stats
 extends Resource
 
-enum CharacterClass { BARBARIAN, RANGER, WIZARD, CLERIC }
+enum CharacterClass { BARBARIAN, RANGER, WIZARD, MONK }
 
-# --- Save proficiency flags (Barbarian: STR + CON) ---
-# TODO: When spell saving throws are implemented, check `save_prof_str` / `save_prof_con`
-# for Barbarian advantage on STR saves and automatic proficiency on both.
-# Barbarian save proficiencies: Strength, Constitution.
-# Other classes: Ranger = DEX+STR, Wizard = INT+WIS, Cleric = WIS+CHA.
+# --- Save proficiency flags ---
+# TODO: When spell saving throws are implemented, check these for proficiency bonuses.
+# Barbarian: STR + CON. Ranger: STR + DEX. Wizard: INT + WIS. Monk: STR + DEX.
+# Monk also has proficiency with simple weapons + martial weapons with light property (TODO: enforce).
 var save_prof_str: bool = false
 var save_prof_con: bool = false
 var save_prof_dex: bool = false
@@ -55,6 +54,16 @@ var slowed_turns: int = 0
 var danger_sense: bool = false   # Lv2: advantage on DEX saves vs traps
 var extra_attack: bool = false   # Lv5: first STR melee attack doesn't end the turn
 
+# Monk: Martial Arts die scales with level. Global default 1d4 is used by all other classes.
+var martial_arts_die_sides: int:
+	get:
+		if character_class == CharacterClass.MONK:
+			if character_level >= 17: return 12
+			if character_level >= 11: return 10
+			if character_level >= 5:  return 8
+			return 6
+		return 4  # global default: 1d4 for unarmed
+
 func exp_for_level(lv: int) -> int:
 	return lv * 10
 
@@ -78,7 +87,7 @@ func _hp_per_level() -> int:
 		CharacterClass.BARBARIAN: return 7 + con_modifier()
 		CharacterClass.RANGER:    return 6 + con_modifier()
 		CharacterClass.WIZARD:    return 4 + con_modifier()
-		CharacterClass.CLERIC:    return 5 + con_modifier()
+		CharacterClass.MONK:      return 5 + con_modifier()  # d8 avg = 5
 		_:                        return 5 + con_modifier()
 
 func modifier(score: int) -> int:
@@ -124,10 +133,13 @@ func tick_status() -> int:
 
 # Recalculates armor_class based on what is equipped.
 # Called externally by GameState.recalculate_stats().
-# Barbarian unarmored defense: if no armor equipped, AC = 10 + DEX + CON instead of 10 + DEX.
+# Barbarian unarmored defense: AC = 10 + DEX + CON when no armor.
+# Monk unarmored defense:     AC = 10 + DEX + WIS when no armor.
 func recalc_ac(has_armor_equipped: bool) -> void:
 	if character_class == CharacterClass.BARBARIAN and not has_armor_equipped:
 		armor_class = 10 + dex_modifier() + con_modifier()
+	elif character_class == CharacterClass.MONK and not has_armor_equipped:
+		armor_class = 10 + dex_modifier() + wis_modifier()
 	else:
 		armor_class = 10 + dex_modifier()
 
@@ -153,12 +165,14 @@ func apply_class_defaults() -> void:
 			max_hp = 6 + modifier(constitution)    # Wizard HD d6
 			save_prof_int = true
 			save_prof_wis = true
-		CharacterClass.CLERIC:
-			wisdom = 16; constitution = 14; strength = 12
-			dexterity = 10; intelligence = 10; charisma = 8
-			max_hp = 8 + modifier(constitution)    # Cleric HD d8
-			save_prof_wis = true
-			save_prof_cha = true
+		CharacterClass.MONK:
+			dexterity = 16; wisdom = 14; constitution = 12
+			strength = 10; intelligence = 10; charisma = 8
+			max_hp = 8 + modifier(constitution)    # Monk HD d8
+			rage_uses_remaining = 0
+			rage_uses_max = 0
+			save_prof_str = true
+			save_prof_dex = true
 	current_hp = max_hp
-	# Barbarian starts with no armor → unarmored defense (DEX + CON)
+	# Barbarian and Monk start unarmored — apply unarmored defense formulas.
 	recalc_ac(false)
