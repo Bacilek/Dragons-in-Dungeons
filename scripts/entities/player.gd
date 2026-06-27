@@ -1133,11 +1133,13 @@ func _wait_action() -> void:
 	if _extra_attack_mode:
 		# Space forfeits the Extra Attack and ends the turn normally.
 		_extra_attack_mode = false
+		GameState.game_log("[color=gray]You skipped extra attack.[/color]")
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
 		TurnManager.on_player_action_complete()
 		return
 	TurnManager.begin_player_action()
+	GameState.game_log("[color=gray]You skipped a turn.[/color]")
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
