@@ -858,21 +858,27 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 	var target: Node2D = entity if entity != null else _player
 
 	# DEX saving throw for player: 1d20 + DEX mod + prof (only if DEX save proficiency) vs DC
+	# Danger Sense (Barbarian Lv2): advantage on DEX saves vs traps — roll 2d20 take higher.
 	if target is Player:
 		var s: Stats = GameState.player_stats
 		var dex_mod: int = s.dex_modifier()
 		var has_prof: bool = s.save_prof_dex
 		var prof_bonus: int = s.proficiency_bonus if has_prof else 0
-		var die: int = randi_range(1, 20)
+		var die1: int = randi_range(1, 20)
+		var die2: int = die1
+		if s.danger_sense:
+			die2 = randi_range(1, 20)
+		var die: int = maxi(die1, die2)
 		var roll: int = die + dex_mod + prof_bonus
 		var dc: int = 10 + GameState.current_floor
+		var adv_tag: String = " [color=gray](Danger Sense)[/color]" if s.danger_sense else ""
 		var save_meta: String = "save:stat=DEX,die=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d" % [
 			die, dex_mod, prof_bonus, roll, dc, 1 if roll >= dc else 0]
 		if roll >= dc:
-			GameState.game_log("[color=cyan]You dodge [b]%s[/b]! [url=%s]%d vs DC %d[/url][/color]" % [trap["name"], save_meta, roll, dc])
+			GameState.game_log("[color=cyan]You dodge [b]%s[/b]!%s [url=%s]%d vs DC %d[/url][/color]" % [trap["name"], adv_tag, save_meta, roll, dc])
 			return
 		else:
-			GameState.game_log("[color=orange]%s triggered! [url=%s]%d vs DC %d[/url][/color]" % [trap["name"], save_meta, roll, dc])
+			GameState.game_log("[color=orange]%s triggered!%s [url=%s]%d vs DC %d[/url][/color]" % [trap["name"], adv_tag, save_meta, roll, dc])
 
 	if is_push:
 		AudioManager.play("trap_piston")

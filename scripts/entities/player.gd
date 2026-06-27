@@ -53,6 +53,16 @@ var _hover_last_texture: Texture2D = null
 var _is_raging: bool = false
 var _rage_turns: int = 0  # additional turns of rage beyond the current one
 
+# ── Reckless Attack state (Barbarian Lv2) ─────────────────────────────────────
+# Persistent toggle: gives ADV on all STR melee attacks; enemies gain ADV against player.
+# Free action — toggling does not consume a turn.
+var _reckless_active: bool = false
+
+# ── Extra Attack state (Barbarian Lv5) ────────────────────────────────────────
+# After the first STR melee attack: phase returns to WAITING_FOR_INPUT without enemy turns.
+# Player MUST attack again (or press Esc to forfeit and end the turn normally).
+var _extra_attack_mode: bool = false
+
 # ── Equip action tracking ─────────────────────────────────────────────────────
 var _pending_equip_turn: bool = false  # set by equip_action_taken signal; consumed in next action gate
 
@@ -112,6 +122,8 @@ func _on_player_hp_changed(_c: int, _m: int) -> void:
 
 func _on_turn_started() -> void:
 	GameState.player_grid_pos = grid_pos
+	# Extra Attack mode is only valid within one action sequence; clear on next real turn start.
+	_extra_attack_mode = false
 	# Refresh visibility after enemy turns, then snapshot FOV
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
@@ -350,6 +362,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
+			if _extra_attack_mode:
+				# Forfeit Extra Attack — end turn so enemies can act.
+				_extra_attack_mode = false
+				if _dungeon_floor != null:
+					_dungeon_floor.update_fog(grid_pos)
+				TurnManager.on_player_action_complete()
+				return
 			if _inspect_mode:
 				_inspect_mode = false
 				GameState.game_log("[color=gray]Inspect cancelled.[/color]")
@@ -532,6 +551,27 @@ func _execute_queued_path() -> void:
 	_path_executing = true
 	TurnManager.fast_mode = not TurnManager.has_any_enemy()
 	_reset_camera_offset()
+
+	# Extra Attack: only allow an adjacent melee strike — no movement.
+	if _extra_attack_mode:
+		var atk_enemy: Enemy = null
+		if _target_enemy != null and is_instance_valid(_target_enemy) and not _target_enemy.stats.is_dead():
+			var d: Vector2i = _target_enemy.grid_pos - grid_pos
+			if maxi(absi(d.x), absi(d.y)) == 1:
+				atk_enemy = _target_enemy
+		elif not _queued_path.is_empty():
+			var nxt: Vector2i = _queued_path[0]
+			atk_enemy = _dungeon_floor.get_enemy_at(nxt) if _dungeon_floor != null else null
+		if atk_enemy != null:
+			_bump_attack(atk_enemy, atk_enemy.grid_pos - grid_pos)
+		else:
+			GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy! (Esc to skip)[/color]")
+		_target_enemy = null
+		_queued_path.clear()
+		TurnManager.fast_mode = false
+		_path_executing = false
+		return
+
 	var fov_snapshot: Array[Enemy] = _dungeon_floor.get_visible_enemies()
 
 	while true:
@@ -708,10 +748,15 @@ func _try_move(dir: Vector2i) -> void:
 
 	var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
 	if enemy != null:
-		if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
+		if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null and not _extra_attack_mode:
 			_ranged_attack(enemy)
 		else:
 			_bump_attack(enemy, dir)
+		return
+
+	# Extra Attack mode: movement is not allowed — player must attack.
+	if _extra_attack_mode:
+		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy! (Esc to skip)[/color]")
 		return
 
 	if GameState.noclip:
@@ -787,6 +832,20 @@ func _try_move(dir: Vector2i) -> void:
 
 # ── Rage helpers ─────────────────────────────────────────────────────────────
 
+func _activate_reckless() -> void:
+	var ab: Ability = _find_ability("reckless_attack")
+	if ab == null:
+		return
+	_reckless_active = not _reckless_active
+	ab.is_active = _reckless_active
+	GameState.reckless_attack_active = _reckless_active
+	GameState.ability_bar_changed.emit()
+	if _reckless_active:
+		GameState.game_log("[color=yellow]Reckless Attack: ON — ADV on STR melee, enemies gain ADV against you.[/color]")
+	else:
+		GameState.game_log("[color=gray]Reckless Attack: OFF.[/color]")
+	# Free action: does NOT consume the turn.
+
 func _activate_rage() -> void:
 	if _is_raging:
 		GameState.game_log("[color=red]You are already raging![/color]")
@@ -834,11 +893,13 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Advantage (2d20 higher) when target is sleeping or entered FOV this turn.
 	# TODO: Barbarian also gets STR check/save advantage while raging — extend to saves when implemented.
 	var is_unarmed: bool = GameState.equipped_weapon == null
+	var is_str_weapon: bool = not is_unarmed and not (GameState.equipped_weapon.is_ranged)
 	var str_mod: int = stats.str_modifier()
 	var prof: int = stats.proficiency_bonus  # all melee weapons are proficient for now
 	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if not is_unarmed else 0
 	var total_hit_bonus: int = str_mod + prof + weapon_bonus
-	var adv: bool = _has_advantage(enemy)
+	# Advantage sources: sleeping target, surprise (just crossed door), Reckless Attack toggle
+	var adv: bool = _has_advantage(enemy) or (_reckless_active and is_str_weapon)
 	# Heavy weapon penalty: STR < 13 imposes Disadvantage
 	var weapon_item_ref: Item = GameState.equipped_weapon
 	var disadv: bool = weapon_item_ref != null and weapon_item_ref.is_heavy and stats.strength < 13
@@ -856,7 +917,6 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var is_nat_one: bool = die == 1
 
 	# Rage extends by 1 turn when you successfully attack with a STR-based weapon
-	var is_str_weapon: bool = not is_unarmed and not (GameState.equipped_weapon.is_ranged)
 	if _is_raging and is_str_weapon:
 		_rage_turns += 1
 
@@ -879,7 +939,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			GameState.screen_shake.emit(2.5)
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
-		TurnManager.on_player_action_complete()
+		_handle_post_attack_turn(is_str_weapon)
 		return
 
 	AudioManager.play("crit" if is_crit else "hit_enemy")
@@ -915,6 +975,18 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_finish_kill(enemy)
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
+	_handle_post_attack_turn(is_str_weapon)
+
+func _handle_post_attack_turn(is_str_melee: bool) -> void:
+	# Extra Attack (Barbarian Lv5): first STR melee attack of the turn doesn't end it.
+	# Phase is set back to WAITING_FOR_INPUT without running enemy turns.
+	# Second attack (or Esc to forfeit) then calls on_player_action_complete normally.
+	if stats.extra_attack and is_str_melee and not _extra_attack_mode:
+		_extra_attack_mode = true
+		TurnManager.phase = TurnManager.Phase.WAITING_FOR_INPUT
+		GameState.game_log("[color=yellow]Extra Attack! Attack again or Esc to skip.[/color]")
+		return
+	_extra_attack_mode = false
 	TurnManager.on_player_action_complete()
 
 func _show_sword_slash(dir: Vector2i) -> void:
@@ -1028,6 +1100,9 @@ func _check_pickup() -> void:
 		GameState.game_log("[color=cyan]You pick up [b]%s[/b].[/color]" % item.item_name)
 
 func _wait_action() -> void:
+	if _extra_attack_mode:
+		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy! (Esc to skip)[/color]")
+		return
 	TurnManager.begin_player_action()
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
@@ -1040,6 +1115,9 @@ func _do_rest_wait_turn() -> void:
 	TurnManager.on_player_action_complete()
 
 func _handle_search_request() -> void:
+	if _extra_attack_mode:
+		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Esc to skip)[/color]")
+		return
 	var now: float = Time.get_ticks_msec() / 1000.0
 	if now - _last_search_request < 0.5:
 		# Double press — trigger actual search
@@ -1314,6 +1392,9 @@ func _use_quickbar_slot(idx: int) -> void:
 	if _ability_bar_active:
 		_use_ability_slot(idx)
 		return
+	if _extra_attack_mode:
+		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Esc to skip)[/color]")
+		return
 	var raw = GameState.player_quickbar[idx]
 	if raw == null:
 		return
@@ -1330,8 +1411,10 @@ func _use_ability_slot(idx: int) -> void:
 		return
 	var ab := raw as Ability
 	match ab.ability_id:
-		"rage": _activate_rage()
-		_: GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
+		"rage":             _activate_rage()
+		"reckless_attack":  _activate_reckless()
+		"danger_sense":     GameState.game_log("[color=gray]Danger Sense is passive — no activation needed.[/color]")
+		_:                  GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
 
 func _make_empty_bottle() -> Item:
 	var b := Item.new()
@@ -1655,6 +1738,9 @@ func _do_throw(pos: Vector2i) -> void:
 	TurnManager.on_player_action_complete()
 
 func _open_short_rest() -> void:
+	if _extra_attack_mode:
+		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Esc to skip)[/color]")
+		return
 	if GameState.short_rests_remaining <= 0:
 		GameState.game_log("[color=gray]No short rests remaining on this floor. Descend to refresh.[/color]")
 		return

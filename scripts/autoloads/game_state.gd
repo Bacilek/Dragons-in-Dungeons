@@ -235,6 +235,7 @@ func gain_exp(amount: int) -> void:
 		combat_message.emit("[color=yellow]Level up! You are now level %d. (+%d max HP, fully restored, +1 hit die)[/color]" % [player_stats.character_level, hp_gained])
 		heal(player_stats.max_hp - player_stats.current_hp)
 		short_rest_changed.emit()
+		_apply_barbarian_level_features(player_stats.character_level)
 
 func debug_level_up() -> void:
 	gain_exp(player_stats.exp_to_next())
@@ -496,6 +497,8 @@ func restore_hunger(amount: int) -> void:
 
 # is_raging is set by player.gd and read here to apply damage resistance.
 var is_raging: bool = false
+# reckless_attack_active is set by player.gd; enemies read it to gain ADV on their attacks.
+var reckless_attack_active: bool = false
 
 func take_damage_raw(amount: int, ignore_rage: bool = false) -> void:
 	if is_game_over or invincible:
@@ -509,6 +512,44 @@ func take_damage_raw(amount: int, ignore_rage: bool = false) -> void:
 	player_stats.take_damage(final_amount)
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 	check_player_death()
+
+func _apply_barbarian_level_features(level: int) -> void:
+	if player_stats.character_class != Stats.CharacterClass.BARBARIAN:
+		return
+	match level:
+		2:
+			player_stats.danger_sense = true
+			# Danger Sense — passive, shows in ability bar
+			var ds := Ability.new()
+			ds.ability_id = "danger_sense"
+			ds.ability_name = "Danger Sense"
+			ds.description = "Passive: advantage on DEX saves against traps."
+			ds.icon_path = "res://sprites/items/Misc/KeyIron.png"
+			ds.uses_remaining = 0
+			ds.uses_max = 0
+			add_ability(ds)
+			# Reckless Attack — toggle, infinite uses
+			var ra := Ability.new()
+			ra.ability_id = "reckless_attack"
+			ra.ability_name = "Reckless"
+			ra.description = "Toggle (free action): advantage on all STR melee attacks this turn. Enemies also gain advantage against you until your next turn."
+			ra.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+			ra.uses_remaining = 0
+			ra.uses_max = 0
+			add_ability(ra)
+			combat_message.emit("[color=cyan]Level 2 Barbarian: [b]Danger Sense[/b] + [b]Reckless Attack[/b] unlocked![/color]")
+		3:
+			player_stats.rage_uses_max += 1
+			player_stats.rage_uses_remaining = player_stats.rage_uses_max
+			_sync_ability_uses()
+			combat_message.emit("[color=cyan]Level 3 Barbarian: +1 Rage use — now [b]%d[/b] per long rest![/color]" % player_stats.rage_uses_max)
+		4:
+			player_stats.strength += 2
+			recalculate_stats()
+			combat_message.emit("[color=cyan]Level 4 Barbarian: STR +2 (now [b]%d[/b], modifier +%d)![/color]" % [player_stats.strength, player_stats.str_modifier()])
+		5:
+			player_stats.extra_attack = true
+			combat_message.emit("[color=cyan]Level 5 Barbarian: [b]Extra Attack[/b]! Your first melee attack no longer ends your turn.[/color]")
 
 func debug_jump_to_floor(n: int) -> void:
 	is_game_over = false

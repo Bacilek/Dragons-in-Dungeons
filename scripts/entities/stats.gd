@@ -51,6 +51,10 @@ var burning_turns: int = 0
 var bleeding_turns: int = 0
 var slowed_turns: int = 0
 
+# Barbarian class features (unlocked on level-up, not present at class start)
+var danger_sense: bool = false   # Lv2: advantage on DEX saves vs traps
+var extra_attack: bool = false   # Lv5: first STR melee attack doesn't end the turn
+
 func exp_for_level(lv: int) -> int:
 	return lv * 10
 

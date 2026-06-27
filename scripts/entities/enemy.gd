@@ -329,16 +329,22 @@ func _attack_player(_player: Player) -> void:
 	if GameState.invincible:
 		GameState.game_log("[color=tomato]%s[/color] strikes you — [color=gray]blocked (invincible)[/color]" % display_name)
 		return
-	# D&D attack roll: d20 + floor-scaled bonus vs player AC
+	# D&D attack roll: d20 + floor-scaled bonus vs player AC.
+	# Reckless Attack: if player has it active, enemies gain advantage (roll 2d20 take higher).
 	var attack_bonus: int = GameState.current_floor / 3
-	var die: int = randi_range(1, 20)
+	var die1: int = randi_range(1, 20)
+	var die: int = die1
+	if GameState.reckless_attack_active:
+		var die2: int = randi_range(1, 20)
+		die = maxi(die1, die2)
 	var roll: int = die + attack_bonus
 	var player_ac: int = GameState.player_stats.armor_class
 	var is_crit: bool = die == 20
+	var reckless_tag: String = " [color=yellow](Reckless)[/color]" if GameState.reckless_attack_active else ""
 	var hit_meta: String = "ehit:die=%d,bonus=%d,total=%d,ac=%d,crit=%d" % [die, attack_bonus, roll, player_ac, 1 if is_crit else 0]
 	if not is_crit and roll < player_ac:
 		var miss_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [attack_bonus, roll, player_ac] if GameState.god_mode else ""
-		GameState.game_log("[color=tomato]%s[/color] [url=%s]misses[/url]!%s" % [display_name, hit_meta, miss_suffix])
+		GameState.game_log("[color=tomato]%s[/color] [url=%s]misses[/url]!%s%s" % [display_name, hit_meta, reckless_tag, miss_suffix])
 		return
 	var dmg_roll: int = stats.roll_damage()
 	var dmg: int = dmg_roll * (2 if is_crit else 1)
@@ -355,9 +361,9 @@ func _attack_player(_player: Player) -> void:
 	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,final=%d" % [dmg_roll, stats.min_damage, stats.max_damage, 1 if is_crit else 0, actual]
 	var god_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [attack_bonus, roll, player_ac] if GameState.god_mode else ""
 	if is_crit:
-		GameState.game_log("[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg.%s" % [display_name, hit_meta, dmg_meta, actual, god_suffix])
+		GameState.game_log("[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [display_name, hit_meta, dmg_meta, actual, reckless_tag, god_suffix])
 	else:
-		GameState.game_log("[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg.%s" % [display_name, hit_meta, dmg_meta, actual, god_suffix])
+		GameState.game_log("[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [display_name, hit_meta, dmg_meta, actual, reckless_tag, god_suffix])
 	# Orc Shaman applies poison on hit
 	if display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
 		GameState.player_stats.poison_turns = 3

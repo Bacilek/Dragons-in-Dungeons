@@ -564,12 +564,22 @@ func _refresh_ability_bar() -> void:
 			if _slot_use_labels.size() > i:
 				var use_lbl: Label = _slot_use_labels[i]
 				use_lbl.visible = true
-				use_lbl.text = "%d/%d" % [ab.uses_remaining, ab.uses_max]
-				# Grey out when no uses left
-				var clr: Color = Color(1.0, 0.7, 0.2) if ab.uses_remaining > 0 else Color(0.5, 0.5, 0.5)
-				use_lbl.add_theme_color_override("font_color", clr)
-			# Grey tint on exhausted abilities
-			slot.modulate = Color(1.0, 1.0, 1.0) if ab.uses_remaining > 0 else Color(0.5, 0.5, 0.5)
+				if ab.uses_max == 0:
+					# Infinite / passive: show ON when active toggle, ∞ otherwise
+					use_lbl.text = "ON" if ab.is_active else "∞"
+					var clr: Color = Color(1.0, 0.5, 0.0) if ab.is_active else Color(0.5, 0.5, 0.5)
+					use_lbl.add_theme_color_override("font_color", clr)
+				else:
+					use_lbl.text = "%d/%d" % [ab.uses_remaining, ab.uses_max]
+					var clr: Color = Color(1.0, 0.7, 0.2) if ab.uses_remaining > 0 else Color(0.5, 0.5, 0.5)
+					use_lbl.add_theme_color_override("font_color", clr)
+			# Active toggle = orange tint; exhausted = grey; normal = white
+			if ab.is_active:
+				slot.modulate = Color(1.0, 0.55, 0.1)
+			elif ab.uses_remaining > 0 or ab.uses_max == 0:
+				slot.modulate = Color(1.0, 1.0, 1.0)
+			else:
+				slot.modulate = Color(0.5, 0.5, 0.5)
 
 func _apply_slot_styles() -> void:
 	for slot: Button in _item_slots:
