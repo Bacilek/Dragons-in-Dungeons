@@ -1053,7 +1053,7 @@ func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
 		GameState.game_log("[color=orange]%s[/color] triggers a trap for [color=yellow]%d[/color] damage!" % [e.display_name, actual])
 		if e.stats.is_dead():
 			GameState.game_log("[color=orange]%s[/color] [color=gray]is killed by a trap.[/color]" % e.display_name)
-			GameState.gain_exp(e.exp_reward)
+			GameState.gain_exp(maxi(1, e.exp_reward / 2))
 			remove_enemy(e)
 			e.die()
 
@@ -1099,7 +1099,7 @@ func _push_entity(entity: Node2D, push_dir: Vector2i, distance: int, trap_sprite
 		GameState.game_log("[color=orange]%s[/color] is blasted%s for [color=yellow]%d[/color] damage!" % [enemy.display_name, wall_str, actual])
 		if enemy.stats.is_dead():
 			GameState.game_log("[color=orange]%s[/color] [color=gray]is killed![/color]" % enemy.display_name)
-			GameState.gain_exp(enemy.exp_reward)
+			GameState.gain_exp(maxi(1, enemy.exp_reward / 2))
 			remove_enemy(enemy)
 			enemy.die()
 

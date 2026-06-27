@@ -126,6 +126,7 @@ func _on_turn_started() -> void:
 	_extra_attack_mode = false
 	# Reckless lock clears each turn — toggle becomes available again.
 	GameState.reckless_locked_this_turn = false
+	GameState.ability_bar_changed.emit()
 	# Refresh visibility after enemy turns, then snapshot FOV
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
@@ -1075,7 +1076,7 @@ func _flash_hit(target: Entity) -> void:
 
 func _finish_kill(enemy: Enemy) -> void:
 	GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
-	GameState.gain_exp(enemy.exp_reward)
+	GameState.gain_exp(maxi(1, enemy.exp_reward / 2))
 	var was_boss: bool = enemy.is_boss
 	var kill_pos: Vector2i = enemy.grid_pos
 	var killed_name: String = enemy.display_name
