@@ -50,6 +50,13 @@ var _is_raging: bool = false
 var _rage_turns: int = 0
 var _rage_attacked_this_turn: bool = false
 
+# ── Rager state (Tier 2) ──────────────────────────────────────────────────────
+# Per-round free-action caps for Rager R2 (move) and R3 (attack). Reset at turn start.
+var _rager_move_triggered: bool = false
+var _rager_attack_triggered: bool = false
+# Per-turn Frenzy cap: fires once per turn. Reset at turn start.
+var _frenzy_triggered_this_turn: bool = false
+
 # ── Reckless Attack state ─────────────────────────────────────────────────────
 # Talent-gated toggle (not available at rank 0). Free action — toggling does not consume a turn.
 # Rank 1: +2 flat to first STR attack / enemies +2. Rank 2+: ADV / enemies ADV.
@@ -117,6 +124,10 @@ func _on_turn_started() -> void:
 	GameState.player_grid_pos = grid_pos
 	# Reckless lock clears each turn — toggle becomes available again.
 	GameState.reckless_locked_this_turn = false
+	# Rager per-round free-action caps and Frenzy per-turn cap reset each turn.
+	_rager_move_triggered = false
+	_rager_attack_triggered = false
+	_frenzy_triggered_this_turn = false
 	GameState.ability_bar_changed.emit()
 	# Refresh visibility after enemy turns, then snapshot FOV
 	if _dungeon_floor != null:
@@ -815,11 +826,11 @@ func _try_move(dir: Vector2i) -> void:
 		var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 		if not trap.is_empty():
 			await _dungeon_floor.trigger_trap(grid_pos, self)  # push trap still awaits; others return instantly
-	TurnManager.on_player_action_complete()
 	if is_stairs:
+		TurnManager.on_player_action_complete()
 		_dungeon_floor.on_player_reached_stairs.call_deferred()
 		return
-	# Difficult terrain or slowed: costs 2 turns per step
+	# Difficult terrain: apply status before Rager check
 	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
 	if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
 		GameState.apply_player_status("slowed", maxi(1, GameState.player_stats.slowed_turns))
@@ -827,6 +838,15 @@ func _try_move(dir: Vector2i) -> void:
 		GameState.player_stats.burning_turns = 0
 		GameState.player_status_changed.emit()
 		GameState.game_log("[color=cyan]The water extinguishes your flames![/color]")
+	# Rager R2: chance to grant a free action after moving (skips enemy turn + slowed penalty)
+	if _is_raging and GameState.get_talent_rank("rager") >= 2 and not _rager_move_triggered:
+		if randi_range(1, 100) <= GameState.player_stats.rage_bonus_damage * 10:
+			_rager_move_triggered = true
+			_rage_attacked_this_turn = true  # pause rage countdown on the reverted turn
+			GameState.game_log("[color=orange]Rager: fury drives you — the move didn't cost a turn![/color]")
+			TurnManager.revert_to_waiting()
+			return
+	TurnManager.on_player_action_complete()
 	if GameState.player_stats.slowed_turns > 0:
 		await TurnManager.player_turn_started
 		TurnManager.begin_player_action()
@@ -1026,6 +1046,19 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	else:
 		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, god_hp])
 
+	# Frenzy: bonus damage on first STR attack while raging (Tier 2 Berserker)
+	var frenzy_rank: int = GameState.get_talent_rank("frenzy")
+	if frenzy_rank >= 1 and _is_raging and is_str_weapon and not _frenzy_triggered_this_turn and not enemy.stats.is_dead():
+		_frenzy_triggered_this_turn = true
+		var frenzy_sides: int = [0, 4, 6, 8][frenzy_rank]
+		var frenzy_roll: int = randi_range(1, frenzy_sides)
+		var frenzy_bonus: int = frenzy_roll * stats.rage_bonus_damage
+		enemy.stats.take_damage(frenzy_bonus)
+		enemy.update_hp_bar()
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(enemy.position, frenzy_bonus, false)
+		GameState.game_log("[color=red]Frenzy! +%d (1d%d × %d rage).[/color]" % [frenzy_bonus, frenzy_sides, stats.rage_bonus_damage])
+
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
 	if _dungeon_floor != null:
@@ -1033,6 +1066,14 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	_handle_post_attack_turn(is_monk_unarmed)
 
 func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
+	# Rager R3: chance to grant a free action after attacking (once per round)
+	if _is_raging and GameState.get_talent_rank("rager") >= 3 and not _rager_attack_triggered:
+		if randi_range(1, 100) <= GameState.player_stats.rage_bonus_damage * 10:
+			_rager_attack_triggered = true
+			_rage_attacked_this_turn = true  # pause rage countdown on revert
+			GameState.game_log("[color=orange]Rager: fury drives you — the attack didn't cost a turn![/color]")
+			TurnManager.revert_to_waiting()
+			return
 	TurnManager.on_player_action_complete()
 
 func _show_sword_slash(dir: Vector2i) -> void:
@@ -1087,6 +1128,32 @@ func _flash_hit(target: Entity) -> void:
 	var tween := target.create_tween()
 	tween.tween_property(target, "modulate", Color(1.8, 0.3, 0.3), 0.05)
 	tween.tween_property(target, "modulate", Color(1.0, 1.0, 1.0), 0.1)
+
+func try_retaliation(attacker: Enemy) -> void:
+	var rank: int = GameState.get_talent_rank("retaliation")
+	if rank < 1:
+		return
+	var rage_bonus: int = stats.rage_bonus_damage
+	var melee_item: Item = GameState.equipment.get("melee", null)
+	var wpn_dmg: int = 0
+	if melee_item != null:
+		wpn_dmg = randi_range(melee_item.damage_die_min, melee_item.damage_die_max) + melee_item.bonus_damage
+	var ret_dmg: int = 0
+	match rank:
+		1: ret_dmg = rage_bonus                            # rage bonus only
+		2: ret_dmg = wpn_dmg                               # weapon only — rage bonus NOT included at rank 2 (intentional)
+		3: ret_dmg = wpn_dmg + rage_bonus + stats.str_modifier()
+	ret_dmg = maxi(0, ret_dmg)
+	if ret_dmg <= 0:
+		return
+	var dmg_type: String = melee_item.damage_type if melee_item != null else "Slashing"
+	attacker.stats.take_damage(ret_dmg)
+	if _dungeon_floor != null:
+		_dungeon_floor.show_damage(attacker.position, ret_dmg, false)
+	GameState.game_log("[color=orange]Retaliation! %d %s back to %s.[/color]" % [ret_dmg, dmg_type, attacker.display_name])
+	if attacker.stats.is_dead():
+		_finish_kill(attacker)
+
 
 func _finish_kill(enemy: Enemy) -> void:
 	GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)

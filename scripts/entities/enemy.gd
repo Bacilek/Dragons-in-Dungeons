@@ -379,3 +379,6 @@ func _attack_player(_player: Player) -> void:
 	if display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
 		if GameState.apply_player_status("poison", 3):
 			GameState.game_log("[color=lime]You are poisoned! (3 turns)[/color]")
+	# Retaliation: Barbarian Berserker T2 counter-damage when hit while raging
+	if actual > 0 and GameState.is_raging:
+		_player.try_retaliation(self)

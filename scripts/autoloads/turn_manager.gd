@@ -38,6 +38,12 @@ func on_player_action_complete() -> void:
 	phase = Phase.RESOLVING_ENEMIES
 	_process_enemies()
 
+# Rager talent: grants a free action by skipping enemy phase and returning to player input.
+# Intentionally narrow — do NOT generalize this into a general action-economy system.
+func revert_to_waiting() -> void:
+	phase = Phase.WAITING_FOR_INPUT
+	player_turn_started.emit()
+
 func _process_enemies() -> void:
 	var valid: Array = []
 	for e in _enemies:

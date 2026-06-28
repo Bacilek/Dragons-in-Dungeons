@@ -712,6 +712,48 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var ra: Ability = _find_ability_by_id("reckless_attack")
 				if ra != null:
 					ra.description = _build_reckless_description(rank)
+		"rager":
+			if rank == 1:
+				var rager_ab := Ability.new()
+				rager_ab.ability_id = "rager"
+				rager_ab.ability_name = "Rager"
+				rager_ab.description = _build_rager_description()
+				rager_ab.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				rager_ab.uses_remaining = 0
+				rager_ab.uses_max = 0
+				add_ability(rager_ab)
+			else:
+				var rager_ab: Ability = _find_ability_by_id("rager")
+				if rager_ab != null:
+					rager_ab.description = _build_rager_description()
+		"frenzy":
+			if rank == 1:
+				var frenzy_ab := Ability.new()
+				frenzy_ab.ability_id = "frenzy"
+				frenzy_ab.ability_name = "Frenzy"
+				frenzy_ab.description = _build_frenzy_description()
+				frenzy_ab.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				frenzy_ab.uses_remaining = 0
+				frenzy_ab.uses_max = 0
+				add_ability(frenzy_ab)
+			else:
+				var frenzy_ab: Ability = _find_ability_by_id("frenzy")
+				if frenzy_ab != null:
+					frenzy_ab.description = _build_frenzy_description()
+		"retaliation":
+			if rank == 1:
+				var ret_ab := Ability.new()
+				ret_ab.ability_id = "retaliation"
+				ret_ab.ability_name = "Retaliation"
+				ret_ab.description = _build_retaliation_description()
+				ret_ab.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				ret_ab.uses_remaining = 0
+				ret_ab.uses_max = 0
+				add_ability(ret_ab)
+			else:
+				var ret_ab: Ability = _find_ability_by_id("retaliation")
+				if ret_ab != null:
+					ret_ab.description = _build_retaliation_description()
 		"danger_sense":
 			if rank == 1:
 				var ds := Ability.new()
@@ -734,6 +776,36 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 					ds.description = _build_danger_sense_description(3)
 				combat_message.emit("[color=cyan]Danger Sense 3: STR +2 (now [b]%d[/b])![/color]" % player_stats.strength)
 	ability_bar_changed.emit()
+
+func _build_rager_description() -> String:
+	var rank: int = get_talent_rank("rager")
+	var chance: int = player_stats.rage_bonus_damage * 10
+	var lines: Array[String] = []
+	lines.append("While Raging: %d%% chance per trigger (scales with Rage damage bonus)." % chance)
+	if rank >= 1: lines.append("R1: Negate incoming status/debuff effects.")
+	if rank >= 2: lines.append("R2: Move may not end your turn (once per round).")
+	if rank >= 3: lines.append("R3: Attack may not end your turn (once per round, independent).")
+	return "\n".join(lines)
+
+
+func _build_frenzy_description() -> String:
+	var rank: int = get_talent_rank("frenzy")
+	var bonus: int = player_stats.rage_bonus_damage
+	var die_sides: int = [0, 4, 6, 8][mini(rank, 3)]
+	return "While Raging, first STR attack each turn: +1d%d × %d (%s) Slashing bonus damage." % [
+		die_sides, bonus, "current die" if rank > 0 else ""]
+
+
+func _build_retaliation_description() -> String:
+	var rank: int = get_talent_rank("retaliation")
+	var bonus: int = player_stats.rage_bonus_damage
+	var lines: Array[String] = []
+	match rank:
+		1: lines.append("When hit by adjacent melee: deal %d back (rage bonus)." % bonus)
+		2: lines.append("When hit by adjacent melee: deal weapon damage back (no rage bonus at this rank).")
+		3: lines.append("When hit by adjacent melee: deal weapon damage + %d rage + STR mod back." % bonus)
+	return "\n".join(lines)
+
 
 func _build_rage_description() -> String:
 	var rank: int = get_talent_rank("rage")
