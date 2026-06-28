@@ -55,25 +55,24 @@ World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: flo
 ### Barbarian class
 Starting equipment (given in `GameState.give_class_starting_items()` after class selection):
 - **Greataxe** — 1d12 Slashing, `is_two_handed=true`. `damage_die_min/max` on Item define dice; `recalculate_stats()` applies them. Two-handed blocks the ranged slot; equipping ranged while two-handed is blocked.
-- **Rage** — ability in slot 0. 2 uses/long rest (resets on floor descent). Activation costs 1 turn. Effects while active: `GameState.is_raging=true` → all incoming damage halved (TODO: restrict to BPS types once damage types added); +2 damage on STR-based melee attacks; red sprite tint. Duration: starts at 0 extra turns; attacking with STR melee adds +1 turn each time. Rage ends if heavy armor equipped (`item.is_heavy_armor`). TODO: also extend via bonus action and forcing enemy saves.
+- **Rage** — ability in slot 0. 2 uses/long rest (resets on floor descent). Activation is a **free action** (does not end the turn). Effects while active: `GameState.is_raging=true` → all incoming damage halved (TODO: restrict to BPS types once damage types added); +2 damage on STR-based melee attacks; red sprite tint. Duration: starts at 0 extra turns; attacking with STR melee adds +1 turn each time. Rage ends if heavy armor equipped (`item.is_heavy_armor`).
 
 **Barbarian level-up features** (applied in `GameState._apply_barbarian_level_features(level)`, called from `gain_exp()` on every level-up):
 - **Level 2 — Danger Sense** (passive): `Stats.danger_sense = true`. In `dungeon_floor.trigger_trap()`, player rolls 2d20 take higher on DEX saves. Ability bar slot shows passive icon.
 - **Level 2 — Reckless Attack** (toggle, free action): `player.gd._activate_reckless()` → flips `_reckless_active`. When on: `GameState.reckless_attack_active = true` → `Ability.is_active = true` → HUD slot shows orange tint (no badge text). ADV added to the **first** STR melee attack of the turn only. After the first reckless attack is made, `GameState.reckless_locked_this_turn = true`: toggle is locked (grays out slot, shows message if player tries to toggle off), and no further ADV is granted to extra attacks. Enemies gain ADV while reckless is active (`enemy.gd._attack_player` rolls 2d20 take higher). Lock resets at start of each new turn in `_on_turn_started()`. Toggle persists across turns; does not cost a turn.
 - **Level 3 — +1 Rage use**: `player_stats.rage_uses_max += 1`; `_sync_ability_uses()` now also syncs `ab.uses_max` so the UI displays correctly (e.g. "3/3").
 - **Level 4 — STR +2**: `player_stats.strength += 2`, `recalculate_stats()` immediately applied.
-- **Level 5 — Extra Attack**: `Stats.extra_attack = true`. In `_bump_attack()`, `_handle_post_attack_turn(from_monk_unarmed)` checks this flag. On first STR melee attack: sets `_extra_attack_mode = true` and `TurnManager.phase = WAITING_FOR_INPUT` directly (no enemy turns). Player can only attack again (movement/items/abilities/rest/search all blocked). Second attack or **Space** (wait) calls `on_player_action_complete()` normally — Space in `_wait_action()` forfeits the extra attack and ends the turn.
+- **Level 5 — (TODO)**: placeholder level; currently shows "Brutal Strikes" message. Feature TBD.
 
 ### Monk class
 Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Save proficiencies: STR + DEX. Proficiency: simple weapons + martial weapons with light property (TODO: enforce). No armor training (any armor → DISADV on STR/DEX checks/saves + DISADV on attacks; TODO: enforce). Starting abilities (slot 0–1 of ability bar):
 - **Unarmored Defense** (passive, ability_id `"unarmored_defense_monk"`): AC = 10 + DEX + WIS while wearing no armor. Handled in `Stats.recalc_ac(has_armor_equipped)`.
-- **Martial Arts** (passive, ability_id `"martial_arts"`): Unarmed strikes use DEX for attack AND damage. Damage die = `Stats.martial_arts_die_sides` (1d6 → 1d8 at lvl 5 → 1d10 at lvl 11 → 1d12 at lvl 17). After a main-action unarmed strike, player enters `_bonus_action_mode` (mirrors `_extra_attack_mode`): one free bonus-action unarmed strike. Space forfeits it. Movement/items/abilities/rest/search blocked during bonus action. Both main and bonus attack use the same `_bump_attack()` with `is_monk_unarmed = true`.
+- **Martial Arts** (passive, ability_id `"martial_arts"`): Unarmed strikes use DEX for attack AND damage. Damage die = `Stats.martial_arts_die_sides` (1d6 → 1d8 at lvl 5 → 1d10 at lvl 11 → 1d12 at lvl 17). Each unarmed attack ends the turn normally. Both main attack uses `_bump_attack()` with `is_monk_unarmed = true`.
 
 **Monk level-up features** (applied in `GameState._apply_monk_level_features(level)`, called alongside `_apply_barbarian_level_features()` from `gain_exp()`):
 - **Level 4 — DEX +2**: `player_stats.dexterity += 2`, `recalculate_stats()` applied.
 - **Levels 5/11/17 — Martial Arts die upgrade**: updates `martial_arts` ability description; die is auto-computed by `Stats.martial_arts_die_sides`.
 
-**Bonus action state** (`_bonus_action_mode: bool` in `player.gd`): set in `_handle_post_attack_turn(from_monk_unarmed=true)` when Monk makes unarmed main-action strike and bonus action not yet spent this turn. Cleared on `_on_turn_started()`. Blocks same actions as `_extra_attack_mode`. Second attack (even on miss) clears it and ends the turn normally.
 
 ### Item fields (new)
 `Item.is_two_handed: bool` — blocks ranged slot while equipped in melee.

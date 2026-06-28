@@ -58,16 +58,6 @@ var _rage_turns: int = 0  # additional turns of rage beyond the current one
 # Free action — toggling does not consume a turn.
 var _reckless_active: bool = false
 
-# ── Extra Attack state (Barbarian Lv5) ────────────────────────────────────────
-# After the first STR melee attack: phase returns to WAITING_FOR_INPUT without enemy turns.
-# Player MUST attack again (or press Esc to forfeit and end the turn normally).
-var _extra_attack_mode: bool = false
-
-# ── Bonus Action state (Monk Martial Arts) ────────────────────────────────────
-# After a Monk unarmed main-action strike: phase returns to WAITING_FOR_INPUT.
-# Player may make one bonus-action unarmed strike or press Space to forfeit.
-# Named "bonus_action" because future features (ki points, etc.) will also spend it.
-var _bonus_action_mode: bool = false
 
 # ── Equip action tracking ─────────────────────────────────────────────────────
 var _pending_equip_turn: bool = false  # set by equip_action_taken signal; consumed in next action gate
@@ -128,9 +118,6 @@ func _on_player_hp_changed(_c: int, _m: int) -> void:
 
 func _on_turn_started() -> void:
 	GameState.player_grid_pos = grid_pos
-	# Extra Attack / Bonus Action modes are only valid within one action sequence.
-	_extra_attack_mode = false
-	_bonus_action_mode = false
 	# Reckless lock clears each turn — toggle becomes available again.
 	GameState.reckless_locked_this_turn = false
 	GameState.ability_bar_changed.emit()
@@ -555,44 +542,6 @@ func _execute_queued_path() -> void:
 	TurnManager.fast_mode = not TurnManager.has_any_enemy()
 	_reset_camera_offset()
 
-	# Extra Attack: only allow an attack (melee or ranged) — no movement.
-	if _extra_attack_mode:
-		var atk_enemy: Enemy = null
-		if _target_enemy != null and is_instance_valid(_target_enemy) and not _target_enemy.stats.is_dead():
-			atk_enemy = _target_enemy
-		elif not _queued_path.is_empty():
-			var nxt: Vector2i = _queued_path[0]
-			atk_enemy = _dungeon_floor.get_enemy_at(nxt) if _dungeon_floor != null else null
-		if atk_enemy != null:
-			if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
-				_ranged_attack(atk_enemy)
-			else:
-				_bump_attack(atk_enemy, atk_enemy.grid_pos - grid_pos)
-		else:
-			GameState.game_log("[color=yellow]Extra Attack — attack an enemy! (Space to skip)[/color]")
-		_target_enemy = null
-		_queued_path.clear()
-		TurnManager.fast_mode = false
-		_path_executing = false
-		return
-
-	# Bonus Action (Monk Martial Arts): only allow unarmed strike — no movement.
-	if _bonus_action_mode:
-		var atk_enemy: Enemy = null
-		if _target_enemy != null and is_instance_valid(_target_enemy) and not _target_enemy.stats.is_dead():
-			atk_enemy = _target_enemy
-		elif not _queued_path.is_empty():
-			var nxt: Vector2i = _queued_path[0]
-			atk_enemy = _dungeon_floor.get_enemy_at(nxt) if _dungeon_floor != null else null
-		if atk_enemy != null:
-			_bump_attack(atk_enemy, atk_enemy.grid_pos - grid_pos)
-		else:
-			GameState.game_log("[color=yellow]Martial Arts — bonus strike! Attack again or Space to skip.[/color]")
-		_target_enemy = null
-		_queued_path.clear()
-		TurnManager.fast_mode = false
-		_path_executing = false
-		return
 
 	var fov_snapshot: Array[Enemy] = _dungeon_floor.get_visible_enemies()
 
@@ -795,13 +744,6 @@ func _try_move(dir: Vector2i) -> void:
 			_attempt_lock_door(target)
 		return
 
-	# Extra Attack mode: movement is not allowed — player must attack.
-	if _extra_attack_mode:
-		GameState.game_log("[color=yellow]Extra Attack — attack an enemy! (Space to skip)[/color]")
-		return
-	if _bonus_action_mode:
-		GameState.game_log("[color=yellow]Martial Arts — bonus strike! Attack again or Space to skip.[/color]")
-		return
 
 	if GameState.noclip:
 		# Noclip: only reject off-grid VOID
@@ -880,7 +822,7 @@ func _activate_reckless() -> void:
 	var ab: Ability = _find_ability("reckless_attack")
 	if ab == null:
 		return
-	if GameState.reckless_locked_this_turn or _extra_attack_mode:
+	if GameState.reckless_locked_this_turn:
 		GameState.game_log("[color=gray]Reckless Attack can only be toggled before your first attack.[/color]")
 		return
 	_reckless_active = not _reckless_active
@@ -1054,23 +996,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_dungeon_floor.update_fog(grid_pos)
 	_handle_post_attack_turn(is_monk_unarmed)
 
-func _handle_post_attack_turn(from_monk_unarmed: bool = false) -> void:
-	# Extra Attack (Barbarian Lv5): any melee/ranged attack grants a second attack.
-	# Phase is set back to WAITING_FOR_INPUT without running enemy turns.
-	# Second attack or Space (forfeit) calls on_player_action_complete normally.
-	if stats.extra_attack and not _extra_attack_mode:
-		_extra_attack_mode = true
-		TurnManager.phase = TurnManager.Phase.WAITING_FOR_INPUT
-		GameState.game_log("[color=yellow]Extra Attack! Attack again or Space to skip.[/color]")
-		return
-	# Monk Martial Arts (Lv1): unarmed main-action attack grants a bonus-action unarmed strike.
-	if from_monk_unarmed and not _bonus_action_mode:
-		_bonus_action_mode = true
-		TurnManager.phase = TurnManager.Phase.WAITING_FOR_INPUT
-		GameState.game_log("[color=cyan]Martial Arts — bonus strike! Attack again or Space to skip.[/color]")
-		return
-	_extra_attack_mode = false
-	_bonus_action_mode = false
+func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
 	TurnManager.on_player_action_complete()
 
 func _show_sword_slash(dir: Vector2i) -> void:
@@ -1184,22 +1110,6 @@ func _check_pickup() -> void:
 		GameState.game_log("[color=cyan]You pick up [b]%s[/b].[/color]" % item.item_name)
 
 func _wait_action() -> void:
-	if _extra_attack_mode:
-		# Space forfeits the Extra Attack and ends the turn normally.
-		_extra_attack_mode = false
-		GameState.game_log("[color=gray]You skipped extra attack.[/color]")
-		if _dungeon_floor != null:
-			_dungeon_floor.update_fog(grid_pos)
-		TurnManager.on_player_action_complete()
-		return
-	if _bonus_action_mode:
-		# Space forfeits the Monk bonus-action strike and ends the turn normally.
-		_bonus_action_mode = false
-		GameState.game_log("[color=gray]You skipped the bonus action strike.[/color]")
-		if _dungeon_floor != null:
-			_dungeon_floor.update_fog(grid_pos)
-		TurnManager.on_player_action_complete()
-		return
 	TurnManager.begin_player_action()
 	GameState.game_log("[color=gray]You skipped a turn.[/color]")
 	if _dungeon_floor != null:
@@ -1213,12 +1123,6 @@ func _do_rest_wait_turn() -> void:
 	TurnManager.on_player_action_complete()
 
 func _handle_search_request() -> void:
-	if _extra_attack_mode:
-		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Space to skip)[/color]")
-		return
-	if _bonus_action_mode:
-		GameState.game_log("[color=yellow]Martial Arts — bonus strike first! (Space to skip)[/color]")
-		return
 	var now: float = Time.get_ticks_msec() / 1000.0
 	if now - _last_search_request < 0.5:
 		# Double press — trigger actual search
@@ -1492,12 +1396,6 @@ func _use_quickbar_slot(idx: int) -> void:
 	# The HUD manages the visual toggle; player.gd reads _ability_bar_active via signal
 	if _ability_bar_active:
 		_use_ability_slot(idx)
-		return
-	if _extra_attack_mode:
-		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Space to skip)[/color]")
-		return
-	if _bonus_action_mode:
-		GameState.game_log("[color=yellow]Martial Arts — bonus strike first! (Space to skip)[/color]")
 		return
 	var raw = GameState.player_quickbar[idx]
 	if raw == null:
@@ -1844,12 +1742,6 @@ func _do_throw(pos: Vector2i) -> void:
 	TurnManager.on_player_action_complete()
 
 func _open_short_rest() -> void:
-	if _extra_attack_mode:
-		GameState.game_log("[color=yellow]Extra Attack — attack an adjacent enemy first! (Space to skip)[/color]")
-		return
-	if _bonus_action_mode:
-		GameState.game_log("[color=yellow]Martial Arts — bonus strike first! (Space to skip)[/color]")
-		return
 	if GameState.short_rests_remaining <= 0:
 		GameState.game_log("[color=gray]No short rests remaining on this floor. Descend to refresh.[/color]")
 		return

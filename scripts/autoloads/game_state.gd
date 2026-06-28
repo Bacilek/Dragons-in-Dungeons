@@ -583,8 +583,7 @@ func _apply_barbarian_level_features(level: int) -> void:
 			recalculate_stats()
 			combat_message.emit("[color=cyan]Level 4 Barbarian: STR +2 (now [b]%d[/b], modifier +%d)![/color]" % [player_stats.strength, player_stats.str_modifier()])
 		5:
-			player_stats.extra_attack = true
-			combat_message.emit("[color=cyan]Level 5 Barbarian: [b]Extra Attack[/b]! Your first melee attack no longer ends your turn.[/color]")
+			combat_message.emit("[color=cyan]Level 5 Barbarian: [b]Brutal Strikes[/b] — your attacks hit harder. (TODO: future feature)[/color]")
 
 func _apply_monk_level_features(level: int) -> void:
 	if player_stats.character_class != Stats.CharacterClass.MONK:
