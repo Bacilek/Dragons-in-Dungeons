@@ -62,6 +62,9 @@ var talent_picker_open: bool = false
 var talent_points_available: int = 0
 var talent_investments: Dictionary = {}   # talent_id → current_rank (int)
 var _class_talents: Array[Talent] = []    # all talents for current class, populated on class select
+# Tier 2 gating: Berserker unlocks on Necromancer kill (floor 10)
+var tier2_unlocked: bool = false
+var _pending_tier2_points: int = 0
 var short_rest_active: bool = false
 var short_rest_turns_remaining: int = 0
 var short_rest_pending_heal: int = 0
@@ -276,8 +279,20 @@ func gain_exp(amount: int) -> void:
 	if leveled_up:
 		player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 		var hp_gained: int = player_stats.max_hp - old_max_hp
-		talent_points_available += 1
-		talent_points_changed.emit(talent_points_available)
+		var lv: int = player_stats.character_level
+		if lv >= 1 and lv <= 5:
+			# Tier 1 points: immediately available
+			talent_points_available += 1
+			talent_points_changed.emit(talent_points_available)
+		elif lv >= 7 and lv <= 12:
+			# Tier 2 points: queued until Necromancer killed, then released by unlock_tier2()
+			if tier2_unlocked:
+				talent_points_available += 1
+				talent_points_changed.emit(talent_points_available)
+			else:
+				_pending_tier2_points += 1
+				combat_message.emit("[color=gray]Tier 2 talent point held — defeat the Necromancer to unlock Berserker.[/color]")
+		# Level 6 and 13+: no talent points (gap between tiers)
 		# Rage uses scale by level — grant the extra use immediately on the triggering level-up.
 		if player_stats.character_class == Stats.CharacterClass.BARBARIAN:
 			var new_rage_max: int = player_stats.rage_uses_max
@@ -286,11 +301,30 @@ func gain_exp(amount: int) -> void:
 					player_stats.rage_uses_remaining + (new_rage_max - old_rage_max),
 					new_rage_max)
 				_sync_ability_uses()
-		var level_msg: String = "[color=yellow]Level up! You are now level %d. (+%d max HP, +1 talent point)[/color]" % [player_stats.character_level, hp_gained]
+		var lv_str: String = ""
+		if (lv >= 1 and lv <= 5) or (tier2_unlocked and lv >= 7 and lv <= 12):
+			lv_str = " +1 talent point."
+		elif lv >= 7 and lv <= 12:
+			lv_str = " (Tier 2 point pending — defeat the Necromancer)"
+		var level_msg: String = "[color=yellow]Level up! You are now level %d. (+%d max HP.%s)[/color]" % [player_stats.character_level, hp_gained, lv_str]
 		combat_message.emit(level_msg)
 		short_rest_changed.emit()
 		_apply_monk_level_features(player_stats.character_level)
 		player_leveled_up.emit(player_stats.character_level)
+
+func unlock_tier2() -> void:
+	if tier2_unlocked:
+		return
+	tier2_unlocked = true
+	_setup_barbarian_tier2_talents()
+	var pts: int = _pending_tier2_points
+	_pending_tier2_points = 0
+	talent_points_available += pts
+	talent_points_changed.emit(talent_points_available)
+	combat_message.emit("[color=gold]Berserker Subclass unlocked! %d Tier 2 talent point(s) available.[/color]" % pts)
+	if talent_points_available > 0:
+		player_leveled_up.emit(player_stats.character_level)
+
 
 func debug_level_up() -> void:
 	gain_exp(player_stats.exp_to_next())
@@ -780,3 +814,53 @@ func _setup_barbarian_talents() -> void:
 		{"description": "STR +2 (flat stat increase)."},
 	]
 	_class_talents.append(ds_talent)
+
+
+func _setup_barbarian_tier2_talents() -> void:
+	# Called by unlock_tier2() when Necromancer is defeated. Appends Tier 2 to _class_talents.
+	var chance_str: String = "%d%%" % (player_stats.rage_bonus_damage * 10)
+
+	var rager_talent := Talent.new()
+	rager_talent.talent_id = "rager"
+	rager_talent.talent_name = "Rager"
+	rager_talent.description = "Berserker fury bends the flow of combat while Raging."
+	rager_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	rager_talent.tier = 2
+	rager_talent.class_id = Stats.CharacterClass.BARBARIAN
+	rager_talent.max_rank = 3
+	rager_talent.ranks = [
+		{"description": "%s chance to fully negate an incoming status/debuff while Raging." % chance_str},
+		{"description": "%s chance after moving that the move doesn't end your turn (once per round)." % chance_str},
+		{"description": "%s chance after attacking that the attack doesn't end your turn (once per round, independent of rank 2)." % chance_str},
+	]
+	_class_talents.append(rager_talent)
+
+	var frenzy_talent := Talent.new()
+	frenzy_talent.talent_id = "frenzy"
+	frenzy_talent.talent_name = "Frenzy"
+	frenzy_talent.description = "First attack each turn deals bonus Rage-scaled damage while Raging."
+	frenzy_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	frenzy_talent.tier = 2
+	frenzy_talent.class_id = Stats.CharacterClass.BARBARIAN
+	frenzy_talent.max_rank = 3
+	frenzy_talent.ranks = [
+		{"description": "First STR attack while Raging: +1d4 × rage bonus (%d) extra damage." % player_stats.rage_bonus_damage},
+		{"description": "Die increases to 1d6 × rage bonus (%d)." % player_stats.rage_bonus_damage},
+		{"description": "Die increases to 1d8 × rage bonus (%d)." % player_stats.rage_bonus_damage},
+	]
+	_class_talents.append(frenzy_talent)
+
+	var retaliation_talent := Talent.new()
+	retaliation_talent.talent_id = "retaliation"
+	retaliation_talent.talent_name = "Retaliation"
+	retaliation_talent.description = "Strike back at enemies who hit you in melee."
+	retaliation_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	retaliation_talent.tier = 2
+	retaliation_talent.class_id = Stats.CharacterClass.BARBARIAN
+	retaliation_talent.max_rank = 3
+	retaliation_talent.ranks = [
+		{"description": "When hit by a melee attack: deal %d damage back (rage bonus only)." % player_stats.rage_bonus_damage},
+		{"description": "Deal weapon damage back instead (no rage bonus at this rank — intentional)."},
+		{"description": "Deal weapon damage + rage bonus (%d) + STR modifier back." % player_stats.rage_bonus_damage},
+	]
+	_class_talents.append(retaliation_talent)

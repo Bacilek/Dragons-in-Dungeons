@@ -73,16 +73,26 @@ func _build_ui() -> void:
 	_vbox.add_theme_constant_override("separation", 0)
 	scroll.add_child(_vbox)
 
-	# Tier 1 — active
+	# Tier 1 — always active
 	_add_tier_header("TIER 1  ·  Levels 1–5", true)
 	for t: Talent in GameState._class_talents:
-		_add_talent_row(t)
+		if t.tier == 1:
+			_add_talent_row(t)
 
-	# Tiers 2–4 — locked placeholders
+	# Tier 2 — Berserker (unlocked on Necromancer kill)
+	if GameState.tier2_unlocked:
+		_add_tier_header("TIER 2  ·  Berserker  ·  Levels 7–12", true)
+		for t: Talent in GameState._class_talents:
+			if t.tier == 2:
+				_add_talent_row(t)
+	else:
+		_add_tier_header("TIER 2  ·  Berserker  ·  Levels 7–12", false)
+		_add_locked_placeholder("Defeat the Necromancer (floor 10) to unlock")
+
+	# Tiers 3–4 — locked placeholders
 	var locked_tiers := [
-		["TIER 2  ·  Levels 6–10", "Unlocks at level 6"],
-		["TIER 3  ·  Levels 11–15", "Unlocks at level 11"],
-		["TIER 4  ·  Levels 16–20", "Unlocks at level 16"],
+		["TIER 3  ·  Levels 13–17", "Unlocks at Tier 3"],
+		["TIER 4  ·  Levels 18–20", "Unlocks at Tier 4"],
 	]
 	for entry: Array in locked_tiers:
 		_add_tier_header(entry[0], false)

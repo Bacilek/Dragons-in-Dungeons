@@ -1098,6 +1098,8 @@ func _finish_kill(enemy: Enemy) -> void:
 	enemy.die()
 	if was_boss:
 		_dungeon_floor.drop_boss_loot(kill_pos)
+		if killed_name == "Necromancer" and stats.character_class == Stats.CharacterClass.BARBARIAN:
+			GameState.unlock_tier2()
 	if killed_name in UNDEAD_NAMES and randf() < 0.20:
 		var rotten := Item.new()
 		rotten.item_name = "Rotten Meat"
