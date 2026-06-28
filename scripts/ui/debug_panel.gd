@@ -114,6 +114,12 @@ func _build_main_panel() -> void:
 	lvlup_btn.pressed.connect(_on_level_up_pressed)
 	_main_panel.add_child(lvlup_btn)
 
+	var talent_btn := _make_btn("+1 Talent Point", Color(0.55, 0.85, 0.55))
+	talent_btn.position = Vector2(6.0, 215.0)
+	talent_btn.size = Vector2(PANEL_W - 12.0, 30.0)
+	talent_btn.pressed.connect(_on_add_talent_point)
+	_main_panel.add_child(talent_btn)
+
 func _build_floor_sub() -> void:
 	_floor_sub = Panel.new()
 	_floor_sub.visible = false
@@ -367,6 +373,14 @@ func _on_spawn_pressed() -> void:
 func _on_level_up_pressed() -> void:
 	GameState.debug_level_up()
 	GameState.game_log("[color=gold][DEBUG] Level Up! Now level %d.[/color]" % GameState.player_stats.character_level)
+
+func _on_add_talent_point() -> void:
+	GameState.talent_points_available += 1
+	GameState.talent_points_changed.emit(GameState.talent_points_available)
+	if not GameState._class_talents.is_empty():
+		var picker_script = load("res://scripts/ui/talent_picker.gd")
+		get_tree().root.call_deferred("add_child", picker_script.new())
+	GameState.game_log("[color=green][DEBUG] +1 talent point (%d available).[/color]" % GameState.talent_points_available)
 
 func _on_floor_selected(floor_num: int) -> void:
 	_floor_sub.visible = false
