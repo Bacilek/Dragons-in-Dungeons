@@ -469,8 +469,7 @@ func use_item(item: Item) -> void:
 			AudioManager.play("eat_food")
 			if item.item_name == "Rotten Meat":
 				restore_hunger(item.heal_amount)
-				player_stats.poison_turns = maxi(player_stats.poison_turns, 3)
-				player_status_changed.emit()
+				apply_player_status("poison", 3)
 				game_log("[color=red]You choke down the rotten meat. You feel sick! (Poisoned 3 turns)[/color]")
 			else:
 				restore_hunger(item.heal_amount)
@@ -588,6 +587,22 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 		player_was_hit_this_turn = true
 	check_player_death()
 	return actual
+
+
+func apply_player_status(type: String, turns: int) -> bool:
+	# Rager rank 1: chance to negate a status/debuff while raging.
+	if get_talent_rank("rager") >= 1 and is_raging:
+		var chance: int = player_stats.rage_bonus_damage * 10  # 20%/30%/40%
+		if randi_range(1, 100) <= chance:
+			game_log("[color=orange]Rager shrugs off the %s![/color]" % type)
+			return false
+	match type:
+		"poison":   player_stats.poison_turns  = maxi(player_stats.poison_turns, turns)
+		"burning":  player_stats.burning_turns = maxi(player_stats.burning_turns, turns)
+		"bleeding": player_stats.bleeding_turns = maxi(player_stats.bleeding_turns, turns)
+		"slowed":   player_stats.slowed_turns  = maxi(player_stats.slowed_turns, turns)
+	player_status_changed.emit()
+	return true
 
 
 func _apply_monk_level_features(level: int) -> void:

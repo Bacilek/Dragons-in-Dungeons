@@ -377,6 +377,5 @@ func _attack_player(_player: Player) -> void:
 		GameState.game_log("[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [display_name, hit_meta, dmg_meta, actual, reckless_tag, god_suffix])
 	# Orc Shaman applies poison on hit
 	if display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
-		GameState.player_stats.poison_turns = 3
-		GameState.player_status_changed.emit()
-		GameState.game_log("[color=lime]You are poisoned! (3 turns)[/color]")
+		if GameState.apply_player_status("poison", 3):
+			GameState.game_log("[color=lime]You are poisoned! (3 turns)[/color]")

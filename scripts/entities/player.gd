@@ -689,7 +689,7 @@ func _execute_queued_path() -> void:
 		# Difficult terrain or slowed: costs 2 turns — stop queued path and waste a turn
 		var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
 		if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
-			GameState.player_stats.slowed_turns = maxi(1, GameState.player_stats.slowed_turns)
+			GameState.apply_player_status("slowed", maxi(1, GameState.player_stats.slowed_turns))
 		if tile_t == DungeonData.TileType.WATER and GameState.player_stats.burning_turns > 0:
 			GameState.player_stats.burning_turns = 0
 			GameState.player_status_changed.emit()
@@ -822,7 +822,7 @@ func _try_move(dir: Vector2i) -> void:
 	# Difficult terrain or slowed: costs 2 turns per step
 	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
 	if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
-		GameState.player_stats.slowed_turns = maxi(1, GameState.player_stats.slowed_turns)
+		GameState.apply_player_status("slowed", maxi(1, GameState.player_stats.slowed_turns))
 	if tile_t == DungeonData.TileType.WATER and GameState.player_stats.burning_turns > 0:
 		GameState.player_stats.burning_turns = 0
 		GameState.player_status_changed.emit()

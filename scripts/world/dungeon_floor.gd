@@ -904,21 +904,18 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 		# Fire Trap applies burning
 		if trap["name"] == "Fire Trap" and target is Player:
 			AudioManager.play("trap_fire")
-			GameState.player_stats.burning_turns = 4
-			GameState.player_status_changed.emit()
-			GameState.game_log("[color=orange]You are burning! (4 turns)[/color]")
+			if GameState.apply_player_status("burning", 4):
+				GameState.game_log("[color=orange]You are burning! (4 turns)[/color]")
 		# Pit Spikes apply bleeding (5 turns, 1 dmg/turn)
 		if trap["name"] == "Pit Spikes" and target is Player:
 			AudioManager.play("trap_spike")
-			GameState.player_stats.bleeding_turns = 5
-			GameState.player_status_changed.emit()
-			GameState.game_log("[color=red]You are bleeding! (5 turns)[/color]")
+			if GameState.apply_player_status("bleeding", 5):
+				GameState.game_log("[color=red]You are bleeding! (5 turns)[/color]")
 		# Bear Trap slows movement for 20 turns (each step costs 2 turns)
 		if trap["name"] == "Bear Trap" and target is Player:
 			AudioManager.play("trap_bear")
-			GameState.player_stats.slowed_turns = 20
-			GameState.player_status_changed.emit()
-			GameState.game_log("[color=yellow]Your leg is caught! Slowed for 20 turns.[/color]")
+			if GameState.apply_player_status("slowed", 20):
+				GameState.game_log("[color=yellow]Your leg is caught! Slowed for 20 turns.[/color]")
 		# Animation plays asynchronously — does not block player input
 		if is_instance_valid(sprite_node):
 			_play_trap_animation(sprite_node)
