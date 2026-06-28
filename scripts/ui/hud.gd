@@ -568,13 +568,17 @@ func _refresh_ability_bar() -> void:
 				var use_lbl: Label = _slot_use_labels[i]
 				use_lbl.visible = true
 				if ab.uses_max == 0:
-					# Passive / infinite: show "passive" for Danger Sense, empty for toggles.
+					# Passive / infinite uses.
 					match ab.ability_id:
 						"danger_sense":
 							use_lbl.text = "passive"
 							use_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 						_:
 							use_lbl.text = ""
+				elif ab.ability_id == "rage" and GameState.is_raging:
+					# While raging: show remaining turns instead of use count.
+					use_lbl.text = "%dt" % GameState.rage_turns_remaining
+					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
 				else:
 					use_lbl.text = "%d/%d" % [ab.uses_remaining, ab.uses_max]
 					var clr: Color = Color(1.0, 0.7, 0.2) if ab.uses_remaining > 0 else Color(0.5, 0.5, 0.5)
@@ -924,6 +928,7 @@ func _fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 	var stat_mod: int = int(p.get("dex" if use_dex else "str", "0"))
 	var prof: int   = int(p.get("prof", "0"))
 	var wpn: int    = int(p.get("wpn", "0"))
+	var reck: int   = int(p.get("reck", "0"))
 	var total: int  = int(p.get("total", "0"))
 	var ac: int     = int(p.get("ac", "0"))
 	var adv: bool   = p.get("adv", "0") == "1"
@@ -945,6 +950,8 @@ func _fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 		lines.append("[color=lightblue]+%d[/color]  (Proficiency)" % prof)
 	if wpn != 0:
 		lines.append("[color=lightblue]%+d[/color]  (weapon +%d)" % [wpn, wpn])
+	if reck != 0:
+		lines.append("[color=orange]%+d[/color]  (Reckless Attack)" % reck)
 	lines.append("─────────────────")
 	var vs: String
 	if n20:

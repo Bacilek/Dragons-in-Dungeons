@@ -872,13 +872,15 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 			die2 = randi_range(1, 20)
 		var die: int = maxi(die1, die2)
 		# Danger Sense rank 2: use max(DEX mod, STR mod) for DEX/WIS/CHA checks
-		if danger_rank >= 2:
-			dex_mod = maxi(dex_mod, s.str_modifier())
+		var effective_stat: String = "DEX"
+		if danger_rank >= 2 and s.str_modifier() > dex_mod:
+			dex_mod = s.str_modifier()
+			effective_stat = "STR"
 		var roll: int = die + dex_mod + prof_bonus
 		var dc: int = 10 + GameState.current_floor
 		var adv_tag: String = " [color=gray](Danger Sense)[/color]" if has_adv else ""
-		var check_meta: String = "check:stat=DEX,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [
-			die, die1, die2, dex_mod, prof_bonus, roll, dc, 1 if roll >= dc else 0, 1 if has_adv else 0]
+		var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [
+			effective_stat, die, die1, die2, dex_mod, prof_bonus, roll, dc, 1 if roll >= dc else 0, 1 if has_adv else 0]
 		if roll >= dc:
 			GameState.game_log("[color=cyan]You dodge [b]%s[/b]!%s [url=%s]%d vs DC %d[/url][/color]" % [trap["name"], adv_tag, check_meta, roll, dc])
 			return

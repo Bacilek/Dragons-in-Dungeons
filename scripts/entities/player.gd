@@ -143,6 +143,8 @@ func _on_turn_started() -> void:
 			_rage_turns -= 1
 		_rage_attacked_this_turn = false
 		GameState.player_was_hit_this_turn = false
+		GameState.rage_turns_remaining = _rage_turns
+		GameState.ability_bar_changed.emit()
 		if _rage_turns <= 0:
 			_end_rage()
 			GameState.game_log("[color=gray]Your Rage fades.[/color]")
@@ -246,7 +248,8 @@ func _process(_delta: float) -> void:
 	if _throw_item != null:
 		_throw_item = null
 		GameState.game_log("[color=gray]Throw cancelled.[/color]")
-	if _tool_item != null:
+	# Thief Tools: let _try_move handle door/trap bump — don't cancel the tool here.
+	if _tool_item != null and _tool_item.item_name != "Thief Tools":
 		_tool_item = null
 		GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 	_try_move(dir)
@@ -383,19 +386,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		match key.physical_keycode:
 			KEY_Q, KEY_KP_7:
 				if _throw_item != null: _throw_item = null; GameState.game_log("[color=gray]Throw cancelled.[/color]")
-				if _tool_item != null: _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
+				if _tool_item != null and _tool_item.item_name != "Thief Tools": _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 				_try_move(Vector2i(-1, -1))
 			KEY_E, KEY_KP_9:
 				if _throw_item != null: _throw_item = null; GameState.game_log("[color=gray]Throw cancelled.[/color]")
-				if _tool_item != null: _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
+				if _tool_item != null and _tool_item.item_name != "Thief Tools": _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 				_try_move(Vector2i(1, -1))
 			KEY_Z, KEY_KP_1:
 				if _throw_item != null: _throw_item = null; GameState.game_log("[color=gray]Throw cancelled.[/color]")
-				if _tool_item != null: _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
+				if _tool_item != null and _tool_item.item_name != "Thief Tools": _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 				_try_move(Vector2i(-1, 1))
 			KEY_C, KEY_KP_3:
 				if _throw_item != null: _throw_item = null; GameState.game_log("[color=gray]Throw cancelled.[/color]")
-				if _tool_item != null: _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
+				if _tool_item != null and _tool_item.item_name != "Thief Tools": _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 				_try_move(Vector2i(1, 1))
 			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _wait_action()
 			KEY_CTRL: _handle_search_request()
@@ -728,24 +731,35 @@ func _try_move(dir: Vector2i) -> void:
 			_bump_attack(enemy, dir)
 		return
 
-	# Thief Tools primed + door bump = lock/unlock action instead of movement.
-	if _tool_item != null and _tool_item.item_name == "Thief Tools" and _dungeon_floor.has_door_at(target):
-		_tool_item = null
-		if _dungeon_floor.is_door_open(target):
-			_attempt_lock_door(target)
-		elif _dungeon_floor.is_door_locked(target):
-			if _dungeon_floor.is_door_player_locked(target):
-				TurnManager.begin_player_action()
-				_dungeon_floor.unlock_door(target)
-				_dungeon_floor.open_door(target)
-				GameState.game_log("[color=cyan]You unlock the door you set.[/color]")
-				_dungeon_floor.update_fog(grid_pos)
-				TurnManager.on_player_action_complete()
+	# Thief Tools primed + bump = interact without moving (door or revealed trap).
+	if _tool_item != null and _tool_item.item_name == "Thief Tools":
+		# Revealed trap adjacent: disarm it.
+		var adjacent_trap: Dictionary = _dungeon_floor.get_trap_at(target)
+		if not adjacent_trap.is_empty() and adjacent_trap.get("revealed", false):
+			_tool_item = null
+			_attempt_disarm(target)
+			return
+		# Door adjacent: lock/unlock/pick action.
+		if _dungeon_floor.has_door_at(target):
+			_tool_item = null
+			if _dungeon_floor.is_door_open(target):
+				_attempt_lock_door(target)
+			elif _dungeon_floor.is_door_locked(target):
+				if _dungeon_floor.is_door_player_locked(target):
+					TurnManager.begin_player_action()
+					_dungeon_floor.unlock_door(target)
+					_dungeon_floor.open_door(target)
+					GameState.game_log("[color=cyan]You unlock the door you set.[/color]")
+					_dungeon_floor.update_fog(grid_pos)
+					TurnManager.on_player_action_complete()
+				else:
+					_attempt_disarm_lock(target)
 			else:
-				_attempt_disarm_lock(target)
-		else:
-			_attempt_lock_door(target)
-		return
+				_attempt_lock_door(target)
+			return
+		# Nothing to interact with — cancel tool and move normally.
+		_tool_item = null
+		GameState.game_log("[color=gray]Nothing to interact with.[/color]")
 
 
 	if GameState.noclip:
@@ -854,6 +868,7 @@ func _activate_rage() -> void:
 	_rage_turns = 10  # baseline: 10-turn countdown
 	_rage_attacked_this_turn = false
 	GameState.is_raging = true
+	GameState.rage_turns_remaining = _rage_turns
 	if not GameState.invincible:
 		ab.uses_remaining -= 1
 	GameState.player_stats.rage_uses_remaining = ab.uses_remaining
@@ -870,6 +885,7 @@ func _end_rage() -> void:
 	_is_raging = false
 	_rage_turns = 0
 	GameState.is_raging = false
+	GameState.rage_turns_remaining = 0
 	$AnimatedSprite2D.modulate = Color(1.0, 1.0, 1.0)
 
 func _find_ability(ab_id: String) -> Ability:
@@ -960,8 +976,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var w_enh: int = weapon_bonus  # weapon.bonus_damage
 	# Use dex= key for Monk unarmed so the HUD tooltip labels it correctly.
 	var mod_key: String = "dex" if is_monk_unarmed else "str"
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
-		die, die1, die2, mod_key, attack_mod, prof, w_enh, roll, enemy.stats.armor_class,
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
+		die, die1, die2, mod_key, attack_mod, prof, w_enh, reckless_flat_bonus, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
 		1 if is_crit else 0, 1 if is_nat_one else 0]
 

@@ -553,20 +553,27 @@ var player_was_hit_this_turn: bool = false
 var reckless_rank: int:
 	get: return get_talent_rank("reckless_attack")
 
+# Synced by player.gd each turn so HUD can display remaining rage turns on the ability slot.
+var rage_turns_remaining: int = 0
+
 func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String = "") -> int:
 	if is_game_over or invincible:
 		return 0
 	var final_amount: int = amount
-	# Rage talent ranks 2/3: physical damage reduction (Bludgeoning/Piercing/Slashing only).
+	# Rage talent ranks 2+: physical damage reduction (Bludgeoning/Piercing/Slashing only).
 	# Status effects and traps pass damage_type="" — they bypass reduction intentionally.
 	var is_physical: bool = damage_type in ["Slashing", "Piercing", "Bludgeoning"]
 	var rage_rank: int = get_talent_rank("rage")
 	if is_raging and not ignore_rage and rage_rank >= 2 and is_physical:
 		var reduction: float = 0.5 if rage_rank >= 3 else 0.25
 		final_amount = int(floor(float(amount) * (1.0 - reduction)))
+	# DR can reduce damage to 0 — skip Stats.take_damage() which floors at 1.
+	if final_amount <= 0:
+		if is_physical and not ignore_rage:
+			player_was_hit_this_turn = true
+		return 0
 	var actual: int = player_stats.take_damage(final_amount)
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
-	# Track hit for rage countdown pause (rank 1: pause when hit by physical dmg)
 	if is_physical and not ignore_rage:
 		player_was_hit_this_turn = true
 	check_player_death()
