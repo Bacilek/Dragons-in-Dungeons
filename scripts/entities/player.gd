@@ -1315,7 +1315,7 @@ func _attempt_disarm(trap_pos: Vector2i) -> void:
 	var s: Stats = GameState.player_stats
 	var die: int = randi_range(1, 20)
 	var dex_mod: int = s.dex_modifier()
-	var has_prof: bool = s.save_prof_dex
+	var has_prof: bool = s.check_prof_dex
 	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
 	var total: int = die + dex_mod + prof_bonus
 	const DC: int = 10
@@ -1359,7 +1359,7 @@ func _attempt_lock_door(door_pos: Vector2i) -> void:
 	_dungeon_floor.update_fog(grid_pos)
 	TurnManager.on_player_action_complete()
 
-# Attempt to pick a dungeon-locked door with Thief Tools (DEX check, no prof for non-DEX-save classes)
+# Attempt to pick a dungeon-locked door with Thief Tools (DEX check, prof only for DEX-check-proficient classes)
 func _attempt_disarm_lock(door_pos: Vector2i) -> void:
 	var tools: Item = _find_thief_tools()
 	if tools == null:
@@ -1369,7 +1369,7 @@ func _attempt_disarm_lock(door_pos: Vector2i) -> void:
 	AudioManager.play("lockpick")
 	var s: Stats = GameState.player_stats
 	var dex_mod: int = s.dex_modifier()
-	var has_prof: bool = s.save_prof_dex  # proficiency only with DEX save proficiency
+	var has_prof: bool = s.check_prof_dex
 	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
 	var die: int = randi_range(1, 20)
 	var total: int = die + dex_mod + prof_bonus

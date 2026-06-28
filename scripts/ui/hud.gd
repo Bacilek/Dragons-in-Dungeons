@@ -1026,7 +1026,7 @@ func _fmt_save_tooltip(p: Dictionary) -> String:
 	if mod != 0:
 		lines.append("[color=lightblue]%+d[/color]  (%s mod)" % [mod, stat])
 	if prof != 0:
-		lines.append("[color=lightblue]+%d[/color]  (Proficiency, %s save)" % [prof, stat])
+		lines.append("[color=lightblue]+%d[/color]  (Proficiency, %s check)" % [prof, stat])
 	lines.append("─────────────────")
 	var result: String = "[color=green]SUCCESS[/color]" if passed else "[color=red]FAIL[/color]"
 	lines.append("= [color=yellow]%d[/color] vs DC %d  →  %s" % [total, dc, result])

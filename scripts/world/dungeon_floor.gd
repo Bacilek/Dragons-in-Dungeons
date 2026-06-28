@@ -857,28 +857,33 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 
 	var target: Node2D = entity if entity != null else _player
 
-	# DEX saving throw for player: 1d20 + DEX mod + prof (only if DEX save proficiency) vs DC
-	# Danger Sense (Barbarian Lv2): advantage on DEX saves vs traps — roll 2d20 take higher.
+	# DEX check for player: 1d20 + DEX mod + prof (only if DEX check proficiency) vs DC
+	# Danger Sense talent rank 1: advantage on DEX checks vs traps — roll 2d20 take higher.
 	if target is Player:
 		var s: Stats = GameState.player_stats
 		var dex_mod: int = s.dex_modifier()
-		var has_prof: bool = s.save_prof_dex
+		var has_prof: bool = s.check_prof_dex
 		var prof_bonus: int = s.proficiency_bonus if has_prof else 0
+		var danger_rank: int = GameState.get_talent_rank("danger_sense")
+		var has_adv: bool = danger_rank >= 1
 		var die1: int = randi_range(1, 20)
 		var die2: int = die1
-		if s.danger_sense:
+		if has_adv:
 			die2 = randi_range(1, 20)
 		var die: int = maxi(die1, die2)
+		# Danger Sense rank 2: use max(DEX mod, STR mod) for DEX/WIS/CHA checks
+		if danger_rank >= 2:
+			dex_mod = maxi(dex_mod, s.str_modifier())
 		var roll: int = die + dex_mod + prof_bonus
 		var dc: int = 10 + GameState.current_floor
-		var adv_tag: String = " [color=gray](Danger Sense)[/color]" if s.danger_sense else ""
-		var save_meta: String = "save:stat=DEX,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [
-			die, die1, die2, dex_mod, prof_bonus, roll, dc, 1 if roll >= dc else 0, 1 if s.danger_sense else 0]
+		var adv_tag: String = " [color=gray](Danger Sense)[/color]" if has_adv else ""
+		var check_meta: String = "check:stat=DEX,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [
+			die, die1, die2, dex_mod, prof_bonus, roll, dc, 1 if roll >= dc else 0, 1 if has_adv else 0]
 		if roll >= dc:
-			GameState.game_log("[color=cyan]You dodge [b]%s[/b]!%s [url=%s]%d vs DC %d[/url][/color]" % [trap["name"], adv_tag, save_meta, roll, dc])
+			GameState.game_log("[color=cyan]You dodge [b]%s[/b]!%s [url=%s]%d vs DC %d[/url][/color]" % [trap["name"], adv_tag, check_meta, roll, dc])
 			return
 		else:
-			GameState.game_log("[color=orange]%s triggered!%s [url=%s]%d vs DC %d[/url][/color]" % [trap["name"], adv_tag, save_meta, roll, dc])
+			GameState.game_log("[color=orange]%s triggered!%s [url=%s]%d vs DC %d[/url][/color]" % [trap["name"], adv_tag, check_meta, roll, dc])
 
 	if is_push:
 		AudioManager.play("trap_piston")

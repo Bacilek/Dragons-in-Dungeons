@@ -3,16 +3,15 @@ extends Resource
 
 enum CharacterClass { BARBARIAN, RANGER, WIZARD, MONK }
 
-# --- Save proficiency flags ---
-# TODO: When spell saving throws are implemented, check these for proficiency bonuses.
+# Check proficiency flags — which ability checks the class rolls with proficiency bonus.
 # Barbarian: STR + CON. Ranger: STR + DEX. Wizard: INT + WIS. Monk: STR + DEX.
 # Monk also has proficiency with simple weapons + martial weapons with light property (TODO: enforce).
-var save_prof_str: bool = false
-var save_prof_con: bool = false
-var save_prof_dex: bool = false
-var save_prof_int: bool = false
-var save_prof_wis: bool = false
-var save_prof_cha: bool = false
+var check_prof_str: bool = false
+var check_prof_con: bool = false
+var check_prof_dex: bool = false
+var check_prof_int: bool = false
+var check_prof_wis: bool = false
+var check_prof_cha: bool = false
 
 @export var strength: int = 10
 @export var dexterity: int = 10
@@ -151,28 +150,28 @@ func apply_class_defaults() -> void:
 			max_hp = 12 + modifier(constitution)   # Barbarian HD d12
 			rage_uses_remaining = 2
 			rage_uses_max = 2
-			save_prof_str = true
-			save_prof_con = true
+			check_prof_str = true
+			check_prof_con = true
 		CharacterClass.RANGER:
 			dexterity = 16; wisdom = 14; constitution = 12
 			strength = 10; intelligence = 10; charisma = 8
 			max_hp = 10 + modifier(constitution)   # Ranger HD d10
-			save_prof_str = true
-			save_prof_dex = true
+			check_prof_str = true
+			check_prof_dex = true
 		CharacterClass.WIZARD:
 			intelligence = 16; dexterity = 14; wisdom = 12
 			constitution = 10; strength = 8; charisma = 10
 			max_hp = 6 + modifier(constitution)    # Wizard HD d6
-			save_prof_int = true
-			save_prof_wis = true
+			check_prof_int = true
+			check_prof_wis = true
 		CharacterClass.MONK:
 			dexterity = 16; wisdom = 14; constitution = 12
 			strength = 10; intelligence = 10; charisma = 8
 			max_hp = 8 + modifier(constitution)    # Monk HD d8
 			rage_uses_remaining = 0
 			rage_uses_max = 0
-			save_prof_str = true
-			save_prof_dex = true
+			check_prof_str = true
+			check_prof_dex = true
 	current_hp = max_hp
 	# Barbarian and Monk start unarmored — apply unarmored defense formulas.
 	recalc_ac(false)
