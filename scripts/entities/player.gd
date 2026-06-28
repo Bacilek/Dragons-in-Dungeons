@@ -1042,12 +1042,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var dmg_type: String = weapon_item.damage_type if weapon_item != null and not weapon_item.damage_type.is_empty() else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	var god_hp: String = " [color=gray][%d/%d HP][/color]" % [enemy.stats.current_hp, enemy.stats.max_hp] if GameState.god_mode and not enemy.stats.is_dead() else ""
-	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, god_hp])
-	else:
-		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, god_hp])
-
-	# Frenzy: bonus damage on first STR attack while raging (Tier 2 Berserker)
+	# Frenzy: compute BEFORE logging so the bonus can be appended to the same line.
+	var frenzy_tag: String = ""
 	var frenzy_rank: int = GameState.get_talent_rank("frenzy")
 	if frenzy_rank >= 1 and _is_raging and is_str_weapon and not _frenzy_triggered_this_turn and not enemy.stats.is_dead():
 		_frenzy_triggered_this_turn = true
@@ -1058,7 +1054,12 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		enemy.update_hp_bar()
 		if _dungeon_floor != null:
 			_dungeon_floor.show_damage(enemy.position, frenzy_bonus, false)
-		GameState.game_log("[color=red]Frenzy! +%d (1d%d × %d rage).[/color]" % [frenzy_bonus, frenzy_sides, stats.rage_bonus_damage])
+		frenzy_tag = " [color=red](+%d Frenzy)[/color]" % frenzy_bonus
+
+	if is_crit:
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, frenzy_tag, god_hp])
+	else:
+		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, frenzy_tag, god_hp])
 
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)

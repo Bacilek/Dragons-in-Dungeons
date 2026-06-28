@@ -515,7 +515,7 @@ func use_item(item: Item) -> void:
 				game_log("[color=green]You eat [b]%s[/b]. Not so hungry anymore.[/color]" % item.item_name)
 			consume_one(item)
 		Item.Type.WEAPON, Item.Type.ARMOR:
-			equip(item, "", true)  # intentional equip from bag/quickbar costs 1 turn
+			equip(item, "", false)  # equipping from bag/quickbar is a free action
 		Item.Type.TOOL:
 			player_tool_primed.emit(item)
 
