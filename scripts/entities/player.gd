@@ -1348,21 +1348,31 @@ func _attempt_disarm(trap_pos: Vector2i) -> void:
 	TurnManager.begin_player_action()
 	AudioManager.play("lockpick")
 	var s: Stats = GameState.player_stats
-	var die: int = randi_range(1, 20)
+	var danger_rank: int = GameState.get_talent_rank("danger_sense")
 	var dex_mod: int = s.dex_modifier()
+	var effective_stat: String = "DEX"
+	if danger_rank >= 2 and s.str_modifier() > dex_mod:
+		dex_mod = s.str_modifier()
+		effective_stat = "STR"
 	var has_prof: bool = s.check_prof_dex
 	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
+	var die1: int = randi_range(1, 20)
+	var die2: int = die1
+	if danger_rank >= 1:
+		die2 = randi_range(1, 20)
+	var die: int = maxi(die1, die2)
 	var total: int = die + dex_mod + prof_bonus
 	const DC: int = 10
 	var trap: Dictionary = _dungeon_floor.get_trap_at(trap_pos)
 	var trap_name: String = trap.get("name", "trap")
-	var check_meta: String = "check:stat=DEX,die=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d" % [die, dex_mod, prof_bonus, total, DC, 1 if total >= DC else 0]
+	var adv_tag: String = " [color=gray](Danger Sense)[/color]" if danger_rank >= 1 else ""
+	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, DC, 1 if total >= DC else 0, 1 if danger_rank >= 1 else 0]
 
 	if total >= DC:
-		GameState.game_log("[color=green]Disarmed [b]%s[/b]! [url=%s]%d vs DC %d[/url][/color]" % [trap_name, check_meta, total, DC])
+		GameState.game_log("[color=green]Disarmed [b]%s[/b]!%s [url=%s]%d vs DC %d[/url][/color]" % [trap_name, adv_tag, check_meta, total, DC])
 		_dungeon_floor.disarm_trap(trap_pos)
 	else:
-		GameState.game_log("[color=red]Failed to disarm [b]%s[/b]! [url=%s]%d vs DC %d[/url]%s[/color]" % [trap_name, check_meta, total, DC, " — Thief Tools lost!" if not GameState.invincible else ""])
+		GameState.game_log("[color=red]Failed to disarm [b]%s[/b]!%s [url=%s]%d vs DC %d[/url]%s[/color]" % [trap_name, adv_tag, check_meta, total, DC, " — Thief Tools lost!" if not GameState.invincible else ""])
 		if not GameState.invincible:
 			GameState.consume_one(tools)
 
@@ -1403,21 +1413,31 @@ func _attempt_disarm_lock(door_pos: Vector2i) -> void:
 	TurnManager.begin_player_action()
 	AudioManager.play("lockpick")
 	var s: Stats = GameState.player_stats
+	var danger_rank: int = GameState.get_talent_rank("danger_sense")
 	var dex_mod: int = s.dex_modifier()
+	var effective_stat: String = "DEX"
+	if danger_rank >= 2 and s.str_modifier() > dex_mod:
+		dex_mod = s.str_modifier()
+		effective_stat = "STR"
 	var has_prof: bool = s.check_prof_dex
 	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
-	var die: int = randi_range(1, 20)
+	var die1: int = randi_range(1, 20)
+	var die2: int = die1
+	if danger_rank >= 1:
+		die2 = randi_range(1, 20)
+	var die: int = maxi(die1, die2)
 	var total: int = die + dex_mod + prof_bonus
 	var dc: int = 10 + GameState.current_floor / 3
-	var check_meta: String = "check:stat=DEX,die=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d" % [die, dex_mod, prof_bonus, total, dc, 1 if total >= dc else 0]
+	var adv_tag: String = " [color=gray](Danger Sense)[/color]" if danger_rank >= 1 else ""
+	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, dc, 1 if total >= dc else 0, 1 if danger_rank >= 1 else 0]
 	var door_world: Vector2 = Vector2(door_pos * TILE_SIZE) + Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
 	if total >= dc:
 		_dungeon_floor.unlock_door(door_pos)
 		_dungeon_floor.open_door(door_pos)
-		GameState.game_log("[color=green]You pick the lock! [url=%s]%d vs DC %d[/url][/color]" % [check_meta, total, dc])
+		GameState.game_log("[color=green]You pick the lock!%s [url=%s]%d vs DC %d[/url][/color]" % [adv_tag, check_meta, total, dc])
 		_show_float_text(door_world, "UNLOCKED!", Color(0.4, 1.0, 0.5))
 	else:
-		GameState.game_log("[color=red]Failed to pick the lock [url=%s]%d vs DC %d[/url]%s[/color]" % [check_meta, total, dc, " — Thief Tools lost!" if not GameState.invincible else ""])
+		GameState.game_log("[color=red]Failed to pick the lock%s [url=%s]%d vs DC %d[/url]%s[/color]" % [adv_tag, check_meta, total, dc, " — Thief Tools lost!" if not GameState.invincible else ""])
 		if not GameState.invincible:
 			GameState.consume_one(tools)
 		_show_float_text(door_world, "FAIL!", Color(1.0, 0.3, 0.3))

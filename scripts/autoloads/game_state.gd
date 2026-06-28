@@ -636,7 +636,7 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 	match id:
 		"rage":
 			player_stats.rage_uses_max += 1
-			player_stats.rage_uses_remaining = player_stats.rage_uses_max
+			player_stats.rage_uses_remaining += 1  # +1 current, not full refill
 			_sync_ability_uses()
 			var rage_ab: Ability = _find_ability_by_id("rage")
 			if rage_ab != null:
