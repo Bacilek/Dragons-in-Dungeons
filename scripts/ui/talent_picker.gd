@@ -1,13 +1,19 @@
 extends CanvasLayer
 
-const PANEL_W: float = 580.0
-const ROW_H: float = 90.0
-const ROW_PAD: float = 12.0
+const PANEL_W: float = 500.0
+const ICON_SIZE: float = 36.0
+const ROW_H: float = 50.0
+const RANK_ROW_H: float = 46.0
+const TIER_LABEL_H: float = 28.0
 
-var _invest_btns: Array[Button] = []
-var _rank_labels: Array[Label] = []
-var _next_desc_labels: Array[RichTextLabel] = []
+# Roman numerals for rank labels
+const ROMAN: Array[String] = ["I", "II", "III", "IV", "V"]
+
+var _expanded_id: String = ""
+var _talent_row_nodes: Dictionary = {}  # talent_id -> {btn, rank_panel, invest_btn, pip_lbl}
 var _points_label: Label
+var _panel: Panel
+var _vbox: VBoxContainer
 
 func _ready() -> void:
 	layer = 25
@@ -15,160 +21,384 @@ func _ready() -> void:
 	_build_ui()
 
 func _build_ui() -> void:
-	var talents: Array[Talent] = _get_class_talents()
-	var n: int = talents.size()
-	var header_h: float = 80.0
-	var footer_h: float = 64.0
-	var panel_h: float = header_h + n * (ROW_H + ROW_PAD) + footer_h
-
 	var dim := ColorRect.new()
-	dim.color = Color(0.0, 0.0, 0.0, 0.55)
+	dim.color = Color(0.0, 0.0, 0.0, 0.62)
 	dim.anchor_right = 1.0
 	dim.anchor_bottom = 1.0
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(dim)
 
-	var panel := Panel.new()
-	panel.size = Vector2(PANEL_W, panel_h)
+	_panel = Panel.new()
+	_panel.size = Vector2(PANEL_W, 600.0)
 	var vp := get_viewport().get_visible_rect().size
-	panel.position = (vp - panel.size) * 0.5
+	_panel.position = Vector2((vp.x - PANEL_W) * 0.5, (vp.y - 600.0) * 0.5)
 	var sbox := StyleBoxFlat.new()
 	sbox.bg_color = Color(0.07, 0.08, 0.13, 0.97)
 	sbox.set_border_width_all(2)
 	sbox.border_color = Color(0.78, 0.55, 0.22)
 	sbox.set_corner_radius_all(6)
-	panel.add_theme_stylebox_override("panel", sbox)
-	add_child(panel)
+	_panel.add_theme_stylebox_override("panel", sbox)
+	add_child(_panel)
 
-	# Title
+	# ── Header ──
 	var title := Label.new()
-	title.text = "Level Up! Choose a Talent"
+	title.text = "TALENTS"
 	title.add_theme_font_size_override("font_size", 20)
 	title.add_theme_color_override("font_color", Color(1.0, 0.82, 0.22))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size = Vector2(PANEL_W, 34.0)
-	title.position = Vector2(0.0, 12.0)
-	panel.add_child(title)
+	title.size = Vector2(PANEL_W, 30.0)
+	title.position = Vector2(0.0, 10.0)
+	_panel.add_child(title)
 
 	_points_label = Label.new()
-	_points_label.add_theme_font_size_override("font_size", 14)
-	_points_label.add_theme_color_override("font_color", Color(0.6, 0.7, 0.6))
+	_points_label.add_theme_font_size_override("font_size", 13)
+	_points_label.add_theme_color_override("font_color", Color(0.65, 0.75, 0.65))
 	_points_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_points_label.size = Vector2(PANEL_W, 22.0)
-	_points_label.position = Vector2(0.0, 48.0)
-	panel.add_child(_points_label)
+	_points_label.size = Vector2(PANEL_W, 20.0)
+	_points_label.position = Vector2(0.0, 42.0)
+	_panel.add_child(_points_label)
 
-	var sep := HSeparator.new()
-	sep.position = Vector2(14.0, 74.0)
-	sep.size = Vector2(PANEL_W - 28.0, 2.0)
-	panel.add_child(sep)
+	var sep_top := _make_hsep(64.0)
+	_panel.add_child(sep_top)
 
-	# Talent rows
-	for i: int in n:
-		var t: Talent = talents[i]
-		var row_y: float = header_h + i * (ROW_H + ROW_PAD)
-		_build_talent_row(panel, t, i, row_y)
+	# ── Scrollable content ──
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(4.0, 70.0)
+	scroll.size = Vector2(PANEL_W - 8.0, 480.0)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_panel.add_child(scroll)
 
-	# Footer
-	var sep2 := HSeparator.new()
-	sep2.position = Vector2(14.0, header_h + n * (ROW_H + ROW_PAD))
-	sep2.size = Vector2(PANEL_W - 28.0, 2.0)
-	panel.add_child(sep2)
+	_vbox = VBoxContainer.new()
+	_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_vbox.add_theme_constant_override("separation", 0)
+	scroll.add_child(_vbox)
+
+	# Tier 1 — active
+	_add_tier_header("TIER 1  ·  Levels 1–5", true)
+	for t: Talent in GameState._class_talents:
+		_add_talent_row(t)
+
+	# Tiers 2–4 — locked placeholders
+	var locked_tiers := [
+		["TIER 2  ·  Levels 6–10", "Unlocks at level 6"],
+		["TIER 3  ·  Levels 11–15", "Unlocks at level 11"],
+		["TIER 4  ·  Levels 16–20", "Unlocks at level 16"],
+	]
+	for entry: Array in locked_tiers:
+		_add_tier_header(entry[0], false)
+		_add_locked_placeholder(entry[1])
+
+	# ── Footer ──
+	var sep_bot := _make_hsep(554.0)
+	_panel.add_child(sep_bot)
 
 	var skip_btn := Button.new()
-	skip_btn.text = "Skip  [Esc]"
-	skip_btn.size = Vector2(180.0, 44.0)
-	skip_btn.position = Vector2((PANEL_W - 180.0) * 0.5, header_h + n * (ROW_H + ROW_PAD) + 10.0)
-	skip_btn.add_theme_font_size_override("font_size", 15)
+	skip_btn.text = "Close  [Esc]"
+	skip_btn.size = Vector2(160.0, 36.0)
+	skip_btn.position = Vector2((PANEL_W - 160.0) * 0.5, 562.0)
+	skip_btn.add_theme_font_size_override("font_size", 14)
 	skip_btn.focus_mode = Control.FOCUS_NONE
 	skip_btn.pressed.connect(_close)
-	_style_btn(skip_btn)
-	panel.add_child(skip_btn)
+	_style_btn(skip_btn, Color(0.14, 0.14, 0.22), Color(0.38, 0.38, 0.55))
+	_panel.add_child(skip_btn)
 
-	_refresh()
+	_refresh_all()
 
-func _build_talent_row(parent: Control, t: Talent, idx: int, row_y: float) -> void:
-	# Icon
-	var icon := TextureRect.new()
+# ── Tier header ──────────────────────────────────────────────────────────────
+
+func _add_tier_header(text: String, active: bool) -> void:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 12)
+	var col: Color = Color(0.78, 0.55, 0.22) if active else Color(0.35, 0.35, 0.35)
+	lbl.add_theme_color_override("font_color", col)
+	lbl.custom_minimum_size = Vector2(PANEL_W - 20.0, TIER_LABEL_H)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var hb := HBoxContainer.new()
+	hb.custom_minimum_size = Vector2(PANEL_W - 20.0, TIER_LABEL_H + 4.0)
+	hb.add_theme_constant_override("separation", 6)
+	var left_line := ColorRect.new()
+	left_line.color = col
+	left_line.custom_minimum_size = Vector2(3.0, 12.0)
+	left_line.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hb.add_child(left_line)
+	hb.add_child(lbl)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_top", 4)
+	margin.add_child(hb)
+	_vbox.add_child(margin)
+
+func _add_locked_placeholder(reason: String) -> void:
+	var lbl := Label.new()
+	lbl.text = reason
+	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_color_override("font_color", Color(0.28, 0.28, 0.28))
+	lbl.custom_minimum_size = Vector2(PANEL_W - 36.0, 28.0)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 20)
+	margin.add_theme_constant_override("margin_bottom", 6)
+	margin.add_child(lbl)
+	_vbox.add_child(margin)
+
+# ── Talent row ───────────────────────────────────────────────────────────────
+
+func _add_talent_row(t: Talent) -> void:
+	var container := VBoxContainer.new()
+	container.add_theme_constant_override("separation", 0)
+	container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	# ── Collapsed header row (clickable) ──
+	var row_btn := Button.new()
+	row_btn.custom_minimum_size = Vector2(PANEL_W - 20.0, ROW_H)
+	row_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row_btn.focus_mode = Control.FOCUS_NONE
+	row_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_style_talent_row_btn(row_btn)
+
+	# Icon inside row
+	var icon_tex := TextureRect.new()
 	if t.icon_path != "":
 		var tex := load(t.icon_path) as Texture2D
 		if tex != null:
-			icon.texture = tex
-	icon.size = Vector2(48.0, 48.0)
-	icon.position = Vector2(14.0, row_y + (ROW_H - 48.0) * 0.5)
-	icon.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
-	parent.add_child(icon)
+			icon_tex.texture = tex
+	icon_tex.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)
+	icon_tex.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	icon_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 
-	# Name + rank pips
 	var name_lbl := Label.new()
 	name_lbl.text = t.talent_name
-	name_lbl.add_theme_font_size_override("font_size", 16)
+	name_lbl.add_theme_font_size_override("font_size", 14)
 	name_lbl.add_theme_color_override("font_color", Color(0.9, 0.85, 0.7))
-	name_lbl.position = Vector2(72.0, row_y + 4.0)
-	name_lbl.size = Vector2(250.0, 24.0)
-	parent.add_child(name_lbl)
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 
-	# Rank pips label (e.g. "● ● ○" for rank 2/3)
-	var rank_lbl := Label.new()
-	rank_lbl.add_theme_font_size_override("font_size", 14)
-	rank_lbl.add_theme_color_override("font_color", Color(0.6, 0.8, 0.6))
-	rank_lbl.position = Vector2(72.0, row_y + 30.0)
-	rank_lbl.size = Vector2(200.0, 22.0)
-	parent.add_child(rank_lbl)
-	_rank_labels.append(rank_lbl)
+	var pip_lbl := Label.new()
+	pip_lbl.add_theme_font_size_override("font_size", 13)
+	pip_lbl.add_theme_color_override("font_color", Color(0.6, 0.85, 0.6))
+	pip_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	pip_lbl.custom_minimum_size = Vector2(70.0, 0.0)
+	pip_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
-	# Next rank description (what you'd get)
-	var desc := RichTextLabel.new()
-	desc.bbcode_enabled = true
-	desc.fit_content = true
-	desc.scroll_active = false
-	desc.add_theme_font_size_override("normal_font_size", 12)
-	desc.add_theme_color_override("default_color", Color(0.55, 0.65, 0.55))
-	desc.size = Vector2(270.0, ROW_H - 8.0)
-	desc.position = Vector2(72.0, row_y + 54.0)
-	parent.add_child(desc)
-	_next_desc_labels.append(desc)
+	var arrow_lbl := Label.new()
+	arrow_lbl.text = "▶"
+	arrow_lbl.add_theme_font_size_override("font_size", 10)
+	arrow_lbl.add_theme_color_override("font_color", Color(0.45, 0.45, 0.45))
+	arrow_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	arrow_lbl.custom_minimum_size = Vector2(18.0, 0.0)
 
-	# Invest button
-	var btn := Button.new()
-	btn.text = "Invest"
-	btn.size = Vector2(110.0, 48.0)
-	btn.position = Vector2(PANEL_W - 130.0, row_y + (ROW_H - 48.0) * 0.5)
-	btn.add_theme_font_size_override("font_size", 15)
-	btn.focus_mode = Control.FOCUS_NONE
+	var row_hb := HBoxContainer.new()
+	row_hb.add_theme_constant_override("separation", 8)
+	row_hb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row_hb.add_child(icon_tex)
+	row_hb.add_child(name_lbl)
+	row_hb.add_child(pip_lbl)
+	row_hb.add_child(arrow_lbl)
+	row_btn.add_child(row_hb)
+	row_hb.position = Vector2(8.0, 0.0)
+	row_hb.size = Vector2(PANEL_W - 36.0, ROW_H)
+
+	# ── Expanded rank detail panel (hidden by default) ──
+	var rank_panel := VBoxContainer.new()
+	rank_panel.visible = false
+	rank_panel.add_theme_constant_override("separation", 2)
+	rank_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	# Rank rows
+	for r: int in t.max_rank:
+		var rank_num: int = r + 1
+		var rank_row := _make_rank_row(t, rank_num)
+		rank_panel.add_child(rank_row)
+
+	# Invest button row
+	var invest_row := HBoxContainer.new()
+	invest_row.add_theme_constant_override("separation", 0)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var invest_btn := Button.new()
+	invest_btn.text = "Invest Point"
+	invest_btn.custom_minimum_size = Vector2(140.0, 32.0)
+	invest_btn.add_theme_font_size_override("font_size", 13)
+	invest_btn.focus_mode = Control.FOCUS_NONE
+	_style_btn(invest_btn, Color(0.10, 0.22, 0.10), Color(0.28, 0.65, 0.28))
+	var disabled_sbox := StyleBoxFlat.new()
+	disabled_sbox.bg_color = Color(0.10, 0.10, 0.10, 0.5)
+	disabled_sbox.set_border_width_all(1)
+	disabled_sbox.border_color = Color(0.22, 0.22, 0.22)
+	invest_btn.add_theme_stylebox_override("disabled", disabled_sbox)
+	var tid: String = t.talent_id
+	invest_btn.pressed.connect(func() -> void: _on_invest(tid))
+	invest_row.add_child(spacer)
+	invest_row.add_child(invest_btn)
+	var invest_margin := MarginContainer.new()
+	invest_margin.add_theme_constant_override("margin_right", 12)
+	invest_margin.add_theme_constant_override("margin_top", 4)
+	invest_margin.add_theme_constant_override("margin_bottom", 6)
+	invest_margin.add_child(invest_row)
+	rank_panel.add_child(invest_margin)
+
+	container.add_child(row_btn)
+	container.add_child(rank_panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 2)
+	margin.add_child(container)
+	_vbox.add_child(margin)
+
+	_talent_row_nodes[t.talent_id] = {
+		"btn": row_btn,
+		"rank_panel": rank_panel,
+		"invest_btn": invest_btn,
+		"pip_lbl": pip_lbl,
+		"arrow_lbl": arrow_lbl,
+	}
+
 	var talent_id: String = t.talent_id
-	btn.pressed.connect(func() -> void: _on_invest(talent_id))
-	_style_invest_btn(btn)
-	parent.add_child(btn)
-	_invest_btns.append(btn)
+	row_btn.pressed.connect(func() -> void: _toggle_expand(talent_id))
 
-func _refresh() -> void:
-	_points_label.text = "Talent points: %d remaining" % GameState.talent_points_available
-	var talents: Array[Talent] = _get_class_talents()
-	for i: int in talents.size():
-		var t: Talent = talents[i]
-		var current: int = GameState.get_talent_rank(t.talent_id)
-		# Rank pips
-		var pip_str: String = ""
-		for r: int in t.max_rank:
-			pip_str += ("●" if r < current else "○")
-			if r < t.max_rank - 1:
-				pip_str += " "
-		_rank_labels[i].text = "Rank %d / %d  %s" % [current, t.max_rank, pip_str]
-		# Next rank description
-		if current < t.max_rank:
-			var next_rank_data: String = t.rank_description(current + 1)
-			_next_desc_labels[i].text = "[color=gray]Next:[/color] " + next_rank_data
-		else:
-			_next_desc_labels[i].text = "[color=gray]Maxed out.[/color]"
-		# Invest button enabled only if can invest
-		_invest_btns[i].disabled = not GameState.can_invest_talent(t.talent_id)
+func _make_rank_row(t: Talent, rank_num: int) -> Control:
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 2)
+	margin.add_theme_constant_override("margin_bottom", 2)
+
+	var bg := PanelContainer.new()
+	bg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 8)
+	hb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var roman_lbl := Label.new()
+	roman_lbl.text = ROMAN[rank_num - 1]
+	roman_lbl.add_theme_font_size_override("font_size", 13)
+	roman_lbl.custom_minimum_size = Vector2(22.0, 0.0)
+	roman_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	roman_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+
+	var desc_lbl := RichTextLabel.new()
+	desc_lbl.bbcode_enabled = true
+	desc_lbl.fit_content = true
+	desc_lbl.scroll_active = false
+	desc_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	desc_lbl.add_theme_font_size_override("normal_font_size", 12)
+	desc_lbl.text = t.rank_description(rank_num)
+
+	hb.add_child(roman_lbl)
+	hb.add_child(desc_lbl)
+
+	var inner_margin := MarginContainer.new()
+	inner_margin.add_theme_constant_override("margin_left", 8)
+	inner_margin.add_theme_constant_override("margin_right", 8)
+	inner_margin.add_theme_constant_override("margin_top", 5)
+	inner_margin.add_theme_constant_override("margin_bottom", 5)
+	inner_margin.add_child(hb)
+	bg.add_child(inner_margin)
+
+	# Store references so _refresh can tint them
+	bg.set_meta("roman_lbl", roman_lbl)
+	bg.set_meta("desc_lbl", desc_lbl)
+	bg.set_meta("rank_num", rank_num)
+	bg.set_meta("talent_id", t.talent_id)
+
+	margin.add_child(bg)
+	return margin
+
+# ── Toggle expand/collapse ───────────────────────────────────────────────────
+
+func _toggle_expand(talent_id: String) -> void:
+	if _expanded_id == talent_id:
+		_set_expanded("")
+	else:
+		_set_expanded(talent_id)
+
+func _set_expanded(talent_id: String) -> void:
+	_expanded_id = talent_id
+	for tid: String in _talent_row_nodes:
+		var nodes: Dictionary = _talent_row_nodes[tid]
+		var is_open: bool = tid == talent_id
+		nodes["rank_panel"].visible = is_open
+		nodes["arrow_lbl"].text = "▼" if is_open else "▶"
+	_refresh_all()
+
+# ── Refresh visuals ──────────────────────────────────────────────────────────
+
+func _refresh_all() -> void:
+	_points_label.text = "Points available: %d" % GameState.talent_points_available
+
+	for tid: String in _talent_row_nodes:
+		var nodes: Dictionary = _talent_row_nodes[tid]
+		var current: int = GameState.get_talent_rank(tid)
+		var talent: Talent = _find_talent(tid)
+		if talent == null:
+			continue
+
+		# Pip string e.g. "●●○"
+		var pips: String = ""
+		for r: int in talent.max_rank:
+			pips += "●" if r < current else "○"
+		nodes["pip_lbl"].text = pips
+
+		# Invest button
+		nodes["invest_btn"].disabled = not GameState.can_invest_talent(tid)
+
+		# Tint each rank row
+		var rank_panel: VBoxContainer = nodes["rank_panel"]
+		for child: Node in rank_panel.get_children():
+			_tint_rank_row(child, current)
+
+func _tint_rank_row(node: Node, current_rank: int) -> void:
+	# Walk into MarginContainer → PanelContainer
+	var bg: PanelContainer = null
+	if node is MarginContainer and node.get_child_count() > 0:
+		bg = node.get_child(0) as PanelContainer
+	if bg == null:
+		return
+	if not bg.has_meta("rank_num"):
+		return
+	var rank_num: int = bg.get_meta("rank_num")
+	var roman_lbl: Label = bg.get_meta("roman_lbl")
+	var desc_lbl: RichTextLabel = bg.get_meta("desc_lbl")
+
+	# Style the background
+	var sbox := StyleBoxFlat.new()
+	if rank_num == current_rank:
+		# Current rank — gold highlight
+		sbox.bg_color = Color(0.20, 0.16, 0.04, 1.0)
+		sbox.set_border_width_all(1)
+		sbox.border_color = Color(0.78, 0.55, 0.22)
+		roman_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.25))
+		desc_lbl.add_theme_color_override("default_color", Color(1.0, 0.90, 0.45))
+	elif rank_num < current_rank:
+		# Already invested (below current)
+		sbox.bg_color = Color(0.08, 0.12, 0.08, 1.0)
+		sbox.set_border_width_all(1)
+		sbox.border_color = Color(0.22, 0.38, 0.22)
+		roman_lbl.add_theme_color_override("font_color", Color(0.45, 0.65, 0.45))
+		desc_lbl.add_theme_color_override("default_color", Color(0.45, 0.65, 0.45))
+	else:
+		# Not yet reached
+		sbox.bg_color = Color(0.09, 0.09, 0.14, 1.0)
+		sbox.set_border_width_all(1)
+		sbox.border_color = Color(0.22, 0.22, 0.30)
+		roman_lbl.add_theme_color_override("font_color", Color(0.38, 0.38, 0.48))
+		desc_lbl.add_theme_color_override("default_color", Color(0.38, 0.38, 0.48))
+	bg.add_theme_stylebox_override("panel", sbox)
+
+# ── Invest ───────────────────────────────────────────────────────────────────
 
 func _on_invest(talent_id: String) -> void:
 	if not GameState.can_invest_talent(talent_id):
 		return
 	GameState.invest_talent(talent_id)
-	_refresh()
+	_refresh_all()
 	if GameState.talent_points_available <= 0:
 		_close()
 
@@ -176,38 +406,43 @@ func _close() -> void:
 	GameState.talent_picker_open = false
 	queue_free()
 
-func _get_class_talents() -> Array[Talent]:
-	return GameState._class_talents
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
-func _style_btn(btn: Button) -> void:
+func _find_talent(tid: String) -> Talent:
+	for t: Talent in GameState._class_talents:
+		if t.talent_id == tid:
+			return t
+	return null
+
+func _make_hsep(y: float) -> HSeparator:
+	var sep := HSeparator.new()
+	sep.position = Vector2(10.0, y)
+	sep.size = Vector2(PANEL_W - 20.0, 2.0)
+	return sep
+
+func _style_talent_row_btn(btn: Button) -> void:
 	var normal := StyleBoxFlat.new()
-	normal.bg_color = Color(0.14, 0.14, 0.22, 1.0)
-	normal.set_border_width_all(1)
-	normal.border_color = Color(0.38, 0.38, 0.55)
-	normal.set_corner_radius_all(4)
+	normal.bg_color = Color(0.10, 0.11, 0.17, 1.0)
+	normal.set_border_width_all(0)
 	btn.add_theme_stylebox_override("normal", normal)
 	var hover := StyleBoxFlat.new()
-	hover.bg_color = Color(0.24, 0.24, 0.38, 1.0)
-	hover.set_corner_radius_all(4)
+	hover.bg_color = Color(0.17, 0.18, 0.26, 1.0)
 	btn.add_theme_stylebox_override("hover", hover)
+	var pressed_sbox := StyleBoxFlat.new()
+	pressed_sbox.bg_color = Color(0.13, 0.14, 0.20, 1.0)
+	btn.add_theme_stylebox_override("pressed", pressed_sbox)
 
-func _style_invest_btn(btn: Button) -> void:
+func _style_btn(btn: Button, bg: Color, border: Color) -> void:
 	var normal := StyleBoxFlat.new()
-	normal.bg_color = Color(0.12, 0.22, 0.12, 1.0)
+	normal.bg_color = bg
 	normal.set_border_width_all(1)
-	normal.border_color = Color(0.28, 0.65, 0.28)
-	normal.set_corner_radius_all(4)
+	normal.border_color = border
+	normal.set_corner_radius_all(3)
 	btn.add_theme_stylebox_override("normal", normal)
 	var hover := StyleBoxFlat.new()
-	hover.bg_color = Color(0.18, 0.36, 0.18, 1.0)
-	hover.set_corner_radius_all(4)
+	hover.bg_color = bg.lightened(0.12)
+	hover.set_corner_radius_all(3)
 	btn.add_theme_stylebox_override("hover", hover)
-	var disabled := StyleBoxFlat.new()
-	disabled.bg_color = Color(0.12, 0.12, 0.12, 0.5)
-	disabled.set_border_width_all(1)
-	disabled.border_color = Color(0.25, 0.25, 0.25)
-	disabled.set_corner_radius_all(4)
-	btn.add_theme_stylebox_override("disabled", disabled)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey):
