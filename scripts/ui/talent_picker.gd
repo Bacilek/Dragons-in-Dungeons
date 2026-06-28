@@ -341,7 +341,8 @@ func _set_expanded(talent_id: String) -> void:
 # ── Refresh visuals ──────────────────────────────────────────────────────────
 
 func _refresh_all() -> void:
-	_points_label.text = "Points available: %d" % GameState.talent_points_available
+	_points_label.text = "Tier 1: %d pt(s)   ·   Tier 2: %d pt(s)" % [
+		GameState.tier1_talent_points, GameState.tier2_talent_points]
 
 	for tid: String in _talent_row_nodes:
 		var nodes: Dictionary = _talent_row_nodes[tid]

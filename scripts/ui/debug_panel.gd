@@ -1,13 +1,15 @@
 extends CanvasLayer
 
-const PANEL_W:   int = 280
-const PANEL_H:   int = 220
-const FLOOR_SW:  int = 234
-const FLOOR_SH:  int = 96
-const ITEMS_SW:  int = 390
-const ITEMS_SH:  int = 370
-const SPAWN_SW:  int = 320
-const SPAWN_SH:  int = 380
+const PANEL_W:    int = 280
+const PANEL_H:    int = 250
+const FLOOR_SW:   int = 234
+const FLOOR_SH:   int = 96
+const ITEMS_SW:   int = 390
+const ITEMS_SH:   int = 370
+const SPAWN_SW:   int = 320
+const SPAWN_SH:   int = 380
+const TALENT_SW:  int = 310
+const TALENT_SH:  int = 380
 
 const WEAPONS_PATH := "res://sprites/weapons/"
 const ITEMS_PATH   := "res://sprites/items/"
@@ -38,6 +40,9 @@ var _main_panel:    Panel
 var _floor_sub:     Panel
 var _items_sub:     Panel
 var _spawn_sub:     Panel
+var _talent_sub:    Panel
+var _talent_vbox:   VBoxContainer
+var _talent_rank_labels: Dictionary = {}   # talent_id -> Label
 var _god_check:     CheckBox
 
 func _ready() -> void:
@@ -46,16 +51,18 @@ func _ready() -> void:
 	_build_floor_sub()
 	_build_items_sub()
 	_build_spawn_sub()
+	_build_talent_sub()
 	call_deferred("_reposition")
 
 # ── Positioning ───────────────────────────────────────────────────────────────
 
 func _reposition() -> void:
 	var vp_w: float = get_viewport().get_visible_rect().size.x
-	_main_panel.position = Vector2(vp_w - PANEL_W - 4.0, 4.0)
-	_floor_sub.position  = Vector2(vp_w - PANEL_W - FLOOR_SW - 8.0, 4.0)
-	_items_sub.position  = Vector2(vp_w - PANEL_W - ITEMS_SW - 8.0, 4.0)
-	_spawn_sub.position  = Vector2(vp_w - PANEL_W - SPAWN_SW - 8.0, 4.0)
+	_main_panel.position  = Vector2(vp_w - PANEL_W - 4.0, 4.0)
+	_floor_sub.position   = Vector2(vp_w - PANEL_W - FLOOR_SW - 8.0, 4.0)
+	_items_sub.position   = Vector2(vp_w - PANEL_W - ITEMS_SW - 8.0, 4.0)
+	_spawn_sub.position   = Vector2(vp_w - PANEL_W - SPAWN_SW - 8.0, 4.0)
+	_talent_sub.position  = Vector2(vp_w - PANEL_W - TALENT_SW - 8.0, 4.0)
 
 # ── Panel builders ────────────────────────────────────────────────────────────
 
@@ -114,10 +121,10 @@ func _build_main_panel() -> void:
 	lvlup_btn.pressed.connect(_on_level_up_pressed)
 	_main_panel.add_child(lvlup_btn)
 
-	var talent_btn := _make_btn("+1 Talent Point", Color(0.55, 0.85, 0.55))
+	var talent_btn := _make_btn("Talents...", Color(0.30, 0.75, 0.30))
 	talent_btn.position = Vector2(6.0, 215.0)
 	talent_btn.size = Vector2(PANEL_W - 12.0, 30.0)
-	talent_btn.pressed.connect(_on_add_talent_point)
+	talent_btn.pressed.connect(_on_talents_pressed)
 	_main_panel.add_child(talent_btn)
 
 func _build_floor_sub() -> void:
@@ -209,6 +216,123 @@ func _build_spawn_sub() -> void:
 		vbox.add_child(_make_spawn_row(entry, false))
 	for entry: Dictionary in boss_pool:
 		vbox.add_child(_make_spawn_row(entry, true))
+
+func _build_talent_sub() -> void:
+	_talent_sub = Panel.new()
+	_talent_sub.visible = false
+	_talent_sub.size = Vector2(TALENT_SW, TALENT_SH)
+	_talent_sub.mouse_filter = Control.MOUSE_FILTER_STOP
+	_style_panel(_talent_sub, Color(0.05, 0.09, 0.06, 0.97), Color(0.25, 0.70, 0.30))
+	add_child(_talent_sub)
+
+	_add_label(_talent_sub, "Talent Debug", 8, 5, 10, Color(0.40, 1.0, 0.45))
+
+	var sep := HSeparator.new()
+	sep.position = Vector2(6.0, 22.0)
+	sep.size = Vector2(TALENT_SW - 12.0, 4.0)
+	_talent_sub.add_child(sep)
+
+	var action_row := HBoxContainer.new()
+	action_row.position = Vector2(6.0, 28.0)
+	action_row.size = Vector2(TALENT_SW - 12.0, 30.0)
+	action_row.add_theme_constant_override("separation", 6)
+	_talent_sub.add_child(action_row)
+
+	var pts_btn := _make_btn("99 Points (all tiers)", Color(0.70, 0.80, 0.20))
+	pts_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pts_btn.custom_minimum_size = Vector2(0.0, 28.0)
+	pts_btn.pressed.connect(_on_give_99_points)
+	action_row.add_child(pts_btn)
+
+	var unlock_btn := _make_btn("Unlock All Tiers", Color(0.70, 0.35, 0.90))
+	unlock_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	unlock_btn.custom_minimum_size = Vector2(0.0, 28.0)
+	unlock_btn.pressed.connect(_on_unlock_all_tiers)
+	action_row.add_child(unlock_btn)
+
+	var sep2 := HSeparator.new()
+	sep2.position = Vector2(6.0, 62.0)
+	sep2.size = Vector2(TALENT_SW - 12.0, 2.0)
+	_talent_sub.add_child(sep2)
+
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(6.0, 68.0)
+	scroll.size = Vector2(TALENT_SW - 12.0, TALENT_SH - 76.0)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_talent_sub.add_child(scroll)
+
+	_talent_vbox = VBoxContainer.new()
+	_talent_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_talent_vbox.add_theme_constant_override("separation", 2)
+	scroll.add_child(_talent_vbox)
+
+func _rebuild_talent_rows() -> void:
+	for child: Node in _talent_vbox.get_children():
+		child.queue_free()
+	_talent_rank_labels.clear()
+	if GameState._class_talents.is_empty():
+		var lbl := Label.new()
+		lbl.text = "No class selected — pick a class first."
+		lbl.add_theme_font_size_override("font_size", 10)
+		lbl.add_theme_color_override("font_color", Color(0.45, 0.45, 0.45))
+		_talent_vbox.add_child(lbl)
+		return
+	var last_tier: int = -1
+	for t: Talent in GameState._class_talents:
+		if t.tier != last_tier:
+			last_tier = t.tier
+			var header := Label.new()
+			header.text = "── TIER %d ──" % t.tier
+			header.add_theme_font_size_override("font_size", 10)
+			header.add_theme_color_override("font_color", Color(0.78, 0.55, 0.22))
+			var margin := MarginContainer.new()
+			margin.add_theme_constant_override("margin_top", 4)
+			margin.add_theme_constant_override("margin_left", 4)
+			margin.add_child(header)
+			_talent_vbox.add_child(margin)
+		_talent_vbox.add_child(_make_talent_row(t))
+
+func _make_talent_row(t: Talent) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	row.custom_minimum_size = Vector2(0.0, 28.0)
+
+	var name_lbl := Label.new()
+	name_lbl.text = t.talent_name
+	name_lbl.add_theme_font_size_override("font_size", 11)
+	name_lbl.add_theme_color_override("font_color", Color(0.85, 0.82, 0.75))
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(name_lbl)
+
+	var rank_lbl := Label.new()
+	rank_lbl.text = "%d/%d" % [GameState.get_talent_rank(t.talent_id), t.max_rank]
+	rank_lbl.add_theme_font_size_override("font_size", 11)
+	rank_lbl.add_theme_color_override("font_color", Color(0.40, 0.85, 0.50))
+	rank_lbl.custom_minimum_size = Vector2(36.0, 0.0)
+	rank_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rank_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_talent_rank_labels[t.talent_id] = rank_lbl
+	row.add_child(rank_lbl)
+
+	var tid: String = t.talent_id
+	var minus_btn := _make_btn("-", Color(0.80, 0.25, 0.25))
+	minus_btn.custom_minimum_size = Vector2(28.0, 24.0)
+	minus_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	minus_btn.pressed.connect(_on_talent_minus.bind(tid))
+	row.add_child(minus_btn)
+
+	var plus_btn := _make_btn("+", Color(0.25, 0.70, 0.30))
+	plus_btn.custom_minimum_size = Vector2(28.0, 24.0)
+	plus_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	plus_btn.pressed.connect(_on_talent_plus.bind(tid))
+	row.add_child(plus_btn)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 4)
+	margin.add_theme_constant_override("margin_right", 4)
+	margin.add_child(row)
+	return margin
 
 # ── Row builders ──────────────────────────────────────────────────────────────
 
@@ -341,6 +465,7 @@ func _input(event: InputEvent) -> void:
 			_floor_sub.visible = false
 			_items_sub.visible = false
 			_spawn_sub.visible = false
+			_talent_sub.visible = false
 
 # ── Callbacks ─────────────────────────────────────────────────────────────────
 
@@ -374,13 +499,44 @@ func _on_level_up_pressed() -> void:
 	GameState.debug_level_up()
 	GameState.game_log("[color=gold][DEBUG] Level Up! Now level %d.[/color]" % GameState.player_stats.character_level)
 
-func _on_add_talent_point() -> void:
-	GameState.talent_points_available += 1
+func _on_talents_pressed() -> void:
+	_talent_sub.visible = not _talent_sub.visible
+	if _talent_sub.visible:
+		_rebuild_talent_rows()
+		_floor_sub.visible = false
+		_items_sub.visible = false
+		_spawn_sub.visible = false
+
+func _on_give_99_points() -> void:
+	GameState.tier1_talent_points = 99
+	GameState.tier2_talent_points = 99
 	GameState.talent_points_changed.emit(GameState.talent_points_available)
-	if not GameState._class_talents.is_empty():
-		var picker_script = load("res://scripts/ui/talent_picker.gd")
-		get_tree().root.call_deferred("add_child", picker_script.new())
-	GameState.game_log("[color=green][DEBUG] +1 talent point (%d available).[/color]" % GameState.talent_points_available)
+	GameState.game_log("[color=green][DEBUG] 99 talent points granted to each tier.[/color]")
+
+func _on_unlock_all_tiers() -> void:
+	GameState.unlock_tier2()
+	_rebuild_talent_rows()
+	GameState.game_log("[color=purple][DEBUG] All talent tiers unlocked.[/color]")
+
+func _on_talent_plus(id: String) -> void:
+	var talent: Talent = GameState._find_talent(id)
+	if talent != null:
+		if talent.tier == 1 and GameState.tier1_talent_points <= 0:
+			GameState.tier1_talent_points = 1
+		elif talent.tier == 2 and GameState.tier2_talent_points <= 0:
+			GameState.tier2_talent_points = 1
+	GameState.invest_talent(id)
+	_refresh_rank_label(id)
+
+func _on_talent_minus(id: String) -> void:
+	GameState.debug_set_talent_rank(id, GameState.get_talent_rank(id) - 1)
+	_refresh_rank_label(id)
+
+func _refresh_rank_label(id: String) -> void:
+	if not _talent_rank_labels.has(id):
+		return
+	var t: Talent = GameState._find_talent(id)
+	_talent_rank_labels[id].text = "%d/%d" % [GameState.get_talent_rank(id), t.max_rank if t != null else 3]
 
 func _on_floor_selected(floor_num: int) -> void:
 	_floor_sub.visible = false

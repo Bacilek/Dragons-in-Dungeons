@@ -58,8 +58,13 @@ var max_short_rests: int = 2
 var short_rest_open: bool = false
 var talent_picker_open: bool = false
 
-# Talent system — points earned per level, invested per talent
-var talent_points_available: int = 0
+# Talent system — points earned per level, invested per talent.
+# Points are tier-locked: Tier 1 levels fill tier1_talent_points, Tier 2 levels fill tier2_talent_points.
+# talent_points_available is a computed sum used for backward-compat (signals, auto-close logic).
+var tier1_talent_points: int = 0
+var tier2_talent_points: int = 0
+var talent_points_available: int:
+	get: return tier1_talent_points + tier2_talent_points
 var talent_investments: Dictionary = {}   # talent_id → current_rank (int)
 var _class_talents: Array[Talent] = []    # all talents for current class, populated on class select
 # Tier 2 gating: Berserker unlocks on Necromancer kill (floor 10)
@@ -281,13 +286,13 @@ func gain_exp(amount: int) -> void:
 		var hp_gained: int = player_stats.max_hp - old_max_hp
 		var lv: int = player_stats.character_level
 		if lv >= 1 and lv <= 5:
-			# Tier 1 points: immediately available
-			talent_points_available += 1
+			# Tier 1 points: immediately available (tier-locked to Tier 1 talents)
+			tier1_talent_points += 1
 			talent_points_changed.emit(talent_points_available)
 		elif lv >= 7 and lv <= 12:
 			# Tier 2 points: queued until Necromancer killed, then released by unlock_tier2()
 			if tier2_unlocked:
-				talent_points_available += 1
+				tier2_talent_points += 1
 				talent_points_changed.emit(talent_points_available)
 			else:
 				_pending_tier2_points += 1
@@ -319,7 +324,7 @@ func unlock_tier2() -> void:
 	_setup_barbarian_tier2_talents()
 	var pts: int = _pending_tier2_points
 	_pending_tier2_points = 0
-	talent_points_available += pts
+	tier2_talent_points += pts
 	talent_points_changed.emit(talent_points_available)
 	combat_message.emit("[color=gold]Berserker Subclass unlocked! %d Tier 2 talent point(s) available.[/color]" % pts)
 	if talent_points_available > 0:
@@ -673,22 +678,60 @@ func _find_talent(id: String) -> Talent:
 	return null
 
 func can_invest_talent(id: String) -> bool:
-	if talent_points_available <= 0:
-		return false
 	var t: Talent = _find_talent(id)
 	if t == null:
 		return false
-	return get_talent_rank(id) < t.max_rank
+	if get_talent_rank(id) >= t.max_rank:
+		return false
+	var pool: int = tier1_talent_points if t.tier == 1 else tier2_talent_points
+	return pool > 0
 
 func invest_talent(id: String) -> void:
 	if not can_invest_talent(id):
 		return
+	var t: Talent = _find_talent(id)
 	var new_rank: int = get_talent_rank(id) + 1
 	talent_investments[id] = new_rank
 	if not invincible:
-		talent_points_available -= 1
+		if t.tier == 1:
+			tier1_talent_points -= 1
+		else:
+			tier2_talent_points -= 1
 	_apply_talent_rank(id, new_rank)
 	talent_invested.emit(id, new_rank)
+	talent_points_changed.emit(talent_points_available)
+
+func debug_set_talent_rank(id: String, new_rank: int) -> void:
+	var talent: Talent = _find_talent(id)
+	if talent == null:
+		return
+	new_rank = clampi(new_rank, 0, talent.max_rank)
+	var old_rank: int = get_talent_rank(id)
+	if new_rank == old_rank:
+		return
+	if new_rank < old_rank:
+		if id == "danger_sense" and old_rank >= 3 and new_rank < 3:
+			player_stats.strength = maxi(10, player_stats.strength - 2)
+			recalculate_stats()
+		if new_rank == 0 and id != "rage":
+			for i: int in player_ability_bar.size():
+				var ab: Ability = player_ability_bar[i]
+				if ab != null and ab.ability_id == id:
+					player_ability_bar[i] = null
+					break
+	if new_rank == 0:
+		talent_investments.erase(id)
+	else:
+		talent_investments[id] = new_rank
+	if new_rank > old_rank:
+		for r: int in range(old_rank + 1, new_rank + 1):
+			if r == 1 and _find_ability_by_id(id) != null:
+				continue
+			_apply_talent_rank(id, r)
+	elif new_rank > 0:
+		_apply_talent_rank(id, new_rank)
+	talent_invested.emit(id, new_rank)
+	ability_bar_changed.emit()
 	talent_points_changed.emit(talent_points_available)
 
 func _apply_talent_rank(id: String, rank: int) -> void:

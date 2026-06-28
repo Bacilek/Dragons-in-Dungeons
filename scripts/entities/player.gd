@@ -965,6 +965,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if reckless_applies and reckless_rank < 3:
 		GameState.reckless_locked_this_turn = true
 		GameState.ability_bar_changed.emit()
+	# die2 is ALWAYS rolled independently when ADV/DISADV is active — nat 1 on die1 does NOT skip it.
 	var die1: int = randi_range(1, 20)
 	var die2: int = die1
 	var die: int = die1
