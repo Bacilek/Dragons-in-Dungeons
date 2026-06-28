@@ -29,8 +29,10 @@ Z-index: enemies = 1, player = 3.
 ## Stats (`stats.gd`)
 `modifier(score) -> int` = `floor((score - 10) / 2)`.
 `apply_class_defaults()` sets all six ability scores and derives `max_hp` and `armor_class`.
-`hit_die_sides() -> int`: Barbarian 12, Ranger 10, Cleric 8, Wizard 6.
+`hit_die_sides() -> int`: Barbarian 12, Ranger 10, Monk 8, Wizard 6.
 `_hp_per_level()`: class HP gain per level-up.
+
+**Check proficiency flags** (formerly "save_prof"): `check_prof_str/con/dex/int/wis/cha`. Used for traps, lockpick, disarm. No separate saving throw system — all defensive rolls are "checks". Barbarian: STR+CON. Ranger/Monk: STR+DEX. Wizard: INT+WIS.
 
 ### Enemy stat scaling (in `_apply_stats()`)
 ```gdscript
@@ -98,4 +100,4 @@ GameState.player_status_changed.emit()
 - `_click_start_screen_pos`: recorded on LMB press; drag > 8 px cancels `_queued_path`
 - `_fov_prev_turn` / `_fov_this_turn`: maintained per turn (no longer grant ADV on their own)
 - Throw mode entered via `GameState.player_throw_primed` signal; Esc cancels
-- All input gated on `TurnManager.phase == WAITING_FOR_INPUT` AND `GameState.short_rest_open == false`
+- All input gated on `TurnManager.phase == WAITING_FOR_INPUT` AND `GameState.short_rest_open == false` AND `GameState.talent_picker_open == false`

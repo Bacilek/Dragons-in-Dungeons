@@ -50,6 +50,12 @@ Triggered by `GameState.stairs_discovered` signal (emitted by `DungeonFloor.upda
 
 ---
 
+## Talent picker (`talent_picker.gd`)
+CanvasLayer, layer = 25. Spawned by `hud.gd._on_player_leveled_up()` when `GameState.talent_points_available > 0`.
+Sets `GameState.talent_picker_open = true` → blocks all player keyboard input. Cleared on close/skip.
+Displays all talents in `GameState._class_talents` as rows: icon, name, rank pips (●○○), next-rank description, Invest button. Auto-closes when points reach 0. Esc/Skip closes early (skips remaining point).
+Debug panel "+1 Talent Point" button also spawns this picker.
+
 ## Short rest panel (`short_rest_panel.gd`)
 CanvasLayer, layer = 25. Spawned by `player.gd._open_short_rest()`.
 

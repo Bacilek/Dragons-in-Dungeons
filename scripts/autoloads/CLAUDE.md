@@ -18,7 +18,7 @@ When you add signals, state fields, or change turn flow here, **immediately upda
 | `floor_changed` | `new_floor: int` | after `advance_floor()` |
 | `player_hp_changed` | `current_hp, max_hp` | after heal/damage |
 | `player_exp_changed` | `exp, exp_needed, level` | XP update |
-| `player_leveled_up` | `level: int` | XP threshold crossed |
+| `player_leveled_up` | `level: int` | XP threshold crossed — hud.gd spawns talent_picker if points > 0 |
 | `player_died` | — | HP hits 0 |
 | `player_won` | — | win condition |
 | `combat_message` | `msg: String` | combat log entries |
@@ -63,12 +63,20 @@ AudioManager.stop_music()
 ```
 short_rest_open: bool        # blocks ALL player input while true
 short_rest_active: bool      # a rest is in progress (ticking turns)
-hit_dice: int                # available dice (refills to character_level on advance_floor)
+hit_dice: int                # available dice (refills to character_level on advance_floor = long rest)
 short_rests_remaining: int   # 2 per floor, resets on advance_floor
+talent_picker_open: bool     # blocks ALL player input while talent picker is visible
+talent_points_available: int # unspent Tier 1 talent points
+talent_investments: Dict     # talent_id → current_rank (int, 0 = not invested)
+_class_talents: Array[Talent]# talents available for current class/tier
 invincible: bool             # debug flag
 noclip: bool                 # debug flag
 player_grid_pos: Vector2i    # synced every move
 ```
+
+**Long rest = floor descent**: `advance_floor()` resets `rage_uses_remaining`, `hit_dice`, and `short_rests_remaining`. Level-up via `gain_exp()` only grants `+1 talent_points_available` and emits `player_leveled_up` — it does NOT reset resources or heal the player.
+
+**Rage DR**: `take_damage_raw(amount, ignore_rage, damage_type: String) -> int` — returns actual damage after DR. Physical types ("Slashing"/"Piercing"/"Bludgeoning") are reduced at Rage talent rank ≥ 2 (25% DR) or ≥ 3 (50% DR). All callers must pass `damage_type`; missing/empty type bypasses DR.
 
 ### Hunger thresholds
 `hunger` 0–1000. Computed property `hunger_state`:
