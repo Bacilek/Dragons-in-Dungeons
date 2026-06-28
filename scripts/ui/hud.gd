@@ -443,6 +443,9 @@ func _on_player_exp_changed(exp: int, exp_needed: int, level: int) -> void:
 
 func _on_player_leveled_up(level: int) -> void:
 	level_label.text = "Lv.%d" % level
+	if GameState.talent_points_available > 0 and not GameState._class_talents.is_empty():
+		var picker_script = load("res://scripts/ui/talent_picker.gd")
+		get_tree().root.call_deferred("add_child", picker_script.new())
 
 func _on_player_died() -> void:
 	var game_over: PackedScene = preload("res://scenes/ui/game_over.tscn")

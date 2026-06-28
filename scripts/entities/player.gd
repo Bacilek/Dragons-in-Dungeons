@@ -359,7 +359,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			if not GameState.short_rest_open:
 				GameState.inventory_toggle.emit()
 			return
-		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active:
+		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active or GameState.talent_picker_open:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
 			if _inspect_mode:
