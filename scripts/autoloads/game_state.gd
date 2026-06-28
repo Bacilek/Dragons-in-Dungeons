@@ -270,6 +270,7 @@ func heal(amount: int) -> void:
 
 func gain_exp(amount: int) -> void:
 	var old_max_hp: int = player_stats.max_hp
+	var old_rage_max: int = player_stats.rage_uses_max
 	var leveled_up := player_stats.gain_exp(amount)
 	player_exp_changed.emit(player_stats.experience, player_stats.exp_to_next(), player_stats.character_level)
 	if leveled_up:
@@ -277,7 +278,16 @@ func gain_exp(amount: int) -> void:
 		var hp_gained: int = player_stats.max_hp - old_max_hp
 		talent_points_available += 1
 		talent_points_changed.emit(talent_points_available)
-		combat_message.emit("[color=yellow]Level up! You are now level %d. (+%d max HP, +1 talent point)[/color]" % [player_stats.character_level, hp_gained])
+		# Rage uses scale by level — grant the extra use immediately on the triggering level-up.
+		if player_stats.character_class == Stats.CharacterClass.BARBARIAN:
+			var new_rage_max: int = player_stats.rage_uses_max
+			if new_rage_max > old_rage_max:
+				player_stats.rage_uses_remaining = mini(
+					player_stats.rage_uses_remaining + (new_rage_max - old_rage_max),
+					new_rage_max)
+				_sync_ability_uses()
+		var level_msg: String = "[color=yellow]Level up! You are now level %d. (+%d max HP, +1 talent point)[/color]" % [player_stats.character_level, hp_gained]
+		combat_message.emit(level_msg)
 		short_rest_changed.emit()
 		_apply_monk_level_features(player_stats.character_level)
 		player_leveled_up.emit(player_stats.character_level)
@@ -635,8 +645,6 @@ func invest_talent(id: String) -> void:
 func _apply_talent_rank(id: String, rank: int) -> void:
 	match id:
 		"rage":
-			player_stats.rage_uses_max += 1
-			player_stats.rage_uses_remaining += 1  # +1 current, not full refill
 			_sync_ability_uses()
 			var rage_ab: Ability = _find_ability_by_id("rage")
 			if rage_ab != null:
@@ -681,15 +689,16 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 func _build_rage_description() -> String:
 	var rank: int = get_talent_rank("rage")
 	var uses: int = player_stats.rage_uses_max
+	var bonus: int = player_stats.rage_bonus_damage
 	var lines: Array[String] = []
-	lines.append("Lasts 10 turns. +2 damage on STR attacks.")
+	lines.append("Lasts 10 turns. +%d damage on STR attacks." % bonus)
 	if rank >= 1:
 		lines.append("Countdown pauses when you attack or are hit.")
 	if rank >= 2:
-		lines.append("25% damage reduction vs Bludgeoning/Piercing/Slashing.")
+		lines.append("25% DR vs Bludgeoning/Piercing/Slashing.")
 	if rank >= 3:
-		lines.append("50% damage reduction vs Bludgeoning/Piercing/Slashing.")
-	lines.append("%d use%s per floor." % [uses, "s" if uses != 1 else ""])
+		lines.append("50% DR vs Bludgeoning/Piercing/Slashing.")
+	lines.append("%d use%s per floor (scales with level)." % [uses, "s" if uses != 1 else ""])
 	return "\n".join(lines)
 
 func _build_reckless_description(rank: int) -> String:
@@ -721,9 +730,9 @@ func _setup_barbarian_talents() -> void:
 	rage_talent.class_id = Stats.CharacterClass.BARBARIAN
 	rage_talent.max_rank = 3
 	rage_talent.ranks = [
-		{"description": "+1 Rage use/floor (total 2). Countdown pauses when you attack or are hit."},
-		{"description": "+1 Rage use/floor (total 3). 25% damage reduction vs physical damage while raging."},
-		{"description": "+1 Rage use/floor (total 4). 50% damage reduction vs physical damage while raging."},
+		{"description": "Rage countdown pauses when you attack or are hit (active combat extends duration)."},
+		{"description": "25% damage reduction vs Bludgeoning, Piercing, and Slashing damage while raging."},
+		{"description": "50% damage reduction vs Bludgeoning, Piercing, and Slashing damage while raging."},
 	]
 	_class_talents.append(rage_talent)
 

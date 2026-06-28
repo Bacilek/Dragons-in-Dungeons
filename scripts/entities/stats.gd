@@ -39,9 +39,24 @@ var proficiency_bonus: int:
 
 @export var experience: int = 0
 
-# Rage uses (Barbarian only). Reset to max on floor descent (= long rest in this game).
+# Rage uses (Barbarian only). rage_uses_max scales by level; reset to max on floor descent.
 var rage_uses_remaining: int = 0
-var rage_uses_max: int = 1
+var rage_uses_max: int:
+	get:
+		if character_class != CharacterClass.BARBARIAN: return 0
+		if character_level >= 17: return 5
+		if character_level >= 12: return 5
+		if character_level >= 6:  return 4
+		if character_level >= 4:  return 3
+		return 2
+
+# Rage bonus damage scales with Barbarian level (+2 / +3 / +4).
+var rage_bonus_damage: int:
+	get:
+		if character_class != CharacterClass.BARBARIAN: return 0
+		if character_level >= 16: return 4
+		if character_level >= 9:  return 3
+		return 2
 
 var poison_turns: int = 0
 var burning_turns: int = 0
@@ -144,8 +159,7 @@ func apply_class_defaults() -> void:
 			strength = 16; constitution = 14; dexterity = 12
 			intelligence = 8; wisdom = 10; charisma = 10
 			max_hp = 12 + modifier(constitution)   # Barbarian HD d12
-			rage_uses_remaining = 1
-			rage_uses_max = 1
+			rage_uses_remaining = rage_uses_max    # = 2 at level 1
 			check_prof_str = true
 			check_prof_con = true
 		CharacterClass.RANGER:
@@ -164,8 +178,7 @@ func apply_class_defaults() -> void:
 			dexterity = 16; wisdom = 14; constitution = 12
 			strength = 10; intelligence = 10; charisma = 8
 			max_hp = 8 + modifier(constitution)    # Monk HD d8
-			rage_uses_remaining = 0
-			rage_uses_max = 0
+			rage_uses_remaining = 0               # Monk never rages (rage_uses_max computed = 0)
 			check_prof_str = true
 			check_prof_dex = true
 	current_hp = max_hp

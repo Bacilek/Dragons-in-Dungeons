@@ -878,7 +878,8 @@ func _activate_rage() -> void:
 	var dr_note: String = ""
 	if rage_rank >= 3: dr_note = " 50% physical DR."
 	elif rage_rank >= 2: dr_note = " 25% physical DR."
-	GameState.game_log("[color=red]You fly into a RAGE! +2 STR damage.%s (%d turns, %d use(s) left)[/color]" % [dr_note, _rage_turns, ab.uses_remaining])
+	var rage_dmg_bonus: int = stats.rage_bonus_damage
+	GameState.game_log("[color=red]You fly into a RAGE! +%d STR damage.%s (%d turns, %d use(s) left)[/color]" % [rage_dmg_bonus, dr_note, _rage_turns, ab.uses_remaining])
 	# Free action — does NOT consume the turn.
 
 func _end_rage() -> void:
@@ -1000,7 +1001,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_show_surprise_mark(enemy)
 
 	var die_roll: int = randi_range(w_dmin, w_dmax)
-	var rage_bonus: int = 2 if (_is_raging and is_str_weapon) else 0
+	var rage_bonus: int = stats.rage_bonus_damage if (_is_raging and is_str_weapon) else 0
 	# Monk unarmed uses DEX for damage; all others use STR.
 	var dmg_mod: int = dex_mod if is_monk_unarmed else str_mod
 	var pre_crit: int = die_roll + w_enh + rage_bonus + dmg_mod
