@@ -44,18 +44,15 @@ var _hover_last_icon_path: String = ""
 var _hover_last_texture: Texture2D = null
 
 # ── Rage state ────────────────────────────────────────────────────────────────
-# _rage_turns: extra full turns of rage remaining after the current one.
-# When rage is activated: set to 0 (lasts only this turn unless extended).
-# Attacking with a STR-based melee weapon adds +1 each time (called each attack).
-# At start of each player turn: if > 0 decrement; if == 0 rage ends.
-# TODO: Also extend by +1 when forcing an enemy saving throw (saving throws not yet implemented).
-# TODO: Also extend by +1 when bonus action is used to maintain rage (bonus actions not yet implemented).
+# Baseline: lasts 10 turns, countdown each turn. Talent rank 1: pause when attacking or hit.
+# _rage_attacked_this_turn: set in _bump_attack when raging + STR weapon; cleared at turn start.
 var _is_raging: bool = false
-var _rage_turns: int = 0  # additional turns of rage beyond the current one
+var _rage_turns: int = 0
+var _rage_attacked_this_turn: bool = false
 
-# ── Reckless Attack state (Barbarian Lv2) ─────────────────────────────────────
-# Persistent toggle: gives ADV on all STR melee attacks; enemies gain ADV against player.
-# Free action — toggling does not consume a turn.
+# ── Reckless Attack state ─────────────────────────────────────────────────────
+# Talent-gated toggle (not available at rank 0). Free action — toggling does not consume a turn.
+# Rank 1: +2 flat to first STR attack / enemies +2. Rank 2+: ADV / enemies ADV.
 var _reckless_active: bool = false
 
 
@@ -136,13 +133,19 @@ func _on_turn_started() -> void:
 		TurnManager.on_player_action_complete()
 		return
 
-	# Tick rage: decrement extra turns; end rage when they hit 0
+	# Tick rage countdown. Talent rank 1: pause if player attacked or was hit last turn.
 	if _is_raging:
-		if _rage_turns > 0:
-			_rage_turns -= 1
+		var rage_rank: int = GameState.get_talent_rank("rage")
+		var combat_last_turn: bool = _rage_attacked_this_turn or GameState.player_was_hit_this_turn
+		if rage_rank >= 1 and combat_last_turn:
+			pass  # countdown paused — active combat extended rage
 		else:
+			_rage_turns -= 1
+		_rage_attacked_this_turn = false
+		GameState.player_was_hit_this_turn = false
+		if _rage_turns <= 0:
 			_end_rage()
-			GameState.game_log("[color=gray]Your Rage fades — you didn't attack last turn.[/color]")
+			GameState.game_log("[color=gray]Your Rage fades.[/color]")
 
 	# Short rest in progress — player waits in place
 	if GameState.short_rest_active:
@@ -829,8 +832,12 @@ func _activate_reckless() -> void:
 	ab.is_active = _reckless_active
 	GameState.reckless_attack_active = _reckless_active
 	GameState.ability_bar_changed.emit()
+	var rank: int = GameState.get_talent_rank("reckless_attack")
 	if _reckless_active:
-		GameState.game_log("[color=yellow]Reckless Attack: ON — ADV on STR melee, enemies gain ADV against you.[/color]")
+		match rank:
+			1: GameState.game_log("[color=yellow]Reckless Attack: ON — +2 to STR attack roll, enemies +2 to attack you.[/color]")
+			2: GameState.game_log("[color=yellow]Reckless Attack: ON — ADV on first STR attack, enemies ADV against you.[/color]")
+			3: GameState.game_log("[color=yellow]Reckless Attack: ON — ADV on all STR attacks, enemies ADV against you.[/color]")
 	else:
 		GameState.game_log("[color=gray]Reckless Attack: OFF.[/color]")
 	# Free action: does NOT consume the turn.
@@ -841,19 +848,23 @@ func _activate_rage() -> void:
 		return
 	var ab: Ability = _find_ability("rage")
 	if ab == null or not ab.has_uses():
-		GameState.game_log("[color=red]No Rage uses remaining (resets on level up).[/color]")
+		GameState.game_log("[color=red]No Rage uses remaining (resets on floor descent).[/color]")
 		return
 	_is_raging = true
-	_rage_turns = 0  # must attack this same turn or rage fades at next turn start
+	_rage_turns = 10  # baseline: 10-turn countdown
+	_rage_attacked_this_turn = false
 	GameState.is_raging = true
 	if not GameState.invincible:
 		ab.uses_remaining -= 1
 	GameState.player_stats.rage_uses_remaining = ab.uses_remaining
 	GameState.ability_bar_changed.emit()
 	$AnimatedSprite2D.modulate = Color(1.6, 0.55, 0.55)  # red tint
-	GameState.game_log("[color=red]You fly into a RAGE! Damage resistance, +2 STR damage. (%d uses left)[/color]" % ab.uses_remaining)
-	# Rage is a free action (bonus action in D&D) — does NOT consume the turn.
-	# Lasts 1 turn unless extended by attacking with a STR melee weapon (+1 per attack).
+	var rage_rank: int = GameState.get_talent_rank("rage")
+	var dr_note: String = ""
+	if rage_rank >= 3: dr_note = " 50% physical DR."
+	elif rage_rank >= 2: dr_note = " 25% physical DR."
+	GameState.game_log("[color=red]You fly into a RAGE! +2 STR damage.%s (%d turns, %d use(s) left)[/color]" % [dr_note, _rage_turns, ab.uses_remaining])
+	# Free action — does NOT consume the turn.
 
 func _end_rage() -> void:
 	_is_raging = false
@@ -895,18 +906,26 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Two ADV sources + one DISADV = net +1 = ADV (house rule: count beats cancel).
 	var adv_count: int = 0
 	var disadv_count: int = 0
+	var reckless_flat_bonus: int = 0  # rank 1 flat +2 (not ADV)
 	if _has_advantage(enemy): adv_count += 1
-	# Reckless only gives ADV on the FIRST melee attack per turn (locked after first use).
-	var reckless_gives_adv: bool = _reckless_active and is_str_weapon and not GameState.reckless_locked_this_turn
-	if reckless_gives_adv: adv_count += 1
+	# Reckless Attack: rank 1 = flat +2 on first attack; rank 2+ = ADV on first; rank 3 = ADV on all.
+	var reckless_rank: int = GameState.get_talent_rank("reckless_attack")
+	var reckless_applies: bool = _reckless_active and is_str_weapon and not GameState.reckless_locked_this_turn
+	var reckless_all_attacks: bool = _reckless_active and is_str_weapon and reckless_rank >= 3
+	if reckless_applies or reckless_all_attacks:
+		match reckless_rank:
+			1:
+				reckless_flat_bonus = 2
+			2, 3:
+				adv_count += 1
 	# Heavy weapon penalty: STR < 13 imposes Disadvantage
 	var weapon_item_ref: Item = GameState.equipped_weapon
 	if weapon_item_ref != null and weapon_item_ref.is_heavy and stats.strength < 13: disadv_count += 1
 	var net: int = adv_count - disadv_count
 	var adv: bool = net > 0
 	var disadv: bool = net < 0
-	# Commit Reckless: lock toggle for rest of turn so it can't be toggled off mid-round.
-	if reckless_gives_adv:
+	# Commit Reckless: lock toggle after first attack (not needed for rank 3 all-attacks mode).
+	if reckless_applies and reckless_rank < 3:
 		GameState.reckless_locked_this_turn = true
 		GameState.ability_bar_changed.emit()
 	var die1: int = randi_range(1, 20)
@@ -918,13 +937,13 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	elif disadv and not adv:
 		die2 = randi_range(1, 20)
 		die = mini(die1, die2)
-	var roll: int = die + total_hit_bonus
+	var roll: int = die + total_hit_bonus + reckless_flat_bonus
 	var is_crit: bool = die == 20
 	var is_nat_one: bool = die == 1
 
-	# Rage extends by 1 turn when you successfully attack with a STR-based weapon
+	# Track that we attacked while raging (for rank 1 countdown pause)
 	if _is_raging and is_str_weapon:
-		_rage_turns += 1
+		_rage_attacked_this_turn = true
 
 	# Compute damage breakdown for tooltip (separate die vs enhancement vs rage)
 	var w_dmin: int

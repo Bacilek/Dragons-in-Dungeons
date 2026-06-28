@@ -30,6 +30,8 @@ signal potion_drunk
 signal ability_bar_changed()
 # Emitted when equip/unequip is done intentionally (costs 1 turn). Not emitted on auto-pickup.
 signal equip_action_taken()
+signal talent_invested(talent_id: String, new_rank: int)
+signal talent_points_changed(available: int)
 
 const QUICKBAR_SIZE: int = 9
 const ABILITY_BAR_SIZE: int = 9
@@ -54,6 +56,12 @@ var hit_dice: int = 1
 var short_rests_remaining: int = 2
 var max_short_rests: int = 2
 var short_rest_open: bool = false
+var talent_picker_open: bool = false
+
+# Talent system — points earned per level, invested per talent
+var talent_points_available: int = 0
+var talent_investments: Dictionary = {}   # talent_id → current_rank (int)
+var _class_talents: Array[Talent] = []    # all talents for current class, populated on class select
 var short_rest_active: bool = false
 var short_rest_turns_remaining: int = 0
 var short_rest_pending_heal: int = 0
@@ -97,6 +105,10 @@ func start_new_run() -> void:
 	invincible = false
 	noclip = false
 	short_rest_open = false
+	talent_picker_open = false
+	talent_points_available = 0
+	talent_investments = {}
+	_class_talents = []
 	hit_dice = 1
 	short_rests_remaining = 2
 	max_short_rests = 2
@@ -142,6 +154,7 @@ func give_class_starting_items() -> void:
 	match player_stats.character_class:
 		Stats.CharacterClass.BARBARIAN:
 			_give_barbarian_starting_items()
+			_setup_barbarian_talents()
 		Stats.CharacterClass.MONK:
 			_give_monk_starting_items()
 
@@ -169,7 +182,7 @@ func _give_barbarian_starting_items() -> void:
 	var rage := Ability.new()
 	rage.ability_id = "rage"
 	rage.ability_name = "Rage"
-	rage.description = "2 uses/long rest. Resistance to all damage (half, rounded down). +2 STR weapon damage. STR checks/saves with advantage. Lasts 1 round; extended by attacking, forcing saves, or using a bonus action to maintain. Ends if heavy armor worn."
+	rage.description = _build_rage_description()
 	rage.icon_path = "res://sprites/weapons/weapon_double_axe.png"
 	rage.uses_remaining = player_stats.rage_uses_remaining
 	rage.uses_max = player_stats.rage_uses_max
@@ -215,8 +228,12 @@ func add_ability(ability: Ability) -> bool:
 
 func advance_floor() -> void:
 	current_floor += 1
+	# Floor descent = long rest: refill rage uses, hit dice, short rest slots
+	player_stats.rage_uses_remaining = player_stats.rage_uses_max
+	hit_dice = player_stats.character_level
 	short_rests_remaining = 2
 	max_short_rests = 2
+	_sync_ability_uses()
 	short_rest_changed.emit()
 	floor_changed.emit(current_floor)
 	if current_floor > 10:
@@ -257,18 +274,13 @@ func gain_exp(amount: int) -> void:
 	player_exp_changed.emit(player_stats.experience, player_stats.exp_to_next(), player_stats.character_level)
 	if leveled_up:
 		player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
-		player_leveled_up.emit(player_stats.character_level)
 		var hp_gained: int = player_stats.max_hp - old_max_hp
-		hit_dice = player_stats.character_level
-		player_stats.rage_uses_remaining = player_stats.rage_uses_max
-		_sync_ability_uses()
-		max_short_rests += 1
-		short_rests_remaining = mini(short_rests_remaining + 1, max_short_rests)
-		combat_message.emit("[color=yellow]Level up! You are now level %d. (+%d max HP, fully restored, +1 hit die)[/color]" % [player_stats.character_level, hp_gained])
-		heal(player_stats.max_hp - player_stats.current_hp)
+		talent_points_available += 1
+		talent_points_changed.emit(talent_points_available)
+		combat_message.emit("[color=yellow]Level up! You are now level %d. (+%d max HP, +1 talent point)[/color]" % [player_stats.character_level, hp_gained])
 		short_rest_changed.emit()
-		_apply_barbarian_level_features(player_stats.character_level)
 		_apply_monk_level_features(player_stats.character_level)
+		player_leveled_up.emit(player_stats.character_level)
 
 func debug_level_up() -> void:
 	gain_exp(player_stats.exp_to_next())
@@ -530,60 +542,36 @@ func restore_hunger(amount: int) -> void:
 
 # is_raging is set by player.gd and read here to apply damage resistance.
 var is_raging: bool = false
-# reckless_attack_active is set by player.gd; enemies read it to gain ADV on their attacks.
+# reckless_attack_active is set by player.gd; enemies read it to decide their attack bonus type.
 var reckless_attack_active: bool = false
-# Set true after first reckless attack this turn — locks the toggle and blocks ADV on 2nd attack.
+# Set true after first reckless attack this turn — locks the toggle and blocks further bonus.
 var reckless_locked_this_turn: bool = false
+# Set true by take_damage_raw when the player takes physical hit damage (not status/starvation).
+# Player.gd reads this in _on_turn_started to decide whether to pause the rage countdown.
+var player_was_hit_this_turn: bool = false
 
-func take_damage_raw(amount: int, ignore_rage: bool = false) -> void:
+var reckless_rank: int:
+	get: return get_talent_rank("reckless_attack")
+
+func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String = "") -> int:
 	if is_game_over or invincible:
-		return
+		return 0
 	var final_amount: int = amount
-	# Rage: resistance to all physical damage (half, rounded down).
-	# TODO: Once enemies have damage types (Bludgeoning/Piercing/Slashing), restrict resistance
-	# to only those three types instead of all damage. For now all melee damage counts.
-	if is_raging and not ignore_rage:
-		final_amount = amount / 2
-	player_stats.take_damage(final_amount)
+	# Rage talent ranks 2/3: physical damage reduction (Bludgeoning/Piercing/Slashing only).
+	# Status effects and traps pass damage_type="" — they bypass reduction intentionally.
+	var is_physical: bool = damage_type in ["Slashing", "Piercing", "Bludgeoning"]
+	var rage_rank: int = get_talent_rank("rage")
+	if is_raging and not ignore_rage and rage_rank >= 2 and is_physical:
+		var reduction: float = 0.5 if rage_rank >= 3 else 0.25
+		final_amount = int(floor(float(amount) * (1.0 - reduction)))
+	var actual: int = player_stats.take_damage(final_amount)
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
+	# Track hit for rage countdown pause (rank 1: pause when hit by physical dmg)
+	if is_physical and not ignore_rage:
+		player_was_hit_this_turn = true
 	check_player_death()
+	return actual
 
-func _apply_barbarian_level_features(level: int) -> void:
-	if player_stats.character_class != Stats.CharacterClass.BARBARIAN:
-		return
-	match level:
-		2:
-			player_stats.danger_sense = true
-			# Danger Sense — passive, shows in ability bar
-			var ds := Ability.new()
-			ds.ability_id = "danger_sense"
-			ds.ability_name = "Danger Sense"
-			ds.description = "Passive: advantage on DEX saves against traps."
-			ds.icon_path = "res://sprites/items/Misc/KeyIron.png"
-			ds.uses_remaining = 0
-			ds.uses_max = 0
-			add_ability(ds)
-			# Reckless Attack — toggle, infinite uses
-			var ra := Ability.new()
-			ra.ability_id = "reckless_attack"
-			ra.ability_name = "Reckless"
-			ra.description = "Toggle (free action): advantage on all STR melee attacks this turn. Enemies also gain advantage against you until your next turn."
-			ra.icon_path = "res://sprites/weapons/weapon_double_axe.png"
-			ra.uses_remaining = 0
-			ra.uses_max = 0
-			add_ability(ra)
-			combat_message.emit("[color=cyan]Level 2 Barbarian: [b]Danger Sense[/b] + [b]Reckless Attack[/b] unlocked![/color]")
-		3:
-			player_stats.rage_uses_max += 1
-			player_stats.rage_uses_remaining = player_stats.rage_uses_max
-			_sync_ability_uses()
-			combat_message.emit("[color=cyan]Level 3 Barbarian: +1 Rage use — now [b]%d[/b] per long rest![/color]" % player_stats.rage_uses_max)
-		4:
-			player_stats.strength += 2
-			recalculate_stats()
-			combat_message.emit("[color=cyan]Level 4 Barbarian: STR +2 (now [b]%d[/b], modifier +%d)![/color]" % [player_stats.strength, player_stats.str_modifier()])
-		5:
-			combat_message.emit("[color=cyan]Level 5 Barbarian: [b]Brutal Strikes[/b] — your attacks hit harder. (TODO: future feature)[/color]")
 
 func _apply_monk_level_features(level: int) -> void:
 	if player_stats.character_class != Stats.CharacterClass.MONK:
@@ -606,3 +594,158 @@ func debug_jump_to_floor(n: int) -> void:
 	current_floor = n
 	floor_changed.emit(current_floor)
 	debug_jump_floor.emit(n)
+
+# ── Talent system ─────────────────────────────────────────────────────────────
+
+func get_talent_rank(id: String) -> int:
+	return talent_investments.get(id, 0)
+
+func _find_talent(id: String) -> Talent:
+	for t: Talent in _class_talents:
+		if t.talent_id == id:
+			return t
+	return null
+
+func can_invest_talent(id: String) -> bool:
+	if talent_points_available <= 0:
+		return false
+	var t: Talent = _find_talent(id)
+	if t == null:
+		return false
+	return get_talent_rank(id) < t.max_rank
+
+func invest_talent(id: String) -> void:
+	if not can_invest_talent(id):
+		return
+	var new_rank: int = get_talent_rank(id) + 1
+	talent_investments[id] = new_rank
+	if not invincible:
+		talent_points_available -= 1
+	_apply_talent_rank(id, new_rank)
+	talent_invested.emit(id, new_rank)
+	talent_points_changed.emit(talent_points_available)
+
+func _apply_talent_rank(id: String, rank: int) -> void:
+	match id:
+		"rage":
+			player_stats.rage_uses_max += 1
+			player_stats.rage_uses_remaining = player_stats.rage_uses_max
+			_sync_ability_uses()
+			var rage_ab: Ability = _find_ability_by_id("rage")
+			if rage_ab != null:
+				rage_ab.description = _build_rage_description()
+		"reckless_attack":
+			if rank == 1:
+				var ra := Ability.new()
+				ra.ability_id = "reckless_attack"
+				ra.ability_name = "Reckless"
+				ra.description = _build_reckless_description(1)
+				ra.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				ra.uses_remaining = 0
+				ra.uses_max = 0
+				add_ability(ra)
+			else:
+				var ra: Ability = _find_ability_by_id("reckless_attack")
+				if ra != null:
+					ra.description = _build_reckless_description(rank)
+		"danger_sense":
+			if rank == 1:
+				var ds := Ability.new()
+				ds.ability_id = "danger_sense"
+				ds.ability_name = "Danger Sense"
+				ds.description = _build_danger_sense_description(1)
+				ds.icon_path = "res://sprites/items/Misc/KeyIron.png"
+				ds.uses_remaining = 0
+				ds.uses_max = 0
+				add_ability(ds)
+			elif rank == 2:
+				var ds: Ability = _find_ability_by_id("danger_sense")
+				if ds != null:
+					ds.description = _build_danger_sense_description(2)
+			elif rank == 3:
+				player_stats.strength += 2
+				recalculate_stats()
+				var ds: Ability = _find_ability_by_id("danger_sense")
+				if ds != null:
+					ds.description = _build_danger_sense_description(3)
+				combat_message.emit("[color=cyan]Danger Sense 3: STR +2 (now [b]%d[/b])![/color]" % player_stats.strength)
+	ability_bar_changed.emit()
+
+func _build_rage_description() -> String:
+	var rank: int = get_talent_rank("rage")
+	var uses: int = player_stats.rage_uses_max
+	var lines: Array[String] = []
+	lines.append("Lasts 10 turns. +2 damage on STR attacks.")
+	if rank >= 1:
+		lines.append("Countdown pauses when you attack or are hit.")
+	if rank >= 2:
+		lines.append("25% damage reduction vs Bludgeoning/Piercing/Slashing.")
+	if rank >= 3:
+		lines.append("50% damage reduction vs Bludgeoning/Piercing/Slashing.")
+	lines.append("%d use%s per floor." % [uses, "s" if uses != 1 else ""])
+	return "\n".join(lines)
+
+func _build_reckless_description(rank: int) -> String:
+	match rank:
+		1: return "Toggle (free action): +2 to your first STR melee attack roll this turn. Enemies also get +2 to their attack rolls against you."
+		2: return "Toggle (free action): Advantage on your first STR melee attack roll. Enemies gain Advantage against you."
+		3: return "Toggle (free action): Advantage on all STR melee attack rolls. Enemies gain Advantage against you."
+	return ""
+
+func _build_danger_sense_description(rank: int) -> String:
+	var lines: Array[String] = ["Passive."]
+	if rank >= 1:
+		lines.append("Advantage on DEX checks (traps, locks).")
+	if rank >= 2:
+		lines.append("For DEX/WIS/CHA checks, use whichever is higher: normal modifier or STR modifier.")
+	if rank >= 3:
+		lines.append("STR +2.")
+	return "\n".join(lines)
+
+func _setup_barbarian_talents() -> void:
+	_class_talents = []
+
+	var rage_talent := Talent.new()
+	rage_talent.talent_id = "rage"
+	rage_talent.talent_name = "Rage"
+	rage_talent.description = "Upgrade your Rage ability."
+	rage_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	rage_talent.tier = 1
+	rage_talent.class_id = Stats.CharacterClass.BARBARIAN
+	rage_talent.max_rank = 3
+	rage_talent.ranks = [
+		{"description": "+1 Rage use/floor (total 2). Countdown pauses when you attack or are hit."},
+		{"description": "+1 Rage use/floor (total 3). 25% damage reduction vs physical damage while raging."},
+		{"description": "+1 Rage use/floor (total 4). 50% damage reduction vs physical damage while raging."},
+	]
+	_class_talents.append(rage_talent)
+
+	var reckless_talent := Talent.new()
+	reckless_talent.talent_id = "reckless_attack"
+	reckless_talent.talent_name = "Reckless Attack"
+	reckless_talent.description = "Unlock and upgrade Reckless Attack."
+	reckless_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	reckless_talent.tier = 1
+	reckless_talent.class_id = Stats.CharacterClass.BARBARIAN
+	reckless_talent.max_rank = 3
+	reckless_talent.ranks = [
+		{"description": "Toggle: +2 to first STR attack roll. Enemies +2 to attacks vs you."},
+		{"description": "Toggle: Advantage on first STR attack roll. Enemies gain Advantage vs you."},
+		{"description": "Toggle: Advantage on all STR attack rolls. Enemies gain Advantage vs you."},
+	]
+	_class_talents.append(reckless_talent)
+
+	var ds_talent := Talent.new()
+	ds_talent.talent_id = "danger_sense"
+	ds_talent.talent_name = "Danger Sense"
+	ds_talent.description = "Unlock and upgrade Danger Sense."
+	ds_talent.icon_path = "res://sprites/items/Misc/KeyIron.png"
+	ds_talent.tier = 1
+	ds_talent.class_id = Stats.CharacterClass.BARBARIAN
+	ds_talent.max_rank = 3
+	ds_talent.ranks = [
+		{"description": "Advantage on DEX checks (traps, locks, Sleight of Hand)."},
+		{"description": "For DEX/WIS/CHA checks, use max(normal mod, STR mod) automatically."},
+		{"description": "STR +2 (flat stat increase)."},
+	]
+	_class_talents.append(ds_talent)

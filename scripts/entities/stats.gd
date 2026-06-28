@@ -39,19 +39,15 @@ var proficiency_bonus: int:
 
 @export var experience: int = 0
 
-# Rage uses (Barbarian only). Reset to max on long rest (advance_floor in GameState).
-# TODO: When multiple classes get abilities, move per-class resources to a separate struct.
+# Rage uses (Barbarian only). Reset to max on floor descent (= long rest in this game).
 var rage_uses_remaining: int = 0
-var rage_uses_max: int = 2
+var rage_uses_max: int = 1
 
 var poison_turns: int = 0
 var burning_turns: int = 0
 var bleeding_turns: int = 0
 var slowed_turns: int = 0
 
-# Barbarian class features (unlocked on level-up, not present at class start)
-var danger_sense: bool = false   # Lv2: advantage on DEX saves vs traps
-var extra_attack: bool = false   # Lv5: first STR melee attack doesn't end the turn
 
 # Monk: Martial Arts die scales with level. Global default 1d4 is used by all other classes.
 var martial_arts_die_sides: int:
@@ -148,8 +144,8 @@ func apply_class_defaults() -> void:
 			strength = 16; constitution = 14; dexterity = 12
 			intelligence = 8; wisdom = 10; charisma = 10
 			max_hp = 12 + modifier(constitution)   # Barbarian HD d12
-			rage_uses_remaining = 2
-			rage_uses_max = 2
+			rage_uses_remaining = 1
+			rage_uses_max = 1
 			check_prof_str = true
 			check_prof_con = true
 		CharacterClass.RANGER:

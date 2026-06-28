@@ -330,23 +330,30 @@ func _attack_player(_player: Player) -> void:
 		GameState.game_log("[color=tomato]%s[/color] strikes you — [color=gray]blocked (invincible)[/color]" % display_name)
 		return
 	# D&D attack roll: d20 + floor-scaled bonus vs player AC.
-	# Reckless Attack: if player has it active, enemies gain advantage (roll 2d20 take higher).
+	# Reckless Attack rank 1: enemies get flat +2. Rank 2+: enemies get Advantage.
 	var attack_bonus: int = GameState.current_floor / 3
+	var reckless_flat: int = 0
 	var die1: int = randi_range(1, 20)
 	var die2: int = die1
 	var die: int = die1
+	var enemy_adv: bool = false
 	if GameState.reckless_attack_active:
-		die2 = randi_range(1, 20)
-		die = maxi(die1, die2)
-	var roll: int = die + attack_bonus
+		match GameState.reckless_rank:
+			1:
+				reckless_flat = 2
+			2, 3:
+				die2 = randi_range(1, 20)
+				die = maxi(die1, die2)
+				enemy_adv = true
+	var roll: int = die + attack_bonus + reckless_flat
 	var player_ac: int = GameState.player_stats.armor_class
 	var is_crit: bool = die == 20
 	var reckless_tag: String = " [color=yellow](Reckless)[/color]" if GameState.reckless_attack_active else ""
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d" % [
-		die, die1, die2, attack_bonus, roll, player_ac,
-		1 if is_crit else 0, 1 if GameState.reckless_attack_active else 0]
+		die, die1, die2, attack_bonus + reckless_flat, roll, player_ac,
+		1 if is_crit else 0, 1 if enemy_adv else 0]
 	if not is_crit and roll < player_ac:
-		var miss_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [attack_bonus, roll, player_ac] if GameState.god_mode else ""
+		var miss_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [attack_bonus + reckless_flat, roll, player_ac] if GameState.god_mode else ""
 		GameState.game_log("[color=tomato]%s[/color] [url=%s]misses[/url]!%s%s" % [display_name, hit_meta, reckless_tag, miss_suffix])
 		return
 	var dmg_roll: int = stats.roll_damage()
@@ -357,12 +364,13 @@ func _attack_player(_player: Player) -> void:
 		AudioManager.play("crit")
 	else:
 		AudioManager.play("player_hurt")
-	var actual: int = GameState.player_stats.take_damage(dmg)
-	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
+	# Route through take_damage_raw for rage DR; enemies deal Bludgeoning by default.
+	# take_damage_raw handles player_hp_changed and check_player_death internally.
+	var actual: int = GameState.take_damage_raw(dmg, false, "Bludgeoning")
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(_player.position, actual, true)
 	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,final=%d" % [dmg_roll, stats.min_damage, stats.max_damage, 1 if is_crit else 0, actual]
-	var god_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [attack_bonus, roll, player_ac] if GameState.god_mode else ""
+	var god_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [attack_bonus + reckless_flat, roll, player_ac] if GameState.god_mode else ""
 	if is_crit:
 		GameState.game_log("[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [display_name, hit_meta, dmg_meta, actual, reckless_tag, god_suffix])
 	else:
@@ -372,4 +380,3 @@ func _attack_player(_player: Player) -> void:
 		GameState.player_stats.poison_turns = 3
 		GameState.player_status_changed.emit()
 		GameState.game_log("[color=lime]You are poisoned! (3 turns)[/color]")
-	GameState.check_player_death()
