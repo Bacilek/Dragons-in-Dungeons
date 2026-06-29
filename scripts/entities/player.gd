@@ -5,6 +5,7 @@ const KNIGHT_PATH := "res://sprites/characters/"
 const SWORD_SPRITE := "res://sprites/weapons/weapon_anime_sword.png"
 const ARROW_SPRITE := "res://sprites/weapons/weapon_arrow.png"
 const UNDEAD_NAMES: Array = ["Tiny Zombie", "Goblin", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
+const _CompanionClass = preload("res://scripts/entities/companion.gd")
 
 var _dungeon_floor: Node
 
@@ -1969,7 +1970,7 @@ func _summon_companion(rank: int) -> void:
 	if _dungeon_floor == null:
 		return
 	var stats_data: Dictionary = GameState.WILD_HEART_COMPANION_STATS.get(rank, {})
-	var companion := Companion.new()
+	var companion: Companion = _CompanionClass.new()
 	companion.configure(stats_data)
 	var spawn_pos: Vector2i = _find_free_adjacent()
 	if spawn_pos == Vector2i(-1, -1):

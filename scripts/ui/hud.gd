@@ -528,6 +528,7 @@ func _refresh_item_bar() -> void:
 		var raw = GameState.player_quickbar[i]
 		var slot: Button = _item_slots[i]
 		var qty_lbl: Label = _slot_qty_labels[i]
+		slot.modulate = Color(1.0, 1.0, 1.0)  # reset tint from ability bar (e.g. reckless orange)
 		if _slot_use_labels.size() > i:
 			_slot_use_labels[i].visible = false
 		if raw == null:

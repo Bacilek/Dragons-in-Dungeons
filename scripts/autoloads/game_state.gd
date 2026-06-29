@@ -137,9 +137,12 @@ func start_new_run() -> void:
 	noclip = false
 	short_rest_open = false
 	talent_picker_open = false
-	talent_points_available = 0
+	tier1_talent_points = 0
+	tier2_talent_points = 0
 	talent_investments = {}
 	_class_talents = []
+	tier2_unlocked = false
+	active_tier2_subclass = "Berserker"
 	hit_dice = 1
 	short_rests_remaining = 2
 	max_short_rests = 2
