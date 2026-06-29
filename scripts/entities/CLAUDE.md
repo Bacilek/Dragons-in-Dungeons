@@ -11,8 +11,12 @@ When adding a new entity type, status effect, or changing combat rules, **immedi
 ```
 Entity (CharacterBody2D)   grid_pos: Vector2i, move_to() 0.08 s tween, _tile_center()
   ├── Player               input handling, quickbar, throw mode, blood trail
-  └── Enemy                take_turn(), Behavior enum, hp bar, zzz label
+  ├── Enemy                take_turn(), Behavior enum, hp bar, zzz label
+  └── Companion            Wild Heart ally — auto-attacks nearest enemy, shares enemy phase
 ```
+
+## Companion (`companion.gd`)
+Extends Entity. Same configure-before-add_child pattern as Enemy (fields set in `configure()`, Stats created in `_ready()`). Key fields: `animal_name`, `armor_class`, `die_count`, `die_sides`. `DungeonFloor.spawn_companion(companion, pos)` sets `_dungeon_floor` and registers via TurnManager. Enemies ignore companions (MVP). On death: sets `GameState.player_companion = null`, unregisters, calls `queue_free()`. `heal_to_max()` called on rest via `GameState._on_short_rest_completed()` and `advance_floor()`. Attack rolls: d20 + `player_stats.proficiency_bonus` vs `enemy.stats.armor_class`.
 World pos = `grid_pos * TILE_SIZE + Vector2i(8, 8)`. `TILE_SIZE = 16`.
 Z-index: enemies = 1, player = 3.
 
@@ -64,6 +68,9 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 - Yellow "!" floats above enemy on ADV surprise attacks
 
 ---
+
+## Temp HP
+`Stats.temp_hp: int = 0`. Set by Natural Sleeper R2 (5 HP per terrain entry). `take_damage()` absorbs temp HP before regular HP — if fully absorbed, returns 0. Not displayed in HUD (log message only).
 
 ## Status effects
 Fields on `Stats`: `poison_turns`, `burning_turns`, `bleeding_turns`, `slowed_turns`.

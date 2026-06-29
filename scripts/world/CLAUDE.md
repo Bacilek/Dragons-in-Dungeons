@@ -15,6 +15,11 @@ dungeon_floor.has_line_of_sight(p1, p2) -> bool             # Bresenham — enem
 dungeon_floor.has_ranged_los(p1, p2) -> bool                # permissive: blocks WALL/VOID only
 dungeon_floor.get_room_centers() -> Array[Vector2i]         # for enemy roam targets
 dungeon_floor.get_visible_enemies() -> Array[Enemy]         # enemies in current FOV
+dungeon_floor.get_all_enemies() -> Array[Enemy]             # all enemies (for companion targeting)
+# Companion system:
+dungeon_floor.spawn_companion(companion: Companion, pos: Vector2i)
+dungeon_floor.remove_companion(companion: Companion)
+dungeon_floor.is_walkable_for_companion(pos: Vector2i) -> bool  # walkable + not blocked by player/enemies/companions
 ```
 
 ## FOV
