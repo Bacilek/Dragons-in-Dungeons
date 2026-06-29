@@ -59,8 +59,11 @@ var _rager_attack_triggered: bool = false
 var _frenzy_triggered_this_turn: bool = false
 
 # ── Wild Heart state (Tier 2) ─────────────────────────────────────────────────
-# Eagle Natural Rager: per-turn free-move cap. Reset at turn start.
+# Eagle Natural Rager: per-round free-move cap (max 1×/round). Only resets on REAL turns.
 var _eagle_free_move_used: bool = false
+# Flag set before revert_to_waiting() so _on_turn_started() knows it's a reverted (non-enemy) turn.
+# Per-round caps are NOT reset on reverted turns — only after enemies go.
+var _reverted_this_round: bool = false
 
 # ── Reckless Attack state ─────────────────────────────────────────────────────
 # Talent-gated toggle (not available at rank 0). Free action — toggling does not consume a turn.
@@ -127,14 +130,35 @@ func _on_player_hp_changed(_c: int, _m: int) -> void:
 
 func _on_turn_started() -> void:
 	GameState.player_grid_pos = grid_pos
-	# Reckless lock clears each turn — toggle becomes available again.
-	GameState.reckless_locked_this_turn = false
-	# Rager per-round free-action caps and Frenzy per-turn cap reset each turn.
-	_rager_move_triggered = false
-	_rager_attack_triggered = false
-	_frenzy_triggered_this_turn = false
-	_eagle_free_move_used = false
+	# Determine whether this is a reverted turn (Rager/Eagle free action) or a real new round.
+	var came_from_revert: bool = _reverted_this_round
+	_reverted_this_round = false
+	# Per-round caps only reset on REAL turns (after enemies resolve).
+	# On reverted turns, Eagle/Rager free-action flags persist so they can't fire again this round.
+	if not came_from_revert:
+		GameState.reckless_locked_this_turn = false
+		_rager_move_triggered = false
+		_rager_attack_triggered = false
+		_frenzy_triggered_this_turn = false
+		_eagle_free_move_used = false
 	GameState.ability_bar_changed.emit()
+	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
+	# Only fires on real turns, not on reverted turns.
+	if not came_from_revert and GameState.wild_heart_sleeper_active:
+		var _ns_rank_ts: int = GameState.get_talent_rank("natural_sleeper")
+		if _ns_rank_ts >= 2 and _dungeon_floor != null:
+			var _af: String = GameState.active_sleeper_form
+			var _ct: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
+			var _terrain_match: bool = (
+				(_af == "Panther" and _ct == DungeonData.TileType.MUD) or
+				(_af == "Salmon" and _ct == DungeonData.TileType.WATER) or
+				(_af == "Owl" and _ct == DungeonData.TileType.CHASM)
+			)
+			if _terrain_match:
+				var _thp: int = randi_range(1, 6) + randi_range(1, 6)
+				GameState.player_stats.temp_hp = _thp  # replace, not stack
+				GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
+				GameState.game_log("[color=cyan]%s Form: %d temp HP (2d6).[/color]" % [_af, _thp])
 	# Refresh visibility after enemy turns, then snapshot FOV
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
@@ -787,7 +811,7 @@ func _try_move(dir: Vector2i) -> void:
 
 
 	var _ns_rank: int = GameState.get_talent_rank("natural_sleeper")
-	var _ns_form: String = GameState.natural_sleeper_form
+	var _ns_form: String = GameState.active_sleeper_form  # locked in at last floor descent
 	var _sleeper_on: bool = GameState.wild_heart_sleeper_active and _ns_rank >= 1
 	var _target_tile: DungeonData.TileType = _dungeon_floor.get_tile_type(target)
 
@@ -862,16 +886,6 @@ func _try_move(dir: Vector2i) -> void:
 		GameState.player_stats.burning_turns = 0
 		GameState.player_status_changed.emit()
 		GameState.game_log("[color=cyan]The water extinguishes your flames![/color]")
-	# Natural Sleeper R2: 5 temp HP when entering form's terrain
-	if _ns_rank >= 2 and GameState.wild_heart_sleeper_active:
-		var _sleeper_terrain_match: bool = (
-			(_ns_form == "Owl" and tile_t == DungeonData.TileType.CHASM) or
-			(_ns_form == "Panther" and tile_t == DungeonData.TileType.MUD) or
-			(_ns_form == "Salmon" and tile_t == DungeonData.TileType.WATER)
-		)
-		if _sleeper_terrain_match:
-			GameState.player_stats.temp_hp += 5
-			GameState.game_log("[color=cyan]Natural Sleeper: 5 temp HP from %s terrain.[/color]" % _ns_form)
 	# Natural Sleeper R3: AC bonus while standing in form's terrain
 	if _ns_rank >= 3 and GameState.wild_heart_sleeper_active:
 		var _ac_terrain_match: bool = (
@@ -889,9 +903,10 @@ func _try_move(dir: Vector2i) -> void:
 			_rager_move_triggered = true
 			_rage_attacked_this_turn = true  # pause rage countdown on the reverted turn
 			GameState.game_log("[color=orange]Rager: fury drives you — the move didn't cost a turn![/color]")
+			_reverted_this_round = true
 			TurnManager.revert_to_waiting()
 			return
-	# Natural Rager Eagle: free-move. R1 = 50% chance once/turn; R2 = guaranteed once/turn.
+	# Natural Rager Eagle: free-move. R1 = 50% chance (max 1×/round); R2 = guaranteed (max 1×/round).
 	var _nr_rank: int = GameState.get_talent_rank("natural_rager")
 	if _is_raging and _nr_rank >= 1 and GameState.natural_rager_form == "Eagle" and not _eagle_free_move_used:
 		var _should_eagle_free: bool = _nr_rank >= 2 or randi_range(1, 100) <= 50
@@ -899,6 +914,7 @@ func _try_move(dir: Vector2i) -> void:
 			_eagle_free_move_used = true
 			_rage_attacked_this_turn = true  # pause rage countdown on reverted turn
 			GameState.game_log("[color=lime]Eagle Form: wings carry you — the move didn't cost a turn![/color]")
+			_reverted_this_round = true
 			TurnManager.revert_to_waiting()
 			return
 	TurnManager.on_player_action_complete()
@@ -1136,6 +1152,7 @@ func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
 			_rager_attack_triggered = true
 			_rage_attacked_this_turn = true  # pause rage countdown on revert
 			GameState.game_log("[color=orange]Rager: fury drives you — the attack didn't cost a turn![/color]")
+			_reverted_this_round = true
 			TurnManager.revert_to_waiting()
 			return
 	TurnManager.on_player_action_complete()
@@ -2019,4 +2036,7 @@ func _cycle_natural_sleeper_form(ab: Ability) -> void:
 	GameState.natural_sleeper_form = forms[(idx + 1) % forms.size()]
 	ab.description = GameState._build_natural_sleeper_description()
 	GameState.ability_bar_changed.emit()
-	GameState.game_log("[color=cyan]Natural Sleeper: switched to %s Form.[/color]" % GameState.natural_sleeper_form)
+	if GameState.wild_heart_sleeper_active and GameState.active_sleeper_form != GameState.natural_sleeper_form:
+		GameState.game_log("[color=cyan]Natural Sleeper: %s Form chosen — activates next rest.[/color]" % GameState.natural_sleeper_form)
+	else:
+		GameState.game_log("[color=cyan]Natural Sleeper: switched to %s Form.[/color]" % GameState.natural_sleeper_form)

@@ -15,6 +15,7 @@ extends CanvasLayer
 
 const BAR_W: float    = 320.0
 const HP_BAR_H: float = 38.0
+const THP_BAR_H: float = 6.0   # temp HP bar above HP fill
 const EXP_BAR_H: float = 24.0
 const SLOT_COUNT: int = 9
 
@@ -23,6 +24,7 @@ var _slot_qty_labels: Array[Label] = []
 var _log_messages: Array[String] = []
 const MAX_LOG_MESSAGES: int = 25
 var _hunger_label: Label
+var _temp_hp_fill: ColorRect  # light-blue temp HP bar above the HP fill
 var _poison_icon: ColorRect
 var _burning_icon: ColorRect
 var _bleeding_icon: ColorRect
@@ -156,6 +158,15 @@ func _ready() -> void:
 	_update_hp_bar(s.current_hp, s.max_hp)
 	_update_exp_bar(s.experience, s.exp_to_next(), s.character_level)
 	_refresh_inventory()
+
+	# Temp HP bar — light blue strip above the HP fill, visible only when temp_hp > 0
+	_temp_hp_fill = ColorRect.new()
+	_temp_hp_fill.color = Color(0.4, 0.8, 1.0, 0.9)
+	_temp_hp_fill.size = Vector2(0.0, THP_BAR_H)
+	_temp_hp_fill.position = hp_fill.position + Vector2(0.0, -THP_BAR_H - 1.0)
+	_temp_hp_fill.visible = false
+	_temp_hp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$StatsPanel.add_child(_temp_hp_fill)
 
 	# Hunger label — created programmatically below the HP bar
 	_hunger_label = Label.new()
@@ -508,6 +519,16 @@ func _update_hp_bar(current_hp: int, max_hp: int) -> void:
 	var ratio: float = clampf(float(current_hp) / float(max_hp), 0.0, 1.0)
 	hp_fill.size = Vector2(BAR_W * ratio, HP_BAR_H)
 	hp_label.text = "%d / %d" % [current_hp, max_hp]
+	# Temp HP bar: light blue fill proportional to temp_hp / max_hp, above the HP fill.
+	var temp: int = 0
+	if GameState.player_stats != null:
+		temp = GameState.player_stats.temp_hp
+	if temp > 0 and max_hp > 0:
+		var temp_ratio: float = clampf(float(temp) / float(max_hp), 0.0, 1.0)
+		_temp_hp_fill.size = Vector2(BAR_W * temp_ratio, THP_BAR_H)
+		_temp_hp_fill.visible = true
+	else:
+		_temp_hp_fill.visible = false
 
 func _update_exp_bar(exp: int, exp_needed: int, level: int) -> void:
 	var ratio: float = clampf(float(exp) / float(exp_needed), 0.0, 1.0)

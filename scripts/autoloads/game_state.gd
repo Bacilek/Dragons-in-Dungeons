@@ -87,7 +87,9 @@ var short_rest_pending_heal: int = 0
 # Natural Rager: toggle between Bear/Eagle/Wolf; effects only apply while is_raging.
 var natural_rager_form: String = "Bear"
 # Natural Sleeper: toggle between Owl/Panther/Salmon; activates on floor entry (long rest).
+# natural_sleeper_form = chosen form (preview); active_sleeper_form = locked in at last rest.
 var natural_sleeper_form: String = "Owl"
+var active_sleeper_form: String = "Owl"   # only changes at floor descent
 var wild_heart_sleeper_active: bool = false
 # Eagle R3: no-op pending future Opportunity Attack system — do NOT remove this flag.
 var player_evades_opportunity_attacks: bool = false
@@ -163,6 +165,7 @@ func start_new_run() -> void:
 		equipment[key] = null
 	natural_rager_form = "Bear"
 	natural_sleeper_form = "Owl"
+	active_sleeper_form = "Owl"
 	wild_heart_sleeper_active = false
 	player_evades_opportunity_attacks = false
 	player_companion = null
@@ -277,8 +280,10 @@ func advance_floor() -> void:
 	hit_dice = player_stats.character_level
 	short_rests_remaining = 2
 	max_short_rests = 2
-	# Natural Sleeper activates on floor entry (long rest trigger)
+	# Natural Sleeper activates on floor entry (long rest trigger).
+	# active_sleeper_form locks in the chosen form for this floor.
 	wild_heart_sleeper_active = get_talent_rank("natural_sleeper") >= 1
+	active_sleeper_form = natural_sleeper_form
 	terrain_ac_bonus = 0  # reset terrain AC; player.gd will reapply on next move
 	# Companion: restore HP if alive; otherwise charge will be restored in _sync_ability_uses
 	if player_companion != null and is_instance_valid(player_companion):
@@ -1056,9 +1061,14 @@ func _build_natural_rager_description() -> String:
 
 func _build_natural_sleeper_description() -> String:
 	var rank: int = get_talent_rank("natural_sleeper")
-	var form: String = natural_sleeper_form
+	var form: String = natural_sleeper_form  # chosen form (preview for next rest)
 	var lines: Array[String] = []
-	lines.append("[%s Form] — activates on each new floor. Click to cycle forms." % form)
+	if wild_heart_sleeper_active and active_sleeper_form != form:
+		lines.append("[%s Form] — activates next rest. [color=gray]Active now: %s[/color]" % [form, active_sleeper_form])
+	elif wild_heart_sleeper_active:
+		lines.append("[%s Form — active this floor] Click to choose next rest's form." % form)
+	else:
+		lines.append("[%s Form] — will activate on floor descent. Click to cycle." % form)
 	match form:
 		"Owl":
 			if rank >= 1: lines.append("R1: Pass through chasms freely.")
