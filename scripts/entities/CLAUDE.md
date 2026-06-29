@@ -70,7 +70,7 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 ---
 
 ## Temp HP
-`Stats.temp_hp: int = 0`. Set by Natural Sleeper R2 (5 HP per terrain entry). `take_damage()` absorbs temp HP before regular HP — if fully absorbed, returns 0. Not displayed in HUD (log message only).
+`Stats.temp_hp: int = 0`. Set by Natural Sleeper R2 (2d6 THP per round while starting a turn on the active form's terrain — replaces existing THP, doesn't stack). `take_damage()` absorbs temp HP before regular HP — if fully absorbed, returns 0. Displayed in HUD as a light-blue strip above the HP bar (`_temp_hp_fill` in hud.gd), proportional to `temp_hp / max_hp`.
 
 ## Status effects
 Fields on `Stats`: `poison_turns`, `burning_turns`, `bleeding_turns`, `slowed_turns`.
