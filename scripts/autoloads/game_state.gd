@@ -89,7 +89,7 @@ var natural_rager_form: String = "Bear"
 # Natural Sleeper: toggle between Owl/Panther/Salmon; activates on floor entry (long rest).
 # natural_sleeper_form = chosen form (preview); active_sleeper_form = locked in at last rest.
 var natural_sleeper_form: String = ""   # "" = no form chosen; locks in at floor descent
-var active_sleeper_form: String = ""    # only changes at floor descent
+var active_sleeper_form: String = ""    # locks in at short rest or floor descent
 var wild_heart_sleeper_active: bool = false
 # Eagle R3: no-op pending future Opportunity Attack system — do NOT remove this flag.
 var player_evades_opportunity_attacks: bool = false
@@ -1078,7 +1078,7 @@ func _build_natural_sleeper_description() -> String:
 	if form == "":
 		lines.append("[No form chosen] — press to select Owl / Panther / Salmon.")
 		if not wild_heart_sleeper_active:
-			lines.append("[color=gray](Descend to activate chosen form.)[/color]")
+			lines.append("[color=gray](Rest or descend to activate chosen form.)[/color]")
 		return "\n".join(lines)
 	# Form chosen — show header and per-form rank effects
 	if wild_heart_sleeper_active and active_sleeper_form != form:
@@ -1102,7 +1102,7 @@ func _build_natural_sleeper_description() -> String:
 			if rank >= 2: lines.append("R2: 2d6 temp HP at the start of each turn while in water.")
 			if rank >= 3: lines.append("R3: +2 AC while standing in water.")
 	if not wild_heart_sleeper_active:
-		lines.append("[color=gray](Descend to a new floor to activate.)[/color]")
+		lines.append("[color=gray](Rest or descend to activate.)[/color]")
 	return "\n".join(lines)
 
 

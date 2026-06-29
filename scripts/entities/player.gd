@@ -211,6 +211,7 @@ func _on_turn_started() -> void:
 			GameState.short_rest_active = false
 			GameState.short_rest_pending_heal = 0
 			_rest_interrupt_shown = false
+			GameState.short_rest_completed.emit()
 			GameState.short_rest_changed.emit()
 		_do_rest_wait_turn()
 		return
