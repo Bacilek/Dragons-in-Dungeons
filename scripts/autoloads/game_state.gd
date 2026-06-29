@@ -88,8 +88,8 @@ var short_rest_pending_heal: int = 0
 var natural_rager_form: String = "Bear"
 # Natural Sleeper: toggle between Owl/Panther/Salmon; activates on floor entry (long rest).
 # natural_sleeper_form = chosen form (preview); active_sleeper_form = locked in at last rest.
-var natural_sleeper_form: String = "Owl"
-var active_sleeper_form: String = "Owl"   # only changes at floor descent
+var natural_sleeper_form: String = ""   # "" = no form chosen; locks in at floor descent
+var active_sleeper_form: String = ""    # only changes at floor descent
 var wild_heart_sleeper_active: bool = false
 # Eagle R3: no-op pending future Opportunity Attack system — do NOT remove this flag.
 var player_evades_opportunity_attacks: bool = false
@@ -164,8 +164,8 @@ func start_new_run() -> void:
 	for key: String in equipment:
 		equipment[key] = null
 	natural_rager_form = "Bear"
-	natural_sleeper_form = "Owl"
-	active_sleeper_form = "Owl"
+	natural_sleeper_form = ""
+	active_sleeper_form = ""
 	wild_heart_sleeper_active = false
 	player_evades_opportunity_attacks = false
 	player_companion = null
@@ -305,22 +305,19 @@ func _sync_ability_uses() -> void:
 			ab.uses_remaining = player_stats.rage_uses_remaining
 			ab.uses_max = player_stats.rage_uses_max
 		elif ab.ability_id == "one_with_nature":
-			# Restore charge only if companion is not alive (per One with Nature design)
-			if player_companion == null or not is_instance_valid(player_companion):
-				ab.uses_remaining = 1
+			ab.uses_remaining = 1  # always restore on long rest
 	ability_bar_changed.emit()
 
-# Triggered on short rest completion. Restores One with Nature charge or heals companion.
+# Triggered on short rest completion. Heals companion (if alive) AND restores One with Nature charge.
 func _on_short_rest_completed() -> void:
 	if player_companion != null and is_instance_valid(player_companion):
 		player_companion.heal_to_max()
 		game_log("[color=lime]%s rests and recovers fully.[/color]" % player_companion.animal_name)
-	else:
-		var owtn: Ability = _find_ability_by_id("one_with_nature")
-		if owtn != null:
-			owtn.uses_remaining = 1
-			ability_bar_changed.emit()
-			game_log("[color=lime]One with Nature: companion charge refreshed.[/color]")
+	var owtn: Ability = _find_ability_by_id("one_with_nature")
+	if owtn != null:
+		owtn.uses_remaining = 1
+		ability_bar_changed.emit()
+		game_log("[color=lime]One with Nature: companion charge refreshed.[/color]")
 
 func hit_die_sides() -> int:
 	match player_stats.character_class:
@@ -1063,24 +1060,32 @@ func _build_natural_sleeper_description() -> String:
 	var rank: int = get_talent_rank("natural_sleeper")
 	var form: String = natural_sleeper_form  # chosen form (preview for next rest)
 	var lines: Array[String] = []
+	# No form chosen yet
+	if form == "":
+		lines.append("[No form chosen] — press to select Owl / Panther / Salmon.")
+		if not wild_heart_sleeper_active:
+			lines.append("[color=gray](Descend to activate chosen form.)[/color]")
+		return "\n".join(lines)
+	# Form chosen — show header and per-form rank effects
 	if wild_heart_sleeper_active and active_sleeper_form != form:
-		lines.append("[%s Form] — activates next rest. [color=gray]Active now: %s[/color]" % [form, active_sleeper_form])
+		var active_label: String = active_sleeper_form if active_sleeper_form != "" else "none"
+		lines.append("[%s Form] — activates next rest. [color=gray]Active now: %s[/color]" % [form, active_label])
 	elif wild_heart_sleeper_active:
-		lines.append("[%s Form — active this floor] Click to choose next rest's form." % form)
+		lines.append("[%s Form — active this floor] Press to choose next rest's form." % form)
 	else:
-		lines.append("[%s Form] — will activate on floor descent. Click to cycle." % form)
+		lines.append("[%s Form] — will activate on floor descent. Press to cycle." % form)
 	match form:
 		"Owl":
 			if rank >= 1: lines.append("R1: Pass through chasms freely.")
-			if rank >= 2: lines.append("R2: Gain 5 temp HP when entering a chasm.")
+			if rank >= 2: lines.append("R2: 2d6 temp HP at the start of each turn while in a chasm.")
 			if rank >= 3: lines.append("R3: +2 AC while standing in a chasm.")
 		"Panther":
 			if rank >= 1: lines.append("R1: Mud is no longer difficult terrain.")
-			if rank >= 2: lines.append("R2: Gain 5 temp HP when entering mud.")
+			if rank >= 2: lines.append("R2: 2d6 temp HP at the start of each turn while in mud.")
 			if rank >= 3: lines.append("R3: +2 AC while standing in mud.")
 		"Salmon":
 			if rank >= 1: lines.append("R1: Water is no longer difficult terrain.")
-			if rank >= 2: lines.append("R2: Gain 5 temp HP when entering water.")
+			if rank >= 2: lines.append("R2: 2d6 temp HP at the start of each turn while in water.")
 			if rank >= 3: lines.append("R3: +2 AC while standing in water.")
 	if not wild_heart_sleeper_active:
 		lines.append("[color=gray](Descend to a new floor to activate.)[/color]")
@@ -1230,7 +1235,7 @@ func _setup_wild_heart_tier2_talents() -> void:
 	ns_talent.max_rank = 3
 	ns_talent.ranks = [
 		{"description": "Owl: chasm passthrough. Panther: mud is normal. Salmon: water is normal."},
-		{"description": "Each form: 5 temp HP when entering its terrain (chasm/mud/water)."},
+		{"description": "Each form: 2d6 temp HP at the start of each turn while on its terrain."},
 		{"description": "Each form: +2 AC while standing in its terrain."},
 	]
 	_class_talents.append(ns_talent)

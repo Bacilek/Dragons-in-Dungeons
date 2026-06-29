@@ -2031,12 +2031,15 @@ func _cycle_natural_rager_form(ab: Ability) -> void:
 	GameState.game_log("[color=orange]Natural Rager: switched to %s Form.[/color]" % GameState.natural_rager_form)
 
 func _cycle_natural_sleeper_form(ab: Ability) -> void:
-	var forms: PackedStringArray = ["Owl", "Panther", "Salmon"]
+	var forms: PackedStringArray = ["", "Owl", "Panther", "Salmon"]
 	var idx: int = forms.find(GameState.natural_sleeper_form)
 	GameState.natural_sleeper_form = forms[(idx + 1) % forms.size()]
 	ab.description = GameState._build_natural_sleeper_description()
 	GameState.ability_bar_changed.emit()
-	if GameState.wild_heart_sleeper_active and GameState.active_sleeper_form != GameState.natural_sleeper_form:
-		GameState.game_log("[color=cyan]Natural Sleeper: %s Form chosen — activates next rest.[/color]" % GameState.natural_sleeper_form)
+	var chosen: String = GameState.natural_sleeper_form
+	if chosen == "":
+		GameState.game_log("[color=cyan]Natural Sleeper: no form selected — will be inactive next rest.[/color]")
+	elif GameState.wild_heart_sleeper_active and GameState.active_sleeper_form != chosen:
+		GameState.game_log("[color=cyan]Natural Sleeper: %s Form chosen — activates next rest.[/color]" % chosen)
 	else:
-		GameState.game_log("[color=cyan]Natural Sleeper: switched to %s Form.[/color]" % GameState.natural_sleeper_form)
+		GameState.game_log("[color=cyan]Natural Sleeper: switched to %s Form.[/color]" % chosen)
