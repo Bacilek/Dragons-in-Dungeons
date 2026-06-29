@@ -62,6 +62,7 @@ var poison_turns: int = 0
 var burning_turns: int = 0
 var bleeding_turns: int = 0
 var slowed_turns: int = 0
+var temp_hp: int = 0  # Natural Sleeper R2 — consumed before regular HP damage
 
 
 # Monk: Martial Arts die scales with level. Global default 1d4 is used by all other classes.
@@ -119,9 +120,16 @@ func roll_damage() -> int:
 	return randi_range(min_damage, max_damage)
 
 func take_damage(amount: int) -> int:
-	var actual: int = maxi(1, amount)
-	current_hp -= actual
-	return actual
+	var clamped: int = maxi(1, amount)
+	# Temp HP (from Natural Sleeper R2) absorbs damage first
+	if temp_hp > 0:
+		var absorbed: int = mini(temp_hp, clamped)
+		temp_hp -= absorbed
+		clamped -= absorbed
+		if clamped <= 0:
+			return 0  # fully absorbed
+	current_hp -= clamped
+	return clamped
 
 func is_dead() -> bool:
 	return current_hp <= 0

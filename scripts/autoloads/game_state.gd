@@ -37,6 +37,13 @@ const QUICKBAR_SIZE: int = 9
 const ABILITY_BAR_SIZE: int = 9
 const INVENTORY_SIZE: int = 24
 
+# Wild Heart Tier 2 companion stats by rank (data-driven, no hardcoded logic)
+const WILD_HEART_COMPANION_STATS: Dictionary = {
+	1: {"animal": "Squirrel", "ac": 12, "hp": 10, "die_count": 1, "die_sides": 6},
+	2: {"animal": "Boar",     "ac": 14, "hp": 20, "die_count": 2, "die_sides": 6},
+	3: {"animal": "Bear",     "ac": 16, "hp": 30, "die_count": 3, "die_sides": 6},
+}
+
 enum HungerState { SATIATED, HUNGRY, STARVING }
 const MAX_HUNGER: int = 1000
 
@@ -75,6 +82,19 @@ var active_tier2_subclass: String = "Berserker"
 var short_rest_active: bool = false
 var short_rest_turns_remaining: int = 0
 var short_rest_pending_heal: int = 0
+
+# ── Wild Heart Tier 2 state ───────────────────────────────────────────────────
+# Natural Rager: toggle between Bear/Eagle/Wolf; effects only apply while is_raging.
+var natural_rager_form: String = "Bear"
+# Natural Sleeper: toggle between Owl/Panther/Salmon; activates on floor entry (long rest).
+var natural_sleeper_form: String = "Owl"
+var wild_heart_sleeper_active: bool = false
+# Eagle R3: no-op pending future Opportunity Attack system — do NOT remove this flag.
+var player_evades_opportunity_attacks: bool = false
+# Reference to living companion node (null when no companion). Set by player.gd.
+var player_companion: Variant = null
+# AC bonus from Natural Sleeper R3 terrain — added in recalculate_stats().
+var terrain_ac_bonus: int = 0
 var player_grid_pos: Vector2i = Vector2i.ZERO
 var current_stairs_pos: Vector2i = Vector2i.ZERO
 var hunger: int = MAX_HUNGER
@@ -105,6 +125,7 @@ var equipped_armor: Item:
 
 func _ready() -> void:
 	start_new_run()
+	short_rest_completed.connect(_on_short_rest_completed)
 
 func start_new_run() -> void:
 	run_seed = randi()
@@ -137,6 +158,12 @@ func start_new_run() -> void:
 		player_inventory.append(null)
 	for key: String in equipment:
 		equipment[key] = null
+	natural_rager_form = "Bear"
+	natural_sleeper_form = "Owl"
+	wild_heart_sleeper_active = false
+	player_evades_opportunity_attacks = false
+	player_companion = null
+	terrain_ac_bonus = 0
 	_give_starting_items()
 
 func _give_starting_items() -> void:
@@ -247,6 +274,13 @@ func advance_floor() -> void:
 	hit_dice = player_stats.character_level
 	short_rests_remaining = 2
 	max_short_rests = 2
+	# Natural Sleeper activates on floor entry (long rest trigger)
+	wild_heart_sleeper_active = get_talent_rank("natural_sleeper") >= 1
+	terrain_ac_bonus = 0  # reset terrain AC; player.gd will reapply on next move
+	# Companion: restore HP if alive; otherwise charge will be restored in _sync_ability_uses
+	if player_companion != null and is_instance_valid(player_companion):
+		player_companion.heal_to_max()
+		game_log("[color=lime]%s rests and recovers fully.[/color]" % player_companion.animal_name)
 	_sync_ability_uses()
 	short_rest_changed.emit()
 	floor_changed.emit(current_floor)
@@ -262,7 +296,23 @@ func _sync_ability_uses() -> void:
 		if ab.ability_id == "rage":
 			ab.uses_remaining = player_stats.rage_uses_remaining
 			ab.uses_max = player_stats.rage_uses_max
+		elif ab.ability_id == "one_with_nature":
+			# Restore charge only if companion is not alive (per One with Nature design)
+			if player_companion == null or not is_instance_valid(player_companion):
+				ab.uses_remaining = 1
 	ability_bar_changed.emit()
+
+# Triggered on short rest completion. Restores One with Nature charge or heals companion.
+func _on_short_rest_completed() -> void:
+	if player_companion != null and is_instance_valid(player_companion):
+		player_companion.heal_to_max()
+		game_log("[color=lime]%s rests and recovers fully.[/color]" % player_companion.animal_name)
+	else:
+		var owtn: Ability = _find_ability_by_id("one_with_nature")
+		if owtn != null:
+			owtn.uses_remaining = 1
+			ability_bar_changed.emit()
+			game_log("[color=lime]One with Nature: companion charge refreshed.[/color]")
 
 func hit_die_sides() -> int:
 	match player_stats.character_class:
@@ -323,8 +373,14 @@ func unlock_tier2() -> void:
 	if tier2_unlocked:
 		return
 	tier2_unlocked = true
-	_setup_barbarian_tier2_talents()
-	game_log("[color=gold]Berserker Tier 2 talents unlocked![/color]")
+	_setup_tier2_for_active_subclass()
+	game_log("[color=gold]%s Tier 2 talents unlocked![/color]" % active_tier2_subclass)
+
+func _setup_tier2_for_active_subclass() -> void:
+	match active_tier2_subclass:
+		"Berserker": _setup_barbarian_tier2_talents()
+		"Wild Heart": _setup_wild_heart_tier2_talents()
+		_: pass  # Zealot, World Tree: placeholder
 
 func debug_switch_subclass(direction: int) -> void:
 	var idx: int = TIER2_SUBCLASSES.find(active_tier2_subclass)
@@ -352,9 +408,8 @@ func debug_switch_subclass(direction: int) -> void:
 		if t.tier != 2:
 			new_talents.append(t)
 	_class_talents = new_talents
-	# Setup new subclass (only Berserker is implemented; others are placeholder)
-	if active_tier2_subclass == "Berserker":
-		_setup_barbarian_tier2_talents()
+	# Setup talents for newly selected subclass
+	_setup_tier2_for_active_subclass()
 	game_log("[color=purple][DEBUG] Subclass → %s[/color]" % active_tier2_subclass)
 
 
@@ -428,6 +483,7 @@ func recalculate_stats() -> void:
 		if slot_name == "melee":
 			continue  # already handled above
 		s.armor_class += it.bonus_ac
+	s.armor_class += terrain_ac_bonus
 
 func move_item(src: String, src_idx: int, src_slot: String,
 			   dest: String, dest_idx: int, dest_slot: String) -> void:
@@ -637,11 +693,22 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 	var final_amount: int = amount
 	# Rage talent ranks 2+: physical damage reduction (Bludgeoning/Piercing/Slashing only).
 	# Status effects and traps pass damage_type="" — they bypass reduction intentionally.
-	var is_physical: bool = damage_type in ["Slashing", "Piercing", "Bludgeoning"]
+	const PHYSICAL_TYPES: Array = ["Slashing", "Piercing", "Bludgeoning"]
+	const CELESTIAL_TYPES: Array = ["Necrotic", "Radiant", "Psychic"]
+	var is_physical: bool = damage_type in PHYSICAL_TYPES
 	var rage_rank: int = get_talent_rank("rage")
 	if is_raging and not ignore_rage and rage_rank >= 2 and is_physical:
 		var reduction: float = 0.5 if rage_rank >= 3 else 0.25
 		final_amount = int(floor(float(amount) * (1.0 - reduction)))
+	# Natural Rager Bear form: magical DR while raging (R1: 25%, R2+: 50%, R3: +50% celestial)
+	var nr_rank: int = get_talent_rank("natural_rager")
+	if nr_rank >= 1 and is_raging and natural_rager_form == "Bear" and not ignore_rage:
+		var is_magical: bool = not (damage_type in PHYSICAL_TYPES or damage_type == "")
+		if is_magical:
+			var bear_dr: float = 0.25 if nr_rank == 1 else 0.5
+			final_amount = int(floor(float(final_amount) * (1.0 - bear_dr)))
+			if nr_rank >= 3 and damage_type in CELESTIAL_TYPES:
+				final_amount = int(floor(float(final_amount) * 0.5))
 	# DR can reduce damage to 0 — skip Stats.take_damage() which floors at 1.
 	if final_amount <= 0:
 		if is_physical and not ignore_rage:
@@ -849,6 +916,48 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				if ds != null:
 					ds.description = _build_danger_sense_description(3)
 				combat_message.emit("[color=cyan]Danger Sense 3: STR +2 (now [b]%d[/b])![/color]" % player_stats.strength)
+		"one_with_nature":
+			if rank == 1:
+				var owtn := Ability.new()
+				owtn.ability_id = "one_with_nature"
+				owtn.ability_name = "One with Nature"
+				owtn.description = _build_one_with_nature_description()
+				owtn.icon_path = "res://sprites/items/Food/MeatCooked.png"
+				owtn.uses_remaining = 1
+				owtn.uses_max = 1
+				add_ability(owtn)
+			else:
+				var owtn: Ability = _find_ability_by_id("one_with_nature")
+				if owtn != null:
+					owtn.description = _build_one_with_nature_description()
+		"natural_rager":
+			if rank == 1:
+				var nr := Ability.new()
+				nr.ability_id = "natural_rager"
+				nr.ability_name = "Natural Rager"
+				nr.description = _build_natural_rager_description()
+				nr.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				nr.uses_remaining = 0
+				nr.uses_max = 0
+				add_ability(nr)
+			else:
+				var nr: Ability = _find_ability_by_id("natural_rager")
+				if nr != null:
+					nr.description = _build_natural_rager_description()
+		"natural_sleeper":
+			if rank == 1:
+				var ns := Ability.new()
+				ns.ability_id = "natural_sleeper"
+				ns.ability_name = "Natural Sleeper"
+				ns.description = _build_natural_sleeper_description()
+				ns.icon_path = "res://sprites/items/Misc/KeyIron.png"
+				ns.uses_remaining = 0
+				ns.uses_max = 0
+				add_ability(ns)
+			else:
+				var ns: Ability = _find_ability_by_id("natural_sleeper")
+				if ns != null:
+					ns.description = _build_natural_sleeper_description()
 	ability_bar_changed.emit()
 
 func _build_rager_description() -> String:
@@ -912,6 +1021,58 @@ func _build_danger_sense_description(rank: int) -> String:
 	if rank >= 3:
 		lines.append("STR +2.")
 	return "\n".join(lines)
+
+func _build_one_with_nature_description() -> String:
+	var rank: int = get_talent_rank("one_with_nature")
+	var d: Dictionary = WILD_HEART_COMPANION_STATS.get(maxi(rank, 1), {})
+	var animal: String = d.get("animal", "Squirrel")
+	var hp: int = d.get("hp", 10)
+	var ac: int = d.get("ac", 12)
+	var dc: int = d.get("die_count", 1)
+	var ds_: int = d.get("die_sides", 6)
+	return "Summon a %s (HP %d, AC %d, %dd%d) to fight by your side.\n1 charge — refreshes on rest. Re-activate to dismiss and resummon." % [animal, hp, ac, dc, ds_]
+
+func _build_natural_rager_description() -> String:
+	var rank: int = get_talent_rank("natural_rager")
+	var form: String = natural_rager_form
+	var lines: Array[String] = []
+	lines.append("[%s Form] — effects active while Raging. Click to cycle forms." % form)
+	match form:
+		"Bear":
+			if rank >= 1: lines.append("R1: −25% incoming magical damage.")
+			if rank >= 2: lines.append("R2: −50% incoming magical damage.")
+			if rank >= 3: lines.append("R3: Also −50% Necrotic/Radiant/Psychic (total 75%).")
+		"Eagle":
+			if rank >= 1: lines.append("R1: 50%% chance a move doesn't end your turn (once/round).")
+			if rank >= 2: lines.append("R2: Guaranteed second move each turn (replaces R1).")
+			if rank >= 3: lines.append("R3: Evade opportunity attacks. [color=gray](No-op until OA system added.)[/color]")
+		"Wolf":
+			var threshold: int = [0, 4, 3, 2][mini(rank, 3)]
+			lines.append("ADV on attack rolls when %d+ enemies are in your FOV." % threshold)
+	return "\n".join(lines)
+
+func _build_natural_sleeper_description() -> String:
+	var rank: int = get_talent_rank("natural_sleeper")
+	var form: String = natural_sleeper_form
+	var lines: Array[String] = []
+	lines.append("[%s Form] — activates on each new floor. Click to cycle forms." % form)
+	match form:
+		"Owl":
+			if rank >= 1: lines.append("R1: Pass through chasms freely.")
+			if rank >= 2: lines.append("R2: Gain 5 temp HP when entering a chasm.")
+			if rank >= 3: lines.append("R3: +2 AC while standing in a chasm.")
+		"Panther":
+			if rank >= 1: lines.append("R1: Mud is no longer difficult terrain.")
+			if rank >= 2: lines.append("R2: Gain 5 temp HP when entering mud.")
+			if rank >= 3: lines.append("R3: +2 AC while standing in mud.")
+		"Salmon":
+			if rank >= 1: lines.append("R1: Water is no longer difficult terrain.")
+			if rank >= 2: lines.append("R2: Gain 5 temp HP when entering water.")
+			if rank >= 3: lines.append("R3: +2 AC while standing in water.")
+	if not wild_heart_sleeper_active:
+		lines.append("[color=gray](Descend to a new floor to activate.)[/color]")
+	return "\n".join(lines)
+
 
 func _setup_barbarian_talents() -> void:
 	_class_talents = []
@@ -1010,3 +1171,53 @@ func _setup_barbarian_tier2_talents() -> void:
 		{"description": "Deal weapon damage + rage bonus (%d) + STR modifier back." % player_stats.rage_bonus_damage},
 	]
 	_class_talents.append(retaliation_talent)
+
+
+func _setup_wild_heart_tier2_talents() -> void:
+	# Wild Heart is an experimental subclass — balance will change significantly after playtesting.
+	# Key design deviation: taking rank 1 of Natural Rager/Sleeper grants 3 simultaneous
+	# switchable form effects (not 1 per point like standard talents). This is intentional.
+	var owtn_talent := Talent.new()
+	owtn_talent.talent_id = "one_with_nature"
+	owtn_talent.talent_name = "One with Nature"
+	owtn_talent.description = "Summon an animal companion that fights alongside you."
+	owtn_talent.icon_path = "res://sprites/items/Food/MeatCooked.png"
+	owtn_talent.tier = 2
+	owtn_talent.class_id = Stats.CharacterClass.BARBARIAN
+	owtn_talent.max_rank = 3
+	owtn_talent.ranks = [
+		{"description": "Summon a Squirrel (HP 10, AC 12, 1d6). 1 charge per rest."},
+		{"description": "Summon a Boar instead (HP 20, AC 14, 2d6). Replaces Squirrel."},
+		{"description": "Summon a Bear instead (HP 30, AC 16, 3d6). Replaces Boar."},
+	]
+	_class_talents.append(owtn_talent)
+
+	var nr_talent := Talent.new()
+	nr_talent.talent_id = "natural_rager"
+	nr_talent.talent_name = "Natural Rager"
+	nr_talent.description = "Unlock Bear/Eagle/Wolf forms while Raging. 1 rank grants all 3 forms."
+	nr_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	nr_talent.tier = 2
+	nr_talent.class_id = Stats.CharacterClass.BARBARIAN
+	nr_talent.max_rank = 3
+	nr_talent.ranks = [
+		{"description": "Bear: −25% magical DMG. Eagle: 50%% free-move chance. Wolf: ADV at 4+ enemies."},
+		{"description": "Bear: −50% magical. Eagle: guaranteed 2nd move (replaces R1). Wolf: threshold 3+."},
+		{"description": "Bear: +−50% celestial. Eagle: OA evasion (flag only). Wolf: threshold 2+."},
+	]
+	_class_talents.append(nr_talent)
+
+	var ns_talent := Talent.new()
+	ns_talent.talent_id = "natural_sleeper"
+	ns_talent.talent_name = "Natural Sleeper"
+	ns_talent.description = "Unlock Owl/Panther/Salmon terrain forms. Activate on floor entry."
+	ns_talent.icon_path = "res://sprites/items/Misc/KeyIron.png"
+	ns_talent.tier = 2
+	ns_talent.class_id = Stats.CharacterClass.BARBARIAN
+	ns_talent.max_rank = 3
+	ns_talent.ranks = [
+		{"description": "Owl: chasm passthrough. Panther: mud is normal. Salmon: water is normal."},
+		{"description": "Each form: 5 temp HP when entering its terrain (chasm/mud/water)."},
+		{"description": "Each form: +2 AC while standing in its terrain."},
+	]
+	_class_talents.append(ns_talent)

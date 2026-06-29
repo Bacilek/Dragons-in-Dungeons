@@ -78,6 +78,7 @@ var _grass_layer: TileMapLayer
 var _data: DungeonData
 var _player: Player
 var _enemies: Array[Enemy] = []
+var _companions: Array = []  # Array[Companion] — ally entities processed in enemy phase
 var _traps: Dictionary = {}         # Vector2i → {name, damage, msg, sprite_node, revealed, triggered, is_push}
 var _doors: Dictionary = {}         # Vector2i → {is_open: bool, sprite: Sprite2D}
 
@@ -176,6 +177,11 @@ func _load_floor() -> void:
 		if is_instance_valid(e):
 			e.queue_free()
 	_enemies.clear()
+	for c in _companions:
+		if is_instance_valid(c):
+			c.queue_free()
+	_companions.clear()
+	GameState.player_companion = null
 	TurnManager.clear_enemies()
 	TurnManager.reset()
 
@@ -581,6 +587,33 @@ func remove_enemy(enemy: Enemy) -> void:
 	TurnManager.unregister_enemy(enemy)
 	close_door(enemy.grid_pos)
 	AudioManager.play("kill_enemy")
+
+func get_all_enemies() -> Array[Enemy]:
+	return _enemies
+
+func spawn_companion(companion: Companion, pos: Vector2i) -> void:
+	companion._dungeon_floor = self
+	entities.add_child(companion)
+	companion.set_grid_pos(pos)
+	_companions.append(companion)
+
+func remove_companion(companion: Companion) -> void:
+	_companions.erase(companion)
+
+func is_walkable_for_companion(pos: Vector2i) -> bool:
+	if not _data.is_walkable(pos):
+		return false
+	if _doors.has(pos) and not _doors[pos]["is_open"]:
+		return false
+	if _player != null and _player.grid_pos == pos:
+		return false
+	for e: Enemy in _enemies:
+		if is_instance_valid(e) and e.grid_pos == pos:
+			return false
+	for c in _companions:
+		if is_instance_valid(c) and c.grid_pos == pos:
+			return false
+	return true
 
 func show_damage(world_pos: Vector2, amount: int, is_player_hit: bool) -> void:
 	var lbl := Label.new()

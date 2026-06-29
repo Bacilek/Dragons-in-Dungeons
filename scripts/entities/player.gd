@@ -57,6 +57,10 @@ var _rager_attack_triggered: bool = false
 # Per-turn Frenzy cap: fires once per turn. Reset at turn start.
 var _frenzy_triggered_this_turn: bool = false
 
+# ── Wild Heart state (Tier 2) ─────────────────────────────────────────────────
+# Eagle Natural Rager: per-turn free-move cap. Reset at turn start.
+var _eagle_free_move_used: bool = false
+
 # ── Reckless Attack state ─────────────────────────────────────────────────────
 # Talent-gated toggle (not available at rank 0). Free action — toggling does not consume a turn.
 # Rank 1: +2 flat to first STR attack / enemies +2. Rank 2+: ADV / enemies ADV.
@@ -128,6 +132,7 @@ func _on_turn_started() -> void:
 	_rager_move_triggered = false
 	_rager_attack_triggered = false
 	_frenzy_triggered_this_turn = false
+	_eagle_free_move_used = false
 	GameState.ability_bar_changed.emit()
 	# Refresh visibility after enemy turns, then snapshot FOV
 	if _dungeon_floor != null:
@@ -780,11 +785,18 @@ func _try_move(dir: Vector2i) -> void:
 		GameState.game_log("[color=gray]Nothing to interact with.[/color]")
 
 
+	var _ns_rank: int = GameState.get_talent_rank("natural_sleeper")
+	var _ns_form: String = GameState.natural_sleeper_form
+	var _sleeper_on: bool = GameState.wild_heart_sleeper_active and _ns_rank >= 1
+	var _target_tile: DungeonData.TileType = _dungeon_floor.get_tile_type(target)
+
 	if GameState.noclip:
 		# Noclip: only reject off-grid VOID
 		if _dungeon_floor.get_tile_type(target) == DungeonData.TileType.VOID:
 			return
 	else:
+		# Natural Sleeper Owl R1: allow movement into CHASM tiles
+		var _owl_override: bool = _sleeper_on and _ns_form == "Owl" and _target_tile == DungeonData.TileType.CHASM
 		# Door handling — locked doors distinguish dungeon-generated vs player-set
 		if _dungeon_floor.has_door_at(target) and not _dungeon_floor.is_door_open(target):
 			if _dungeon_floor.is_door_locked(target):
@@ -800,7 +812,7 @@ func _try_move(dir: Vector2i) -> void:
 			else:
 				_dungeon_floor.open_door(target)
 
-		if not _dungeon_floor.is_walkable(target):
+		if not _dungeon_floor.is_walkable(target) and not _owl_override:
 			return
 
 	var is_stairs: bool = _dungeon_floor.get_tile_type(target) == DungeonData.TileType.STAIRS_DOWN
@@ -837,14 +849,39 @@ func _try_move(dir: Vector2i) -> void:
 		TurnManager.on_player_action_complete()
 		_dungeon_floor.on_player_reached_stairs.call_deferred()
 		return
-	# Difficult terrain: apply status before Rager check
+	# Difficult terrain: apply status before Rager / Eagle check.
+	# Natural Sleeper Panther R1 bypasses mud; Salmon R1 bypasses water.
 	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
+	var _panther_bypass: bool = _sleeper_on and _ns_form == "Panther" and tile_t == DungeonData.TileType.MUD
+	var _salmon_bypass: bool = _sleeper_on and _ns_form == "Salmon" and tile_t == DungeonData.TileType.WATER
 	if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
-		GameState.apply_player_status("slowed", maxi(1, GameState.player_stats.slowed_turns))
+		if not _panther_bypass and not _salmon_bypass:
+			GameState.apply_player_status("slowed", maxi(1, GameState.player_stats.slowed_turns))
 	if tile_t == DungeonData.TileType.WATER and GameState.player_stats.burning_turns > 0:
 		GameState.player_stats.burning_turns = 0
 		GameState.player_status_changed.emit()
 		GameState.game_log("[color=cyan]The water extinguishes your flames![/color]")
+	# Natural Sleeper R2: 5 temp HP when entering form's terrain
+	if _ns_rank >= 2 and GameState.wild_heart_sleeper_active:
+		var _sleeper_terrain_match: bool = (
+			(_ns_form == "Owl" and tile_t == DungeonData.TileType.CHASM) or
+			(_ns_form == "Panther" and tile_t == DungeonData.TileType.MUD) or
+			(_ns_form == "Salmon" and tile_t == DungeonData.TileType.WATER)
+		)
+		if _sleeper_terrain_match:
+			GameState.player_stats.temp_hp += 5
+			GameState.game_log("[color=cyan]Natural Sleeper: 5 temp HP from %s terrain.[/color]" % _ns_form)
+	# Natural Sleeper R3: AC bonus while standing in form's terrain
+	if _ns_rank >= 3 and GameState.wild_heart_sleeper_active:
+		var _ac_terrain_match: bool = (
+			(_ns_form == "Owl" and tile_t == DungeonData.TileType.CHASM) or
+			(_ns_form == "Panther" and tile_t == DungeonData.TileType.MUD) or
+			(_ns_form == "Salmon" and tile_t == DungeonData.TileType.WATER)
+		)
+		var _new_ac_bonus: int = 2 if _ac_terrain_match else 0
+		if _new_ac_bonus != GameState.terrain_ac_bonus:
+			GameState.terrain_ac_bonus = _new_ac_bonus
+			GameState.recalculate_stats()
 	# Rager R2: chance to grant a free action after moving (skips enemy turn + slowed penalty)
 	if _is_raging and GameState.get_talent_rank("rager") >= 2 and not _rager_move_triggered:
 		if randi_range(1, 100) <= GameState.player_stats.rage_bonus_damage * 10:
@@ -853,8 +890,19 @@ func _try_move(dir: Vector2i) -> void:
 			GameState.game_log("[color=orange]Rager: fury drives you — the move didn't cost a turn![/color]")
 			TurnManager.revert_to_waiting()
 			return
+	# Natural Rager Eagle: free-move. R1 = 50% chance once/turn; R2 = guaranteed once/turn.
+	var _nr_rank: int = GameState.get_talent_rank("natural_rager")
+	if _is_raging and _nr_rank >= 1 and GameState.natural_rager_form == "Eagle" and not _eagle_free_move_used:
+		var _should_eagle_free: bool = _nr_rank >= 2 or randi_range(1, 100) <= 50
+		if _should_eagle_free:
+			_eagle_free_move_used = true
+			_rage_attacked_this_turn = true  # pause rage countdown on reverted turn
+			GameState.game_log("[color=lime]Eagle Form: wings carry you — the move didn't cost a turn![/color]")
+			TurnManager.revert_to_waiting()
+			return
 	TurnManager.on_player_action_complete()
-	if GameState.player_stats.slowed_turns > 0:
+	# Slowed extra turn cost (skip if Panther/Salmon bypassed the terrain penalty)
+	if GameState.player_stats.slowed_turns > 0 and not _panther_bypass and not _salmon_bypass:
 		await TurnManager.player_turn_started
 		TurnManager.begin_player_action()
 		_dungeon_floor.update_fog(grid_pos)
@@ -965,6 +1013,12 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Heavy weapon penalty: STR < 13 imposes Disadvantage
 	var weapon_item_ref: Item = GameState.equipped_weapon
 	if weapon_item_ref != null and weapon_item_ref.is_heavy and stats.strength < 13: disadv_count += 1
+	# Natural Rager Wolf: ADV when enough enemies are in FOV while Raging
+	var wolf_nr_rank: int = GameState.get_talent_rank("natural_rager")
+	if wolf_nr_rank >= 1 and _is_raging and GameState.natural_rager_form == "Wolf" and is_str_weapon:
+		var wolf_threshold: int = [0, 4, 3, 2][mini(wolf_nr_rank, 3)]
+		if _dungeon_floor != null and _dungeon_floor.get_visible_enemies().size() >= wolf_threshold:
+			adv_count += 1
 	var net: int = adv_count - disadv_count
 	var adv: bool = net > 0
 	var disadv: bool = net < 0
@@ -1556,6 +1610,9 @@ func _use_ability_slot(idx: int) -> void:
 		"danger_sense":            GameState.game_log("[color=gray]Danger Sense is passive — no activation needed.[/color]")
 		"unarmored_defense_monk":  GameState.game_log("[color=gray]Unarmored Defense is passive — active when unarmored (AC = 10+DEX+WIS).[/color]")
 		"martial_arts":            GameState.game_log("[color=gray]Martial Arts is passive — attack unarmed to trigger a bonus-action strike.[/color]")
+		"one_with_nature":         _activate_one_with_nature(ab)
+		"natural_rager":           _cycle_natural_rager_form(ab)
+		"natural_sleeper":         _cycle_natural_sleeper_form(ab)
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
 
 func _make_empty_bottle() -> Item:
@@ -1892,3 +1949,73 @@ func _open_talent_picker() -> void:
 		return
 	var picker = load("res://scripts/ui/talent_picker.gd").new()
 	get_tree().root.add_child(picker)
+
+
+# ── Wild Heart helpers ────────────────────────────────────────────────────────
+
+func _activate_one_with_nature(ab: Ability) -> void:
+	var rank: int = GameState.get_talent_rank("one_with_nature")
+	if ab.uses_remaining <= 0:
+		GameState.game_log("[color=gray]One with Nature: no charge available (rest to restore).[/color]")
+		return
+	if GameState.player_companion != null and is_instance_valid(GameState.player_companion):
+		_dismiss_companion()
+	_summon_companion(rank)
+	if not GameState.invincible:
+		ab.uses_remaining = 0
+	GameState.ability_bar_changed.emit()
+
+func _summon_companion(rank: int) -> void:
+	if _dungeon_floor == null:
+		return
+	var stats_data: Dictionary = GameState.WILD_HEART_COMPANION_STATS.get(rank, {})
+	var companion := Companion.new()
+	companion.configure(stats_data)
+	var spawn_pos: Vector2i = _find_free_adjacent()
+	if spawn_pos == Vector2i(-1, -1):
+		GameState.game_log("[color=gray]No room to summon companion![/color]")
+		return
+	_dungeon_floor.spawn_companion(companion, spawn_pos)
+	GameState.player_companion = companion
+	GameState.game_log("[color=lime]You summon a %s to fight by your side![/color]" % companion.animal_name)
+
+func _dismiss_companion() -> void:
+	var comp = GameState.player_companion
+	if comp == null or not is_instance_valid(comp):
+		GameState.player_companion = null
+		return
+	if _dungeon_floor != null:
+		_dungeon_floor.remove_companion(comp)
+	TurnManager.unregister_enemy(comp)
+	GameState.game_log("[color=gray]%s is dismissed.[/color]" % comp.animal_name)
+	comp.queue_free()
+	GameState.player_companion = null
+
+func _find_free_adjacent() -> Vector2i:
+	if _dungeon_floor == null:
+		return Vector2i(-1, -1)
+	var dirs: Array[Vector2i] = [
+		Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+		Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1),
+	]
+	for d: Vector2i in dirs:
+		var p: Vector2i = grid_pos + d
+		if _dungeon_floor.is_walkable_for_companion(p):
+			return p
+	return Vector2i(-1, -1)
+
+func _cycle_natural_rager_form(ab: Ability) -> void:
+	var forms: PackedStringArray = ["Bear", "Eagle", "Wolf"]
+	var idx: int = forms.find(GameState.natural_rager_form)
+	GameState.natural_rager_form = forms[(idx + 1) % forms.size()]
+	ab.description = GameState._build_natural_rager_description()
+	GameState.ability_bar_changed.emit()
+	GameState.game_log("[color=orange]Natural Rager: switched to %s Form.[/color]" % GameState.natural_rager_form)
+
+func _cycle_natural_sleeper_form(ab: Ability) -> void:
+	var forms: PackedStringArray = ["Owl", "Panther", "Salmon"]
+	var idx: int = forms.find(GameState.natural_sleeper_form)
+	GameState.natural_sleeper_form = forms[(idx + 1) % forms.size()]
+	ab.description = GameState._build_natural_sleeper_description()
+	GameState.ability_bar_changed.emit()
+	GameState.game_log("[color=cyan]Natural Sleeper: switched to %s Form.[/color]" % GameState.natural_sleeper_form)
