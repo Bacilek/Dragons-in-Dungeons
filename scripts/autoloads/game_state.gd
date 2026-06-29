@@ -208,6 +208,7 @@ func _give_monk_starting_items() -> void:
 	ud.icon_path = "res://sprites/items/Misc/KeyIron.png"
 	ud.uses_remaining = 0
 	ud.uses_max = 0
+	ud.is_passive = true
 	add_ability(ud)
 	# Martial Arts passive — die scales with level (1d6 → 1d8 → 1d10 → 1d12)
 	var ma := Ability.new()
@@ -217,6 +218,7 @@ func _give_monk_starting_items() -> void:
 	ma.icon_path = "res://sprites/items/Misc/KeyIron.png"
 	ma.uses_remaining = 0
 	ma.uses_max = 0
+	ma.is_passive = true
 	add_ability(ma)
 	recalculate_stats()
 	equipment_changed.emit()
@@ -228,6 +230,8 @@ func _find_ability_by_id(id: String) -> Ability:
 	return null
 
 func add_ability(ability: Ability) -> bool:
+	if ability.is_passive:
+		return false
 	for i: int in ABILITY_BAR_SIZE:
 		if player_ability_bar[i] == null:
 			player_ability_bar[i] = ability
@@ -787,6 +791,7 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				rager_ab.icon_path = "res://sprites/weapons/weapon_double_axe.png"
 				rager_ab.uses_remaining = 0
 				rager_ab.uses_max = 0
+				rager_ab.is_passive = true
 				add_ability(rager_ab)
 			else:
 				var rager_ab: Ability = _find_ability_by_id("rager")
@@ -801,6 +806,7 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				frenzy_ab.icon_path = "res://sprites/weapons/weapon_double_axe.png"
 				frenzy_ab.uses_remaining = 0
 				frenzy_ab.uses_max = 0
+				frenzy_ab.is_passive = true
 				add_ability(frenzy_ab)
 			else:
 				var frenzy_ab: Ability = _find_ability_by_id("frenzy")
@@ -815,6 +821,7 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				ret_ab.icon_path = "res://sprites/weapons/weapon_double_axe.png"
 				ret_ab.uses_remaining = 0
 				ret_ab.uses_max = 0
+				ret_ab.is_passive = true
 				add_ability(ret_ab)
 			else:
 				var ret_ab: Ability = _find_ability_by_id("retaliation")
@@ -829,6 +836,7 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				ds.icon_path = "res://sprites/items/Misc/KeyIron.png"
 				ds.uses_remaining = 0
 				ds.uses_max = 0
+				ds.is_passive = true
 				add_ability(ds)
 			elif rank == 2:
 				var ds: Ability = _find_ability_by_id("danger_sense")

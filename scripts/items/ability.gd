@@ -10,6 +10,8 @@ extends Resource
 @export var uses_max: int = 0
 # For toggle abilities (e.g. Reckless Attack): true while toggled on.
 @export var is_active: bool = false
+# Passive abilities are shown only in the talent screen, never placed in the ability bar.
+@export var is_passive: bool = false
 
 func get_display_name() -> String:
 	return ability_name
