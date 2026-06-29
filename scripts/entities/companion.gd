@@ -1,6 +1,9 @@
 class_name Companion
 extends Entity
 
+const SIGHT_RADIUS: int = 6      # sees enemies within 6 Chebyshev tiles
+const FOLLOW_DISTANCE: int = 3   # only follows player when farther than this
+
 var animal_name: String = "Squirrel"
 var armor_class: int = 12
 var die_count: int = 1
@@ -84,7 +87,7 @@ func take_turn() -> void:
 	if _dungeon_floor == null:
 		return
 
-	var nearest: Enemy = _find_nearest_enemy()
+	var nearest: Enemy = _find_nearest_visible_enemy()
 	if nearest != null:
 		var diff: Vector2i = nearest.grid_pos - grid_pos
 		if maxi(absi(diff.x), absi(diff.y)) <= 1:
@@ -92,9 +95,13 @@ func take_turn() -> void:
 			return
 		_move_step_toward(nearest.grid_pos)
 	else:
-		_move_step_toward(GameState.player_grid_pos)
+		var player_diff: Vector2i = GameState.player_grid_pos - grid_pos
+		var player_dist: int = maxi(absi(player_diff.x), absi(player_diff.y))
+		if player_dist > FOLLOW_DISTANCE:
+			_move_step_toward(GameState.player_grid_pos)
+		# else: already close — idle this turn
 
-func _find_nearest_enemy() -> Enemy:
+func _find_nearest_visible_enemy() -> Enemy:
 	if _dungeon_floor == null:
 		return null
 	var best: Enemy = null
@@ -104,6 +111,10 @@ func _find_nearest_enemy() -> Enemy:
 			continue
 		var diff: Vector2i = e.grid_pos - grid_pos
 		var dist: int = maxi(absi(diff.x), absi(diff.y))
+		if dist > SIGHT_RADIUS:
+			continue
+		if not _dungeon_floor.has_line_of_sight(grid_pos, e.grid_pos):
+			continue
 		if dist < best_dist:
 			best_dist = dist
 			best = e
@@ -112,9 +123,8 @@ func _find_nearest_enemy() -> Enemy:
 func _attack_enemy(target: Enemy) -> void:
 	if not is_instance_valid(target) or target.stats.is_dead():
 		return
-	var prof: int = GameState.player_stats.proficiency_bonus
 	var die_roll: int = randi_range(1, 20)
-	var roll: int = die_roll + prof
+	var roll: int = die_roll  # no proficiency — animal instinct, not trained combat
 	if die_roll == 20 or roll >= target.stats.armor_class:
 		var dmg: int = 0
 		for _i: int in die_count:
@@ -128,14 +138,14 @@ func _attack_enemy(target: Enemy) -> void:
 			_dungeon_floor.show_damage(target.position, dmg, false)
 		var crit_tag: String = " [color=red]CRIT![/color]" if die_roll == 20 else ""
 		var crit_int: int = 1 if die_roll == 20 else 0
-		GameState.game_log("[color=lime]%s[/color] attacks [color=orange]%s[/color] for [url=catk:die=%d,prof=%d,roll=%d,ac=%d,dmg=%d,crit=%d][color=yellow]%d[/color][/url].%s" % [animal_name, target.display_name, die_roll, prof, roll, target.stats.armor_class, dmg, crit_int, dmg, crit_tag])
+		GameState.game_log("[color=lime]%s[/color] rolls [color=yellow]%d[/color] vs AC [color=yellow]%d[/color] → hits [color=orange]%s[/color] for [url=catk:die=%d,prof=0,roll=%d,ac=%d,dmg=%d,crit=%d][color=yellow]%d[/color][/url].%s" % [animal_name, roll, target.stats.armor_class, target.display_name, die_roll, roll, target.stats.armor_class, dmg, crit_int, dmg, crit_tag])
 		if target.stats.is_dead():
 			GameState.game_log("[color=lime]%s kills %s![/color]" % [animal_name, target.display_name])
 			GameState.gain_exp(maxi(1, target.exp_reward / 2))
 			_dungeon_floor.remove_enemy(target)
 			target.die()
 	else:
-		GameState.game_log("[color=gray]%s misses %s. [url=catk:die=%d,prof=%d,roll=%d,ac=%d,dmg=0,crit=0]▸[/url][/color]" % [animal_name, target.display_name, die_roll, prof, roll, target.stats.armor_class])
+		GameState.game_log("[color=gray]%s rolls [color=yellow]%d[/color] vs AC [color=yellow]%d[/color] → misses %s. [url=catk:die=%d,prof=0,roll=%d,ac=%d,dmg=0,crit=0]▸[/url][/color]" % [animal_name, roll, target.stats.armor_class, target.display_name, die_roll, roll, target.stats.armor_class])
 
 func _move_step_toward(target_pos: Vector2i) -> void:
 	if _dungeon_floor == null or target_pos == grid_pos:
