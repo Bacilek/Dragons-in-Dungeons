@@ -520,15 +520,16 @@ func _update_hp_bar(current_hp: int, max_hp: int) -> void:
 	hp_fill.size = Vector2(BAR_W * ratio, HP_BAR_H)
 	hp_label.text = "%d / %d" % [current_hp, max_hp]
 	# Temp HP bar: light blue fill proportional to temp_hp / max_hp, above the HP fill.
-	var temp: int = 0
-	if GameState.player_stats != null:
-		temp = GameState.player_stats.temp_hp
-	if temp > 0 and max_hp > 0:
-		var temp_ratio: float = clampf(float(temp) / float(max_hp), 0.0, 1.0)
-		_temp_hp_fill.size = Vector2(BAR_W * temp_ratio, THP_BAR_H)
-		_temp_hp_fill.visible = true
-	else:
-		_temp_hp_fill.visible = false
+	if _temp_hp_fill != null:
+		var temp: int = 0
+		if GameState.player_stats != null:
+			temp = GameState.player_stats.temp_hp
+		if temp > 0 and max_hp > 0:
+			var temp_ratio: float = clampf(float(temp) / float(max_hp), 0.0, 1.0)
+			_temp_hp_fill.size = Vector2(BAR_W * temp_ratio, THP_BAR_H)
+			_temp_hp_fill.visible = true
+		else:
+			_temp_hp_fill.visible = false
 
 func _update_exp_bar(exp: int, exp_needed: int, level: int) -> void:
 	var ratio: float = clampf(float(exp) / float(exp_needed), 0.0, 1.0)
