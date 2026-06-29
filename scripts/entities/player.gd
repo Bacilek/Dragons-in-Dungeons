@@ -1144,9 +1144,12 @@ func try_retaliation(attacker: Enemy) -> void:
 		return
 	var rage_bonus: int = stats.rage_bonus_damage
 	var melee_item: Item = GameState.equipment.get("melee", null)
-	var wpn_dmg: int = 0
+	var wpn_roll: int = 0
+	var wpn_bonus: int = 0
 	if melee_item != null:
-		wpn_dmg = randi_range(melee_item.damage_die_min, melee_item.damage_die_max) + melee_item.bonus_damage
+		wpn_roll = randi_range(melee_item.damage_die_min, melee_item.damage_die_max)
+		wpn_bonus = melee_item.bonus_damage
+	var wpn_dmg: int = wpn_roll + wpn_bonus
 	var ret_dmg: int = 0
 	match rank:
 		1: ret_dmg = rage_bonus                            # rage bonus only
@@ -1159,7 +1162,10 @@ func try_retaliation(attacker: Enemy) -> void:
 	attacker.stats.take_damage(ret_dmg)
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(attacker.position, ret_dmg, false)
-	GameState.game_log("[color=orange]Retaliation! %d %s back to %s.[/color]" % [ret_dmg, dmg_type, attacker.display_name])
+	var ret_meta: String = "ret:rank=%d,wpn_roll=%d,wpn_bonus=%d,rage=%d,str=%d,final=%d" % [
+		rank, wpn_roll, wpn_bonus, rage_bonus, stats.str_modifier(), ret_dmg]
+	GameState.game_log("[color=orange]Retaliation! [url=%s][color=yellow]%d[/color][/url] %s back to %s.[/color]" % [
+		ret_meta, ret_dmg, dmg_type, attacker.display_name])
 	if attacker.stats.is_dead():
 		_finish_kill(attacker)
 

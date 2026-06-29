@@ -51,10 +51,10 @@ Triggered by `GameState.stairs_discovered` signal (emitted by `DungeonFloor.upda
 ---
 
 ## Talent picker (`talent_picker.gd`)
-CanvasLayer, layer = 25. Spawned by `hud.gd._on_player_leveled_up()` when `GameState.talent_points_available > 0`.
-Sets `GameState.talent_picker_open = true` → blocks all player keyboard input. Cleared on close/skip.
-Displays all talents in `GameState._class_talents` as rows: icon, name, rank pips (●○○), next-rank description, Invest button. Auto-closes when points reach 0. Esc/Skip closes early (skips remaining point).
-Debug panel "+1 Talent Point" button also spawns this picker.
+CanvasLayer, layer = 25. Opened by `player.gd._open_talent_picker()` via **T key** (bypasses phase gate). Does NOT auto-open on level-up.
+Sets `GameState.talent_picker_open = true` → blocks all player keyboard input. Esc or T closes.
+Pixel Dungeon style: tier header with star bar (gray=spent / yellow=available / dark=locked) + icon row with dot rank indicators + bottom detail panel showing all rank descriptions + "Upgrade Talent ▲" button.
+**Subclass arrows** (Tier 2 header only, visible in God Mode): ◀ `active_tier2_subclass` ▶ arrows call `GameState.debug_switch_subclass(±1)` then close+reopen the picker. Placeholders: Zealot, World Tree, Wild Heart (no talents, show empty Tier 2 area).
 
 ## Short rest panel (`short_rest_panel.gd`)
 CanvasLayer, layer = 25. Spawned by `player.gd._open_short_rest()`.

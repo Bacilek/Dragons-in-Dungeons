@@ -69,8 +69,9 @@ talent_picker_open: bool     # blocks ALL player input while talent picker is vi
 talent_points_available: int # unspent talent points (Tier 1 + Tier 2)
 talent_investments: Dict     # talent_id → current_rank (int, 0 = not invested)
 _class_talents: Array[Talent]# all talents for current class (Tier 1 + unlocked Tier 2)
-tier2_unlocked: bool         # set by unlock_tier2() on Necromancer kill (Barbarian)
-_pending_tier2_points: int   # queued Tier 2 points earned before Necromancer kill
+tier2_unlocked: bool         # auto-set at level 7 via gain_exp() → unlock_tier2()
+active_tier2_subclass: String# current Tier 2 subclass name ("Berserker" default); debug-switchable
+TIER2_SUBCLASSES: PackedStringArray  # ["Berserker", "Zealot", "World Tree", "Wild Heart"]
 invincible: bool             # debug flag
 noclip: bool                 # debug flag
 player_grid_pos: Vector2i    # synced every move
@@ -78,7 +79,9 @@ player_grid_pos: Vector2i    # synced every move
 
 **Status chokepoint**: `apply_player_status(type: String, turns: int) -> bool` — single entry point for all player status/debuff application. If Rager R1 is active and raging, applies a % chance to negate and returns false (caller skips log). On success: sets `player_stats.{type}_turns = maxi(existing, turns)` and emits `player_status_changed`. All trap, enemy, terrain, and rotten-meat callers must use this — never set `player_stats.{status}_turns` directly.
 
-**Tier 2 unlock**: `unlock_tier2()` — called from player.gd `_finish_kill()` on Necromancer death (Barbarian class). Calls `_setup_barbarian_tier2_talents()` to append Rager/Frenzy/Retaliation to `_class_talents`, releases `_pending_tier2_points`, emits `player_leveled_up` if points > 0 (spawns talent_picker).
+**Tier 2 unlock**: `unlock_tier2()` — auto-called from `gain_exp()` at level 7. Calls `_setup_barbarian_tier2_talents()` to append Rager/Frenzy/Retaliation to `_class_talents`. No longer tied to Necromancer kill.
+
+**Debug subclass switching**: `TIER2_SUBCLASSES: PackedStringArray = ["Berserker", "Zealot", "World Tree", "Wild Heart"]`. `active_tier2_subclass: String` tracks current. `debug_switch_subclass(direction: int)` — clears tier 2 investments + ability bar entries + `_class_talents` tier 2 entries, then re-runs `_setup_barbarian_tier2_talents()` for Berserker or leaves empty for placeholders. Called from talent_picker.gd's subclass arrow buttons (only visible in God Mode).
 
 **Long rest = floor descent**: `advance_floor()` resets `rage_uses_remaining`, `hit_dice`, and `short_rests_remaining`. Level-up via `gain_exp()` only grants `+1 talent_points_available` and emits `player_leveled_up` — it does NOT reset resources or heal the player.
 

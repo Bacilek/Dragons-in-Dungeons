@@ -69,6 +69,9 @@ var talent_investments: Dictionary = {}   # talent_id → current_rank (int)
 var _class_talents: Array[Talent] = []    # all talents for current class, populated on class select
 # Tier 2 auto-unlocks at level 7 (no boss kill required).
 var tier2_unlocked: bool = false
+# Debug subclass cycling — only Berserker is fully implemented; others are placeholders.
+const TIER2_SUBCLASSES: PackedStringArray = ["Berserker", "Zealot", "World Tree", "Wild Heart"]
+var active_tier2_subclass: String = "Berserker"
 var short_rest_active: bool = false
 var short_rest_turns_remaining: int = 0
 var short_rest_pending_heal: int = 0
@@ -318,6 +321,37 @@ func unlock_tier2() -> void:
 	tier2_unlocked = true
 	_setup_barbarian_tier2_talents()
 	game_log("[color=gold]Berserker Tier 2 talents unlocked![/color]")
+
+func debug_switch_subclass(direction: int) -> void:
+	var idx: int = TIER2_SUBCLASSES.find(active_tier2_subclass)
+	if idx < 0:
+		idx = 0
+	idx = (idx + direction + TIER2_SUBCLASSES.size()) % TIER2_SUBCLASSES.size()
+	active_tier2_subclass = TIER2_SUBCLASSES[idx]
+	# Collect tier 2 talent IDs currently in _class_talents
+	var tier2_ids: Array[String] = []
+	for t: Talent in _class_talents:
+		if t.tier == 2:
+			tier2_ids.append(t.talent_id)
+	# Clear tier 2 investments
+	for id: String in tier2_ids:
+		talent_investments.erase(id)
+	# Clear tier 2 ability bar entries
+	for i: int in player_ability_bar.size():
+		var ab: Ability = player_ability_bar[i] as Ability
+		if ab != null and ab.ability_id in tier2_ids:
+			player_ability_bar[i] = null
+	ability_bar_changed.emit()
+	# Replace tier 2 talent entries
+	var new_talents: Array[Talent] = []
+	for t: Talent in _class_talents:
+		if t.tier != 2:
+			new_talents.append(t)
+	_class_talents = new_talents
+	# Setup new subclass (only Berserker is implemented; others are placeholder)
+	if active_tier2_subclass == "Berserker":
+		_setup_barbarian_tier2_talents()
+	game_log("[color=purple][DEBUG] Subclass → %s[/color]" % active_tier2_subclass)
 
 
 func debug_level_up() -> void:

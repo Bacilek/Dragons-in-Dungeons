@@ -914,6 +914,7 @@ func _format_tooltip(meta: String) -> String:
 		"save", "check": return _fmt_save_tooltip(params)
 		"ehit":          return _fmt_ehit_tooltip(params)
 		"edmg":          return _fmt_edmg_tooltip(params)
+		"ret":           return _fmt_ret_tooltip(params)
 	return ""
 
 func _fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
@@ -1080,6 +1081,34 @@ func _fmt_edmg_tooltip(p: Dictionary) -> String:
 		lines.append("damage = [color=yellow]%d[/color]" % roll)
 	if crit:
 		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
+	lines.append("─────────────────")
+	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
+	return "\n".join(lines)
+
+func _fmt_ret_tooltip(p: Dictionary) -> String:
+	var rank: int      = int(p.get("rank", "0"))
+	var wpn_roll: int  = int(p.get("wpn_roll", "0"))
+	var wpn_bonus: int = int(p.get("wpn_bonus", "0"))
+	var rage: int      = int(p.get("rage", "0"))
+	var str_mod: int   = int(p.get("str", "0"))
+	var final_dmg: int = int(p.get("final", "0"))
+	var lines: PackedStringArray = []
+	lines.append("[color=orange]Retaliation[/color]  (Rank %d)" % rank)
+	match rank:
+		1:
+			lines.append("[color=red]+%d[/color]  (Rage bonus)" % rage)
+		2:
+			lines.append("weapon roll = [color=yellow]%d[/color]" % wpn_roll)
+			if wpn_bonus != 0:
+				lines.append("[color=lightblue]%+d[/color]  (weapon bonus)" % wpn_bonus)
+		3:
+			lines.append("weapon roll = [color=yellow]%d[/color]" % wpn_roll)
+			if wpn_bonus != 0:
+				lines.append("[color=lightblue]%+d[/color]  (weapon bonus)" % wpn_bonus)
+			if rage != 0:
+				lines.append("[color=red]+%d[/color]  (Rage bonus)" % rage)
+			if str_mod != 0:
+				lines.append("[color=lightblue]%+d[/color]  (STR mod)" % str_mod)
 	lines.append("─────────────────")
 	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
 	return "\n".join(lines)

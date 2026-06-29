@@ -97,8 +97,39 @@ func _build_tier_section(tier: int, y: float) -> float:
 	tier_lbl.add_theme_font_size_override("font_size", 13)
 	tier_lbl.add_theme_color_override("font_color", label_color)
 	tier_lbl.position = Vector2(14.0, y + 4.0)
-	tier_lbl.size = Vector2(60.0, 20.0)
+	tier_lbl.size = Vector2(50.0, 20.0)
 	_panel.add_child(tier_lbl)
+
+	# Debug subclass arrows (only in God Mode, only for Tier 2)
+	if tier == 2 and GameState.god_mode:
+		var prev_btn := Button.new()
+		prev_btn.text = "◀"
+		prev_btn.size = Vector2(24.0, 22.0)
+		prev_btn.position = Vector2(68.0, y + 4.0)
+		prev_btn.focus_mode = Control.FOCUS_NONE
+		prev_btn.add_theme_font_size_override("font_size", 11)
+		_style_btn(prev_btn, Color(0.14, 0.10, 0.22), Color(0.42, 0.28, 0.70))
+		prev_btn.pressed.connect(func() -> void: _on_subclass_arrow(-1))
+		_panel.add_child(prev_btn)
+
+		var sub_lbl := Label.new()
+		sub_lbl.text = GameState.active_tier2_subclass
+		sub_lbl.add_theme_font_size_override("font_size", 12)
+		sub_lbl.add_theme_color_override("font_color", Color(0.72, 0.52, 0.90))
+		sub_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sub_lbl.position = Vector2(96.0, y + 4.0)
+		sub_lbl.size = Vector2(156.0, 20.0)
+		_panel.add_child(sub_lbl)
+
+		var next_btn := Button.new()
+		next_btn.text = "▶"
+		next_btn.size = Vector2(24.0, 22.0)
+		next_btn.position = Vector2(256.0, y + 4.0)
+		next_btn.focus_mode = Control.FOCUS_NONE
+		next_btn.add_theme_font_size_override("font_size", 11)
+		_style_btn(next_btn, Color(0.14, 0.10, 0.22), Color(0.42, 0.28, 0.70))
+		next_btn.pressed.connect(func() -> void: _on_subclass_arrow(1))
+		_panel.add_child(next_btn)
 
 	# Star bar (right side, colored ★ chars via bbcode)
 	var star_rtl := RichTextLabel.new()
@@ -257,6 +288,12 @@ func _on_upgrade() -> void:
 	GameState.invest_talent(_selected_id)
 	_select_talent(_selected_id)  # re-apply highlight + re-read rank
 	_refresh()
+
+func _on_subclass_arrow(direction: int) -> void:
+	GameState.debug_switch_subclass(direction)
+	var new_picker = load("res://scripts/ui/talent_picker.gd").new()
+	get_tree().root.call_deferred("add_child", new_picker)
+	_close()
 
 func _close() -> void:
 	GameState.talent_picker_open = false
