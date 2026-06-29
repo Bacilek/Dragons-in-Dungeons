@@ -938,6 +938,7 @@ func _format_tooltip(meta: String) -> String:
 		"ehit":          return _fmt_ehit_tooltip(params)
 		"edmg":          return _fmt_edmg_tooltip(params)
 		"ret":           return _fmt_ret_tooltip(params)
+		"catk":          return _fmt_catk_tooltip(params)
 	return ""
 
 func _fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
@@ -1106,6 +1107,29 @@ func _fmt_edmg_tooltip(p: Dictionary) -> String:
 		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
 	lines.append("─────────────────")
 	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
+	return "\n".join(lines)
+
+func _fmt_catk_tooltip(p: Dictionary) -> String:
+	var die: int   = int(p.get("die", "0"))
+	var prof: int  = int(p.get("prof", "0"))
+	var roll: int  = int(p.get("roll", "0"))
+	var ac: int    = int(p.get("ac", "0"))
+	var dmg: int   = int(p.get("dmg", "0"))
+	var crit: bool = p.get("crit", "0") == "1"
+	var lines: PackedStringArray = []
+	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if crit else ""
+	lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
+	if prof != 0:
+		lines.append("[color=lightblue]%+d[/color]  (proficiency)" % prof)
+	lines.append("─────────────────")
+	var vs: String
+	if crit or roll >= ac:
+		vs = "[color=tomato]HIT[/color]"
+	else:
+		vs = "[color=gray]MISS[/color]"
+	lines.append("= [color=yellow]%d[/color] vs AC %d  →  %s" % [roll, ac, vs])
+	if dmg > 0:
+		lines.append("damage = [color=yellow]%d[/color]%s" % [dmg, "  ×2 (crit)" if crit else ""])
 	return "\n".join(lines)
 
 func _fmt_ret_tooltip(p: Dictionary) -> String:

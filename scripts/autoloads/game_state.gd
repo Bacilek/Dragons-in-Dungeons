@@ -285,6 +285,11 @@ func advance_floor() -> void:
 	wild_heart_sleeper_active = get_talent_rank("natural_sleeper") >= 1
 	active_sleeper_form = natural_sleeper_form
 	terrain_ac_bonus = 0  # reset terrain AC; player.gd will reapply on next move
+	if wild_heart_sleeper_active:
+		if active_sleeper_form != "":
+			game_log("[color=cyan]Natural Sleeper: you wake — %s Form is active this floor.[/color]" % active_sleeper_form)
+		else:
+			game_log("[color=gray]Natural Sleeper: no form chosen — press the ability to select one.[/color]")
 	# Companion: restore HP if alive; otherwise charge will be restored in _sync_ability_uses
 	if player_companion != null and is_instance_valid(player_companion):
 		player_companion.heal_to_max()

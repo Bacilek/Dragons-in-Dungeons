@@ -127,14 +127,15 @@ func _attack_enemy(target: Enemy) -> void:
 		if _dungeon_floor != null:
 			_dungeon_floor.show_damage(target.position, dmg, false)
 		var crit_tag: String = " [color=red]CRIT![/color]" if die_roll == 20 else ""
-		GameState.game_log("[color=lime]%s[/color] attacks [color=orange]%s[/color] for [color=yellow]%d[/color].%s" % [animal_name, target.display_name, dmg, crit_tag])
+		var crit_int: int = 1 if die_roll == 20 else 0
+		GameState.game_log("[color=lime]%s[/color] attacks [color=orange]%s[/color] for [url=catk:die=%d,prof=%d,roll=%d,ac=%d,dmg=%d,crit=%d][color=yellow]%d[/color][/url].%s" % [animal_name, target.display_name, die_roll, prof, roll, target.stats.armor_class, dmg, crit_int, dmg, crit_tag])
 		if target.stats.is_dead():
 			GameState.game_log("[color=lime]%s kills %s![/color]" % [animal_name, target.display_name])
 			GameState.gain_exp(maxi(1, target.exp_reward / 2))
 			_dungeon_floor.remove_enemy(target)
 			target.die()
 	else:
-		GameState.game_log("[color=gray]%s misses %s.[/color]" % [animal_name, target.display_name])
+		GameState.game_log("[color=gray]%s misses %s. [url=catk:die=%d,prof=%d,roll=%d,ac=%d,dmg=0,crit=0]▸[/url][/color]" % [animal_name, target.display_name, die_roll, prof, roll, target.stats.armor_class])
 
 func _move_step_toward(target_pos: Vector2i) -> void:
 	if _dungeon_floor == null or target_pos == grid_pos:
@@ -143,6 +144,10 @@ func _move_step_toward(target_pos: Vector2i) -> void:
 	if path.is_empty():
 		return
 	var next: Vector2i = path[0]
+	# Open closed (unlocked) doors — same pattern as enemy.gd
+	if _dungeon_floor.has_door_at(next) and not _dungeon_floor.is_door_open(next):
+		if not _dungeon_floor.is_door_locked(next):
+			_dungeon_floor.open_door(next)
 	if _dungeon_floor.is_walkable_for_companion(next):
 		if _sprite != null:
 			_sprite.flip_h = next.x < grid_pos.x
