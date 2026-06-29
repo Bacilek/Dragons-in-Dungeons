@@ -2023,6 +2023,9 @@ func _find_free_adjacent() -> Vector2i:
 	return Vector2i(-1, -1)
 
 func _cycle_natural_rager_form(ab: Ability) -> void:
+	if GameState.is_raging:
+		GameState.game_log("[color=orange]Natural Rager: cannot switch form while raging.[/color]")
+		return
 	var forms: PackedStringArray = ["Bear", "Eagle", "Wolf"]
 	var idx: int = forms.find(GameState.natural_rager_form)
 	GameState.natural_rager_form = forms[(idx + 1) % forms.size()]

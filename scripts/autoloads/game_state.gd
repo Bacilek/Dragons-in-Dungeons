@@ -323,6 +323,15 @@ func _on_short_rest_completed() -> void:
 		owtn.uses_remaining = 1
 		ability_bar_changed.emit()
 		game_log("[color=lime]One with Nature: companion charge refreshed.[/color]")
+	# Natural Sleeper: short rest also locks in the chosen form (same as floor descent)
+	if get_talent_rank("natural_sleeper") >= 1:
+		wild_heart_sleeper_active = true
+		if active_sleeper_form != natural_sleeper_form:
+			active_sleeper_form = natural_sleeper_form
+			if active_sleeper_form != "":
+				game_log("[color=cyan]Natural Sleeper: %s Form is now active.[/color]" % active_sleeper_form)
+			else:
+				game_log("[color=gray]Natural Sleeper: no form chosen — press the ability to select one.[/color]")
 
 func hit_die_sides() -> int:
 	match player_stats.character_class:
