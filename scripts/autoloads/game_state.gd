@@ -67,9 +67,8 @@ var talent_points_available: int:
 	get: return tier1_talent_points + tier2_talent_points
 var talent_investments: Dictionary = {}   # talent_id → current_rank (int)
 var _class_talents: Array[Talent] = []    # all talents for current class, populated on class select
-# Tier 2 gating: Berserker unlocks on Necromancer kill (floor 10)
+# Tier 2 auto-unlocks at level 7 (no boss kill required).
 var tier2_unlocked: bool = false
-var _pending_tier2_points: int = 0
 var short_rest_active: bool = false
 var short_rest_turns_remaining: int = 0
 var short_rest_pending_heal: int = 0
@@ -290,13 +289,11 @@ func gain_exp(amount: int) -> void:
 			tier1_talent_points += 1
 			talent_points_changed.emit(talent_points_available)
 		elif lv >= 7 and lv <= 12:
-			# Tier 2 points: queued until Necromancer killed, then released by unlock_tier2()
-			if tier2_unlocked:
-				tier2_talent_points += 1
-				talent_points_changed.emit(talent_points_available)
-			else:
-				_pending_tier2_points += 1
-				combat_message.emit("[color=gray]Tier 2 talent point held — defeat the Necromancer to unlock Berserker.[/color]")
+			# Tier 2 auto-unlocks on first Tier 2 level-up (level 7).
+			if not tier2_unlocked:
+				unlock_tier2()
+			tier2_talent_points += 1
+			talent_points_changed.emit(talent_points_available)
 		# Level 6 and 13+: no talent points (gap between tiers)
 		# Rage uses scale by level — grant the extra use immediately on the triggering level-up.
 		if player_stats.character_class == Stats.CharacterClass.BARBARIAN:
@@ -307,10 +304,8 @@ func gain_exp(amount: int) -> void:
 					new_rage_max)
 				_sync_ability_uses()
 		var lv_str: String = ""
-		if (lv >= 1 and lv <= 5) or (tier2_unlocked and lv >= 7 and lv <= 12):
+		if (lv >= 1 and lv <= 5) or (lv >= 7 and lv <= 12):
 			lv_str = " +1 talent point."
-		elif lv >= 7 and lv <= 12:
-			lv_str = " (Tier 2 point pending — defeat the Necromancer)"
 		var level_msg: String = "[color=yellow]Level up! You are now level %d. (+%d max HP.%s)[/color]" % [player_stats.character_level, hp_gained, lv_str]
 		combat_message.emit(level_msg)
 		short_rest_changed.emit()
@@ -322,13 +317,7 @@ func unlock_tier2() -> void:
 		return
 	tier2_unlocked = true
 	_setup_barbarian_tier2_talents()
-	var pts: int = _pending_tier2_points
-	_pending_tier2_points = 0
-	tier2_talent_points += pts
-	talent_points_changed.emit(talent_points_available)
-	combat_message.emit("[color=gold]Berserker Subclass unlocked! %d Tier 2 talent point(s) available.[/color]" % pts)
-	if talent_points_available > 0:
-		player_leveled_up.emit(player_stats.character_level)
+	game_log("[color=gold]Berserker Tier 2 talents unlocked![/color]")
 
 
 func debug_level_up() -> void:

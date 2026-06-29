@@ -373,6 +373,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			if not GameState.short_rest_open:
 				GameState.inventory_toggle.emit()
 			return
+		# T key opens talent screen regardless of turn phase; bypasses phase gate
+		if key.physical_keycode == KEY_T:
+			if not GameState.inventory_open and not GameState.short_rest_open \
+					and not GameState.short_rest_active and not GameState.talent_picker_open:
+				_open_talent_picker()
+				get_viewport().set_input_as_handled()
+			return
 		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active or GameState.talent_picker_open:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
@@ -1167,8 +1174,6 @@ func _finish_kill(enemy: Enemy) -> void:
 	enemy.die()
 	if was_boss:
 		_dungeon_floor.drop_boss_loot(kill_pos)
-		if killed_name == "Necromancer" and stats.character_class == Stats.CharacterClass.BARBARIAN:
-			GameState.unlock_tier2()
 	if killed_name in UNDEAD_NAMES and randf() < 0.20:
 		var rotten := Item.new()
 		rotten.item_name = "Rotten Meat"
@@ -1875,3 +1880,9 @@ func _open_short_rest() -> void:
 	GameState.short_rest_open = true
 	var panel_script = load("res://scripts/ui/short_rest_panel.gd")
 	get_tree().root.add_child(panel_script.new())
+
+func _open_talent_picker() -> void:
+	if GameState._class_talents.is_empty():
+		return
+	var picker = load("res://scripts/ui/talent_picker.gd").new()
+	get_tree().root.add_child(picker)

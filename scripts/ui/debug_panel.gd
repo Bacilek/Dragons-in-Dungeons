@@ -232,32 +232,11 @@ func _build_talent_sub() -> void:
 	sep.size = Vector2(TALENT_SW - 12.0, 4.0)
 	_talent_sub.add_child(sep)
 
-	var action_row := HBoxContainer.new()
-	action_row.position = Vector2(6.0, 28.0)
-	action_row.size = Vector2(TALENT_SW - 12.0, 30.0)
-	action_row.add_theme_constant_override("separation", 6)
-	_talent_sub.add_child(action_row)
-
-	var pts_btn := _make_btn("99 Points (all tiers)", Color(0.70, 0.80, 0.20))
-	pts_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	pts_btn.custom_minimum_size = Vector2(0.0, 28.0)
-	pts_btn.pressed.connect(_on_give_99_points)
-	action_row.add_child(pts_btn)
-
-	var unlock_btn := _make_btn("Unlock All Tiers", Color(0.70, 0.35, 0.90))
-	unlock_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	unlock_btn.custom_minimum_size = Vector2(0.0, 28.0)
-	unlock_btn.pressed.connect(_on_unlock_all_tiers)
-	action_row.add_child(unlock_btn)
-
-	var sep2 := HSeparator.new()
-	sep2.position = Vector2(6.0, 62.0)
-	sep2.size = Vector2(TALENT_SW - 12.0, 2.0)
-	_talent_sub.add_child(sep2)
+	# Clicking "Talents…" auto-unlocks all tiers and gives 99pts — no sub-buttons needed here.
 
 	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(6.0, 68.0)
-	scroll.size = Vector2(TALENT_SW - 12.0, TALENT_SH - 76.0)
+	scroll.position = Vector2(6.0, 30.0)
+	scroll.size = Vector2(TALENT_SW - 12.0, TALENT_SH - 36.0)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_talent_sub.add_child(scroll)
 
@@ -500,6 +479,11 @@ func _on_level_up_pressed() -> void:
 	GameState.game_log("[color=gold][DEBUG] Level Up! Now level %d.[/color]" % GameState.player_stats.character_level)
 
 func _on_talents_pressed() -> void:
+	# Auto: unlock all tiers + give 99 pts so the debug panel is immediately usable
+	GameState.unlock_tier2()
+	GameState.tier1_talent_points = 99
+	GameState.tier2_talent_points = 99
+	GameState.talent_points_changed.emit(GameState.talent_points_available)
 	_talent_sub.visible = not _talent_sub.visible
 	if _talent_sub.visible:
 		_rebuild_talent_rows()
