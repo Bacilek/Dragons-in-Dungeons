@@ -72,6 +72,10 @@ _class_talents: Array[Talent]# all talents for current class (Tier 1 + unlocked 
 tier2_unlocked: bool         # auto-set at level 7 via gain_exp() → unlock_tier2()
 active_tier2_subclass: String# current Tier 2 subclass name ("Berserker" default); debug-switchable
 TIER2_SUBCLASSES: PackedStringArray  # ["Berserker", "Zealot", "World Tree", "Wild Heart"]
+zealot_divine_fury_type: String      # "Radiant"/"Necrotic", persists across turns (toggle only, not per-turn)
+zealot_blessed_charges: int          # long-rest resource, max via BLESSED_WARRIOR_MAX_CHARGES[rank] = [0,2,4,6]
+zealot_blessed_heal_queued: bool     # set on Blessed Warrior activation; consumed by next successful hit this turn
+zealot_zp_charges: int               # Zealous Presence charge, 1/long rest, independent of rage_uses_remaining
 invincible: bool             # debug flag
 noclip: bool                 # debug flag
 player_grid_pos: Vector2i    # synced every move

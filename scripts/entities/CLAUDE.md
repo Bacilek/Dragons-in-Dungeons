@@ -9,11 +9,12 @@ When adding a new entity type, status effect, or changing combat rules, **immedi
 
 ## Entity hierarchy
 ```
-Entity (CharacterBody2D)   grid_pos: Vector2i, move_to() 0.08 s tween, _tile_center()
-  ├── Player               input handling, quickbar, throw mode, blood trail
-  ├── Enemy                take_turn(), Behavior enum, hp bar, zzz label
-  └── Companion            Wild Heart ally — auto-attacks nearest enemy, shares enemy phase
+Entity (CharacterBody2D)   grid_pos: Vector2i, move_to() 0.08 s tween, _tile_center(), is_friendly: bool
+  ├── Player               input handling, quickbar, throw mode, blood trail (is_friendly = true)
+  ├── Enemy                take_turn(), Behavior enum, hp bar, zzz label (is_friendly = false, default)
+  └── Companion            Wild Heart ally — auto-attacks nearest enemy, shares enemy phase (is_friendly = true)
 ```
+`Entity.is_friendly: bool` (default false) — true on `Player` and `Companion`. Added for Zealot's Zealous Presence AOE targeting ("friendly entities in FOV"); reusable by any future ally-scoped system (e.g. Phase 2 multiplayer) without per-class type checks.
 
 ## Companion (`companion.gd`)
 Extends Entity. Same configure-before-add_child pattern as Enemy (fields set in `configure()`, Stats created in `_ready()`). Key fields: `animal_name`, `armor_class`, `die_count`, `die_sides`. `DungeonFloor.spawn_companion(companion, pos)` sets `_dungeon_floor` and registers via TurnManager. Enemies ignore companions (MVP). On death: sets `GameState.player_companion = null`, unregisters, calls `queue_free()`. `heal_to_max()` called on rest via `GameState._on_short_rest_completed()` and `advance_floor()`. Attack rolls: d20 + `player_stats.proficiency_bonus` vs `enemy.stats.armor_class`.
@@ -71,6 +72,9 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 
 ## Temp HP
 `Stats.temp_hp: int = 0`. Set by Natural Sleeper R2 (2d6 THP per round while starting a turn on the active form's terrain — replaces existing THP, doesn't stack) and by World Tree's Ironwood Bark (`1d6 × rage_bonus_damage` on Rage activation, and again at turn start while Raging if temp HP is 0 — see `player.gd._on_turn_started()`). `take_damage()` absorbs temp HP before regular HP — if fully absorbed, returns 0. Displayed in HUD as a light-blue strip above the HP bar (`_temp_hp_fill` in hud.gd), proportional to `temp_hp / max_hp`.
+
+## Zealous Presence buff (Zealot)
+`Stats.zealous_presence_turns: int = 0` — on the shared `Stats` resource so both `Player` and `Companion` can carry it independently. While > 0, grants Advantage on that entity's attack rolls (`_bump_attack()`, `_ranged_attack()`, `Companion._attack_enemy()`) and on the player's DEX checks (trap disarm, lock picking, trap trigger — same call sites Danger Sense already grants Advantage at). Decrements by 1 at the start of **that entity's own turn** (player: `player.gd._on_turn_started()`, real turns only; companion: top of `Companion.take_turn()`) — not the caster's turn, so a buffed ally's duration ticks down on its own schedule. Set by `player.gd._activate_zealous_presence()` on both `stats` (self) and `GameState.player_companion.stats` (if alive) at cast time only — entities that enter FOV after the cast are not retroactively buffed.
 
 ## Status effects
 Fields on `Stats`: `poison_turns`, `burning_turns`, `bleeding_turns`, `slowed_turns`.
