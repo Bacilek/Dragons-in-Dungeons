@@ -177,8 +177,6 @@ func _add_talent_icon(t: Talent, pos: Vector2) -> void:
 	btn.ignore_texture_size = true
 	btn.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	btn.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	if t.icon_path != "" and ResourceLoader.exists(t.icon_path):
-		btn.texture_normal = load(t.icon_path)
 	btn.focus_mode = Control.FOCUS_NONE
 	_talent_btns[t.talent_id] = btn
 	var tid: String = t.talent_id
@@ -269,7 +267,7 @@ func _refresh() -> void:
 	# Star bars
 	for tier: int in _star_rtls:
 		_star_rtls[tier].text = _star_bar(tier)
-	# Dot rows
+	# Dot rows + rank-gradient icons
 	for t: Talent in GameState._class_talents:
 		if not _dot_labels.has(t.talent_id):
 			continue
@@ -278,6 +276,13 @@ func _refresh() -> void:
 		for r: int in t.max_rank:
 			dots += "●" if r < rank else "○"
 		_dot_labels[t.talent_id].text = dots
+		var icon_path: String = GameState.talent_icon_path(t.talent_id, maxi(rank, 1))
+		if icon_path == "":
+			icon_path = t.icon_path
+		var btn: TextureButton = _talent_btns.get(t.talent_id)
+		if btn != null and icon_path != "" and ResourceLoader.exists(icon_path):
+			btn.texture_normal = load(icon_path)
+			btn.modulate.a = 1.0 if rank > 0 else 0.5
 	# Upgrade button
 	if _selected_id != "":
 		_upgrade_btn.disabled = not GameState.can_invest_talent(_selected_id)

@@ -44,6 +44,32 @@ const WILD_HEART_COMPANION_STATS: Dictionary = {
 	3: {"animal": "Bear",     "ac": 16, "hp": 30, "die_count": 3, "die_sides": 6},
 }
 
+# talent_id → icons/barbarian/<folder>_<rank>.png stem. Rank-specific art (1-3), see icons/barbarian/CLAUDE.md.
+const TALENT_ICON_FOLDER: Dictionary = {
+	"rage": "base/primal_fury",
+	"reckless_attack": "base/reckless_attack",
+	"danger_sense": "base/feral_instinct",
+	"rager": "berserker/unchained_momentum",
+	"frenzy": "berserker/crimson_cleaver",
+	"retaliation": "berserker/vengeful_reflex",
+	"one_with_nature": "wild_heart/primal_bond",
+	"natural_rager": "wild_heart/aspect_of_the_wild",
+	"natural_sleeper": "wild_heart/dreamwalker_instinct",
+	"ironwood_bark": "world_tree/ironwood_bark",
+	"grip_of_the_forest": "world_tree/grip_of_the_forest",
+	"branching_strike": "world_tree/branching_strike",
+	"divine_fury": "zealot/divine_fury",
+	"blessed_warrior": "zealot/blessed_warrior",
+	"zealous_presence": "zealot/zealous_presence",
+}
+
+## Returns the rank-specific icon for a talent/ability (rank clamped to 1-3); "" if unmapped.
+func talent_icon_path(id: String, rank: int) -> String:
+	if not TALENT_ICON_FOLDER.has(id):
+		return ""
+	var r: int = clampi(rank, 1, 3)
+	return "res://icons/barbarian/%s_%d.png" % [TALENT_ICON_FOLDER[id], r]
+
 enum HungerState { SATIATED, HUNGRY, STARVING }
 const MAX_HUNGER: int = 1000
 
@@ -243,7 +269,7 @@ func _give_barbarian_starting_items() -> void:
 	rage.ability_id = "rage"
 	rage.ability_name = "Rage"
 	rage.description = _build_rage_description()
-	rage.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	rage.icon_path = talent_icon_path("rage", maxi(get_talent_rank("rage"), 1))
 	rage.uses_remaining = player_stats.rage_uses_remaining
 	rage.uses_max = player_stats.rage_uses_max
 	add_ability(rage)
@@ -879,13 +905,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 			var rage_ab: Ability = _find_ability_by_id("rage")
 			if rage_ab != null:
 				rage_ab.description = _build_rage_description()
+				rage_ab.icon_path = talent_icon_path("rage", rank)
 		"reckless_attack":
 			if rank == 1:
 				var ra := Ability.new()
 				ra.ability_id = "reckless_attack"
 				ra.ability_name = "Reckless"
 				ra.description = _build_reckless_description(1)
-				ra.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				ra.icon_path = talent_icon_path("reckless_attack", 1)
 				ra.uses_remaining = 0
 				ra.uses_max = 0
 				add_ability(ra)
@@ -893,13 +920,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var ra: Ability = _find_ability_by_id("reckless_attack")
 				if ra != null:
 					ra.description = _build_reckless_description(rank)
+					ra.icon_path = talent_icon_path("reckless_attack", rank)
 		"rager":
 			if rank == 1:
 				var rager_ab := Ability.new()
 				rager_ab.ability_id = "rager"
 				rager_ab.ability_name = "Rager"
 				rager_ab.description = _build_rager_description()
-				rager_ab.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				rager_ab.icon_path = talent_icon_path("rager", 1)
 				rager_ab.uses_remaining = 0
 				rager_ab.uses_max = 0
 				rager_ab.is_passive = true
@@ -908,13 +936,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var rager_ab: Ability = _find_ability_by_id("rager")
 				if rager_ab != null:
 					rager_ab.description = _build_rager_description()
+					rager_ab.icon_path = talent_icon_path("rager", rank)
 		"frenzy":
 			if rank == 1:
 				var frenzy_ab := Ability.new()
 				frenzy_ab.ability_id = "frenzy"
 				frenzy_ab.ability_name = "Frenzy"
 				frenzy_ab.description = _build_frenzy_description()
-				frenzy_ab.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				frenzy_ab.icon_path = talent_icon_path("frenzy", 1)
 				frenzy_ab.uses_remaining = 0
 				frenzy_ab.uses_max = 0
 				frenzy_ab.is_passive = true
@@ -923,13 +952,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var frenzy_ab: Ability = _find_ability_by_id("frenzy")
 				if frenzy_ab != null:
 					frenzy_ab.description = _build_frenzy_description()
+					frenzy_ab.icon_path = talent_icon_path("frenzy", rank)
 		"retaliation":
 			if rank == 1:
 				var ret_ab := Ability.new()
 				ret_ab.ability_id = "retaliation"
 				ret_ab.ability_name = "Retaliation"
 				ret_ab.description = _build_retaliation_description()
-				ret_ab.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				ret_ab.icon_path = talent_icon_path("retaliation", 1)
 				ret_ab.uses_remaining = 0
 				ret_ab.uses_max = 0
 				ret_ab.is_passive = true
@@ -938,13 +968,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var ret_ab: Ability = _find_ability_by_id("retaliation")
 				if ret_ab != null:
 					ret_ab.description = _build_retaliation_description()
+					ret_ab.icon_path = talent_icon_path("retaliation", rank)
 		"danger_sense":
 			if rank == 1:
 				var ds := Ability.new()
 				ds.ability_id = "danger_sense"
 				ds.ability_name = "Danger Sense"
 				ds.description = _build_danger_sense_description(1)
-				ds.icon_path = "res://sprites/items/Misc/KeyIron.png"
+				ds.icon_path = talent_icon_path("danger_sense", 1)
 				ds.uses_remaining = 0
 				ds.uses_max = 0
 				ds.is_passive = true
@@ -953,12 +984,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var ds: Ability = _find_ability_by_id("danger_sense")
 				if ds != null:
 					ds.description = _build_danger_sense_description(2)
+					ds.icon_path = talent_icon_path("danger_sense", 2)
 			elif rank == 3:
 				player_stats.strength += 2
 				recalculate_stats()
 				var ds: Ability = _find_ability_by_id("danger_sense")
 				if ds != null:
 					ds.description = _build_danger_sense_description(3)
+					ds.icon_path = talent_icon_path("danger_sense", 3)
 				combat_message.emit("[color=cyan]Danger Sense 3: STR +2 (now [b]%d[/b])![/color]" % player_stats.strength)
 		"one_with_nature":
 			if rank == 1:
@@ -966,7 +999,7 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				owtn.ability_id = "one_with_nature"
 				owtn.ability_name = "One with Nature"
 				owtn.description = _build_one_with_nature_description()
-				owtn.icon_path = "res://sprites/items/Food/MeatCooked.png"
+				owtn.icon_path = talent_icon_path("one_with_nature", 1)
 				owtn.uses_remaining = 1
 				owtn.uses_max = 1
 				add_ability(owtn)
@@ -974,13 +1007,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var owtn: Ability = _find_ability_by_id("one_with_nature")
 				if owtn != null:
 					owtn.description = _build_one_with_nature_description()
+					owtn.icon_path = talent_icon_path("one_with_nature", rank)
 		"natural_rager":
 			if rank == 1:
 				var nr := Ability.new()
 				nr.ability_id = "natural_rager"
 				nr.ability_name = "Natural Rager"
 				nr.description = _build_natural_rager_description()
-				nr.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				nr.icon_path = talent_icon_path("natural_rager", 1)
 				nr.uses_remaining = 0
 				nr.uses_max = 0
 				add_ability(nr)
@@ -988,13 +1022,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var nr: Ability = _find_ability_by_id("natural_rager")
 				if nr != null:
 					nr.description = _build_natural_rager_description()
+					nr.icon_path = talent_icon_path("natural_rager", rank)
 		"natural_sleeper":
 			if rank == 1:
 				var ns := Ability.new()
 				ns.ability_id = "natural_sleeper"
 				ns.ability_name = "Natural Sleeper"
 				ns.description = _build_natural_sleeper_description()
-				ns.icon_path = "res://sprites/items/Misc/KeyIron.png"
+				ns.icon_path = talent_icon_path("natural_sleeper", 1)
 				ns.uses_remaining = 0
 				ns.uses_max = 0
 				add_ability(ns)
@@ -1002,13 +1037,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var ns: Ability = _find_ability_by_id("natural_sleeper")
 				if ns != null:
 					ns.description = _build_natural_sleeper_description()
+					ns.icon_path = talent_icon_path("natural_sleeper", rank)
 		"ironwood_bark":
 			if rank == 1:
 				var ib := Ability.new()
 				ib.ability_id = "ironwood_bark"
 				ib.ability_name = "Ironwood Bark"
 				ib.description = _build_ironwood_bark_description()
-				ib.icon_path = "res://sprites/items/Food/MeatCooked.png"
+				ib.icon_path = talent_icon_path("ironwood_bark", 1)
 				ib.uses_remaining = 0
 				ib.uses_max = 0
 				ib.is_passive = true
@@ -1017,13 +1053,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var ib: Ability = _find_ability_by_id("ironwood_bark")
 				if ib != null:
 					ib.description = _build_ironwood_bark_description()
+					ib.icon_path = talent_icon_path("ironwood_bark", rank)
 		"grip_of_the_forest":
 			if rank == 1:
 				var gotf := Ability.new()
 				gotf.ability_id = "grip_of_the_forest"
 				gotf.ability_name = "Grip of the Forest"
 				gotf.description = _build_grip_of_the_forest_description()
-				gotf.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				gotf.icon_path = talent_icon_path("grip_of_the_forest", 1)
 				gotf.uses_remaining = 0
 				gotf.uses_max = 0
 				add_ability(gotf)
@@ -1031,13 +1068,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var gotf: Ability = _find_ability_by_id("grip_of_the_forest")
 				if gotf != null:
 					gotf.description = _build_grip_of_the_forest_description()
+					gotf.icon_path = talent_icon_path("grip_of_the_forest", rank)
 		"branching_strike":
 			if rank == 1:
 				var bs := Ability.new()
 				bs.ability_id = "branching_strike"
 				bs.ability_name = "Branching Strike"
 				bs.description = _build_branching_strike_description()
-				bs.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				bs.icon_path = talent_icon_path("branching_strike", 1)
 				bs.uses_remaining = 0
 				bs.uses_max = 0
 				bs.is_passive = true
@@ -1046,13 +1084,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var bs: Ability = _find_ability_by_id("branching_strike")
 				if bs != null:
 					bs.description = _build_branching_strike_description()
+					bs.icon_path = talent_icon_path("branching_strike", rank)
 		"divine_fury":
 			if rank == 1:
 				var df := Ability.new()
 				df.ability_id = "divine_fury"
 				df.ability_name = "Divine Fury"
 				df.description = _build_divine_fury_description()
-				df.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				df.icon_path = talent_icon_path("divine_fury", 1)
 				df.uses_remaining = 0
 				df.uses_max = 0
 				add_ability(df)
@@ -1060,6 +1099,7 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var df: Ability = _find_ability_by_id("divine_fury")
 				if df != null:
 					df.description = _build_divine_fury_description()
+					df.icon_path = talent_icon_path("divine_fury", rank)
 		"blessed_warrior":
 			var new_max: int = BLESSED_WARRIOR_MAX_CHARGES[rank]
 			if rank == 1:
@@ -1068,7 +1108,7 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				bw.ability_id = "blessed_warrior"
 				bw.ability_name = "Blessed Warrior"
 				bw.description = _build_blessed_warrior_description()
-				bw.icon_path = "res://sprites/items/Potions/Health/PotionHealthAdvanced.png"
+				bw.icon_path = talent_icon_path("blessed_warrior", 1)
 				bw.uses_remaining = zealot_blessed_charges
 				bw.uses_max = new_max
 				add_ability(bw)
@@ -1081,6 +1121,7 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var bw: Ability = _find_ability_by_id("blessed_warrior")
 				if bw != null:
 					bw.description = _build_blessed_warrior_description()
+					bw.icon_path = talent_icon_path("blessed_warrior", rank)
 					bw.uses_remaining = zealot_blessed_charges
 					bw.uses_max = new_max
 		"zealous_presence":
@@ -1090,13 +1131,14 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				zp.ability_id = "zealous_presence"
 				zp.ability_name = "Zealous Presence"
 				zp.description = _build_zealous_presence_description()
-				zp.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				zp.icon_path = talent_icon_path("zealous_presence", 1)
 				zp.uses_remaining = zealot_zp_charges
 				zp.uses_max = 1
 				add_ability(zp)
 			else:
 				var zp: Ability = _find_ability_by_id("zealous_presence")
 				if zp != null:
+					zp.icon_path = talent_icon_path("zealous_presence", rank)
 					zp.description = _build_zealous_presence_description()
 	ability_bar_changed.emit()
 
@@ -1284,7 +1326,7 @@ func _setup_barbarian_talents() -> void:
 	rage_talent.talent_id = "rage"
 	rage_talent.talent_name = "Rage"
 	rage_talent.description = "Upgrade your Rage ability."
-	rage_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	rage_talent.icon_path = talent_icon_path("rage", 1)
 	rage_talent.tier = 1
 	rage_talent.class_id = Stats.CharacterClass.BARBARIAN
 	rage_talent.max_rank = 3
@@ -1299,7 +1341,7 @@ func _setup_barbarian_talents() -> void:
 	reckless_talent.talent_id = "reckless_attack"
 	reckless_talent.talent_name = "Reckless Attack"
 	reckless_talent.description = "Unlock and upgrade Reckless Attack."
-	reckless_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	reckless_talent.icon_path = talent_icon_path("reckless_attack", 1)
 	reckless_talent.tier = 1
 	reckless_talent.class_id = Stats.CharacterClass.BARBARIAN
 	reckless_talent.max_rank = 3
@@ -1314,7 +1356,7 @@ func _setup_barbarian_talents() -> void:
 	ds_talent.talent_id = "danger_sense"
 	ds_talent.talent_name = "Danger Sense"
 	ds_talent.description = "Unlock and upgrade Danger Sense."
-	ds_talent.icon_path = "res://sprites/items/Misc/KeyIron.png"
+	ds_talent.icon_path = talent_icon_path("danger_sense", 1)
 	ds_talent.tier = 1
 	ds_talent.class_id = Stats.CharacterClass.BARBARIAN
 	ds_talent.max_rank = 3
@@ -1334,7 +1376,7 @@ func _setup_barbarian_tier2_talents() -> void:
 	rager_talent.talent_id = "rager"
 	rager_talent.talent_name = "Rager"
 	rager_talent.description = "Berserker fury bends the flow of combat while Raging."
-	rager_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	rager_talent.icon_path = talent_icon_path("rager", 1)
 	rager_talent.tier = 2
 	rager_talent.class_id = Stats.CharacterClass.BARBARIAN
 	rager_talent.max_rank = 3
@@ -1349,7 +1391,7 @@ func _setup_barbarian_tier2_talents() -> void:
 	frenzy_talent.talent_id = "frenzy"
 	frenzy_talent.talent_name = "Frenzy"
 	frenzy_talent.description = "First attack each turn deals bonus Rage-scaled damage while Raging."
-	frenzy_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	frenzy_talent.icon_path = talent_icon_path("frenzy", 1)
 	frenzy_talent.tier = 2
 	frenzy_talent.class_id = Stats.CharacterClass.BARBARIAN
 	frenzy_talent.max_rank = 3
@@ -1364,7 +1406,7 @@ func _setup_barbarian_tier2_talents() -> void:
 	retaliation_talent.talent_id = "retaliation"
 	retaliation_talent.talent_name = "Retaliation"
 	retaliation_talent.description = "Strike back at enemies who hit you in melee."
-	retaliation_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	retaliation_talent.icon_path = talent_icon_path("retaliation", 1)
 	retaliation_talent.tier = 2
 	retaliation_talent.class_id = Stats.CharacterClass.BARBARIAN
 	retaliation_talent.max_rank = 3
@@ -1384,7 +1426,7 @@ func _setup_wild_heart_tier2_talents() -> void:
 	owtn_talent.talent_id = "one_with_nature"
 	owtn_talent.talent_name = "One with Nature"
 	owtn_talent.description = "Summon an animal companion that fights alongside you."
-	owtn_talent.icon_path = "res://sprites/items/Food/MeatCooked.png"
+	owtn_talent.icon_path = talent_icon_path("one_with_nature", 1)
 	owtn_talent.tier = 2
 	owtn_talent.class_id = Stats.CharacterClass.BARBARIAN
 	owtn_talent.max_rank = 3
@@ -1399,7 +1441,7 @@ func _setup_wild_heart_tier2_talents() -> void:
 	nr_talent.talent_id = "natural_rager"
 	nr_talent.talent_name = "Natural Rager"
 	nr_talent.description = "Unlock Bear/Eagle/Wolf forms while Raging. 1 rank grants all 3 forms."
-	nr_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	nr_talent.icon_path = talent_icon_path("natural_rager", 1)
 	nr_talent.tier = 2
 	nr_talent.class_id = Stats.CharacterClass.BARBARIAN
 	nr_talent.max_rank = 3
@@ -1414,7 +1456,7 @@ func _setup_wild_heart_tier2_talents() -> void:
 	ns_talent.talent_id = "natural_sleeper"
 	ns_talent.talent_name = "Natural Sleeper"
 	ns_talent.description = "Unlock Owl/Panther/Salmon terrain forms. Activate on floor entry."
-	ns_talent.icon_path = "res://sprites/items/Misc/KeyIron.png"
+	ns_talent.icon_path = talent_icon_path("natural_sleeper", 1)
 	ns_talent.tier = 2
 	ns_talent.class_id = Stats.CharacterClass.BARBARIAN
 	ns_talent.max_rank = 3
@@ -1432,7 +1474,7 @@ func _setup_world_tree_tier2_talents() -> void:
 	ib_talent.talent_id = "ironwood_bark"
 	ib_talent.talent_name = "Ironwood Bark"
 	ib_talent.description = "Bark-like temporary HP fueled by Rage, with a damage payoff at rank 3."
-	ib_talent.icon_path = "res://sprites/items/Food/MeatCooked.png"
+	ib_talent.icon_path = talent_icon_path("ironwood_bark", 1)
 	ib_talent.tier = 2
 	ib_talent.class_id = Stats.CharacterClass.BARBARIAN
 	ib_talent.max_rank = 3
@@ -1447,7 +1489,7 @@ func _setup_world_tree_tier2_talents() -> void:
 	gotf_talent.talent_id = "grip_of_the_forest"
 	gotf_talent.talent_name = "Grip of the Forest"
 	gotf_talent.description = "While Raging, once per turn, pull a distant enemy into melee range."
-	gotf_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	gotf_talent.icon_path = talent_icon_path("grip_of_the_forest", 1)
 	gotf_talent.tier = 2
 	gotf_talent.class_id = Stats.CharacterClass.BARBARIAN
 	gotf_talent.max_rank = 3
@@ -1462,7 +1504,7 @@ func _setup_world_tree_tier2_talents() -> void:
 	bs_talent.talent_id = "branching_strike"
 	bs_talent.talent_name = "Branching Strike"
 	bs_talent.description = "Extend your reach with heavy/versatile melee weapons, and push foes back."
-	bs_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	bs_talent.icon_path = talent_icon_path("branching_strike", 1)
 	bs_talent.tier = 2
 	bs_talent.class_id = Stats.CharacterClass.BARBARIAN
 	bs_talent.max_rank = 3
@@ -1478,7 +1520,7 @@ func _setup_zealot_tier2_talents() -> void:
 	df_talent.talent_id = "divine_fury"
 	df_talent.talent_name = "Divine Fury"
 	df_talent.description = "Your first attack each turn is charged with Radiant or Necrotic power."
-	df_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	df_talent.icon_path = talent_icon_path("divine_fury", 1)
 	df_talent.tier = 2
 	df_talent.class_id = Stats.CharacterClass.BARBARIAN
 	df_talent.max_rank = 3
@@ -1493,7 +1535,7 @@ func _setup_zealot_tier2_talents() -> void:
 	bw_talent.talent_id = "blessed_warrior"
 	bw_talent.talent_name = "Blessed Warrior"
 	bw_talent.description = "A pool of divine healing charges you can call on mid-fight."
-	bw_talent.icon_path = "res://sprites/items/Potions/Health/PotionHealthAdvanced.png"
+	bw_talent.icon_path = talent_icon_path("blessed_warrior", 1)
 	bw_talent.tier = 2
 	bw_talent.class_id = Stats.CharacterClass.BARBARIAN
 	bw_talent.max_rank = 3
@@ -1508,7 +1550,7 @@ func _setup_zealot_tier2_talents() -> void:
 	zp_talent.talent_id = "zealous_presence"
 	zp_talent.talent_name = "Zealous Presence"
 	zp_talent.description = "Rally yourself and nearby allies with Advantage on all rolls."
-	zp_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	zp_talent.icon_path = talent_icon_path("zealous_presence", 1)
 	zp_talent.tier = 2
 	zp_talent.class_id = Stats.CharacterClass.BARBARIAN
 	zp_talent.max_rank = 3

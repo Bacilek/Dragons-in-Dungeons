@@ -29,7 +29,7 @@ var _poison_icon: ColorRect
 var _burning_icon: ColorRect
 var _bleeding_icon: ColorRect
 var _slowed_icon: ColorRect
-var _rage_icon: ColorRect        # red dot shown while raging
+var _rage_icon: TextureRect      # Primal Fury icon (rank-gradient) shown while raging
 var _inventory_overlay_ref: Node = null
 var _debug_panel_ref: Node = null
 var _hit_dice_label: Label
@@ -181,7 +181,7 @@ func _ready() -> void:
 	_burning_icon  = _make_status_dot(Color(1.00, 0.45, 0.10), Vector2(16.0, 2.0))
 	_bleeding_icon = _make_status_dot(Color(0.80, 0.0,  0.0),  Vector2(30.0, 2.0))
 	_slowed_icon   = _make_status_dot(Color(0.55, 0.35, 0.10), Vector2(44.0, 2.0))
-	_rage_icon     = _make_status_dot(Color(1.00, 0.10, 0.10), Vector2(58.0, 2.0))
+	_rage_icon     = _make_status_icon_rect(Vector2(58.0, 2.0))
 	$StatsPanel.add_child(_poison_icon)
 	$StatsPanel.add_child(_burning_icon)
 	$StatsPanel.add_child(_bleeding_icon)
@@ -309,7 +309,8 @@ func _ready() -> void:
 	_init_popup_extra_labels()
 
 	# Refresh popup every turn so AC, rage status, etc. stay live
-	TurnManager.player_turn_started.connect(func(): _refresh_popup(); _update_ac_label())
+	TurnManager.player_turn_started.connect(func(): _refresh_popup(); _update_ac_label(); _update_status_icons())
+	GameState.ability_bar_changed.connect(_update_status_icons)
 	GameState.equipment_changed.connect(func(): _refresh_popup(); _update_ac_label())
 	GameState.player_status_changed.connect(func(): _refresh_popup(); _update_ac_label())
 
@@ -338,6 +339,11 @@ func _update_status_icons() -> void:
 		_slowed_icon.visible = GameState.player_stats.slowed_turns > 0
 	if _rage_icon != null:
 		_rage_icon.visible = GameState.is_raging
+		if GameState.is_raging:
+			var rage_rank: int = maxi(GameState.get_talent_rank("rage"), 1)
+			var icon_path: String = GameState.talent_icon_path("rage", rage_rank)
+			if icon_path != "" and ResourceLoader.exists(icon_path):
+				_rage_icon.texture = load(icon_path)
 
 func _show_crit_banner(text: String, color: Color) -> void:
 	var lbl := Label.new()
@@ -409,6 +415,15 @@ func _make_status_dot(color: Color, offset: Vector2) -> ColorRect:
 	dot.position = portrait.position + offset
 	dot.visible = false
 	return dot
+
+func _make_status_icon_rect(offset: Vector2) -> TextureRect:
+	var rect := TextureRect.new()
+	rect.size = Vector2(12.0, 12.0)
+	rect.position = portrait.position + offset
+	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	rect.visible = false
+	return rect
 
 func _update_hunger_label() -> void:
 	if _hunger_label == null:
