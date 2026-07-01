@@ -922,7 +922,7 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 
 	if is_push:
 		AudioManager.play("trap_piston")
-		await _push_entity(target, trap["push_dir"], 2, sprite_node)
+		await force_move_entity(target, trap["push_dir"], 2, true, sprite_node)
 		# Stay fully visible if already revealed, otherwise return to semi-hidden
 		if is_instance_valid(sprite_node):
 			sprite_node.modulate = Color(1.0, 1.0, 1.0, 1.0 if trap.get("revealed", false) else 0.5)
@@ -1094,16 +1094,23 @@ func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
 			remove_enemy(e)
 			e.die()
 
-func _push_entity(entity: Node2D, push_dir: Vector2i, distance: int, trap_sprite: Sprite2D = null) -> void:
+## Generalized forced-movement primitive — walks `entity` step-by-step in `direction`,
+## stopping early on wall/occupant collision. Used for pushes (piston traps, Branching
+## Strike R3) and pulls (Grip of the Forest — pass the direction toward the player and
+## max_distance = current_distance - 1 so the target lands adjacent, not on top of the player).
+## `deal_damage=true` reproduces the old piston-trap-only splash damage; World Tree forced
+## movement (pull/push) does not deal damage, so it passes deal_damage=false.
+func force_move_entity(entity: Node2D, direction: Vector2i, max_distance: int, deal_damage: bool = false, trap_sprite: Sprite2D = null) -> int:
 	if not is_instance_valid(entity):
 		if is_instance_valid(trap_sprite):
 			await _play_trap_animation(trap_sprite)
-		return
+		return 0
 	var e: Entity = entity as Entity
-	var current: Vector2i = e.grid_pos
+	var start: Vector2i = e.grid_pos
+	var current: Vector2i = start
 	var hit_wall: bool = false
-	for _i: int in distance:
-		var nxt: Vector2i = current + push_dir
+	for _i: int in max_distance:
+		var nxt: Vector2i = current + direction
 		if not _data.is_walkable(nxt):
 			hit_wall = true
 			break
@@ -1118,8 +1125,9 @@ func _push_entity(entity: Node2D, push_dir: Vector2i, distance: int, trap_sprite
 		_play_trap_animation(trap_sprite)  # fires async — simultaneous with movement
 	if current != e.grid_pos:
 		await e.move_to(current, 0.15)
-	if not is_instance_valid(entity):
-		return
+	var tiles_moved: int = absi(current.x - start.x) + absi(current.y - start.y)
+	if not is_instance_valid(entity) or not deal_damage:
+		return tiles_moved
 	var push_dmg: int = 2 + GameState.current_floor / 2
 	if hit_wall:
 		push_dmg += 4
@@ -1139,6 +1147,7 @@ func _push_entity(entity: Node2D, push_dir: Vector2i, distance: int, trap_sprite
 			GameState.gain_exp(maxi(1, enemy.exp_reward / 2))
 			remove_enemy(enemy)
 			enemy.die()
+	return tiles_moved
 
 func _play_trap_animation(sprite_node: Sprite2D) -> void:
 	if not is_instance_valid(sprite_node):

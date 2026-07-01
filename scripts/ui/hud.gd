@@ -1050,9 +1050,12 @@ func _fmt_save_tooltip(p: Dictionary) -> String:
 	var stat: String = p.get("stat", "DEX")
 	var passed: bool = p.get("pass", "0") == "1"
 	var adv: bool  = p.get("adv", "0") == "1"
+	var disadv: bool = p.get("disadv", "0") == "1"
 	var lines: PackedStringArray = []
 	if adv and d1 != d2:
 		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
+	elif disadv and d1 != d2:
+		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
 	else:
 		lines.append("d20 = [color=yellow]%d[/color]" % die)
 	if mod != 0:
@@ -1073,10 +1076,13 @@ func _fmt_ehit_tooltip(p: Dictionary) -> String:
 	var ac: int     = int(p.get("ac", "0"))
 	var crit: bool  = p.get("crit", "0") == "1"
 	var adv: bool   = p.get("adv", "0") == "1"
+	var disadv: bool = p.get("disadv", "0") == "1"
 	var lines: PackedStringArray = []
 	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if crit else ""
 	if adv and d1 != d2:
 		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
+	elif disadv and d1 != d2:
+		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
 	else:
 		lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
 	if bonus != 0:

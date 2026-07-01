@@ -19,6 +19,8 @@ var last_known_player_pos: Vector2i = Vector2i(-1, -1)
 
 var just_crossed_door: bool = false
 var slowed_turns: int = 0
+var rooted_turns: int = 0        # World Tree Grip of the Forest R2 — skips movement, still attacks if adjacent
+var disadv_next_attack: bool = false  # World Tree Grip of the Forest R3 — consumed on next attack roll
 var _roam_target: Vector2i = Vector2i(-1, -1)
 var _roam_path: Array[Vector2i] = []
 # Search state — used when enemy loses sight of player after chasing
@@ -54,6 +56,17 @@ func _apply_stats() -> void:
 	stats.armor_class = _type.get("ac", 10) + _type.get("armor", 0) + f / 5
 	stats.current_hp  = stats.max_hp
 	exp_reward        = _type.get("exp", 5)
+	# Optional per-pool-entry resist modifiers (default 0) — used by resist_check() below.
+	stats.strength    = 10 + _type.get("str_mod", 0) * 2
+	stats.constitution = 10 + _type.get("con_mod", 0) * 2
+
+# Rolls d20 + (con_modifier if use_con else str_modifier) vs dc.
+# Used by World Tree's Grip of the Forest (STR) and Branching Strike R3 push (CON).
+# Returns true if the enemy RESISTS (roll >= dc).
+func resist_check(dc: int, use_con: bool = false) -> bool:
+	var mod: int = stats.con_modifier() if use_con else stats.str_modifier()
+	var roll: int = randi_range(1, 20) + GameState.current_floor / 3 + mod
+	return roll >= dc
 
 func _setup_animations() -> void:
 	var prefix: String = _type.get("sprite", "orc_warrior")
@@ -116,6 +129,17 @@ func take_turn() -> void:
 		return
 	var player: Player = _dungeon_floor.get_player()
 	if player == null:
+		return
+
+	# World Tree Grip of the Forest R2: rooted — no movement this turn, but can still attack if adjacent.
+	if rooted_turns > 0:
+		rooted_turns -= 1
+		var rdx: int = player.grid_pos.x - grid_pos.x
+		var rdy: int = player.grid_pos.y - grid_pos.y
+		if maxi(absi(rdx), absi(rdy)) == 1:
+			_attack_player(player)
+		else:
+			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		return
 
 	var dx: int = player.grid_pos.x - grid_pos.x
@@ -337,21 +361,24 @@ func _attack_player(_player: Player) -> void:
 	var die2: int = die1
 	var die: int = die1
 	var enemy_adv: bool = false
+	var enemy_disadv: bool = disadv_next_attack
+	disadv_next_attack = false  # World Tree Grip of the Forest R3 — consumed after one attack
 	if GameState.reckless_attack_active:
 		match GameState.reckless_rank:
 			1:
 				reckless_flat = 2
 			2, 3:
-				die2 = randi_range(1, 20)
-				die = maxi(die1, die2)
 				enemy_adv = true
+	if enemy_adv != enemy_disadv:
+		die2 = randi_range(1, 20)
+		die = maxi(die1, die2) if enemy_adv else mini(die1, die2)
 	var roll: int = die + attack_bonus + reckless_flat
 	var player_ac: int = GameState.player_stats.armor_class
 	var is_crit: bool = die == 20
 	var reckless_tag: String = " [color=yellow](Reckless)[/color]" if GameState.reckless_attack_active else ""
-	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d" % [
+	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d" % [
 		die, die1, die2, attack_bonus + reckless_flat, roll, player_ac,
-		1 if is_crit else 0, 1 if enemy_adv else 0]
+		1 if is_crit else 0, 1 if (enemy_adv and not enemy_disadv) else 0, 1 if (enemy_disadv and not enemy_adv) else 0]
 	if not is_crit and roll < player_ac:
 		var miss_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [attack_bonus + reckless_flat, roll, player_ac] if GameState.god_mode else ""
 		GameState.game_log("[color=tomato]%s[/color] [url=%s]misses[/url]!%s%s" % [display_name, hit_meta, reckless_tag, miss_suffix])
