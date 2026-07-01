@@ -77,6 +77,13 @@ var _ironwood_bark_bonus_pending: int = 0
 var _hook_mode_active: bool = false
 var _grip_used_this_turn: bool = false
 
+# ── Zealot state (Tier 2) ──────────────────────────────────────────────────────
+# Divine Fury: per-turn cap, fires once per turn regardless of how many attacks land. Reset at turn start.
+var _divine_fury_triggered_this_turn: bool = false
+# Blessed Warrior: "max once per turn" activation cap. Reset at turn start. Charge pool itself lives on
+# GameState (zealot_blessed_charges) since it's a long-rest resource, not a per-turn one.
+var _blessed_warrior_used_this_turn: bool = false
+
 
 # ── Equip action tracking ─────────────────────────────────────────────────────
 var _pending_equip_turn: bool = false  # set by equip_action_taken signal; consumed in next action gate
@@ -84,6 +91,7 @@ var _pending_equip_turn: bool = false  # set by equip_action_taken signal; consu
 
 func _ready() -> void:
 	stats = GameState.player_stats
+	is_friendly = true
 	z_index = 3
 	_setup_animations()
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
@@ -149,6 +157,11 @@ func _on_turn_started() -> void:
 		_frenzy_triggered_this_turn = false
 		_eagle_free_move_used = false
 		_grip_used_this_turn = false
+		_divine_fury_triggered_this_turn = false
+		_blessed_warrior_used_this_turn = false
+	# Zealous Presence: buff decrements at the start of THIS entity's own turn (real turns only).
+	if not came_from_revert and stats.zealous_presence_turns > 0:
+		stats.zealous_presence_turns -= 1
 	GameState.ability_bar_changed.emit()
 	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
 	# Only fires on real turns, not on reverted turns.
@@ -1086,6 +1099,14 @@ func _melee_reach_bonus() -> int:
 	if rank >= 1: return 1
 	return 0
 
+# Divine Fury: rank 3 replaces rank 2's formula (not additive) — always exactly one formula per rank.
+func _divine_fury_flat_bonus(rank: int) -> int:
+	var lvl: int = stats.character_level
+	match rank:
+		2: return lvl / 4
+		3: return lvl / 2
+	return 0
+
 func _find_ability(ab_id: String) -> Ability:
 	for slot in GameState.player_ability_bar:
 		if slot != null and (slot as Ability).ability_id == ab_id:
@@ -1122,6 +1143,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var disadv_count: int = 0
 	var reckless_flat_bonus: int = 0  # rank 1 flat +2 (not ADV)
 	if _has_advantage(enemy): adv_count += 1
+	# Zealous Presence: Advantage on all attack rolls while buffed.
+	if stats.zealous_presence_turns > 0: adv_count += 1
 	# Reckless Attack: rank 1 = flat +2 on first attack; rank 2+ = ADV on first; rank 3 = ADV on all.
 	var reckless_rank: int = GameState.get_talent_rank("reckless_attack")
 	var reckless_applies: bool = _reckless_active and is_str_weapon and not GameState.reckless_locked_this_turn
@@ -1199,6 +1222,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_handle_post_attack_turn(is_monk_unarmed)
 		return
 
+	_resolve_blessed_warrior_heal()
 	AudioManager.play("crit" if is_crit else "hit_enemy")
 	_flash_hit(enemy)
 	if adv:
@@ -1250,10 +1274,23 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			_dungeon_floor.show_damage(enemy.position, ib_bonus, false)
 		ironwood_tag = " [color=cyan](+%d Ironwood Bark)[/color]" % ib_bonus
 
+	# Divine Fury: first attack each turn (any weapon), regardless of Rage state.
+	var divine_fury_tag: String = ""
+	var df_rank: int = GameState.get_talent_rank("divine_fury")
+	if df_rank >= 1 and not _divine_fury_triggered_this_turn and not enemy.stats.is_dead():
+		_divine_fury_triggered_this_turn = true
+		var df_bonus: int = randi_range(1, 6) + _divine_fury_flat_bonus(df_rank)
+		enemy.stats.take_damage(df_bonus)
+		enemy.update_hp_bar()
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(enemy.position, df_bonus, false)
+		var df_color: String = "gold" if GameState.zealot_divine_fury_type == "Radiant" else "purple"
+		divine_fury_tag = " [color=%s](+%d %s — Divine Fury)[/color]" % [df_color, df_bonus, GameState.zealot_divine_fury_type]
+
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, frenzy_tag, ironwood_tag, god_hp])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, frenzy_tag, ironwood_tag, divine_fury_tag, god_hp])
 	else:
-		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, frenzy_tag, ironwood_tag, god_hp])
+		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, frenzy_tag, ironwood_tag, divine_fury_tag, god_hp])
 
 	# Branching Strike R3: push the target 1 tile away on a hit with a Heavy/Versatile melee weapon.
 	if GameState.get_talent_rank("branching_strike") >= 3 and is_str_weapon and not enemy.stats.is_dead() \
@@ -1639,17 +1676,18 @@ func _attempt_disarm(trap_pos: Vector2i) -> void:
 		effective_stat = "STR"
 	var has_prof: bool = s.check_prof_dex
 	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
+	var has_adv: bool = danger_rank >= 1 or s.zealous_presence_turns > 0
 	var die1: int = randi_range(1, 20)
 	var die2: int = die1
-	if danger_rank >= 1:
+	if has_adv:
 		die2 = randi_range(1, 20)
 	var die: int = maxi(die1, die2)
 	var total: int = die + dex_mod + prof_bonus
 	const DC: int = 10
 	var trap: Dictionary = _dungeon_floor.get_trap_at(trap_pos)
 	var trap_name: String = trap.get("name", "trap")
-	var adv_tag: String = " [color=gray](Danger Sense)[/color]" if danger_rank >= 1 else ""
-	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, DC, 1 if total >= DC else 0, 1 if danger_rank >= 1 else 0]
+	var adv_tag: String = " [color=gray](%s)[/color]" % ("Danger Sense" if danger_rank >= 1 else "Zealous Presence") if has_adv else ""
+	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, DC, 1 if total >= DC else 0, 1 if has_adv else 0]
 
 	if total >= DC:
 		GameState.game_log("[color=green]Disarmed [b]%s[/b]!%s [url=%s]%d vs DC %d[/url][/color]" % [trap_name, adv_tag, check_meta, total, DC])
@@ -1704,15 +1742,16 @@ func _attempt_disarm_lock(door_pos: Vector2i) -> void:
 		effective_stat = "STR"
 	var has_prof: bool = s.check_prof_dex
 	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
+	var has_adv: bool = danger_rank >= 1 or s.zealous_presence_turns > 0
 	var die1: int = randi_range(1, 20)
 	var die2: int = die1
-	if danger_rank >= 1:
+	if has_adv:
 		die2 = randi_range(1, 20)
 	var die: int = maxi(die1, die2)
 	var total: int = die + dex_mod + prof_bonus
 	var dc: int = 10 + GameState.current_floor / 3
-	var adv_tag: String = " [color=gray](Danger Sense)[/color]" if danger_rank >= 1 else ""
-	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, dc, 1 if total >= dc else 0, 1 if danger_rank >= 1 else 0]
+	var adv_tag: String = " [color=gray](%s)[/color]" % ("Danger Sense" if danger_rank >= 1 else "Zealous Presence") if has_adv else ""
+	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, dc, 1 if total >= dc else 0, 1 if has_adv else 0]
 	var door_world: Vector2 = Vector2(door_pos * TILE_SIZE) + Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
 	if total >= dc:
 		_dungeon_floor.unlock_door(door_pos)
@@ -1762,6 +1801,9 @@ func _use_ability_slot(idx: int) -> void:
 		"ironwood_bark":           GameState.game_log("[color=gray]Ironwood Bark is passive — triggers on Rage activation and while Raging.[/color]")
 		"grip_of_the_forest":      _activate_grip_of_the_forest()
 		"branching_strike":        GameState.game_log("[color=gray]Branching Strike is passive — reach and push apply automatically.[/color]")
+		"divine_fury":             _toggle_divine_fury(ab)
+		"blessed_warrior":         _activate_blessed_warrior(ab)
+		"zealous_presence":        _activate_zealous_presence(ab)
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
 
 func _make_empty_bottle() -> Item:
@@ -1879,8 +1921,8 @@ func _ranged_attack(enemy: Enemy) -> void:
 	var dex_mod: int = stats.dex_modifier()
 	var prof: int = stats.proficiency_bonus
 	var weapon_bonus: int = (weapon.bonus_damage if weapon != null else 0) + prof
-	# Advantage: target sleeping or just entered FOV this turn
-	var adv: bool = _has_advantage(enemy)
+	# Advantage: target sleeping or just entered FOV this turn, or Zealous Presence active
+	var adv: bool = _has_advantage(enemy) or stats.zealous_presence_turns > 0
 	# Disadvantage: ranged weapon fired at melee range (Chebyshev distance 1)
 	var d_vec: Vector2i = enemy.grid_pos - grid_pos
 	var disadv: bool = maxi(abs(d_vec.x), abs(d_vec.y)) <= 1
@@ -1926,6 +1968,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 		_handle_post_attack_turn()
 		return
 
+	_resolve_blessed_warrior_heal()
 	AudioManager.play("crit" if is_crit else "hit_enemy")
 	_flash_hit(enemy)
 	if adv and not disadv:
@@ -1946,10 +1989,22 @@ func _ranged_attack(enemy: Enemy) -> void:
 	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
 	var r_god_hp: String = " [color=gray][%d/%d HP][/color]" % [enemy.stats.current_hp, enemy.stats.max_hp] if GameState.god_mode and not enemy.stats.is_dead() else ""
+	# Divine Fury: first attack each turn (any weapon, ranged included), regardless of Rage state.
+	var r_divine_fury_tag: String = ""
+	var r_df_rank: int = GameState.get_talent_rank("divine_fury")
+	if r_df_rank >= 1 and not _divine_fury_triggered_this_turn and not enemy.stats.is_dead():
+		_divine_fury_triggered_this_turn = true
+		var r_df_bonus: int = randi_range(1, 6) + _divine_fury_flat_bonus(r_df_rank)
+		enemy.stats.take_damage(r_df_bonus)
+		enemy.update_hp_bar()
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(enemy.position, r_df_bonus, false)
+		var r_df_color: String = "gold" if GameState.zealot_divine_fury_type == "Radiant" else "purple"
+		r_divine_fury_tag = " [color=%s](+%d %s — Divine Fury)[/color]" % [r_df_color, r_df_bonus, GameState.zealot_divine_fury_type]
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, r_god_hp])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, r_divine_fury_tag, r_god_hp])
 	else:
-		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, r_god_hp])
+		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, r_divine_fury_tag, r_god_hp])
 
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
@@ -2177,3 +2232,69 @@ func _cycle_natural_sleeper_form(ab: Ability) -> void:
 		GameState.game_log("[color=cyan]Natural Sleeper: %s Form chosen — activates next rest.[/color]" % chosen)
 	else:
 		GameState.game_log("[color=cyan]Natural Sleeper: switched to %s Form.[/color]" % chosen)
+
+# ── Zealot (Tier 2) ────────────────────────────────────────────────────────────
+
+func _toggle_divine_fury(ab: Ability) -> void:
+	GameState.zealot_divine_fury_type = "Necrotic" if GameState.zealot_divine_fury_type == "Radiant" else "Radiant"
+	ab.description = GameState._build_divine_fury_description()
+	GameState.ability_bar_changed.emit()
+	GameState.game_log("[color=cyan]Divine Fury: switched to %s.[/color]" % GameState.zealot_divine_fury_type)
+	# Free action — persists between turns, does NOT consume the turn.
+
+func _activate_blessed_warrior(ab: Ability) -> void:
+	if _blessed_warrior_used_this_turn:
+		GameState.game_log("[color=gray]Blessed Warrior: already used this turn.[/color]")
+		return
+	if GameState.zealot_blessed_charges <= 0:
+		GameState.game_log("[color=gray]Blessed Warrior: no charges remaining (recovers on long rest).[/color]")
+		return
+	_blessed_warrior_used_this_turn = true
+	if not GameState.invincible:
+		GameState.zealot_blessed_charges -= 1
+	GameState.zealot_blessed_heal_queued = true
+	ab.uses_remaining = GameState.zealot_blessed_charges
+	ab.description = GameState._build_blessed_warrior_description()
+	GameState.ability_bar_changed.emit()
+	GameState.game_log("[color=cyan]Blessed Warrior: readied — your next successful hit this turn heals 1d12. (%d charge%s left)[/color]" % [GameState.zealot_blessed_charges, "" if GameState.zealot_blessed_charges == 1 else "s"])
+	# Free action — does NOT consume the turn.
+
+func _resolve_blessed_warrior_heal() -> void:
+	if not GameState.zealot_blessed_heal_queued:
+		return
+	GameState.zealot_blessed_heal_queued = false
+	var heal_roll: int = randi_range(1, 12)
+	var before: int = stats.current_hp
+	GameState.heal(heal_roll)
+	var healed: int = stats.current_hp - before
+	if healed > 0:
+		GameState.game_log("[color=lime]Blessed Warrior: divine vigor mends your wounds (+%d HP).[/color]" % healed)
+
+func _activate_zealous_presence(ab: Ability) -> void:
+	var rank: int = GameState.get_talent_rank("zealous_presence")
+	if rank <= 0:
+		return
+	var use_zp: bool = GameState.zealot_zp_charges > 0
+	var use_rage: bool = not use_zp and GameState.player_stats.rage_uses_remaining > 0
+	if not use_zp and not use_rage:
+		GameState.game_log("[color=gray]Zealous Presence: no charges available (needs a Zealous Presence or Rage charge).[/color]")
+		return
+	if not GameState.invincible:
+		if use_zp:
+			GameState.zealot_zp_charges -= 1
+		else:
+			GameState.player_stats.rage_uses_remaining -= 1
+			var rage_ab: Ability = _find_ability("rage")
+			if rage_ab != null:
+				rage_ab.uses_remaining = GameState.player_stats.rage_uses_remaining
+	var duration: int = [0, 1, 3, 5][mini(rank, 3)]
+	stats.zealous_presence_turns = maxi(stats.zealous_presence_turns, duration)
+	var comp = GameState.player_companion
+	if comp != null and is_instance_valid(comp):
+		comp.stats.zealous_presence_turns = maxi(comp.stats.zealous_presence_turns, duration)
+	ab.uses_remaining = GameState.zealot_zp_charges
+	ab.description = GameState._build_zealous_presence_description()
+	GameState.ability_bar_changed.emit()
+	var source_note: String = "" if use_zp else " [color=orange](no ZP charge left — consumed a Rage charge instead)[/color]"
+	GameState.game_log("[color=gold]Zealous Presence! You and nearby allies gain Advantage for %d turn(s).%s[/color]" % [duration, source_note])
+	# Free action — does NOT consume the turn.

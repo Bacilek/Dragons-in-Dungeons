@@ -8,6 +8,9 @@ signal move_completed
 var grid_pos: Vector2i = Vector2i.ZERO
 var stats: Stats
 var _hp_bar: HealthBarNode
+# True for the player and any allied entity (e.g. Wild Heart companion). Enemies leave this false.
+# Used by Zealot's Zealous Presence to target "friendly entities in FOV" for its buff.
+var is_friendly: bool = false
 
 func _setup_hp_bar() -> void:
 	_hp_bar = HealthBarNode.new()

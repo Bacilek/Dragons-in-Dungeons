@@ -63,6 +63,7 @@ var burning_turns: int = 0
 var bleeding_turns: int = 0
 var slowed_turns: int = 0
 var temp_hp: int = 0  # Natural Sleeper R2 — consumed before regular HP damage
+var zealous_presence_turns: int = 0  # Zealot Zealous Presence — Advantage on attacks/checks while > 0
 
 
 # Monk: Martial Arts die scales with level. Global default 1d4 is used by all other classes.

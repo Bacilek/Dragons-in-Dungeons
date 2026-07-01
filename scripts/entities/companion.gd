@@ -25,6 +25,7 @@ func _ready() -> void:
 	stats.max_hp = _config.get("hp", 10)
 	stats.current_hp = stats.max_hp
 	stats.armor_class = armor_class
+	is_friendly = true
 	z_index = 1
 
 	# Programmatic sprite — use wizard sprite (green tint) as placeholder
@@ -83,6 +84,9 @@ func _on_companion_die() -> void:
 func take_turn() -> void:
 	if not is_instance_valid(self) or stats == null or stats.current_hp <= 0:
 		return
+	# Zealous Presence: buff decrements at the start of this entity's own turn.
+	if stats.zealous_presence_turns > 0:
+		stats.zealous_presence_turns -= 1
 	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 	if _dungeon_floor == null:
 		return
@@ -124,6 +128,9 @@ func _attack_enemy(target: Enemy) -> void:
 	if not is_instance_valid(target) or target.stats.is_dead():
 		return
 	var die_roll: int = randi_range(1, 20)
+	# Zealous Presence: Advantage on all attack rolls while buffed.
+	if stats.zealous_presence_turns > 0:
+		die_roll = maxi(die_roll, randi_range(1, 20))
 	var roll: int = die_roll  # no proficiency — animal instinct, not trained combat
 	if die_roll == 20 or roll >= target.stats.armor_class:
 		var dmg: int = 0

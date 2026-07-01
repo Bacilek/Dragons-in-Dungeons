@@ -97,6 +97,19 @@ var player_evades_opportunity_attacks: bool = false
 var player_companion: Variant = null
 # AC bonus from Natural Sleeper R3 terrain — added in recalculate_stats().
 var terrain_ac_bonus: int = 0
+
+# ── Zealot Tier 2 state ────────────────────────────────────────────────────
+# Divine Fury: toggle-only damage type selector, persists between turns (does NOT reset per turn).
+var zealot_divine_fury_type: String = "Radiant"
+# Blessed Warrior: long-rest-recharged charge pool. Max scales with rank (see BLESSED_WARRIOR_MAX_CHARGES).
+var zealot_blessed_charges: int = 0
+# Set true when the player activates Blessed Warrior; consumed by the next successful hit this turn
+# (hit only — a miss still spends the activation with no heal). Reset per-turn cap lives in player.gd.
+var zealot_blessed_heal_queued: bool = false
+const BLESSED_WARRIOR_MAX_CHARGES: Array = [0, 2, 4, 6]
+# Zealous Presence: separate long-rest-recharged resource (1 charge/rest, independent of Rage's pool).
+# Activation prefers this charge; falls back to consuming 1 Rage charge only when this is 0.
+var zealot_zp_charges: int = 0
 var player_grid_pos: Vector2i = Vector2i.ZERO
 var current_stairs_pos: Vector2i = Vector2i.ZERO
 var hunger: int = MAX_HUNGER
@@ -145,6 +158,10 @@ func start_new_run() -> void:
 	_class_talents = []
 	tier2_unlocked = false
 	active_tier2_subclass = "Berserker"
+	zealot_divine_fury_type = "Radiant"
+	zealot_blessed_charges = 0
+	zealot_blessed_heal_queued = false
+	zealot_zp_charges = 0
 	hit_dice = 1
 	short_rests_remaining = 2
 	max_short_rests = 2
@@ -285,6 +302,12 @@ func advance_floor() -> void:
 	wild_heart_sleeper_active = get_talent_rank("natural_sleeper") >= 1
 	active_sleeper_form = natural_sleeper_form
 	terrain_ac_bonus = 0  # reset terrain AC; player.gd will reapply on next move
+	# Zealot long-rest resources (independent pools — see CLAUDE.md "long-rest-recharged resource" pattern).
+	var bw_rank: int = get_talent_rank("blessed_warrior")
+	if bw_rank >= 1:
+		zealot_blessed_charges = BLESSED_WARRIOR_MAX_CHARGES[bw_rank]
+	if get_talent_rank("zealous_presence") >= 1:
+		zealot_zp_charges = 1
 	if wild_heart_sleeper_active:
 		if active_sleeper_form != "":
 			game_log("[color=cyan]Natural Sleeper: you wake — %s Form is active this floor.[/color]" % active_sleeper_form)
@@ -400,7 +423,8 @@ func _setup_tier2_for_active_subclass() -> void:
 		"Berserker": _setup_barbarian_tier2_talents()
 		"Wild Heart": _setup_wild_heart_tier2_talents()
 		"World Tree": _setup_world_tree_tier2_talents()
-		_: pass  # Zealot: placeholder
+		"Zealot": _setup_zealot_tier2_talents()
+		_: pass
 
 func debug_switch_subclass(direction: int) -> void:
 	var idx: int = TIER2_SUBCLASSES.find(active_tier2_subclass)
@@ -1022,6 +1046,58 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var bs: Ability = _find_ability_by_id("branching_strike")
 				if bs != null:
 					bs.description = _build_branching_strike_description()
+		"divine_fury":
+			if rank == 1:
+				var df := Ability.new()
+				df.ability_id = "divine_fury"
+				df.ability_name = "Divine Fury"
+				df.description = _build_divine_fury_description()
+				df.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				df.uses_remaining = 0
+				df.uses_max = 0
+				add_ability(df)
+			else:
+				var df: Ability = _find_ability_by_id("divine_fury")
+				if df != null:
+					df.description = _build_divine_fury_description()
+		"blessed_warrior":
+			var new_max: int = BLESSED_WARRIOR_MAX_CHARGES[rank]
+			if rank == 1:
+				zealot_blessed_charges = new_max
+				var bw := Ability.new()
+				bw.ability_id = "blessed_warrior"
+				bw.ability_name = "Blessed Warrior"
+				bw.description = _build_blessed_warrior_description()
+				bw.icon_path = "res://sprites/items/Potions/Health/PotionHealthAdvanced.png"
+				bw.uses_remaining = zealot_blessed_charges
+				bw.uses_max = new_max
+				add_ability(bw)
+			else:
+				# Rank-up mid-run: new pool size is the new rank's max, minus charges
+				# already spent this long-rest cycle (spec: preserve "already used", not "already left").
+				var old_max: int = BLESSED_WARRIOR_MAX_CHARGES[rank - 1]
+				var used: int = old_max - zealot_blessed_charges
+				zealot_blessed_charges = maxi(0, new_max - used)
+				var bw: Ability = _find_ability_by_id("blessed_warrior")
+				if bw != null:
+					bw.description = _build_blessed_warrior_description()
+					bw.uses_remaining = zealot_blessed_charges
+					bw.uses_max = new_max
+		"zealous_presence":
+			if rank == 1:
+				zealot_zp_charges = 1
+				var zp := Ability.new()
+				zp.ability_id = "zealous_presence"
+				zp.ability_name = "Zealous Presence"
+				zp.description = _build_zealous_presence_description()
+				zp.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				zp.uses_remaining = zealot_zp_charges
+				zp.uses_max = 1
+				add_ability(zp)
+			else:
+				var zp: Ability = _find_ability_by_id("zealous_presence")
+				if zp != null:
+					zp.description = _build_zealous_presence_description()
 	ability_bar_changed.emit()
 
 func _build_rager_description() -> String:
@@ -1175,6 +1251,31 @@ func _build_branching_strike_description() -> String:
 	if rank >= 3: lines.append("R3: On hit with a Heavy/Versatile melee weapon, push the target 1 tile away (CON check DC 8+STR mod+prof to resist).")
 	return "\n".join(lines)
 
+
+func _build_divine_fury_description() -> String:
+	var rank: int = get_talent_rank("divine_fury")
+	var lvl: int = player_stats.character_level
+	var lines: Array[String] = ["[%s] — click to switch damage type." % zealot_divine_fury_type]
+	match rank:
+		1: lines.append("First attack each turn: +1d6 bonus damage.")
+		2: lines.append("First attack each turn: +1d6 + %d bonus damage (level/4)." % (lvl / 4))
+		3: lines.append("First attack each turn: +1d6 + %d bonus damage (level/2)." % (lvl / 2))
+	return "\n".join(lines)
+
+func _build_blessed_warrior_description() -> String:
+	var rank: int = get_talent_rank("blessed_warrior")
+	var max_charges: int = BLESSED_WARRIOR_MAX_CHARGES[maxi(rank, 1)]
+	return "Activate (max once/turn, %d/%d charges) to queue a 1d12 heal on your next successful hit this turn. A miss still spends the charge. Recharges on long rest." % [zealot_blessed_charges, max_charges]
+
+func _build_zealous_presence_description() -> String:
+	var rank: int = get_talent_rank("zealous_presence")
+	var duration: int = [0, 1, 3, 5][mini(rank, 3)]
+	var lines: Array[String] = [
+		"Grant Advantage on all attack rolls and checks to yourself and friendly entities in FOV for %d turn(s)." % duration,
+		"%d/1 Zealous Presence charge — recharges on long rest." % zealot_zp_charges,
+		"If out of charges, consumes 1 Rage charge instead (silently, only if a ZP charge isn't available).",
+	]
+	return "\n".join(lines)
 
 func _setup_barbarian_talents() -> void:
 	_class_talents = []
@@ -1371,3 +1472,49 @@ func _setup_world_tree_tier2_talents() -> void:
 		{"description": "On a hit with a Heavy/Versatile melee weapon, push the target 1 tile away (CON check DC 8+STR mod+prof to resist)."},
 	]
 	_class_talents.append(bs_talent)
+
+func _setup_zealot_tier2_talents() -> void:
+	var df_talent := Talent.new()
+	df_talent.talent_id = "divine_fury"
+	df_talent.talent_name = "Divine Fury"
+	df_talent.description = "Your first attack each turn is charged with Radiant or Necrotic power."
+	df_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	df_talent.tier = 2
+	df_talent.class_id = Stats.CharacterClass.BARBARIAN
+	df_talent.max_rank = 3
+	df_talent.ranks = [
+		{"description": "First attack each turn: +1d6 bonus damage (Radiant or Necrotic, your choice)."},
+		{"description": "+1d6 + floor(level/4) bonus damage (replaces rank 1's formula)."},
+		{"description": "+1d6 + floor(level/2) bonus damage (replaces rank 2's formula)."},
+	]
+	_class_talents.append(df_talent)
+
+	var bw_talent := Talent.new()
+	bw_talent.talent_id = "blessed_warrior"
+	bw_talent.talent_name = "Blessed Warrior"
+	bw_talent.description = "A pool of divine healing charges you can call on mid-fight."
+	bw_talent.icon_path = "res://sprites/items/Potions/Health/PotionHealthAdvanced.png"
+	bw_talent.tier = 2
+	bw_talent.class_id = Stats.CharacterClass.BARBARIAN
+	bw_talent.max_rank = 3
+	bw_talent.ranks = [
+		{"description": "2 charges/long rest. Activate (max once/turn) to queue a 1d12 heal on your next successful hit this turn."},
+		{"description": "4 charges/long rest."},
+		{"description": "6 charges/long rest."},
+	]
+	_class_talents.append(bw_talent)
+
+	var zp_talent := Talent.new()
+	zp_talent.talent_id = "zealous_presence"
+	zp_talent.talent_name = "Zealous Presence"
+	zp_talent.description = "Rally yourself and nearby allies with Advantage on all rolls."
+	zp_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	zp_talent.tier = 2
+	zp_talent.class_id = Stats.CharacterClass.BARBARIAN
+	zp_talent.max_rank = 3
+	zp_talent.ranks = [
+		{"description": "Grant Advantage on all attack rolls and checks to yourself and friendly entities in FOV for 1 turn. 1 charge/long rest (falls back to consuming a Rage charge if out)."},
+		{"description": "Duration increases to 3 turns."},
+		{"description": "Duration increases to 5 turns."},
+	]
+	_class_talents.append(zp_talent)

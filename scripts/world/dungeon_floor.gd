@@ -898,7 +898,7 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 		var has_prof: bool = s.check_prof_dex
 		var prof_bonus: int = s.proficiency_bonus if has_prof else 0
 		var danger_rank: int = GameState.get_talent_rank("danger_sense")
-		var has_adv: bool = danger_rank >= 1
+		var has_adv: bool = danger_rank >= 1 or s.zealous_presence_turns > 0
 		var die1: int = randi_range(1, 20)
 		var die2: int = die1
 		if has_adv:
@@ -911,7 +911,7 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 			effective_stat = "STR"
 		var roll: int = die + dex_mod + prof_bonus
 		var dc: int = 10 + GameState.current_floor
-		var adv_tag: String = " [color=gray](Danger Sense)[/color]" if has_adv else ""
+		var adv_tag: String = " [color=gray](%s)[/color]" % ("Danger Sense" if danger_rank >= 1 else "Zealous Presence") if has_adv else ""
 		var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [
 			effective_stat, die, die1, die2, dex_mod, prof_bonus, roll, dc, 1 if roll >= dc else 0, 1 if has_adv else 0]
 		if roll >= dc:
