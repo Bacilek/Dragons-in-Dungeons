@@ -1209,6 +1209,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
 		1 if is_crit else 0, 1 if is_nat_one else 0]
 
+	# Blessed Warrior heal resolves off the very next attack this turn regardless of hit/miss.
+	_resolve_blessed_warrior_heal()
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_verb: String = "strike at" if is_monk_unarmed else ("punch" if is_unarmed else "swing")
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
@@ -1222,7 +1224,6 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_handle_post_attack_turn(is_monk_unarmed)
 		return
 
-	_resolve_blessed_warrior_heal()
 	AudioManager.play("crit" if is_crit else "hit_enemy")
 	_flash_hit(enemy)
 	if adv:
@@ -1237,60 +1238,56 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
-	var actual: int = enemy.stats.take_damage(pre_crit)
+
+	# All bonus damage sources (Frenzy, Ironwood Bark, Divine Fury) are computed BEFORE
+	# take_damage/show_damage and folded into one number — see "damage stacking" rule in
+	# scripts/entities/CLAUDE.md. Never call take_damage/show_damage separately per source.
+	var bonus_dmg: int = 0
+	var bonus_tags: PackedStringArray = []
+
+	var frenzy_rank: int = GameState.get_talent_rank("frenzy")
+	if frenzy_rank >= 1 and _is_raging and is_str_weapon and not _frenzy_triggered_this_turn:
+		_frenzy_triggered_this_turn = true
+		var frenzy_sides: int = [0, 4, 6, 8][frenzy_rank]
+		var frenzy_roll: int = randi_range(1, frenzy_sides)
+		var frenzy_bonus: int = frenzy_roll * stats.rage_bonus_damage
+		bonus_dmg += frenzy_bonus
+		bonus_tags.append("[color=red]+%d Frenzy[/color]" % frenzy_bonus)
+
+	# Ironwood Bark R3: next attack this turn deals bonus damage equal to the temp HP snapshotted at turn start.
+	if _ironwood_bark_bonus_pending > 0:
+		var ib_bonus: int = _ironwood_bark_bonus_pending
+		_ironwood_bark_bonus_pending = 0
+		bonus_dmg += ib_bonus
+		bonus_tags.append("[color=cyan]+%d Ironwood Bark[/color]" % ib_bonus)
+
+	# Divine Fury: first attack each turn (any weapon), regardless of Rage state.
+	var df_rank: int = GameState.get_talent_rank("divine_fury")
+	if df_rank >= 1 and not _divine_fury_triggered_this_turn:
+		_divine_fury_triggered_this_turn = true
+		var df_bonus: int = randi_range(1, 6) + _divine_fury_flat_bonus(df_rank)
+		bonus_dmg += df_bonus
+		var df_color: String = "gold" if GameState.zealot_divine_fury_type == "Radiant" else "purple"
+		bonus_tags.append("[color=%s]+%d %s (Divine Fury)[/color]" % [df_color, df_bonus, GameState.zealot_divine_fury_type])
+
+	var actual: int = enemy.stats.take_damage(pre_crit + bonus_dmg)
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
 
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,rage=%d,crit=%d,final=%d" % [
-		die_roll, w_dmin, w_dmax, w_enh, mod_key, dmg_mod, rage_bonus, 1 if is_crit else 0, actual]
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,rage=%d,bonus=%d,crit=%d,final=%d" % [
+		die_roll, w_dmin, w_dmax, w_enh, mod_key, dmg_mod, rage_bonus, bonus_dmg, 1 if is_crit else 0, actual]
 	var verb: String = "strike" if is_monk_unarmed else ("punch" if is_unarmed else "strike")
 	var weapon_item: Item = GameState.equipped_weapon
 	var dmg_type: String = weapon_item.damage_type if weapon_item != null and not weapon_item.damage_type.is_empty() else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	var god_hp: String = " [color=gray][%d/%d HP][/color]" % [enemy.stats.current_hp, enemy.stats.max_hp] if GameState.god_mode and not enemy.stats.is_dead() else ""
-	# Frenzy: compute BEFORE logging so the bonus can be appended to the same line.
-	var frenzy_tag: String = ""
-	var frenzy_rank: int = GameState.get_talent_rank("frenzy")
-	if frenzy_rank >= 1 and _is_raging and is_str_weapon and not _frenzy_triggered_this_turn and not enemy.stats.is_dead():
-		_frenzy_triggered_this_turn = true
-		var frenzy_sides: int = [0, 4, 6, 8][frenzy_rank]
-		var frenzy_roll: int = randi_range(1, frenzy_sides)
-		var frenzy_bonus: int = frenzy_roll * stats.rage_bonus_damage
-		enemy.stats.take_damage(frenzy_bonus)
-		enemy.update_hp_bar()
-		if _dungeon_floor != null:
-			_dungeon_floor.show_damage(enemy.position, frenzy_bonus, false)
-		frenzy_tag = " [color=red](+%d Frenzy)[/color]" % frenzy_bonus
-
-	# Ironwood Bark R3: next attack this turn deals bonus damage equal to the temp HP snapshotted at turn start.
-	var ironwood_tag: String = ""
-	if _ironwood_bark_bonus_pending > 0 and not enemy.stats.is_dead():
-		var ib_bonus: int = _ironwood_bark_bonus_pending
-		_ironwood_bark_bonus_pending = 0
-		enemy.stats.take_damage(ib_bonus)
-		enemy.update_hp_bar()
-		if _dungeon_floor != null:
-			_dungeon_floor.show_damage(enemy.position, ib_bonus, false)
-		ironwood_tag = " [color=cyan](+%d Ironwood Bark)[/color]" % ib_bonus
-
-	# Divine Fury: first attack each turn (any weapon), regardless of Rage state.
-	var divine_fury_tag: String = ""
-	var df_rank: int = GameState.get_talent_rank("divine_fury")
-	if df_rank >= 1 and not _divine_fury_triggered_this_turn and not enemy.stats.is_dead():
-		_divine_fury_triggered_this_turn = true
-		var df_bonus: int = randi_range(1, 6) + _divine_fury_flat_bonus(df_rank)
-		enemy.stats.take_damage(df_bonus)
-		enemy.update_hp_bar()
-		if _dungeon_floor != null:
-			_dungeon_floor.show_damage(enemy.position, df_bonus, false)
-		var df_color: String = "gold" if GameState.zealot_divine_fury_type == "Radiant" else "purple"
-		divine_fury_tag = " [color=%s](+%d %s — Divine Fury)[/color]" % [df_color, df_bonus, GameState.zealot_divine_fury_type]
+	var bonus_tag: String = "  (%s)" % ", ".join(bonus_tags) if not bonus_tags.is_empty() else ""
 
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, frenzy_tag, ironwood_tag, divine_fury_tag, god_hp])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, bonus_tag, god_hp])
 	else:
-		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, frenzy_tag, ironwood_tag, divine_fury_tag, god_hp])
+		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, bonus_tag, god_hp])
 
 	# Branching Strike R3: push the target 1 tile away on a hit with a Heavy/Versatile melee weapon.
 	if GameState.get_talent_rank("branching_strike") >= 3 and is_str_weapon and not enemy.stats.is_dead() \
@@ -1956,6 +1953,8 @@ func _ranged_attack(enemy: Enemy) -> void:
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
 		1 if is_crit else 0, 1 if is_nat_one else 0]
 
+	# Blessed Warrior heal resolves off the very next attack this turn regardless of hit/miss.
+	_resolve_blessed_warrior_heal()
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
 		GameState.game_log("You shoot at [color=orange]%s[/color] — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
@@ -1968,7 +1967,6 @@ func _ranged_attack(enemy: Enemy) -> void:
 		_handle_post_attack_turn()
 		return
 
-	_resolve_blessed_warrior_heal()
 	AudioManager.play("crit" if is_crit else "hit_enemy")
 	_flash_hit(enemy)
 	if adv and not disadv:
@@ -1979,32 +1977,35 @@ func _ranged_attack(enemy: Enemy) -> void:
 		r_pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
-	var actual: int = enemy.stats.take_damage(r_pre_crit)
+
+	# Divine Fury folded into the same hit/floater — see damage stacking rule in
+	# scripts/entities/CLAUDE.md.
+	var r_bonus_dmg: int = 0
+	var r_bonus_tags: PackedStringArray = []
+	var r_df_rank: int = GameState.get_talent_rank("divine_fury")
+	if r_df_rank >= 1 and not _divine_fury_triggered_this_turn:
+		_divine_fury_triggered_this_turn = true
+		var r_df_bonus: int = randi_range(1, 6) + _divine_fury_flat_bonus(r_df_rank)
+		r_bonus_dmg += r_df_bonus
+		var r_df_color: String = "gold" if GameState.zealot_divine_fury_type == "Radiant" else "purple"
+		r_bonus_tags.append("[color=%s]+%d %s (Divine Fury)[/color]" % [r_df_color, r_df_bonus, GameState.zealot_divine_fury_type])
+
+	var actual: int = enemy.stats.take_damage(r_pre_crit + r_bonus_dmg)
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
 
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,dex=%d,rage=0,crit=%d,final=%d" % [
-		r_die_roll, stats.base_min_damage, stats.base_max_damage, r_wpn_enh, dex_mod, 1 if is_crit else 0, actual]
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,dex=%d,rage=0,bonus=%d,crit=%d,final=%d" % [
+		r_die_roll, stats.base_min_damage, stats.base_max_damage, r_wpn_enh, dex_mod, r_bonus_dmg, 1 if is_crit else 0, actual]
 	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
 	var r_god_hp: String = " [color=gray][%d/%d HP][/color]" % [enemy.stats.current_hp, enemy.stats.max_hp] if GameState.god_mode and not enemy.stats.is_dead() else ""
-	# Divine Fury: first attack each turn (any weapon, ranged included), regardless of Rage state.
-	var r_divine_fury_tag: String = ""
-	var r_df_rank: int = GameState.get_talent_rank("divine_fury")
-	if r_df_rank >= 1 and not _divine_fury_triggered_this_turn and not enemy.stats.is_dead():
-		_divine_fury_triggered_this_turn = true
-		var r_df_bonus: int = randi_range(1, 6) + _divine_fury_flat_bonus(r_df_rank)
-		enemy.stats.take_damage(r_df_bonus)
-		enemy.update_hp_bar()
-		if _dungeon_floor != null:
-			_dungeon_floor.show_damage(enemy.position, r_df_bonus, false)
-		var r_df_color: String = "gold" if GameState.zealot_divine_fury_type == "Radiant" else "purple"
-		r_divine_fury_tag = " [color=%s](+%d %s — Divine Fury)[/color]" % [r_df_color, r_df_bonus, GameState.zealot_divine_fury_type]
+	var r_bonus_tag: String = "  (%s)" % ", ".join(r_bonus_tags) if not r_bonus_tags.is_empty() else ""
+
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, r_divine_fury_tag, r_god_hp])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, r_bonus_tag, r_god_hp])
 	else:
-		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, r_divine_fury_tag, r_god_hp])
+		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, r_bonus_tag, r_god_hp])
 
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)

@@ -1009,6 +1009,7 @@ func _fmt_dmg_tooltip(p: Dictionary) -> String:
 	var str_mod: int = int(p.get("str", "0"))
 	var dex_mod: int = int(p.get("dex", "0"))
 	var rage: int  = int(p.get("rage", "0"))
+	var bonus: int = int(p.get("bonus", "0"))
 	var crit: bool = p.get("crit", "0") == "1"
 	var final_dmg: int = int(p.get("final", "0"))
 	var lines: PackedStringArray = []
@@ -1026,6 +1027,8 @@ func _fmt_dmg_tooltip(p: Dictionary) -> String:
 		lines.append("[color=red]+%d[/color]  (Rage bonus)" % rage)
 	if crit:
 		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
+	if bonus != 0:
+		lines.append("[color=orange]+%d[/color]  (Frenzy / Ironwood Bark / Divine Fury — see log line)" % bonus)
 	lines.append("─────────────────")
 	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
 	return "\n".join(lines)

@@ -67,6 +67,10 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 - **DISADV**: ranged attack at Chebyshev distance 1 (melee range); melee with a `is_heavy` weapon when STR < 13
 - ADV + DISADV cancel → 1d20
 - Yellow "!" floats above enemy on ADV surprise attacks
+- Enemy attack log lines (`enemy.gd._attack_player()`) never name the specific talent/ability that granted ADV/DISADV (e.g. no `"(Reckless)"` text) — that context lives only in the `ehit` tooltip roll breakdown, not the log line.
+
+### Bonus damage stacking (Frenzy / Ironwood Bark / Divine Fury, etc.)
+When more than one bonus damage source can trigger on the same attack, compute all of them **before** the single `Stats.take_damage()` / `DungeonFloor.show_damage()` call and add them into the base damage total — one number, one floater, one chat log line (each source may still append its own colored `(+N Source)` fragment to that one line for flavor). Never call `take_damage()`/`show_damage()` once per source — besides producing a confusing multi-part log line, a source gated on `not enemy.stats.is_dead()` can silently fail to trigger if an earlier source already killed the enemy. See `player.gd._bump_attack()` / `_ranged_attack()` for the reference implementation (Frenzy + Ironwood Bark + Divine Fury summed into `bonus_dmg` before `enemy.stats.take_damage(pre_crit + bonus_dmg)`).
 
 ---
 

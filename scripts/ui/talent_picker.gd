@@ -1,7 +1,7 @@
 extends CanvasLayer
 
-const PANEL_W: float = 500.0
-const ICON_SIZE: float = 48.0
+const PANEL_W: float = 720.0
+const ICON_SIZE: float = 64.0
 
 var _selected_id: String = ""
 var _talent_btns: Dictionary = {}   # talent_id → TextureButton
@@ -30,58 +30,58 @@ func _build_ui() -> void:
 	add_child(dim)
 
 	_panel = Panel.new()
-	_panel.size = Vector2(PANEL_W, 600.0)  # resized at end
+	_panel.size = Vector2(PANEL_W, 800.0)  # resized at end
 	var sbox := StyleBoxFlat.new()
 	sbox.bg_color = Color(0.07, 0.08, 0.13, 0.97)
-	sbox.set_border_width_all(2)
+	sbox.set_border_width_all(3)
 	sbox.border_color = Color(0.78, 0.55, 0.22)
-	sbox.set_corner_radius_all(6)
+	sbox.set_corner_radius_all(8)
 	_panel.add_theme_stylebox_override("panel", sbox)
 	add_child(_panel)
 
 	# ── Title bar ────────────────────────────────────────────────────────────────
 	var title := Label.new()
 	title.text = "Talents"
-	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_font_size_override("font_size", 26)
 	title.add_theme_color_override("font_color", Color(1.0, 0.82, 0.22))
-	title.position = Vector2(14.0, 10.0)
-	title.size = Vector2(260.0, 26.0)
+	title.position = Vector2(20.0, 14.0)
+	title.size = Vector2(380.0, 34.0)
 	_panel.add_child(title)
 
 	var close_btn := Button.new()
 	close_btn.text = "✕  [Esc/T]"
-	close_btn.size = Vector2(90.0, 28.0)
-	close_btn.position = Vector2(PANEL_W - 102.0, 10.0)
+	close_btn.size = Vector2(112.0, 34.0)
+	close_btn.position = Vector2(PANEL_W - 128.0, 14.0)
 	close_btn.focus_mode = Control.FOCUS_NONE
-	close_btn.add_theme_font_size_override("font_size", 12)
+	close_btn.add_theme_font_size_override("font_size", 14)
 	_style_btn(close_btn, Color(0.22, 0.10, 0.10), Color(0.60, 0.25, 0.25))
 	close_btn.pressed.connect(_close)
 	_panel.add_child(close_btn)
 
 	var sep1 := HSeparator.new()
-	sep1.position = Vector2(8.0, 46.0)
-	sep1.size = Vector2(PANEL_W - 16.0, 2.0)
+	sep1.position = Vector2(12.0, 60.0)
+	sep1.size = Vector2(PANEL_W - 24.0, 2.0)
 	_panel.add_child(sep1)
 
 	# ── Tier sections ─────────────────────────────────────────────────────────────
-	var y: float = 54.0
+	var y: float = 70.0
 	y = _build_tier_section(1, y)
-	y += 10.0
+	y += 14.0
 	y = _build_tier_section(2, y)
-	y += 8.0
+	y += 10.0
 
 	# ── Detail separator ──────────────────────────────────────────────────────────
 	var sep2 := HSeparator.new()
-	sep2.position = Vector2(8.0, y)
-	sep2.size = Vector2(PANEL_W - 16.0, 2.0)
+	sep2.position = Vector2(12.0, y)
+	sep2.size = Vector2(PANEL_W - 24.0, 2.0)
 	_panel.add_child(sep2)
-	y += 8.0
+	y += 12.0
 
 	# ── Detail section ────────────────────────────────────────────────────────────
 	_build_detail_section(y)
 
 	# Resize panel to actual content height
-	var panel_h: float = y + 28.0 + 120.0 + 34.0 + 16.0
+	var panel_h: float = y + 32.0 + 190.0 + 42.0 + 24.0
 	_panel.size = Vector2(PANEL_W, panel_h)
 	_panel.position = Vector2((vp.x - PANEL_W) * 0.5, (vp.y - panel_h) * 0.5)
 
@@ -94,39 +94,39 @@ func _build_tier_section(tier: int, y: float) -> float:
 	# "Tier N" label
 	var tier_lbl := Label.new()
 	tier_lbl.text = "Tier %d" % tier
-	tier_lbl.add_theme_font_size_override("font_size", 13)
+	tier_lbl.add_theme_font_size_override("font_size", 16)
 	tier_lbl.add_theme_color_override("font_color", label_color)
-	tier_lbl.position = Vector2(14.0, y + 4.0)
-	tier_lbl.size = Vector2(50.0, 20.0)
+	tier_lbl.position = Vector2(20.0, y + 4.0)
+	tier_lbl.size = Vector2(64.0, 24.0)
 	_panel.add_child(tier_lbl)
 
 	# Debug subclass arrows (only in God Mode, only for Tier 2)
 	if tier == 2 and GameState.god_mode:
 		var prev_btn := Button.new()
 		prev_btn.text = "◀"
-		prev_btn.size = Vector2(24.0, 22.0)
-		prev_btn.position = Vector2(68.0, y + 4.0)
+		prev_btn.size = Vector2(30.0, 28.0)
+		prev_btn.position = Vector2(96.0, y + 2.0)
 		prev_btn.focus_mode = Control.FOCUS_NONE
-		prev_btn.add_theme_font_size_override("font_size", 11)
+		prev_btn.add_theme_font_size_override("font_size", 13)
 		_style_btn(prev_btn, Color(0.14, 0.10, 0.22), Color(0.42, 0.28, 0.70))
 		prev_btn.pressed.connect(func() -> void: _on_subclass_arrow(-1))
 		_panel.add_child(prev_btn)
 
 		var sub_lbl := Label.new()
 		sub_lbl.text = GameState.active_tier2_subclass
-		sub_lbl.add_theme_font_size_override("font_size", 12)
+		sub_lbl.add_theme_font_size_override("font_size", 15)
 		sub_lbl.add_theme_color_override("font_color", Color(0.72, 0.52, 0.90))
 		sub_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		sub_lbl.position = Vector2(96.0, y + 4.0)
-		sub_lbl.size = Vector2(156.0, 20.0)
+		sub_lbl.position = Vector2(132.0, y + 2.0)
+		sub_lbl.size = Vector2(220.0, 24.0)
 		_panel.add_child(sub_lbl)
 
 		var next_btn := Button.new()
 		next_btn.text = "▶"
-		next_btn.size = Vector2(24.0, 22.0)
-		next_btn.position = Vector2(256.0, y + 4.0)
+		next_btn.size = Vector2(30.0, 28.0)
+		next_btn.position = Vector2(358.0, y + 2.0)
 		next_btn.focus_mode = Control.FOCUS_NONE
-		next_btn.add_theme_font_size_override("font_size", 11)
+		next_btn.add_theme_font_size_override("font_size", 13)
 		_style_btn(next_btn, Color(0.14, 0.10, 0.22), Color(0.42, 0.28, 0.70))
 		next_btn.pressed.connect(func() -> void: _on_subclass_arrow(1))
 		_panel.add_child(next_btn)
@@ -136,13 +136,13 @@ func _build_tier_section(tier: int, y: float) -> float:
 	star_rtl.bbcode_enabled = true
 	star_rtl.fit_content = false
 	star_rtl.scroll_active = false
-	star_rtl.position = Vector2(PANEL_W - 144.0, y + 2.0)
-	star_rtl.size = Vector2(132.0, 24.0)
-	star_rtl.add_theme_font_size_override("normal_font_size", 15)
+	star_rtl.position = Vector2(PANEL_W - 190.0, y + 2.0)
+	star_rtl.size = Vector2(178.0, 30.0)
+	star_rtl.add_theme_font_size_override("normal_font_size", 19)
 	_panel.add_child(star_rtl)
 	_star_rtls[tier] = star_rtl
 
-	y += 30.0
+	y += 38.0
 
 	# Collect talents for this tier
 	var tier_talents: Array[Talent] = []
@@ -153,21 +153,21 @@ func _build_tier_section(tier: int, y: float) -> float:
 	if tier == 2 and not GameState.tier2_unlocked:
 		var locked_lbl := Label.new()
 		locked_lbl.text = "Tier 2  —  unlocks at level 7"
-		locked_lbl.add_theme_font_size_override("font_size", 12)
+		locked_lbl.add_theme_font_size_override("font_size", 14)
 		locked_lbl.add_theme_color_override("font_color", Color(0.33, 0.33, 0.33))
-		locked_lbl.position = Vector2(14.0, y + 8.0)
-		locked_lbl.size = Vector2(PANEL_W - 28.0, 24.0)
+		locked_lbl.position = Vector2(20.0, y + 10.0)
+		locked_lbl.size = Vector2(PANEL_W - 40.0, 28.0)
 		_panel.add_child(locked_lbl)
-		y += 36.0
+		y += 44.0
 	else:
 		var n: int = tier_talents.size()
 		if n > 0:
-			var slot_w: float = (PANEL_W - 28.0) / n
+			var slot_w: float = (PANEL_W - 40.0) / n
 			for i: int in n:
 				var t: Talent = tier_talents[i]
-				var icon_x: float = 14.0 + i * slot_w + (slot_w - ICON_SIZE) * 0.5
+				var icon_x: float = 20.0 + i * slot_w + (slot_w - ICON_SIZE) * 0.5
 				_add_talent_icon(t, Vector2(icon_x, y))
-		y += ICON_SIZE + 26.0  # 48 icon + 4 gap + 22 dot label + 2 breathing room
+		y += ICON_SIZE + 34.0  # icon + gap + dot label + breathing room
 	return y
 
 func _add_talent_icon(t: Talent, pos: Vector2) -> void:
@@ -184,37 +184,37 @@ func _add_talent_icon(t: Talent, pos: Vector2) -> void:
 	_panel.add_child(btn)
 
 	var dot_lbl := Label.new()
-	dot_lbl.add_theme_font_size_override("font_size", 14)
+	dot_lbl.add_theme_font_size_override("font_size", 17)
 	dot_lbl.add_theme_color_override("font_color", Color(0.50, 0.80, 0.50))
 	dot_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	dot_lbl.position = Vector2(pos.x - 8.0, pos.y + ICON_SIZE + 4.0)
-	dot_lbl.size = Vector2(ICON_SIZE + 16.0, 20.0)
+	dot_lbl.position = Vector2(pos.x - 12.0, pos.y + ICON_SIZE + 4.0)
+	dot_lbl.size = Vector2(ICON_SIZE + 24.0, 24.0)
 	_dot_labels[t.talent_id] = dot_lbl
 	_panel.add_child(dot_lbl)
 
 func _build_detail_section(y: float) -> void:
 	_detail_name = Label.new()
 	_detail_name.text = "— select a talent —"
-	_detail_name.add_theme_font_size_override("font_size", 14)
+	_detail_name.add_theme_font_size_override("font_size", 17)
 	_detail_name.add_theme_color_override("font_color", Color(1.0, 0.82, 0.22))
-	_detail_name.position = Vector2(14.0, y)
-	_detail_name.size = Vector2(PANEL_W - 28.0, 26.0)
+	_detail_name.position = Vector2(20.0, y)
+	_detail_name.size = Vector2(PANEL_W - 40.0, 32.0)
 	_panel.add_child(_detail_name)
 
 	_detail_desc = RichTextLabel.new()
 	_detail_desc.bbcode_enabled = true
 	_detail_desc.fit_content = false
 	_detail_desc.scroll_active = false
-	_detail_desc.position = Vector2(14.0, y + 30.0)
-	_detail_desc.size = Vector2(PANEL_W - 28.0, 120.0)
-	_detail_desc.add_theme_font_size_override("normal_font_size", 12)
+	_detail_desc.position = Vector2(20.0, y + 36.0)
+	_detail_desc.size = Vector2(PANEL_W - 40.0, 190.0)
+	_detail_desc.add_theme_font_size_override("normal_font_size", 14)
 	_panel.add_child(_detail_desc)
 
 	_upgrade_btn = Button.new()
 	_upgrade_btn.text = "Upgrade Talent  ▲"
-	_upgrade_btn.size = Vector2(182.0, 34.0)
-	_upgrade_btn.position = Vector2(PANEL_W - 196.0, y + 154.0)
-	_upgrade_btn.add_theme_font_size_override("font_size", 13)
+	_upgrade_btn.size = Vector2(230.0, 42.0)
+	_upgrade_btn.position = Vector2(PANEL_W - 250.0, y + 234.0)
+	_upgrade_btn.add_theme_font_size_override("font_size", 16)
 	_upgrade_btn.focus_mode = Control.FOCUS_NONE
 	_upgrade_btn.disabled = true
 	var dis_sbox := StyleBoxFlat.new()
