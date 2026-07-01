@@ -70,7 +70,7 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 ---
 
 ## Temp HP
-`Stats.temp_hp: int = 0`. Set by Natural Sleeper R2 (2d6 THP per round while starting a turn on the active form's terrain — replaces existing THP, doesn't stack). `take_damage()` absorbs temp HP before regular HP — if fully absorbed, returns 0. Displayed in HUD as a light-blue strip above the HP bar (`_temp_hp_fill` in hud.gd), proportional to `temp_hp / max_hp`.
+`Stats.temp_hp: int = 0`. Set by Natural Sleeper R2 (2d6 THP per round while starting a turn on the active form's terrain — replaces existing THP, doesn't stack) and by World Tree's Ironwood Bark (`1d6 × rage_bonus_damage` on Rage activation, and again at turn start while Raging if temp HP is 0 — see `player.gd._on_turn_started()`). `take_damage()` absorbs temp HP before regular HP — if fully absorbed, returns 0. Displayed in HUD as a light-blue strip above the HP bar (`_temp_hp_fill` in hud.gd), proportional to `temp_hp / max_hp`.
 
 ## Status effects
 Fields on `Stats`: `poison_turns`, `burning_turns`, `bleeding_turns`, `slowed_turns`.
@@ -90,6 +90,11 @@ GameState.player_status_changed.emit()
 | Slowed | brown | Bear Trap (20t), mud, water | movement costs 2 turns |
 
 ---
+
+## Enemy resist checks (World Tree)
+`Enemy.resist_check(dc: int, use_con: bool = false) -> bool` — rolls `d20 + floor/3 + (con_modifier or str_modifier)` vs `dc`; true = enemy resists. Backing stats: `ENEMY_POOL`/`BOSS_POOL` entries may set optional `"str_mod"`/`"con_mod"` int keys (default 0); `_apply_stats()` converts them to `Stats.strength/constitution` (`10 + mod * 2`). Used by Grip of the Forest's pull (STR) and Branching Strike R3's push (CON), both vs DC `8 + player STR mod + proficiency`.
+`Enemy.rooted_turns: int` — Grip of the Forest R2. Checked at the top of `take_turn()`: decrements, skips movement, still attacks if already adjacent.
+`Enemy.disadv_next_attack: bool` — Grip of the Forest R3. Consumed in `_attack_player()`'s roll (adds a Disadvantage source, combined with Reckless Attack's Advantage via the same net-ADV/DISADV house rule as the player's own attacks).
 
 ## Enemy behavior states
 `SLEEPING → STATIONARY → ROAMING → CHASING → SEARCHING`

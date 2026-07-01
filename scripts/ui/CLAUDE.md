@@ -54,7 +54,7 @@ Triggered by `GameState.stairs_discovered` signal (emitted by `DungeonFloor.upda
 CanvasLayer, layer = 25. Opened by `player.gd._open_talent_picker()` via **T key** (bypasses phase gate). Does NOT auto-open on level-up.
 Sets `GameState.talent_picker_open = true` → blocks all player keyboard input. Esc or T closes.
 Pixel Dungeon style: tier header with star bar (gray=spent / yellow=available / dark=locked) + icon row with dot rank indicators + bottom detail panel showing all rank descriptions + "Upgrade Talent ▲" button.
-**Subclass arrows** (Tier 2 header only, visible in God Mode): ◀ `active_tier2_subclass` ▶ arrows call `GameState.debug_switch_subclass(±1)` then close+reopen the picker. Placeholders: Zealot, World Tree, Wild Heart (no talents, show empty Tier 2 area).
+**Subclass arrows** (Tier 2 header only, visible in God Mode): ◀ `active_tier2_subclass` ▶ arrows call `GameState.debug_switch_subclass(±1)` then close+reopen the picker. Berserker, Wild Heart, and World Tree are implemented; Zealot remains a placeholder (no talents, shows empty Tier 2 area).
 
 ## Short rest panel (`short_rest_panel.gd`)
 CanvasLayer, layer = 25. Spawned by `player.gd._open_short_rest()`.

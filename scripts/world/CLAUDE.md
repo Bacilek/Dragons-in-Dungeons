@@ -48,6 +48,12 @@ dungeon_floor.search_around(pos) -> int   # returns number of traps revealed
 
 Piston: `search_around` only detects from the `-push_dir` side.
 
+## Forced movement (`force_move_entity`)
+```gdscript
+dungeon_floor.force_move_entity(entity: Node2D, direction: Vector2i, max_distance: int, deal_damage: bool = false, trap_sprite: Sprite2D = null) -> int
+```
+Generalized from the old piston-trap-only `_push_entity`. Walks `entity` step-by-step in `direction`, stopping early on wall/occupant collision; returns tiles actually moved. `deal_damage=true` reproduces the original piston-trap splash damage (piston traps still pass `true`). World Tree's Grip of the Forest (pull toward player, recomputing direction each step so off-axis targets still land adjacent) and Branching Strike R3 (push 1 tile away) both pass `deal_damage=false`. Reuse this for any future forced-movement talent/trap instead of writing a new mover.
+
 ---
 
 ## Doors (`_doors: Dictionary[Vector2i, Dictionary]`)

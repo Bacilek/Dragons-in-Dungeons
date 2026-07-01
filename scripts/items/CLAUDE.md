@@ -40,6 +40,7 @@ TOOL   = 7
 | `is_two_handed` | bool | cosmetic flag; shown as "Two-handed" in weapon tooltip |
 | `is_heavy_armor` | bool | ends Barbarian Rage on equip |
 | `is_heavy` | bool | Heavy weapon: attacking with STR < 13 imposes Disadvantage; shown as hoverable "Heavy" keyword in tooltip |
+| `is_versatile` | bool | Versatile weapon; no weapon currently sets it. World Tree's Branching Strike keys off `is_heavy or is_versatile` for reach/push |
 
 ---
 
