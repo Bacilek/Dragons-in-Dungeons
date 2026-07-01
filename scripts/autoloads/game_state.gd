@@ -399,7 +399,8 @@ func _setup_tier2_for_active_subclass() -> void:
 	match active_tier2_subclass:
 		"Berserker": _setup_barbarian_tier2_talents()
 		"Wild Heart": _setup_wild_heart_tier2_talents()
-		_: pass  # Zealot, World Tree: placeholder
+		"World Tree": _setup_world_tree_tier2_talents()
+		_: pass  # Zealot: placeholder
 
 func debug_switch_subclass(direction: int) -> void:
 	var idx: int = TIER2_SUBCLASSES.find(active_tier2_subclass)
@@ -977,6 +978,50 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				var ns: Ability = _find_ability_by_id("natural_sleeper")
 				if ns != null:
 					ns.description = _build_natural_sleeper_description()
+		"ironwood_bark":
+			if rank == 1:
+				var ib := Ability.new()
+				ib.ability_id = "ironwood_bark"
+				ib.ability_name = "Ironwood Bark"
+				ib.description = _build_ironwood_bark_description()
+				ib.icon_path = "res://sprites/items/Food/MeatCooked.png"
+				ib.uses_remaining = 0
+				ib.uses_max = 0
+				ib.is_passive = true
+				add_ability(ib)
+			else:
+				var ib: Ability = _find_ability_by_id("ironwood_bark")
+				if ib != null:
+					ib.description = _build_ironwood_bark_description()
+		"grip_of_the_forest":
+			if rank == 1:
+				var gotf := Ability.new()
+				gotf.ability_id = "grip_of_the_forest"
+				gotf.ability_name = "Grip of the Forest"
+				gotf.description = _build_grip_of_the_forest_description()
+				gotf.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				gotf.uses_remaining = 0
+				gotf.uses_max = 0
+				add_ability(gotf)
+			else:
+				var gotf: Ability = _find_ability_by_id("grip_of_the_forest")
+				if gotf != null:
+					gotf.description = _build_grip_of_the_forest_description()
+		"branching_strike":
+			if rank == 1:
+				var bs := Ability.new()
+				bs.ability_id = "branching_strike"
+				bs.ability_name = "Branching Strike"
+				bs.description = _build_branching_strike_description()
+				bs.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+				bs.uses_remaining = 0
+				bs.uses_max = 0
+				bs.is_passive = true
+				add_ability(bs)
+			else:
+				var bs: Ability = _find_ability_by_id("branching_strike")
+				if bs != null:
+					bs.description = _build_branching_strike_description()
 	ability_bar_changed.emit()
 
 func _build_rager_description() -> String:
@@ -1103,6 +1148,31 @@ func _build_natural_sleeper_description() -> String:
 			if rank >= 3: lines.append("R3: +2 AC while standing in water.")
 	if not wild_heart_sleeper_active:
 		lines.append("[color=gray](Rest or descend to activate.)[/color]")
+	return "\n".join(lines)
+
+func _build_ironwood_bark_description() -> String:
+	var rank: int = get_talent_rank("ironwood_bark")
+	var bonus: int = player_stats.rage_bonus_damage
+	var lines: Array[String] = []
+	if rank >= 1: lines.append("R1: Activating Rage grants 1d6 × %d temp HP." % bonus)
+	if rank >= 2: lines.append("R2: While Raging, refresh temp HP (1d6 × %d) if you start your turn at 0." % bonus)
+	if rank >= 3: lines.append("R3: While Raging, if you start your turn with temp HP > 0, your next attack deals bonus damage equal to it.")
+	return "\n".join(lines)
+
+func _build_grip_of_the_forest_description() -> String:
+	var rank: int = get_talent_rank("grip_of_the_forest")
+	var hook_range: int = [0, 3, 4, 5][mini(rank, 3)]
+	var lines: Array[String] = ["While Raging, once per turn: target an enemy within %d tiles (STR check DC 8+STR mod+prof to resist) and pull them into melee range." % hook_range]
+	if rank >= 2: lines.append("R2: On success, the target can't move on their next turn.")
+	if rank >= 3: lines.append("R3: On success, the target also has Disadvantage on their next attack roll.")
+	return "\n".join(lines)
+
+func _build_branching_strike_description() -> String:
+	var rank: int = get_talent_rank("branching_strike")
+	var lines: Array[String] = []
+	if rank >= 2: lines.append("R2: +2 tiles reach with Heavy/Versatile melee weapons.")
+	elif rank >= 1: lines.append("R1: +1 tile reach with Heavy/Versatile melee weapons.")
+	if rank >= 3: lines.append("R3: On hit with a Heavy/Versatile melee weapon, push the target 1 tile away (CON check DC 8+STR mod+prof to resist).")
 	return "\n".join(lines)
 
 
@@ -1253,3 +1323,51 @@ func _setup_wild_heart_tier2_talents() -> void:
 		{"description": "Each form: +2 AC while standing in its terrain."},
 	]
 	_class_talents.append(ns_talent)
+
+func _setup_world_tree_tier2_talents() -> void:
+	var rage_bonus: int = player_stats.rage_bonus_damage
+
+	var ib_talent := Talent.new()
+	ib_talent.talent_id = "ironwood_bark"
+	ib_talent.talent_name = "Ironwood Bark"
+	ib_talent.description = "Bark-like temporary HP fueled by Rage, with a damage payoff at rank 3."
+	ib_talent.icon_path = "res://sprites/items/Food/MeatCooked.png"
+	ib_talent.tier = 2
+	ib_talent.class_id = Stats.CharacterClass.BARBARIAN
+	ib_talent.max_rank = 3
+	ib_talent.ranks = [
+		{"description": "Activating Rage grants 1d6 × rage bonus (%d) temporary HP." % rage_bonus},
+		{"description": "While Raging, if you start your turn with 0 temp HP, refresh it (1d6 × rage bonus)."},
+		{"description": "While Raging, if you start your turn with temp HP > 0, your next attack this turn deals bonus damage equal to that temp HP amount."},
+	]
+	_class_talents.append(ib_talent)
+
+	var gotf_talent := Talent.new()
+	gotf_talent.talent_id = "grip_of_the_forest"
+	gotf_talent.talent_name = "Grip of the Forest"
+	gotf_talent.description = "While Raging, once per turn, pull a distant enemy into melee range."
+	gotf_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	gotf_talent.tier = 2
+	gotf_talent.class_id = Stats.CharacterClass.BARBARIAN
+	gotf_talent.max_rank = 3
+	gotf_talent.ranks = [
+		{"description": "Target an enemy within 3 tiles (STR check DC 8+STR mod+prof to resist) and pull them into melee range."},
+		{"description": "Range increases to 4 tiles. On success, the target can't move on their next turn."},
+		{"description": "Range increases to 5 tiles. On success, the target also has Disadvantage on their next attack roll."},
+	]
+	_class_talents.append(gotf_talent)
+
+	var bs_talent := Talent.new()
+	bs_talent.talent_id = "branching_strike"
+	bs_talent.talent_name = "Branching Strike"
+	bs_talent.description = "Extend your reach with heavy/versatile melee weapons, and push foes back."
+	bs_talent.icon_path = "res://sprites/weapons/weapon_double_axe.png"
+	bs_talent.tier = 2
+	bs_talent.class_id = Stats.CharacterClass.BARBARIAN
+	bs_talent.max_rank = 3
+	bs_talent.ranks = [
+		{"description": "+1 tile reach when wielding a Heavy or Versatile melee weapon."},
+		{"description": "+2 tiles reach when wielding a Heavy or Versatile melee weapon (replaces rank 1)."},
+		{"description": "On a hit with a Heavy/Versatile melee weapon, push the target 1 tile away (CON check DC 8+STR mod+prof to resist)."},
+	]
+	_class_talents.append(bs_talent)

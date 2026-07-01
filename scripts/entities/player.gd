@@ -70,6 +70,13 @@ var _reverted_this_round: bool = false
 # Rank 1: +2 flat to first STR attack / enemies +2. Rank 2+: ADV / enemies ADV.
 var _reckless_active: bool = false
 
+# ── World Tree state (Tier 2) ─────────────────────────────────────────────────
+# Ironwood Bark R3: bonus damage from temp HP snapshotted at turn start, consumed by next attack.
+var _ironwood_bark_bonus_pending: int = 0
+# Grip of the Forest: once-per-turn hook-targeting mode (armed via ability bar, resolved on click).
+var _hook_mode_active: bool = false
+var _grip_used_this_turn: bool = false
+
 
 # ── Equip action tracking ─────────────────────────────────────────────────────
 var _pending_equip_turn: bool = false  # set by equip_action_taken signal; consumed in next action gate
@@ -141,6 +148,7 @@ func _on_turn_started() -> void:
 		_rager_attack_triggered = false
 		_frenzy_triggered_this_turn = false
 		_eagle_free_move_used = false
+		_grip_used_this_turn = false
 	GameState.ability_bar_changed.emit()
 	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
 	# Only fires on real turns, not on reverted turns.
@@ -159,6 +167,21 @@ func _on_turn_started() -> void:
 				GameState.player_stats.temp_hp = _thp  # replace, not stack
 				GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 				GameState.game_log("[color=cyan]%s Form: %d temp HP (2d6).[/color]" % [_af, _thp])
+
+	# Ironwood Bark R2/R3: mutually exclusive per turn — both ranks read the SAME pre-turn
+	# temp HP snapshot, so R2's refresh this tick cannot also trigger R3 this same tick.
+	_ironwood_bark_bonus_pending = 0
+	if not came_from_revert:
+		var _ib_rank: int = GameState.get_talent_rank("ironwood_bark")
+		if _ib_rank >= 2 and _is_raging:
+			var _ib_snapshot_thp: int = GameState.player_stats.temp_hp
+			if _ib_snapshot_thp == 0:
+				var _ib_thp: int = randi_range(1, 6) * GameState.player_stats.rage_bonus_damage
+				GameState.player_stats.temp_hp = _ib_thp
+				GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
+				GameState.game_log("[color=cyan]Ironwood Bark: %d temp HP (1d6 × rage bonus).[/color]" % _ib_thp)
+			elif _ib_rank >= 3:
+				_ironwood_bark_bonus_pending = _ib_snapshot_thp
 	# Refresh visibility after enemy turns, then snapshot FOV
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
@@ -424,6 +447,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _tool_item != null:
 				_tool_item = null
 				GameState.game_log("[color=gray]Disarm cancelled.[/color]")
+			if _hook_mode_active:
+				_hook_mode_active = false
+				GameState.game_log("[color=gray]Grip of the Forest cancelled.[/color]")
 			return
 		# Tab toggles between item bar and ability bar (valid any time except game over)
 		if key.physical_keycode == KEY_TAB:
@@ -564,6 +590,25 @@ func _unhandled_input(event: InputEvent) -> void:
 				_do_inspect(clicked)
 			return
 
+		# Grip of the Forest hook-targeting mode
+		if _hook_mode_active:
+			_hook_mode_active = false
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				var rank_h: int = GameState.get_talent_rank("grip_of_the_forest")
+				var hook_range: int = [0, 3, 4, 5][mini(rank_h, 3)]
+				var target_enemy: Enemy = _dungeon_floor.get_enemy_at(clicked)
+				if target_enemy == null:
+					GameState.game_log("[color=gray]Grip of the Forest: no target there.[/color]")
+				else:
+					var dv: Vector2i = clicked - grid_pos
+					if maxi(absi(dv.x), absi(dv.y)) > hook_range:
+						GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % hook_range)
+					elif not _dungeon_floor.has_ranged_los(grid_pos, clicked):
+						GameState.game_log("[color=gray]No clear line to target.[/color]")
+					else:
+						_execute_hook(target_enemy)
+			return
+
 		# Tool targeting mode — route by tool type
 		if _tool_item != null:
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
@@ -615,8 +660,8 @@ func _execute_queued_path() -> void:
 				_target_enemy = null
 				break
 
-			if chase_path.size() == 1:
-				# Adjacent — melee attack
+			if chase_path.size() <= 1 + _melee_reach_bonus():
+				# In melee (or extended reach) range — attack
 				var atk_dir: Vector2i = _target_enemy.grid_pos - grid_pos
 				_bump_attack(_target_enemy, atk_dir)
 				_target_enemy = null
@@ -973,7 +1018,56 @@ func _activate_rage() -> void:
 	elif rage_rank >= 2: dr_note = " 25% physical DR."
 	var rage_dmg_bonus: int = stats.rage_bonus_damage
 	GameState.game_log("[color=red]You fly into a RAGE! +%d STR damage.%s (%d turns, %d use(s) left)[/color]" % [rage_dmg_bonus, dr_note, _rage_turns, ab.uses_remaining])
+	# Ironwood Bark R1: activating Rage grants temp HP (1d6 × rage bonus).
+	if GameState.get_talent_rank("ironwood_bark") >= 1:
+		var ib_thp: int = randi_range(1, 6) * rage_dmg_bonus
+		GameState.player_stats.temp_hp = ib_thp
+		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
+		GameState.game_log("[color=cyan]Ironwood Bark: %d temp HP (1d6 × rage bonus).[/color]" % ib_thp)
 	# Free action — does NOT consume the turn.
+
+func _activate_grip_of_the_forest() -> void:
+	if not _is_raging:
+		GameState.game_log("[color=gray]Grip of the Forest requires Raging.[/color]")
+		return
+	if _grip_used_this_turn:
+		GameState.game_log("[color=gray]Grip of the Forest: already used this turn.[/color]")
+		return
+	_hook_mode_active = true
+	var rank: int = GameState.get_talent_rank("grip_of_the_forest")
+	var hook_range: int = [0, 3, 4, 5][mini(rank, 3)]
+	GameState.game_log("[color=lime]Grip of the Forest — click an enemy within %d tiles. [Esc] to cancel.[/color]" % hook_range)
+
+func _execute_hook(enemy: Enemy) -> void:
+	_grip_used_this_turn = true
+	TurnManager.begin_player_action()
+	var rank: int = GameState.get_talent_rank("grip_of_the_forest")
+	var dc: int = 8 + stats.str_modifier() + stats.proficiency_bonus
+	var die1: int = randi_range(1, 20)
+	var roll: int = die1 + enemy.stats.str_modifier() + GameState.current_floor / 3
+	var check_meta: String = "check:stat=STR,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=0" % [
+		die1, die1, die1, enemy.stats.str_modifier(), GameState.current_floor / 3, roll, dc, 1 if roll >= dc else 0]
+	if roll >= dc:
+		GameState.game_log("[color=gray]%s resists Grip of the Forest! [url=%s]%d vs DC %d[/url][/color]" % [enemy.display_name, check_meta, roll, dc])
+	else:
+		GameState.game_log("[color=lime]Grip of the Forest pulls %s toward you! [url=%s]%d vs DC %d[/url][/color]" % [enemy.display_name, check_meta, roll, dc])
+		if _dungeon_floor != null:
+			var guard: int = 0
+			while maxi(absi(enemy.grid_pos.x - grid_pos.x), absi(enemy.grid_pos.y - grid_pos.y)) > 1 and guard < 20:
+				guard += 1
+				var step_dir: Vector2i = Vector2i(sign(grid_pos.x - enemy.grid_pos.x), sign(grid_pos.y - enemy.grid_pos.y))
+				var moved: int = await _dungeon_floor.force_move_entity(enemy, step_dir, 1, false)
+				if moved == 0:
+					break
+		if rank >= 2:
+			enemy.rooted_turns = 1
+			GameState.game_log("[color=gray]%s is rooted![/color]" % enemy.display_name)
+		if rank >= 3:
+			enemy.disadv_next_attack = true
+			GameState.game_log("[color=gray]%s has Disadvantage on their next attack.[/color]" % enemy.display_name)
+	if _dungeon_floor != null:
+		_dungeon_floor.update_fog(grid_pos)
+	TurnManager.on_player_action_complete()
 
 func _end_rage() -> void:
 	_is_raging = false
@@ -981,6 +1075,16 @@ func _end_rage() -> void:
 	GameState.is_raging = false
 	GameState.rage_turns_remaining = 0
 	$AnimatedSprite2D.modulate = Color(1.0, 1.0, 1.0)
+
+# Branching Strike: reach bonus (in tiles) for Heavy/Versatile melee weapons. R2 replaces R1 (not additive).
+func _melee_reach_bonus() -> int:
+	var w: Item = GameState.equipped_weapon
+	if w == null or not (w.is_heavy or w.is_versatile):
+		return 0
+	var rank: int = GameState.get_talent_rank("branching_strike")
+	if rank >= 2: return 2
+	if rank >= 1: return 1
+	return 0
 
 func _find_ability(ab_id: String) -> Ability:
 	for slot in GameState.player_ability_bar:
@@ -1135,10 +1239,33 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			_dungeon_floor.show_damage(enemy.position, frenzy_bonus, false)
 		frenzy_tag = " [color=red](+%d Frenzy)[/color]" % frenzy_bonus
 
+	# Ironwood Bark R3: next attack this turn deals bonus damage equal to the temp HP snapshotted at turn start.
+	var ironwood_tag: String = ""
+	if _ironwood_bark_bonus_pending > 0 and not enemy.stats.is_dead():
+		var ib_bonus: int = _ironwood_bark_bonus_pending
+		_ironwood_bark_bonus_pending = 0
+		enemy.stats.take_damage(ib_bonus)
+		enemy.update_hp_bar()
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(enemy.position, ib_bonus, false)
+		ironwood_tag = " [color=cyan](+%d Ironwood Bark)[/color]" % ib_bonus
+
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, frenzy_tag, god_hp])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, frenzy_tag, ironwood_tag, god_hp])
 	else:
-		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, frenzy_tag, god_hp])
+		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, frenzy_tag, ironwood_tag, god_hp])
+
+	# Branching Strike R3: push the target 1 tile away on a hit with a Heavy/Versatile melee weapon.
+	if GameState.get_talent_rank("branching_strike") >= 3 and is_str_weapon and not enemy.stats.is_dead() \
+			and weapon_item_ref != null and (weapon_item_ref.is_heavy or weapon_item_ref.is_versatile) and _dungeon_floor != null:
+		var push_dc: int = 8 + str_mod + prof
+		if not enemy.resist_check(push_dc, true):
+			var away_dir: Vector2i = Vector2i(sign(enemy.grid_pos.x - grid_pos.x), sign(enemy.grid_pos.y - grid_pos.y))
+			if away_dir != Vector2i.ZERO:
+				await _dungeon_floor.force_move_entity(enemy, away_dir, 1, false)
+				GameState.game_log("[color=cyan]Branching Strike: %s is pushed back![/color]" % enemy.display_name)
+		else:
+			GameState.game_log("[color=gray]Branching Strike: %s resists the push.[/color]" % enemy.display_name)
 
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
@@ -1632,6 +1759,9 @@ func _use_ability_slot(idx: int) -> void:
 		"one_with_nature":         _activate_one_with_nature(ab)
 		"natural_rager":           _cycle_natural_rager_form(ab)
 		"natural_sleeper":         _cycle_natural_sleeper_form(ab)
+		"ironwood_bark":           GameState.game_log("[color=gray]Ironwood Bark is passive — triggers on Rage activation and while Raging.[/color]")
+		"grip_of_the_forest":      _activate_grip_of_the_forest()
+		"branching_strike":        GameState.game_log("[color=gray]Branching Strike is passive — reach and push apply automatically.[/color]")
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
 
 func _make_empty_bottle() -> Item:
