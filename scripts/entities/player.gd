@@ -1242,12 +1242,12 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# All bonus damage sources (Frenzy, Ironwood Bark, Divine Fury) are computed BEFORE
 	# take_damage/show_damage and folded into one number — see "damage stacking" rule in
 	# scripts/entities/CLAUDE.md. Never call take_damage/show_damage separately per source.
-	# Each source keeps its own named amount (not just a combined "bonus" total) so the
-	# tooltip and log line can name exactly which source(s) fired on this hit.
+	# Each source keeps its own named amount in dmg_meta (not just a combined "bonus" total)
+	# so the hover tooltip can name exactly which source(s) fired — the visible log line only
+	# ever shows the single combined damage number, never a per-source text breakdown.
 	var frenzy_bonus: int = 0
 	var ironwood_bonus: int = 0
 	var divine_bonus: int = 0
-	var bonus_tags: PackedStringArray = []
 
 	var frenzy_rank: int = GameState.get_talent_rank("frenzy")
 	if frenzy_rank >= 1 and _is_raging and is_str_weapon and not _frenzy_triggered_this_turn:
@@ -1255,21 +1255,17 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		var frenzy_sides: int = [0, 4, 6, 8][frenzy_rank]
 		var frenzy_roll: int = randi_range(1, frenzy_sides)
 		frenzy_bonus = frenzy_roll * stats.rage_bonus_damage
-		bonus_tags.append("[color=red]+%d Frenzy[/color]" % frenzy_bonus)
 
 	# Ironwood Bark R3: next attack this turn deals bonus damage equal to the temp HP snapshotted at turn start.
 	if _ironwood_bark_bonus_pending > 0:
 		ironwood_bonus = _ironwood_bark_bonus_pending
 		_ironwood_bark_bonus_pending = 0
-		bonus_tags.append("[color=cyan]+%d Ironwood Bark[/color]" % ironwood_bonus)
 
 	# Divine Fury: first attack each turn (any weapon), regardless of Rage state.
 	var df_rank: int = GameState.get_talent_rank("divine_fury")
 	if df_rank >= 1 and not _divine_fury_triggered_this_turn:
 		_divine_fury_triggered_this_turn = true
 		divine_bonus = randi_range(1, 6) + _divine_fury_flat_bonus(df_rank)
-		var df_color: String = "gold" if GameState.zealot_divine_fury_type == "Radiant" else "purple"
-		bonus_tags.append("[color=%s]+%d %s (Divine Fury)[/color]" % [df_color, divine_bonus, GameState.zealot_divine_fury_type])
 
 	var bonus_dmg: int = frenzy_bonus + ironwood_bonus + divine_bonus
 	var actual: int = enemy.stats.take_damage(pre_crit + bonus_dmg)
@@ -1284,13 +1280,11 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var weapon_item: Item = GameState.equipped_weapon
 	var dmg_type: String = weapon_item.damage_type if weapon_item != null and not weapon_item.damage_type.is_empty() else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
-	var god_hp: String = " [color=gray][%d/%d HP][/color]" % [enemy.stats.current_hp, enemy.stats.max_hp] if GameState.god_mode and not enemy.stats.is_dead() else ""
-	var bonus_tag: String = "  (%s)" % ", ".join(bonus_tags) if not bonus_tags.is_empty() else ""
 
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, bonus_tag, god_hp])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag])
 	else:
-		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, bonus_tag, god_hp])
+		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag])
 
 	# Branching Strike R3: push the target 1 tile away on a hit with a Heavy/Versatile melee weapon.
 	if GameState.get_talent_rank("branching_strike") >= 3 and is_str_weapon and not enemy.stats.is_dead() \
@@ -1982,15 +1976,13 @@ func _ranged_attack(enemy: Enemy) -> void:
 		GameState.screen_shake.emit(5.0)
 
 	# Divine Fury folded into the same hit/floater — see damage stacking rule in
-	# scripts/entities/CLAUDE.md.
+	# scripts/entities/CLAUDE.md. Named breakdown lives only in dmg_meta (for the hover
+	# tooltip); the visible log line always shows just the single combined number.
 	var r_divine_bonus: int = 0
-	var r_bonus_tags: PackedStringArray = []
 	var r_df_rank: int = GameState.get_talent_rank("divine_fury")
 	if r_df_rank >= 1 and not _divine_fury_triggered_this_turn:
 		_divine_fury_triggered_this_turn = true
 		r_divine_bonus = randi_range(1, 6) + _divine_fury_flat_bonus(r_df_rank)
-		var r_df_color: String = "gold" if GameState.zealot_divine_fury_type == "Radiant" else "purple"
-		r_bonus_tags.append("[color=%s]+%d %s (Divine Fury)[/color]" % [r_df_color, r_divine_bonus, GameState.zealot_divine_fury_type])
 
 	var actual: int = enemy.stats.take_damage(r_pre_crit + r_divine_bonus)
 	enemy.update_hp_bar()
@@ -2002,13 +1994,11 @@ func _ranged_attack(enemy: Enemy) -> void:
 		GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
 	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
-	var r_god_hp: String = " [color=gray][%d/%d HP][/color]" % [enemy.stats.current_hp, enemy.stats.max_hp] if GameState.god_mode and not enemy.stats.is_dead() else ""
-	var r_bonus_tag: String = "  (%s)" % ", ".join(r_bonus_tags) if not r_bonus_tags.is_empty() else ""
 
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, r_bonus_tag, r_god_hp])
+		GameState.game_log("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag])
 	else:
-		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, r_bonus_tag, r_god_hp])
+		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag])
 
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)

@@ -421,6 +421,7 @@ func _make_status_icon_rect(offset: Vector2) -> TextureRect:
 	rect.size = Vector2(12.0, 12.0)
 	rect.position = portrait.position + offset
 	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	rect.ignore_texture_size = true  # without this, assigning a texture forces the control to its native pixel size (talent icons are 2048x2048)
 	rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	rect.visible = false
 	return rect

@@ -27,6 +27,9 @@ slot.size = Vector2(SLOT_SIZE, SLOT_SIZE)
 ### Drag hit detection
 Use `Rect2(slot.position, Vector2(SLOT_SIZE, SLOT_SIZE)).has_point(local_mouse)` — not `slot.get_rect()` (unreliable in non-Container parents).
 
+### TextureRect icons — always set `ignore_texture_size = true`
+Any `TextureRect` that shows an icon at a small fixed size (status icons, small HUD indicators) MUST set `ignore_texture_size = true`. Without it, assigning `.texture` makes `get_minimum_size()` return the texture's native pixel size, and `Control.size` gets clamped up to that minimum — so a `TextureRect` explicitly sized e.g. 12×12 renders at the source PNG's full resolution instead (talent icons are 2048×2048, so this bug looked like a giant icon covering most of the screen). `_make_status_icon_rect()` in `hud.gd` sets this; `talent_picker.gd`'s `_add_talent_icon()` already did. `TextureButton`'s `icon`/`texture_normal` don't have this footgun the same way, but double-check any new `TextureRect` usage against this rule.
+
 ---
 
 ## HUD (`hud.gd`)
