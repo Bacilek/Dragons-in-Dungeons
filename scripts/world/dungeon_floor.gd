@@ -1422,17 +1422,12 @@ func remove_floor_item(pos: Vector2i) -> void:
 	_floor_items.erase(pos)
 
 func drop_boss_loot(pos: Vector2i) -> void:
-	var loot_pool: Array = []
-	if GameState.current_floor >= 8:
-		loot_pool = [
-			{"name": "Lavish Sword",   "type": 0, "icon": "weapon_lavish_sword.png",  "src": "weapons", "bonus_dmg": 5, "heal": 0, "str_bonus": 0, "fmin": 8, "fmax": 10, "desc": "+5 damage"},
-			{"name": "Golden Sword",   "type": 0, "icon": "weapon_golden_sword.png",  "src": "weapons", "bonus_dmg": 4, "heal": 0, "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "+4 damage"},
-		]
-	else:
-		loot_pool = [
-			{"name": "Knight Sword",   "type": 0, "icon": "weapon_knight_sword.png",  "src": "weapons", "bonus_dmg": 3, "heal": 0, "str_bonus": 0, "fmin": 4, "fmax": 8,  "desc": "+3 damage"},
-			{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png", "src": "items", "bonus_dmg": 2, "heal": 0, "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
-		]
+	# No physical melee weapons drop as loot anymore (Barbarian's Greataxe, Short Bow,
+	# and Crossbow are the only weapons in the game) — boss loot is potions only.
+	var loot_pool: Array = [
+		{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png",     "src": "items", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
+		{"name": "Health Potion",  "type": 2, "icon": "Potions/Health/HealthPotionMedium.png",  "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 2d4+CON HP", "heal_dice": 2, "heal_sides": 4},
+	]
 	var d: Dictionary = loot_pool[randi() % loot_pool.size()]
 
 	var item := Item.new()
@@ -1440,6 +1435,8 @@ func drop_boss_loot(pos: Vector2i) -> void:
 	item.item_type = d["type"] as Item.Type
 	item.bonus_damage = d["bonus_dmg"]
 	item.heal_amount = d["heal"]
+	item.heal_dice_count = d.get("heal_dice", 0)
+	item.heal_dice_sides = d.get("heal_sides", 0)
 	item.str_bonus = d.get("str_bonus", 0)
 	item.floor_min = d["fmin"]
 	item.floor_max = d["fmax"]

@@ -14,19 +14,12 @@ const TRAP_POOL: Array = [
 
 # item_type: 0=WEAPON 1=ARMOR 2=POTION 4=FOOD  (matches Item.Type enum)
 const ITEM_POOL: Array = [
-	{"name": "Rusty Sword",    "type": 0, "icon": "weapon_rusty_sword.png",    "src": "weapons", "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 3,  "desc": "+1 damage", "dmg_type": "Slashing"},
-	{"name": "Short Sword",    "type": 0, "icon": "weapon_knife.png",           "src": "weapons", "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 4,  "desc": "+1 damage", "dmg_type": "Slashing"},
-	{"name": "Sword",          "type": 0, "icon": "weapon_regular_sword.png",   "src": "weapons", "bonus_dmg": 2, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 6,  "desc": "+2 damage", "dmg_type": "Slashing"},
-	{"name": "Knight Sword",   "type": 0, "icon": "weapon_knight_sword.png",    "src": "weapons", "bonus_dmg": 3, "heal": 0,   "str_bonus": 0, "fmin": 4, "fmax": 8,  "desc": "+3 damage", "dmg_type": "Slashing"},
-	{"name": "Golden Sword",   "type": 0, "icon": "weapon_golden_sword.png",    "src": "weapons", "bonus_dmg": 4, "heal": 0,   "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "+4 damage", "dmg_type": "Slashing"},
-	{"name": "Lavish Sword",   "type": 0, "icon": "weapon_lavish_sword.png",    "src": "weapons", "bonus_dmg": 5, "heal": 0,   "str_bonus": 0, "fmin": 8, "fmax": 10, "desc": "+5 damage", "dmg_type": "Slashing"},
 	{"name": "Health Potion",  "type": 2, "icon": "Potions/Health/HealthPotionMedium.png", "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 2d4+CON HP", "heal_dice": 2, "heal_sides": 4},
 	{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png",    "src": "items", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
 	{"name": "Ration",         "type": 4, "icon": "Food/MeatCooked.png",                  "src": "items", "bonus_dmg": 0, "heal": 200, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Fills you up"},
 	{"name": "Mystery Meat",   "type": 4, "icon": "Food/Meat.png",                        "src": "items", "bonus_dmg": 0, "heal": 120, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Better than nothing"},
 	{"name": "Short Bow",      "type": 0, "icon": "Weapons/BowArrow.png",                 "src": "items", "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 6,  "desc": "Ranged, DEX-based. Range 6.", "is_ranged": true, "range": 6, "dmg_type": "Piercing"},
 	{"name": "Crossbow",       "type": 0, "icon": "Weapons/BowArrowGold.png",             "src": "items", "bonus_dmg": 3, "heal": 0,   "str_bonus": 0, "fmin": 5, "fmax": 10, "desc": "Ranged, DEX-based. Range 8.", "is_ranged": true, "range": 8, "dmg_type": "Piercing"},
-	{"name": "Throwing Daggers","type": 0,"icon": "Weapons/Throwing/Shuriken.png",        "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 8,  "desc": "Ranged, DEX-based. Range 4. Consumed on throw.", "is_ranged": true, "range": 4, "consumes": true, "qty": 3, "dmg_type": "Slashing"},
 	{"name": "Thief Tools",    "type": 7, "icon": "Misc/KeyIron.png",                    "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Disarm traps, lock doors. Consumed on failure.", "qty": 2},
 ]
 

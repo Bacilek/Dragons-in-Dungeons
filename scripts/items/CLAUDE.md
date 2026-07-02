@@ -49,9 +49,9 @@ TOOL   = 7
 |---|---|---|---|---|
 | Short Bow | +1 | 6 | DEX | yes |
 | Crossbow | +3 | 8 | DEX | yes |
-| Throwing Daggers | +0 | 4 | DEX | no (qty 3) |
 
-`consumes_on_ranged = true` on Throwing Daggers → unequips when qty hits 0.
+## Weapons (current, game-wide)
+The only weapons in the game are the Barbarian's starting **Greataxe** (melee, two-handed, given via `GameState._give_barbarian_starting_items()` — never spawns as floor loot) plus **Short Bow** and **Crossbow** above. All physical melee weapons that used to spawn as floor loot (Rusty/Short/Regular/Knight/Golden/Lavish Sword) and **Throwing Daggers** have been removed from `DungeonFloorData.ITEM_POOL`, `debug_panel.ALL_ITEMS`, and boss loot (`dungeon_floor.gd drop_boss_loot()`, now potions-only). Their sprite assets under `res://sprites/weapons/` are untouched (unused, not deleted) in case they're reintroduced later.
 
 ---
 

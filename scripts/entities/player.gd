@@ -2012,7 +2012,6 @@ func _show_projectile(target_world_pos: Vector2, weapon: Item) -> void:
 	var proj_path: String
 	var tumble: bool = false
 	match weapon.item_name:
-		"Throwing Daggers": proj_path = "res://sprites/weapons/weapon_knife.png"
 		"Crossbow":
 			proj_path = ARROW_SPRITE
 			tumble = true

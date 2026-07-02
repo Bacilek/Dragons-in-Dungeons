@@ -15,12 +15,6 @@ const WEAPONS_PATH := "res://sprites/weapons/"
 const ITEMS_PATH   := "res://sprites/items/"
 
 const ALL_ITEMS: Array = [
-	{"name": "Rusty Sword",     "type": 0, "src": "weapons", "icon": "weapon_rusty_sword.png",                "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "desc": "+1 damage"},
-	{"name": "Short Sword",     "type": 0, "src": "weapons", "icon": "weapon_knife.png",                      "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "desc": "+1 damage"},
-	{"name": "Sword",           "type": 0, "src": "weapons", "icon": "weapon_regular_sword.png",              "bonus_dmg": 2, "heal": 0,   "str_bonus": 0, "desc": "+2 damage"},
-	{"name": "Knight Sword",    "type": 0, "src": "weapons", "icon": "weapon_knight_sword.png",               "bonus_dmg": 3, "heal": 0,   "str_bonus": 0, "desc": "+3 damage"},
-	{"name": "Golden Sword",    "type": 0, "src": "weapons", "icon": "weapon_golden_sword.png",               "bonus_dmg": 4, "heal": 0,   "str_bonus": 0, "desc": "+4 damage"},
-	{"name": "Lavish Sword",    "type": 0, "src": "weapons", "icon": "weapon_lavish_sword.png",               "bonus_dmg": 5, "heal": 0,   "str_bonus": 0, "desc": "+5 damage"},
 	{"name": "Health Potion",   "type": 2, "src": "items",   "icon": "Potions/Health/HealthPotionMedium.png", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Restores 2d4+CON HP", "heal_dice": 2, "heal_sides": 4},
 	{"name": "Strength Potion", "type": 2, "src": "items",   "icon": "Potions/Mana/ManaPotionMedium.png",     "bonus_dmg": 0, "heal": 0,   "str_bonus": 2, "desc": "+2 ATK (permanent)"},
 	{"name": "Ration",          "type": 4, "src": "items",   "icon": "Food/MeatCooked.png",                   "bonus_dmg": 0, "heal": 200, "str_bonus": 0, "desc": "Fills you up"},
@@ -29,7 +23,6 @@ const ALL_ITEMS: Array = [
 	{"name": "Thief Tools",      "type": 7, "src": "items",   "icon": "Misc/KeyIron.png",                         "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Disarm traps",               "qty": 3},
 	{"name": "Short Bow",        "type": 0, "src": "items",   "icon": "Weapons/BowArrow.png",                     "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "desc": "Ranged DEX, range 6",        "is_ranged": true, "range": 6},
 	{"name": "Crossbow",         "type": 0, "src": "items",   "icon": "Weapons/BowArrowGold.png",                 "bonus_dmg": 3, "heal": 0,   "str_bonus": 0, "desc": "Ranged DEX, range 8",        "is_ranged": true, "range": 8},
-	{"name": "Throwing Daggers", "type": 0, "src": "items",   "icon": "Weapons/Throwing/Shuriken.png",            "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Ranged DEX, range 4, ×3 uses","is_ranged": true, "range": 4, "consumes": true, "qty": 3},
 	{"name": "Empty Bottle",    "type": 7, "src": "items",   "icon": "Materials/BottleSmall.png",                "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Fill from water or mud"},
 	{"name": "Bottle of Water", "type": 4, "src": "items",   "icon": "Materials/BottleMedium.png",               "bonus_dmg": 0, "heal": 60,  "str_bonus": 0, "desc": "Restores 60 hunger"},
 	{"name": "Bottle of Mud",   "type": 7, "src": "items",   "icon": "Materials/BottleSmall.png",               "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Foul mud. Maybe useful."},
