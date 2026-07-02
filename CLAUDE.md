@@ -67,7 +67,7 @@ World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: flo
 
 ### Barbarian class
 Tier 1 (levels 1–5): earns 5 talent points, spent across 3 talents (max 3 ranks each = 9 total cost → no run can max all three). Starting equipment given in `GameState.give_class_starting_items()` → `_give_barbarian_starting_items()`:
-- **Greataxe** — 1d12 Slashing, `is_two_handed=true`. `damage_die_min/max` on Item define dice; `recalculate_stats()` applies them. Two-handed blocks the ranged slot.
+- **Greataxe** — 1d12 Slashing, `is_two_handed=true`, `is_heavy=true`, `weapon_mastery="Cleave"`. `damage_die_min/max` on Item define dice; `recalculate_stats()` applies them. Two-handed blocks the ranged slot.
 - **Rage** (ability_id `"rage"`) — in slot 0. Uses and bonus damage scale by level (see Stats computed properties above). 10-turn countdown; no DR at rank 0. Activation is a **free action**. Red sprite tint. Rage ends if heavy armor equipped (`item.is_heavy_armor`). **Rage talent** upgrades (no uses change — uses are level-gated): R1 countdown pauses when player attacked or was hit last turn; R2 25% physical DR (Slashing/Piercing/Bludgeoning only); R3 50% physical DR. DR applied in `take_damage_raw(amount, ignore_rage, damage_type: String)` — status and trap damage pass `""` and bypass DR.
 
 **Barbarian Tier 1 talents** (levels 1–5, no fixed level-up unlocks — all are point-gated):
@@ -123,10 +123,13 @@ Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: ST
 `Item.is_two_handed: bool` — blocks ranged slot while equipped in melee.
 `Item.is_heavy_armor: bool` — ends Barbarian Rage on equip.
 `Item.damage_die_min / damage_die_max: int` — weapon-specific damage dice; override base stats when > 0.
-`Item.damage_type: String` — "Slashing", "Piercing", "Bludgeoning", or "" (unknown). Shown in attack chat log.
+`Item.damage_type: String` — "Slashing", "Piercing", "Bludgeoning", or "" (unknown). Shown in attack chat log. Damage type categories (documentation only, no enum): **Physical** (Slashing, Piercing, Bludgeoning), **Elemental** (Fire, Cold, Acid, Poison, Thunder, Lightning), **Magical** (Force, Necrotic, Psychic, Radiant).
 `Item.heal_dice_count / heal_dice_sides: int` — if > 0, `use_item()` rolls N×d(sides) + CON mod instead of flat `heal_amount`. Health Potion uses 2d4+CON.
+`Item.weapon_mastery: String` — one signature effect per weapon (`""` = none). See "Weapon masteries" below.
 
-**Advantage / Disadvantage**: ADV = roll 2d20 take higher; DISADV = roll 2d20 take lower. **House rule**: sources are counted (`adv_count`, `disadv_count`); net = adv_count − disadv_count → if >0 ADV, <0 DISADV, ==0 normal. Two ADV + one DISADV = net +1 = ADV (not cancel). Player gets ADV when attacking a SLEEPING enemy, or an enemy whose `just_crossed_door == true` (consumed one-shot by `_has_advantage()`), or on **first** STR melee attack when Reckless Attack is active. DISADV from Heavy weapon (STR<13) and ranged at distance 1. ADV surprise attacks show a yellow "!" floating above the enemy. `_fov_prev_turn` / `_fov_this_turn` in `player.gd` are maintained but no longer grant ADV on their own.
+**Advantage / Disadvantage**: ADV = roll 2d20 take higher; DISADV = roll 2d20 take lower. **House rule**: sources are counted (`adv_count`, `disadv_count`); net = adv_count − disadv_count → if >0 ADV, <0 DISADV, ==0 normal. Two ADV + one DISADV = net +1 = ADV (not cancel). Player gets ADV when attacking a SLEEPING enemy, or an enemy whose `just_crossed_door == true` (consumed one-shot by `_has_advantage()`), or on **first** STR melee attack when Reckless Attack is active. DISADV from Heavy weapon (melee STR<13, ranged DEX<13) and ranged at distance 1. ADV surprise attacks show a yellow "!" floating above the enemy. `_fov_prev_turn` / `_fov_this_turn` in `player.gd` are maintained but no longer grant ADV on their own.
+
+**Weapon masteries**: `Item.weapon_mastery` names one signature effect per weapon, shown as `(Mastery)` next to the item name in tooltips (hoverable, same keyword-glossary popup as Heavy/Two-handed). Currently implemented: **Cleave** (Greataxe) — on any melee attack (hit or miss), if 2+ distinct visible enemies are within melee reach, the swing also rolls a fully independent attack + damage roll against the enemy closest to the primary target (`player.gd._try_cleave()` / `_resolve_cleave_attack()`, melee-only, logged as its own `Cleave:` chat line).
 
 **Ranged weapons** (`Item.is_ranged=true`, `Item.range: int`): Short Bow (+1, range 6, DEX, infinite), Crossbow (+3, range 8, DEX, infinite). `Item.consumes_on_ranged=true` → decrement/unequip on use (unused by any current weapon; kept for future consumable ranged items). Ranged attack uses DISADV at distance 1, otherwise same ADV rules as melee.
 
@@ -138,8 +141,11 @@ Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: ST
 
 ### Item system (`scripts/items/item.gd`)
 `Item.Type` enum: `WEAPON=0, ARMOR=1, POTION=2, SCROLL=3, FOOD=4, GOLD=5, KEY=6, TOOL=7`. Key fields: `item_name`, `item_type`, `quantity`, `icon_path`, `heal_amount`, `bonus_damage`, `bonus_ac`, `str_bonus`, `is_ranged: bool`, `range: int`, `consumes_on_ranged: bool`. `get_display_name()` appends `×N` if quantity > 1.
-`Item.is_heavy: bool` — Heavy weapon property: attacking with STR < 13 imposes Disadvantage. Shown as `[url=keyword:heavy]Heavy[/url]` in weapon tooltips; hover triggers a glossary popup. Greataxe has `is_heavy = true`.
+`Item.is_heavy: bool` — Heavy weapon property: melee attack with STR < 13, or ranged attack with DEX < 13, imposes Disadvantage. Shown as `[url=keyword:heavy]Heavy[/url]` in weapon tooltips; hover triggers a glossary popup. Greataxe has `is_heavy = true`.
 `Item.is_versatile: bool` — Versatile weapon property; no weapon currently sets it. World Tree's Branching Strike keys off `is_heavy or is_versatile` for reach/push.
+`Item.weapon_mastery: String` — see "Weapon masteries" above (Cleave on Greataxe).
+
+**Weapon tooltip layout** (`hud.gd._on_qbar_slot_hover()`, `inventory_overlay.gd._on_slot_hover()`): `[b]Name[/b] (Mastery)` header, then a `1dN +bonus DamageType` line, then a comma-separated properties line (`Two-handed`, `Heavy`, etc.) — every property and mastery name is an `[url=keyword:x]` link that pops the shared glossary panel on hover (`KEYWORD_GLOSSARY` in both files, duplicated intentionally — see `scripts/ui/CLAUDE.md`).
 
 ### Hunger system
 `GameState.hunger` (0–1000). Thresholds: >600 SATIATED, >200 HUNGRY, else STARVING. Depletes 1/turn. Starvation damage: 1 HP every 10 turns at hunger=0. HP regen disabled while Starving. Eat food: `GameState.use_item(item)` → `restore_hunger(heal_amount)`.

@@ -53,7 +53,9 @@ var _qbar_tooltip_frozen: bool = false
 var _glossary_popup: Panel = null
 var _glossary_rtl: RichTextLabel = null
 const KEYWORD_GLOSSARY: Dictionary = {
-	"heavy": "Heavy weapon.\nRequires STR 13+.\nAttacking with STR < 13\nimposes Disadvantage."
+	"heavy": "Heavy weapon.\nMelee: requires STR 13+.\nRanged: requires DEX 13+.\nAttacking without enough\nStrength/Dexterity imposes\nDisadvantage.",
+	"two_handed": "Two-handed weapon.\nOccupies Main Hand.\nOff-hand cannot be used\nwhile equipped.",
+	"cleave": "Mastery: Cleave.\nIf 2+ enemies are within\nmelee reach, this attack\nalso strikes the one closest\nto your primary target —\nwith its own attack roll\nand damage roll."
 }
 
 # ── Extra popup labels (added programmatically to expand the stats popup) ─────
@@ -710,21 +712,26 @@ func _on_qbar_slot_hover(idx: int) -> void:
 			return
 		text = "[b]%s[/b]" % item.item_name
 		if item.item_type == Item.Type.WEAPON:
+			if not item.weapon_mastery.is_empty():
+				text += " [url=keyword:%s](%s)[/url]" % [item.weapon_mastery.to_lower(), item.weapon_mastery]
 			var die_max: int = item.damage_die_max if item.damage_die_max > 0 else 0
 			var die_str: String = "1d%d" % die_max if die_max > 0 else ""
 			var bonus_str: String = "+%d" % item.bonus_damage if item.bonus_damage > 0 else ""
 			var sep: String = " " if not die_str.is_empty() and not bonus_str.is_empty() else ""
-			var type_str: String = " %s" % item.damage_type if not item.damage_type.is_empty() else ""
+			var type_str: String = " [color=gray]%s[/color]" % item.damage_type if not item.damage_type.is_empty() else ""
 			if not die_str.is_empty() or not bonus_str.is_empty():
 				text += "\n%s%s%s%s" % [die_str, sep, bonus_str, type_str]
 			if item.is_ranged:
 				text += "\nrange: %d tiles" % item.range
 			else:
 				text += "\nrange: 1 tile"
+			var props: Array[String] = []
 			if item.is_two_handed:
-				text += "\nTwo-handed"
+				props.append("[url=keyword:two_handed]Two-handed[/url]")
 			if item.is_heavy:
-				text += "\n[url=keyword:heavy]Heavy[/url]"
+				props.append("[url=keyword:heavy]Heavy[/url]")
+			if not props.is_empty():
+				text += "\n%s" % ", ".join(props)
 		if not item.description.is_empty():
 			text += "\n[color=gray]%s[/color]" % item.description
 	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"

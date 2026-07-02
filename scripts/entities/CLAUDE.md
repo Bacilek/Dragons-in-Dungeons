@@ -64,7 +64,7 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 
 ### Advantage / Disadvantage
 - **ADV**: attacking a SLEEPING enemy; attacking enemy whose `just_crossed_door == true` (consumed one-shot after check)
-- **DISADV**: ranged attack at Chebyshev distance 1 (melee range); melee with a `is_heavy` weapon when STR < 13
+- **DISADV**: ranged attack at Chebyshev distance 1 (melee range); melee with a `is_heavy` weapon when STR < 13; ranged with a `is_heavy` weapon when DEX < 13
 - ADV + DISADV cancel → 1d20
 - Yellow "!" floats above enemy on ADV surprise attacks
 - Enemy attack log lines (`enemy.gd._attack_player()`) never name the specific talent/ability that granted ADV/DISADV (e.g. no `"(Reckless)"` text) — that context lives only in the `ehit` tooltip roll breakdown, not the log line.

@@ -25,9 +25,17 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 # recalculate_stats() in GameState applies these instead of base_min/max_damage when non-zero.
 @export var damage_die_min: int = 0
 @export var damage_die_max: int = 0
-@export var damage_type: String = ""   # "Slashing", "Piercing", "Bludgeoning", "" = unknown
+# Damage type categories (for reference — no enum, just documentation):
+#   Physical:  "Slashing", "Piercing", "Bludgeoning"
+#   Elemental: "Fire", "Cold", "Acid", "Poison", "Thunder", "Lightning"
+#   Magical:   "Force", "Necrotic", "Psychic", "Radiant"
+# "" = unknown/unset.
+@export var damage_type: String = ""
 @export var heal_dice_count: int = 0   # if > 0, roll N dice of heal_dice_sides + CON instead of heal_amount
 @export var heal_dice_sides: int = 0
+# Weapon mastery — one signature effect per weapon, keyed by name (e.g. "Cleave").
+# "" = no mastery. WeaponProperties.MASTERY_GLOSSARY holds the tooltip description.
+@export var weapon_mastery: String = ""
 
 func get_display_name() -> String:
 	if quantity > 1:

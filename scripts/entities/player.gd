@@ -1221,6 +1221,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			GameState.screen_shake.emit(2.5)
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
+		_try_cleave(enemy, is_str_weapon)
 		_handle_post_attack_turn(is_monk_unarmed)
 		return
 
@@ -1302,7 +1303,77 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_finish_kill(enemy)
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
+	_try_cleave(enemy, is_str_weapon)
 	_handle_post_attack_turn(is_monk_unarmed)
+
+# Cleave mastery (Greataxe): if 2+ distinct enemies are within melee reach, the swing also
+# rolls a fully independent attack + damage roll against a second target — the one closest
+# to the primary target, per weapon-mastery design. Fires regardless of whether the primary
+# attack hit or missed (it's a separate swing of the arc, not a bonus tacked onto the primary).
+func _try_cleave(primary: Enemy, is_str_weapon: bool) -> void:
+	var weapon: Item = GameState.equipped_weapon
+	if weapon == null or weapon.weapon_mastery != "Cleave" or not is_str_weapon or _dungeon_floor == null:
+		return
+	var reach: int = 1 + _melee_reach_bonus()
+	var candidates: Array[Enemy] = []
+	for e: Enemy in _dungeon_floor.get_visible_enemies():
+		if e == primary or e.stats.is_dead():
+			continue
+		var d: Vector2i = e.grid_pos - grid_pos
+		if maxi(absi(d.x), absi(d.y)) <= reach:
+			candidates.append(e)
+	if candidates.is_empty():
+		return
+	candidates.sort_custom(func(a: Enemy, b: Enemy) -> bool:
+		var da: Vector2i = a.grid_pos - primary.grid_pos
+		var db: Vector2i = b.grid_pos - primary.grid_pos
+		return maxi(absi(da.x), absi(da.y)) < maxi(absi(db.x), absi(db.y)))
+	_resolve_cleave_attack(candidates[0], weapon)
+
+func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
+	var str_mod: int = stats.str_modifier()
+	var prof: int = stats.proficiency_bonus
+	var weapon_bonus: int = weapon.bonus_damage
+	var disadv: bool = weapon.is_heavy and stats.strength < 13
+	var die1: int = randi_range(1, 20)
+	var die2: int = die1
+	var die: int = die1
+	if disadv:
+		die2 = randi_range(1, 20)
+		die = mini(die1, die2)
+	var roll: int = die + str_mod + prof + weapon_bonus
+	var is_crit: bool = die == 20
+	var is_nat_one: bool = die == 1
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=0,disadv=%d,n20=%d,n1=%d" % [
+		die, die1, die2, str_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
+		1 if disadv else 0, 1 if is_crit else 0, 1 if is_nat_one else 0]
+	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
+		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
+		GameState.game_log("[color=cyan]Cleave:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
+		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
+		return
+	AudioManager.play("crit" if is_crit else "hit_enemy")
+	_flash_hit(enemy)
+	var w_dmin: int = weapon.damage_die_min if weapon.damage_die_min > 0 else stats.base_min_damage
+	var w_dmax: int = weapon.damage_die_max if weapon.damage_die_max > 0 else stats.base_max_damage
+	var die_roll: int = randi_range(w_dmin, w_dmax)
+	var rage_bonus: int = stats.rage_bonus_damage if _is_raging else 0
+	var pre_crit: int = die_roll + weapon_bonus + rage_bonus + str_mod
+	if is_crit:
+		pre_crit *= 2
+		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
+		GameState.screen_shake.emit(5.0)
+	var actual: int = enemy.stats.take_damage(pre_crit)
+	enemy.update_hp_bar()
+	if _dungeon_floor != null:
+		_dungeon_floor.show_damage(enemy.position, actual, false)
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,rage=%d,frenzy=0,ironwood=0,divine=0,divtype=%s,crit=%d,final=%d" % [
+		die_roll, w_dmin, w_dmax, weapon_bonus, str_mod, rage_bonus, GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
+	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
+	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
+	GameState.game_log("[color=cyan]Cleave:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag])
+	if enemy.stats.is_dead():
+		_finish_kill(enemy)
 
 func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
 	# Rager R3: chance to grant a free action after attacking (once per round)
@@ -1917,9 +1988,10 @@ func _ranged_attack(enemy: Enemy) -> void:
 	var weapon_bonus: int = (weapon.bonus_damage if weapon != null else 0) + prof
 	# Advantage: target sleeping or just entered FOV this turn, or Zealous Presence active
 	var adv: bool = _has_advantage(enemy) or stats.zealous_presence_turns > 0
-	# Disadvantage: ranged weapon fired at melee range (Chebyshev distance 1)
+	# Disadvantage: ranged weapon fired at melee range (Chebyshev distance 1), or Heavy weapon with DEX < 13
 	var d_vec: Vector2i = enemy.grid_pos - grid_pos
 	var disadv: bool = maxi(abs(d_vec.x), abs(d_vec.y)) <= 1
+	if weapon != null and weapon.is_heavy and stats.dexterity < 13: disadv = true
 	# adv + disadv cancel each other → normal 1d20
 	var die1: int = randi_range(1, 20)
 	var die2: int = die1

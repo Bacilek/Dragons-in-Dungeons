@@ -259,6 +259,7 @@ func _give_barbarian_starting_items() -> void:
 	axe.is_ranged = false
 	axe.is_two_handed = true
 	axe.damage_type = "Slashing"
+	axe.weapon_mastery = "Cleave"
 	# Equip silently (no turn cost, no turn consumed — startup)
 	equipment["melee"] = axe
 	recalculate_stats()
