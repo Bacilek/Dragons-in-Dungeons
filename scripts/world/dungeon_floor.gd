@@ -929,14 +929,12 @@ func disarm_trap(pos: Vector2i) -> void:
 		tw.tween_callback(sprite_node.queue_free)
 	_traps.erase(pos)
 
+
+# Multiple items can occupy the same tile — they stack in _floor_items[pos] (Array[Item],
+# oldest first). Only the newest (last) item's sprite is shown, so a spot where several
+# arrows/items landed still reads as a single pickup icon; walking onto the tile
+# (PlayerActions.check_pickup()) collects the whole stack at once.
 func place_item_on_floor(pos: Vector2i, item: Item) -> void:
-	var target: Vector2i = pos
-	if _floor_items.has(target):
-		for d: Vector2i in [Vector2i(1,0), Vector2i(-1,0), Vector2i(0,1), Vector2i(0,-1)]:
-			var alt: Vector2i = pos + d
-			if _data.is_walkable(alt) and not _floor_items.has(alt):
-				target = alt
-				break
 	var tex: Texture2D
 	if item.icon_path != "" and ResourceLoader.exists(item.icon_path):
 		tex = load(item.icon_path)
@@ -944,14 +942,21 @@ func place_item_on_floor(pos: Vector2i, item: Item) -> void:
 		var fallback_img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
 		fallback_img.fill(Color(0.80, 0.55, 0.15))
 		tex = ImageTexture.create_from_image(fallback_img)
-	var sprite := Sprite2D.new()
-	sprite.texture = tex
-	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	sprite.position = Vector2(target.x * TILE_SIZE + TILE_SIZE * 0.5, target.y * TILE_SIZE + TILE_SIZE * 0.5)
-	sprite.z_index = 1
-	entities.add_child(sprite)
-	_floor_items[target] = item
-	_floor_item_sprites[target] = sprite
+	if _floor_item_sprites.has(pos):
+		var existing: Sprite2D = _floor_item_sprites[pos]
+		if is_instance_valid(existing):
+			existing.texture = tex
+	else:
+		var sprite := Sprite2D.new()
+		sprite.texture = tex
+		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+		sprite.z_index = 1
+		entities.add_child(sprite)
+		_floor_item_sprites[pos] = sprite
+	if not _floor_items.has(pos):
+		_floor_items[pos] = [] as Array[Item]
+	(_floor_items[pos] as Array).append(item)
 
 func place_blood_decal(pos: Vector2i) -> void:
 	var img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
@@ -1313,23 +1318,8 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 		"weapons": base_path = DungeonFloorData.WEAPONS_PATH
 		"items":   base_path = DungeonFloorData.ITEMS_PATH
 		_:         base_path = DungeonFloorData.OBJECTS_PATH
-	var icon_path: String = base_path + d["icon"]
-	item.icon_path = icon_path
-	var tex: Texture2D
-	if ResourceLoader.exists(icon_path):
-		tex = load(icon_path)
-	else:
-		var fallback_img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
-		fallback_img.fill(Color(0.80, 0.55, 0.15))
-		tex = ImageTexture.create_from_image(fallback_img)
-	var sprite := Sprite2D.new()
-	sprite.texture = tex
-	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
-	sprite.z_index = 1
-	entities.add_child(sprite)
-	_floor_items[pos] = item
-	_floor_item_sprites[pos] = sprite
+	item.icon_path = base_path + d["icon"]
+	place_item_on_floor(pos, item)
 
 func _spawn_items() -> void:
 	var eligible: Array = []
@@ -1444,8 +1434,18 @@ func _spawn_locked_doors() -> void:
 
 		break  # max 1 locked door per floor
 
+# Returns the newest (topmost, last-dropped) item at pos — the one whose icon is showing.
 func get_item_at(pos: Vector2i) -> Item:
-	return _floor_items.get(pos, null) as Item
+	var stack: Array = _floor_items.get(pos, [])
+	return stack.back() as Item if not stack.is_empty() else null
+
+# Returns the full stack at pos (oldest first), e.g. every arrow that landed on one tile.
+func get_items_at(pos: Vector2i) -> Array[Item]:
+	var stack: Array = _floor_items.get(pos, [])
+	var out: Array[Item] = []
+	for it: Item in stack:
+		out.append(it)
+	return out
 
 func remove_floor_item(pos: Vector2i) -> void:
 	if _floor_item_sprites.has(pos):

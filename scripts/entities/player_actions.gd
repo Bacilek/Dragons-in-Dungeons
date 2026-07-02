@@ -27,17 +27,28 @@ func open_talent_picker() -> void:
 func check_pickup() -> void:
 	if player._dungeon_floor == null:
 		return
-	var item: Item = player._dungeon_floor.get_item_at(player.grid_pos)
-	if item == null:
+	var items: Array[Item] = player._dungeon_floor.get_items_at(player.grid_pos)
+	if items.is_empty():
 		return
 	player._dungeon_floor.remove_floor_item(player.grid_pos)
-	var is_first_weapon: bool = item.item_type == Item.Type.WEAPON and GameState.equipped_weapon == null
-	GameState.add_item(item)
-	if is_first_weapon:
-		GameState.equip(item)
-		GameState.game_log("[color=cyan]You pick up [b]%s[/b] and equip it.[/color]" % item.item_name)
-	else:
-		GameState.game_log("[color=cyan]You pick up [b]%s[/b].[/color]" % item.item_name)
+	# Multiple items can be stacked on one tile (e.g. every arrow that landed on the same
+	# spot) — pick up the whole stack in one step, but collapse same-named items into a
+	# single "xN" log line instead of spamming one line per item.
+	var stack_counts: Dictionary = {}
+	for item: Item in items:
+		var is_first_weapon: bool = item.item_type == Item.Type.WEAPON and GameState.equipped_weapon == null
+		GameState.add_item(item)
+		if is_first_weapon:
+			GameState.equip(item)
+			GameState.game_log("[color=cyan]You pick up [b]%s[/b] and equip it.[/color]" % item.item_name)
+		else:
+			stack_counts[item.item_name] = stack_counts.get(item.item_name, 0) + item.quantity
+	for item_name: String in stack_counts:
+		var qty: int = stack_counts[item_name]
+		if qty > 1:
+			GameState.game_log("[color=cyan]You pick up [b]%s x%d[/b].[/color]" % [item_name, qty])
+		else:
+			GameState.game_log("[color=cyan]You pick up [b]%s[/b].[/color]" % item_name)
 
 func wait_action() -> void:
 	TurnManager.begin_player_action()
@@ -111,9 +122,11 @@ func do_inspect(pos: Vector2i) -> void:
 	if not trap.is_empty() and trap.get("revealed", false):
 		GameState.game_log("[color=orange]%s[/color] — revealed trap" % trap.get("name", "Trap"))
 		return
-	var floor_item: Item = player._dungeon_floor.get_item_at(pos)
-	if floor_item != null:
-		GameState.game_log("[color=cyan]%s[/color] — on the floor" % floor_item.get_display_name())
+	var floor_stack: Array[Item] = player._dungeon_floor.get_items_at(pos)
+	if not floor_stack.is_empty():
+		var floor_item: Item = floor_stack.back()
+		var extra: String = " (+%d more)" % (floor_stack.size() - 1) if floor_stack.size() > 1 else ""
+		GameState.game_log("[color=cyan]%s[/color] — on the floor%s" % [floor_item.get_display_name(), extra])
 		return
 	var tile_t: DungeonData.TileType = player._dungeon_floor.get_tile_type(pos)
 	var tile_name: String
