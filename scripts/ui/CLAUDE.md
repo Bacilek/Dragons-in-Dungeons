@@ -35,6 +35,8 @@ Any `TextureRect` that shows an icon at a small fixed size (status icons, small 
 ## HUD (`hud.gd`)
 Connects to `GameState` signals only — never poll `GameState` in `_process()`.
 
+**ActionBar (bottom quickbar/ability bar) scale**: `scenes/ui/hud.tscn`'s `ActionBar` panel and its 9 `ItemSlotN` buttons + Wait/Search/Interact buttons are sized 1.5× the original layout (`ActionBar` height 90→135, slot size 76→114px, pitch 80→120px). Item/ability icons use `Button.icon` + `expand_icon = true` so they auto-scale with the button — no separate icon-size code to touch. The per-slot quantity badge (`_slot_qty_labels`) and ability use-count badge (`_slot_use_labels`) offsets/font sizes in `hud.gd` scale alongside (`-32/-18/11pt` → `-48/-27/16pt`). `_bar_mode_label` offsets are pinned to `ActionBar`'s new top (`-135`), not the old `-90`.
+
 **Split-out modules** (pure refactor, same behavior — GDScript has no partial classes, so these use composition/static-helper patterns instead):
 - `tooltip_formatters.gd` (`TooltipFormatters`, static-func-only helper) — the 8 combat tooltip formatters (`fmt_hit_tooltip`, `fmt_dmg_tooltip`, `fmt_heal_tooltip`, `fmt_save_tooltip`, `fmt_ehit_tooltip`, `fmt_edmg_tooltip`, `fmt_catk_tooltip`, `fmt_ret_tooltip`). Each takes only a `Dictionary` and returns a `String`. `hud.gd._format_tooltip()` still owns the `kind` dispatch match and calls into these.
 - `crit_banner.gd` (`CritBanner`, composition child-node, `extends Node`) — `show_banner(text, color)` (was `hud.gd._show_crit_banner`). Instantiated once in `hud.gd._ready()` (`_crit_banner`), added as a child, and `GameState.crit_banner` connects directly to `_crit_banner.show_banner`.
@@ -89,8 +91,10 @@ If new `Item` fields are added, also update `_on_give_item()` in this file.
 ---
 
 ## Inventory overlay (`inventory_overlay.gd`)
-Equipment slot labels: **Melee** / **Ranged** (keys `"melee"` / `"ranged"` in `GameState.equipment`).
-Slot type enforced: melee slot rejects ranged items and vice versa.
+**Scale**: `SLOT_SIZE = 90`, `SLOT_GAP = 6` (`STEP = 96`), `PANEL_W = 1020`, `PANEL_H = 690` — 1.5× the original 60/4/820/460 values (bumped for legibility; keep the whole overlay's fonts/paddings/offsets scaling off these two constants if you touch them again).
+Equipment slot labels: **Hand 1** (key `"melee"`) / **Hand 2** (key `"hand2"`) / **Ranged** (key `"ranged"`) in `GameState.equipment`.
+**Equipment grid layout** (`_build_equipment_section()`, positions relative to `EQUIPMENT_ORIGIN`): Headgear top-center (above Armor), Ranged top-right (centered above the gap between Hand 1 and Hand 2), middle row is Gloves / Armor / Hand 1 / Hand 2 left→right, Boots bottom-center (below Armor). `"trinket"` still exists as a dead key in `GameState.equipment` but is not rendered in this grid (unrequested/unused).
+Slot type enforced via `_fits_slot()`: melee (Hand 1) rejects ranged items and vice versa; `"hand2"` (Hand 2) has no fits-slot case yet (like gloves/boots/head — a placeholder slot for a future dual-wield/offhand feature, not wired into combat).
 Quickbar: 9 slots (indices 0–8). Bag: 24 slots.
 
 **Ctrl-freeze tooltip**: pressing Ctrl while hovering an item (tooltip visible) freezes the tooltip in place and switches `_inv_tooltip.mouse_filter = MOUSE_FILTER_STOP` + `_inv_tooltip_rtl.mouse_filter = MOUSE_FILTER_PASS`. This allows `meta_hover_started` to fire for `[url=keyword:X]` links (e.g. "Heavy"), showing the glossary popup. Ctrl again or closing inventory unfreezes. `_unfreeze_tooltip()` helper restores MOUSE_FILTER_IGNORE on both AND hides the tooltip. `_on_slot_hover()` returns early when `_tooltip_frozen` so moving mouse to other slots does not overwrite the frozen tooltip. Same Ctrl-freeze feature also implemented for the qbar tooltip in `hud.gd` (`_qbar_tooltip_frozen`, `_unfreeze_qbar_tooltip()`, `_input()` handler). All item tooltips show a small gray "Ctrl: inspect" hint in the bottom-right corner.
