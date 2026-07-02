@@ -40,7 +40,7 @@ When you add signals, state fields, or change turn flow here, **immediately upda
 | `debug_reveal_all` | — | reveal map |
 | `debug_see_all` | `active: bool` | F3 See All toggle |
 | `crit_banner` | `text: String, color: Color` | nat 20 / nat 1 overlay banner |
-| `screen_shake` | `strength: float` | camera shake (handled by Player._screen_shake) |
+| `screen_shake` | `strength: float` | camera shake (handled by `PlayerVfx.screen_shake`, `scripts/entities/player_vfx.gd`) |
 
 ---
 

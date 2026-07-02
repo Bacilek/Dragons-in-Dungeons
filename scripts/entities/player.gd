@@ -2,12 +2,20 @@ class_name Player
 extends Entity
 
 const KNIGHT_PATH := "res://sprites/characters/"
-const SWORD_SPRITE := "res://sprites/weapons/weapon_anime_sword.png"
-const ARROW_SPRITE := "res://sprites/weapons/weapon_arrow.png"
 const UNDEAD_NAMES: Array = ["Tiny Zombie", "Goblin", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
-const _CompanionClass = preload("res://scripts/entities/companion.gd")
 
 var _dungeon_floor: Node
+
+# ── Split-out modules (composition child-nodes / static helper) ──────────────────────────────
+# See "Split-out modules" in scripts/entities/CLAUDE.md for what moved where and why.
+var _wild_heart: PlayerWildHeart
+var _zealot: PlayerZealot
+var _ammo: PlayerAmmo
+var _throw_tool: PlayerThrowTool
+var _thief_tools: PlayerThiefTools
+var _vfx: PlayerVfx
+var _actions: PlayerActions
+var _ranged: PlayerRanged
 
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
@@ -20,9 +28,7 @@ var _interrupted: bool = false           # set when enemy seen mid-hold; cleared
 var _throw_item: Item = null
 var _tool_item: Item = null
 var _inspect_mode: bool = false
-var _last_search_request: float = -999.0
 var _rest_interrupt_shown: bool = false
-var _traps_in_proximity: Array[Vector2i] = []
 
 # FOV snapshots for advantage (surprise attack) detection
 var _fov_prev_turn: Array[Enemy] = []  # visible enemies at START of previous player turn
@@ -78,11 +84,10 @@ var _hook_mode_active: bool = false
 var _grip_used_this_turn: bool = false
 
 # ── Zealot state (Tier 2) ──────────────────────────────────────────────────────
-# Divine Fury: per-turn cap, fires once per turn regardless of how many attacks land. Reset at turn start.
+# Divine Fury: per-turn cap, fires once per turn regardless of how many attacks land. Reset at turn
+# start. Stays here (not on PlayerZealot) since both melee (_bump_attack) and ranged (PlayerRanged)
+# read/write it. Blessed Warrior's own per-turn cap lives on PlayerZealot (_zealot).
 var _divine_fury_triggered_this_turn: bool = false
-# Blessed Warrior: "max once per turn" activation cap. Reset at turn start. Charge pool itself lives on
-# GameState (zealot_blessed_charges) since it's a long-rest resource, not a per-turn one.
-var _blessed_warrior_used_this_turn: bool = false
 
 # ── Weapon mastery state ────────────────────────────────────────────────────────
 # Vex (Short Bow): after a Short-Bow hit, grants Advantage on the very next attack THIS ROUND
@@ -101,18 +106,28 @@ func _ready() -> void:
 	is_friendly = true
 	z_index = 3
 	_setup_animations()
+
+	_wild_heart = PlayerWildHeart.new(); _wild_heart.player = self; add_child(_wild_heart)
+	_zealot = PlayerZealot.new(); _zealot.player = self; add_child(_zealot)
+	_ammo = PlayerAmmo.new(); _ammo.player = self; add_child(_ammo)
+	_throw_tool = PlayerThrowTool.new(); _throw_tool.player = self; add_child(_throw_tool)
+	_thief_tools = PlayerThiefTools.new(); _thief_tools.player = self; add_child(_thief_tools)
+	_vfx = PlayerVfx.new(); _vfx.player = self; add_child(_vfx)
+	_actions = PlayerActions.new(); _actions.player = self; add_child(_actions)
+	_ranged = PlayerRanged.new(); _ranged.player = self; add_child(_ranged)
+
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
-	GameState.player_throw_primed.connect(_on_throw_primed)
-	GameState.player_tool_primed.connect(_on_tool_primed)
+	GameState.player_throw_primed.connect(_throw_tool.on_throw_primed)
+	GameState.player_tool_primed.connect(_throw_tool.on_tool_primed)
 	GameState.player_died.connect(_on_player_died)
 	GameState.class_chosen.connect(_on_class_chosen)
 	GameState.camera_recenter_requested.connect(_reset_camera_offset)
-	GameState.screen_shake.connect(_screen_shake)
+	GameState.screen_shake.connect(_vfx.screen_shake)
 	GameState.equip_action_taken.connect(_on_equip_action_taken)
 	GameState.equipment_changed.connect(_on_equipment_changed)
 	GameState.potion_drunk.connect(func():
-		if GameState.add_item(_make_empty_bottle()):
+		if GameState.add_item(_throw_tool.make_empty_bottle()):
 			GameState.game_log("[color=gray]Empty bottle added to your bag.[/color]")
 	)
 	TurnManager.player_turn_started.connect(_on_turn_started)
@@ -165,7 +180,7 @@ func _on_turn_started() -> void:
 		_eagle_free_move_used = false
 		_grip_used_this_turn = false
 		_divine_fury_triggered_this_turn = false
-		_blessed_warrior_used_this_turn = false
+		_zealot.blessed_warrior_used_this_turn = false
 		_vex_adv_target = null
 	# Zealous Presence: buff decrements at the start of THIS entity's own turn (real turns only).
 	if not came_from_revert and stats.zealous_presence_turns > 0:
@@ -243,7 +258,7 @@ func _on_turn_started() -> void:
 			GameState.short_rest_open = true
 			var panel_script = load("res://scripts/ui/rest_interrupt_panel.gd")
 			get_tree().root.call_deferred("add_child", panel_script.new())
-			_do_rest_wait_turn()
+			_actions.do_rest_wait_turn()
 			return
 		GameState.short_rest_turns_remaining -= 1
 		if GameState.short_rest_turns_remaining > 0:
@@ -257,7 +272,7 @@ func _on_turn_started() -> void:
 			_rest_interrupt_shown = false
 			GameState.short_rest_completed.emit()
 			GameState.short_rest_changed.emit()
-		_do_rest_wait_turn()
+		_actions.do_rest_wait_turn()
 		return
 
 	GameState.deplete_hunger()
@@ -385,17 +400,6 @@ func _reset_camera_offset() -> void:
 	_lmb_panning = false
 	_pending_click_tile = Vector2i(-1, -1)
 
-func _screen_shake(strength: float = 5.0) -> void:
-	if _camera == null:
-		return
-	var t := create_tween()
-	for i: int in 8:
-		t.tween_callback(func():
-			_camera.offset = Vector2(randf_range(-strength, strength), randf_range(-strength, strength))
-		)
-		t.tween_interval(0.035)
-	t.tween_callback(func(): _camera.offset = Vector2.ZERO)
-
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and _camera != null:
 		var mb := event as InputEventMouseButton
@@ -452,7 +456,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if key.physical_keycode == KEY_T:
 			if not GameState.inventory_open and not GameState.short_rest_open \
 					and not GameState.short_rest_active and not GameState.talent_picker_open:
-				_open_talent_picker()
+				_actions.open_talent_picker()
 				get_viewport().set_input_as_handled()
 			return
 		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active or GameState.talent_picker_open:
@@ -496,9 +500,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				if _throw_item != null: _throw_item = null; GameState.game_log("[color=gray]Throw cancelled.[/color]")
 				if _tool_item != null and _tool_item.item_name != "Thief Tools": _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 				_try_move(Vector2i(1, 1))
-			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _wait_action()
-			KEY_CTRL: _handle_search_request()
-			KEY_ALT: _open_short_rest()
+			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _actions.wait_action()
+			KEY_CTRL: _actions.handle_search_request()
+			KEY_ALT: _actions.open_short_rest()
 			KEY_1: _use_quickbar_slot(0)
 			KEY_2: _use_quickbar_slot(1)
 			KEY_3: _use_quickbar_slot(2)
@@ -548,7 +552,7 @@ func _unhandled_input(event: InputEvent) -> void:
 						return
 					if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 						return
-					if not _is_ranged_target_in_range(rw, pending):
+					if not _ranged.is_ranged_target_in_range(rw, pending):
 						GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % DungeonFloor.FOV_RADIUS)
 						return
 					if not _dungeon_floor.has_ranged_los(grid_pos, pending):
@@ -556,9 +560,9 @@ func _unhandled_input(event: InputEvent) -> void:
 						return
 					var enemy_shift: Enemy = _dungeon_floor.get_enemy_at(pending)
 					if enemy_shift != null:
-						_ranged_attack(enemy_shift)
+						_ranged.ranged_attack(enemy_shift)
 					else:
-						_ranged_attack_tile(pending)
+						_ranged.ranged_attack_tile(pending)
 					return
 				var enemy_on_tile: Enemy = _dungeon_floor.get_enemy_at(pending)
 				if enemy_on_tile != null:
@@ -588,11 +592,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				if _tool_item != null and _tool_item.item_name == "Empty Bottle":
 					var bottle: Item = _tool_item
 					_tool_item = null
-					_try_fill_bottle(bottle, clicked)
+					_throw_tool.try_fill_bottle(bottle, clicked)
 				else:
 					var had_tool: bool = _tool_item != null
 					_tool_item = null
-					_interact_action(had_tool, clicked)
+					_actions.interact_action(had_tool, clicked)
 			return
 
 		if mb.button_index != MOUSE_BUTTON_LEFT:
@@ -607,7 +611,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _inspect_mode:
 			_inspect_mode = false
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT:
-				_do_inspect(clicked)
+				_actions.do_inspect(clicked)
 			return
 
 		# Grip of the Forest hook-targeting mode
@@ -637,9 +641,9 @@ func _unhandled_input(event: InputEvent) -> void:
 					var tool: Item = _tool_item
 					_tool_item = null
 					if tool.item_name == "Empty Bottle":
-						_try_fill_bottle(tool, clicked)
+						_throw_tool.try_fill_bottle(tool, clicked)
 					else:
-						_interact_action(true, clicked)  # Thief Tools: door lock / trap disarm / nothing
+						_actions.interact_action(true, clicked)  # Thief Tools: door lock / trap disarm / nothing
 				else:
 					GameState.game_log("[color=gray]Too far — click an adjacent tile.[/color]")
 			else:
@@ -649,7 +653,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Throw mode — consume left-click for the toss (immediate intentional click)
 		if _throw_item != null:
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
-				_do_throw(clicked)
+				_throw_tool.do_throw(clicked)
 			else:
 				_throw_item = null
 			return
@@ -680,7 +684,7 @@ func _execute_queued_path() -> void:
 				_target_enemy = null
 				break
 
-			if chase_path.size() <= 1 + _melee_reach_bonus():
+			if chase_path.size() <= 1 + CombatMath.melee_reach_bonus(GameState.get_talent_rank("branching_strike")):
 				# In melee (or extended reach) range — attack
 				var atk_dir: Vector2i = _target_enemy.grid_pos - grid_pos
 				_bump_attack(_target_enemy, atk_dir)
@@ -706,10 +710,10 @@ func _execute_queued_path() -> void:
 			if _dungeon_floor != null:
 				if _dungeon_floor.has_door_at(prev_c):
 					_dungeon_floor.close_door(prev_c)
-				_leave_blood_trail(prev_c)
+				_vfx.leave_blood_trail(prev_c)
 				if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 					_dungeon_floor.destroy_grass(grid_pos)
-				_check_pickup()
+				_actions.check_pickup()
 				var trap_c: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 				if not trap_c.is_empty():
 					await _dungeon_floor.trigger_trap(grid_pos, self)
@@ -732,7 +736,7 @@ func _execute_queued_path() -> void:
 		var enemy_there: Enemy = _dungeon_floor.get_enemy_at(next)
 		if enemy_there != null:
 			if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
-				_ranged_attack(enemy_there)
+				_ranged.ranged_attack(enemy_there)
 			else:
 				_bump_attack(enemy_there, dir)
 			if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
@@ -779,11 +783,11 @@ func _execute_queued_path() -> void:
 		if _dungeon_floor != null:
 			if _dungeon_floor.has_door_at(prev_p):
 				_dungeon_floor.close_door(prev_p)
-			_leave_blood_trail(prev_p)
+			_vfx.leave_blood_trail(prev_p)
 			if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 				_dungeon_floor.destroy_grass(grid_pos)
 				_dungeon_floor.update_fog(grid_pos)
-			_check_pickup()
+			_actions.check_pickup()
 			var trap_p: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 			if not trap_p.is_empty():
 				await _dungeon_floor.trigger_trap(grid_pos, self)
@@ -840,7 +844,7 @@ func _try_move(dir: Vector2i) -> void:
 	var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
 	if enemy != null:
 		if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
-			_ranged_attack(enemy)
+			_ranged.ranged_attack(enemy)
 		else:
 			_bump_attack(enemy, dir)
 		return
@@ -851,13 +855,13 @@ func _try_move(dir: Vector2i) -> void:
 		var adjacent_trap: Dictionary = _dungeon_floor.get_trap_at(target)
 		if not adjacent_trap.is_empty() and adjacent_trap.get("revealed", false):
 			_tool_item = null
-			_attempt_disarm(target)
+			_thief_tools.attempt_disarm(target)
 			return
 		# Door adjacent: lock/unlock/pick action.
 		if _dungeon_floor.has_door_at(target):
 			_tool_item = null
 			if _dungeon_floor.is_door_open(target):
-				_attempt_lock_door(target)
+				_thief_tools.attempt_lock_door(target)
 			elif _dungeon_floor.is_door_locked(target):
 				if _dungeon_floor.is_door_player_locked(target):
 					TurnManager.begin_player_action()
@@ -867,9 +871,9 @@ func _try_move(dir: Vector2i) -> void:
 					_dungeon_floor.update_fog(grid_pos)
 					TurnManager.on_player_action_complete()
 				else:
-					_attempt_disarm_lock(target)
+					_thief_tools.attempt_disarm_lock(target)
 			else:
-				_attempt_lock_door(target)
+				_thief_tools.attempt_lock_door(target)
 			return
 		# Nothing to interact with — cancel tool and move normally.
 		_tool_item = null
@@ -917,13 +921,13 @@ func _try_move(dir: Vector2i) -> void:
 	if _dungeon_floor != null:
 		if _dungeon_floor.has_door_at(prev_pos):
 			_dungeon_floor.close_door(prev_pos)
-		_leave_blood_trail(prev_pos)
+		_vfx.leave_blood_trail(prev_pos)
 		# Destroy grass before fog update so our own tile doesn't block sight
 		if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 			_dungeon_floor.destroy_grass(grid_pos)
 		_dungeon_floor.update_fog(grid_pos)
-		_passive_trap_check()
-		_check_pickup()
+		_actions.passive_trap_check()
+		_actions.check_pickup()
 		match _dungeon_floor.get_tile_type(grid_pos):
 			DungeonData.TileType.GRASS, DungeonData.TileType.TRAMPLED_GRASS:
 				AudioManager.play("step_grass")
@@ -1096,35 +1100,8 @@ func _end_rage() -> void:
 	GameState.rage_turns_remaining = 0
 	$AnimatedSprite2D.modulate = Color(1.0, 1.0, 1.0)
 
-# Branching Strike: reach bonus (in tiles) for Heavy/Versatile melee weapons. R2 replaces R1 (not additive).
-func _melee_reach_bonus() -> int:
-	var w: Item = GameState.equipped_weapon
-	if w == null or not (w.is_heavy or w.is_versatile):
-		return 0
-	var rank: int = GameState.get_talent_rank("branching_strike")
-	if rank >= 2: return 2
-	if rank >= 1: return 1
-	return 0
-
-# Divine Fury: rank 3 replaces rank 2's formula (not additive) — always exactly one formula per rank.
-func _divine_fury_flat_bonus(rank: int) -> int:
-	var lvl: int = stats.character_level
-	match rank:
-		2: return lvl / 4
-		3: return lvl / 2
-	return 0
-
-# Weapon proficiency: unarmed strikes are always proficient. A Simple/Martial weapon only adds
-# proficiency_bonus to the attack roll if Stats.proficient_simple_weapons/proficient_martial_weapons
-# is set — lacking proficiency doesn't block using the weapon, it just drops this bonus.
-func _weapon_prof_bonus(weapon: Item) -> int:
-	if weapon == null:
-		return stats.proficiency_bonus
-	var proficient: bool = true
-	match weapon.weapon_category:
-		"Simple":  proficient = stats.proficient_simple_weapons
-		"Martial": proficient = stats.proficient_martial_weapons
-	return stats.proficiency_bonus if proficient else 0
+# Branching Strike reach bonus, Divine Fury flat bonus, and weapon proficiency bonus are all
+# pure math — computed in scripts/entities/combat_math.gd (CombatMath) now; see call sites below.
 
 func _find_ability(ab_id: String) -> Ability:
 	for slot in GameState.player_ability_bar:
@@ -1141,7 +1118,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	await $AnimatedSprite2D.animation_finished
 	$AnimatedSprite2D.play("idle")
 
-	_show_sword_slash(dir)
+	_vfx.show_sword_slash(dir)
 
 	# D&D attack roll: d20 + modifier + proficiency bonus + weapon enhancement vs enemy AC
 	# Advantage (2d20 higher) when target is sleeping or entered FOV this turn.
@@ -1151,7 +1128,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var is_str_weapon: bool = not is_unarmed and not (GameState.equipped_weapon.is_ranged)
 	var str_mod: int = stats.str_modifier()
 	var dex_mod: int = stats.dex_modifier()
-	var prof: int = _weapon_prof_bonus(null if is_unarmed else GameState.equipped_weapon)
+	var prof: int = CombatMath.weapon_prof_bonus(null if is_unarmed else GameState.equipped_weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
 	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if not is_unarmed else 0
 	# Monk unarmed uses DEX; everyone else uses STR for melee attack roll.
 	var attack_mod: int = dex_mod if is_monk_unarmed else str_mod
@@ -1161,7 +1138,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var adv_count: int = 0
 	var disadv_count: int = 0
 	var reckless_flat_bonus: int = 0  # rank 1 flat +2 (not ADV)
-	if _has_advantage(enemy): adv_count += 1
+	if _vfx.has_advantage(enemy): adv_count += 1
 	# Zealous Presence: Advantage on all attack rolls while buffed.
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	# Vex (Short Bow): ADV on the attack immediately following a Short-Bow hit on this same enemy.
@@ -1186,25 +1163,18 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		var wolf_threshold: int = [0, 4, 3, 2][mini(wolf_nr_rank, 3)]
 		if _dungeon_floor != null and _dungeon_floor.get_visible_enemies().size() >= wolf_threshold:
 			adv_count += 1
-	var net: int = adv_count - disadv_count
-	var adv: bool = net > 0
-	var disadv: bool = net < 0
 	if vex_triggered:
 		_vex_adv_target = null
 	# Commit Reckless: lock toggle after first attack (not needed for rank 3 all-attacks mode).
 	if reckless_applies and reckless_rank < 3:
 		GameState.reckless_locked_this_turn = true
 		GameState.ability_bar_changed.emit()
-	# die2 is ALWAYS rolled independently when ADV/DISADV is active — nat 1 on die1 does NOT skip it.
-	var die1: int = randi_range(1, 20)
-	var die2: int = die1
-	var die: int = die1
-	if adv and not disadv:
-		die2 = randi_range(1, 20)
-		die = maxi(die1, die2)
-	elif disadv and not adv:
-		die2 = randi_range(1, 20)
-		die = mini(die1, die2)
+	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
+	var die1: int = r["die1"]
+	var die2: int = r["die2"]
+	var die: int = r["die"]
+	var adv: bool = r["adv"]
+	var disadv: bool = r["disadv"]
 	var roll: int = die + total_hit_bonus + reckless_flat_bonus
 	var is_crit: bool = die == 20
 	var is_nat_one: bool = die == 1
@@ -1234,7 +1204,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		1 if is_crit else 0, 1 if is_nat_one else 0]
 
 	# Blessed Warrior heal resolves off the very next attack this turn regardless of hit/miss.
-	_resolve_blessed_warrior_heal()
+	_zealot.resolve_blessed_warrior_heal()
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_verb: String = "strike at" if is_monk_unarmed else ("punch" if is_unarmed else "swing")
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
@@ -1250,9 +1220,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		return
 
 	AudioManager.play("crit" if is_crit else "hit_enemy")
-	_flash_hit(enemy)
+	_vfx.flash_hit(enemy)
 	if adv:
-		_show_surprise_mark(enemy)
+		_vfx.show_surprise_mark(enemy)
 
 	var die_roll: int = randi_range(w_dmin, w_dmax)
 	var rage_bonus: int = stats.rage_bonus_damage if (_is_raging and is_str_weapon) else 0
@@ -1290,7 +1260,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var df_rank: int = GameState.get_talent_rank("divine_fury")
 	if df_rank >= 1 and not _divine_fury_triggered_this_turn:
 		_divine_fury_triggered_this_turn = true
-		divine_bonus = randi_range(1, 6) + _divine_fury_flat_bonus(df_rank)
+		divine_bonus = randi_range(1, 6) + CombatMath.divine_fury_flat_bonus(df_rank, stats.character_level)
 
 	var bonus_dmg: int = frenzy_bonus + ironwood_bonus + divine_bonus
 	var actual: int = enemy.stats.take_damage(pre_crit + bonus_dmg)
@@ -1338,7 +1308,7 @@ func _try_cleave(primary: Enemy, is_str_weapon: bool) -> void:
 	var weapon: Item = GameState.equipped_weapon
 	if weapon == null or weapon.weapon_mastery != "Cleave" or not is_str_weapon or _dungeon_floor == null:
 		return
-	var reach: int = 1 + _melee_reach_bonus()
+	var reach: int = 1 + CombatMath.melee_reach_bonus(GameState.get_talent_rank("branching_strike"))
 	var candidates: Array[Enemy] = []
 	for e: Enemy in _dungeon_floor.get_visible_enemies():
 		if e == primary or e.stats.is_dead():
@@ -1356,7 +1326,7 @@ func _try_cleave(primary: Enemy, is_str_weapon: bool) -> void:
 
 func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var str_mod: int = stats.str_modifier()
-	var prof: int = _weapon_prof_bonus(weapon)
+	var prof: int = CombatMath.weapon_prof_bonus(weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
 	var weapon_bonus: int = weapon.bonus_damage
 	var adv_count: int = 0
 	var disadv_count: int = 0
@@ -1364,20 +1334,14 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	# Vex (Short Bow): future-proofing — a weapon could carry both Cleave and Vex.
 	var vex_triggered: bool = _vex_adv_target == enemy
 	if vex_triggered: adv_count += 1
-	var net: int = adv_count - disadv_count
-	var adv: bool = net > 0
-	var disadv: bool = net < 0
 	if vex_triggered:
 		_vex_adv_target = null
-	var die1: int = randi_range(1, 20)
-	var die2: int = die1
-	var die: int = die1
-	if adv and not disadv:
-		die2 = randi_range(1, 20)
-		die = maxi(die1, die2)
-	elif disadv and not adv:
-		die2 = randi_range(1, 20)
-		die = mini(die1, die2)
+	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
+	var die1: int = r["die1"]
+	var die2: int = r["die2"]
+	var die: int = r["die"]
+	var adv: bool = r["adv"]
+	var disadv: bool = r["disadv"]
 	var roll: int = die + str_mod + prof + weapon_bonus
 	var is_crit: bool = die == 20
 	var is_nat_one: bool = die == 1
@@ -1390,7 +1354,7 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		return
 	AudioManager.play("crit" if is_crit else "hit_enemy")
-	_flash_hit(enemy)
+	_vfx.flash_hit(enemy)
 	var w_dmin: int = weapon.damage_die_min if weapon.damage_die_min > 0 else stats.base_min_damage
 	var w_dmax: int = weapon.damage_die_max if weapon.damage_die_max > 0 else stats.base_max_damage
 	var die_roll: int = randi_range(w_dmin, w_dmax)
@@ -1423,59 +1387,6 @@ func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
 			TurnManager.revert_to_waiting()
 			return
 	TurnManager.on_player_action_complete()
-
-func _show_sword_slash(dir: Vector2i) -> void:
-	if GameState.equipped_weapon == null:
-		return
-
-	var attack_angle := atan2(float(dir.y), float(dir.x))
-
-	# Arc width and speed scale with weapon tier (bonus_damage)
-	var bonus: int = 0
-	var weapon_path: String = SWORD_SPRITE
-	if GameState.equipped_weapon != null:
-		bonus = GameState.equipped_weapon.bonus_damage
-		if GameState.equipped_weapon.icon_path != "":
-			weapon_path = GameState.equipped_weapon.icon_path
-
-	var start_off: float
-	var end_off: float
-	var dur: float
-	match bonus:
-		1:   start_off = 55.0;  end_off = 38.0;  dur = 0.14
-		2:   start_off = 75.0;  end_off = 50.0;  dur = 0.18
-		3:   start_off = 88.0;  end_off = 60.0;  dur = 0.20
-		4:   start_off = 95.0;  end_off = 68.0;  dur = 0.22
-		5:   start_off = 105.0; end_off = 78.0;  dur = 0.26
-		_:   start_off = 60.0;  end_off = 42.0;  dur = 0.15
-
-	var pivot := Node2D.new()
-	pivot.position = _tile_center(grid_pos)
-	pivot.z_index = 5
-	pivot.rotation = attack_angle - deg_to_rad(start_off)
-
-	var slash := Sprite2D.new()
-	slash.texture = load(weapon_path)
-	slash.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	slash.position = Vector2(12.0, 0.0)
-	# All 0x72 weapon sprites point upper-right (~45°); rotate to point right.
-	slash.rotation = -PI * 0.25
-
-	pivot.add_child(slash)
-	get_parent().add_child(pivot)
-
-	var tween := pivot.create_tween()
-	tween.tween_property(pivot, "rotation", attack_angle + deg_to_rad(end_off), dur) \
-		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tween.parallel().tween_property(slash, "modulate:a", 0.0, dur * 0.4).set_delay(dur * 0.6)
-	tween.tween_callback(pivot.queue_free)
-
-func _flash_hit(target: Entity) -> void:
-	if not is_instance_valid(target):
-		return
-	var tween := target.create_tween()
-	tween.tween_property(target, "modulate", Color(1.8, 0.3, 0.3), 0.05)
-	tween.tween_property(target, "modulate", Color(1.0, 1.0, 1.0), 0.1)
 
 func try_retaliation(attacker: Enemy) -> void:
 	var rank: int = GameState.get_talent_rank("retaliation")
@@ -1530,7 +1441,7 @@ func _finish_kill(enemy: Enemy, dropped_ammo: Item = null) -> void:
 		GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)
 	# Ammo drop-from-corpse: 50% chance the killing shot's arrow/bolt is recoverable.
 	if dropped_ammo != null and randf() < 0.5:
-		_resolve_ammo_landing(dropped_ammo, kill_pos)
+		_ammo.resolve_ammo_landing(dropped_ammo, kill_pos)
 		GameState.game_log("[color=gray]The %s drops from the corpse.[/color]" % dropped_ammo.item_name)
 
 func _on_action_requested(action_name: String) -> void:
@@ -1538,7 +1449,7 @@ func _on_action_requested(action_name: String) -> void:
 		if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT:
 			_queued_path.clear()
 			_path_executing = false
-			_do_rest_wait_turn()
+			_actions.do_rest_wait_turn()
 		return
 	if action_name == "toggle_ability_bar":
 		_ability_bar_active = not _ability_bar_active
@@ -1551,326 +1462,9 @@ func _on_action_requested(action_name: String) -> void:
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 		return
 	match action_name:
-		"wait":     _wait_action()
-		"search":   _handle_search_request()
-		"interact": _interact_action()
-
-func _check_pickup() -> void:
-	if _dungeon_floor == null:
-		return
-	var item: Item = _dungeon_floor.get_item_at(grid_pos)
-	if item == null:
-		return
-	_dungeon_floor.remove_floor_item(grid_pos)
-	var is_first_weapon: bool = item.item_type == Item.Type.WEAPON and GameState.equipped_weapon == null
-	GameState.add_item(item)
-	if is_first_weapon:
-		GameState.equip(item)
-		GameState.game_log("[color=cyan]You pick up [b]%s[/b] and equip it.[/color]" % item.item_name)
-	else:
-		GameState.game_log("[color=cyan]You pick up [b]%s[/b].[/color]" % item.item_name)
-
-func _wait_action() -> void:
-	TurnManager.begin_player_action()
-	GameState.game_log("[color=gray]You skipped a turn.[/color]")
-	if _dungeon_floor != null:
-		_dungeon_floor.update_fog(grid_pos)
-	TurnManager.on_player_action_complete()
-
-func _do_rest_wait_turn() -> void:
-	if _dungeon_floor != null:
-		_dungeon_floor.update_fog(grid_pos)
-	TurnManager.begin_player_action()
-	TurnManager.on_player_action_complete()
-
-func _handle_search_request() -> void:
-	var now: float = Time.get_ticks_msec() / 1000.0
-	if now - _last_search_request < 0.5:
-		# Double press — trigger actual search
-		_inspect_mode = false
-		_last_search_request = -999.0
-		_search_action()
-	else:
-		# First press — enter inspect mode
-		_last_search_request = now
-		_inspect_mode = true
-		GameState.game_log("[color=cyan]Inspect — left-click any visible tile for info. [Esc] to cancel. Press Ctrl/Search again to search area.[/color]")
-
-func _search_action() -> void:
-	if _dungeon_floor == null:
-		return
-	TurnManager.begin_player_action()
-	var wis_mod: int = GameState.player_stats.wis_modifier()
-	var dc: int = maxi(10, 10 + GameState.current_floor / 3)
-	var die1: int = randi_range(1, 20)
-	var die2: int = randi_range(1, 20)
-	var roll: int = maxi(die1, die2) + wis_mod
-	if roll >= dc:
-		var found: int = _dungeon_floor.search_around(grid_pos)
-		if found > 0:
-			GameState.game_log("[color=cyan]You search carefully and reveal %d trap(s)! (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs DC %d)[/color]" % [found, die1, die2, maxi(die1, die2), wis_mod, roll, dc])
-		else:
-			GameState.game_log("[color=gray]You search but find nothing suspicious. (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs DC %d)[/color]" % [die1, die2, maxi(die1, die2), wis_mod, roll, dc])
-	else:
-		GameState.game_log("[color=gray]You search but notice nothing. (adv [%d,%d]→%d+%d=[color=yellow]%d[/color] vs DC %d)[/color]" % [die1, die2, maxi(die1, die2), wis_mod, roll, dc])
-	_dungeon_floor.update_fog(grid_pos)
-	TurnManager.on_player_action_complete()
-
-func _do_inspect(pos: Vector2i) -> void:
-	if _dungeon_floor == null:
-		return
-	if not _dungeon_floor.is_explored(pos):
-		GameState.game_log("[color=gray]You haven't explored that area.[/color]")
-		return
-	if not _dungeon_floor.is_tile_visible(pos):
-		GameState.game_log("[color=gray]You can't see that from here.[/color]")
-		return
-	var enemy: Enemy = _dungeon_floor.get_enemy_at(pos)
-	if enemy != null and enemy.visible:
-		if GameState.god_mode:
-			GameState.game_log("[color=orange]%s[/color] — HP: %d/%d  AC: %d  Dmg: %d–%d  EXP: %d%s" % [
-				enemy.display_name,
-				enemy.stats.current_hp, enemy.stats.max_hp,
-				enemy.stats.armor_class,
-				enemy.stats.min_damage, enemy.stats.max_damage,
-				enemy.exp_reward,
-				"  [color=red]BOSS[/color]" if enemy.is_boss else ""])
-		else:
-			GameState.game_log("[color=orange]%s[/color] — HP: %d/%d, AC: %d" % [enemy.display_name, enemy.stats.current_hp, enemy.stats.max_hp, enemy.stats.armor_class])
-		return
-	var trap: Dictionary = _dungeon_floor.get_trap_at(pos)
-	if not trap.is_empty() and trap.get("revealed", false):
-		GameState.game_log("[color=orange]%s[/color] — revealed trap" % trap.get("name", "Trap"))
-		return
-	var floor_item: Item = _dungeon_floor.get_item_at(pos)
-	if floor_item != null:
-		GameState.game_log("[color=cyan]%s[/color] — on the floor" % floor_item.get_display_name())
-		return
-	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(pos)
-	var tile_name: String
-	match tile_t:
-		DungeonData.TileType.FLOOR:          tile_name = "Stone floor"
-		DungeonData.TileType.WALL:           tile_name = "Stone wall"
-		DungeonData.TileType.STAIRS_DOWN:    tile_name = "Stairs leading down"
-		DungeonData.TileType.CHASM:          tile_name = "Chasm — deadly fall"
-		DungeonData.TileType.WATER:          tile_name = "Water — slows movement"
-		DungeonData.TileType.MUD:            tile_name = "Mud — slows movement"
-		DungeonData.TileType.GRASS:          tile_name = "Tall grass — blocks line of sight"
-		DungeonData.TileType.TRAMPLED_GRASS: tile_name = "Trampled grass"
-		_:                                   tile_name = "Unknown"
-	GameState.game_log("[color=gray]%s.[/color]" % tile_name)
-
-func _passive_trap_check() -> void:
-	if _dungeon_floor == null:
-		return
-	var wis_mod: int = GameState.player_stats.wis_modifier()
-	var dc: int = maxi(8, 8 + GameState.current_floor / 2)
-	var now_in_range: Array[Vector2i] = []
-	for trap_pos: Vector2i in _dungeon_floor.get_unrevealed_traps():
-		var diff: Vector2i = trap_pos - grid_pos
-		if maxi(absi(diff.x), absi(diff.y)) > 2:
-			continue
-		now_in_range.append(trap_pos)
-		if trap_pos in _traps_in_proximity:
-			continue  # already knew it was near — don't re-roll
-		var die: int = randi_range(1, 20)
-		if die + wis_mod >= dc:
-			_dungeon_floor.reveal_trap(trap_pos)
-			if _queued_path.size() > 0:
-				_queued_path.clear()
-				GameState.game_log("[color=yellow]You notice something suspicious nearby and stop cautiously.[/color]")
-			else:
-				GameState.game_log("[color=yellow]You notice something suspicious on the floor.[/color]")
-	_traps_in_proximity = now_in_range
-
-func _interact_action(can_lock: bool = true, target: Vector2i = Vector2i(-1, -1)) -> void:
-	if _dungeon_floor == null:
-		return
-	var dirs8: Array[Vector2i] = [
-		Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
-		Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)
-	]
-	# Priority 1: revealed trap
-	# When called from RMB with a target tile, only check that exact tile.
-	# When called from keyboard/debug (no target), scan all 8 neighbors.
-	var trap_tiles: Array[Vector2i] = []
-	if target != Vector2i(-1, -1):
-		var diff: Vector2i = target - grid_pos
-		if abs(diff.x) <= 1 and abs(diff.y) <= 1:
-			trap_tiles.append(target)
-	else:
-		for d: Vector2i in dirs8:
-			trap_tiles.append(grid_pos + d)
-	for pos: Vector2i in trap_tiles:
-		var trap: Dictionary = _dungeon_floor.get_trap_at(pos)
-		if not trap.is_empty() and trap.get("revealed", false):
-			_attempt_disarm(pos)
-			return
-	# Priority 2: door
-	# When called from RMB (target provided), only interact with that exact tile if adjacent.
-	# When called from F key (no target), scan all 8 neighbors for the first door.
-	var door_candidates: Array[Vector2i] = []
-	if target != Vector2i(-1, -1):
-		var diff: Vector2i = target - grid_pos
-		if abs(diff.x) <= 1 and abs(diff.y) <= 1 and _dungeon_floor.has_door_at(target):
-			door_candidates.append(target)
-	else:
-		for d: Vector2i in dirs8:
-			var pos: Vector2i = grid_pos + d
-			if _dungeon_floor.has_door_at(pos):
-				door_candidates.append(pos)
-	for pos: Vector2i in door_candidates:
-		if _dungeon_floor.is_door_locked(pos):
-			if _dungeon_floor.is_door_player_locked(pos):
-				# Player set this lock — can unlock freely (free action on F)
-				TurnManager.begin_player_action()
-				_dungeon_floor.unlock_door(pos)
-				_dungeon_floor.open_door(pos)
-				GameState.game_log("[color=cyan]You unlock your own lock and open the door.[/color]")
-				_dungeon_floor.update_fog(grid_pos)
-				TurnManager.on_player_action_complete()
-			else:
-				# Dungeon-generated lock — attempt to pick with Thief Tools
-				if _find_thief_tools() != null:
-					_attempt_disarm_lock(pos)
-				else:
-					GameState.game_log("[color=red]Locked. You need Thief Tools to pick this lock.[/color]")
-			return
-		if _dungeon_floor.is_door_open(pos):
-			# F/RMB on open door → close it
-			TurnManager.begin_player_action()
-			_dungeon_floor.close_door(pos)
-			_dungeon_floor.update_fog(grid_pos)
-			TurnManager.on_player_action_complete()
-			return
-		# Closed unlocked door: lock if tools available, else open
-		if can_lock and _find_thief_tools() != null:
-			_attempt_lock_door(pos)
-		else:
-			TurnManager.begin_player_action()
-			_dungeon_floor.open_door(pos)
-			_dungeon_floor.update_fog(grid_pos)
-			TurnManager.on_player_action_complete()
-		return
-	GameState.game_log("[color=gray]Nothing to interact with nearby.[/color]")
-
-func _find_thief_tools() -> Item:
-	for i: int in GameState.QUICKBAR_SIZE:
-		var it: Item = GameState.player_quickbar[i] as Item
-		if it != null and it.item_name == "Thief Tools":
-			return it
-	for i: int in GameState.INVENTORY_SIZE:
-		var it: Item = GameState.player_inventory[i] as Item
-		if it != null and it.item_name == "Thief Tools":
-			return it
-	return null
-
-func _attempt_disarm(trap_pos: Vector2i) -> void:
-	var tools: Item = _find_thief_tools()
-	if tools == null:
-		GameState.game_log("[color=red]You need Thief Tools to disarm traps![/color]")
-		return
-
-	TurnManager.begin_player_action()
-	AudioManager.play("lockpick")
-	var s: Stats = GameState.player_stats
-	var danger_rank: int = GameState.get_talent_rank("danger_sense")
-	var dex_mod: int = s.dex_modifier()
-	var effective_stat: String = "DEX"
-	if danger_rank >= 2 and s.str_modifier() > dex_mod:
-		dex_mod = s.str_modifier()
-		effective_stat = "STR"
-	var has_prof: bool = s.check_prof_dex
-	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
-	var has_adv: bool = danger_rank >= 1 or s.zealous_presence_turns > 0
-	var die1: int = randi_range(1, 20)
-	var die2: int = die1
-	if has_adv:
-		die2 = randi_range(1, 20)
-	var die: int = maxi(die1, die2)
-	var total: int = die + dex_mod + prof_bonus
-	const DC: int = 10
-	var trap: Dictionary = _dungeon_floor.get_trap_at(trap_pos)
-	var trap_name: String = trap.get("name", "trap")
-	var adv_tag: String = " [color=gray](%s)[/color]" % ("Danger Sense" if danger_rank >= 1 else "Zealous Presence") if has_adv else ""
-	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, DC, 1 if total >= DC else 0, 1 if has_adv else 0]
-
-	if total >= DC:
-		GameState.game_log("[color=green]Disarmed [b]%s[/b]!%s [url=%s]%d vs DC %d[/url][/color]" % [trap_name, adv_tag, check_meta, total, DC])
-		_dungeon_floor.disarm_trap(trap_pos)
-	else:
-		GameState.game_log("[color=red]Failed to disarm [b]%s[/b]!%s [url=%s]%d vs DC %d[/url]%s[/color]" % [trap_name, adv_tag, check_meta, total, DC, " — Thief Tools lost!" if not GameState.invincible else ""])
-		if not GameState.invincible:
-			GameState.consume_one(tools)
-
-	_dungeon_floor.update_fog(grid_pos)
-	TurnManager.on_player_action_complete()
-
-func _attempt_lock_door(door_pos: Vector2i) -> void:
-	var tools: Item = _find_thief_tools()
-	if tools == null:
-		GameState.game_log("[color=gray]You need Thief Tools to lock a door.[/color]")
-		return
-	TurnManager.begin_player_action()
-	AudioManager.play("lockpick")
-	var dex_mod: int = stats.dex_modifier()
-	var die: int = randi_range(1, 20)
-	var total: int = die + dex_mod
-	const LOCK_DC: int = 10
-	var door_world: Vector2 = Vector2(door_pos * TILE_SIZE) + Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
-	var check_meta: String = "check:stat=DEX,die=%d,mod=%d,prof=0,total=%d,dc=%d,pass=%d" % [die, dex_mod, total, LOCK_DC, 1 if total >= LOCK_DC else 0]
-	if total >= LOCK_DC:
-		_dungeon_floor.lock_door(door_pos, true)  # by_player=true
-		GameState.game_log("[color=green]You lock the door! [url=%s]%d vs DC %d[/url][/color]" % [check_meta, total, LOCK_DC])
-		_show_float_text(door_world, "LOCKED!", Color(0.7, 0.4, 1.0))
-	else:
-		GameState.game_log("[color=red]Failed to lock the door [url=%s]%d vs DC %d[/url]%s[/color]" % [check_meta, total, LOCK_DC, " — Thief Tools lost!" if not GameState.invincible else ""])
-		if not GameState.invincible:
-			GameState.consume_one(tools)
-		_show_float_text(door_world, "FAIL!", Color(1.0, 0.3, 0.3))
-	_dungeon_floor.update_fog(grid_pos)
-	TurnManager.on_player_action_complete()
-
-# Attempt to pick a dungeon-locked door with Thief Tools (DEX check, prof only for DEX-check-proficient classes)
-func _attempt_disarm_lock(door_pos: Vector2i) -> void:
-	var tools: Item = _find_thief_tools()
-	if tools == null:
-		GameState.game_log("[color=red]You need Thief Tools to pick this lock.[/color]")
-		return
-	TurnManager.begin_player_action()
-	AudioManager.play("lockpick")
-	var s: Stats = GameState.player_stats
-	var danger_rank: int = GameState.get_talent_rank("danger_sense")
-	var dex_mod: int = s.dex_modifier()
-	var effective_stat: String = "DEX"
-	if danger_rank >= 2 and s.str_modifier() > dex_mod:
-		dex_mod = s.str_modifier()
-		effective_stat = "STR"
-	var has_prof: bool = s.check_prof_dex
-	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
-	var has_adv: bool = danger_rank >= 1 or s.zealous_presence_turns > 0
-	var die1: int = randi_range(1, 20)
-	var die2: int = die1
-	if has_adv:
-		die2 = randi_range(1, 20)
-	var die: int = maxi(die1, die2)
-	var total: int = die + dex_mod + prof_bonus
-	var dc: int = 10 + GameState.current_floor / 3
-	var adv_tag: String = " [color=gray](%s)[/color]" % ("Danger Sense" if danger_rank >= 1 else "Zealous Presence") if has_adv else ""
-	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, dc, 1 if total >= dc else 0, 1 if has_adv else 0]
-	var door_world: Vector2 = Vector2(door_pos * TILE_SIZE) + Vector2(TILE_SIZE * 0.5, TILE_SIZE * 0.5)
-	if total >= dc:
-		_dungeon_floor.unlock_door(door_pos)
-		_dungeon_floor.open_door(door_pos)
-		GameState.game_log("[color=green]You pick the lock!%s [url=%s]%d vs DC %d[/url][/color]" % [adv_tag, check_meta, total, dc])
-		_show_float_text(door_world, "UNLOCKED!", Color(0.4, 1.0, 0.5))
-	else:
-		GameState.game_log("[color=red]Failed to pick the lock%s [url=%s]%d vs DC %d[/url]%s[/color]" % [adv_tag, check_meta, total, dc, " — Thief Tools lost!" if not GameState.invincible else ""])
-		if not GameState.invincible:
-			GameState.consume_one(tools)
-		_show_float_text(door_world, "FAIL!", Color(1.0, 0.3, 0.3))
-	_dungeon_floor.update_fog(grid_pos)
-	TurnManager.on_player_action_complete()
+		"wait":     _actions.wait_action()
+		"search":   _actions.handle_search_request()
+		"interact": _actions.interact_action()
 
 func _use_quickbar_slot(idx: int) -> void:
 	if idx < 0 or idx >= GameState.QUICKBAR_SIZE:
@@ -1901,638 +1495,14 @@ func _use_ability_slot(idx: int) -> void:
 		"danger_sense":            GameState.game_log("[color=gray]Danger Sense is passive — no activation needed.[/color]")
 		"unarmored_defense_monk":  GameState.game_log("[color=gray]Unarmored Defense is passive — active when unarmored (AC = 10+DEX+WIS).[/color]")
 		"martial_arts":            GameState.game_log("[color=gray]Martial Arts is passive — attack unarmed to trigger a bonus-action strike.[/color]")
-		"one_with_nature":         _activate_one_with_nature(ab)
-		"natural_rager":           _cycle_natural_rager_form(ab)
-		"natural_sleeper":         _cycle_natural_sleeper_form(ab)
+		"one_with_nature":         _wild_heart.activate_one_with_nature(ab)
+		"natural_rager":           _wild_heart.cycle_natural_rager_form(ab)
+		"natural_sleeper":         _wild_heart.cycle_natural_sleeper_form(ab)
 		"ironwood_bark":           GameState.game_log("[color=gray]Ironwood Bark is passive — triggers on Rage activation and while Raging.[/color]")
 		"grip_of_the_forest":      _activate_grip_of_the_forest()
 		"branching_strike":        GameState.game_log("[color=gray]Branching Strike is passive — reach and push apply automatically.[/color]")
-		"divine_fury":             _toggle_divine_fury(ab)
-		"blessed_warrior":         _activate_blessed_warrior(ab)
-		"zealous_presence":        _activate_zealous_presence(ab)
+		"divine_fury":             _zealot.toggle_divine_fury(ab)
+		"blessed_warrior":         _zealot.activate_blessed_warrior(ab)
+		"zealous_presence":        _zealot.activate_zealous_presence(ab)
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
 
-func _make_empty_bottle() -> Item:
-	var b := Item.new()
-	b.item_name = "Empty Bottle"
-	b.item_type = Item.Type.TOOL
-	b.icon_path = "res://sprites/items/Materials/BottleSmall.png"
-	b.description = "An empty glass bottle. Fill it from water or mud."
-	return b
-
-func _try_fill_bottle(bottle: Item, target: Vector2i) -> void:
-	if _dungeon_floor == null:
-		return
-	var dist: int = maxi(absi(target.x - grid_pos.x), absi(target.y - grid_pos.y))
-	if dist > 1:
-		GameState.game_log("[color=gray]Too far — stand next to water or mud.[/color]")
-		return
-	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(target)
-	if tile_t != DungeonData.TileType.WATER and tile_t != DungeonData.TileType.MUD:
-		GameState.game_log("[color=gray]Nothing to fill the bottle with here.[/color]")
-		return
-	TurnManager.begin_player_action()
-	# Nat 1: bottle shatters
-	var fill_roll: int = randi_range(1, 20)
-	if fill_roll == 1:
-		GameState.game_log("[color=red]You fumble — the bottle shatters![/color]")
-		if not GameState.invincible:
-			GameState.consume_one(bottle)
-		GameState.inventory_changed.emit()
-		_dungeon_floor.update_fog(grid_pos)
-		TurnManager.on_player_action_complete()
-		return
-	if tile_t == DungeonData.TileType.WATER:
-		bottle.item_name = "Bottle of Water"
-		bottle.icon_path = "res://sprites/items/Materials/BottleMedium.png"
-		bottle.description = "A bottle of dungeon water."
-		AudioManager.play("bottle_fill")
-		GameState.game_log("[color=cyan]You fill the bottle with water.[/color]")
-	else:
-		bottle.item_name = "Bottle of Mud"
-		bottle.icon_path = "res://sprites/items/Materials/BottleSmall.png"
-		bottle.description = "A bottle of foul mud. Maybe useful for something."
-		AudioManager.play("bottle_fill")
-		GameState.game_log("[color=gray]You fill the bottle with mud.[/color]")
-	GameState.inventory_changed.emit()
-	_dungeon_floor.update_fog(grid_pos)
-	TurnManager.on_player_action_complete()
-
-func _find_item_by_name(item_name: String) -> Item:
-	for slot: Item in GameState.player_quickbar:
-		if slot != null and slot.item_name == item_name:
-			return slot
-	for slot: Item in GameState.player_inventory:
-		if slot != null and slot.item_name == item_name:
-			return slot
-	return null
-
-func _leave_blood_trail(pos: Vector2i) -> void:
-	if _dungeon_floor != null and GameState.player_stats.bleeding_turns > 0:
-		_dungeon_floor.place_blood_decal(pos)
-
-func _has_advantage(enemy: Enemy) -> bool:
-	if enemy.just_crossed_door:
-		enemy.just_crossed_door = false
-		return true
-	return enemy.behavior == Enemy.Behavior.SLEEPING
-
-func _show_float_text(world_pos: Vector2, text: String, color: Color) -> void:
-	var lbl := Label.new()
-	lbl.text = text
-	lbl.add_theme_font_size_override("font_size", 11)
-	lbl.add_theme_color_override("font_color", color)
-	lbl.position = world_pos + Vector2(-16.0, -20.0)
-	lbl.z_index = 10
-	get_parent().add_child(lbl)
-	var tw := lbl.create_tween()
-	tw.tween_property(lbl, "position:y", lbl.position.y - 14.0, 0.9)
-	tw.parallel().tween_property(lbl, "modulate:a", 0.0, 0.9).set_delay(0.35)
-	tw.tween_callback(lbl.queue_free)
-
-func _show_surprise_mark(enemy: Enemy) -> void:
-	if not is_instance_valid(enemy):
-		return
-	var lbl := Label.new()
-	lbl.text = "!"
-	lbl.add_theme_font_size_override("font_size", 20)
-	lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.0))
-	lbl.position = enemy.position + Vector2(-4.0, -26.0)
-	lbl.z_index = 10
-	get_parent().add_child(lbl)
-	var tween := lbl.create_tween()
-	tween.tween_property(lbl, "position:y", lbl.position.y - 10.0, 0.7)
-	tween.parallel().tween_property(lbl, "modulate:a", 0.0, 0.7).set_delay(0.3)
-	tween.tween_callback(lbl.queue_free)
-
-# Range gate for ranged weapons: within a weapon's "normal" range (weapon.range), the shot
-# rolls normally. Beyond normal range but within the player's live FOV (DungeonFloor.FOV_RADIUS,
-# gated by actual is_tile_visible — not just distance, so shots around corners don't count) the
-# shot is still possible but will roll with Disadvantage (see _ranged_shot_disadvantage()).
-# "Long range" is intentionally NOT a per-weapon field — every ranged weapon shares this same
-# FOV-based long-range rule; only the normal range differs per weapon.
-func _is_ranged_target_in_range(weapon: Item, target_pos: Vector2i) -> bool:
-	if weapon == null or _dungeon_floor == null:
-		return false
-	var d: Vector2i = target_pos - grid_pos
-	var dist_sq: int = d.x * d.x + d.y * d.y
-	var fov_r: int = DungeonFloor.FOV_RADIUS
-	if dist_sq > fov_r * fov_r:
-		return false
-	if dist_sq > weapon.range * weapon.range and not _dungeon_floor.is_tile_visible(target_pos):
-		return false
-	return true
-
-func _ranged_shot_disadvantage(weapon: Item, target_pos: Vector2i) -> bool:
-	if weapon == null:
-		return false
-	var d: Vector2i = target_pos - grid_pos
-	return (d.x * d.x + d.y * d.y) > weapon.range * weapon.range
-
-# Named-ammo lookup (Item.ammo_item_name), separate from the legacy consumes_on_ranged
-# (weapon's own quantity) pattern. Searches quickbar then bag by item_name, same order as
-# GameState.add_item()'s stacking search.
-func _find_ammo_stack(ammo_name: String) -> Item:
-	for it: Item in GameState.player_quickbar:
-		if it != null and it.item_name == ammo_name and it.quantity > 0:
-			return it
-	for it: Item in GameState.player_inventory:
-		if it != null and it.item_name == ammo_name and it.quantity > 0:
-			return it
-	return null
-
-func _remove_ammo_stack(ammo_name: String) -> void:
-	for i: int in GameState.player_quickbar.size():
-		var it: Item = GameState.player_quickbar[i]
-		if it != null and it.item_name == ammo_name:
-			GameState.player_quickbar[i] = null
-			return
-	for i: int in GameState.player_inventory.size():
-		var it: Item = GameState.player_inventory[i]
-		if it != null and it.item_name == ammo_name:
-			GameState.player_inventory[i] = null
-			return
-
-# Generalized ammo-landing resolver — works for any stackable Item passed as ammo_item (only
-# "Arrow" is spawned in-game today, but this makes no assumptions beyond "a stackable Item that
-# should reappear as a floor pickup at its impact point"). Called from _ranged_attack() (miss —
-# arrow flies to the still-alive enemy's tile), _ranged_attack_tile() (open-ground/wall shots),
-# and _finish_kill() (kill-shot 50% drop-from-corpse — NOT called for a non-lethal hit, where
-# the arrow stays embedded with no pickup at all, per design).
-func _resolve_ammo_landing(ammo_item: Item, impact_pos: Vector2i) -> void:
-	if ammo_item == null or _dungeon_floor == null:
-		return
-	match _dungeon_floor.get_tile_type(impact_pos):
-		DungeonData.TileType.WALL:
-			return  # destroyed, no pickup
-		DungeonData.TileType.CHASM:
-			var dropped := Item.new()
-			dropped.item_name = ammo_item.item_name
-			dropped.item_type = ammo_item.item_type
-			dropped.icon_path = ammo_item.icon_path
-			dropped.description = ammo_item.description
-			dropped.quantity = 1
-			GameState.pending_chasm_items.append(dropped)
-			GameState.game_log("[color=gray]The %s falls into the chasm...[/color]" % ammo_item.item_name)
-		_:
-			var landed := Item.new()
-			landed.item_name = ammo_item.item_name
-			landed.item_type = ammo_item.item_type
-			landed.icon_path = ammo_item.icon_path
-			landed.description = ammo_item.description
-			landed.quantity = 1
-			_dungeon_floor.place_item_on_floor(impact_pos, landed)
-
-func _is_in_ranged_range(enemy: Enemy) -> bool:
-	var weapon: Item = GameState.equipped_ranged
-	if weapon == null or not weapon.is_ranged or _dungeon_floor == null:
-		return false
-	return _is_ranged_target_in_range(weapon, enemy.grid_pos) \
-		and _dungeon_floor.has_ranged_los(grid_pos, enemy.grid_pos)
-
-func _ranged_attack(enemy: Enemy) -> void:
-	TurnManager.begin_player_action()
-	$AnimatedSprite2D.flip_h = enemy.grid_pos.x < grid_pos.x
-	$AnimatedSprite2D.play("hit")
-	await $AnimatedSprite2D.animation_finished
-	$AnimatedSprite2D.play("idle")
-
-	var weapon: Item = GameState.equipped_ranged
-
-	# Ammo check + consume happens BEFORE the projectile animation, so a shot that can't fire
-	# never plays the arrow-fly VFX. Named ammo (weapon.ammo_item_name) takes priority over the
-	# legacy consumes_on_ranged (weapon's own stack) path below, which stays unchanged for
-	# weapons that don't set ammo_item_name (e.g. old Throwing-Dagger-style items).
-	var ammo_item: Item = null
-	if weapon != null and not weapon.ammo_item_name.is_empty():
-		ammo_item = _find_ammo_stack(weapon.ammo_item_name)
-		if ammo_item == null:
-			GameState.game_log("[color=red]No %s left![/color]" % weapon.ammo_item_name)
-			if _dungeon_floor != null:
-				_dungeon_floor.update_fog(grid_pos)
-			_handle_post_attack_turn()
-			return
-		if not GameState.invincible:
-			ammo_item.quantity -= 1
-			if ammo_item.quantity <= 0:
-				_remove_ammo_stack(weapon.ammo_item_name)
-			GameState.inventory_changed.emit()
-	elif weapon != null and weapon.consumes_on_ranged and not GameState.invincible:
-		weapon.quantity -= 1
-		GameState.inventory_changed.emit()
-		if weapon.quantity <= 0:
-			GameState.equipment["ranged"] = null
-			GameState.recalculate_stats()
-			GameState.equipment_changed.emit()
-			GameState.game_log("[color=gray]Last throwing dagger used.[/color]")
-
-	_show_projectile(enemy.position, weapon)
-
-	var dex_mod: int = stats.dex_modifier()
-	var prof: int = _weapon_prof_bonus(weapon)
-	var weapon_bonus: int = (weapon.bonus_damage if weapon != null else 0) + prof
-	# Advantage / Disadvantage: sources are counted (house rule — net decides outcome, not
-	# a simple boolean OR/cancel). See _bump_attack() for the reference melee implementation.
-	var adv_count: int = 0
-	var disadv_count: int = 0
-	if _has_advantage(enemy): adv_count += 1
-	if stats.zealous_presence_turns > 0: adv_count += 1
-	# Vex: if the flag targets this exact enemy, grant ADV and consume it on this attempt.
-	var vex_triggered: bool = _vex_adv_target == enemy
-	if vex_triggered: adv_count += 1
-	# Disadvantage: ranged weapon fired at melee range (Chebyshev distance 1), Heavy weapon with
-	# DEX < 13, or a long-range shot (beyond the weapon's normal range but within FOV).
-	var d_vec: Vector2i = enemy.grid_pos - grid_pos
-	if maxi(abs(d_vec.x), abs(d_vec.y)) <= 1: disadv_count += 1
-	if weapon != null and weapon.is_heavy and stats.dexterity < 13: disadv_count += 1
-	if _ranged_shot_disadvantage(weapon, enemy.grid_pos): disadv_count += 1
-	var net: int = adv_count - disadv_count
-	var adv: bool = net > 0
-	var disadv: bool = net < 0
-	if vex_triggered:
-		_vex_adv_target = null
-	# die2 is ALWAYS rolled independently when ADV/DISADV is active — nat 1 on die1 does NOT skip it.
-	var die1: int = randi_range(1, 20)
-	var die2: int = die1
-	var die: int = die1
-	if adv and not disadv:
-		die2 = randi_range(1, 20)
-		die = maxi(die1, die2)
-	elif disadv and not adv:
-		die2 = randi_range(1, 20)
-		die = mini(die1, die2)
-	var roll: int = die + dex_mod + weapon_bonus
-	var is_crit: bool = die == 20
-	var is_nat_one: bool = die == 1
-
-	var r_wpn_enh: int = weapon.bonus_damage if weapon != null else 0
-	var hit_meta: String = "rhit:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
-		die, die1, die2, dex_mod, prof, r_wpn_enh, roll, enemy.stats.armor_class,
-		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
-		1 if is_crit else 0, 1 if is_nat_one else 0]
-
-	# Blessed Warrior heal resolves off the very next attack this turn regardless of hit/miss.
-	_resolve_blessed_warrior_heal()
-	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
-		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
-		GameState.game_log("You shoot at [color=orange]%s[/color] — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
-		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
-		if is_nat_one:
-			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
-			GameState.screen_shake.emit(2.5)
-		# Arrow flies to the (still-alive) enemy's tile and lands as a normal pickup on a miss.
-		_resolve_ammo_landing(ammo_item, enemy.grid_pos)
-		if _dungeon_floor != null:
-			_dungeon_floor.update_fog(grid_pos)
-		_handle_post_attack_turn()
-		return
-
-	AudioManager.play("crit" if is_crit else "hit_enemy")
-	_flash_hit(enemy)
-	if adv and not disadv:
-		_show_surprise_mark(enemy)
-	if weapon != null and weapon.weapon_mastery == "Vex":
-		_vex_adv_target = enemy
-	var r_dmin: int = weapon.damage_die_min if weapon != null and weapon.damage_die_min > 0 else stats.base_min_damage
-	var r_dmax: int = weapon.damage_die_max if weapon != null and weapon.damage_die_max > 0 else stats.base_max_damage
-	var r_die_roll: int = randi_range(r_dmin, r_dmax)
-	var r_pre_crit: int = r_die_roll + r_wpn_enh + dex_mod
-	if is_crit:
-		r_pre_crit *= 2
-		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
-		GameState.screen_shake.emit(5.0)
-
-	# Divine Fury folded into the same hit/floater — see damage stacking rule in
-	# scripts/entities/CLAUDE.md. Named breakdown lives only in dmg_meta (for the hover
-	# tooltip); the visible log line always shows just the single combined number.
-	var r_divine_bonus: int = 0
-	var r_df_rank: int = GameState.get_talent_rank("divine_fury")
-	if r_df_rank >= 1 and not _divine_fury_triggered_this_turn:
-		_divine_fury_triggered_this_turn = true
-		r_divine_bonus = randi_range(1, 6) + _divine_fury_flat_bonus(r_df_rank)
-
-	var actual: int = enemy.stats.take_damage(r_pre_crit + r_divine_bonus)
-	enemy.update_hp_bar()
-	if _dungeon_floor != null:
-		_dungeon_floor.show_damage(enemy.position, actual, false)
-
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,dex=%d,rage=0,frenzy=0,ironwood=0,divine=%d,divtype=%s,crit=%d,final=%d" % [
-		r_die_roll, r_dmin, r_dmax, r_wpn_enh, dex_mod, r_divine_bonus,
-		GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
-	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
-	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
-
-	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag])
-	else:
-		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag])
-
-	if enemy.stats.is_dead():
-		# Enemy died to this shot — arrow drop-from-corpse (50% chance) is handled inside
-		# _finish_kill so it can use the corpse's final tile after remove_enemy()/die().
-		# If the enemy survives (branch not taken), the arrow stays embedded — no pickup.
-		_finish_kill(enemy, ammo_item)
-	if _dungeon_floor != null:
-		_dungeon_floor.update_fog(grid_pos)
-	_handle_post_attack_turn()
-
-func _show_projectile(target_world_pos: Vector2, weapon: Item) -> void:
-	if weapon == null:
-		return
-	var proj_path: String
-	var tumble: bool = false
-	match weapon.item_name:
-		"Heavy Crossbow":
-			proj_path = ARROW_SPRITE
-			tumble = true
-		_: proj_path = ARROW_SPRITE
-
-	AudioManager.play("shoot")
-	var tex: Texture2D = load(proj_path)
-	var from: Vector2 = _tile_center(grid_pos)
-	var angle: float = (target_world_pos - from).angle()
-	var direction: Vector2 = (target_world_pos - from).normalized()
-	var dur: float = 0.18
-
-	# Ghost trail sprites (i=1,2 trail behind main i=0)
-	const ALPHAS: Array = [1.0, 0.5, 0.22]
-	const DELAYS: Array = [0.0, 0.028, 0.055]
-	for i: int in 3:
-		var sp := Sprite2D.new()
-		sp.texture = tex
-		sp.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		sp.scale = Vector2(0.5, 0.5)
-		sp.position = from - direction * (i * 5.0)
-		sp.rotation = angle
-		sp.z_index = 5 - i
-		sp.modulate.a = ALPHAS[i]
-		get_parent().add_child(sp)
-		var t := sp.create_tween()
-		var d: float = dur - DELAYS[i]
-		if DELAYS[i] > 0.0:
-			t.tween_interval(DELAYS[i])
-		t.tween_property(sp, "position", target_world_pos, d)
-		if tumble:
-			t.parallel().tween_property(sp, "rotation", angle + TAU, d)
-		if i == 0:
-			t.parallel().tween_property(sp, "modulate:a", 0.0, d * 0.3).set_delay(d * 0.7)
-		t.tween_callback(sp.queue_free)
-
-func _ranged_attack_tile(target_pos: Vector2i) -> void:
-	TurnManager.begin_player_action()
-	$AnimatedSprite2D.flip_h = target_pos.x < grid_pos.x
-	$AnimatedSprite2D.play("hit")
-	await $AnimatedSprite2D.animation_finished
-	$AnimatedSprite2D.play("idle")
-	var weapon: Item = GameState.equipped_ranged
-	var ammo_item: Item = null
-	if weapon != null and not weapon.ammo_item_name.is_empty():
-		ammo_item = _find_ammo_stack(weapon.ammo_item_name)
-		if ammo_item == null:
-			GameState.game_log("[color=red]No %s left![/color]" % weapon.ammo_item_name)
-			if _dungeon_floor != null:
-				_dungeon_floor.update_fog(grid_pos)
-			_handle_post_attack_turn()
-			return
-		if not GameState.invincible:
-			ammo_item.quantity -= 1
-			if ammo_item.quantity <= 0:
-				_remove_ammo_stack(weapon.ammo_item_name)
-			GameState.inventory_changed.emit()
-	elif weapon != null and weapon.consumes_on_ranged and not GameState.invincible:
-		weapon.quantity -= 1
-		GameState.inventory_changed.emit()
-		if weapon.quantity <= 0:
-			GameState.equipment["ranged"] = null
-			GameState.recalculate_stats()
-			GameState.equipment_changed.emit()
-			GameState.game_log("[color=gray]Last throwing dagger thrown.[/color]")
-	var target_world: Vector2 = Vector2(target_pos.x * 16 + 8, target_pos.y * 16 + 8)
-	_show_projectile(target_world, weapon)
-	_resolve_ammo_landing(ammo_item, target_pos)
-	if _dungeon_floor != null:
-		_dungeon_floor.update_fog(grid_pos)
-	_handle_post_attack_turn()
-
-
-func _on_throw_primed(item: Item) -> void:
-	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
-		return
-	_tool_item = null
-	if _throw_item != null:
-		_throw_item = item
-		return
-	_throw_item = item
-	GameState.game_log("[color=yellow]Throw [b]%s[/b] — left-click target tile. [Esc] to cancel.[/color]" % item.item_name)
-
-func _on_tool_primed(item: Item) -> void:
-	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
-		return
-	_throw_item = null
-	_tool_item = item
-	if item.item_name == "Empty Bottle":
-		GameState.game_log("[color=cyan]Empty Bottle — right-click on adjacent water or mud to fill. [Esc] to cancel.[/color]")
-	else:
-		GameState.game_log("[color=yellow]Thief Tools — click an adjacent revealed trap to disarm. [Esc] to cancel.[/color]")
-
-func _do_throw(pos: Vector2i) -> void:
-	var item: Item = _throw_item
-	_throw_item = null
-	if _dungeon_floor == null:
-		return
-	var _found: bool = false
-	for _s in GameState.player_quickbar:
-		if _s == item:
-			_found = true
-			break
-	if not _found:
-		for _s in GameState.player_inventory:
-			if _s == item:
-				_found = true
-				break
-	if not _found:
-		GameState.game_log("[color=gray]Throw cancelled — item no longer in inventory.[/color]")
-		return
-	TurnManager.begin_player_action()
-	AudioManager.play("throw_item")
-	if _dungeon_floor.has_door_at(pos) and not _dungeon_floor.is_door_open(pos):
-		_dungeon_floor.open_door(pos)
-	var trap: Dictionary = _dungeon_floor.get_trap_at(pos)
-	var is_fire: bool = not trap.is_empty() and trap.get("name", "") == "Fire Trap" and trap.get("revealed", false)
-	if is_fire and item.item_name == "Rotten Meat":
-		GameState.consume_one(item)
-		var cooked: Item = _dungeon_floor.cook_rotten_meat(pos)
-		_dungeon_floor.place_item_on_floor(pos, cooked)
-		GameState.game_log("[color=orange]You throw the meat into the fire — it sizzles and cooks! [b]Cooked Meat[/b] landed where the trap was.[/color]")
-	else:
-		var dropped := Item.new()
-		dropped.item_name = item.item_name
-		dropped.item_type = item.item_type
-		dropped.heal_amount = item.heal_amount
-		dropped.icon_path = item.icon_path
-		dropped.description = item.description
-		dropped.quantity = 1
-		GameState.consume_one(item)
-		_dungeon_floor.place_item_on_floor(pos, dropped)
-		GameState.game_log("[color=gray]You throw [b]%s[/b].[/color]" % dropped.item_name)
-	_dungeon_floor.update_fog(grid_pos)
-	TurnManager.on_player_action_complete()
-
-func _open_short_rest() -> void:
-	if GameState.short_rests_remaining <= 0:
-		GameState.game_log("[color=gray]No short rests remaining on this floor. Descend to refresh.[/color]")
-		return
-	GameState.short_rest_open = true
-	var panel_script = load("res://scripts/ui/short_rest_panel.gd")
-	get_tree().root.add_child(panel_script.new())
-
-func _open_talent_picker() -> void:
-	if GameState._class_talents.is_empty():
-		return
-	var picker = load("res://scripts/ui/talent_picker.gd").new()
-	get_tree().root.add_child(picker)
-
-
-# ── Wild Heart helpers ────────────────────────────────────────────────────────
-
-func _activate_one_with_nature(ab: Ability) -> void:
-	var rank: int = GameState.get_talent_rank("one_with_nature")
-	if ab.uses_remaining <= 0:
-		GameState.game_log("[color=gray]One with Nature: no charge available (rest to restore).[/color]")
-		return
-	if GameState.player_companion != null and is_instance_valid(GameState.player_companion):
-		_dismiss_companion()
-	_summon_companion(rank)
-	if not GameState.invincible:
-		ab.uses_remaining = 0
-	GameState.ability_bar_changed.emit()
-
-func _summon_companion(rank: int) -> void:
-	if _dungeon_floor == null:
-		return
-	var stats_data: Dictionary = GameState.WILD_HEART_COMPANION_STATS.get(rank, {})
-	var companion: Companion = _CompanionClass.new()
-	companion.configure(stats_data)
-	var spawn_pos: Vector2i = _find_free_adjacent()
-	if spawn_pos == Vector2i(-1, -1):
-		GameState.game_log("[color=gray]No room to summon companion![/color]")
-		return
-	_dungeon_floor.spawn_companion(companion, spawn_pos)
-	GameState.player_companion = companion
-	GameState.game_log("[color=lime]You summon a %s to fight by your side![/color]" % companion.animal_name)
-
-func _dismiss_companion() -> void:
-	var comp = GameState.player_companion
-	if comp == null or not is_instance_valid(comp):
-		GameState.player_companion = null
-		return
-	if _dungeon_floor != null:
-		_dungeon_floor.remove_companion(comp)
-	TurnManager.unregister_enemy(comp)
-	GameState.game_log("[color=gray]%s is dismissed.[/color]" % comp.animal_name)
-	comp.queue_free()
-	GameState.player_companion = null
-
-func _find_free_adjacent() -> Vector2i:
-	if _dungeon_floor == null:
-		return Vector2i(-1, -1)
-	var dirs: Array[Vector2i] = [
-		Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
-		Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1),
-	]
-	for d: Vector2i in dirs:
-		var p: Vector2i = grid_pos + d
-		if _dungeon_floor.is_walkable_for_companion(p):
-			return p
-	return Vector2i(-1, -1)
-
-func _cycle_natural_rager_form(ab: Ability) -> void:
-	if GameState.is_raging:
-		GameState.game_log("[color=orange]Natural Rager: cannot switch form while raging.[/color]")
-		return
-	var forms: PackedStringArray = ["Bear", "Eagle", "Wolf"]
-	var idx: int = forms.find(GameState.natural_rager_form)
-	GameState.natural_rager_form = forms[(idx + 1) % forms.size()]
-	ab.description = GameState._build_natural_rager_description()
-	GameState.ability_bar_changed.emit()
-	GameState.game_log("[color=orange]Natural Rager: switched to %s Form.[/color]" % GameState.natural_rager_form)
-
-func _cycle_natural_sleeper_form(ab: Ability) -> void:
-	# "" is the initial state (never chosen), not part of the cycle.
-	# First press: find("") = -1 → (-1+1)%3 = 0 → "Owl". After that: Owl→Panther→Salmon→Owl.
-	var forms: PackedStringArray = ["Owl", "Panther", "Salmon"]
-	var idx: int = forms.find(GameState.natural_sleeper_form)
-	GameState.natural_sleeper_form = forms[(idx + 1) % forms.size()]
-	ab.description = GameState._build_natural_sleeper_description()
-	GameState.ability_bar_changed.emit()
-	var chosen: String = GameState.natural_sleeper_form
-	if GameState.wild_heart_sleeper_active and GameState.active_sleeper_form != chosen:
-		GameState.game_log("[color=cyan]Natural Sleeper: %s Form chosen — activates next rest.[/color]" % chosen)
-	else:
-		GameState.game_log("[color=cyan]Natural Sleeper: switched to %s Form.[/color]" % chosen)
-
-# ── Zealot (Tier 2) ────────────────────────────────────────────────────────────
-
-func _toggle_divine_fury(ab: Ability) -> void:
-	GameState.zealot_divine_fury_type = "Necrotic" if GameState.zealot_divine_fury_type == "Radiant" else "Radiant"
-	ab.description = GameState._build_divine_fury_description()
-	GameState.ability_bar_changed.emit()
-	GameState.game_log("[color=cyan]Divine Fury: switched to %s.[/color]" % GameState.zealot_divine_fury_type)
-	# Free action — persists between turns, does NOT consume the turn.
-
-func _activate_blessed_warrior(ab: Ability) -> void:
-	if _blessed_warrior_used_this_turn:
-		GameState.game_log("[color=gray]Blessed Warrior: already used this turn.[/color]")
-		return
-	if GameState.zealot_blessed_charges <= 0:
-		GameState.game_log("[color=gray]Blessed Warrior: no charges remaining (recovers on long rest).[/color]")
-		return
-	_blessed_warrior_used_this_turn = true
-	if not GameState.invincible:
-		GameState.zealot_blessed_charges -= 1
-	GameState.zealot_blessed_heal_queued = true
-	ab.uses_remaining = GameState.zealot_blessed_charges
-	ab.description = GameState._build_blessed_warrior_description()
-	GameState.ability_bar_changed.emit()
-	GameState.game_log("[color=cyan]Blessed Warrior: readied — your next successful hit this turn heals 1d12. (%d charge%s left)[/color]" % [GameState.zealot_blessed_charges, "" if GameState.zealot_blessed_charges == 1 else "s"])
-	# Free action — does NOT consume the turn.
-
-func _resolve_blessed_warrior_heal() -> void:
-	if not GameState.zealot_blessed_heal_queued:
-		return
-	GameState.zealot_blessed_heal_queued = false
-	var heal_roll: int = randi_range(1, 12)
-	var before: int = stats.current_hp
-	GameState.heal(heal_roll)
-	var healed: int = stats.current_hp - before
-	if healed > 0:
-		GameState.game_log("[color=lime]Blessed Warrior: divine vigor mends your wounds (+%d HP).[/color]" % healed)
-
-func _activate_zealous_presence(ab: Ability) -> void:
-	var rank: int = GameState.get_talent_rank("zealous_presence")
-	if rank <= 0:
-		return
-	var use_zp: bool = GameState.zealot_zp_charges > 0
-	var use_rage: bool = not use_zp and GameState.player_stats.rage_uses_remaining > 0
-	if not use_zp and not use_rage:
-		GameState.game_log("[color=gray]Zealous Presence: no charges available (needs a Zealous Presence or Rage charge).[/color]")
-		return
-	if not GameState.invincible:
-		if use_zp:
-			GameState.zealot_zp_charges -= 1
-		else:
-			GameState.player_stats.rage_uses_remaining -= 1
-			var rage_ab: Ability = _find_ability("rage")
-			if rage_ab != null:
-				rage_ab.uses_remaining = GameState.player_stats.rage_uses_remaining
-	var duration: int = [0, 1, 3, 5][mini(rank, 3)]
-	stats.zealous_presence_turns = maxi(stats.zealous_presence_turns, duration)
-	var comp = GameState.player_companion
-	if comp != null and is_instance_valid(comp):
-		comp.stats.zealous_presence_turns = maxi(comp.stats.zealous_presence_turns, duration)
-	ab.uses_remaining = GameState.zealot_zp_charges
-	ab.description = GameState._build_zealous_presence_description()
-	GameState.ability_bar_changed.emit()
-	var source_note: String = "" if use_zp else " [color=orange](no ZP charge left — consumed a Rage charge instead)[/color]"
-	GameState.game_log("[color=gold]Zealous Presence! You and nearby allies gain Advantage for %d turn(s).%s[/color]" % [duration, source_note])
-	# Free action — does NOT consume the turn.

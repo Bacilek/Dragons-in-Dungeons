@@ -61,7 +61,7 @@ Triggered by `GameState.stairs_discovered` signal (emitted by `DungeonFloor.upda
 ---
 
 ## Talent picker (`talent_picker.gd`)
-CanvasLayer, layer = 25. Opened by `player.gd._open_talent_picker()` via **T key** (bypasses phase gate). Does NOT auto-open on level-up.
+CanvasLayer, layer = 25. Opened by `PlayerActions.open_talent_picker()` (`scripts/entities/player_actions.gd`) via **T key** (bypasses phase gate). Does NOT auto-open on level-up.
 Sets `GameState.talent_picker_open = true` → blocks all player keyboard input. Esc or T closes.
 Pixel Dungeon style: tier header with star bar (gray=spent / yellow=available / dark=locked) + icon row with dot rank indicators + bottom detail panel showing all rank descriptions + "Upgrade Talent ▲" button.
 **Sizing**: `PANEL_W = 720.0`, `ICON_SIZE = 64.0` (bumped up from the original 500/48 for legibility — panel height auto-computed from content and re-centered on the 1920×1080 viewport in `_build_ui()`). All other offsets/paddings/font sizes in the file scale off these two constants or are hand-tuned alongside them; if you change either constant, re-check the hardcoded subclass-arrow positions in `_build_tier_section()` (only rendered in God Mode) since those aren't formula-driven.
@@ -70,7 +70,7 @@ Pixel Dungeon style: tier header with star bar (gray=spent / yellow=available / 
 **Rank-gradient talent icons**: `_add_talent_icon()` no longer sets a texture at creation time — `_refresh()` (called on build and after every upgrade) loads `GameState.talent_icon_path(t.talent_id, max(rank,1))` into `btn.texture_normal` each time, so the icon art changes as the player invests ranks (falls back to `t.icon_path` if unmapped). Icons dim to alpha 0.5 while unranked.
 
 ## Short rest panel (`short_rest_panel.gd`)
-CanvasLayer, layer = 25. Spawned by `player.gd._open_short_rest()`.
+CanvasLayer, layer = 25. Spawned by `PlayerActions.open_short_rest()` (`scripts/entities/player_actions.gd`).
 
 Keyboard bindings: ←/A/KP4 = minus dice, →/D/KP6 = plus dice, **Space = rest**, Esc = close.
 On Rest: rolls `_dice_to_spend × hit_die_sides() + CON mod` (min 1 per die), heals player, decrements `GameState.hit_dice` and `GameState.short_rests_remaining`.
