@@ -80,12 +80,16 @@ dungeon_floor.unlock_door(pos)             # restores white tint, removes lock i
 ---
 
 ## Floor items (`_floor_items`, `_floor_item_sprites`)
+`_floor_items: Dictionary[Vector2i, Array[Item]]` — **tiles stack**: multiple items can occupy the same position (oldest first in the array). `_floor_item_sprites` holds exactly one `Sprite2D` per occupied tile, always showing the newest (last-appended) item's icon — `place_item_on_floor()` swaps the existing sprite's texture in place rather than spawning a second sprite or bumping the drop to an adjacent tile. This is what lets a volley of arrows shot at the same spot all pile up on one tile instead of scattering.
 ```gdscript
-dungeon_floor.place_item_on_floor(pos: Vector2i, item: Item)
-dungeon_floor.pick_up_item(pos: Vector2i) -> Item
+dungeon_floor.place_item_on_floor(pos: Vector2i, item: Item)   # appends to the stack at pos
+dungeon_floor.get_item_at(pos: Vector2i) -> Item                # topmost/newest item only (for tooltips/inspect)
+dungeon_floor.get_items_at(pos: Vector2i) -> Array[Item]         # full stack, oldest first
+dungeon_floor.remove_floor_item(pos: Vector2i)                   # clears the whole stack + sprite at pos
 dungeon_floor.cook_rotten_meat(trap_pos: Vector2i) -> Item  # erases Fire Trap, returns Cooked Meat (heal=150)
 ```
 `cook_rotten_meat` only called from `PlayerThrowTool.do_throw()` (`scripts/entities/player_throw_tool.gd`) when `trap["revealed"] == true`. `place_item_on_floor` is also called from `PlayerAmmo`'s ranged-ammo landing resolver (`resolve_ammo_landing()`) — see "Ammo items" in `scripts/items/CLAUDE.md`.
+**Pickup**: `PlayerActions.check_pickup()` (`scripts/entities/player_actions.gd`) calls `get_items_at()` + `remove_floor_item()` to grab the entire stack on the player's tile in one step (walking onto a pile of arrows returns all of them at once), collapsing same-named items into one `"xN"` log line.
 
 ---
 
