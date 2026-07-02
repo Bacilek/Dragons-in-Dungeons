@@ -150,7 +150,7 @@ var player_ability_bar: Array = [] # 9 ability slots (Tab to switch)
 var player_inventory: Array = []  # 24-slot bag
 
 var equipment: Dictionary = {
-	"melee": null, "ranged": null, "armor": null,
+	"melee": null, "hand2": null, "ranged": null, "armor": null,
 	"boots": null, "gloves": null, "head": null, "trinket": null,
 }
 

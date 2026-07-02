@@ -98,9 +98,9 @@ player_grid_pos: Vector2i    # synced every move
 - `<= 200` → STARVING (1 dmg / 10 turns, no HP regen)
 
 ### Equipment slots
-`GameState.equipment` dict: keys `"melee"` and `"ranged"`.
+`GameState.equipment` dict: keys `"melee"` (displayed "Hand 1" in the inventory overlay), `"hand2"` (displayed "Hand 2" — placeholder slot, no `equip()`/`_fits_slot()` routing yet, not read by combat code, exists only so the inventory grid has a second hand slot for a future dual-wield/offhand feature), `"ranged"`, `"armor"`, `"boots"`, `"gloves"`, `"head"`, `"trinket"`.
 `GameState.equipped_ranged` property returns ranged slot item.
-`equip()` auto-routes by `item.is_ranged`.
+`equip()` auto-routes by `item.is_ranged` (weapons always land in `"melee"`/`"ranged"`, never `"hand2"`).
 
 ---
 

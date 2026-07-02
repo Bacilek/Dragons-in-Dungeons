@@ -185,106 +185,106 @@ theme_override_font_sizes/font_size = 13
 anchor_right = 1.0
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_top = -90.0
+offset_top = -135.0
 
 [node name="ItemSlot0" type="Button" parent="ActionBar"]
-offset_left = 4.0
-offset_top = 7.0
-offset_right = 80.0
-offset_bottom = 83.0
-theme_override_font_sizes/font_size = 11
+offset_left = 6.0
+offset_top = 10.0
+offset_right = 120.0
+offset_bottom = 124.0
+theme_override_font_sizes/font_size = 16
 clip_text = true
 
 [node name="ItemSlot1" type="Button" parent="ActionBar"]
-offset_left = 84.0
-offset_top = 7.0
-offset_right = 160.0
-offset_bottom = 83.0
-theme_override_font_sizes/font_size = 11
+offset_left = 126.0
+offset_top = 10.0
+offset_right = 240.0
+offset_bottom = 124.0
+theme_override_font_sizes/font_size = 16
 clip_text = true
 
 [node name="ItemSlot2" type="Button" parent="ActionBar"]
-offset_left = 164.0
-offset_top = 7.0
-offset_right = 240.0
-offset_bottom = 83.0
-theme_override_font_sizes/font_size = 11
+offset_left = 246.0
+offset_top = 10.0
+offset_right = 360.0
+offset_bottom = 124.0
+theme_override_font_sizes/font_size = 16
 clip_text = true
 
 [node name="ItemSlot3" type="Button" parent="ActionBar"]
-offset_left = 244.0
-offset_top = 7.0
-offset_right = 320.0
-offset_bottom = 83.0
-theme_override_font_sizes/font_size = 11
+offset_left = 366.0
+offset_top = 10.0
+offset_right = 480.0
+offset_bottom = 124.0
+theme_override_font_sizes/font_size = 16
 clip_text = true
 
 [node name="ItemSlot4" type="Button" parent="ActionBar"]
-offset_left = 324.0
-offset_top = 7.0
-offset_right = 400.0
-offset_bottom = 83.0
-theme_override_font_sizes/font_size = 11
+offset_left = 486.0
+offset_top = 10.0
+offset_right = 600.0
+offset_bottom = 124.0
+theme_override_font_sizes/font_size = 16
 clip_text = true
 
 [node name="ItemSlot5" type="Button" parent="ActionBar"]
-offset_left = 404.0
-offset_top = 7.0
-offset_right = 480.0
-offset_bottom = 83.0
-theme_override_font_sizes/font_size = 11
+offset_left = 606.0
+offset_top = 10.0
+offset_right = 720.0
+offset_bottom = 124.0
+theme_override_font_sizes/font_size = 16
 clip_text = true
 
 [node name="ItemSlot6" type="Button" parent="ActionBar"]
-offset_left = 484.0
-offset_top = 7.0
-offset_right = 560.0
-offset_bottom = 83.0
-theme_override_font_sizes/font_size = 11
+offset_left = 726.0
+offset_top = 10.0
+offset_right = 840.0
+offset_bottom = 124.0
+theme_override_font_sizes/font_size = 16
 clip_text = true
 
 [node name="ItemSlot7" type="Button" parent="ActionBar"]
-offset_left = 564.0
-offset_top = 7.0
-offset_right = 640.0
-offset_bottom = 83.0
-theme_override_font_sizes/font_size = 11
+offset_left = 846.0
+offset_top = 10.0
+offset_right = 960.0
+offset_bottom = 124.0
+theme_override_font_sizes/font_size = 16
 clip_text = true
 
 [node name="ItemSlot8" type="Button" parent="ActionBar"]
-offset_left = 644.0
-offset_top = 7.0
-offset_right = 720.0
-offset_bottom = 83.0
-theme_override_font_sizes/font_size = 11
+offset_left = 966.0
+offset_top = 10.0
+offset_right = 1080.0
+offset_bottom = 124.0
+theme_override_font_sizes/font_size = 16
 clip_text = true
 
 [node name="WaitButton" type="Button" parent="ActionBar"]
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -416.0
-offset_top = 7.0
-offset_right = -280.0
-offset_bottom = 83.0
+offset_left = -624.0
+offset_top = 10.0
+offset_right = -420.0
+offset_bottom = 124.0
 text = "Wait (Space)"
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 19
 
 [node name="SearchButton" type="Button" parent="ActionBar"]
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -276.0
-offset_top = 7.0
-offset_right = -140.0
-offset_bottom = 83.0
+offset_left = -414.0
+offset_top = 10.0
+offset_right = -210.0
+offset_bottom = 124.0
 text = "Search (Ctrl×2)"
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 19
 
 [node name="InteractButton" type="Button" parent="ActionBar"]
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -136.0
-offset_top = 7.0
+offset_left = -204.0
+offset_top = 10.0
 offset_right = 0.0
-offset_bottom = 83.0
+offset_bottom = 124.0
 text = "Interact (RMB)"
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 19

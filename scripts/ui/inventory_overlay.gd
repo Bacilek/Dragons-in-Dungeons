@@ -1,10 +1,10 @@
 extends CanvasLayer
 
-const SLOT_SIZE: int = 60
-const SLOT_GAP: int  = 4
-const STEP:      int = SLOT_SIZE + SLOT_GAP   # 64
-const PANEL_W:   int = 820
-const PANEL_H:   int = 460
+const SLOT_SIZE: int = 90
+const SLOT_GAP: int  = 6
+const STEP:      int = SLOT_SIZE + SLOT_GAP   # 96
+const PANEL_W:   int = 1020
+const PANEL_H:   int = 690
 
 var _panel: Panel
 var _bag_slots: Array[Control]    = []
@@ -142,10 +142,10 @@ func _build_ui() -> void:
 	_panel.add_theme_stylebox_override("panel", ps)
 	add_child(_panel)
 
-	_add_label(_panel, "INVENTORY", Vector2(14, 10), 18, Color(0.9, 0.85, 0.6))
+	_add_label(_panel, "INVENTORY", Vector2(21, 15), 27, Color(0.9, 0.85, 0.6))
 
 	var sep0 := HSeparator.new()
-	sep0.position = Vector2(10, 34); sep0.size = Vector2(PANEL_W - 20, 2)
+	sep0.position = Vector2(15, 51); sep0.size = Vector2(PANEL_W - 30, 3)
 	_panel.add_child(sep0)
 
 	_build_equipment_section()
@@ -192,30 +192,32 @@ func _build_ui() -> void:
 	add_child(_inv_glossary_popup)
 
 	_add_label(_panel, "I / Esc  •  Right-click: use/equip  •  Drag to move",
-		Vector2(10, PANEL_H - 24), 11, Color(0.4, 0.4, 0.4))
+		Vector2(15, PANEL_H - 36), 16, Color(0.4, 0.4, 0.4))
+
+const EQUIPMENT_ORIGIN: Vector2 = Vector2(14, 102)
+const BAG_ORIGIN_X: float = 432.0
 
 func _build_equipment_section() -> void:
-	_add_label(_panel, "Equipment", Vector2(14, 42), 14, Color(0.7, 0.7, 0.8))
-	# 3-column × 4-row silhouette; empty strings = visual gap
+	_add_label(_panel, "Equipment", Vector2(21, 63), 21, Color(0.7, 0.7, 0.8))
+	# Gloves-Armor-Hand1-Hand2 middle row; Headgear above Armor; Boots below Armor;
+	# Ranged centered above the gap between Hand 1 and Hand 2.
 	var layout: Array = [
-		["head",       1, 0],
-		["ranged",  0, 1], ["armor",   1, 1], ["melee", 2, 1],
-		["gloves",     0, 2],                    ["boots",      2, 2],
-		["trinket",    1, 3],
+		["head",   1.0, 0],                                   ["ranged", 2.5, 0],
+		["gloves", 0.0, 1], ["armor", 1.0, 1], ["melee", 2.0, 1], ["hand2", 3.0, 1],
+		["boots",  1.0, 2],
 	]
-	var origin := Vector2(14, 68)
 	for entry in layout:
-		var sn: String = entry[0]; var c: int = entry[1]; var r: int = entry[2]
+		var sn: String = entry[0]; var c: float = entry[1]; var r: int = entry[2]
 		var slot := _make_slot(sn)
-		slot.position = origin + Vector2(c * STEP, r * STEP)
+		slot.position = EQUIPMENT_ORIGIN + Vector2(c * STEP, r * STEP)
 		slot.set_meta("source", "equipment")
 		slot.set_meta("slot_name", sn)
 		_panel.add_child(slot)
 		_eq_slots[sn] = slot
 
 func _build_bag_section() -> void:
-	_add_label(_panel, "Bag  (24)", Vector2(350, 42), 14, Color(0.7, 0.7, 0.8))
-	var origin := Vector2(350, 68)
+	_add_label(_panel, "Bag  (24)", Vector2(BAG_ORIGIN_X, 63), 21, Color(0.7, 0.7, 0.8))
+	var origin := Vector2(BAG_ORIGIN_X, 102)
 	for i: int in 24:
 		var slot := _make_slot()
 		slot.position = origin + Vector2((i % 6) * STEP, (i / 6) * STEP)
@@ -226,13 +228,13 @@ func _build_bag_section() -> void:
 
 func _build_quickbar_section() -> void:
 	var sep := HSeparator.new()
-	sep.position = Vector2(10, PANEL_H - 108); sep.size = Vector2(PANEL_W - 20, 2)
+	sep.position = Vector2(15, PANEL_H - 162); sep.size = Vector2(PANEL_W - 30, 3)
 	_panel.add_child(sep)
-	_add_label(_panel, "Quickbar", Vector2(14, PANEL_H - 100), 14, Color(0.7, 0.7, 0.8))
+	_add_label(_panel, "Quickbar", Vector2(21, PANEL_H - 150), 21, Color(0.7, 0.7, 0.8))
 	# 9 slots centered horizontally
 	var total_w: int = 9 * STEP - SLOT_GAP
 	var origin_x: float = (PANEL_W - total_w) / 2.0
-	var origin_y: float = PANEL_H - 82.0
+	var origin_y: float = PANEL_H - 123.0
 	for i: int in 9:
 		var slot := _make_slot()
 		slot.position = Vector2(origin_x + i * STEP, origin_y)
@@ -256,10 +258,10 @@ func _make_slot(eq_type: String = "") -> Control:
 		var tl := Label.new()
 		tl.name = "TypeLabel"
 		tl.text = _eq_display(eq_type)
-		tl.add_theme_font_size_override("font_size", 9)
+		tl.add_theme_font_size_override("font_size", 13)
 		tl.add_theme_color_override("font_color", Color(0.48, 0.48, 0.56))
 		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		tl.position = Vector2(0, SLOT_SIZE - 14); tl.size = Vector2(SLOT_SIZE, 14)
+		tl.position = Vector2(0, SLOT_SIZE - 21); tl.size = Vector2(SLOT_SIZE, 21)
 		tl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		slot.add_child(tl)
 
@@ -268,16 +270,16 @@ func _make_slot(eq_type: String = "") -> Control:
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	icon.position = Vector2(4, 4)
-	icon.size = Vector2(SLOT_SIZE - 8, SLOT_SIZE - (18 if eq_type != "" else 8))
+	icon.position = Vector2(6, 6)
+	icon.size = Vector2(SLOT_SIZE - 12, SLOT_SIZE - (27 if eq_type != "" else 12))
 	slot.add_child(icon)
 
 	var cnt := Label.new()
 	cnt.name = "Count"
-	cnt.add_theme_font_size_override("font_size", 10)
+	cnt.add_theme_font_size_override("font_size", 15)
 	cnt.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
 	cnt.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	cnt.position = Vector2(1, 2); cnt.size = Vector2(SLOT_SIZE - 2, 14)
+	cnt.position = Vector2(2, 3); cnt.size = Vector2(SLOT_SIZE - 3, 21)
 	cnt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	slot.add_child(cnt)
 
@@ -288,12 +290,13 @@ func _make_slot(eq_type: String = "") -> Control:
 
 func _eq_display(name: String) -> String:
 	match name:
-		"melee":  return "Melee"
+		"melee":  return "Hand 1"
+		"hand2":  return "Hand 2"
 		"ranged": return "Ranged"
 		"armor":      return "Armor"
 		"gloves":     return "Gloves"
 		"boots":      return "Boots"
-		"head":       return "Head"
+		"head":       return "Headgear"
 		"trinket":    return "Trinket"
 		_:            return name
 

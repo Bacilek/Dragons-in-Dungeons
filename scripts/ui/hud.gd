@@ -136,7 +136,7 @@ func _ready() -> void:
 		slot.focus_mode = Control.FOCUS_NONE
 		# Small quantity badge in bottom-right corner
 		var qty_lbl := Label.new()
-		qty_lbl.add_theme_font_size_override("font_size", 11)
+		qty_lbl.add_theme_font_size_override("font_size", 16)
 		qty_lbl.add_theme_color_override("font_color", Color.WHITE)
 		qty_lbl.add_theme_color_override("font_shadow_color", Color.BLACK)
 		qty_lbl.add_theme_constant_override("shadow_offset_x", 1)
@@ -146,9 +146,9 @@ func _ready() -> void:
 		qty_lbl.anchor_right = 1.0
 		qty_lbl.anchor_top = 1.0
 		qty_lbl.anchor_bottom = 1.0
-		qty_lbl.offset_left = -32.0
-		qty_lbl.offset_top = -18.0
-		qty_lbl.offset_right = -2.0
+		qty_lbl.offset_left = -48.0
+		qty_lbl.offset_top = -27.0
+		qty_lbl.offset_right = -3.0
 		qty_lbl.offset_bottom = -1.0
 		qty_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		slot.add_child(qty_lbl)
@@ -191,7 +191,7 @@ func _ready() -> void:
 	$StatsPanel.add_child(_rage_icon)
 	_update_status_icons()
 
-	# Bar mode label — anchored to bottom, just above the action bar (which sits at bottom -90px)
+	# Bar mode label — anchored to bottom, just above the action bar (which sits at bottom -135px)
 	_bar_mode_label = Label.new()
 	_bar_mode_label.add_theme_font_size_override("font_size", 10)
 	_bar_mode_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -199,8 +199,8 @@ func _ready() -> void:
 	_bar_mode_label.anchor_right = 1.0
 	_bar_mode_label.anchor_top = 1.0
 	_bar_mode_label.anchor_bottom = 1.0
-	_bar_mode_label.offset_top = -104.0   # ActionBar top is at -90; label sits 14px above that
-	_bar_mode_label.offset_bottom = -90.0
+	_bar_mode_label.offset_top = -156.0   # ActionBar top is at -135; label sits 21px above that
+	_bar_mode_label.offset_bottom = -135.0
 	_bar_mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	add_child(_bar_mode_label)
 	_update_bar_mode_label()
@@ -208,7 +208,7 @@ func _ready() -> void:
 	# Use-count badges for ability slots (separate from item qty labels)
 	for _i: int in SLOT_COUNT:
 		var use_lbl := Label.new()
-		use_lbl.add_theme_font_size_override("font_size", 11)
+		use_lbl.add_theme_font_size_override("font_size", 16)
 		use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2))
 		use_lbl.add_theme_color_override("font_shadow_color", Color.BLACK)
 		use_lbl.add_theme_constant_override("shadow_offset_x", 1)
@@ -218,9 +218,9 @@ func _ready() -> void:
 		use_lbl.anchor_right = 1.0
 		use_lbl.anchor_top = 1.0
 		use_lbl.anchor_bottom = 1.0
-		use_lbl.offset_left = -32.0
-		use_lbl.offset_top = -18.0
-		use_lbl.offset_right = -2.0
+		use_lbl.offset_left = -48.0
+		use_lbl.offset_top = -27.0
+		use_lbl.offset_right = -3.0
 		use_lbl.offset_bottom = -1.0
 		use_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		use_lbl.visible = false
