@@ -258,7 +258,7 @@ func _make_slot(eq_type: String = "") -> Control:
 		var tl := Label.new()
 		tl.name = "TypeLabel"
 		tl.text = _eq_display(eq_type)
-		tl.add_theme_font_size_override("font_size", 13)
+		tl.add_theme_font_size_override("font_size", 10)
 		tl.add_theme_color_override("font_color", Color(0.48, 0.48, 0.56))
 		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		tl.position = Vector2(0, SLOT_SIZE - 21); tl.size = Vector2(SLOT_SIZE, 21)
@@ -283,6 +283,19 @@ func _make_slot(eq_type: String = "") -> Control:
 	cnt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	slot.add_child(cnt)
 
+	if eq_type == "hand2":
+		var blocked := Label.new()
+		blocked.name = "BlockedMark"
+		blocked.text = "✕"
+		blocked.add_theme_font_size_override("font_size", 32)
+		blocked.add_theme_color_override("font_color", Color(0.75, 0.15, 0.15))
+		blocked.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		blocked.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		blocked.position = Vector2(0, 0); blocked.size = Vector2(SLOT_SIZE, SLOT_SIZE - 21)
+		blocked.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		blocked.visible = false
+		slot.add_child(blocked)
+
 	slot.gui_input.connect(func(ev: InputEvent): _on_slot_input(ev, slot))
 	slot.mouse_entered.connect(func(): _on_slot_hover(slot))
 	slot.mouse_exited.connect(func(): _on_slot_hover_end())
@@ -290,8 +303,8 @@ func _make_slot(eq_type: String = "") -> Control:
 
 func _eq_display(name: String) -> String:
 	match name:
-		"melee":  return "Hand 1"
-		"hand2":  return "Hand 2"
+		"melee":  return "Main Hand"
+		"hand2":  return "Off-hand"
 		"ranged": return "Ranged"
 		"armor":      return "Armor"
 		"gloves":     return "Gloves"
@@ -480,6 +493,13 @@ func _refresh() -> void:
 		_update_slot(_qb_slots[i], raw as Item)
 	for sn: String in _eq_slots:
 		_update_slot(_eq_slots[sn] as Control, GameState.equipment.get(sn) as Item)
+	var main_hand: Item = GameState.equipment.get("melee") as Item
+	var off_hand_blocked: bool = main_hand != null and main_hand.is_two_handed
+	var hand2_slot: Control = _eq_slots.get("hand2") as Control
+	if hand2_slot != null:
+		var mark: Label = hand2_slot.get_node_or_null("BlockedMark") as Label
+		if mark != null:
+			mark.visible = off_hand_blocked
 
 func _update_slot(slot: Control, item: Item) -> void:
 	var icon:  TextureRect = slot.get_node_or_null("Icon") as TextureRect
