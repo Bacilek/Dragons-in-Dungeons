@@ -21,12 +21,12 @@ const ALL_ITEMS: Array = [
 	{"name": "Mystery Meat",    "type": 4, "src": "items",   "icon": "Food/Meat.png",                         "bonus_dmg": 0, "heal": 120, "str_bonus": 0, "desc": "Better than nothing"},
 	{"name": "Rotten Meat",     "type": 4, "src": "items",   "icon": "Food/Meat.png",                         "bonus_dmg": 0, "heal": 20,  "str_bonus": 0, "desc": "Throw into fire to cook"},
 	{"name": "Thief Tools",      "type": 7, "src": "items",   "icon": "Misc/KeyIron.png",                         "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Disarm traps",               "qty": 3},
-	{"name": "Short Bow",        "type": 0, "src": "items",   "icon": "Weapons/BowArrow.png",                     "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "desc": "Ranged DEX, range 6",        "is_ranged": true, "range": 6},
-	{"name": "Crossbow",         "type": 0, "src": "items",   "icon": "Weapons/BowArrowGold.png",                 "bonus_dmg": 3, "heal": 0,   "str_bonus": 0, "desc": "Ranged DEX, range 8",        "is_ranged": true, "range": 8},
+	{"name": "Short Bow",        "type": 0, "src": "items",   "icon": "Weapons/BowArrow.png",                     "bonus_dmg": 1, "heal": 0,   "str_bonus": 0, "desc": "Ranged DEX, range 6",        "is_ranged": true, "range": 6, "category": "Simple"},
+	{"name": "Crossbow",         "type": 0, "src": "items",   "icon": "Weapons/BowArrowGold.png",                 "bonus_dmg": 3, "heal": 0,   "str_bonus": 0, "desc": "Ranged DEX, range 8",        "is_ranged": true, "range": 8, "category": "Martial"},
 	{"name": "Empty Bottle",    "type": 7, "src": "items",   "icon": "Materials/BottleSmall.png",                "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Fill from water or mud"},
 	{"name": "Bottle of Water", "type": 4, "src": "items",   "icon": "Materials/BottleMedium.png",               "bonus_dmg": 0, "heal": 60,  "str_bonus": 0, "desc": "Restores 60 hunger"},
 	{"name": "Bottle of Mud",   "type": 7, "src": "items",   "icon": "Materials/BottleSmall.png",               "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Foul mud. Maybe useful."},
-	{"name": "Greataxe",        "type": 0, "src": "weapons", "icon": "weapon_double_axe.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "die_min": 1, "die_max": 12, "dmg_type": "Slashing", "mastery": "Cleave"},
+	{"name": "Greataxe",        "type": 0, "src": "weapons", "icon": "weapon_double_axe.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "die_min": 1, "die_max": 12, "dmg_type": "Slashing", "mastery": "Cleave", "category": "Martial"},
 ]
 
 var _main_panel:    Panel
@@ -545,6 +545,7 @@ func _on_give_item(d: Dictionary) -> void:
 	item.damage_die_max     = d.get("die_max", 0)
 	item.damage_type        = d.get("dmg_type", "")
 	item.weapon_mastery     = d.get("mastery", "")
+	item.weapon_category    = d.get("category", "")
 	item.description = d["desc"]
 	match d["src"]:
 		"weapons": item.icon_path = WEAPONS_PATH + d["icon"]

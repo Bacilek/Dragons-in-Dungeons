@@ -36,6 +36,10 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 # Weapon mastery — one signature effect per weapon, keyed by name (e.g. "Cleave").
 # "" = no mastery. WeaponProperties.MASTERY_GLOSSARY holds the tooltip description.
 @export var weapon_mastery: String = ""
+# Weapon category — "Simple" or "Martial" ("" = n/a, e.g. non-weapon items). Determines
+# whether Stats.proficient_simple_weapons/proficient_martial_weapons grants the attack
+# roll's proficiency bonus (see Stats and player.gd._weapon_prof_bonus()).
+@export var weapon_category: String = ""
 
 func get_display_name() -> String:
 	if quantity > 1:

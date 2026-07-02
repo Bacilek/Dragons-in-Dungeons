@@ -1292,6 +1292,7 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.heal_dice_count = d.get("heal_dice", 0)
 	item.heal_dice_sides = d.get("heal_sides", 0)
 	item.damage_type = d.get("dmg_type", "")
+	item.weapon_category = d.get("category", "")
 	item.str_bonus = d.get("str_bonus", 0)
 	item.is_ranged = d.get("is_ranged", false)
 	item.range = d.get("range", 0)

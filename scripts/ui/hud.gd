@@ -55,7 +55,9 @@ var _glossary_rtl: RichTextLabel = null
 const KEYWORD_GLOSSARY: Dictionary = {
 	"heavy": "Heavy weapon.\nMelee: requires STR 13+.\nRanged: requires DEX 13+.\nAttacking without enough\nStrength/Dexterity imposes\nDisadvantage.",
 	"two_handed": "Two-handed weapon.\nOccupies Main Hand.\nOff-hand cannot be used\nwhile equipped.",
-	"cleave": "Mastery: Cleave.\nIf 2+ enemies are within\nmelee reach, this attack\nalso strikes the one closest\nto your primary target —\nwith its own attack roll\nand damage roll."
+	"cleave": "Mastery: Cleave.\nIf 2+ enemies are within\nmelee reach, this attack\nalso strikes the one closest\nto your primary target —\nwith its own attack roll\nand damage roll.",
+	"simple": "Simple weapon.\nEasy to use — most\ncharacters are proficient.\nRed text means your class\nlacks this proficiency: you\ncan still attack with it,\nbut lose your proficiency\nbonus on the attack roll.",
+	"martial": "Martial weapon.\nRequires training — only\nsome classes are proficient.\nRed text means your class\nlacks this proficiency: you\ncan still attack with it,\nbut lose your proficiency\nbonus on the attack roll."
 }
 
 # ── Extra popup labels (added programmatically to expand the stats popup) ─────
@@ -691,6 +693,13 @@ func _setup_quickbar_tooltip() -> void:
 		_item_slots[i].mouse_entered.connect(_on_qbar_slot_hover.bind(i))
 		_item_slots[i].mouse_exited.connect(_on_qbar_slot_hover_end)
 
+func _is_weapon_category_proficient(category: String) -> bool:
+	var s: Stats = GameState.player_stats
+	match category:
+		"Simple":  return s.proficient_simple_weapons
+		"Martial": return s.proficient_martial_weapons
+		_: return true
+
 func _on_qbar_slot_hover(idx: int) -> void:
 	if _qbar_tooltip_frozen:
 		return
@@ -721,6 +730,9 @@ func _on_qbar_slot_hover(idx: int) -> void:
 			var type_str: String = " [color=gray]%s[/color]" % item.damage_type if not item.damage_type.is_empty() else ""
 			if not die_str.is_empty() or not bonus_str.is_empty():
 				text += "\n%s%s%s%s" % [die_str, sep, bonus_str, type_str]
+			if not item.weapon_category.is_empty():
+				var cat_color: String = "white" if _is_weapon_category_proficient(item.weapon_category) else "red"
+				text += "\n[color=%s][url=keyword:%s]%s[/url][/color]" % [cat_color, item.weapon_category.to_lower(), item.weapon_category]
 			if item.is_ranged:
 				text += "\nrange: %d tiles" % item.range
 			else:

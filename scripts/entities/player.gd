@@ -1107,6 +1107,18 @@ func _divine_fury_flat_bonus(rank: int) -> int:
 		3: return lvl / 2
 	return 0
 
+# Weapon proficiency: unarmed strikes are always proficient. A Simple/Martial weapon only adds
+# proficiency_bonus to the attack roll if Stats.proficient_simple_weapons/proficient_martial_weapons
+# is set — lacking proficiency doesn't block using the weapon, it just drops this bonus.
+func _weapon_prof_bonus(weapon: Item) -> int:
+	if weapon == null:
+		return stats.proficiency_bonus
+	var proficient: bool = true
+	match weapon.weapon_category:
+		"Simple":  proficient = stats.proficient_simple_weapons
+		"Martial": proficient = stats.proficient_martial_weapons
+	return stats.proficiency_bonus if proficient else 0
+
 func _find_ability(ab_id: String) -> Ability:
 	for slot in GameState.player_ability_bar:
 		if slot != null and (slot as Ability).ability_id == ab_id:
@@ -1132,7 +1144,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var is_str_weapon: bool = not is_unarmed and not (GameState.equipped_weapon.is_ranged)
 	var str_mod: int = stats.str_modifier()
 	var dex_mod: int = stats.dex_modifier()
-	var prof: int = stats.proficiency_bonus  # all melee weapons are proficient for now
+	var prof: int = _weapon_prof_bonus(null if is_unarmed else GameState.equipped_weapon)
 	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if not is_unarmed else 0
 	# Monk unarmed uses DEX; everyone else uses STR for melee attack roll.
 	var attack_mod: int = dex_mod if is_monk_unarmed else str_mod
@@ -1332,7 +1344,7 @@ func _try_cleave(primary: Enemy, is_str_weapon: bool) -> void:
 
 func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var str_mod: int = stats.str_modifier()
-	var prof: int = stats.proficiency_bonus
+	var prof: int = _weapon_prof_bonus(weapon)
 	var weapon_bonus: int = weapon.bonus_damage
 	var disadv: bool = weapon.is_heavy and stats.strength < 13
 	var die1: int = randi_range(1, 20)
@@ -1984,7 +1996,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 	_show_projectile(enemy.position, weapon)
 
 	var dex_mod: int = stats.dex_modifier()
-	var prof: int = stats.proficiency_bonus
+	var prof: int = _weapon_prof_bonus(weapon)
 	var weapon_bonus: int = (weapon.bonus_damage if weapon != null else 0) + prof
 	# Advantage: target sleeping or just entered FOV this turn, or Zealous Presence active
 	var adv: bool = _has_advantage(enemy) or stats.zealous_presence_turns > 0

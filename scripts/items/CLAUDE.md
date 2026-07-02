@@ -42,6 +42,7 @@ TOOL   = 7
 | `is_heavy` | bool | Heavy weapon: melee attack with STR < 13, or ranged attack with DEX < 13, imposes Disadvantage; shown as hoverable "Heavy" keyword in tooltip |
 | `is_versatile` | bool | Versatile weapon; no weapon currently sets it. World Tree's Branching Strike keys off `is_heavy or is_versatile` for reach/push |
 | `weapon_mastery` | String | One signature effect per weapon (e.g. "Cleave"); `""` = none. Shown as `(Mastery)` next to the item name in tooltips, hoverable via the same keyword-glossary popup (lowercased mastery name as the key) |
+| `weapon_category` | String | "Simple", "Martial", or `""` = n/a. Gates whether `Stats.proficient_simple_weapons`/`proficient_martial_weapons` grants the proficiency bonus on the attack roll (`player.gd._weapon_prof_bonus()`); shown right under the damage line in tooltips, red when the class lacks that proficiency |
 
 ## Damage type categories (documentation only — no enum)
 - **Physical**: Slashing, Piercing, Bludgeoning
@@ -58,10 +59,10 @@ TOOL   = 7
 ---
 
 ## Ranged weapons (current)
-| Item | Bonus | Range | Stat | Infinite |
-|---|---|---|---|---|
-| Short Bow | +1 | 6 | DEX | yes |
-| Crossbow | +3 | 8 | DEX | yes |
+| Item | Bonus | Range | Stat | Infinite | Category |
+|---|---|---|---|---|---|
+| Short Bow | +1 | 6 | DEX | yes | Simple |
+| Crossbow | +3 | 8 | DEX | yes | Martial |
 
 ## Weapons (current, game-wide)
 The only weapons in the game are the Barbarian's starting **Greataxe** (melee, two-handed, given via `GameState._give_barbarian_starting_items()` — never spawns as floor loot) plus **Short Bow** and **Crossbow** above. All physical melee weapons that used to spawn as floor loot (Rusty/Short/Regular/Knight/Golden/Lavish Sword) and **Throwing Daggers** have been removed from `DungeonFloorData.ITEM_POOL`, `debug_panel.ALL_ITEMS`, and boss loot (`dungeon_floor.gd drop_boss_loot()`, now potions-only). Their sprite assets under `res://sprites/weapons/` are untouched (unused, not deleted) in case they're reintroduced later.

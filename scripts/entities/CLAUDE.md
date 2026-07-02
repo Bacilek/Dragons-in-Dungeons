@@ -39,6 +39,8 @@ Z-index: enemies = 1, player = 3.
 
 **Check proficiency flags** (formerly "save_prof"): `check_prof_str/con/dex/int/wis/cha`. Used for traps, lockpick, disarm. No separate saving throw system — all defensive rolls are "checks". Barbarian: STR+CON. Ranger/Monk: STR+DEX. Wizard: INT+WIS.
 
+**Weapon proficiency flags**: `Stats.proficient_simple_weapons: bool`, `Stats.proficient_martial_weapons: bool` (both default `false`, set per-class in `apply_class_defaults()`). Only Barbarian currently has both `true`. `Item.weapon_category` ("Simple"/"Martial"/`""`) determines which flag gates a given weapon. `player.gd._weapon_prof_bonus(weapon: Item) -> int` is the single chokepoint: unarmed (`weapon == null`) is always proficient; otherwise returns `stats.proficiency_bonus` if the matching flag is set, else `0`. Used for `prof` in `_bump_attack()`, `_ranged_attack()`, and `_resolve_cleave_attack()` — lacking proficiency does not block using the weapon, it only drops the proficiency bonus from the attack roll (damage is unaffected). Weapon tooltips (`hud.gd`, `inventory_overlay.gd`) show the category right under the damage line, colored red when the equipped class lacks that proficiency (`_is_weapon_category_proficient()` in each file).
+
 ### Enemy stat scaling (in `_apply_stats()`)
 ```gdscript
 max_hp      = type["hp"]      + (floor_num - 1) * type["hp_per_floor"]

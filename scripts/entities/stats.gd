@@ -13,6 +13,12 @@ var check_prof_int: bool = false
 var check_prof_wis: bool = false
 var check_prof_cha: bool = false
 
+# Weapon proficiency — whether the class adds proficiency_bonus to attack rolls with
+# Simple/Martial weapons (Item.weapon_category). Lacking proficiency still lets the
+# character use the weapon; it just skips the proficiency bonus on the attack roll.
+var proficient_simple_weapons: bool = false
+var proficient_martial_weapons: bool = false
+
 @export var strength: int = 10
 @export var dexterity: int = 10
 @export var constitution: int = 10
@@ -171,6 +177,8 @@ func apply_class_defaults() -> void:
 			rage_uses_remaining = rage_uses_max    # = 2 at level 1
 			check_prof_str = true
 			check_prof_con = true
+			proficient_simple_weapons = true
+			proficient_martial_weapons = true
 		CharacterClass.RANGER:
 			dexterity = 16; wisdom = 14; constitution = 12
 			strength = 10; intelligence = 10; charisma = 8
