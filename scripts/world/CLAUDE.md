@@ -127,3 +127,17 @@ on_player_reached_stairs() → GameState.advance_floor() → _load_floor()
 
 ## See All (debug, F3)
 `_on_debug_see_all(active: bool)` → sets `_see_all_active`, marks all non-VOID tiles as explored (enables click-to-move), emits `stairs_discovered`.
+
+---
+
+## Water terrain
+`TileType.WATER` (=5) is fully rendered and implemented. Stepping into water: costs 2 turns (difficult terrain, same as mud) AND extinguishes burning (`burning_turns = 0`, logged in cyan). Both `player.gd _try_move()` and `_execute_queued_path()` handle this.
+
+## Empty bottle mechanic
+Drinking any POTION adds an `Empty Bottle` (TOOL type, `sprites/items/Materials/BottleSmall.png`) to inventory via `potion_drunk` signal → `GameState.add_item()`. **Fill is manual**: use the bottle from quickbar/inventory (enters tool mode via `player_tool_primed`), then LMB or RMB on an adjacent WATER tile → `Bottle of Water` (TOOL, BottleMedium sprite); adjacent MUD → `Bottle of Mud` (TOOL, BottleSmall sprite). Neither restores hunger. Fill costs 1 turn. `_try_fill_bottle(bottle, target)` in `player.gd` checks adjacency and tile type. **Nat-1 roll on fill**: rolling 1 on a d20 shatters the bottle (consumed, no fill). LMB tool routing checks item name before dispatching: "Empty Bottle" → `_try_fill_bottle()`; other tools → `_interact_action()`.
+
+## Throw mechanic
+Right-click food item in HUD quickbar → `GameState.player_throw_primed.emit(item)` → player enters throw mode. Left-click target tile → `_do_throw(pos)`. Rotten Meat + Fire Trap = Cooked Meat (see "Floor items" above). Esc cancels.
+
+## Boss floors
+`DungeonData.boss_room: Rect2i` set on floors divisible by 5. `_spawn_boss()` spawns from `DungeonFloorData.BOSS_POOL`. Floor 5: Big Demon (hp=80). Floor 10: Necromancer (hp=120). Boss dies → `drop_boss_loot(pos)`. `enemy.is_boss: bool`.

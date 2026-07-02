@@ -84,6 +84,12 @@ The only weapons in the game are the Barbarian's starting **Greataxe** (melee, t
 
 ---
 
+## Equipment slots
+`GameState.equipment` dict keys: `"melee"`, `"hand2"`, `"ranged"`, `"armor"`, `"boots"`, `"gloves"`, `"head"`, `"trinket"`. `equip()` routes `is_ranged` items automatically to `"ranged"`; melee weapons always go to `"melee"` (Main Hand) — every auto-equip path (pickup, starting gear, debug give-item), not just explicit drag equips. Inventory overlay labels `"melee"`/`"hand2"`/`"ranged"` as Main Hand/Off-hand/Ranged and enforces slot type. `"hand2"` (Off-hand) is a placeholder slot — visible in the grid but not wired into `equip()`/`_fits_slot()`/combat; reserved for a future dual-wield/offhand feature. When Main Hand holds a two-handed weapon, the Off-hand slot shows a red ✕ overlay (purely visual, `inventory_overlay.gd._refresh()`).
+
+## Ranged attack flow
+Shift+click enemy or floor tile → fires ranged weapon if `equipped_ranged` exists and target is in range (normal range full accuracy, or anywhere in FOV at Disadvantage — see "Ranged weapons" above). LMB on enemy within ranged range+LOS → `_ranged_attack()` (DEX-based, projectile VFX). Shift+click any tile (not just enemies) → `_ranged_attack_tile()` for VFX + ammo consumption without requiring an enemy target. Chase always ends in melee (no auto-ranged-when-chasing). **LOS for ranged**: `has_ranged_los()` in `dungeon_floor.gd` — blocks only WALL/VOID, passes through grass/doors/chasms (more permissive than `has_line_of_sight()`). **Hover indicator**: weapon icon shown above hovered enemy — melee icon normally, ranged icon when Shift held and ranged weapon equipped.
+
 ## Adding a new item
 1. Add entry to `DungeonFloorData.ITEM_POOL` (or `WEAPON_POOL`) in `scripts/world/dungeon_floor_data.gd`
 2. **Mirror** in `debug_panel.ALL_ITEMS` with all relevant fields
