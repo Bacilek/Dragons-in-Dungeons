@@ -84,6 +84,13 @@ var _divine_fury_triggered_this_turn: bool = false
 # GameState (zealot_blessed_charges) since it's a long-rest resource, not a per-turn one.
 var _blessed_warrior_used_this_turn: bool = false
 
+# ── Weapon mastery state ────────────────────────────────────────────────────────
+# Vex (Short Bow): after a Short-Bow hit, grants Advantage on the very next attack THIS ROUND
+# against that exact same enemy (any attack type — melee, cleave, ranged). Consumed on the
+# next attack attempt regardless of hit/miss. Cleared at a real new-round turn start; survives
+# a revert_to_waiting() free-action chain (Rager move/attack, Eagle) within the same round.
+var _vex_adv_target: Enemy = null
+
 
 # ── Equip action tracking ─────────────────────────────────────────────────────
 var _pending_equip_turn: bool = false  # set by equip_action_taken signal; consumed in next action gate
@@ -159,6 +166,7 @@ func _on_turn_started() -> void:
 		_grip_used_this_turn = false
 		_divine_fury_triggered_this_turn = false
 		_blessed_warrior_used_this_turn = false
+		_vex_adv_target = null
 	# Zealous Presence: buff decrements at the start of THIS entity's own turn (real turns only).
 	if not came_from_revert and stats.zealous_presence_turns > 0:
 		stats.zealous_presence_turns -= 1
@@ -540,9 +548,8 @@ func _unhandled_input(event: InputEvent) -> void:
 						return
 					if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 						return
-					var dv: Vector2i = pending - grid_pos
-					if dv.x * dv.x + dv.y * dv.y > rw.range * rw.range:
-						GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % rw.range)
+					if not _is_ranged_target_in_range(rw, pending):
+						GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % DungeonFloor.FOV_RADIUS)
 						return
 					if not _dungeon_floor.has_ranged_los(grid_pos, pending):
 						GameState.game_log("[color=gray]No clear shot to target.[/color]")
@@ -1157,6 +1164,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if _has_advantage(enemy): adv_count += 1
 	# Zealous Presence: Advantage on all attack rolls while buffed.
 	if stats.zealous_presence_turns > 0: adv_count += 1
+	# Vex (Short Bow): ADV on the attack immediately following a Short-Bow hit on this same enemy.
+	var vex_triggered: bool = _vex_adv_target == enemy
+	if vex_triggered: adv_count += 1
 	# Reckless Attack: rank 1 = flat +2 on first attack; rank 2+ = ADV on first; rank 3 = ADV on all.
 	var reckless_rank: int = GameState.get_talent_rank("reckless_attack")
 	var reckless_applies: bool = _reckless_active and is_str_weapon and not GameState.reckless_locked_this_turn
@@ -1179,6 +1189,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var net: int = adv_count - disadv_count
 	var adv: bool = net > 0
 	var disadv: bool = net < 0
+	if vex_triggered:
+		_vex_adv_target = null
 	# Commit Reckless: lock toggle after first attack (not needed for rank 3 all-attacks mode).
 	if reckless_applies and reckless_rank < 3:
 		GameState.reckless_locked_this_turn = true
@@ -1346,19 +1358,32 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var str_mod: int = stats.str_modifier()
 	var prof: int = _weapon_prof_bonus(weapon)
 	var weapon_bonus: int = weapon.bonus_damage
-	var disadv: bool = weapon.is_heavy and stats.strength < 13
+	var adv_count: int = 0
+	var disadv_count: int = 0
+	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
+	# Vex (Short Bow): future-proofing — a weapon could carry both Cleave and Vex.
+	var vex_triggered: bool = _vex_adv_target == enemy
+	if vex_triggered: adv_count += 1
+	var net: int = adv_count - disadv_count
+	var adv: bool = net > 0
+	var disadv: bool = net < 0
+	if vex_triggered:
+		_vex_adv_target = null
 	var die1: int = randi_range(1, 20)
 	var die2: int = die1
 	var die: int = die1
-	if disadv:
+	if adv and not disadv:
+		die2 = randi_range(1, 20)
+		die = maxi(die1, die2)
+	elif disadv and not adv:
 		die2 = randi_range(1, 20)
 		die = mini(die1, die2)
 	var roll: int = die + str_mod + prof + weapon_bonus
 	var is_crit: bool = die == 20
 	var is_nat_one: bool = die == 1
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=0,disadv=%d,n20=%d,n1=%d" % [
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
 		die, die1, die2, str_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
-		1 if disadv else 0, 1 if is_crit else 0, 1 if is_nat_one else 0]
+		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0]
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
 		GameState.game_log("[color=cyan]Cleave:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
@@ -1484,7 +1509,7 @@ func try_retaliation(attacker: Enemy) -> void:
 		_finish_kill(attacker)
 
 
-func _finish_kill(enemy: Enemy) -> void:
+func _finish_kill(enemy: Enemy, dropped_ammo: Item = null) -> void:
 	GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
 	GameState.gain_exp(maxi(1, enemy.exp_reward / 2))
 	var was_boss: bool = enemy.is_boss
@@ -1503,6 +1528,10 @@ func _finish_kill(enemy: Enemy) -> void:
 		rotten.description = "Throw into fire to cook. Raw: minimal nutrition + 3 turns poison."
 		_dungeon_floor.place_item_on_floor(kill_pos, rotten)
 		GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)
+	# Ammo drop-from-corpse: 50% chance the killing shot's arrow/bolt is recoverable.
+	if dropped_ammo != null and randf() < 0.5:
+		_resolve_ammo_landing(dropped_ammo, kill_pos)
+		GameState.game_log("[color=gray]The %s drops from the corpse.[/color]" % dropped_ammo.item_name)
 
 func _on_action_requested(action_name: String) -> void:
 	if action_name == "short_rest_begin":
@@ -1976,13 +2005,89 @@ func _show_surprise_mark(enemy: Enemy) -> void:
 	tween.parallel().tween_property(lbl, "modulate:a", 0.0, 0.7).set_delay(0.3)
 	tween.tween_callback(lbl.queue_free)
 
+# Range gate for ranged weapons: within a weapon's "normal" range (weapon.range), the shot
+# rolls normally. Beyond normal range but within the player's live FOV (DungeonFloor.FOV_RADIUS,
+# gated by actual is_tile_visible — not just distance, so shots around corners don't count) the
+# shot is still possible but will roll with Disadvantage (see _ranged_shot_disadvantage()).
+# "Long range" is intentionally NOT a per-weapon field — every ranged weapon shares this same
+# FOV-based long-range rule; only the normal range differs per weapon.
+func _is_ranged_target_in_range(weapon: Item, target_pos: Vector2i) -> bool:
+	if weapon == null or _dungeon_floor == null:
+		return false
+	var d: Vector2i = target_pos - grid_pos
+	var dist_sq: int = d.x * d.x + d.y * d.y
+	var fov_r: int = DungeonFloor.FOV_RADIUS
+	if dist_sq > fov_r * fov_r:
+		return false
+	if dist_sq > weapon.range * weapon.range and not _dungeon_floor.is_tile_visible(target_pos):
+		return false
+	return true
+
+func _ranged_shot_disadvantage(weapon: Item, target_pos: Vector2i) -> bool:
+	if weapon == null:
+		return false
+	var d: Vector2i = target_pos - grid_pos
+	return (d.x * d.x + d.y * d.y) > weapon.range * weapon.range
+
+# Named-ammo lookup (Item.ammo_item_name), separate from the legacy consumes_on_ranged
+# (weapon's own quantity) pattern. Searches quickbar then bag by item_name, same order as
+# GameState.add_item()'s stacking search.
+func _find_ammo_stack(ammo_name: String) -> Item:
+	for it: Item in GameState.player_quickbar:
+		if it != null and it.item_name == ammo_name and it.quantity > 0:
+			return it
+	for it: Item in GameState.player_inventory:
+		if it != null and it.item_name == ammo_name and it.quantity > 0:
+			return it
+	return null
+
+func _remove_ammo_stack(ammo_name: String) -> void:
+	for i: int in GameState.player_quickbar.size():
+		var it: Item = GameState.player_quickbar[i]
+		if it != null and it.item_name == ammo_name:
+			GameState.player_quickbar[i] = null
+			return
+	for i: int in GameState.player_inventory.size():
+		var it: Item = GameState.player_inventory[i]
+		if it != null and it.item_name == ammo_name:
+			GameState.player_inventory[i] = null
+			return
+
+# Generalized ammo-landing resolver — works for any stackable Item passed as ammo_item (only
+# "Arrow" is spawned in-game today, but this makes no assumptions beyond "a stackable Item that
+# should reappear as a floor pickup at its impact point"). Called from _ranged_attack() (miss —
+# arrow flies to the still-alive enemy's tile), _ranged_attack_tile() (open-ground/wall shots),
+# and _finish_kill() (kill-shot 50% drop-from-corpse — NOT called for a non-lethal hit, where
+# the arrow stays embedded with no pickup at all, per design).
+func _resolve_ammo_landing(ammo_item: Item, impact_pos: Vector2i) -> void:
+	if ammo_item == null or _dungeon_floor == null:
+		return
+	match _dungeon_floor.get_tile_type(impact_pos):
+		DungeonData.TileType.WALL:
+			return  # destroyed, no pickup
+		DungeonData.TileType.CHASM:
+			var dropped := Item.new()
+			dropped.item_name = ammo_item.item_name
+			dropped.item_type = ammo_item.item_type
+			dropped.icon_path = ammo_item.icon_path
+			dropped.description = ammo_item.description
+			dropped.quantity = 1
+			GameState.pending_chasm_items.append(dropped)
+			GameState.game_log("[color=gray]The %s falls into the chasm...[/color]" % ammo_item.item_name)
+		_:
+			var landed := Item.new()
+			landed.item_name = ammo_item.item_name
+			landed.item_type = ammo_item.item_type
+			landed.icon_path = ammo_item.icon_path
+			landed.description = ammo_item.description
+			landed.quantity = 1
+			_dungeon_floor.place_item_on_floor(impact_pos, landed)
+
 func _is_in_ranged_range(enemy: Enemy) -> bool:
 	var weapon: Item = GameState.equipped_ranged
 	if weapon == null or not weapon.is_ranged or _dungeon_floor == null:
 		return false
-	var d: Vector2i = enemy.grid_pos - grid_pos
-	var dist_sq: int = d.x * d.x + d.y * d.y
-	return dist_sq <= weapon.range * weapon.range \
+	return _is_ranged_target_in_range(weapon, enemy.grid_pos) \
 		and _dungeon_floor.has_ranged_los(grid_pos, enemy.grid_pos)
 
 func _ranged_attack(enemy: Enemy) -> void:
@@ -1993,18 +2098,60 @@ func _ranged_attack(enemy: Enemy) -> void:
 	$AnimatedSprite2D.play("idle")
 
 	var weapon: Item = GameState.equipped_ranged
+
+	# Ammo check + consume happens BEFORE the projectile animation, so a shot that can't fire
+	# never plays the arrow-fly VFX. Named ammo (weapon.ammo_item_name) takes priority over the
+	# legacy consumes_on_ranged (weapon's own stack) path below, which stays unchanged for
+	# weapons that don't set ammo_item_name (e.g. old Throwing-Dagger-style items).
+	var ammo_item: Item = null
+	if weapon != null and not weapon.ammo_item_name.is_empty():
+		ammo_item = _find_ammo_stack(weapon.ammo_item_name)
+		if ammo_item == null:
+			GameState.game_log("[color=red]No %s left![/color]" % weapon.ammo_item_name)
+			if _dungeon_floor != null:
+				_dungeon_floor.update_fog(grid_pos)
+			_handle_post_attack_turn()
+			return
+		if not GameState.invincible:
+			ammo_item.quantity -= 1
+			if ammo_item.quantity <= 0:
+				_remove_ammo_stack(weapon.ammo_item_name)
+			GameState.inventory_changed.emit()
+	elif weapon != null and weapon.consumes_on_ranged and not GameState.invincible:
+		weapon.quantity -= 1
+		GameState.inventory_changed.emit()
+		if weapon.quantity <= 0:
+			GameState.equipment["ranged"] = null
+			GameState.recalculate_stats()
+			GameState.equipment_changed.emit()
+			GameState.game_log("[color=gray]Last throwing dagger used.[/color]")
+
 	_show_projectile(enemy.position, weapon)
 
 	var dex_mod: int = stats.dex_modifier()
 	var prof: int = _weapon_prof_bonus(weapon)
 	var weapon_bonus: int = (weapon.bonus_damage if weapon != null else 0) + prof
-	# Advantage: target sleeping or just entered FOV this turn, or Zealous Presence active
-	var adv: bool = _has_advantage(enemy) or stats.zealous_presence_turns > 0
-	# Disadvantage: ranged weapon fired at melee range (Chebyshev distance 1), or Heavy weapon with DEX < 13
+	# Advantage / Disadvantage: sources are counted (house rule — net decides outcome, not
+	# a simple boolean OR/cancel). See _bump_attack() for the reference melee implementation.
+	var adv_count: int = 0
+	var disadv_count: int = 0
+	if _has_advantage(enemy): adv_count += 1
+	if stats.zealous_presence_turns > 0: adv_count += 1
+	# Vex: if the flag targets this exact enemy, grant ADV and consume it on this attempt.
+	var vex_triggered: bool = _vex_adv_target == enemy
+	if vex_triggered: adv_count += 1
+	# Disadvantage: ranged weapon fired at melee range (Chebyshev distance 1), Heavy weapon with
+	# DEX < 13, or a long-range shot (beyond the weapon's normal range but within FOV).
 	var d_vec: Vector2i = enemy.grid_pos - grid_pos
-	var disadv: bool = maxi(abs(d_vec.x), abs(d_vec.y)) <= 1
-	if weapon != null and weapon.is_heavy and stats.dexterity < 13: disadv = true
-	# adv + disadv cancel each other → normal 1d20
+	if maxi(abs(d_vec.x), abs(d_vec.y)) <= 1: disadv_count += 1
+	if weapon != null and weapon.is_heavy and stats.dexterity < 13: disadv_count += 1
+	if _ranged_shot_disadvantage(weapon, enemy.grid_pos): disadv_count += 1
+	var net: int = adv_count - disadv_count
+	var adv: bool = net > 0
+	var disadv: bool = net < 0
+	if vex_triggered:
+		_vex_adv_target = null
+	# die2 is ALWAYS rolled independently when ADV/DISADV is active — nat 1 on die1 does NOT skip it.
 	var die1: int = randi_range(1, 20)
 	var die2: int = die1
 	var die: int = die1
@@ -2017,16 +2164,6 @@ func _ranged_attack(enemy: Enemy) -> void:
 	var roll: int = die + dex_mod + weapon_bonus
 	var is_crit: bool = die == 20
 	var is_nat_one: bool = die == 1
-
-	# Consume throwing weapon before resolving hit (it was thrown regardless)
-	if weapon != null and weapon.consumes_on_ranged and not GameState.invincible:
-		weapon.quantity -= 1
-		GameState.inventory_changed.emit()
-		if weapon.quantity <= 0:
-			GameState.equipment["ranged"] = null
-			GameState.recalculate_stats()
-			GameState.equipment_changed.emit()
-			GameState.game_log("[color=gray]Last throwing dagger used.[/color]")
 
 	var r_wpn_enh: int = weapon.bonus_damage if weapon != null else 0
 	var hit_meta: String = "rhit:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
@@ -2043,6 +2180,8 @@ func _ranged_attack(enemy: Enemy) -> void:
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
 			GameState.screen_shake.emit(2.5)
+		# Arrow flies to the (still-alive) enemy's tile and lands as a normal pickup on a miss.
+		_resolve_ammo_landing(ammo_item, enemy.grid_pos)
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
 		_handle_post_attack_turn()
@@ -2052,7 +2191,11 @@ func _ranged_attack(enemy: Enemy) -> void:
 	_flash_hit(enemy)
 	if adv and not disadv:
 		_show_surprise_mark(enemy)
-	var r_die_roll: int = randi_range(stats.base_min_damage, stats.base_max_damage)
+	if weapon != null and weapon.weapon_mastery == "Vex":
+		_vex_adv_target = enemy
+	var r_dmin: int = weapon.damage_die_min if weapon != null and weapon.damage_die_min > 0 else stats.base_min_damage
+	var r_dmax: int = weapon.damage_die_max if weapon != null and weapon.damage_die_max > 0 else stats.base_max_damage
+	var r_die_roll: int = randi_range(r_dmin, r_dmax)
 	var r_pre_crit: int = r_die_roll + r_wpn_enh + dex_mod
 	if is_crit:
 		r_pre_crit *= 2
@@ -2074,7 +2217,7 @@ func _ranged_attack(enemy: Enemy) -> void:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
 
 	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,dex=%d,rage=0,frenzy=0,ironwood=0,divine=%d,divtype=%s,crit=%d,final=%d" % [
-		r_die_roll, stats.base_min_damage, stats.base_max_damage, r_wpn_enh, dex_mod, r_divine_bonus,
+		r_die_roll, r_dmin, r_dmax, r_wpn_enh, dex_mod, r_divine_bonus,
 		GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
 	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
@@ -2085,7 +2228,10 @@ func _ranged_attack(enemy: Enemy) -> void:
 		GameState.game_log("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag])
 
 	if enemy.stats.is_dead():
-		_finish_kill(enemy)
+		# Enemy died to this shot — arrow drop-from-corpse (50% chance) is handled inside
+		# _finish_kill so it can use the corpse's final tile after remove_enemy()/die().
+		# If the enemy survives (branch not taken), the arrow stays embedded — no pickup.
+		_finish_kill(enemy, ammo_item)
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
 	_handle_post_attack_turn()
@@ -2096,7 +2242,7 @@ func _show_projectile(target_world_pos: Vector2, weapon: Item) -> void:
 	var proj_path: String
 	var tumble: bool = false
 	match weapon.item_name:
-		"Crossbow":
+		"Heavy Crossbow":
 			proj_path = ARROW_SPRITE
 			tumble = true
 		_: proj_path = ARROW_SPRITE
@@ -2139,9 +2285,21 @@ func _ranged_attack_tile(target_pos: Vector2i) -> void:
 	await $AnimatedSprite2D.animation_finished
 	$AnimatedSprite2D.play("idle")
 	var weapon: Item = GameState.equipped_ranged
-	var target_world: Vector2 = Vector2(target_pos.x * 16 + 8, target_pos.y * 16 + 8)
-	_show_projectile(target_world, weapon)
-	if weapon != null and weapon.consumes_on_ranged and not GameState.invincible:
+	var ammo_item: Item = null
+	if weapon != null and not weapon.ammo_item_name.is_empty():
+		ammo_item = _find_ammo_stack(weapon.ammo_item_name)
+		if ammo_item == null:
+			GameState.game_log("[color=red]No %s left![/color]" % weapon.ammo_item_name)
+			if _dungeon_floor != null:
+				_dungeon_floor.update_fog(grid_pos)
+			_handle_post_attack_turn()
+			return
+		if not GameState.invincible:
+			ammo_item.quantity -= 1
+			if ammo_item.quantity <= 0:
+				_remove_ammo_stack(weapon.ammo_item_name)
+			GameState.inventory_changed.emit()
+	elif weapon != null and weapon.consumes_on_ranged and not GameState.invincible:
 		weapon.quantity -= 1
 		GameState.inventory_changed.emit()
 		if weapon.quantity <= 0:
@@ -2149,6 +2307,9 @@ func _ranged_attack_tile(target_pos: Vector2i) -> void:
 			GameState.recalculate_stats()
 			GameState.equipment_changed.emit()
 			GameState.game_log("[color=gray]Last throwing dagger thrown.[/color]")
+	var target_world: Vector2 = Vector2(target_pos.x * 16 + 8, target_pos.y * 16 + 8)
+	_show_projectile(target_world, weapon)
+	_resolve_ammo_landing(ammo_item, target_pos)
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
 	_handle_post_attack_turn()

@@ -66,7 +66,7 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 
 ### Advantage / Disadvantage
 - **ADV**: attacking a SLEEPING enemy; attacking enemy whose `just_crossed_door == true` (consumed one-shot after check)
-- **DISADV**: ranged attack at Chebyshev distance 1 (melee range); melee with a `is_heavy` weapon when STR < 13; ranged with a `is_heavy` weapon when DEX < 13
+- **DISADV**: ranged attack at Chebyshev distance 1 (melee range); melee with a `is_heavy` weapon when STR < 13; ranged with a `is_heavy` weapon when DEX < 13; ranged shot beyond the weapon's normal range but within FOV (`player.gd._ranged_shot_disadvantage()` — every ranged weapon's "long range" is the player's live FOV, not a per-weapon field, see `scripts/items/CLAUDE.md`)
 - ADV + DISADV cancel → 1d20
 - Yellow "!" floats above enemy on ADV surprise attacks
 - Enemy attack log lines (`enemy.gd._attack_player()`) never name the specific talent/ability that granted ADV/DISADV (e.g. no `"(Reckless)"` text) — that context lives only in the `ehit` tooltip roll breakdown, not the log line.
@@ -123,3 +123,5 @@ GameState.player_status_changed.emit()
 - `_fov_prev_turn` / `_fov_this_turn`: maintained per turn (no longer grant ADV on their own)
 - Throw mode entered via `GameState.player_throw_primed` signal; Esc cancels
 - All input gated on `TurnManager.phase == WAITING_FOR_INPUT` AND `GameState.short_rest_open == false` AND `GameState.talent_picker_open == false`
+- `_vex_adv_target: Enemy` — Vex mastery's per-turn ADV-vs-target flag (Short Bow). Consumed on the next attack attempt (any type) against that enemy; reset in `_on_turn_started()`'s `if not came_from_revert:` block alongside `_frenzy_triggered_this_turn` etc. — survives a `revert_to_waiting()` free-action chain within the same round, clears on a real new round.
+- `_finish_kill(enemy: Enemy, dropped_ammo: Item = null)` — optional second param used only by `_ranged_attack()`'s kill path (the ammo item consumed by the killing shot); rolls a 50% chance to drop it at the corpse's tile via `_resolve_ammo_landing()`. Other call sites (`_resolve_cleave_attack`, `try_retaliation`) pass no second arg.

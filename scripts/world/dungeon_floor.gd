@@ -216,6 +216,7 @@ func _load_floor() -> void:
 	_spawn_doors()
 	_spawn_items()
 	_spawn_locked_doors()
+	_spawn_pending_chasm_items()
 	_setup_fog()
 	_see_all_active = false
 	update_fog(_data.player_start)
@@ -1293,6 +1294,12 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.heal_dice_sides = d.get("heal_sides", 0)
 	item.damage_type = d.get("dmg_type", "")
 	item.weapon_category = d.get("category", "")
+	item.weapon_mastery = d.get("mastery", "")
+	item.damage_die_min = d.get("die_min", 0)
+	item.damage_die_max = d.get("die_max", 0)
+	item.is_heavy = d.get("heavy", false)
+	item.is_two_handed = d.get("two_handed", false)
+	item.ammo_item_name = d.get("ammo", "")
 	item.str_bonus = d.get("str_bonus", 0)
 	item.is_ranged = d.get("is_ranged", false)
 	item.range = d.get("range", 0)
@@ -1351,6 +1358,32 @@ func _spawn_items() -> void:
 	for i: int in count:
 		var d: Dictionary = eligible[randi() % eligible.size()]
 		_build_floor_item(candidates[i], d)
+
+# Drains GameState.pending_chasm_items (arrows/ammo that fell into a chasm on the previous
+# floor) onto random walkable tiles of THIS floor. Same candidate-picking pattern as
+# _spawn_items(). General-purpose, not arrow-specific.
+func _spawn_pending_chasm_items() -> void:
+	if GameState.pending_chasm_items.is_empty():
+		return
+	var candidates: Array[Vector2i] = []
+	for y: int in _data.height:
+		for x: int in _data.width:
+			var pos := Vector2i(x, y)
+			var tile: DungeonData.TileType = _data.get_tile(x, y)
+			if tile != DungeonData.TileType.FLOOR and tile != DungeonData.TileType.MUD:
+				continue
+			if pos == _data.player_start or pos == _data.stairs_pos:
+				continue
+			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos):
+				continue
+			candidates.append(pos)
+	if candidates.is_empty():
+		return
+	candidates.shuffle()
+	var items: Array[Item] = GameState.pending_chasm_items.duplicate()
+	GameState.pending_chasm_items.clear()
+	for i: int in items.size():
+		place_item_on_floor(candidates[i % candidates.size()], items[i])
 
 func _spawn_locked_doors() -> void:
 	if _doors.is_empty():
@@ -1424,7 +1457,7 @@ func remove_floor_item(pos: Vector2i) -> void:
 
 func drop_boss_loot(pos: Vector2i) -> void:
 	# No physical melee weapons drop as loot anymore (Barbarian's Greataxe, Short Bow,
-	# and Crossbow are the only weapons in the game) — boss loot is potions only.
+	# and Heavy Crossbow are the only weapons in the game) — boss loot is potions only.
 	var loot_pool: Array = [
 		{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png",     "src": "items", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
 		{"name": "Health Potion",  "type": 2, "icon": "Potions/Health/HealthPotionMedium.png",  "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 2d4+CON HP", "heal_dice": 2, "heal_sides": 4},

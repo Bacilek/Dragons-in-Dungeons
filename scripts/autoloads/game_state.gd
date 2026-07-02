@@ -137,6 +137,11 @@ const BLESSED_WARRIOR_MAX_CHARGES: Array = [0, 2, 4, 6]
 # Activation prefers this charge; falls back to consuming 1 Rage charge only when this is 0.
 var zealot_zp_charges: int = 0
 var player_grid_pos: Vector2i = Vector2i.ZERO
+# Items whose ammo/projectile fell into a chasm mid-shot — reappear at a random walkable floor
+# tile on the NEXT floor down, drained by DungeonFloor._spawn_pending_chasm_items() during
+# _load_floor(). General-purpose (not arrow-specific) so any future "item falls into a chasm"
+# mechanic can push onto this list.
+var pending_chasm_items: Array[Item] = []
 var current_stairs_pos: Vector2i = Vector2i.ZERO
 var hunger: int = MAX_HUNGER
 var hunger_state: HungerState:

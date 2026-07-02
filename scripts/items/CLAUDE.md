@@ -43,6 +43,7 @@ TOOL   = 7
 | `is_versatile` | bool | Versatile weapon; no weapon currently sets it. World Tree's Branching Strike keys off `is_heavy or is_versatile` for reach/push |
 | `weapon_mastery` | String | One signature effect per weapon (e.g. "Cleave"); `""` = none. Shown as `(Mastery)` next to the item name in tooltips, hoverable via the same keyword-glossary popup (lowercased mastery name as the key) |
 | `weapon_category` | String | "Simple", "Martial", or `""` = n/a. Gates whether `Stats.proficient_simple_weapons`/`proficient_martial_weapons` grants the proficiency bonus on the attack roll (`player.gd._weapon_prof_bonus()`); shown right under the damage line in tooltips, red when the class lacks that proficiency |
+| `ammo_item_name` | String | Name of the Item this ranged weapon consumes per shot (e.g. `"Arrow"`); `""` = no named ammo (falls back to `consumes_on_ranged` on the weapon's own stack, or infinite). See "Ammo items" below |
 
 ## Damage type categories (documentation only — no enum)
 - **Physical**: Slashing, Piercing, Bludgeoning
@@ -54,18 +55,32 @@ TOOL   = 7
 ## Weapon masteries
 `Item.weapon_mastery` names one signature effect per weapon. Currently implemented:
 - **Cleave** (Greataxe): on any melee attack (hit or miss), if 2+ distinct visible enemies are within melee reach (`1 + player._melee_reach_bonus()` tiles, Chebyshev), the swing also rolls a fully independent attack + damage roll against the enemy closest to the primary target. Implemented in `player.gd._try_cleave()` / `_resolve_cleave_attack()`, called from both the hit and miss paths of `_bump_attack()` (not ranged attacks — melee-only). Does **not** re-trigger per-turn-once bonuses (Frenzy/Ironwood Bark/Divine Fury) since those flags are already consumed by the primary attack that turn; the cleave hit is logged as its own separate `[color=cyan]Cleave:[/color]` chat line with its own `hit`/`dmg` tooltip metadata (not folded into the primary attack's numbers — this is a second swing, not a bonus source on the same swing, so the "damage stacking" rule in `scripts/entities/CLAUDE.md` doesn't apply here).
-- New masteries: add the glossary text to `KEYWORD_GLOSSARY` in both `hud.gd` and `inventory_overlay.gd` (key = mastery name lowercased) and implement the effect wherever it naturally hooks into combat (see Cleave for the melee-attack pattern).
+- **Vex** (Short Bow): after a Short Bow hit (any hit, including crits — not on a miss), the attacker gains Advantage on their very next attack THIS ROUND against that exact same enemy — any attack type (melee, cleave, ranged), consumed on the next attack attempt regardless of hit/miss. Implemented as `player.gd._vex_adv_target: Enemy`, set in `_ranged_attack()`'s hit branch, checked/consumed as an ADV source in `_bump_attack()`, `_resolve_cleave_attack()`, and `_ranged_attack()`. Cleared in `_on_turn_started()`'s `if not came_from_revert:` reset block, so it survives a `revert_to_waiting()` free-action chain (e.g. Rager) within the same round but clears at a real new round — see `_reverted_this_round` in `scripts/entities/CLAUDE.md`.
+- New masteries: add the glossary text to `KEYWORD_GLOSSARY` in both `hud.gd` and `inventory_overlay.gd` (key = mastery name lowercased) and implement the effect wherever it naturally hooks into combat (see Cleave for the melee-attack pattern, Vex for the per-turn-flag pattern).
 
 ---
 
 ## Ranged weapons (current)
-| Item | Bonus | Range | Stat | Infinite | Category |
+Every ranged weapon has just one range value — `Item.range`, the "normal" range at full accuracy. **Long range is NOT a per-weapon field**: every ranged weapon can additionally fire anywhere within the player's live FOV (`DungeonFloor.FOV_RADIUS`, gated by actual `is_tile_visible()` — not just distance, so shots around corners don't count), but a shot beyond `range` rolls with Disadvantage. See `player.gd._is_ranged_target_in_range()` / `_ranged_shot_disadvantage()`.
+
+| Item | Bonus | Normal range | Ammo | Stat | Category |
 |---|---|---|---|---|---|
-| Short Bow | +1 | 6 | DEX | yes | Simple |
-| Crossbow | +3 | 8 | DEX | yes | Martial |
+| Short Bow | +1 | 4 | Arrow | DEX | Simple |
+| Heavy Crossbow | +3 | 4 | — (infinite) | DEX | Martial |
+
+## Ammo items
+`Item.ammo_item_name` on a ranged weapon names a separate stackable `Item` (currently only **Arrow**, `Item.Type.TOOL`, no combat stats of its own) consumed 1-per-shot. Found/looked-up by `item_name` match across the quickbar then bag (`player.gd._find_ammo_stack()`/`_remove_ammo_stack()`) — a weapon with `ammo_item_name == ""` falls back to the legacy `consumes_on_ranged` pattern (decrements the weapon's own `quantity`, e.g. old Throwing Daggers) or fires with infinite ammo (Heavy Crossbow).
+
+**Landing resolution** (`player.gd._resolve_ammo_landing(ammo_item, impact_pos)`, generalized — not arrow-specific):
+- **WALL** tile impact → ammo destroyed, no pickup.
+- **CHASM** tile impact → not placed on this floor; pushed onto `GameState.pending_chasm_items` and reappears at a random walkable tile on the **next floor down** (drained by `DungeonFloor._spawn_pending_chasm_items()` during `_load_floor()`).
+- Any other floor tile → becomes a normal pickupable floor item via `DungeonFloor.place_item_on_floor()`.
+- **Miss against an enemy** → ammo lands at the enemy's tile (pickupable), same as any open-ground miss.
+- **Non-lethal hit on an enemy** → ammo is embedded in the (still-alive) enemy — no pickup at all.
+- **Killing hit** → handled inside `player.gd._finish_kill(enemy, dropped_ammo)`: 50% chance the ammo drops at the corpse's tile (pickupable), 50% chance it's lost with the kill.
 
 ## Weapons (current, game-wide)
-The only weapons in the game are the Barbarian's starting **Greataxe** (melee, two-handed, given via `GameState._give_barbarian_starting_items()` — never spawns as floor loot) plus **Short Bow** and **Crossbow** above. All physical melee weapons that used to spawn as floor loot (Rusty/Short/Regular/Knight/Golden/Lavish Sword) and **Throwing Daggers** have been removed from `DungeonFloorData.ITEM_POOL`, `debug_panel.ALL_ITEMS`, and boss loot (`dungeon_floor.gd drop_boss_loot()`, now potions-only). Their sprite assets under `res://sprites/weapons/` are untouched (unused, not deleted) in case they're reintroduced later.
+The only weapons in the game are the Barbarian's starting **Greataxe** (melee, two-handed, given via `GameState._give_barbarian_starting_items()` — never spawns as floor loot), **Short Bow**, and **Heavy Crossbow** above (formerly named "Crossbow" — renamed as the first of a small family of future ranged weapons, e.g. Longbow, sharing the same normal-range/FOV-long-range rule). All physical melee weapons that used to spawn as floor loot (Rusty/Short/Regular/Knight/Golden/Lavish Sword) and **Throwing Daggers** have been removed from `DungeonFloorData.ITEM_POOL`, `debug_panel.ALL_ITEMS`, and boss loot (`dungeon_floor.gd drop_boss_loot()`, now potions-only). Their sprite assets under `res://sprites/weapons/` are untouched (unused, not deleted) in case they're reintroduced later.
 
 ---
 

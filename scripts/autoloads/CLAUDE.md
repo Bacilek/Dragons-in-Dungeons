@@ -79,6 +79,7 @@ zealot_zp_charges: int               # Zealous Presence charge, 1/long rest, ind
 invincible: bool             # debug flag
 noclip: bool                 # debug flag
 player_grid_pos: Vector2i    # synced every move
+pending_chasm_items: Array[Item]  # ammo (or any future item) that fell into a chasm mid-shot; drained onto the NEXT floor's random walkable tiles by DungeonFloor._spawn_pending_chasm_items()
 ```
 
 **Status chokepoint**: `apply_player_status(type: String, turns: int) -> bool` — single entry point for all player status/debuff application. If Rager R1 is active and raging, applies a % chance to negate and returns false (caller skips log). On success: sets `player_stats.{type}_turns = maxi(existing, turns)` and emits `player_status_changed`. All trap, enemy, terrain, and rotten-meat callers must use this — never set `player_stats.{status}_turns` directly.

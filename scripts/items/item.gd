@@ -40,6 +40,12 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 # whether Stats.proficient_simple_weapons/proficient_martial_weapons grants the attack
 # roll's proficiency bonus (see Stats and player.gd._weapon_prof_bonus()).
 @export var weapon_category: String = ""
+# Name of the Item this ranged weapon consumes as ammo per shot (e.g. "Arrow"). "" = no named
+# ammo required (falls back to consumes_on_ranged on the weapon's own stack, e.g. the legacy
+# Throwing-Dagger pattern, or infinite ammo). Long range for ranged weapons is NOT a per-item
+# field — it's always the player's live FOV (DungeonFloor.FOV_RADIUS), only the "normal" range
+# (`range` above) differs per weapon; see player.gd._is_ranged_target_in_range().
+@export var ammo_item_name: String = ""
 
 func get_display_name() -> String:
 	if quantity > 1:

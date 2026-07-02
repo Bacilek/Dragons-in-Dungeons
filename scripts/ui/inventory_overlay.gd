@@ -19,7 +19,8 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"two_handed": "Two-handed weapon.\nOccupies Main Hand.\nOff-hand cannot be used\nwhile equipped.",
 	"cleave": "Mastery: Cleave.\nIf 2+ enemies are within\nmelee reach, this attack\nalso strikes the one closest\nto your primary target —\nwith its own attack roll\nand damage roll.",
 	"simple": "Simple weapon.\nEasy to use — most\ncharacters are proficient.\nRed text means your class\nlacks this proficiency: you\ncan still attack with it,\nbut lose your proficiency\nbonus on the attack roll.",
-	"martial": "Martial weapon.\nRequires training — only\nsome classes are proficient.\nRed text means your class\nlacks this proficiency: you\ncan still attack with it,\nbut lose your proficiency\nbonus on the attack roll."
+	"martial": "Martial weapon.\nRequires training — only\nsome classes are proficient.\nRed text means your class\nlacks this proficiency: you\ncan still attack with it,\nbut lose your proficiency\nbonus on the attack roll.",
+	"vex": "Mastery: Vex.\nOn a hit, gain Advantage\non your next attack this\nround against the same\ntarget (any attack type)."
 }
 
 # Tooltip freeze state (Ctrl to freeze, enabling keyword link hover)
@@ -434,7 +435,9 @@ func _on_slot_hover(slot: Control) -> void:
 			var cat_color: String = "white" if _is_weapon_category_proficient(item.weapon_category) else "red"
 			text += "\n[color=%s][url=keyword:%s]%s[/url][/color]" % [cat_color, item.weapon_category.to_lower(), item.weapon_category]
 		if item.is_ranged:
-			text += "\nrange: %d tiles" % item.range
+			text += "\nrange: %d tiles [color=gray](long: FOV, DISADV)[/color]" % item.range
+			if not item.ammo_item_name.is_empty():
+				text += "\n[color=gray]Requires: %s[/color]" % item.ammo_item_name
 		else:
 			text += "\nrange: 1 tile"
 		var props: Array[String] = []

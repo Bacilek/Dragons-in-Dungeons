@@ -85,7 +85,7 @@ dungeon_floor.place_item_on_floor(pos: Vector2i, item: Item)
 dungeon_floor.pick_up_item(pos: Vector2i) -> Item
 dungeon_floor.cook_rotten_meat(trap_pos: Vector2i) -> Item  # erases Fire Trap, returns Cooked Meat (heal=150)
 ```
-`cook_rotten_meat` only called from `_do_throw()` in `player.gd` when `trap["revealed"] == true`.
+`cook_rotten_meat` only called from `_do_throw()` in `player.gd` when `trap["revealed"] == true`. `place_item_on_floor` is also called from `player.gd`'s ranged-ammo landing resolver (`_resolve_ammo_landing()`) — see "Ammo items" in `scripts/items/CLAUDE.md`.
 
 ---
 
@@ -96,10 +96,11 @@ _spawn_boss()           # floor % 5 == 0 → picks from DungeonFloorData.BOSS_PO
 _spawn_items()          # 2-3 random items from DungeonFloorData.ITEM_POOL; calls _build_floor_item()
 _spawn_traps()          # places traps by type
 _spawn_locked_doors()   # locks 1 door/floor that doesn't block spawn→stairs; places 2-3 rewards inside
+_spawn_pending_chasm_items()  # drains GameState.pending_chasm_items (ammo that fell into a chasm on the PREVIOUS floor) onto random walkable tiles of this floor; called after _spawn_locked_doors(), before _setup_fog()
 ```
 Item helper:
 ```gdscript
-_build_floor_item(pos: Vector2i, d: Dictionary)  # shared by _spawn_items() and _spawn_locked_doors()
+_build_floor_item(pos: Vector2i, d: Dictionary)  # shared by _spawn_items() and _spawn_locked_doors(); also reads weapon_mastery/damage_die_min/damage_die_max/ammo_item_name ("mastery"/"die_min"/"die_max"/"ammo" pool keys) — previously only debug_panel._on_give_item read those, so floor-loot weapons with a mastery/die/ammo now match their debug-given equivalents
 ```
 Item spawn path lookup:
 ```gdscript
