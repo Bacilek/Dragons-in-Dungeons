@@ -1306,7 +1306,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 # attack hit or missed (it's a separate swing of the arc, not a bonus tacked onto the primary).
 func _try_cleave(primary: Enemy, is_str_weapon: bool) -> void:
 	var weapon: Item = GameState.equipped_weapon
-	if weapon == null or weapon.weapon_mastery != "Cleave" or not is_str_weapon or _dungeon_floor == null:
+	if weapon == null or weapon.weapon_mastery != "Cleave" or not stats.knows_mastery("Cleave") or not is_str_weapon or _dungeon_floor == null:
 		return
 	var reach: int = 1 + CombatMath.melee_reach_bonus(GameState.get_talent_rank("branching_strike"))
 	var candidates: Array[Enemy] = []

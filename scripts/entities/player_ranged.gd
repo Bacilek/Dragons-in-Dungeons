@@ -134,7 +134,7 @@ func ranged_attack(enemy: Enemy) -> void:
 	player._vfx.flash_hit(enemy)
 	if adv and not disadv:
 		player._vfx.show_surprise_mark(enemy)
-	if weapon != null and weapon.weapon_mastery == "Vex":
+	if weapon != null and weapon.weapon_mastery == "Vex" and player.stats.knows_mastery("Vex"):
 		player._vex_adv_target = enemy
 	var r_dmin: int = weapon.damage_die_min if weapon != null and weapon.damage_die_min > 0 else player.stats.base_min_damage
 	var r_dmax: int = weapon.damage_die_max if weapon != null and weapon.damage_die_max > 0 else player.stats.base_max_damage

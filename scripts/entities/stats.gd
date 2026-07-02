@@ -19,6 +19,15 @@ var check_prof_cha: bool = false
 var proficient_simple_weapons: bool = false
 var proficient_martial_weapons: bool = false
 
+# Weapon mastery ownership — a weapon's Item.weapon_mastery (e.g. "Cleave", "Vex") only
+# triggers its effect if the character actually knows that mastery. Nothing grants
+# masteries yet (no class/talent populates this) — equipping a mastery weapon currently
+# has no mastery effect until something explicitly adds to this list.
+var known_weapon_masteries: Array[String] = []
+
+func knows_mastery(mastery_name: String) -> bool:
+	return mastery_name in known_weapon_masteries
+
 @export var strength: int = 10
 @export var dexterity: int = 10
 @export var constitution: int = 10
