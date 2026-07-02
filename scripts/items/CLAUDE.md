@@ -56,14 +56,15 @@ TOOL   = 7
 ---
 
 ## Adding a new item
-1. Add entry to `ITEM_POOL` (or `WEAPON_POOL`) in `dungeon_floor.gd`
+1. Add entry to `DungeonFloorData.ITEM_POOL` (or `WEAPON_POOL`) in `scripts/world/dungeon_floor_data.gd`
 2. **Mirror** in `debug_panel.ALL_ITEMS` with all relevant fields
 3. If new `Item` fields introduced, update `_on_give_item()` in `debug_panel.gd`
 4. Set `"src"` in the pool entry: `"weapons"` → `WEAPONS_PATH`, `"items"` → `ITEMS_PATH`, anything else → `OBJECTS_PATH`
 
 ## Sprite paths
 ```gdscript
-WEAPONS_PATH = "res://sprites/weapons/"
-ITEMS_PATH   = "res://sprites/items/"           # subfolders: Food/, Potions/, Misc/, etc.
-OBJECTS_PATH = "res://sprites/objects/"
+DungeonFloorData.WEAPONS_PATH = "res://sprites/weapons/"
+DungeonFloorData.ITEMS_PATH   = "res://sprites/items/"           # subfolders: Food/, Potions/, Misc/, etc.
+DungeonFloorData.OBJECTS_PATH = "res://sprites/objects/"
 ```
+(`debug_panel.gd` keeps its own local `WEAPONS_PATH`/`ITEMS_PATH` constants — unrelated duplicates used only for its Give Item icon lookups, not part of this refactor.)

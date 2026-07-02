@@ -33,10 +33,8 @@ var _rage_icon: TextureRect      # Primal Fury icon (rank-gradient) shown while 
 var _inventory_overlay_ref: Node = null
 var _debug_panel_ref: Node = null
 var _hit_dice_label: Label
-var _compass_panel: Panel
-var _compass_arrow_label: Label
-var _compass_dist_label: Label
-var _stairs_found_this_floor: bool = false
+var _compass: Compass
+var _crit_banner: CritBanner
 
 # ── Ability bar toggle ────────────────────────────────────────────────────────
 var _ability_bar_mode: bool = false  # false = items, true = abilities
@@ -113,9 +111,13 @@ func _ready() -> void:
 	GameState.player_status_changed.connect(_on_status_changed)
 	GameState.class_chosen.connect(_on_class_chosen)
 	GameState.short_rest_changed.connect(_update_hit_dice_label)
-	GameState.stairs_discovered.connect(_on_stairs_discovered)
-	GameState.crit_banner.connect(_show_crit_banner)
-	TurnManager.player_turn_started.connect(_update_compass)
+	_compass = Compass.new()
+	add_child(_compass)
+	_crit_banner = CritBanner.new()
+	add_child(_crit_banner)
+	GameState.stairs_discovered.connect(_compass.on_stairs_discovered)
+	GameState.crit_banner.connect(_crit_banner.show_banner)
+	TurnManager.player_turn_started.connect(_compass.update_display)
 	TurnManager.player_turn_started.connect(_update_status_icons)
 	portrait.pressed.connect(_on_portrait_pressed)
 	portrait.focus_mode      = Control.FOCUS_NONE
@@ -245,44 +247,6 @@ func _ready() -> void:
 	$StatsPanel.add_child(_ac_label)
 	_update_ac_label()
 
-	# Stairs compass — top-center, hidden until stairs discovered
-	_compass_panel = Panel.new()
-	_compass_panel.anchor_left = 0.5
-	_compass_panel.anchor_right = 0.5
-	_compass_panel.offset_left = -55.0
-	_compass_panel.offset_top = 4.0
-	_compass_panel.offset_right = 55.0
-	_compass_panel.offset_bottom = 84.0
-	_compass_panel.visible = false
-	add_child(_compass_panel)
-
-	var title_lbl := Label.new()
-	title_lbl.text = "Stairs"
-	title_lbl.add_theme_font_size_override("font_size", 12)
-	title_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.4))
-	title_lbl.position = Vector2(0.0, 2.0)
-	title_lbl.size = Vector2(110.0, 18.0)
-	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_compass_panel.add_child(title_lbl)
-
-	_compass_arrow_label = Label.new()
-	_compass_arrow_label.text = "?"
-	_compass_arrow_label.add_theme_font_size_override("font_size", 36)
-	_compass_arrow_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
-	_compass_arrow_label.position = Vector2(0.0, 20.0)
-	_compass_arrow_label.size = Vector2(110.0, 44.0)
-	_compass_arrow_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_compass_panel.add_child(_compass_arrow_label)
-
-	_compass_dist_label = Label.new()
-	_compass_dist_label.text = ""
-	_compass_dist_label.add_theme_font_size_override("font_size", 11)
-	_compass_dist_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	_compass_dist_label.position = Vector2(0.0, 64.0)
-	_compass_dist_label.size = Vector2(110.0, 14.0)
-	_compass_dist_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_compass_panel.add_child(_compass_dist_label)
-
 	# Inventory overlay — add as sibling CanvasLayer so it floats above HUD
 	var overlay_script = load("res://scripts/ui/inventory_overlay.gd")
 	_inventory_overlay_ref = overlay_script.new()
@@ -345,69 +309,6 @@ func _update_status_icons() -> void:
 			if icon_path != "" and ResourceLoader.exists(icon_path):
 				_rage_icon.texture = load(icon_path)
 
-func _show_crit_banner(text: String, color: Color) -> void:
-	var lbl := Label.new()
-	lbl.text = text
-	lbl.add_theme_font_size_override("font_size", 48)
-	lbl.add_theme_color_override("font_color", color)
-	lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
-	lbl.add_theme_constant_override("shadow_offset_x", 2)
-	lbl.add_theme_constant_override("shadow_offset_y", 2)
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.anchor_left = 0.0
-	lbl.anchor_right = 1.0
-	lbl.anchor_top = 0.35
-	lbl.anchor_bottom = 0.65
-	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var _vp := get_viewport().get_visible_rect().size
-	lbl.pivot_offset = Vector2(_vp.x * 0.5, _vp.y * 0.15)
-	add_child(lbl)
-	var t := create_tween()
-	lbl.scale = Vector2(1.6, 1.6)
-	lbl.modulate.a = 0.0
-	t.tween_property(lbl, "scale", Vector2(1.0, 1.0), 0.25).set_ease(Tween.EASE_OUT)
-	t.parallel().tween_property(lbl, "modulate:a", 1.0, 0.15)
-	t.tween_interval(0.5)
-	t.tween_property(lbl, "modulate:a", 0.0, 0.4)
-	t.tween_callback(lbl.queue_free)
-
-func _on_stairs_discovered() -> void:
-	_stairs_found_this_floor = true
-	if _compass_panel != null:
-		_compass_panel.visible = true
-	_update_compass()
-
-func _update_compass() -> void:
-	if _compass_panel == null or not _compass_panel.visible:
-		return
-	if not _stairs_found_this_floor:
-		return
-	var diff: Vector2i = GameState.current_stairs_pos - GameState.player_grid_pos
-	if diff == Vector2i.ZERO:
-		_compass_arrow_label.text = "★"
-		_compass_dist_label.text = "here!"
-		return
-	# Pick arrow character from 8 directions (dx/dy sign + which axis dominates)
-	var ax: int = absi(diff.x)
-	var ay: int = absi(diff.y)
-	var arrow: String
-	if ax > ay * 2:
-		arrow = "→" if diff.x > 0 else "←"
-	elif ay > ax * 2:
-		arrow = "↓" if diff.y > 0 else "↑"
-	elif diff.x > 0 and diff.y > 0:
-		arrow = "↘"
-	elif diff.x > 0 and diff.y < 0:
-		arrow = "↗"
-	elif diff.x < 0 and diff.y > 0:
-		arrow = "↙"
-	else:
-		arrow = "↖"
-	_compass_arrow_label.text = arrow
-	var dist: int = maxi(ax, ay)
-	_compass_dist_label.text = "%d tiles" % dist
-
 func _make_status_dot(color: Color, offset: Vector2) -> ColorRect:
 	var dot := ColorRect.new()
 	dot.color = color
@@ -456,9 +357,7 @@ func _on_floor_changed(new_floor: int) -> void:
 	_log_messages.clear()
 	log_label.text = ""
 	_update_hit_dice_label()
-	_stairs_found_this_floor = false
-	if _compass_panel != null:
-		_compass_panel.visible = false
+	_compass.reset_for_new_floor()
 
 func _on_player_hp_changed(current_hp: int, max_hp: int) -> void:
 	_update_hp_bar(current_hp, max_hp)
@@ -946,248 +845,13 @@ func _format_tooltip(meta: String) -> String:
 		if eq >= 0:
 			params[kv.substr(0, eq)] = kv.substr(eq + 1)
 	match kind:
-		"hit", "miss":   return _fmt_hit_tooltip(params, false)
-		"rhit", "rmiss": return _fmt_hit_tooltip(params, true)
-		"dmg":           return _fmt_dmg_tooltip(params)
-		"heal":          return _fmt_heal_tooltip(params)
-		"save", "check": return _fmt_save_tooltip(params)
-		"ehit":          return _fmt_ehit_tooltip(params)
-		"edmg":          return _fmt_edmg_tooltip(params)
-		"ret":           return _fmt_ret_tooltip(params)
-		"catk":          return _fmt_catk_tooltip(params)
+		"hit", "miss":   return TooltipFormatters.fmt_hit_tooltip(params, false)
+		"rhit", "rmiss": return TooltipFormatters.fmt_hit_tooltip(params, true)
+		"dmg":           return TooltipFormatters.fmt_dmg_tooltip(params)
+		"heal":          return TooltipFormatters.fmt_heal_tooltip(params)
+		"save", "check": return TooltipFormatters.fmt_save_tooltip(params)
+		"ehit":          return TooltipFormatters.fmt_ehit_tooltip(params)
+		"edmg":          return TooltipFormatters.fmt_edmg_tooltip(params)
+		"ret":           return TooltipFormatters.fmt_ret_tooltip(params)
+		"catk":          return TooltipFormatters.fmt_catk_tooltip(params)
 	return ""
-
-func _fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
-	var die: int    = int(p.get("die", "0"))
-	var d1: int     = int(p.get("d1", str(die)))
-	var d2: int     = int(p.get("d2", str(die)))
-	# Ranged uses dex=; melee uses str=; Monk unarmed melee also uses dex= (no str= key).
-	var use_dex: bool = is_ranged or p.has("dex")
-	var stat_mod: int = int(p.get("dex" if use_dex else "str", "0"))
-	var prof: int   = int(p.get("prof", "0"))
-	var wpn: int    = int(p.get("wpn", "0"))
-	var reck: int   = int(p.get("reck", "0"))
-	var total: int  = int(p.get("total", "0"))
-	var ac: int     = int(p.get("ac", "0"))
-	var adv: bool   = p.get("adv", "0") == "1"
-	var disadv: bool = p.get("disadv", "0") == "1"
-	var n20: bool   = p.get("n20", "0") == "1"
-	var n1: bool    = p.get("n1", "0") == "1"
-	var stat_name: String = "DEX" if use_dex else "STR"
-	var lines: PackedStringArray = []
-	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if n20 else ("  [color=red]✕ FAIL[/color]" if n1 else "")
-	if adv and d1 != d2:
-		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
-	elif disadv and d1 != d2:
-		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
-	else:
-		lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
-	if stat_mod != 0:
-		lines.append("[color=lightblue]%+d[/color]  (%s mod)" % [stat_mod, stat_name])
-	if prof != 0:
-		lines.append("[color=lightblue]+%d[/color]  (Proficiency)" % prof)
-	if wpn != 0:
-		lines.append("[color=lightblue]%+d[/color]  (weapon +%d)" % [wpn, wpn])
-	if reck != 0:
-		lines.append("[color=orange]%+d[/color]  (Reckless Attack)" % reck)
-	lines.append("─────────────────")
-	var vs: String
-	if n20:
-		vs = "[color=gold]CRITICAL HIT[/color]"
-	elif n1:
-		vs = "[color=red]CRITICAL FAIL[/color]"
-	elif total >= ac:
-		vs = "[color=green]HIT[/color]"
-	else:
-		vs = "[color=red]MISS[/color]"
-	lines.append("= [color=yellow]%d[/color] vs AC %d  →  %s" % [total, ac, vs])
-	return "\n".join(lines)
-
-func _fmt_dmg_tooltip(p: Dictionary) -> String:
-	var roll: int  = int(p.get("roll", "0"))
-	var dmax: int  = int(p.get("dmax", "0"))
-	var wpn: int   = int(p.get("wpn", "0"))
-	var str_mod: int = int(p.get("str", "0"))
-	var dex_mod: int = int(p.get("dex", "0"))
-	var rage: int  = int(p.get("rage", "0"))
-	var frenzy: int   = int(p.get("frenzy", "0"))
-	var ironwood: int = int(p.get("ironwood", "0"))
-	var divine: int   = int(p.get("divine", "0"))
-	var divtype: String = p.get("divtype", "Radiant")
-	var crit: bool = p.get("crit", "0") == "1"
-	var final_dmg: int = int(p.get("final", "0"))
-	var lines: PackedStringArray = []
-	if dmax > 0:
-		lines.append("1d%d = [color=yellow]%d[/color]" % [dmax, roll])
-	else:
-		lines.append("damage = [color=yellow]%d[/color]" % roll)
-	if wpn != 0:
-		lines.append("[color=lightblue]%+d[/color]  (weapon bonus)" % wpn)
-	if str_mod != 0:
-		lines.append("[color=lightblue]%+d[/color]  (STR mod)" % str_mod)
-	if dex_mod != 0:
-		lines.append("[color=lightblue]%+d[/color]  (DEX mod)" % dex_mod)
-	if rage != 0:
-		lines.append("[color=red]+%d[/color]  (Rage bonus)" % rage)
-	if crit:
-		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
-	if frenzy != 0:
-		lines.append("[color=red]+%d[/color]  (Frenzy)" % frenzy)
-	if ironwood != 0:
-		lines.append("[color=cyan]+%d[/color]  (Ironwood Bark)" % ironwood)
-	if divine != 0:
-		lines.append("[color=%s]+%d[/color]  (%s — Divine Fury)" % ["gold" if divtype == "Radiant" else "purple", divine, divtype])
-	lines.append("─────────────────")
-	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
-	return "\n".join(lines)
-
-func _fmt_heal_tooltip(p: Dictionary) -> String:
-	var dice: int  = int(p.get("dice", "0"))
-	var sides: int = int(p.get("sides", "0"))
-	var con: int   = int(p.get("con", "0"))
-	var total: int = int(p.get("total", "0"))
-	var lines: PackedStringArray = []
-	if dice > 0 and sides > 0:
-		var roll: int = int(p.get("roll", "0"))
-		lines.append("%dd%d = [color=lime]%d[/color]" % [dice, sides, roll])
-		if con != 0:
-			lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)
-		lines.append("─────────────────")
-		var uncapped: int = maxi(1, roll + con)
-		if total < uncapped:
-			lines.append("= [color=gray]+%d HP[/color]  →  [color=lime]+%d HP[/color] healed" % [uncapped, total])
-		else:
-			lines.append("= [color=lime]+%d HP[/color]" % total)
-	else:
-		if con != 0:
-			lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)
-			lines.append("─────────────────")
-		lines.append("= [color=lime]+%d HP[/color]" % total)
-	return "\n".join(lines)
-
-func _fmt_save_tooltip(p: Dictionary) -> String:
-	var die: int   = int(p.get("die", "0"))
-	var d1: int    = int(p.get("d1", str(die)))
-	var d2: int    = int(p.get("d2", str(die)))
-	var mod: int   = int(p.get("mod", "0"))
-	var prof: int  = int(p.get("prof", "0"))
-	var total: int = int(p.get("total", "0"))
-	var dc: int    = int(p.get("dc", "0"))
-	var stat: String = p.get("stat", "DEX")
-	var passed: bool = p.get("pass", "0") == "1"
-	var adv: bool  = p.get("adv", "0") == "1"
-	var disadv: bool = p.get("disadv", "0") == "1"
-	var lines: PackedStringArray = []
-	if adv and d1 != d2:
-		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
-	elif disadv and d1 != d2:
-		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
-	else:
-		lines.append("d20 = [color=yellow]%d[/color]" % die)
-	if mod != 0:
-		lines.append("[color=lightblue]%+d[/color]  (%s mod)" % [mod, stat])
-	if prof != 0:
-		lines.append("[color=lightblue]+%d[/color]  (Proficiency, %s check)" % [prof, stat])
-	lines.append("─────────────────")
-	var result: String = "[color=green]SUCCESS[/color]" if passed else "[color=red]FAIL[/color]"
-	lines.append("= [color=yellow]%d[/color] vs DC %d  →  %s" % [total, dc, result])
-	return "\n".join(lines)
-
-func _fmt_ehit_tooltip(p: Dictionary) -> String:
-	var die: int    = int(p.get("die", "0"))
-	var d1: int     = int(p.get("d1", str(die)))
-	var d2: int     = int(p.get("d2", str(die)))
-	var bonus: int  = int(p.get("bonus", "0"))
-	var total: int  = int(p.get("total", "0"))
-	var ac: int     = int(p.get("ac", "0"))
-	var crit: bool  = p.get("crit", "0") == "1"
-	var adv: bool   = p.get("adv", "0") == "1"
-	var disadv: bool = p.get("disadv", "0") == "1"
-	var lines: PackedStringArray = []
-	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if crit else ""
-	if adv and d1 != d2:
-		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
-	elif disadv and d1 != d2:
-		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
-	else:
-		lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
-	if bonus != 0:
-		lines.append("[color=lightblue]%+d[/color]  (attack bonus)" % bonus)
-	lines.append("─────────────────")
-	var vs: String
-	if crit:
-		vs = "[color=gold]CRITICAL HIT[/color]"
-	elif total >= ac:
-		vs = "[color=tomato]HIT[/color]"
-	else:
-		vs = "[color=gray]MISS[/color]"
-	lines.append("= [color=yellow]%d[/color] vs AC %d  →  %s" % [total, ac, vs])
-	return "\n".join(lines)
-
-func _fmt_edmg_tooltip(p: Dictionary) -> String:
-	var roll: int  = int(p.get("roll", "0"))
-	var dmin: int  = int(p.get("min", "0"))
-	var dmax: int  = int(p.get("max", "0"))
-	var crit: bool = p.get("crit", "0") == "1"
-	var final_dmg: int = int(p.get("final", "0"))
-	var lines: PackedStringArray = []
-	if dmax > 0:
-		lines.append("%d–%d = [color=yellow]%d[/color]" % [dmin, dmax, roll])
-	else:
-		lines.append("damage = [color=yellow]%d[/color]" % roll)
-	if crit:
-		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
-	lines.append("─────────────────")
-	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
-	return "\n".join(lines)
-
-func _fmt_catk_tooltip(p: Dictionary) -> String:
-	var die: int   = int(p.get("die", "0"))
-	var prof: int  = int(p.get("prof", "0"))
-	var roll: int  = int(p.get("roll", "0"))
-	var ac: int    = int(p.get("ac", "0"))
-	var dmg: int   = int(p.get("dmg", "0"))
-	var crit: bool = p.get("crit", "0") == "1"
-	var lines: PackedStringArray = []
-	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if crit else ""
-	lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
-	if prof != 0:
-		lines.append("[color=lightblue]%+d[/color]  (proficiency)" % prof)
-	lines.append("─────────────────")
-	var vs: String
-	if crit or roll >= ac:
-		vs = "[color=tomato]HIT[/color]"
-	else:
-		vs = "[color=gray]MISS[/color]"
-	lines.append("= [color=yellow]%d[/color] vs AC %d  →  %s" % [roll, ac, vs])
-	if dmg > 0:
-		lines.append("damage = [color=yellow]%d[/color]%s" % [dmg, "  ×2 (crit)" if crit else ""])
-	return "\n".join(lines)
-
-func _fmt_ret_tooltip(p: Dictionary) -> String:
-	var rank: int      = int(p.get("rank", "0"))
-	var wpn_roll: int  = int(p.get("wpn_roll", "0"))
-	var wpn_bonus: int = int(p.get("wpn_bonus", "0"))
-	var rage: int      = int(p.get("rage", "0"))
-	var str_mod: int   = int(p.get("str", "0"))
-	var final_dmg: int = int(p.get("final", "0"))
-	var lines: PackedStringArray = []
-	lines.append("[color=orange]Retaliation[/color]  (Rank %d)" % rank)
-	match rank:
-		1:
-			lines.append("[color=red]+%d[/color]  (Rage bonus)" % rage)
-		2:
-			lines.append("weapon roll = [color=yellow]%d[/color]" % wpn_roll)
-			if wpn_bonus != 0:
-				lines.append("[color=lightblue]%+d[/color]  (weapon bonus)" % wpn_bonus)
-		3:
-			lines.append("weapon roll = [color=yellow]%d[/color]" % wpn_roll)
-			if wpn_bonus != 0:
-				lines.append("[color=lightblue]%+d[/color]  (weapon bonus)" % wpn_bonus)
-			if rage != 0:
-				lines.append("[color=red]+%d[/color]  (Rage bonus)" % rage)
-			if str_mod != 0:
-				lines.append("[color=lightblue]%+d[/color]  (STR mod)" % str_mod)
-	lines.append("─────────────────")
-	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
-	return "\n".join(lines)

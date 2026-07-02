@@ -35,6 +35,11 @@ Any `TextureRect` that shows an icon at a small fixed size (status icons, small 
 ## HUD (`hud.gd`)
 Connects to `GameState` signals only — never poll `GameState` in `_process()`.
 
+**Split-out modules** (pure refactor, same behavior — GDScript has no partial classes, so these use composition/static-helper patterns instead):
+- `tooltip_formatters.gd` (`TooltipFormatters`, static-func-only helper) — the 8 combat tooltip formatters (`fmt_hit_tooltip`, `fmt_dmg_tooltip`, `fmt_heal_tooltip`, `fmt_save_tooltip`, `fmt_ehit_tooltip`, `fmt_edmg_tooltip`, `fmt_catk_tooltip`, `fmt_ret_tooltip`). Each takes only a `Dictionary` and returns a `String`. `hud.gd._format_tooltip()` still owns the `kind` dispatch match and calls into these.
+- `crit_banner.gd` (`CritBanner`, composition child-node, `extends Node`) — `show_banner(text, color)` (was `hud.gd._show_crit_banner`). Instantiated once in `hud.gd._ready()` (`_crit_banner`), added as a child, and `GameState.crit_banner` connects directly to `_crit_banner.show_banner`.
+- `compass.gd` (`Compass`, composition child-node, `extends Panel`) — owns the top-center stairs compass UI and its `_stairs_found_this_floor` state internally. Public methods: `on_stairs_discovered()`, `update_display()`, `reset_for_new_floor()`. Instantiated once in `hud.gd._ready()` (`_compass`); `GameState.stairs_discovered` connects to `on_stairs_discovered`, `TurnManager.player_turn_started` connects to `update_display`, and `hud.gd._on_floor_changed()` calls `reset_for_new_floor()`.
+
 ### Z-index reference
 | Element | Z |
 |---|---|
@@ -47,8 +52,8 @@ Connects to `GameState` signals only — never poll `GameState` in `_process()`.
 | Short rest panel / Debug panel | 25 |
 
 ### Compass
-Hidden at floor start. Appears at **top-center** of screen only when stairs tile enters FOV (`_on_stairs_discovered()` sets `_stairs_found_this_floor = true` and shows panel). Resets (hides) on every floor change.
-`_update_compass()` early-returns until flag is true. Arrow character picked from 8 Unicode directions; shows Chebyshev distance.
+Implemented in `compass.gd` (`Compass` component, see above). Hidden at floor start. Appears at **top-center** of screen only when stairs tile enters FOV (`on_stairs_discovered()` sets its internal `_stairs_found_this_floor = true` and shows itself). Resets (hides) on every floor change via `reset_for_new_floor()`.
+`update_display()` early-returns until the flag is true. Arrow character picked from 8 Unicode directions; shows Chebyshev distance.
 Triggered by `GameState.stairs_discovered` signal (emitted by `DungeonFloor.update_fog()` or See All debug).
 
 ---
@@ -74,11 +79,11 @@ Sets `GameState.short_rest_open = true` on open → blocks all player input unti
 
 ## Debug panel (`debug_panel.gd`)
 F3 toggle. CanvasLayer, layer = 25.
-Features: **God Mode** (checkbox — activates invincible + noclip + see_all + exposes enemy rolls/HP in chat log), Invincible, Noclip, Jump to Floor, Give Item, **Spawn Enemy** (sub-panel listing all ENEMY_POOL + BOSS_POOL, spawns adjacent to player via `dungeon_floor.debug_spawn_enemy()`), **Level Up** (`GameState.debug_level_up()`), See All.
+Features: **God Mode** (checkbox — activates invincible + noclip + see_all + exposes enemy rolls/HP in chat log), Invincible, Noclip, Jump to Floor, Give Item, **Spawn Enemy** (sub-panel listing all `DungeonFloorData.ENEMY_POOL` + `BOSS_POOL`, spawns adjacent to player via `dungeon_floor.debug_spawn_enemy()`), **Level Up** (`GameState.debug_level_up()`), See All.
 
-DungeonFloor registers itself in group `"dungeon_floor"` in `_ready()` so the debug panel can locate it via `get_tree().get_first_node_in_group("dungeon_floor")`.
+DungeonFloor registers itself in group `"dungeon_floor"` in `_ready()` so the debug panel can locate it via `get_tree().get_first_node_in_group("dungeon_floor")`. Pool data (`ENEMY_POOL`/`BOSS_POOL`/`ITEM_POOL`) is read directly off `DungeonFloorData` (`scripts/world/dungeon_floor_data.gd`, global via `class_name`) — no `load()` of `dungeon_floor.gd` needed.
 
-**Item sync rule**: any new entry in `dungeon_floor.ITEM_POOL` must also appear in `debug_panel.ALL_ITEMS` with all relevant fields mirrored (`is_ranged`, `range`, `consumes_on_ranged`, `qty`, `two_handed`, `heavy_armor`, `die_min`, `die_max`, `dmg_type`, `heal_dice`, `heal_sides`, etc.).
+**Item sync rule**: any new entry in `DungeonFloorData.ITEM_POOL` must also appear in `debug_panel.ALL_ITEMS` with all relevant fields mirrored (`is_ranged`, `range`, `consumes_on_ranged`, `qty`, `two_handed`, `heavy_armor`, `die_min`, `die_max`, `dmg_type`, `heal_dice`, `heal_sides`, etc.).
 If new `Item` fields are added, also update `_on_give_item()` in this file.
 
 ---

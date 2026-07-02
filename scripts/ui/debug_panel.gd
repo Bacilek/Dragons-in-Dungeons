@@ -209,9 +209,8 @@ func _build_spawn_sub() -> void:
 	scroll.add_child(vbox)
 
 	# Regular enemies
-	var dungeon_floor_script = load("res://scripts/world/dungeon_floor.gd")
-	var enemy_pool: Array = dungeon_floor_script.ENEMY_POOL
-	var boss_pool: Array  = dungeon_floor_script.BOSS_POOL
+	var enemy_pool: Array = DungeonFloorData.ENEMY_POOL
+	var boss_pool: Array  = DungeonFloorData.BOSS_POOL
 	for entry: Dictionary in enemy_pool:
 		vbox.add_child(_make_spawn_row(entry, false))
 	for entry: Dictionary in boss_pool:

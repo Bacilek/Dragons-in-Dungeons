@@ -2,6 +2,8 @@
 
 `dungeon_floor.gd` — master scene node for one dungeon floor. Owns TileMapLayer, Entities node, fog overlay, and all subsystem dictionaries.
 
+`dungeon_floor_data.gd` (`DungeonFloorData`, static-const-only helper, `extends RefCounted`) — pure data pulled out of `dungeon_floor.gd`: `ENEMY_POOL`, `BOSS_POOL`, `TRAP_POOL`, `ITEM_POOL`, and the `WEAPONS_PATH`/`OBJECTS_PATH`/`ITEMS_PATH` sprite-folder constants. `dungeon_floor.gd` references these as `DungeonFloorData.ENEMY_POOL` etc. `scripts/ui/debug_panel.gd`'s Give Item / Spawn Enemy pickers also read `DungeonFloorData.ITEM_POOL`/`ENEMY_POOL`/`BOSS_POOL` directly (no more `load("res://scripts/world/dungeon_floor.gd")` indirection — `class_name` makes it globally addressable).
+
 ## Maintenance rule
 When adding a new trap type, subsystem, or floor event, **immediately update this file and root `CLAUDE.md`** — without waiting to be asked.
 
@@ -71,7 +73,7 @@ dungeon_floor.lock_door(pos)               # purple tint + lock icon; enemy bloc
 dungeon_floor.unlock_door(pos)             # restores white tint, removes lock icon
 ```
 
-**Generation-time locking**: `_spawn_locked_doors()` runs after `_spawn_items()`. Picks 1 door per floor whose removal doesn't disconnect spawn from stairs (`_bfs_reachable` validation). Places 2–3 reward items from `ITEM_POOL` in the room behind the locked door. Uses `_bfs_collect()` to find tiles unreachable without that door.
+**Generation-time locking**: `_spawn_locked_doors()` runs after `_spawn_items()`. Picks 1 door per floor whose removal doesn't disconnect spawn from stairs (`_bfs_reachable` validation). Places 2–3 reward items from `DungeonFloorData.ITEM_POOL` in the room behind the locked door. Uses `_bfs_collect()` to find tiles unreachable without that door.
 **Player locking**: F key on adjacent CLOSED UNLOCKED door with Thief Tools → DC 10 DEX Sleight of Hand. Fail consumes Thief Tools.
 **Unlocking**: Player walks into locked door → auto-unlock (free). Or F on locked door → unlock+open (spends action).
 
@@ -89,9 +91,9 @@ dungeon_floor.cook_rotten_meat(trap_pos: Vector2i) -> Item  # erases Fire Trap, 
 
 ## Spawning
 ```gdscript
-_spawn_enemies()        # pulls from ENEMY_POOL filtered by floor range, registers with TurnManager
-_spawn_boss()           # floor % 5 == 0 → picks from BOSS_POOL
-_spawn_items()          # 2-3 random items from ITEM_POOL; calls _build_floor_item()
+_spawn_enemies()        # pulls from DungeonFloorData.ENEMY_POOL filtered by floor range, registers with TurnManager
+_spawn_boss()           # floor % 5 == 0 → picks from DungeonFloorData.BOSS_POOL
+_spawn_items()          # 2-3 random items from DungeonFloorData.ITEM_POOL; calls _build_floor_item()
 _spawn_traps()          # places traps by type
 _spawn_locked_doors()   # locks 1 door/floor that doesn't block spawn→stairs; places 2-3 rewards inside
 ```
@@ -102,9 +104,9 @@ _build_floor_item(pos: Vector2i, d: Dictionary)  # shared by _spawn_items() and 
 Item spawn path lookup:
 ```gdscript
 match d["src"]:
-    "weapons": WEAPONS_PATH
-    "items":   ITEMS_PATH
-    _:         OBJECTS_PATH
+    "weapons": DungeonFloorData.WEAPONS_PATH
+    "items":   DungeonFloorData.ITEMS_PATH
+    _:         DungeonFloorData.OBJECTS_PATH
 ```
 
 ---

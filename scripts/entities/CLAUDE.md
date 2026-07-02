@@ -26,8 +26,8 @@ Z-index: enemies = 1, player = 3.
 ## Adding a new enemy
 1. Extend `Entity`, implement `take_turn()` and `_setup_animations()`
 2. `TurnManager.register_enemy(self)` in `_ready()` (not in `configure()`)
-3. Add entry to `ENEMY_POOL` in `dungeon_floor.gd`; add `idle_fmt`/`run_fmt` keys if sprite naming is non-standard
-4. If boss: add to `BOSS_POOL`, set `is_boss = true`
+3. Add entry to `DungeonFloorData.ENEMY_POOL` (`scripts/world/dungeon_floor_data.gd`); add `idle_fmt`/`run_fmt` keys if sprite naming is non-standard
+4. If boss: add to `DungeonFloorData.BOSS_POOL`, set `is_boss = true`
 
 ---
 
@@ -70,7 +70,7 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 - Enemy attack log lines (`enemy.gd._attack_player()`) never name the specific talent/ability that granted ADV/DISADV (e.g. no `"(Reckless)"` text) — that context lives only in the `ehit` tooltip roll breakdown, not the log line.
 
 ### Bonus damage stacking (Frenzy / Ironwood Bark / Divine Fury, etc.)
-When more than one bonus damage source can trigger on the same attack, compute all of them **before** the single `Stats.take_damage()` / `DungeonFloor.show_damage()` call and add them into the base damage total — one number, one floater, one chat log line. Never call `take_damage()`/`show_damage()` once per source — besides producing a confusing multi-part log line, a source gated on `not enemy.stats.is_dead()` can silently fail to trigger if an earlier source already killed the enemy. Each source still gets a **named** field in the `dmg_meta` string (`frenzy=`, `ironwood=`, `divine=`+`divtype=`) purely for the hover tooltip (`hud.gd._fmt_dmg_tooltip()`) — the visible chat log line itself carries no per-source text or amounts (no `(+N Frenzy)`, no God-Mode `[HP/HP]` suffix), only the combined number + damage type. See `player.gd._bump_attack()` / `_ranged_attack()` for the reference implementation (Frenzy + Ironwood Bark + Divine Fury summed into `bonus_dmg` before `enemy.stats.take_damage(pre_crit + bonus_dmg)`).
+When more than one bonus damage source can trigger on the same attack, compute all of them **before** the single `Stats.take_damage()` / `DungeonFloor.show_damage()` call and add them into the base damage total — one number, one floater, one chat log line. Never call `take_damage()`/`show_damage()` once per source — besides producing a confusing multi-part log line, a source gated on `not enemy.stats.is_dead()` can silently fail to trigger if an earlier source already killed the enemy. Each source still gets a **named** field in the `dmg_meta` string (`frenzy=`, `ironwood=`, `divine=`+`divtype=`) purely for the hover tooltip (`TooltipFormatters.fmt_dmg_tooltip()` in `scripts/ui/tooltip_formatters.gd`) — the visible chat log line itself carries no per-source text or amounts (no `(+N Frenzy)`, no God-Mode `[HP/HP]` suffix), only the combined number + damage type. See `player.gd._bump_attack()` / `_ranged_attack()` for the reference implementation (Frenzy + Ironwood Bark + Divine Fury summed into `bonus_dmg` before `enemy.stats.take_damage(pre_crit + bonus_dmg)`).
 
 ---
 
@@ -100,7 +100,7 @@ GameState.player_status_changed.emit()
 ---
 
 ## Enemy resist checks (World Tree)
-`Enemy.resist_check(dc: int, use_con: bool = false) -> bool` — rolls `d20 + floor/3 + (con_modifier or str_modifier)` vs `dc`; true = enemy resists. Backing stats: `ENEMY_POOL`/`BOSS_POOL` entries may set optional `"str_mod"`/`"con_mod"` int keys (default 0); `_apply_stats()` converts them to `Stats.strength/constitution` (`10 + mod * 2`). Used by Grip of the Forest's pull (STR) and Branching Strike R3's push (CON), both vs DC `8 + player STR mod + proficiency`.
+`Enemy.resist_check(dc: int, use_con: bool = false) -> bool` — rolls `d20 + floor/3 + (con_modifier or str_modifier)` vs `dc`; true = enemy resists. Backing stats: `DungeonFloorData.ENEMY_POOL`/`BOSS_POOL` entries may set optional `"str_mod"`/`"con_mod"` int keys (default 0); `_apply_stats()` converts them to `Stats.strength/constitution` (`10 + mod * 2`). Used by Grip of the Forest's pull (STR) and Branching Strike R3's push (CON), both vs DC `8 + player STR mod + proficiency`.
 `Enemy.rooted_turns: int` — Grip of the Forest R2. Checked at the top of `take_turn()`: decrements, skips movement, still attacks if already adjacent.
 `Enemy.disadv_next_attack: bool` — Grip of the Forest R3. Consumed in `_attack_player()`'s roll (adds a Disadvantage source, combined with Reckless Attack's Advantage via the same net-ADV/DISADV house rule as the player's own attacks).
 
