@@ -65,8 +65,8 @@ Every ranged weapon has just one range value — `Item.range`, the "normal" rang
 
 | Item | Bonus | Normal range | Ammo | Stat | Category |
 |---|---|---|---|---|---|
-| Short Bow | +1 | 4 | Arrow | DEX | Simple |
-| Heavy Crossbow | +3 | 4 | — (infinite) | DEX | Martial |
+| Short Bow | +0 | 4 | Arrow | DEX | Simple |
+| Heavy Crossbow | +0 | 4 | — (infinite) | DEX | Martial |
 
 ## Ammo items
 `Item.ammo_item_name` on a ranged weapon names a separate stackable `Item` (currently only **Arrow**, `Item.Type.TOOL`, no combat stats of its own) consumed 1-per-shot. Found/looked-up by `item_name` match across the quickbar then bag (`PlayerAmmo.find_ammo_stack()`/`remove_ammo_stack()` in `scripts/entities/player_ammo.gd`) — a weapon with `ammo_item_name == ""` falls back to the legacy `consumes_on_ranged` pattern (decrements the weapon's own `quantity`, e.g. old Throwing Daggers) or fires with infinite ammo (Heavy Crossbow).
