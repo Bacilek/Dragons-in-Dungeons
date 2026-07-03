@@ -29,6 +29,7 @@ const ALL_ITEMS: Array = [
 	{"name": "Bottle of Water", "type": 4, "src": "items",   "icon": "Materials/BottleMedium.png",               "bonus_dmg": 0, "heal": 60,  "str_bonus": 0, "desc": "Restores 60 hunger"},
 	{"name": "Bottle of Mud",   "type": 7, "src": "items",   "icon": "Materials/BottleSmall.png",               "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Foul mud. Maybe useful."},
 	{"name": "Greataxe",        "type": 0, "src": "weapons", "icon": "weapon_double_axe.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "die_min": 1, "die_max": 12, "dmg_type": "Slashing", "mastery": "Cleave", "category": "Martial"},
+	{"name": "Rapier",          "type": 0, "src": "weapons", "icon": "weapon_duel_sword.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "die_min": 1, "die_max": 8, "dmg_type": "Piercing", "mastery": "Vex", "category": "Martial", "finesse": true},
 ]
 
 var _main_panel:    Panel
@@ -543,6 +544,8 @@ func _on_give_item(d: Dictionary) -> void:
 	item.is_two_handed      = d.get("two_handed", false)
 	item.is_heavy_armor     = d.get("heavy_armor", false)
 	item.is_heavy           = d.get("heavy", false)
+	item.is_finesse         = d.get("finesse", false)
+	item.is_light           = d.get("light", false)
 	item.damage_die_min     = d.get("die_min", 0)
 	item.damage_die_max     = d.get("die_max", 0)
 	item.damage_type        = d.get("dmg_type", "")

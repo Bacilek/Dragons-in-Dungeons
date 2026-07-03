@@ -21,7 +21,9 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"simple": "Simple weapon.\nEasy to use — most\ncharacters are proficient.\nRed text means your class\nlacks this proficiency: you\ncan still attack with it,\nbut lose your proficiency\nbonus on the attack roll.",
 	"martial": "Martial weapon.\nRequires training — only\nsome classes are proficient.\nRed text means your class\nlacks this proficiency: you\ncan still attack with it,\nbut lose your proficiency\nbonus on the attack roll.",
 	"vex": "Mastery: Vex.\nOn a hit, gain Advantage\non your next attack this\nround against the same\ntarget (any attack type).",
-	"push": "Mastery: Push.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ DEX) or is shoved 1 tile\ndirectly away from you.\nHitting a wall deals 1d4\nBludgeoning instead of\nmoving; falling into a\nchasm removes it (loot,\nif any, appears a floor\ndown)."
+	"push": "Mastery: Push.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ DEX) or is shoved 1 tile\ndirectly away from you.\nHitting a wall deals 1d4\nBludgeoning instead of\nmoving; falling into a\nchasm removes it (loot,\nif any, appears a floor\ndown).",
+	"finesse": "Finesse weapon.\nUse either STR or DEX\n(whichever is higher) for\nboth the attack roll and\nthe damage roll.",
+	"light": "Light weapon.\nCan be equipped in the\nOff-hand alongside a\nMain Hand weapon."
 }
 
 # Tooltip freeze state (Ctrl to freeze, enabling keyword link hover)
@@ -394,6 +396,8 @@ func _fits_slot(item: Item, slot_name: String) -> bool:
 		"melee":  return item.item_type == Item.Type.WEAPON and not item.is_ranged
 		"ranged": return item.item_type == Item.Type.WEAPON and item.is_ranged
 		"armor":                   return item.item_type == Item.Type.ARMOR
+		# Off-hand: only Light melee weapons may be dual-wielded here (or a non-weapon item).
+		"hand2":  return item.item_type != Item.Type.WEAPON or (not item.is_ranged and item.is_light)
 		_:                         return false
 
 func _right_click(slot: Control) -> void:
@@ -446,6 +450,10 @@ func _on_slot_hover(slot: Control) -> void:
 			props.append("[url=keyword:two_handed]Two-handed[/url]")
 		if item.is_heavy:
 			props.append("[url=keyword:heavy]Heavy[/url]")
+		if item.is_finesse:
+			props.append("[url=keyword:finesse]Finesse[/url]")
+		if item.is_light:
+			props.append("[url=keyword:light]Light[/url]")
 		if not props.is_empty():
 			text += "\n%s" % ", ".join(props)
 	elif item.item_type == Item.Type.POTION or item.item_type == Item.Type.FOOD:

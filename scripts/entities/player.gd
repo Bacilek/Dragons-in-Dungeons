@@ -1130,8 +1130,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var dex_mod: int = stats.dex_modifier()
 	var prof: int = CombatMath.weapon_prof_bonus(null if is_unarmed else GameState.equipped_weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
 	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if not is_unarmed else 0
-	# Monk unarmed uses DEX; everyone else uses STR for melee attack roll.
-	var attack_mod: int = dex_mod if is_monk_unarmed else str_mod
+	var is_finesse_weapon: bool = not is_unarmed and GameState.equipped_weapon.is_finesse
+	# Monk unarmed uses DEX; Finesse weapons use max(STR, DEX); everyone else uses STR for melee attack roll.
+	var attack_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
 	var total_hit_bonus: int = attack_mod + prof + weapon_bonus
 	# Advantage sources are counted; net ADV count vs DISADV count decides outcome.
 	# Two ADV sources + one DISADV = net +1 = ADV (house rule: count beats cancel).
@@ -1196,8 +1197,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		w_dmin = stats.base_min_damage
 		w_dmax = stats.base_max_damage
 	var w_enh: int = weapon_bonus  # weapon.bonus_damage
-	# Use dex= key for Monk unarmed so the HUD tooltip labels it correctly.
-	var mod_key: String = "dex" if is_monk_unarmed else "str"
+	# Use dex= key for Monk unarmed, or for a Finesse weapon whose DEX mod is the one actually used.
+	var mod_key: String = "dex" if (is_monk_unarmed or (is_finesse_weapon and dex_mod > str_mod)) else "str"
 	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
 		die, die1, die2, mod_key, attack_mod, prof, w_enh, reckless_flat_bonus, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
@@ -1223,11 +1224,14 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	_vfx.flash_hit(enemy)
 	if adv:
 		_vfx.show_surprise_mark(enemy)
+	# Vex (e.g. Rapier): melee hit grants ADV on the next attack this round against this enemy — mirrors PlayerRanged's ranged Vex trigger.
+	if weapon_item_ref != null and weapon_item_ref.weapon_mastery == "Vex" and stats.knows_mastery("Vex"):
+		_vex_adv_target = enemy
 
 	var die_roll: int = randi_range(w_dmin, w_dmax)
 	var rage_bonus: int = stats.rage_bonus_damage if (_is_raging and is_str_weapon) else 0
-	# Monk unarmed uses DEX for damage; all others use STR.
-	var dmg_mod: int = dex_mod if is_monk_unarmed else str_mod
+	# Monk unarmed uses DEX for damage; Finesse weapons use max(STR, DEX); all others use STR.
+	var dmg_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
 	var pre_crit: int = die_roll + w_enh + rage_bonus + dmg_mod
 	if is_crit:
 		pre_crit *= 2

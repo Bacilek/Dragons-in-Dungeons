@@ -1304,6 +1304,8 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.damage_die_max = d.get("die_max", 0)
 	item.is_heavy = d.get("heavy", false)
 	item.is_two_handed = d.get("two_handed", false)
+	item.is_finesse = d.get("finesse", false)
+	item.is_light = d.get("light", false)
 	item.ammo_item_name = d.get("ammo", "")
 	item.str_bonus = d.get("str_bonus", 0)
 	item.is_ranged = d.get("is_ranged", false)

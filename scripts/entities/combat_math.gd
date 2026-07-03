@@ -42,6 +42,10 @@ static func weapon_prof_bonus(weapon: Item, proficiency_bonus: int, proficient_s
 		"Martial": proficient = proficient_martial
 	return proficiency_bonus if proficient else 0
 
+# Finesse: attack/damage modifier uses whichever of STR/DEX is higher instead of always STR.
+static func finesse_modifier(str_mod: int, dex_mod: int, is_finesse: bool) -> int:
+	return maxi(str_mod, dex_mod) if is_finesse else str_mod
+
 # Branching Strike: reach bonus (in tiles) for Heavy/Versatile melee weapons. R2 replaces R1 (not additive).
 static func melee_reach_bonus(rank: int) -> int:
 	if rank >= 2: return 2
