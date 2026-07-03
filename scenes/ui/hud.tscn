@@ -92,9 +92,9 @@ theme_override_font_sizes/font_size = 13
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
-offset_top = -380.0
+offset_top = -441.0
 offset_right = 720.0
-offset_bottom = -94.0
+offset_bottom = -155.0
 mouse_filter = 2
 
 [node name="LogLabel" type="RichTextLabel" parent="LogPanel"]
