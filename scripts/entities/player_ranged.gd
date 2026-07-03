@@ -175,6 +175,14 @@ func ranged_attack(enemy: Enemy) -> void:
 		# _finish_kill so it can use the corpse's final tile after remove_enemy()/die().
 		# If the enemy survives (branch not taken), the arrow stays embedded — no pickup.
 		player._finish_kill(enemy, ammo_item)
+	elif weapon != null and weapon.weapon_mastery == "Push" and player.stats.knows_mastery("Push") and player._dungeon_floor != null:
+		var push_dc: int = 8 + prof + dex_mod
+		if not enemy.resist_check(push_dc, true):
+			var away_dir: Vector2i = Vector2i(sign(enemy.grid_pos.x - player.grid_pos.x), sign(enemy.grid_pos.y - player.grid_pos.y))
+			if away_dir != Vector2i.ZERO:
+				await player._dungeon_floor.resolve_push(enemy, away_dir)
+		else:
+			GameState.game_log("[color=gray]Push: %s resists the shove.[/color]" % enemy.display_name)
 	if player._dungeon_floor != null:
 		player._dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()

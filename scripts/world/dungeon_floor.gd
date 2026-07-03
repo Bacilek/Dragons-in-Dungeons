@@ -1455,15 +1455,13 @@ func remove_floor_item(pos: Vector2i) -> void:
 		_floor_item_sprites.erase(pos)
 	_floor_items.erase(pos)
 
-func drop_boss_loot(pos: Vector2i) -> void:
-	# No physical melee weapons drop as loot anymore (Barbarian's Greataxe, Short Bow,
-	# and Heavy Crossbow are the only weapons in the game) — boss loot is potions only.
-	var loot_pool: Array = [
-		{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png",     "src": "items", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
-		{"name": "Health Potion",  "type": 2, "icon": "Potions/Health/HealthPotionMedium.png",  "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 2d4+CON HP", "heal_dice": 2, "heal_sides": 4},
-	]
-	var d: Dictionary = loot_pool[randi() % loot_pool.size()]
+const BOSS_LOOT_POOL: Array = [
+	{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png",     "src": "items", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
+	{"name": "Health Potion",  "type": 2, "icon": "Potions/Health/HealthPotionMedium.png",  "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 2d4+CON HP", "heal_dice": 2, "heal_sides": 4},
+]
 
+func _roll_boss_loot_item() -> Item:
+	var d: Dictionary = BOSS_LOOT_POOL[randi() % BOSS_LOOT_POOL.size()]
 	var item := Item.new()
 	item.item_name = d["name"]
 	item.item_type = d["type"] as Item.Type
@@ -1479,5 +1477,48 @@ func drop_boss_loot(pos: Vector2i) -> void:
 		"weapons": item.icon_path = DungeonFloorData.WEAPONS_PATH + d["icon"]
 		"items":   item.icon_path = DungeonFloorData.ITEMS_PATH + d["icon"]
 		_:         item.icon_path = DungeonFloorData.OBJECTS_PATH + d["icon"]
+	return item
+
+func drop_boss_loot(pos: Vector2i) -> void:
+	# No physical melee weapons drop as loot anymore (Barbarian's Greataxe, Short Bow,
+	# and Heavy Crossbow are the only weapons in the game) — boss loot is potions only.
+	var item: Item = _roll_boss_loot_item()
 	place_item_on_floor(pos, item)
 	GameState.game_log("[color=yellow][b]The boss dropped [/b][color=white]%s[/color][b]![/b][/color]" % item.item_name)
+
+## Push weapon mastery (Heavy Crossbow): shoves `enemy` exactly 1 tile in `direction`.
+## Distinct from force_move_entity() because a CHASM destination here is a valid outcome
+## (the target falls in and is removed, loot deferred to the next floor down via
+## GameState.pending_chasm_items) rather than treated as blocking, and hitting a WALL
+## deals a flat 1d4 Bludgeoning instead of the piston-style splash-damage formula.
+func resolve_push(enemy: Enemy, direction: Vector2i) -> void:
+	if not is_instance_valid(enemy) or direction == Vector2i.ZERO:
+		return
+	var dest: Vector2i = enemy.grid_pos + direction
+	if get_enemy_at(dest) != null or (_player != null and _player.grid_pos == dest):
+		return  # blocked by another occupant — stays put, no damage
+	var tile: DungeonData.TileType = _data.get_tile(dest.x, dest.y)
+	if tile == DungeonData.TileType.CHASM:
+		GameState.game_log("[color=cyan]%s is pushed into the chasm and vanishes![/color]" % enemy.display_name)
+		if enemy.is_boss:
+			GameState.pending_chasm_items.append(_roll_boss_loot_item())
+		GameState.gain_exp(maxi(1, enemy.exp_reward / 2))
+		remove_enemy(enemy)
+		enemy.die()
+		return
+	if not _data.is_walkable(dest):
+		var dmg: int = randi_range(1, 4)
+		var actual: int = enemy.stats.take_damage(dmg)
+		enemy.update_hp_bar()
+		show_damage(enemy.position, actual, false)
+		GameState.game_log("[color=cyan]Push:[/color] [color=orange]%s[/color] slams into a wall for [color=yellow]%d[/color] [color=gray]Bludgeoning[/color] dmg." % [enemy.display_name, actual])
+		if enemy.stats.is_dead():
+			GameState.game_log("[color=orange]%s[/color] [color=gray]is killed![/color]" % enemy.display_name)
+			GameState.gain_exp(maxi(1, enemy.exp_reward / 2))
+			remove_enemy(enemy)
+			enemy.die()
+		return
+	await enemy.move_to(dest, 0.15)
+	GameState.game_log("[color=cyan]Push:[/color] [color=orange]%s[/color] [color=gray]is shoved back.[/color]" % enemy.display_name)
+	if _traps.has(dest):
+		trigger_trap(dest, enemy)
