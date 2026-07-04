@@ -96,6 +96,12 @@ var _divine_fury_triggered_this_turn: bool = false
 # a revert_to_waiting() free-action chain (Rager move/attack, Eagle) within the same round.
 var _vex_adv_target: Enemy = null
 
+# ── Opportunity Attack state ──────────────────────────────────────────────────
+# Once-per-round reaction cap (5e: one reaction per round). Reset in _on_turn_started()'s
+# "not came_from_revert" block alongside the other per-round caps — must survive
+# revert_to_waiting() free-action chains and only reset after enemies actually take a round.
+var _oa_used_this_round: bool = false
+
 
 # ── Equip action tracking ─────────────────────────────────────────────────────
 var _pending_equip_turn: bool = false  # set by equip_action_taken signal; consumed in next action gate
@@ -182,6 +188,7 @@ func _on_turn_started() -> void:
 		_divine_fury_triggered_this_turn = false
 		_zealot.blessed_warrior_used_this_turn = false
 		_vex_adv_target = null
+		_oa_used_this_round = false
 	# Zealous Presence: buff decrements at the start of THIS entity's own turn (real turns only).
 	if not came_from_revert and stats.zealous_presence_turns > 0:
 		stats.zealous_presence_turns -= 1
@@ -697,6 +704,10 @@ func _execute_queued_path() -> void:
 			var next: Vector2i = chase_path[0]
 			var dir: Vector2i = next - grid_pos
 			var prev_c: Vector2i = grid_pos
+			_resolve_enemy_opportunity_attacks(prev_c, next)
+			if GameState.is_game_over:
+				_target_enemy = null
+				break
 			TurnManager.begin_player_action()
 			$AnimatedSprite2D.flip_h = dir.x < 0
 			$AnimatedSprite2D.play("run")
@@ -770,6 +781,10 @@ func _execute_queued_path() -> void:
 		var is_stairs: bool = _dungeon_floor.get_tile_type(next) == DungeonData.TileType.STAIRS_DOWN
 		var prev_p: Vector2i = grid_pos
 
+		_resolve_enemy_opportunity_attacks(prev_p, next)
+		if GameState.is_game_over:
+			_queued_path.clear()
+			break
 		TurnManager.begin_player_action()
 		$AnimatedSprite2D.flip_h = dir.x < 0
 		$AnimatedSprite2D.play("run")
@@ -834,6 +849,38 @@ func _has_new_enemy_in_fov(snapshot: Array[Enemy]) -> bool:
 		if e not in snapshot:
 			return true
 	return false
+
+# Opportunity Attacks: called on every voluntary player-move step (keyboard _try_move and both
+# _execute_queued_path bodies) BEFORE the move tween starts, while the player is still on `prev`.
+# Each threatening enemy that isn't SLEEPING, can see `prev`, and hasn't used its reaction this
+# round gets one free inline attack — Retaliation-style, no TurnManager involvement, no phase
+# change. See docs/architecture/opportunity-attacks-design.md.
+func _resolve_enemy_opportunity_attacks(prev: Vector2i, next: Vector2i) -> void:
+	if GameState.noclip or _dungeon_floor == null:
+		return
+	var evading: bool = GameState.player_evades_opportunity_attacks
+	var evaded_any: bool = false
+	for e: Enemy in _dungeon_floor.get_all_enemies():
+		if not is_instance_valid(e) or e.stats.is_dead() or e.behavior == Enemy.Behavior.SLEEPING:
+			continue
+		if e.oa_used_this_round:
+			continue
+		if not _dungeon_floor.has_line_of_sight(e.grid_pos, prev):
+			continue
+		var reach: int = e.melee_reach()
+		var d_prev: int = maxi(absi(prev.x - e.grid_pos.x), absi(prev.y - e.grid_pos.y))
+		var d_next: int = maxi(absi(next.x - e.grid_pos.x), absi(next.y - e.grid_pos.y))
+		if d_prev > reach or d_next <= reach:
+			continue
+		if evading:
+			evaded_any = true
+			continue
+		e.oa_used_this_round = true
+		e._attack_player(self)
+		if GameState.is_game_over:
+			return
+	if evaded_any:
+		GameState.game_log("[color=gray]Eagle Form: you slip past their reach.[/color]")
 
 func _try_move(dir: Vector2i) -> void:
 	if _dungeon_floor == null:
@@ -913,6 +960,9 @@ func _try_move(dir: Vector2i) -> void:
 	var is_stairs: bool = _dungeon_floor.get_tile_type(target) == DungeonData.TileType.STAIRS_DOWN
 
 	var prev_pos: Vector2i = grid_pos
+	_resolve_enemy_opportunity_attacks(prev_pos, target)
+	if GameState.is_game_over:
+		return
 	TurnManager.begin_player_action()
 	$AnimatedSprite2D.flip_h = dir.x < 0
 	$AnimatedSprite2D.play("run")
@@ -1031,6 +1081,9 @@ func _activate_rage() -> void:
 	_rage_attacked_this_turn = false
 	GameState.is_raging = true
 	GameState.rage_turns_remaining = _rage_turns
+	# Natural Rager Eagle R3: evades Opportunity Attacks only while Raging in Eagle form.
+	GameState.player_evades_opportunity_attacks = GameState.get_talent_rank("natural_rager") >= 3 \
+			and GameState.natural_rager_form == "Eagle"
 	if not GameState.invincible:
 		ab.uses_remaining -= 1
 	GameState.player_stats.rage_uses_remaining = ab.uses_remaining
@@ -1098,6 +1151,7 @@ func _end_rage() -> void:
 	_rage_turns = 0
 	GameState.is_raging = false
 	GameState.rage_turns_remaining = 0
+	GameState.player_evades_opportunity_attacks = false
 	$AnimatedSprite2D.modulate = Color(1.0, 1.0, 1.0)
 
 # Branching Strike reach bonus, Divine Fury flat bonus, and weapon proficiency bonus are all
@@ -1410,6 +1464,79 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	GameState.game_log("[color=cyan]Cleave:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag])
+	if enemy.stats.is_dead():
+		_finish_kill(enemy)
+
+# Opportunity Attack: a self-contained, turn-free melee swing triggered when an enemy leaves the
+# player's threat range (see docs/architecture/opportunity-attacks-design.md). Modeled on
+# _resolve_cleave_attack() — no TurnManager involvement, no per-turn talent effects. Reckless/
+# Vex/Frenzy/Divine-Fury/Ironwood-Bark are deliberately excluded — those are per-turn action
+# effects, and this fires on the enemy's turn, not the player's.
+func resolve_opportunity_attack(enemy: Enemy) -> void:
+	if not is_instance_valid(enemy) or enemy.stats.is_dead():
+		return
+	var weapon: Item = GameState.equipped_weapon
+	var is_unarmed: bool = weapon == null
+	var is_monk_unarmed: bool = is_unarmed and stats.character_class == Stats.CharacterClass.MONK
+	var is_str_weapon: bool = not is_unarmed and not weapon.is_ranged
+	var str_mod: int = stats.str_modifier()
+	var dex_mod: int = stats.dex_modifier()
+	var prof: int = CombatMath.weapon_prof_bonus(null if is_unarmed else weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
+	var weapon_bonus: int = weapon.bonus_damage if not is_unarmed else 0
+	var is_finesse_weapon: bool = not is_unarmed and weapon.is_finesse
+	var attack_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
+	var adv_count: int = 0
+	var disadv_count: int = 0
+	if weapon != null and weapon.is_heavy and stats.strength < 13: disadv_count += 1
+	if stats.zealous_presence_turns > 0: adv_count += 1
+	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
+	var die1: int = r["die1"]
+	var die2: int = r["die2"]
+	var die: int = r["die"]
+	var adv: bool = r["adv"]
+	var disadv: bool = r["disadv"]
+	var roll: int = die + attack_mod + prof + weapon_bonus
+	var is_crit: bool = die == 20
+	var is_nat_one: bool = die == 1
+	var mod_key: String = "dex" if (is_monk_unarmed or (is_finesse_weapon and dex_mod > str_mod)) else "str"
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
+		die, die1, die2, mod_key, attack_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
+		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0]
+	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
+		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
+		GameState.game_log("[color=cyan]Opportunity attack:[/color] you swing at [color=orange]%s[/color] as it flees — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
+		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
+		return
+	AudioManager.play("crit" if is_crit else "hit_enemy")
+	_vfx.flash_hit(enemy)
+	var w_dmin: int
+	var w_dmax: int
+	if is_monk_unarmed:
+		w_dmin = 1
+		w_dmax = stats.martial_arts_die_sides
+	elif not is_unarmed and weapon.damage_die_min > 0:
+		w_dmin = weapon.damage_die_min
+		w_dmax = weapon.damage_die_max
+	else:
+		w_dmin = stats.base_min_damage
+		w_dmax = stats.base_max_damage
+	var die_roll: int = randi_range(w_dmin, w_dmax)
+	var rage_bonus: int = stats.rage_bonus_damage if (_is_raging and is_str_weapon) else 0
+	var dmg_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
+	var pre_crit: int = die_roll + weapon_bonus + rage_bonus + dmg_mod
+	if is_crit:
+		pre_crit *= 2
+		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
+		GameState.screen_shake.emit(5.0)
+	var actual: int = enemy.stats.take_damage(pre_crit)
+	enemy.update_hp_bar()
+	if _dungeon_floor != null:
+		_dungeon_floor.show_damage(enemy.position, actual, false)
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,rage=%d,frenzy=0,ironwood=0,divine=0,divtype=%s,crit=%d,final=%d" % [
+		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, rage_bonus, GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
+	var dmg_type: String = weapon.damage_type if (not is_unarmed and not weapon.damage_type.is_empty()) else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
+	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
+	GameState.game_log("[color=cyan]Opportunity attack:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag])
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
 
