@@ -1306,6 +1306,7 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.is_two_handed = d.get("two_handed", false)
 	item.is_finesse = d.get("finesse", false)
 	item.is_light = d.get("light", false)
+	item.is_reach = d.get("reach", false)
 	item.ammo_item_name = d.get("ammo", "")
 	item.str_bonus = d.get("str_bonus", 0)
 	item.is_ranged = d.get("is_ranged", false)

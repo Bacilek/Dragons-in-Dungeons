@@ -684,7 +684,7 @@ func _execute_queued_path() -> void:
 				_target_enemy = null
 				break
 
-			if chase_path.size() <= 1 + CombatMath.melee_reach_bonus(GameState.get_talent_rank("branching_strike")):
+			if chase_path.size() <= CombatMath.melee_reach(GameState.equipped_weapon, GameState.get_talent_rank("branching_strike")):
 				# In melee (or extended reach) range — attack
 				var atk_dir: Vector2i = _target_enemy.grid_pos - grid_pos
 				_bump_attack(_target_enemy, atk_dir)
@@ -1329,7 +1329,7 @@ func _try_cleave(primary: Enemy, is_str_weapon: bool) -> void:
 	var weapon: Item = GameState.equipped_weapon
 	if weapon == null or weapon.weapon_mastery != "Cleave" or not stats.knows_mastery("Cleave") or not is_str_weapon or _dungeon_floor == null:
 		return
-	var reach: int = 1 + CombatMath.melee_reach_bonus(GameState.get_talent_rank("branching_strike"))
+	var reach: int = CombatMath.melee_reach(weapon, GameState.get_talent_rank("branching_strike"))
 	var candidates: Array[Enemy] = []
 	for e: Enemy in _dungeon_floor.get_visible_enemies():
 		if e == primary or e.stats.is_dead():

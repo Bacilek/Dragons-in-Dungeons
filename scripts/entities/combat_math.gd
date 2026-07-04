@@ -52,6 +52,14 @@ static func melee_reach_bonus(rank: int) -> int:
 	if rank >= 1: return 1
 	return 0
 
+# Total melee range in tiles: base 1 + Branching Strike's talent bonus + a Reach weapon's own +1
+# (e.g. Glaive). These two sources are additive (unlike Branching Strike's own ranks, which replace).
+static func melee_reach(weapon: Item, branching_strike_rank: int) -> int:
+	var bonus: int = melee_reach_bonus(branching_strike_rank)
+	if weapon != null and weapon.is_reach:
+		bonus += 1
+	return 1 + bonus
+
 # Divine Fury: rank 3 replaces rank 2's formula (not additive) — always exactly one formula per rank.
 static func divine_fury_flat_bonus(rank: int, level: int) -> int:
 	match rank:

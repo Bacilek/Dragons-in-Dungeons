@@ -62,7 +62,8 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"push": "Mastery: Push.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ DEX) or is shoved 1 tile\ndirectly away from you.\nHitting a wall deals 1d4\nBludgeoning instead of\nmoving; falling into a\nchasm removes it (loot,\nif any, appears a floor\ndown).",
 	"finesse": "Finesse weapon.\nUse either STR or DEX\n(whichever is higher) for\nboth the attack roll and\nthe damage roll.",
 	"light": "Light weapon.\nCan be equipped in the\nOff-hand alongside a\nMain Hand weapon.",
-	"graze": "Mastery: Graze.\nOn a miss, still deal\ndamage equal to the\nability modifier used\nfor the attack (min 0)."
+	"graze": "Mastery: Graze.\nOn a miss, still deal\ndamage equal to the\nability modifier used\nfor the attack (min 0).",
+	"reach": "Reach weapon.\n+1 tile melee range —\ncan attack (and chase-\nattack) from 2 tiles away\ninstead of 1."
 }
 
 # ── Extra popup labels (added programmatically to expand the stats popup) ─────
@@ -743,7 +744,7 @@ func _on_qbar_slot_hover(idx: int) -> void:
 				if not item.ammo_item_name.is_empty():
 					text += "\n[color=gray]Requires: %s[/color]" % item.ammo_item_name
 			else:
-				text += "\nrange: 1 tile"
+				text += "\nrange: %d tile%s" % [2 if item.is_reach else 1, "s" if item.is_reach else ""]
 			var props: Array[String] = []
 			if item.is_two_handed:
 				props.append("[url=keyword:two_handed]Two-handed[/url]")
@@ -753,6 +754,8 @@ func _on_qbar_slot_hover(idx: int) -> void:
 				props.append("[url=keyword:finesse]Finesse[/url]")
 			if item.is_light:
 				props.append("[url=keyword:light]Light[/url]")
+			if item.is_reach:
+				props.append("[url=keyword:reach]Reach[/url]")
 			if not props.is_empty():
 				text += "\n%s" % ", ".join(props)
 		if not item.description.is_empty():
