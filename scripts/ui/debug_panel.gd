@@ -32,6 +32,7 @@ const ALL_ITEMS: Array = [
 	{"name": "Rapier",          "type": 0, "src": "weapons", "icon": "weapon_duel_sword.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "die_min": 1, "die_max": 8, "dmg_type": "Piercing", "mastery": "Vex", "category": "Martial", "finesse": true},
 	{"name": "Greatsword",      "type": 0, "src": "weapons", "icon": "weapon_knight_sword.png",                "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "die_min": 2, "die_max": 12, "dmg_type": "Slashing", "mastery": "Graze", "category": "Martial"},
 	{"name": "Glaive",          "type": 0, "src": "weapons", "icon": "weapon_spear.png",                       "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "reach": true, "die_min": 1, "die_max": 10, "dmg_type": "Slashing", "mastery": "Graze", "category": "Martial"},
+	{"name": "Maul",            "type": 0, "src": "weapons", "icon": "weapon_big_hammer.png",                  "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "die_min": 2, "die_max": 12, "dmg_type": "Bludgeoning", "mastery": "Topple", "category": "Martial"},
 ]
 
 var _main_panel:    Panel

@@ -25,7 +25,8 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"finesse": "Finesse weapon.\nUse either STR or DEX\n(whichever is higher) for\nboth the attack roll and\nthe damage roll.",
 	"light": "Light weapon.\nCan be equipped in the\nOff-hand alongside a\nMain Hand weapon.",
 	"graze": "Mastery: Graze.\nOn a miss, still deal\ndamage equal to the\nability modifier used\nfor the attack (min 0).",
-	"reach": "Reach weapon.\n+1 tile melee range —\ncan attack (and chase-\nattack) from 2 tiles away\ninstead of 1."
+	"reach": "Reach weapon.\n+1 tile melee range —\ncan attack (and chase-\nattack) from 2 tiles away\ninstead of 1.",
+	"topple": "Mastery: Topple.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ STR) or is knocked Prone,\nskipping its entire next turn."
 }
 
 # Tooltip freeze state (Ctrl to freeze, enabling keyword link hover)

@@ -21,6 +21,7 @@ var just_crossed_door: bool = false
 var slowed_turns: int = 0
 var rooted_turns: int = 0        # World Tree Grip of the Forest R2 — skips movement, still attacks if adjacent
 var disadv_next_attack: bool = false  # World Tree Grip of the Forest R3 — consumed on next attack roll
+var prone_turns: int = 0         # Maul's Topple mastery — skips the ENTIRE turn (no movement, no attack)
 var _roam_target: Vector2i = Vector2i(-1, -1)
 var _roam_path: Array[Vector2i] = []
 # Search state — used when enemy loses sight of player after chasing
@@ -122,6 +123,10 @@ func _wake_up() -> void:
 
 func take_turn() -> void:
 	if _dungeon_floor == null:
+		return
+	if prone_turns > 0:
+		prone_turns -= 1
+		await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		return
 	if slowed_turns > 0:
 		slowed_turns -= 1
