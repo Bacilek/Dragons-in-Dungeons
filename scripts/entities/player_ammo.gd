@@ -32,10 +32,11 @@ func remove_ammo_stack(ammo_name: String) -> void:
 
 # Generalized ammo-landing resolver — works for any stackable Item passed as ammo_item (only
 # "Arrow" is spawned in-game today, but this makes no assumptions beyond "a stackable Item that
-# should reappear as a floor pickup at its impact point"). Called from _ranged_attack() (miss —
-# arrow flies to the still-alive enemy's tile), _ranged_attack_tile() (open-ground/wall shots),
-# and _finish_kill() (kill-shot 50% drop-from-corpse — NOT called for a non-lethal hit, where
-# the arrow stays embedded with no pickup at all, per design).
+# should reappear as a floor pickup at its impact point"). Called from _ranged_attack_tile()
+# (open-ground/wall shots, no enemy involved — always lands normally) and _finish_kill()
+# (kill-shot 50% drop-from-corpse). Deliberately NOT called for a shot fired AT an enemy that
+# doesn't kill it — hit or miss, the ammo stays embedded/lodged with the enemy, no pickup at all,
+# so missed shots can't be walked up and re-collected for an effectively infinite ammo supply.
 func resolve_ammo_landing(ammo_item: Item, impact_pos: Vector2i) -> void:
 	if ammo_item == null or player._dungeon_floor == null:
 		return

@@ -123,8 +123,10 @@ func ranged_attack(enemy: Enemy) -> void:
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
 			GameState.screen_shake.emit(2.5)
-		# Arrow flies to the (still-alive) enemy's tile and lands as a normal pickup on a miss.
-		player._ammo.resolve_ammo_landing(ammo_item, enemy.grid_pos)
+		# A miss still lodges the arrow in/around the still-alive enemy — same as a non-lethal hit,
+		# it does NOT land as an immediate floor pickup (only a killing shot gets the 50% corpse-drop
+		# roll, in _finish_kill). This matches "ammo fired at an enemy — hit or miss — stays with the
+		# enemy" rather than littering the floor with recoverable ammo on every miss.
 		if player._dungeon_floor != null:
 			player._dungeon_floor.update_fog(player.grid_pos)
 		player._handle_post_attack_turn()
@@ -146,22 +148,26 @@ func ranged_attack(enemy: Enemy) -> void:
 		GameState.screen_shake.emit(5.0)
 
 	# Divine Fury folded into the same hit/floater — see damage stacking rule in
-	# scripts/entities/CLAUDE.md. Named breakdown lives only in dmg_meta (for the hover
-	# tooltip); the visible log line always shows just the single combined number.
+	# scripts/entities/CLAUDE.md. Bonus sources go into dmg_meta's "extra" field (for the hover
+	# tooltip, rendered generically — no tooltip_formatters.gd edit needed for new sources); the
+	# visible log line always shows just the single combined number.
+	var r_bonus_sources: Array = []
 	var r_divine_bonus: int = 0
 	var r_df_rank: int = GameState.get_talent_rank("divine_fury")
 	if r_df_rank >= 1 and not player._divine_fury_triggered_this_turn:
 		player._divine_fury_triggered_this_turn = true
 		r_divine_bonus = randi_range(1, 6) + CombatMath.divine_fury_flat_bonus(r_df_rank, player.stats.character_level)
+		var r_divtype: String = GameState.zealot_divine_fury_type
+		r_bonus_sources.append({"label": "%s — Divine Fury" % r_divtype, "color": "gold" if r_divtype == "Radiant" else "purple", "value": r_divine_bonus})
 
 	var actual: int = enemy.stats.take_damage(r_pre_crit + r_divine_bonus)
 	enemy.update_hp_bar()
 	if player._dungeon_floor != null:
 		player._dungeon_floor.show_damage(enemy.position, actual, false)
 
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,dex=%d,rage=0,frenzy=0,ironwood=0,divine=%d,divtype=%s,crit=%d,final=%d" % [
-		r_die_roll, r_dmin, r_dmax, r_wpn_enh, dex_mod, r_divine_bonus,
-		GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,dex=%d,extra=%s,crit=%d,final=%d" % [
+		r_die_roll, r_dmin, r_dmax, r_wpn_enh, dex_mod, CombatMath.encode_bonus_sources(r_bonus_sources),
+		1 if is_crit else 0, actual]
 	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
 

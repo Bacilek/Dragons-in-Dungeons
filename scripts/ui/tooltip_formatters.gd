@@ -53,11 +53,6 @@ static func fmt_dmg_tooltip(p: Dictionary) -> String:
 	var wpn: int   = int(p.get("wpn", "0"))
 	var str_mod: int = int(p.get("str", "0"))
 	var dex_mod: int = int(p.get("dex", "0"))
-	var rage: int  = int(p.get("rage", "0"))
-	var frenzy: int   = int(p.get("frenzy", "0"))
-	var ironwood: int = int(p.get("ironwood", "0"))
-	var divine: int   = int(p.get("divine", "0"))
-	var divtype: String = p.get("divtype", "Radiant")
 	var crit: bool = p.get("crit", "0") == "1"
 	var final_dmg: int = int(p.get("final", "0"))
 	var lines: PackedStringArray = []
@@ -71,16 +66,14 @@ static func fmt_dmg_tooltip(p: Dictionary) -> String:
 		lines.append("[color=lightblue]%+d[/color]  (STR mod)" % str_mod)
 	if dex_mod != 0:
 		lines.append("[color=lightblue]%+d[/color]  (DEX mod)" % dex_mod)
-	if rage != 0:
-		lines.append("[color=red]+%d[/color]  (Rage bonus)" % rage)
 	if crit:
 		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
-	if frenzy != 0:
-		lines.append("[color=red]+%d[/color]  (Frenzy)" % frenzy)
-	if ironwood != 0:
-		lines.append("[color=cyan]+%d[/color]  (Ironwood Bark)" % ironwood)
-	if divine != 0:
-		lines.append("[color=%s]+%d[/color]  (%s — Divine Fury)" % ["gold" if divtype == "Radiant" else "purple", divine, divtype])
+	# Generic bonus-damage sources (Rage, Frenzy, Ironwood Bark, Divine Fury, any future talent/
+	# item effect): each is a {label, color, value} entry encoded by CombatMath.encode_bonus_sources()
+	# at the call site (player.gd/player_ranged.gd) — a NEW source needs no edit here, just append
+	# an entry there. See "Bonus damage stacking" in scripts/entities/CLAUDE.md.
+	for src: Dictionary in CombatMath.decode_bonus_sources(p.get("extra", "")):
+		lines.append("[color=%s]+%d[/color]  (%s)" % [src["color"], src["value"], src["label"]])
 	lines.append("─────────────────")
 	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
 	return "\n".join(lines)

@@ -58,3 +58,27 @@ static func divine_fury_flat_bonus(rank: int, level: int) -> int:
 		2: return level / 4
 		3: return level / 2
 	return 0
+
+# Generic bonus-damage-source encoding for the "dmg" tooltip (TooltipFormatters.fmt_dmg_tooltip).
+# Lets any new bonus damage source (talent, item effect, etc.) show up in the hover tooltip by
+# just appending one {label, color, value} entry here — no matching edit needed in
+# tooltip_formatters.gd. Zero-value sources are dropped by the caller before encoding (see
+# player.gd._bump_attack()/PlayerRanged.ranged_attack() for the reference call site).
+# Encoding avoids "," and "=" (already used by the surrounding key=value,key2=value2 meta string)
+# by using "|" to separate a source's fields and ";" to separate sources.
+static func encode_bonus_sources(sources: Array) -> String:
+	var parts: PackedStringArray = []
+	for s: Dictionary in sources:
+		parts.append("%s|%s|%d" % [s["label"], s["color"], s["value"]])
+	return ";".join(parts)
+
+static func decode_bonus_sources(encoded: String) -> Array:
+	var result: Array = []
+	if encoded.is_empty():
+		return result
+	for part: String in encoded.split(";"):
+		var fields: PackedStringArray = part.split("|")
+		if fields.size() != 3:
+			continue
+		result.append({"label": fields[0], "color": fields[1], "value": int(fields[2])})
+	return result

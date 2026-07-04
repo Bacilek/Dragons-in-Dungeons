@@ -130,3 +130,7 @@ TurnManager.revert_to_waiting()         # Rager talent only — skips enemy phas
 4. Phase = WAITING_FOR_INPUT → `player_turn_started` signal fires
 
 Each turn: hunger −1, `Stats.tick_status()` deals status damage, HP regen every 10 turns (blocked while STARVING).
+
+### Fast mode (`fast_mode: bool`, `has_any_enemy()`)
+`player.gd._execute_queued_path()` sets `TurnManager.fast_mode = not TurnManager.has_any_enemy()` at the start of a queued move/chase, and clears it back to `false` when the path ends, on reaching stairs, or on any interruption. `has_any_enemy()` only reports whether at least one `Enemy` is still registered/valid — it is **not** based on visibility, distance, or behavior state, so a single sleeping/roaming/stuck enemy anywhere on the floor keeps `fast_mode` false. While true, `enemy.gd`/`companion.gd` movement tweens and idle-turn waits shrink from `0.08`s to `0.04`s — this is the "floor is clear, stop slowing me down" speed-up; the player's own `move_to()` calls are always `0.08` regardless of `fast_mode`.
+This flag is a red herring for "why does the game feel fast with an enemy still alive" bugs — the actual feel of speed comes from how long `TurnManager._process_enemies()` takes to resolve each round, which is however long every registered enemy's `take_turn()` awaits, not from `fast_mode` itself. See `scripts/entities/CLAUDE.md`'s note on `take_turn()` always needing a real `await` — an enemy whose turn resolves instantly (no move, no attack, no wait) makes the round feel exactly like an empty floor even with `fast_mode == false`.

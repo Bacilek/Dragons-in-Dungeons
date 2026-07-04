@@ -215,6 +215,9 @@ func take_turn() -> void:
 				_search_path.clear()
 				_roam_path.clear()
 				_roam_target = Vector2i(-1, -1)
+				# The SEARCHING → ROAMING transition itself spends no move/attack — still wait out
+				# a real turn's worth of time (see the matching fallback in _act_toward()).
+				await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 
 # Attack if adjacent to player; otherwise step toward last known / player position.
 func _act_toward(player: Player) -> void:
@@ -245,6 +248,15 @@ func _act_toward(player: Player) -> void:
 			_dungeon_floor.open_door(next_pos)
 		if _dungeon_floor.is_walkable_for_enemy(next_pos):
 			await _move_step(step, next_pos)
+			return
+
+	# Both greedy and BFS routing failed (e.g. genuinely boxed in) — still spend a real turn's
+	# worth of time so a "stuck" enemy doesn't make TurnManager's enemy phase resolve instantly.
+	# An instant no-op turn here was indistinguishable from an empty floor: TurnManager.fast_mode
+	# only reads has_any_enemy() (is this enemy still registered/alive), not whether its turn
+	# actually took any time, so a live-but-stuck enemy let the player's queued-path movement feel
+	# fully sped-up even though the floor was not actually clear.
+	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 
 func _pick_roam_target() -> Vector2i:
 	var centers: Array[Vector2i] = _dungeon_floor.get_room_centers()
