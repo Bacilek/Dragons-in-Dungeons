@@ -1298,6 +1298,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		else:
 			GameState.game_log("[color=gray]Branching Strike: %s resists the push.[/color]" % enemy.display_name)
 
+	_try_topple(enemy, is_str_weapon, prof, str_mod)
+
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
 	if _dungeon_floor != null:
@@ -1320,6 +1322,20 @@ func _try_graze(enemy: Enemy, is_str_weapon: bool, attack_mod: int) -> void:
 	GameState.game_log("[color=cyan]Graze:[/color] %s still takes [url=%s][color=yellow]%d[/color][/url] dmg." % [enemy.display_name, graze_meta, graze_dmg])
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
+
+# Topple mastery (Maul): on a hit, the target rolls a CON save (DC 8 + prof + STR mod) or is
+# knocked Prone — Enemy.prone_turns skips its entire next turn (no movement, no attack).
+func _try_topple(enemy: Enemy, is_str_weapon: bool, prof: int, str_mod: int) -> void:
+	var weapon: Item = GameState.equipped_weapon
+	if weapon == null or weapon.weapon_mastery != "Topple" or not stats.knows_mastery("Topple") \
+			or not is_str_weapon or enemy.stats.is_dead():
+		return
+	var topple_dc: int = 8 + prof + str_mod
+	if not enemy.resist_check(topple_dc, true):
+		enemy.prone_turns = 1
+		GameState.game_log("[color=cyan]Topple:[/color] %s is knocked [color=orange]Prone[/color]!" % enemy.display_name)
+	else:
+		GameState.game_log("[color=gray]Topple: %s resists being knocked prone.[/color]" % enemy.display_name)
 
 # Cleave mastery (Greataxe): if 2+ distinct enemies are within melee reach, the swing also
 # rolls a fully independent attack + damage roll against a second target — the one closest
