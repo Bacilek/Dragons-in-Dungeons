@@ -11,6 +11,8 @@ var boss_room: Rect2i = Rect2i()   # valid only on boss floors (floor % 5 == 0)
 var start_room: Rect2i = Rect2i()  # the room the player spawns in
 var width: int = 0
 var height: int = 0
+var feeling: String = ""           # Floor Feeling id ("" = none; always "" on boss floors).
+                                   # Display/debug only — gameplay code reads FloorFeeling.FEELINGS multipliers, never switches on this.
 
 func get_tile(x: int, y: int) -> TileType:
 	if x < 0 or y < 0 or x >= width or y >= height:

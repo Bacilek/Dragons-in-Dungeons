@@ -8,19 +8,21 @@ extends RefCounted
 #      the pre-refactor dungeon_generator.gd (same rng call order, byte-identical
 #      output per §8 step 1).
 #
-# KNOWN BUG, DELIBERATELY PRESERVED IN PHASE 1: the two `dirs4.shuffle()` calls in
-# _place_water_mud/_place_grass_clusters use the UNSEEDED global RNG (see
-# docs/architecture/SEEDED_FLOOR_POPULATION.md §1.1). Fixing them is Phase 2's
-# job — Phase 1 must reproduce today's behavior exactly, bugs included.
+# Phase 2: the two formerly-unseeded `dirs4.shuffle()` calls in _place_water_mud/
+# _place_grass_clusters are FIXED — all shuffles now go through RngUtil.shuffle(rng)
+# (SEEDED_FLOOR_POPULATION.md §1.1/§3), so same seed+floor reproduces identical
+# water/grass shapes. This intentionally diverged from the Phase-1 baseline dump.
 #
-# `feeling` is accepted and ignored so Phase 2 (feeling multipliers) doesn't have
-# to change this signature.
+# `feeling` (Floor Feelings, architecture doc §5): only `water_mult` has anything
+# to multiply here — it scales the water cluster count in _place_water_mud().
+# `trap_mult` has NO effect in this pipeline: traps are placed at runtime by
+# dungeon_floor.gd, out of scope for scripts/dungeon/.
 # _is_connected() lives here (not shared with BspBuilder) because its only
 # callers are _place_pillars/_place_chasms — no duplication needed.
 
 
-static func paint(data: DungeonData, rooms: Array, rng: RandomNumberGenerator, _feeling: String) -> void:
-	# Per-room paint first (§2.3 step 1). All Phase 1 room types are no-ops that
+static func paint(data: DungeonData, rooms: Array, rng: RandomNumberGenerator, feeling: String) -> void:
+	# Per-room paint first (§2.3 step 1). All current room types are no-ops that
 	# consume zero rng calls, so this cannot perturb the seeded stream.
 	for room in rooms:
 		(room as Room).paint(data, rng)
@@ -28,7 +30,7 @@ static func paint(data: DungeonData, rooms: Array, rng: RandomNumberGenerator, _
 	# Level-wide overlays (§2.3 step 2) — same order as the old generate().
 	_place_pillars(data, rng)
 	_place_chasms(data, rng)
-	_place_water_mud(data, rng)
+	_place_water_mud(data, rng, feeling)
 	_place_grass_clusters(data, rng)
 
 
@@ -44,12 +46,7 @@ static func _place_pillars(data: DungeonData, rng: RandomNumberGenerator) -> voi
 			for x: int in range(r.position.x + 2, r.position.x + r.size.x - 2):
 				candidates.append(Vector2i(x, y))
 
-		# Fisher-Yates shuffle using the seeded rng
-		for i: int in range(candidates.size() - 1, 0, -1):
-			var j: int = rng.randi_range(0, i)
-			var tmp = candidates[i]
-			candidates[i] = candidates[j]
-			candidates[j] = tmp
+		RngUtil.shuffle(candidates, rng)
 
 		var max_p: int = clampi(r.size.x * r.size.y / 40, 1, 4)
 		var placed: Array = []
@@ -107,9 +104,7 @@ static func _place_chasms(data: DungeonData, rng: RandomNumberGenerator) -> void
 	if large_rooms.is_empty():
 		return
 	# Pick 1–2 rooms for chasm clusters
-	for i: int in range(large_rooms.size() - 1, 0, -1):
-		var j: int = rng.randi_range(0, i)
-		var tmp = large_rooms[i]; large_rooms[i] = large_rooms[j]; large_rooms[j] = tmp
+	RngUtil.shuffle(large_rooms, rng)
 	var num_clusters: int = rng.randi_range(1, mini(2, large_rooms.size()))
 	var dirs4: Array = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0)]
 	for ci: int in num_clusters:
@@ -155,7 +150,7 @@ static func _place_chasms(data: DungeonData, rng: RandomNumberGenerator) -> void
 				data.grid[pv.y][pv.x] = DungeonData.TileType.FLOOR
 
 
-static func _place_water_mud(data: DungeonData, rng: RandomNumberGenerator) -> void:
+static func _place_water_mud(data: DungeonData, rng: RandomNumberGenerator, feeling: String) -> void:
 	var all_floor: Array = []
 	for y: int in data.height:
 		for x: int in data.width:
@@ -166,8 +161,10 @@ static func _place_water_mud(data: DungeonData, rng: RandomNumberGenerator) -> v
 	if all_floor.is_empty():
 		return
 	var dirs4: Array = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0)]
-	# Place dedicated water clusters then mud clusters — both always appear
-	var water_count: int = rng.randi_range(2, 4)
+	# Place dedicated water clusters then mud clusters — both always appear.
+	# "water" feeling scales the cluster count (dict lookup, neutral default 1.0).
+	var water_mult: float = FloorFeeling.FEELINGS.get(feeling, {}).get("water_mult", 1.0)
+	var water_count: int = roundi(rng.randi_range(2, 4) * water_mult)
 	var mud_count: int   = rng.randi_range(1, 2)
 	var schedule: Array = []
 	for _w: int in water_count:
@@ -188,7 +185,7 @@ static func _place_water_mud(data: DungeonData, rng: RandomNumberGenerator) -> v
 		placed_count += 1
 		while not queue.is_empty() and placed_count < max_size:
 			var cur: Vector2i = queue.pop_front()
-			dirs4.shuffle()
+			RngUtil.shuffle(dirs4, rng)
 			for d in dirs4:
 				var nxt: Vector2i = cur + (d as Vector2i)
 				if nxt == data.player_start or nxt == data.stairs_pos:
@@ -227,7 +224,7 @@ static func _place_grass_clusters(data: DungeonData, rng: RandomNumberGenerator)
 		placed_count += 1
 		while not queue.is_empty() and placed_count < max_size:
 			var cur: Vector2i = queue.pop_front()
-			dirs4.shuffle()
+			RngUtil.shuffle(dirs4, rng)
 			for d in dirs4:
 				var nxt: Vector2i = cur + (d as Vector2i)
 				if nxt == data.player_start or nxt == data.stairs_pos:
