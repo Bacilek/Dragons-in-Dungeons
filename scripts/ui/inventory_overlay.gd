@@ -23,7 +23,8 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"vex": "Mastery: Vex.\nOn a hit, gain Advantage\non your next attack this\nround against the same\ntarget (any attack type).",
 	"push": "Mastery: Push.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ DEX) or is shoved 1 tile\ndirectly away from you.\nHitting a wall deals 1d4\nBludgeoning instead of\nmoving; falling into a\nchasm removes it (loot,\nif any, appears a floor\ndown).",
 	"finesse": "Finesse weapon.\nUse either STR or DEX\n(whichever is higher) for\nboth the attack roll and\nthe damage roll.",
-	"light": "Light weapon.\nCan be equipped in the\nOff-hand alongside a\nMain Hand weapon."
+	"light": "Light weapon.\nCan be equipped in the\nOff-hand alongside a\nMain Hand weapon.",
+	"graze": "Mastery: Graze.\nOn a miss, still deal\ndamage equal to the\nability modifier used\nfor the attack (min 0)."
 }
 
 # Tooltip freeze state (Ctrl to freeze, enabling keyword link hover)

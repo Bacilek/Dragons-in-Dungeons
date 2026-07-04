@@ -85,6 +85,16 @@ static func fmt_dmg_tooltip(p: Dictionary) -> String:
 	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
 	return "\n".join(lines)
 
+static func fmt_grz_tooltip(p: Dictionary) -> String:
+	var mod: int = int(p.get("mod", "0"))
+	var final_dmg: int = int(p.get("final", "0"))
+	var lines: PackedStringArray = []
+	lines.append("Graze: miss still deals")
+	lines.append("[color=lightblue]%d[/color]  (ability mod)" % mod)
+	lines.append("─────────────────")
+	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
+	return "\n".join(lines)
+
 static func fmt_heal_tooltip(p: Dictionary) -> String:
 	var dice: int  = int(p.get("dice", "0"))
 	var sides: int = int(p.get("sides", "0"))

@@ -30,6 +30,7 @@ const ALL_ITEMS: Array = [
 	{"name": "Bottle of Mud",   "type": 7, "src": "items",   "icon": "Materials/BottleSmall.png",               "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Foul mud. Maybe useful."},
 	{"name": "Greataxe",        "type": 0, "src": "weapons", "icon": "weapon_double_axe.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "die_min": 1, "die_max": 12, "dmg_type": "Slashing", "mastery": "Cleave", "category": "Martial"},
 	{"name": "Rapier",          "type": 0, "src": "weapons", "icon": "weapon_duel_sword.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "die_min": 1, "die_max": 8, "dmg_type": "Piercing", "mastery": "Vex", "category": "Martial", "finesse": true},
+	{"name": "Greatsword",      "type": 0, "src": "weapons", "icon": "weapon_knight_sword.png",                "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "die_min": 2, "die_max": 12, "dmg_type": "Slashing", "mastery": "Graze", "category": "Martial"},
 ]
 
 var _main_panel:    Panel

@@ -1216,6 +1216,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			GameState.screen_shake.emit(2.5)
 		if _dungeon_floor != null:
 			_dungeon_floor.update_fog(grid_pos)
+		_try_graze(enemy, is_str_weapon, attack_mod)
 		_try_cleave(enemy, is_str_weapon)
 		_handle_post_attack_turn(is_monk_unarmed)
 		return
@@ -1303,6 +1304,22 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_dungeon_floor.update_fog(grid_pos)
 	_try_cleave(enemy, is_str_weapon)
 	_handle_post_attack_turn(is_monk_unarmed)
+
+# Graze mastery (Greatsword): a missed melee attack still deals damage equal to the ability
+# modifier used for the attack roll (min 0) — a separate, self-contained damage instance
+# logged on its own line, not folded into the (nonexistent) hit damage of this swing.
+func _try_graze(enemy: Enemy, is_str_weapon: bool, attack_mod: int) -> void:
+	var weapon: Item = GameState.equipped_weapon
+	if weapon == null or weapon.weapon_mastery != "Graze" or not stats.knows_mastery("Graze") or not is_str_weapon:
+		return
+	var graze_dmg: int = enemy.stats.take_damage(maxi(attack_mod, 0))
+	enemy.update_hp_bar()
+	if _dungeon_floor != null:
+		_dungeon_floor.show_damage(enemy.position, graze_dmg, false)
+	var graze_meta: String = "grz:mod=%d,final=%d" % [attack_mod, graze_dmg]
+	GameState.game_log("[color=cyan]Graze:[/color] %s still takes [url=%s][color=yellow]%d[/color][/url] dmg." % [enemy.display_name, graze_meta, graze_dmg])
+	if enemy.stats.is_dead():
+		_finish_kill(enemy)
 
 # Cleave mastery (Greataxe): if 2+ distinct enemies are within melee reach, the swing also
 # rolls a fully independent attack + damage roll against a second target — the one closest
