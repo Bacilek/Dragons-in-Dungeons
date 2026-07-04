@@ -1058,6 +1058,8 @@ func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
 ## max_distance = current_distance - 1 so the target lands adjacent, not on top of the player).
 ## `deal_damage=true` reproduces the old piston-trap-only splash damage; World Tree forced
 ## movement (pull/push) does not deal damage, so it passes deal_damage=false.
+# Forced movement never provokes an Opportunity Attack (5e RAW) — intentionally does not call
+# either OA hook (enemy.gd._check_opportunity_attacks_on_move / player.gd._resolve_enemy_opportunity_attacks).
 func force_move_entity(entity: Node2D, direction: Vector2i, max_distance: int, deal_damage: bool = false, trap_sprite: Sprite2D = null) -> int:
 	if not is_instance_valid(entity):
 		if is_instance_valid(trap_sprite):
@@ -1494,6 +1496,7 @@ func drop_boss_loot(pos: Vector2i) -> void:
 ## (the target falls in and is removed, loot deferred to the next floor down via
 ## GameState.pending_chasm_items) rather than treated as blocking, and hitting a WALL
 ## deals a flat 1d4 Bludgeoning instead of the piston-style splash-damage formula.
+## Forced movement never provokes an Opportunity Attack (5e RAW) — intentionally OA-free.
 func resolve_push(enemy: Enemy, direction: Vector2i) -> void:
 	if not is_instance_valid(enemy) or direction == Vector2i.ZERO:
 		return
