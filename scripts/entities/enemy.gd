@@ -18,6 +18,7 @@ var behavior: Behavior = Behavior.SLEEPING
 var last_known_player_pos: Vector2i = Vector2i(-1, -1)
 
 var just_crossed_door: bool = false
+var oa_used_this_round: bool = false  # Opportunity Attack reaction cap — reset at the top of take_turn()
 var slowed_turns: int = 0
 var rooted_turns: int = 0        # World Tree Grip of the Forest R2 — skips movement, still attacks if adjacent
 var disadv_next_attack: bool = false  # World Tree Grip of the Forest R3 — consumed on next attack roll
@@ -121,7 +122,13 @@ func _wake_up() -> void:
 	behavior = Behavior.CHASING
 	_stop_zzz()
 
+# Threat range in tiles for Opportunity Attacks. Flat 1 for all current enemies (pool key
+# "reach", default 1) — a future reach enemy (whip skeleton, tentacle boss) is a one-line pool entry.
+func melee_reach() -> int:
+	return _type.get("reach", 1)
+
 func take_turn() -> void:
+	oa_used_this_round = false
 	if _dungeon_floor == null:
 		return
 	if prone_turns > 0:
@@ -298,6 +305,9 @@ func _do_random_step() -> void:
 
 func _move_step(step: Vector2i, next_pos: Vector2i) -> void:
 	var prev_pos: Vector2i = grid_pos
+	_check_opportunity_attacks_on_move(prev_pos, next_pos)
+	if not is_instance_valid(self) or stats.is_dead():
+		return
 	var stepping_through_door: bool = _dungeon_floor.has_door_at(next_pos)
 	$AnimatedSprite2D.flip_h = step.x < 0
 	$AnimatedSprite2D.play("run")
@@ -317,6 +327,35 @@ func _move_step(step: Vector2i, next_pos: Vector2i) -> void:
 	var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 	if not trap.is_empty():
 		await _dungeon_floor.trigger_trap(grid_pos, self)
+
+# Opportunity Attacks: this enemy is the mover, the player (and any live companions) are the
+# potential attackers. Voluntary-movement chokepoint for ALL enemy movement (chase/roam/random/
+# search) — see docs/architecture/opportunity-attacks-design.md. Forced movement (force_move_entity,
+# resolve_push) intentionally bypasses this and must NOT call it.
+func _check_opportunity_attacks_on_move(prev_pos: Vector2i, next_pos: Vector2i) -> void:
+	if _dungeon_floor == null or not _dungeon_floor.is_tile_visible(prev_pos):
+		return
+	var player: Player = _dungeon_floor.get_player()
+	if player != null and is_instance_valid(player) and not player.stats.is_dead() and not player._oa_used_this_round:
+		var reach: int = CombatMath.melee_reach(GameState.equipped_weapon, GameState.get_talent_rank("branching_strike"))
+		var d_prev: int = maxi(absi(prev_pos.x - player.grid_pos.x), absi(prev_pos.y - player.grid_pos.y))
+		var d_next: int = maxi(absi(next_pos.x - player.grid_pos.x), absi(next_pos.y - player.grid_pos.y))
+		if d_prev <= reach and d_next > reach:
+			player._oa_used_this_round = true
+			player.resolve_opportunity_attack(self)
+			if not is_instance_valid(self) or stats.is_dead():
+				return
+	for c: Node in get_tree().get_nodes_in_group("companions"):
+		var comp: Companion = c as Companion
+		if comp == null or not is_instance_valid(comp) or comp.stats.is_dead() or comp.oa_used_this_round:
+			continue
+		var cd_prev: int = maxi(absi(prev_pos.x - comp.grid_pos.x), absi(prev_pos.y - comp.grid_pos.y))
+		var cd_next: int = maxi(absi(next_pos.x - comp.grid_pos.x), absi(next_pos.y - comp.grid_pos.y))
+		if cd_prev <= 1 and cd_next > 1:
+			comp.oa_used_this_round = true
+			comp._attack_enemy(self)
+			if not is_instance_valid(self) or stats.is_dead():
+				return
 
 # Returns movement direction candidates in priority order (diagonal first, then axes).
 func _preferred_steps(dx: int, dy: int) -> Array[Vector2i]:

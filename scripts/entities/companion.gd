@@ -12,6 +12,7 @@ var _config: Dictionary = {}
 var _dungeon_floor: DungeonFloor
 
 var _sprite: Sprite2D
+var oa_used_this_round: bool = false  # Opportunity Attack reaction cap — reset at the top of take_turn()
 
 func configure(d: Dictionary) -> void:
 	_config = d
@@ -82,6 +83,7 @@ func _on_companion_die() -> void:
 	queue_free()
 
 func take_turn() -> void:
+	oa_used_this_round = false
 	if not is_instance_valid(self) or stats == null or stats.current_hp <= 0:
 		return
 	# Zealous Presence: buff decrements at the start of this entity's own turn.
