@@ -24,6 +24,7 @@ var slowed_turns: int = 0
 var rooted_turns: int = 0        # World Tree Grip of the Forest R2 — skips movement, still attacks if adjacent
 var disadv_next_attack: bool = false  # World Tree Grip of the Forest R3 — consumed on next attack roll
 var prone_turns: int = 0         # Maul's Topple mastery — skips the ENTIRE turn (no movement, no attack)
+var embedded_items: Array[Item] = []  # thrown weapons stuck in a non-lethal hit (PlayerThrowTool._throw_weapon) — dropped at 100% chance wherever/whenever this enemy eventually dies, see die() override below
 var _roam_target: Vector2i = Vector2i(-1, -1)
 var _roam_path: Array[Vector2i] = []
 # Search state — used when enemy loses sight of player after chasing
@@ -71,6 +72,18 @@ func resist_check(dc: int, use_con: bool = false) -> bool:
 	var mod: int = stats.con_modifier() if use_con else stats.str_modifier()
 	var roll: int = randi_range(1, 20) + GameState.current_floor / 3 + mod
 	return roll >= dc
+
+# Overrides Entity.die(): drop any thrown weapons embedded in this enemy (see embedded_items
+# above) at 100% chance before freeing — regardless of what actually killed it or how many turns
+# ago they were embedded. Every death call site (player.gd._finish_kill, companion.gd, trap/chasm
+# deaths in dungeon_floor.gd) already calls enemy.die() as its last step, so this single override
+# covers all of them with no other call site changes needed.
+func die() -> void:
+	if not embedded_items.is_empty() and _dungeon_floor != null:
+		for it: Item in embedded_items:
+			_dungeon_floor.place_item_on_floor(grid_pos, it)
+		embedded_items.clear()
+	super.die()
 
 func _setup_animations() -> void:
 	var prefix: String = _type.get("sprite", "orc_warrior")
