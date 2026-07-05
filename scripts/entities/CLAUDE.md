@@ -38,6 +38,7 @@ For a full D&D-style stat block (CR, ability-score modifiers, damage resist/immu
 `apply_class_defaults()` sets all six ability scores and derives `max_hp` and `armor_class`.
 `hit_die_sides() -> int`: Barbarian 12, Ranger 10, Monk 8, Wizard 6.
 `_hp_per_level()`: class HP gain per level-up.
+`to_dict()`/`from_dict(d)` (Save/Load Phase A): hand-written serialization of every mutable field (scores, class, level/XP, HP, base damage, rage uses, temp HP, status turns, `known_weapon_masteries`). Computed properties and class-set flags are never saved — `from_dict()` calls `apply_class_defaults()` first, then overwrites with saved values; `armor_class`/`min/max_damage` are re-derived by `GameState.recalculate_stats()` after load. **Any new mutable Stats field must be added to both functions** — see `scripts/autoloads/CLAUDE.md`'s SaveManager section.
 
 **Check proficiency flags** (formerly "save_prof"): `check_prof_str/con/dex/int/wis/cha`. Used for traps, lockpick, disarm. No separate saving throw system — all defensive rolls are "checks". Barbarian: STR+CON. Ranger/Monk: STR+DEX. Wizard: INT+WIS.
 

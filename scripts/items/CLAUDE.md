@@ -3,7 +3,10 @@
 `item.gd` — data class for all items. All item instances are `Item` resources (no nodes).
 
 ## Maintenance rule
-When adding fields to `Item` or new entries to `ITEM_POOL` / `WEAPON_POOL`, **immediately update this file, `debug_panel.ALL_ITEMS`, and root `CLAUDE.md`** — without waiting to be asked.
+When adding fields to `Item` or new entries to `ITEM_POOL` / `WEAPON_POOL`, **immediately update this file, `debug_panel.ALL_ITEMS`, `Item.to_dict()`/`Item.from_dict()` (save serialization — see below), and root `CLAUDE.md`** — without waiting to be asked.
+
+## Save serialization (`to_dict()` / `from_dict()`)
+`Item.to_dict() -> Dictionary` and `static Item.from_dict(d) -> Item` (Save/Load Phase A, `docs/architecture/SAVE_LOAD_ARCHITECTURE.md` §4.4) are a mechanical, hand-written listing of **every** field in the table below — flat primitives only, no `store_var()`/Resource serialization ever. **Any new `Item` field must be added to both functions or it will silently reset to its default on load.** Used by `GameState.to_dict()/from_dict()` for quickbar/bag (positional arrays, null slots preserved), equipment dict, and `pending_chasm_items`.
 
 ---
 

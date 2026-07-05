@@ -196,6 +196,65 @@ func recalc_ac(has_armor_equipped: bool) -> void:
 	else:
 		armor_class = 10 + dex_modifier()
 
+# ── Save/load (Phase A — docs/architecture/SAVE_LOAD_ARCHITECTURE.md §4.1) ──────
+# Persist mutable state only. Computed properties (proficiency_bonus, rage_uses_max,
+# martial_arts_die_sides) and class-set flags (check_prof_*, weapon proficiency) are
+# never saved — from_dict() re-derives them via apply_class_defaults().
+
+func to_dict() -> Dictionary:
+	return {
+		"strength": strength,
+		"dexterity": dexterity,
+		"constitution": constitution,
+		"intelligence": intelligence,
+		"wisdom": wisdom,
+		"charisma": charisma,
+		"character_class": int(character_class),
+		"character_level": character_level,
+		"experience": experience,
+		"max_hp": max_hp,
+		"current_hp": current_hp,
+		"base_min_damage": base_min_damage,
+		"base_max_damage": base_max_damage,
+		"rage_uses_remaining": rage_uses_remaining,
+		"temp_hp": temp_hp,
+		"poison_turns": poison_turns,
+		"burning_turns": burning_turns,
+		"bleeding_turns": bleeding_turns,
+		"slowed_turns": slowed_turns,
+		"zealous_presence_turns": zealous_presence_turns,
+		"known_weapon_masteries": known_weapon_masteries.duplicate(),
+	}
+
+# Order matters (doc §4.1): apply_class_defaults() first (resets scores/HP/flags),
+# THEN saved values overwrite. armor_class and min/max_damage are not restored here —
+# GameState.recalculate_stats() recomputes both from equipment after the full load.
+func from_dict(d: Dictionary) -> void:
+	character_class = int(d.get("character_class", CharacterClass.BARBARIAN)) as CharacterClass
+	apply_class_defaults()
+	strength = int(d.get("strength", strength))
+	dexterity = int(d.get("dexterity", dexterity))
+	constitution = int(d.get("constitution", constitution))
+	intelligence = int(d.get("intelligence", intelligence))
+	wisdom = int(d.get("wisdom", wisdom))
+	charisma = int(d.get("charisma", charisma))
+	character_level = int(d.get("character_level", 1))
+	experience = int(d.get("experience", 0))
+	max_hp = int(d.get("max_hp", max_hp))
+	current_hp = int(d.get("current_hp", max_hp))
+	base_min_damage = int(d.get("base_min_damage", base_min_damage))
+	base_max_damage = int(d.get("base_max_damage", base_max_damage))
+	rage_uses_remaining = int(d.get("rage_uses_remaining", 0))
+	temp_hp = int(d.get("temp_hp", 0))
+	poison_turns = int(d.get("poison_turns", 0))
+	burning_turns = int(d.get("burning_turns", 0))
+	bleeding_turns = int(d.get("bleeding_turns", 0))
+	slowed_turns = int(d.get("slowed_turns", 0))
+	zealous_presence_turns = int(d.get("zealous_presence_turns", 0))
+	known_weapon_masteries.clear()
+	for m: Variant in (d.get("known_weapon_masteries", []) as Array):
+		known_weapon_masteries.append(String(m))
+
 func apply_class_defaults() -> void:
 	match character_class:
 		CharacterClass.BARBARIAN:

@@ -1,10 +1,10 @@
 extends Node
 
-# SaveManager — save-file plumbing only (Save/Load Phase A, session 3a).
+# SaveManager — save-file plumbing (Save/Load Phase A, sessions 3a + 3b).
 # Atomic write + backup + delete-on-death per docs/architecture/SAVE_LOAD_ARCHITECTURE.md §1.
-# Game-state serialization (to_dict/from_dict payloads) lands in session 3b —
-# until then save_run() writes a version-only stub payload and load_run()
-# only validates that a readable, version-compatible save exists.
+# save_run() serializes the full Phase-A snapshot via GameState.to_dict() (doc §4);
+# load_run() applies it via GameState.from_dict(). The Continue-flow UI that decides
+# WHEN to call load_run() (main menu / floor reload) is session 3c.
 
 const SAVE_DIR: String = "user://save"
 const SAVE_PATH: String = "user://save/run.json"
@@ -28,18 +28,22 @@ func has_save() -> bool:
 	return not _read_save().is_empty()
 
 
-## Write the current run to disk. Payload is a stub until session 3b.
+## Write the current run to disk (full Phase-A snapshot, doc §4).
 func save_run() -> void:
 	var data: Dictionary = _build_save_dict()
 	var text: String = JSON.stringify(data, "\t")
 	_write_atomically(SAVE_PATH, text)
 
 
-## Validate and parse the save. Returns false when no usable save exists.
-## Session 3b/3c will extend this to actually apply the parsed state.
+## Parse the save and, on success, fully repopulate GameState via from_dict().
+## Returns false when no usable save exists. Does NOT reload the floor — the
+## Continue flow (session 3c) drives that from the restored run_seed/current_floor.
 func load_run() -> bool:
 	var data: Dictionary = _read_save()
-	return not data.is_empty()
+	if data.is_empty():
+		return false
+	GameState.from_dict(data)
+	return true
 
 
 ## Remove the active save (and backup/temp). Called on death and win.
@@ -52,8 +56,10 @@ func delete_save() -> void:
 # --- Internals ---------------------------------------------------------------
 
 func _build_save_dict() -> Dictionary:
-	# Session 3b replaces this stub with the full Phase-A schema (doc §4).
-	return {"save_version": SAVE_VERSION}
+	# save_version stays the first key (doc §1.1); GameState supplies the payload (doc §4).
+	var data: Dictionary = {"save_version": SAVE_VERSION}
+	data.merge(GameState.to_dict())
+	return data
 
 
 # Atomic write per doc §1.3: temp file first, previous save becomes the backup,

@@ -108,7 +108,13 @@ pending_chasm_items: Array[Item]  # ammo (or any future item) that fell into a c
 
 ## SaveManager (`save_manager.gd`)
 
-Save-file plumbing for the single-slot run save (design: `docs/architecture/SAVE_LOAD_ARCHITECTURE.md`). **Phase A session 3a only** — file mechanics exist, but the payload is still a version-only stub `{"save_version": 1}`; real `to_dict()/from_dict()` serialization is session 3b, Continue-flow UI is 3c.
+Save-file plumbing for the single-slot run save (design: `docs/architecture/SAVE_LOAD_ARCHITECTURE.md`). **Phase A sessions 3a + 3b are done** — file mechanics AND full Phase-A serialization are live; only the Continue-flow UI (session 3c: main menu button, floor reload, lifecycle-notification autosave triggers) remains. Nothing calls `save_run()`/`load_run()` in gameplay yet.
+
+### Serialization (Phase A schema, doc §4)
+- `save_run()` writes `{"save_version": 1}` merged with **`GameState.to_dict()`**: `run_seed`, `current_floor`, `player_stats` (`Stats.to_dict()` — scores, level/XP, HP, base damage, rage uses, temp HP, status turns, `known_weapon_masteries`), `talents` (investments, per-tier points, `tier2_unlocked`, `active_tier2_subclass`, Wild Heart forms, Zealot charges, plus small `ability_uses`/`ability_active` id-keyed maps), `inventory` (quickbar/bag as positional arrays of `Item.to_dict()` or null, `equipment` slot dict, `pending_chasm_items`, companion `{alive, current_hp}`), `rest` (`hit_dice`, `short_rests_remaining`).
+- `load_run()` applies via **`GameState.from_dict()`** (doc §4.3 order): `start_new_run()` clean slate → class + `apply_class_defaults()` + `give_class_starting_items()` → **talent replay** (`_apply_talent_rank(id, r)` for rank 1..saved per invested talent — abilities are derived state, never serialized as objects) → inventory/equipment/rest → **Stats restored LAST** (so replay one-shots like Danger Sense R3's STR +2 don't double-apply) → `recalculate_stats()` + `_sync_ability_uses()` → per-ability `uses_remaining`/`is_active` patches → UI-refresh signals. `floor_changed` is deliberately NOT emitted — 3c drives the floor reload from `run_seed` + `current_floor`. Companion save state lands in `GameState.pending_companion_restore` for 3c's floor-load path to consume.
+- **Every serialized class uses hand-written `to_dict()`/`from_dict()`** (`Stats` instance pair, `Item.to_dict()` + `static Item.from_dict()`) — never `store_var()` a Resource. Adding an `Item`/`Stats` field means adding it to both functions.
+- Per-floor world state (enemies/doors/traps/fog/floor items/`player_grid_pos`) is NOT serialized in Phase A — the floor reloads fresh from the seeded generator (doc §2 accepted limitation; mid-floor state is Phase B).
 
 ### Files
 - `user://save/run.json` — active run (versioned JSON, `save_version` first key)
@@ -119,7 +125,7 @@ Save-file plumbing for the single-slot run save (design: `docs/architecture/SAVE
 ```gdscript
 SaveManager.has_save() -> bool   # a parseable, version-compatible run.json (or .bak) exists
 SaveManager.save_run()           # atomic write: .tmp → rotate old save to .bak → rename into place
-SaveManager.load_run() -> bool   # validates/parses only (stub); 3b/3c will apply the state
+SaveManager.load_run() -> bool   # parses + fully repopulates GameState via from_dict(); floor reload is 3c's job
 SaveManager.delete_save()        # removes run.json + .bak + .tmp
 SaveManager.v2i_to_arr(v) / SaveManager.arr_to_v2i(a)  # shared Vector2i↔[x,y] JSON helpers (static)
 ```
