@@ -99,9 +99,9 @@ pending_chasm_items: Array[Item]  # ammo (or any future item) that fell into a c
 - `<= 200` → STARVING (1 dmg / 10 turns, no HP regen)
 
 ### Equipment slots
-`GameState.equipment` dict: keys `"melee"` (displayed "Hand 1" in the inventory overlay), `"hand2"` (displayed "Hand 2" — placeholder slot, no `equip()`/`_fits_slot()` routing yet, not read by combat code, exists only so the inventory grid has a second hand slot for a future dual-wield/offhand feature), `"ranged"`, `"armor"`, `"boots"`, `"gloves"`, `"head"`, `"trinket"`.
+`GameState.equipment` dict: keys `"melee"` (Main Hand), `"hand2"` (Off-hand), `"ranged"`, `"armor"`, `"boots"`, `"gloves"`, `"head"`, `"trinket"`.
 `GameState.equipped_ranged` property returns ranged slot item.
-`equip()` auto-routes by `item.is_ranged` (weapons always land in `"melee"`/`"ranged"`, never `"hand2"`).
+`equip()` auto-routes by `item.is_ranged` (weapons always land in `"melee"`/`"ranged"`, never `"hand2"` — Off-hand is only reachable via explicit drag in `inventory_overlay.gd`). `"hand2"` accepts a Light melee weapon only when Main Hand is also Light — dual-wielding two Light weapons (currently only the Handaxe) fires a bonus Off-hand attack on every melee swing (`player.gd._try_offhand_attack()`) — see `scripts/items/CLAUDE.md`'s "Dual-wielding".
 
 ---
 

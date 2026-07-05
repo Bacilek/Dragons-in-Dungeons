@@ -1272,6 +1272,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			_dungeon_floor.update_fog(grid_pos)
 		_try_graze(enemy, is_str_weapon, attack_mod)
 		_try_cleave(enemy, is_str_weapon)
+		_try_offhand_attack(enemy, is_str_weapon)
 		_handle_post_attack_turn(is_monk_unarmed)
 		return
 
@@ -1359,6 +1360,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.update_fog(grid_pos)
 	_try_cleave(enemy, is_str_weapon)
+	_try_offhand_attack(enemy, is_str_weapon)
 	_handle_post_attack_turn(is_monk_unarmed)
 
 # Graze mastery (Greatsword): a missed melee attack still deals damage equal to the ability
@@ -1464,6 +1466,78 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	GameState.game_log("[color=cyan]Cleave:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag])
+	if enemy.stats.is_dead():
+		_finish_kill(enemy)
+
+# Dual-wielding (Two-Weapon Fighting): if Main Hand and the Off-hand (GameState.equipment["hand2"])
+# both hold a Light melee weapon, every melee attack also swings the off-hand weapon at the same
+# target — a fully independent roll, fired regardless of whether the primary attack hit or missed
+# (mirrors Cleave's call sites). Per the house rule: the off-hand damage roll skips the STR/finesse
+# ability modifier entirely UNLESS it's negative, in which case it's always applied.
+func _try_offhand_attack(enemy: Enemy, is_str_weapon: bool) -> void:
+	var main_hand: Item = GameState.equipped_weapon
+	if main_hand == null or not main_hand.is_light or not is_str_weapon or enemy.stats.is_dead():
+		return
+	var off_hand: Item = GameState.equipment.get("hand2") as Item
+	if off_hand == null or off_hand.item_type != Item.Type.WEAPON or off_hand.is_ranged or not off_hand.is_light:
+		return
+	_resolve_offhand_attack(enemy, off_hand)
+
+func _resolve_offhand_attack(enemy: Enemy, weapon: Item) -> void:
+	var str_mod: int = stats.str_modifier()
+	var dex_mod: int = stats.dex_modifier()
+	var attack_mod: int = CombatMath.finesse_modifier(str_mod, dex_mod, weapon.is_finesse)
+	var prof: int = CombatMath.weapon_prof_bonus(weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
+	var weapon_bonus: int = weapon.bonus_damage
+	var adv_count: int = 0
+	var disadv_count: int = 0
+	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
+	var vex_triggered: bool = _vex_adv_target == enemy
+	if vex_triggered: adv_count += 1
+	if vex_triggered:
+		_vex_adv_target = null
+	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
+	var die1: int = r["die1"]
+	var die2: int = r["die2"]
+	var die: int = r["die"]
+	var adv: bool = r["adv"]
+	var disadv: bool = r["disadv"]
+	var roll: int = die + attack_mod + prof + weapon_bonus
+	var is_crit: bool = die == 20
+	var is_nat_one: bool = die == 1
+	var mod_key: String = "dex" if (weapon.is_finesse and dex_mod > str_mod) else "str"
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
+		die, die1, die2, mod_key, attack_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
+		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0]
+	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
+		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
+		GameState.game_log("[color=cyan]Off-hand:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
+		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
+		return
+	AudioManager.play("crit" if is_crit else "hit_enemy")
+	_vfx.flash_hit(enemy)
+	if weapon.weapon_mastery == "Vex" and stats.knows_mastery("Vex"):
+		_vex_adv_target = enemy
+	var w_dmin: int = weapon.damage_die_min if weapon.damage_die_min > 0 else stats.base_min_damage
+	var w_dmax: int = weapon.damage_die_max if weapon.damage_die_max > 0 else stats.base_max_damage
+	var die_roll: int = randi_range(w_dmin, w_dmax)
+	var rage_bonus: int = stats.rage_bonus_damage if _is_raging else 0
+	# Off-hand damage drops the positive ability modifier; a negative modifier still always applies.
+	var dmg_mod: int = mini(attack_mod, 0)
+	var pre_crit: int = die_roll + weapon_bonus + rage_bonus + dmg_mod
+	if is_crit:
+		pre_crit *= 2
+		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
+		GameState.screen_shake.emit(5.0)
+	var actual: int = enemy.stats.take_damage(pre_crit)
+	enemy.update_hp_bar()
+	if _dungeon_floor != null:
+		_dungeon_floor.show_damage(enemy.position, actual, false)
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,rage=%d,frenzy=0,ironwood=0,divine=0,divtype=%s,crit=%d,final=%d" % [
+		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, rage_bonus, GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
+	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
+	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
+	GameState.game_log("[color=cyan]Off-hand:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag])
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
 

@@ -35,6 +35,7 @@ const ALL_ITEMS: Array = [
 	{"name": "Maul",            "type": 0, "src": "weapons", "icon": "weapon_big_hammer.png",                  "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "die_min": 2, "die_max": 12, "dmg_type": "Bludgeoning", "mastery": "Topple", "category": "Martial"},
 	{"name": "Quarterstaff",    "type": 0, "src": "weapons", "icon": "weapon_green_magic_staff.png",           "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "versatile": true, "die_min": 1, "die_max": 6, "vmin": 1, "vmax": 8, "dmg_type": "Bludgeoning", "mastery": "Topple", "category": "Simple"},
 	{"name": "Spear",           "type": 0, "src": "weapons", "icon": "weapon_spear.png",                       "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "versatile": true, "die_min": 1, "die_max": 6, "vmin": 1, "vmax": 8, "dmg_type": "Piercing", "mastery": "Sap", "category": "Simple", "thrown": true, "range": 3, "uses_max": 5},
+	{"name": "Handaxe",         "type": 0, "src": "weapons", "icon": "weapon_throwing_axe.png",               "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "light": true, "die_min": 1, "die_max": 6, "dmg_type": "Slashing", "mastery": "Vex", "category": "Simple", "thrown": true, "range": 3, "uses_max": 5},
 ]
 
 var _main_panel:    Panel

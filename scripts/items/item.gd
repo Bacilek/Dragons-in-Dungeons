@@ -26,7 +26,7 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 @export var versatile_die_min: int = 0
 @export var versatile_die_max: int = 0
 @export var is_finesse: bool = false      # Finesse: attack/damage modifier uses max(STR, DEX) instead of STR — see CombatMath.finesse_modifier()
-@export var is_light: bool = false        # Light: only Light weapons may be equipped in the Off-hand slot alongside a Main Hand weapon
+@export var is_light: bool = false        # Light: pairs with a Light Main Hand weapon in the Off-hand slot to attack with both — see player.gd._try_offhand_attack()
 @export var is_reach: bool = false        # Reach: +1 tile melee range — see CombatMath.melee_reach()
 # If > 0, overrides Stats.base_min/max_damage when this weapon is equipped (e.g. 1d12 Greataxe).
 # recalculate_stats() in GameState applies these instead of base_min/max_damage when non-zero.
