@@ -26,7 +26,8 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"light": "Light weapon.\nCan be equipped in the\nOff-hand alongside a\nMain Hand weapon.",
 	"graze": "Mastery: Graze.\nOn a miss, still deal\ndamage equal to the\nability modifier used\nfor the attack (min 0).",
 	"reach": "Reach weapon.\n+1 tile melee range —\ncan attack (and chase-\nattack) from 2 tiles away\ninstead of 1.",
-	"topple": "Mastery: Topple.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ STR) or is knocked Prone,\nskipping its entire next turn."
+	"topple": "Mastery: Topple.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ STR) or is knocked Prone,\nskipping its entire next turn.",
+	"versatile": "Versatile weapon.\nClick the Main Hand slot\nto switch grip: one-handed\nuses the die shown, two-\nhanded uses the die listed\nhere instead."
 }
 
 # Tooltip freeze state (Ctrl to freeze, enabling keyword link hover)
@@ -378,6 +379,11 @@ func _finish_drag() -> void:
 			break
 	if dest != null:
 		_do_move(dest)
+	elif _drag_src_sname == "melee" and _drag_src_ctrl != null \
+			and Rect2(_drag_src_ctrl.position, Vector2(SLOT_SIZE, SLOT_SIZE)).has_point(local_mouse):
+		var main_hand: Item = GameState.equipment.get("melee") as Item
+		if main_hand != null and main_hand.is_versatile:
+			GameState.toggle_versatile_grip()
 	if _drag_icon != null:
 		_drag_icon.queue_free()
 		_drag_icon = null
@@ -459,6 +465,9 @@ func _on_slot_hover(slot: Control) -> void:
 			props.append("[url=keyword:light]Light[/url]")
 		if item.is_reach:
 			props.append("[url=keyword:reach]Reach[/url]")
+		if item.is_versatile:
+			var grip_str: String = "two" if item.is_two_handed else "one"
+			props.append("[url=keyword:versatile]Versatile (1d%d %s-handed)[/url]" % [item.versatile_die_max, grip_str])
 		if not props.is_empty():
 			text += "\n%s" % ", ".join(props)
 	elif item.item_type == Item.Type.POTION or item.item_type == Item.Type.FOOD:
@@ -536,6 +545,13 @@ func _refresh() -> void:
 		var mark: Label = hand2_slot.get_node_or_null("BlockedMark") as Label
 		if mark != null:
 			mark.visible = off_hand_blocked
+	var melee_slot: Control = _eq_slots.get("melee") as Control
+	if melee_slot != null:
+		var sbox: StyleBoxFlat = melee_slot.get_theme_stylebox("panel") as StyleBoxFlat
+		if sbox != null:
+			var two_handed_grip: bool = main_hand != null and main_hand.is_versatile and main_hand.is_two_handed
+			sbox.border_color = Color(0.95, 0.75, 0.25) if two_handed_grip else Color(0.35, 0.34, 0.38)
+			sbox.set_border_width_all(3 if two_handed_grip else 1)
 
 func _update_slot(slot: Control, item: Item) -> void:
 	var icon:  TextureRect = slot.get_node_or_null("Icon") as TextureRect

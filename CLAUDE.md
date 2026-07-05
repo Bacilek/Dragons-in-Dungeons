@@ -65,7 +65,7 @@ Opportunity Attacks (movement out of threat range provokes a free reactive melee
 **Barbarian (Tier 1: Rage/Reckless Attack/Danger Sense; Tier 2 at level 7: Berserker/Zealot/World Tree/Wild Heart, 3 talents each) and Monk full talent/ability tables: `scripts/entities/CLAUDE.md`.**
 
 ### Items and combat
-Weapon fields (`damage_die_min/max`, `damage_type`, `weapon_mastery`, `weapon_category`, `is_heavy`, `is_two_handed`, `is_finesse`, `is_light`, `is_reach`, `ammo_item_name`), weapon masteries (Cleave, Vex, Push, Graze), weapon proficiency, ranged weapons/ammo/long-range rules, equipment slots (incl. Off-hand's Light-weapon gate), and the full `Item` field table: **`scripts/items/CLAUDE.md`**.
+Weapon fields (`damage_die_min/max`, `damage_type`, `weapon_mastery`, `weapon_category`, `is_heavy`, `is_two_handed`, `is_finesse`, `is_light`, `is_reach`, `is_versatile`/`versatile_die_min/max`, `ammo_item_name`), weapon masteries (Cleave, Vex, Push, Graze, Topple), weapon proficiency, ranged weapons/ammo/long-range rules, equipment slots (incl. Off-hand's Light-weapon gate), the click-to-toggle Versatile grip (Quarterstaff), and the full `Item` field table: **`scripts/items/CLAUDE.md`**.
 ADV/DISADV house rule, combat roll formulas, damage-stacking rule, and enemy resist checks: **`scripts/entities/CLAUDE.md`**.
 
 ### Hunger, traps, doors, short rest
