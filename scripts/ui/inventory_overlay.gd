@@ -23,7 +23,7 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"vex": "Mastery: Vex.\nOn a hit, gain Advantage\non your next attack this\nround against the same\ntarget (any attack type).",
 	"push": "Mastery: Push.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ DEX) or is shoved 1 tile\ndirectly away from you.\nHitting a wall deals 1d4\nBludgeoning instead of\nmoving; falling into a\nchasm removes it (loot,\nif any, appears a floor\ndown).",
 	"finesse": "Finesse weapon.\nUse either STR or DEX\n(whichever is higher) for\nboth the attack roll and\nthe damage roll.",
-	"light": "Light weapon.\nCan be equipped in the\nOff-hand alongside a\nMain Hand weapon.",
+	"light": "Light weapon.\nPair another Light weapon\nin the Off-hand to attack\nwith both. The Off-hand\nswing skips your ability\nmodifier on damage, unless\nit's negative.",
 	"graze": "Mastery: Graze.\nOn a miss, still deal\ndamage equal to the\nability modifier used\nfor the attack (min 0).",
 	"reach": "Reach weapon.\n+1 tile melee range —\ncan attack (and chase-\nattack) from 2 tiles away\ninstead of 1.",
 	"topple": "Mastery: Topple.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ STR) or is knocked Prone,\nskipping its entire next turn.",
@@ -407,8 +407,13 @@ func _fits_slot(item: Item, slot_name: String) -> bool:
 		"melee":  return item.item_type == Item.Type.WEAPON and not item.is_ranged
 		"ranged": return item.item_type == Item.Type.WEAPON and item.is_ranged
 		"armor":                   return item.item_type == Item.Type.ARMOR
-		# Off-hand: only Light melee weapons may be dual-wielded here (or a non-weapon item).
-		"hand2":  return item.item_type != Item.Type.WEAPON or (not item.is_ranged and item.is_light)
+		# Off-hand: a Light melee weapon may only be dual-wielded here if Main Hand also holds
+		# a Light weapon (5e Two-Weapon Fighting rule); non-weapon items are always accepted.
+		"hand2":
+			if item.item_type != Item.Type.WEAPON:
+				return true
+			var main_hand: Item = GameState.equipped_weapon
+			return not item.is_ranged and item.is_light and main_hand != null and main_hand.is_light
 		_:                         return false
 
 func _right_click(slot: Control) -> void:
