@@ -47,6 +47,7 @@ Entity (CharacterBody2D)   ← grid_pos, move_to() 0.08s tween, _tile_center(), 
 ```
 World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: floor items=1, enemies=1, player=3, fog=2, damage labels=10; blood decals=0.
 Full combat rolls, ADV/DISADV rules, status effects, enemy AI states, and per-class talent trees: **`scripts/entities/CLAUDE.md`**.
+Target schema for full D&D-style enemy stat blocks (CR, ability scores, resist/immune/vuln, creature type, size, senses, traits, multiattack, reactions, conditional triggers, legendary resistance) — design only, not yet implemented: `docs/architecture/enemy-stat-block-design.md`.
 Opportunity Attacks (movement out of threat range provokes a free reactive melee attack, Retaliation-style inline resolution, no TurnManager changes): **`scripts/entities/CLAUDE.md`**'s "Opportunity Attacks" section (design doc: `docs/architecture/opportunity-attacks-design.md`).
 
 ### D&D stats (`scripts/entities/stats.gd`)
