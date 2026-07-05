@@ -11,6 +11,8 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 @export var bonus_damage: int = 0
 @export var bonus_ac: int = 0
 @export var heal_amount: int = 0
+# FOOD items only: value sacrificed toward GameState.LONG_REST_FOOD_COST at a long rest.
+@export var food_value: int = 0
 @export var str_bonus: int = 0
 @export var floor_min: int = 1
 @export var floor_max: int = 10

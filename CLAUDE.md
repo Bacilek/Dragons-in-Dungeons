@@ -15,13 +15,13 @@ After every feature, fix, or refactor that changes architecture, adds a system, 
 
 Open `project.godot` in **Godot 4.6 (Mono build)**. Press **F5** to run. No CLI build commands.
 
-**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait (also forfeits Extra Attack). Ctrl = search. Alt = short rest. RMB on world = interact. 1–9 = use active quickbar slot 0–8. **Tab = toggle between item bar and ability bar**. I = open inventory. Left-click enemy = chase+attack (melee). Shift+left-click enemy/tile = ranged attack (if ranged weapon equipped and in range). Left-click floor = pathfind. RMB on food in quickbar = throw mode, then LMB = throw. Esc = cancel throw/tool. **Thief Tools keyboard**: prime via quickbar hotkey → WASD into open/closed door = lock attempt; WASD into locked door = pick/unlock attempt. Note: F key no longer opens doors.
+**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait (also forfeits Extra Attack). Ctrl = search. Alt = rest (short/long tabs). RMB on world = interact. 1–9 = use active quickbar slot 0–8. **Tab = toggle between item bar and ability bar**. I = open inventory. Left-click enemy = chase+attack (melee). Shift+left-click enemy/tile = ranged attack (if ranged weapon equipped and in range). Left-click floor = pathfind. RMB on food in quickbar = throw mode, then LMB = throw. Esc = cancel throw/tool. **Thief Tools keyboard**: prime via quickbar hotkey → WASD into open/closed door = lock attempt; WASD into locked door = pick/unlock attempt. Note: F key no longer opens doors.
 
 ## Architecture
 
 ### Singletons (autoloads)
 Full signal list, state fields, and API live in **`scripts/autoloads/CLAUDE.md`** — read it before touching `game_state.gd`, `turn_manager.gd`, or `audio_manager.gd`.
-- **`GameState`** (`scripts/autoloads/game_state.gd`) — run seed, floor number, player `Stats`, inventory (quickbar 9 slots + bag 24), ability bar (9 slots), equipment, hunger, short rest state, talent state. Call `GameState.game_log(msg)` for combat log — **never call `log()`** (that's GDScript's built-in float math function).
+- **`GameState`** (`scripts/autoloads/game_state.gd`) — run seed, floor number, player `Stats`, inventory (quickbar 9 slots + bag 24), ability bar (9 slots), equipment, rest state, talent state. Call `GameState.game_log(msg)` for combat log — **never call `log()`** (that's GDScript's built-in float math function).
 - **`TurnManager`** (`scripts/autoloads/turn_manager.gd`) — phase state machine: `WAITING_FOR_INPUT → RESOLVING_PLAYER → RESOLVING_ENEMIES → WAITING_FOR_INPUT`. Player input hard-gated on `phase == WAITING_FOR_INPUT`. New entity: `TurnManager.register_enemy(self)` on spawn, `TurnManager.clear_enemies()` before floor reload.
 - **`AudioManager`** (`scripts/autoloads/audio_manager.gd`) — drop `.ogg` files into `res://audio/`; missing files silently ignored. `AudioManager.play("name")` for SFX, `AudioManager.play_music(path)` for looping BGM.
 
@@ -31,7 +31,7 @@ Full signal list, state fields, and API live in **`scripts/autoloads/CLAUDE.md`*
 3. `TurnManager._process_enemies()` awaits each enemy's `take_turn()` sequentially
 4. Phase → WAITING_FOR_INPUT. `player_turn_started` signal fires.
 
-Each turn: hunger depletes 1, status effects tick (`Stats.tick_status()` → dmg), HP regen every 10 turns (blocked while Starving).
+Each turn: status effects tick (`Stats.tick_status()` → dmg). Hunger has been removed — food items are long-rest fuel only (see "Rest system" below).
 
 ### Dungeon
 - **`DungeonGenerator.generate(seed, floor_num)`** — pure static, returns `DungeonData`. Seed: `run_seed XOR (floor * 0x9e3779b9)`. BSP depth 5, 48×48 grid, L-shaped corridors. Internally a three-phase pipeline (`FloorPlanner` → `BspBuilder` → `LevelPainter`, with `Room` type classes) — details in `scripts/dungeon/CLAUDE.md`.
@@ -58,21 +58,21 @@ Opportunity Attacks (movement out of threat range provokes a free reactive melee
 ### Talent system (`scripts/items/talent.gd`, `scripts/autoloads/game_state.gd`)
 `Talent` is a reusable Resource: `talent_id`, `talent_name`, `description`, `icon_path`, `tier`, `class_id`, `max_rank`, `ranks: Array[Dictionary]`. `rank_description(rank)` returns the description string for a given rank.
 
-**GameState talent state**: `talent_points_available`, `talent_investments` (talent_id → rank), `_class_talents`, `talent_picker_open` (blocks all input). **Key functions**: `get_talent_rank(id)`, `can_invest_talent(id)`, `invest_talent(id)` → `_apply_talent_rank(id, rank)` (dispatches side effects) → emits `talent_invested`. **Long rest = floor descent**: `advance_floor()` resets `rage_uses_remaining`/`hit_dice`. Level-up only grants `+1 talent_points_available`. `hud.gd._on_player_leveled_up()` spawns `talent_picker.gd` when points > 0.
+**GameState talent state**: `talent_points_available`, `talent_investments` (talent_id → rank), `_class_talents`, `talent_picker_open` (blocks all input). **Key functions**: `get_talent_rank(id)`, `can_invest_talent(id)`, `invest_talent(id)` → `_apply_talent_rank(id, rank)` (dispatches side effects) → emits `talent_invested`. Long rest is no longer floor descent — see "Rest system" below for where `rage_uses_remaining`/`hit_dice` actually refill. Level-up only grants `+1 talent_points_available`. `hud.gd._on_player_leveled_up()` spawns `talent_picker.gd` when points > 0.
 
 **Rank-gradient icons**: `GameState.TALENT_ICON_FOLDER` maps every Barbarian talent_id to `res://icons/barbarian/<subclass>/<name>_<rank>.png`. `GameState.talent_icon_path(id, rank)` clamps rank to 1–3 and returns the matching file. Every Talent/Ability sets `icon_path` via this helper so both the talent-tree icon and the ability-bar icon "gradate" as ranks are invested.
 
 **Barbarian (Tier 1: Rage/Reckless Attack/Danger Sense; Tier 2 at level 7: Berserker/Zealot/World Tree/Wild Heart, 3 talents each) and Monk full talent/ability tables: `scripts/entities/CLAUDE.md`.**
 
 ### Weapon mastery selection ("Mastery Picker")
-`Stats.ALL_WEAPON_MASTERIES` (all 8) + `Stats.mastery_cap()` (per-class/level, computed live) back `scripts/ui/mastery_picker.gd`, which populates `Stats.known_weapon_masteries` — the array every weapon-mastery combat effect already gates on. Currently spawns once, right after class selection (`class_select.gd`); a long-rest re-trigger is speced but not yet wired up (long rest is still "new floor" today — deliberately left alone). Full design: `docs/architecture/weapon-mastery-selection-design.md`; implementation detail: `scripts/ui/CLAUDE.md`.
+`Stats.ALL_WEAPON_MASTERIES` (all 8) + `Stats.mastery_cap()` (per-class/level, computed live) back `scripts/ui/mastery_picker.gd`, which populates `Stats.known_weapon_masteries` — the array every weapon-mastery combat effect already gates on. Spawns once right after class selection (`class_select.gd`), and again after any completed long rest if the player opts in (see "Rest system" below). Full design: `docs/architecture/weapon-mastery-selection-design.md`; implementation detail: `scripts/ui/CLAUDE.md`.
 
 ### Items and combat
 Weapon fields (`damage_die_min/max`, `damage_type`, `weapon_mastery`, `weapon_category`, `is_heavy`, `is_two_handed`, `is_finesse`, `is_light`, `is_reach`, `is_versatile`/`versatile_die_min/max`, `is_thrown`/`uses_max`/`uses_remaining`, `ammo_item_name`), weapon masteries (Cleave, Vex, Push, Graze, Topple, Sap, Nick, Slow), weapon proficiency, ranged weapons/ammo/long-range rules, equipment slots + dual-wielding (Off-hand only accepts a Light weapon when Main Hand is also Light — Handaxe/Dagger — and fires a bonus Off-hand attack per swing, its damage roll dropping the ability modifier unless negative; a Nick-mastery weapon in either hand adds a third, identical bonus attack), the click-to-toggle Versatile grip (Quarterstaff, Spear), Thrown weapons (Spear, Handaxe, Dagger — RMB/LMB throw using the melee attack modifier, durability "uses"), and the full `Item` field table: **`scripts/items/CLAUDE.md`**.
 ADV/DISADV house rule, combat roll formulas, damage-stacking rule, and enemy resist checks: **`scripts/entities/CLAUDE.md`**.
 
-### Hunger, traps, doors, short rest
-Hunger thresholds live on `GameState` (see `scripts/autoloads/CLAUDE.md`). Trap/door/floor-item systems and spawning live on `DungeonFloor` (see `scripts/world/CLAUDE.md`). Short rest panel: `scripts/ui/CLAUDE.md`. `Alt` key opens it; all player input is blocked while `GameState.short_rest_open == true`.
+### Rest system (short rest / long rest), traps, doors
+Hunger has been removed. `Alt` opens a tabbed rest panel (`scripts/ui/short_rest_panel.gd`) — **Short Rest** (default tab, up to 2/long-rest-cycle, spends hit dice) and **Long Rest** (explicit player action, NOT floor descent). Long rest requires sacrificing FOOD items worth `GameState.LONG_REST_FOOD_COST` (100) combined `Item.food_value`, takes `GameState.LONG_REST_TURNS` (20) turns (interruptible by enemies, same mechanism as short rest), fully heals HP, clears status effects, and refills every long-rest-gated resource (hit dice, short rests, Rage uses, Zealot/Wild Heart charges, companion HP) via the single `GameState.long_rest()` chokepoint — see `scripts/autoloads/CLAUDE.md`. On completion the player is asked whether to reselect weapon masteries (re-spawns the Mastery Picker). All player input is blocked while `GameState.short_rest_open == true`. Trap/door/floor-item systems and spawning live on `DungeonFloor` (see `scripts/world/CLAUDE.md`).
 
 ## Sprite Assets
 

@@ -67,6 +67,7 @@ func do_throw(pos: Vector2i) -> void:
 		dropped.item_name = item.item_name
 		dropped.item_type = item.item_type
 		dropped.heal_amount = item.heal_amount
+		dropped.food_value = item.food_value
 		dropped.icon_path = item.icon_path
 		dropped.description = item.description
 		dropped.quantity = 1

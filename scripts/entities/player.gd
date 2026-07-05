@@ -271,18 +271,25 @@ func _on_turn_started() -> void:
 		if GameState.short_rest_turns_remaining > 0:
 			GameState.game_log("[color=gray]Resting... (%d turn(s) remaining)[/color]" % GameState.short_rest_turns_remaining)
 		else:
-			var healed: int = GameState.short_rest_pending_heal
-			GameState.heal(healed)
-			GameState.game_log("[color=cyan]You finish your short rest and recover [b]+%d HP[/b].[/color]" % healed)
 			GameState.short_rest_active = false
-			GameState.short_rest_pending_heal = 0
 			_rest_interrupt_shown = false
-			GameState.short_rest_completed.emit()
+			if GameState.long_rest_pending:
+				GameState.long_rest_pending = false
+				GameState.short_rest_pending_heal = 0
+				GameState.long_rest()
+				GameState.mastery_picker_open = true
+				var prompt_script = load("res://scripts/ui/mastery_reselect_prompt.gd")
+				get_tree().root.call_deferred("add_child", prompt_script.new())
+			else:
+				var healed: int = GameState.short_rest_pending_heal
+				GameState.short_rest_pending_heal = 0
+				GameState.heal(healed)
+				GameState.game_log("[color=cyan]You finish your short rest and recover [b]+%d HP[/b].[/color]" % healed)
+				GameState.short_rest_completed.emit()
 			GameState.short_rest_changed.emit()
 		_actions.do_rest_wait_turn()
 		return
 
-	GameState.deplete_hunger()
 	var status_dmg: int = GameState.player_stats.tick_status()
 	if status_dmg > 0:
 		GameState.take_damage_raw(status_dmg)
@@ -1683,9 +1690,9 @@ func _finish_kill(enemy: Enemy, dropped_ammo: Item = null) -> void:
 		var rotten := Item.new()
 		rotten.item_name = "Rotten Meat"
 		rotten.item_type = Item.Type.FOOD
-		rotten.heal_amount = 20
+		rotten.food_value = 10
 		rotten.icon_path = "res://sprites/items/Food/Meat.png"
-		rotten.description = "Throw into fire to cook. Raw: minimal nutrition + 3 turns poison."
+		rotten.description = "Throw into fire to cook into Cooked Meat."
 		_dungeon_floor.place_item_on_floor(kill_pos, rotten)
 		GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)
 	# Ammo drop-from-corpse: 50% chance the killing shot's arrow/bolt is recoverable.

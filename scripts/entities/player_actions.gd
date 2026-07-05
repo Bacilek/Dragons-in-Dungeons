@@ -11,9 +11,6 @@ var _last_search_request: float = -999.0
 var _traps_in_proximity: Array[Vector2i] = []
 
 func open_short_rest() -> void:
-	if GameState.short_rests_remaining <= 0:
-		GameState.game_log("[color=gray]No short rests remaining on this floor. Descend to refresh.[/color]")
-		return
 	GameState.short_rest_open = true
 	var panel_script = load("res://scripts/ui/short_rest_panel.gd")
 	player.get_tree().root.add_child(panel_script.new())

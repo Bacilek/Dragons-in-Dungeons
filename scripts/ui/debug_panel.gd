@@ -17,9 +17,10 @@ const ITEMS_PATH   := "res://sprites/items/"
 const ALL_ITEMS: Array = [
 	{"name": "Health Potion",   "type": 2, "src": "items",   "icon": "Potions/Health/HealthPotionMedium.png", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Restores 2d4+CON HP", "heal_dice": 2, "heal_sides": 4},
 	{"name": "Strength Potion", "type": 2, "src": "items",   "icon": "Potions/Mana/ManaPotionMedium.png",     "bonus_dmg": 0, "heal": 0,   "str_bonus": 2, "desc": "+2 ATK (permanent)"},
-	{"name": "Ration",          "type": 4, "src": "items",   "icon": "Food/MeatCooked.png",                   "bonus_dmg": 0, "heal": 200, "str_bonus": 0, "desc": "Fills you up"},
-	{"name": "Mystery Meat",    "type": 4, "src": "items",   "icon": "Food/Meat.png",                         "bonus_dmg": 0, "heal": 120, "str_bonus": 0, "desc": "Better than nothing"},
-	{"name": "Rotten Meat",     "type": 4, "src": "items",   "icon": "Food/Meat.png",                         "bonus_dmg": 0, "heal": 20,  "str_bonus": 0, "desc": "Throw into fire to cook"},
+	{"name": "Ration",          "type": 4, "src": "items",   "icon": "Food/MeatCooked.png",                   "bonus_dmg": 0, "heal": 0, "food_value": 50, "str_bonus": 0, "desc": "Required for a long rest."},
+	{"name": "Cooked Meat",     "type": 4, "src": "items",   "icon": "Food/MeatCooked.png",                   "bonus_dmg": 0, "heal": 0, "food_value": 75, "str_bonus": 0, "desc": "Roasted over a fire trap. Required for a long rest."},
+	{"name": "Mystery Meat",    "type": 4, "src": "items",   "icon": "Food/Meat.png",                         "bonus_dmg": 0, "heal": 0, "food_value": 25, "str_bonus": 0, "desc": "Required for a long rest."},
+	{"name": "Rotten Meat",     "type": 4, "src": "items",   "icon": "Food/Meat.png",                         "bonus_dmg": 0, "heal": 0, "food_value": 10, "str_bonus": 0, "desc": "Throw into fire to cook into Cooked Meat."},
 	{"name": "Thief Tools",      "type": 7, "src": "items",   "icon": "Misc/KeyIron.png",                         "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Disarm traps",               "qty": 3},
 	{"name": "Short Bow",        "type": 0, "src": "items",   "icon": "Weapons/BowArrow.png",                     "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "is_ranged": true, "range": 4, "category": "Simple", "die_min": 1, "die_max": 6, "dmg_type": "Piercing", "mastery": "Vex", "ammo": "Arrow"},
 	{"name": "Heavy Crossbow",   "type": 0, "src": "items",   "icon": "Weapons/BowArrowGold.png",                 "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "is_ranged": true, "range": 4, "category": "Martial", "dmg_type": "Piercing", "die_min": 1, "die_max": 10, "mastery": "Push", "ammo": "Bolt", "heavy": true, "two_handed": true},
@@ -27,7 +28,7 @@ const ALL_ITEMS: Array = [
 	{"name": "Arrow",            "type": 7, "src": "weapons", "icon": "weapon_arrow.png",                         "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Ammunition for the Short Bow and Longbow.", "qty": 6},
 	{"name": "Bolt",             "type": 7, "src": "weapons", "icon": "weapon_arrow.png",                         "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Ammunition for the Heavy Crossbow.", "qty": 6},
 	{"name": "Empty Bottle",    "type": 7, "src": "items",   "icon": "Materials/BottleSmall.png",                "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Fill from water or mud"},
-	{"name": "Bottle of Water", "type": 4, "src": "items",   "icon": "Materials/BottleMedium.png",               "bonus_dmg": 0, "heal": 60,  "str_bonus": 0, "desc": "Restores 60 hunger"},
+	{"name": "Bottle of Water", "type": 7, "src": "items",   "icon": "Materials/BottleMedium.png",               "bonus_dmg": 0, "heal": 0,  "str_bonus": 0, "desc": "Fresh water. Not required for anything yet."},
 	{"name": "Bottle of Mud",   "type": 7, "src": "items",   "icon": "Materials/BottleSmall.png",               "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Foul mud. Maybe useful."},
 	{"name": "Greataxe",        "type": 0, "src": "weapons", "icon": "weapon_double_axe.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "die_min": 1, "die_max": 12, "dmg_type": "Slashing", "mastery": "Cleave", "category": "Martial"},
 	{"name": "Rapier",          "type": 0, "src": "weapons", "icon": "weapon_duel_sword.png",                   "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "die_min": 1, "die_max": 8, "dmg_type": "Piercing", "mastery": "Vex", "category": "Martial", "finesse": true},
@@ -543,6 +544,7 @@ func _on_give_item(d: Dictionary) -> void:
 	item.item_type   = d["type"] as Item.Type
 	item.bonus_damage = d["bonus_dmg"]
 	item.heal_amount        = d["heal"]
+	item.food_value         = d.get("food_value", 0)
 	item.heal_dice_count    = d.get("heal_dice", 0)
 	item.heal_dice_sides    = d.get("heal_sides", 0)
 	item.str_bonus          = d.get("str_bonus", 0)

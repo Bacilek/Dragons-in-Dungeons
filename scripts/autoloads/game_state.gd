@@ -14,7 +14,6 @@ signal player_action_requested(action_name: String)
 signal player_throw_primed(item: Item)
 signal player_tool_primed(item: Item)
 signal class_chosen(chosen_class: Stats.CharacterClass)
-signal hunger_changed(value: int)
 signal player_status_changed()
 signal debug_jump_floor(floor_num: int)
 signal short_rest_changed
@@ -33,6 +32,7 @@ signal equip_action_taken()
 signal talent_invested(talent_id: String, new_rank: int)
 signal talent_points_changed(available: int)
 signal known_masteries_changed
+signal long_rest_completed()
 
 const QUICKBAR_SIZE: int = 9
 const ABILITY_BAR_SIZE: int = 9
@@ -71,11 +71,12 @@ func talent_icon_path(id: String, rank: int) -> String:
 	var r: int = clampi(rank, 1, 3)
 	return "res://icons/barbarian/%s_%d.png" % [TALENT_ICON_FOLDER[id], r]
 
-enum HungerState { SATIATED, HUNGRY, STARVING }
-const MAX_HUNGER: int = 1000
-
-const STARVE_INTERVAL: int = 10
-var _starvation_tick: int = 0
+# Long rest: an explicit, Alt-menu-triggered rest (NOT floor descent — see long_rest()).
+# Requires sacrificing FOOD items worth LONG_REST_FOOD_COST combined food_value, and takes
+# LONG_REST_TURNS turns to complete (interruptible by enemies, same mechanism as short rest).
+const LONG_REST_FOOD_COST: int = 100
+const LONG_REST_TURNS: int = 20
+const SHORT_REST_TURNS: int = 5
 
 var current_floor: int = 1
 var player_stats: Stats
@@ -110,14 +111,18 @@ var active_tier2_subclass: String = "Berserker"
 var short_rest_active: bool = false
 var short_rest_turns_remaining: int = 0
 var short_rest_pending_heal: int = 0
+# Set true when the in-progress short_rest_active countdown is actually a long rest (Alt menu's
+# Long Rest tab). Consumed on completion by player.gd's _on_turn_started(), which calls
+# long_rest() instead of applying the short-rest heal. See long_rest() below.
+var long_rest_pending: bool = false
 
 # ── Wild Heart Tier 2 state ───────────────────────────────────────────────────
 # Natural Rager: toggle between Bear/Eagle/Wolf; effects only apply while is_raging.
 var natural_rager_form: String = "Bear"
-# Natural Sleeper: toggle between Owl/Panther/Salmon; activates on floor entry (long rest).
-# natural_sleeper_form = chosen form (preview); active_sleeper_form = locked in at last rest.
-var natural_sleeper_form: String = ""   # "" = no form chosen; locks in at floor descent
-var active_sleeper_form: String = ""    # locks in at short rest or floor descent
+# Natural Sleeper: toggle between Owl/Panther/Salmon; activates/locks in on a completed long rest.
+# natural_sleeper_form = chosen form (preview); active_sleeper_form = locked in at last long rest.
+var natural_sleeper_form: String = ""   # "" = no form chosen; locks in on long_rest()
+var active_sleeper_form: String = ""    # locks in on long_rest() only
 var wild_heart_sleeper_active: bool = false
 # Eagle R3: no-op pending future Opportunity Attack system — do NOT remove this flag.
 var player_evades_opportunity_attacks: bool = false
@@ -145,12 +150,6 @@ var player_grid_pos: Vector2i = Vector2i.ZERO
 # mechanic can push onto this list.
 var pending_chasm_items: Array[Item] = []
 var current_stairs_pos: Vector2i = Vector2i.ZERO
-var hunger: int = MAX_HUNGER
-var hunger_state: HungerState:
-	get:
-		if hunger > 600: return HungerState.SATIATED
-		if hunger > 200: return HungerState.HUNGRY
-		return HungerState.STARVING
 
 var player_quickbar: Array = []   # 9 item slots shown in HUD action bar
 var player_ability_bar: Array = [] # 9 ability slots (Tab to switch)
@@ -199,8 +198,7 @@ func start_new_run() -> void:
 	hit_dice = 1
 	short_rests_remaining = 2
 	max_short_rests = 2
-	hunger = MAX_HUNGER
-	_starvation_tick = 0
+	long_rest_pending = false
 	player_stats = Stats.new()
 	player_stats.apply_class_defaults()  # defaults until class select overrides
 	player_quickbar.clear()
@@ -227,9 +225,9 @@ func _give_starting_items() -> void:
 	var ration := Item.new()
 	ration.item_name = "Ration"
 	ration.item_type = Item.Type.FOOD
-	ration.heal_amount = 200
+	ration.food_value = 50
 	ration.icon_path = "res://sprites/items/Food/MeatCooked.png"
-	ration.description = "Fills you up"
+	ration.description = "Required for a long rest."
 	ration.quantity = 3
 	add_item(ration)
 
@@ -328,36 +326,93 @@ func add_ability(ability: Ability) -> bool:
 
 func advance_floor() -> void:
 	current_floor += 1
-	# Floor descent = long rest: refill rage uses, hit dice, short rest slots
+	# Floor descent is no longer a rest — see long_rest() for every long-rest-gated resource.
+	# Only floor bookkeeping and terrain reset happen here.
+	terrain_ac_bonus = 0  # reset terrain AC; player.gd will reapply on next move
+	short_rest_changed.emit()
+	floor_changed.emit(current_floor)
+	if current_floor > 10:
+		player_won.emit()
+
+# ── Rations / long rest ───────────────────────────────────────────────────────
+
+# Sums food_value × quantity across quickbar + bag for every FOOD item.
+func total_food_value() -> int:
+	var total: int = 0
+	for it: Item in player_quickbar:
+		if it != null and it.item_type == Item.Type.FOOD:
+			total += it.food_value * it.quantity
+	for it: Item in player_inventory:
+		if it != null and it.item_type == Item.Type.FOOD:
+			total += it.food_value * it.quantity
+	return total
+
+func can_long_rest() -> bool:
+	if invincible:
+		return true
+	return total_food_value() >= LONG_REST_FOOD_COST
+
+# Removes FOOD items worth `amount` combined food_value, cheapest-value items first so a
+# handful of low-value scraps get spent before a stack of Rations. No-op while invincible
+# (project invariant: invincible skips all consumption).
+func _consume_food_value(amount: int) -> void:
+	if invincible or amount <= 0:
+		return
+	var remaining: int = amount
+	var candidates: Array[Item] = []
+	for it: Item in player_quickbar:
+		if it != null and it.item_type == Item.Type.FOOD and it.food_value > 0:
+			candidates.append(it)
+	for it: Item in player_inventory:
+		if it != null and it.item_type == Item.Type.FOOD and it.food_value > 0:
+			candidates.append(it)
+	candidates.sort_custom(func(a: Item, b: Item) -> bool: return a.food_value < b.food_value)
+	for it: Item in candidates:
+		if remaining <= 0:
+			break
+		var qty: int = it.quantity
+		for _i: int in qty:
+			if remaining <= 0:
+				break
+			consume_one(it)
+			remaining -= it.food_value
+
+# The single chokepoint for every "per long rest" resource. Triggered explicitly by the player
+# via the Alt-menu Long Rest tab (see short_rest_panel.gd) — NEVER by advance_floor(). Any new
+# long-rest-gated resource must be refilled here and nowhere else.
+func long_rest() -> void:
+	player_stats.current_hp = player_stats.max_hp
+	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
+	player_stats.poison_turns = 0
+	player_stats.burning_turns = 0
+	player_stats.bleeding_turns = 0
+	player_stats.slowed_turns = 0
+	player_status_changed.emit()
 	player_stats.rage_uses_remaining = player_stats.rage_uses_max
 	hit_dice = player_stats.character_level
-	short_rests_remaining = 2
-	max_short_rests = 2
-	# Natural Sleeper activates on floor entry (long rest trigger).
-	# active_sleeper_form locks in the chosen form for this floor.
+	short_rests_remaining = max_short_rests
+	# Natural Sleeper activates/locks in on long rest only (not short rest, not floor descent).
 	wild_heart_sleeper_active = get_talent_rank("natural_sleeper") >= 1
 	active_sleeper_form = natural_sleeper_form
-	terrain_ac_bonus = 0  # reset terrain AC; player.gd will reapply on next move
+	if wild_heart_sleeper_active:
+		if active_sleeper_form != "":
+			game_log("[color=cyan]Natural Sleeper: you wake — %s Form is active.[/color]" % active_sleeper_form)
+		else:
+			game_log("[color=gray]Natural Sleeper: no form chosen — press the ability to select one.[/color]")
 	# Zealot long-rest resources (independent pools — see CLAUDE.md "long-rest-recharged resource" pattern).
 	var bw_rank: int = get_talent_rank("blessed_warrior")
 	if bw_rank >= 1:
 		zealot_blessed_charges = BLESSED_WARRIOR_MAX_CHARGES[bw_rank]
 	if get_talent_rank("zealous_presence") >= 1:
 		zealot_zp_charges = 1
-	if wild_heart_sleeper_active:
-		if active_sleeper_form != "":
-			game_log("[color=cyan]Natural Sleeper: you wake — %s Form is active this floor.[/color]" % active_sleeper_form)
-		else:
-			game_log("[color=gray]Natural Sleeper: no form chosen — press the ability to select one.[/color]")
-	# Companion: restore HP if alive; otherwise charge will be restored in _sync_ability_uses
 	if player_companion != null and is_instance_valid(player_companion):
 		player_companion.heal_to_max()
 		game_log("[color=lime]%s rests and recovers fully.[/color]" % player_companion.animal_name)
 	_sync_ability_uses()
+	_consume_food_value(LONG_REST_FOOD_COST)
 	short_rest_changed.emit()
-	floor_changed.emit(current_floor)
-	if current_floor > 10:
-		player_won.emit()
+	game_log("[color=cyan]You finish your long rest, fully healed and refreshed.[/color]")
+	long_rest_completed.emit()
 
 # Keeps ability resource uses_remaining in sync with player_stats after a long rest.
 func _sync_ability_uses() -> void:
@@ -373,6 +428,7 @@ func _sync_ability_uses() -> void:
 	ability_bar_changed.emit()
 
 # Triggered on short rest completion. Heals companion (if alive) AND restores One with Nature charge.
+# Natural Sleeper's form lock does NOT happen here — long rest only (see long_rest()).
 func _on_short_rest_completed() -> void:
 	if player_companion != null and is_instance_valid(player_companion):
 		player_companion.heal_to_max()
@@ -382,15 +438,6 @@ func _on_short_rest_completed() -> void:
 		owtn.uses_remaining = 1
 		ability_bar_changed.emit()
 		game_log("[color=lime]One with Nature: companion charge refreshed.[/color]")
-	# Natural Sleeper: short rest also locks in the chosen form (same as floor descent)
-	if get_talent_rank("natural_sleeper") >= 1:
-		wild_heart_sleeper_active = true
-		if active_sleeper_form != natural_sleeper_form:
-			active_sleeper_form = natural_sleeper_form
-			if active_sleeper_form != "":
-				game_log("[color=cyan]Natural Sleeper: %s Form is now active.[/color]" % active_sleeper_form)
-			else:
-				game_log("[color=gray]Natural Sleeper: no form chosen — press the ability to select one.[/color]")
 
 func hit_die_sides() -> int:
 	match player_stats.character_class:
@@ -714,15 +761,7 @@ func use_item(item: Item) -> void:
 				consume_one(item)
 			potion_drunk.emit()
 		Item.Type.FOOD:
-			AudioManager.play("eat_food")
-			if item.item_name == "Rotten Meat":
-				restore_hunger(item.heal_amount)
-				apply_player_status("poison", 3)
-				game_log("[color=red]You choke down the rotten meat. You feel sick! (Poisoned 3 turns)[/color]")
-			else:
-				restore_hunger(item.heal_amount)
-				game_log("[color=green]You eat [b]%s[/b]. Not so hungry anymore.[/color]" % item.item_name)
-			consume_one(item)
+			game_log("[color=gray]%s isn't eaten directly — it's saved as fuel for your next long rest (hold Alt).[/color]" % item.item_name)
 		Item.Type.WEAPON, Item.Type.ARMOR:
 			equip(item, "", false)  # equipping from bag/quickbar is a free action
 		Item.Type.TOOL:
@@ -770,40 +809,13 @@ func _add_to_bags_silent(item: Item) -> void:
 func game_log(msg: String) -> void:
 	combat_message.emit(msg)
 
-# ── Hunger ────────────────────────────────────────────────────────────────────
-
-func deplete_hunger() -> void:
-	if is_game_over:
-		return
-	var prev_state: HungerState = hunger_state
-	hunger = maxi(0, hunger - 1)
-	hunger_changed.emit(hunger)
-	var new_state: HungerState = hunger_state
-	if new_state != prev_state:
-		if new_state == HungerState.HUNGRY:
-			AudioManager.play("hungry")
-		elif new_state == HungerState.STARVING:
-			AudioManager.play("starving")
-	if hunger == 0:
-		_starvation_tick += 1
-		if _starvation_tick >= STARVE_INTERVAL:
-			_starvation_tick = 0
-			take_damage_raw(1)
-			game_log("[color=red]You are starving![/color]")
-	else:
-		_starvation_tick = 0
-
-func restore_hunger(amount: int) -> void:
-	hunger = mini(MAX_HUNGER, hunger + amount)
-	hunger_changed.emit(hunger)
-
 # is_raging is set by player.gd and read here to apply damage resistance.
 var is_raging: bool = false
 # reckless_attack_active is set by player.gd; enemies read it to decide their attack bonus type.
 var reckless_attack_active: bool = false
 # Set true after first reckless attack this turn — locks the toggle and blocks further bonus.
 var reckless_locked_this_turn: bool = false
-# Set true by take_damage_raw when the player takes physical hit damage (not status/starvation).
+# Set true by take_damage_raw when the player takes physical hit damage (not status effects).
 # Player.gd reads this in _on_turn_started to decide whether to pause the rage countdown.
 var player_was_hit_this_turn: bool = false
 
@@ -1315,16 +1327,16 @@ func _build_natural_sleeper_description() -> String:
 	if form == "":
 		lines.append("[No form chosen] — press to select Owl / Panther / Salmon.")
 		if not wild_heart_sleeper_active:
-			lines.append("[color=gray](Rest or descend to activate chosen form.)[/color]")
+			lines.append("[color=gray](Long rest to activate chosen form.)[/color]")
 		return "\n".join(lines)
 	# Form chosen — show header and per-form rank effects
 	if wild_heart_sleeper_active and active_sleeper_form != form:
 		var active_label: String = active_sleeper_form if active_sleeper_form != "" else "none"
-		lines.append("[%s Form] — activates next rest. [color=gray]Active now: %s[/color]" % [form, active_label])
+		lines.append("[%s Form] — activates next long rest. [color=gray]Active now: %s[/color]" % [form, active_label])
 	elif wild_heart_sleeper_active:
-		lines.append("[%s Form — active this floor] Press to choose next rest's form." % form)
+		lines.append("[%s Form — active] Press to choose next long rest's form." % form)
 	else:
-		lines.append("[%s Form] — will activate on floor descent. Press to cycle." % form)
+		lines.append("[%s Form] — will activate on your next long rest. Press to cycle." % form)
 	match form:
 		"Owl":
 			if rank >= 1: lines.append("R1: Pass through chasms freely.")

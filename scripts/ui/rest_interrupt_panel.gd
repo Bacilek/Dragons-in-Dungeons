@@ -64,6 +64,10 @@ func _on_abort() -> void:
 	GameState.short_rest_active = false
 	GameState.short_rest_pending_heal = 0
 	GameState.short_rest_open = false
+	if GameState.long_rest_pending:
+		GameState.long_rest_pending = false
+		GameState.game_log("[color=orange]You abandon your long rest. No food was spent.[/color]")
+	else:
+		GameState.game_log("[color=orange]You abandon your rest. The hit dice were spent.[/color]")
 	GameState.short_rest_changed.emit()
-	GameState.game_log("[color=orange]You abandon your rest. The hit dice were spent.[/color]")
 	queue_free()

@@ -26,7 +26,8 @@ TOOL   = 7
 | `item_type` | Type | enum above |
 | `quantity` | int | stackable; `get_display_name()` appends `×N` when > 1 |
 | `icon_path` | String | full `res://` path |
-| `heal_amount` | int | potions / food |
+| `heal_amount` | int | potions only — FOOD items no longer use this (see "Rations / long rest" below) |
+| `food_value` | int | FOOD items only: value sacrificed toward `GameState.LONG_REST_FOOD_COST` at a long rest |
 | `bonus_damage` | int | weapon hit bonus |
 | `bonus_ac` | int | armor AC bonus |
 | `str_bonus` | int | ability score bonus |
@@ -50,6 +51,9 @@ TOOL   = 7
 | `ammo_item_name` | String | Name of the Item this ranged weapon consumes per shot (e.g. `"Arrow"`); `""` = no named ammo (falls back to `consumes_on_ranged` on the weapon's own stack, or infinite). See "Ammo items" below |
 | `is_thrown` | bool | Thrown weapon (currently only Spear): can be primed via RMB (same UX as quickbar food throw) then thrown at a tile with LMB — see "Thrown weapons" below |
 | `uses_max`/`uses_remaining` | int | Thrown weapons only: durability. `uses_remaining` starts at `uses_max` and ticks down per throw (see "Thrown weapons"); reaching 0 breaks the weapon |
+
+## Rations / long rest
+FOOD items (`Ration`, `Mystery Meat`, `Rotten Meat`, `Cooked Meat`) are no longer directly edible — `GameState.use_item()`'s `FOOD` branch just logs a hint and consumes nothing. Their only purpose is `Item.food_value`, sacrificed toward `GameState.LONG_REST_FOOD_COST` (100) when the player completes a long rest (`scripts/ui/short_rest_panel.gd`'s Long Rest tab, see `scripts/autoloads/CLAUDE.md`'s "Rest system"). Current values: Ration 50, Cooked Meat 75, Mystery Meat 25, Rotten Meat 10 (tune here if rebalancing). `GameState.total_food_value()` sums `food_value × quantity` across quickbar+bag; `GameState._consume_food_value(amount)` spends the cheapest-value items first and is skipped entirely while `invincible` (God Mode long rests cost nothing). Rotten Meat can still be thrown into a revealed Fire Trap to cook into Cooked Meat (`DungeonFloor.cook_rotten_meat()`) — unrelated to the eating mechanic, which no longer exists for any food item.
 
 ## Damage type categories (documentation only — no enum)
 - **Physical**: Slashing, Piercing, Bludgeoning

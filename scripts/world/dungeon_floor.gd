@@ -993,7 +993,7 @@ func cook_rotten_meat(trap_pos: Vector2i) -> Item:
 	var cooked := Item.new()
 	cooked.item_name = "Cooked Meat"
 	cooked.item_type = Item.Type.FOOD
-	cooked.heal_amount = 150
+	cooked.food_value = 75
 	cooked.icon_path = "res://sprites/items/Food/MeatCooked.png"
 	cooked.description = "Roasted over a fire trap."
 	return cooked
@@ -1297,6 +1297,7 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.item_type = d["type"] as Item.Type
 	item.bonus_damage = d["bonus_dmg"]
 	item.heal_amount = d["heal"]
+	item.food_value = d.get("food_value", 0)
 	item.heal_dice_count = d.get("heal_dice", 0)
 	item.heal_dice_sides = d.get("heal_sides", 0)
 	item.damage_type = d.get("dmg_type", "")
@@ -1478,6 +1479,7 @@ func _roll_boss_loot_item() -> Item:
 	item.item_type = d["type"] as Item.Type
 	item.bonus_damage = d["bonus_dmg"]
 	item.heal_amount = d["heal"]
+	item.food_value = d.get("food_value", 0)
 	item.heal_dice_count = d.get("heal_dice", 0)
 	item.heal_dice_sides = d.get("heal_sides", 0)
 	item.str_bonus = d.get("str_bonus", 0)
