@@ -101,7 +101,7 @@ pending_chasm_items: Array[Item]  # ammo (or any future item) that fell into a c
 ### Equipment slots
 `GameState.equipment` dict: keys `"melee"` (Main Hand), `"hand2"` (Off-hand), `"ranged"`, `"armor"`, `"boots"`, `"gloves"`, `"head"`, `"trinket"`.
 `GameState.equipped_ranged` property returns ranged slot item.
-`equip()` auto-routes by `item.is_ranged` (weapons always land in `"melee"`/`"ranged"`, never `"hand2"` — Off-hand is only reachable via explicit drag in `inventory_overlay.gd`). `"hand2"` accepts a Light melee weapon only when Main Hand is also Light — dual-wielding two Light weapons (currently only the Handaxe) fires a bonus Off-hand attack on every melee swing (`player.gd._try_offhand_attack()`) — see `scripts/items/CLAUDE.md`'s "Dual-wielding".
+`equip()` auto-routes by `item.is_ranged` (weapons always land in `"melee"`/`"ranged"`, never `"hand2"` — Off-hand is only reachable via explicit drag in `inventory_overlay.gd`). `"hand2"` accepts a Light melee weapon only when Main Hand is also Light — dual-wielding two Light weapons (Handaxe, Dagger) fires a bonus Off-hand attack on every melee swing (`player.gd._try_offhand_attack()`) — see `scripts/items/CLAUDE.md`'s "Dual-wielding". Dragging a stacked durability weapon (`quantity > 1`) onto any equipment slot equips only one unit (`move_item()`'s `_should_split_for_equip()`/`_split_one_unit()`, shared with `equip()`) — see `scripts/items/CLAUDE.md`'s "Dragging a stack".
 
 ---
 
