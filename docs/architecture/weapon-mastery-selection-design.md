@@ -59,19 +59,18 @@ research on this repo, verified):
 | Nick | Dagger | `player.gd:1488-1489` |
 | Push | Heavy Crossbow | `player_ranged.gd:178` |
 | Sap | Spear (thrown) | `player_throw_tool.gd:250` |
-| Slow | **none** | **none — not implemented anywhere** |
+| Slow | Longbow | `player_ranged.gd` (`ranged_attack()`, Slow `elif` branch right after Push) |
 | Topple | Maul, Quarterstaff | `player.gd:1386` (`_try_topple()`) |
 | Vex | Short Bow, Rapier, Handaxe | `player.gd:1284`, `:1525`, `player_ranged.gd:137` |
 
-### 2.1 The Slow caveat
+### 2.1 The Slow caveat (resolved)
 
-**Slow has no backing weapon and no effect code.** Per explicit owner instruction it still
-appears in the picker as a normal selectable option — selecting it just adds `"Slow"` to
-`known_weapon_masteries` and does nothing until a future weapon/effect lands. The picker must
-therefore be **data-driven off a flat name list** and never assume an effect (or a weapon)
-exists for a selected mastery. No warning UI, no special styling — it's indistinguishable
-from the others in the picker. Implementers: do not "helpfully" hide it or add effect code
-for it; that's a separate future feature (see §9).
+Update: Slow now has a backing weapon and effect (Longbow, added after this doc was written —
+see `scripts/items/CLAUDE.md`'s "Weapon masteries" section). On a non-lethal ranged hit it sets
+`Enemy.slowed_turns = maxi(enemy.slowed_turns, 1)`, the same field Mud/Water difficult terrain
+uses, making the enemy skip its entire next turn. No resist/save roll, unlike Push/Topple. All
+8 masteries are therefore now data-complete; the picker still must not hardcode this
+assumption anywhere (a future 9th mastery could just as easily launch mid-cycle inert).
 
 ---
 
@@ -395,8 +394,9 @@ never store the cap on the picker instance across refreshes — call the functio
 
 ### 7.5 Selecting Slow
 
-Adds `"Slow"` to the array; no weapon carries it and no effect reads it, so it is inert
-(§2.1). This is accepted behavior, not a bug — do not add UI warnings.
+Update: Slow is now backed by the Longbow (§2.1) — selecting it behaves exactly like any
+other mastery, no special-casing needed. (Originally written when Slow was inert; kept as a
+worked example of "a mastery can launch mid-cycle with no backing weapon" for future entries.)
 
 ### 7.6 Invincible / god mode
 
@@ -424,8 +424,6 @@ gating deviation from talent-picker parity (§5.3), alphabetical mastery order (
 
 ## 9. Out of scope (explicitly)
 
-- **Slow mastery's weapon + effect implementation** — future feature; the picker treats it
-  as an inert string (§2.1).
 - **Real icon assets** — owner supplies later; placeholder frames until then (§4.2).
 - **Long rest as a standalone system** — this design hooks the current stand-in
   (`advance_floor()` via `floor_changed`); when an explicit long-rest trigger lands, only

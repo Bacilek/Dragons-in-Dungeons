@@ -183,6 +183,9 @@ func ranged_attack(enemy: Enemy) -> void:
 				await player._dungeon_floor.resolve_push(enemy, away_dir)
 		else:
 			GameState.game_log("[color=gray]Push: %s resists the shove.[/color]" % enemy.display_name)
+	elif weapon != null and weapon.weapon_mastery == "Slow" and player.stats.knows_mastery("Slow"):
+		enemy.slowed_turns = maxi(enemy.slowed_turns, 1)
+		GameState.game_log("[color=gray]Slow: %s is slowed.[/color]" % enemy.display_name)
 	if player._dungeon_floor != null:
 		player._dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()
