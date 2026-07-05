@@ -512,13 +512,23 @@ func equip(item: Item, slot_name: String = "", costs_turn: bool = false) -> void
 	if not equipment.has(slot_name):
 		return
 
+	var to_equip: Item = item
+	# A stacked thrown weapon (quantity > 1, all sharing the same uses_remaining — see add_item())
+	# only ever equips a single unit: split one off instead of moving the whole stack into the
+	# slot, so the rest keep sitting in the bag with their own durability untouched.
+	if item.quantity > 1 and item.item_type == Item.Type.WEAPON and item.uses_max > 0:
+		to_equip = item.duplicate()
+		to_equip.quantity = 1
+		item.quantity -= 1
+	else:
+		_remove_from_bags(item)
+
 	var prev: Item = equipment[slot_name] as Item
-	equipment[slot_name] = item
-	_remove_from_bags(item)
+	equipment[slot_name] = to_equip
 	if prev != null:
 		_add_to_bags_silent(prev)
 	recalculate_stats()
-	combat_message.emit("[color=cyan]Equipped [b]%s[/b].[/color]" % item.item_name)
+	combat_message.emit("[color=cyan]Equipped [b]%s[/b].[/color]" % to_equip.item_name)
 	equipment_changed.emit()
 	inventory_changed.emit()
 	if costs_turn and class_selected:
@@ -617,25 +627,24 @@ func _set_slot_item(source: String, idx: int, slot_name: String, item: Item) -> 
 # ── Item management ───────────────────────────────────────────────────────────
 
 func add_item(item: Item) -> bool:
-	# Weapons with individual durability (uses_max > 0, e.g. thrown weapons) never merge into a
-	# shared quantity stack — each carries its own uses_remaining, and merging would silently
-	# discard that per-instance state. Each one always lands in its own slot instead, so it can
-	# be thrown/equipped one at a time independently of any others of the same name.
-	var stackable: bool = not (item.item_type == Item.Type.WEAPON and item.uses_max > 0)
-	if stackable:
-		# Try stacking in quickbar, then bag
-		for i: int in QUICKBAR_SIZE:
-			var ex: Item = player_quickbar[i] as Item
-			if ex != null and ex.item_name == item.item_name:
-				ex.quantity += item.quantity
-				inventory_changed.emit()
-				return true
-		for i: int in INVENTORY_SIZE:
-			var ex: Item = player_inventory[i] as Item
-			if ex != null and ex.item_name == item.item_name:
-				ex.quantity += item.quantity
-				inventory_changed.emit()
-				return true
+	# Weapons with individual durability (uses_max > 0, e.g. thrown weapons) only stack with an
+	# existing pile that has the exact same uses_remaining — different durability never merges,
+	# so a stack always holds interchangeable units (throwing/equipping one from a stack is safe
+	# no matter which unit gets picked, see equip()/PlayerThrowTool._throw_weapon() splitting).
+	var is_durability_weapon: bool = item.item_type == Item.Type.WEAPON and item.uses_max > 0
+	# Try stacking in quickbar, then bag
+	for i: int in QUICKBAR_SIZE:
+		var ex: Item = player_quickbar[i] as Item
+		if ex != null and ex.item_name == item.item_name and (not is_durability_weapon or ex.uses_remaining == item.uses_remaining):
+			ex.quantity += item.quantity
+			inventory_changed.emit()
+			return true
+	for i: int in INVENTORY_SIZE:
+		var ex: Item = player_inventory[i] as Item
+		if ex != null and ex.item_name == item.item_name and (not is_durability_weapon or ex.uses_remaining == item.uses_remaining):
+			ex.quantity += item.quantity
+			inventory_changed.emit()
+			return true
 	# Empty quickbar slot first, then bag
 	for i: int in QUICKBAR_SIZE:
 		if player_quickbar[i] == null:
