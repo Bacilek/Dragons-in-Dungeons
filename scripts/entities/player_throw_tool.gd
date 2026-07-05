@@ -125,7 +125,9 @@ func try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 # Thrown weapon (e.g. Spear): uses the melee attack modifier (STR, or max(STR,DEX) if Finesse),
 # not a separate DEX/ranged stat. Normal range = weapon.range; beyond that but within the live
 # FOV the throw still works but rolls with Disadvantage — same convention as ranged weapons
-# (see PlayerRanged.is_ranged_target_in_range()/ranged_shot_disadvantage()).
+# (see PlayerRanged.is_ranged_target_in_range()/ranged_shot_disadvantage()). A throw at an
+# adjacent target (Chebyshev 1) also rolls with Disadvantage, mirroring ranged_attack()'s
+# melee-range check.
 #
 # Landing (mirrors the ranged-ammo landing model, scripts/items/CLAUDE.md's "Ammo items", but
 # with a thrown weapon's own rules): no target tile → lands on the ground at the thrown tile, no
@@ -187,6 +189,9 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	if long_throw: disadv_count += 1
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
+	# Same convention as ranged weapons: throwing at an adjacent target (Chebyshev 1) is
+	# awkward at that range, so it rolls with Disadvantage too (PlayerRanged.ranged_attack()).
+	if maxi(absi(d.x), absi(d.y)) <= 1: disadv_count += 1
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]
 	var die2: int = r["die2"]
