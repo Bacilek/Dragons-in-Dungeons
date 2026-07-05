@@ -53,6 +53,17 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 # field — it's always the player's live FOV (DungeonFloor.FOV_RADIUS), only the "normal" range
 # (`range` above) differs per weapon; see player.gd._is_ranged_target_in_range().
 @export var ammo_item_name: String = ""
+# Thrown: can be primed via RMB (same UX as quickbar food throw) then thrown at a tile with LMB.
+# Uses the wielder's MELEE attack modifier (STR, or max(STR,DEX) if is_finesse) even though it's
+# thrown — not a separate ranged stat. `range` (above) is the thrown weapon's normal range; beyond
+# that but within the player's live FOV the throw still works but rolls with Disadvantage — same
+# normal/FOV-long-range convention as ranged weapons (see PlayerRanged.is_ranged_target_in_range()).
+@export var is_thrown: bool = false
+# Thrown weapons only: durability. uses_remaining starts at uses_max and decrements by 1 per throw
+# (0 on a natural-20 critical hit, 2 on a natural-1 critical fumble). Reaching 0 breaks the weapon
+# (GameState.remove_item()). Not consumed by ordinary melee attacks — only by throwing.
+@export var uses_max: int = 0
+@export var uses_remaining: int = 0
 
 func get_display_name() -> String:
 	if quantity > 1:

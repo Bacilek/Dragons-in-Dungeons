@@ -64,7 +64,10 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"light": "Light weapon.\nCan be equipped in the\nOff-hand alongside a\nMain Hand weapon.",
 	"graze": "Mastery: Graze.\nOn a miss, still deal\ndamage equal to the\nability modifier used\nfor the attack (min 0).",
 	"reach": "Reach weapon.\n+1 tile melee range —\ncan attack (and chase-\nattack) from 2 tiles away\ninstead of 1.",
-	"topple": "Mastery: Topple.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ STR) or is knocked Prone,\nskipping its entire next turn."
+	"topple": "Mastery: Topple.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ STR) or is knocked Prone,\nskipping its entire next turn.",
+	"versatile": "Versatile weapon.\nClick the Main Hand slot\nto switch grip: one-handed\nuses the die shown, two-\nhanded uses the die listed\nhere instead.",
+	"thrown": "Thrown weapon.\nRight-click to prime a\nthrow, then left-click a\ntarget tile — uses your\nmelee attack modifier.\nNormal range shown; beyond\nit (still within FOV) rolls\nwith Disadvantage. Has\nlimited uses before it\nbreaks.",
+	"sap": "Mastery: Sap.\nOn a hit, the target has\nDisadvantage on its very\nnext attack, next turn."
 }
 
 # ── Extra popup labels (added programmatically to expand the stats popup) ─────
@@ -757,10 +760,19 @@ func _on_qbar_slot_hover(idx: int) -> void:
 				props.append("[url=keyword:light]Light[/url]")
 			if item.is_reach:
 				props.append("[url=keyword:reach]Reach[/url]")
+			if item.is_versatile:
+				var grip_str: String = "two" if item.is_two_handed else "one"
+				props.append("[url=keyword:versatile]Versatile (1d%d %s-handed)[/url]" % [item.versatile_die_max, grip_str])
+			if item.is_thrown:
+				props.append("[url=keyword:thrown]Thrown (%d/FOV)[/url]" % item.range)
 			if not props.is_empty():
 				text += "\n%s" % ", ".join(props)
 		if not item.description.is_empty():
 			text += "\n[color=gray]%s[/color]" % item.description
+	if not _ability_bar_mode:
+		var thrown_item := item_or_ability as Item
+		if thrown_item != null and thrown_item.item_type == Item.Type.WEAPON and thrown_item.is_thrown:
+			text += "\n[color=#999][font_size=11][right]Uses: %d/%d[/right][/font_size][/color]" % [thrown_item.uses_remaining, thrown_item.uses_max]
 	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
 	_qbar_tooltip_rtl.text = text
 	_qbar_tooltip_rtl.size = Vector2(172.0, 0)
