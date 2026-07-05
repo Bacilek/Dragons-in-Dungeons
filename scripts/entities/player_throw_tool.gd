@@ -125,8 +125,15 @@ func try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 # Thrown weapon (e.g. Spear): uses the melee attack modifier (STR, or max(STR,DEX) if Finesse),
 # not a separate DEX/ranged stat. Normal range = weapon.range; beyond that but within the live
 # FOV the throw still works but rolls with Disadvantage — same convention as ranged weapons
-# (see PlayerRanged.is_ranged_target_in_range()/ranged_shot_disadvantage()). The weapon itself
-# is never dropped/consumed on the ground — only its uses_remaining durability ticks down.
+# (see PlayerRanged.is_ranged_target_in_range()/ranged_shot_disadvantage()).
+#
+# Landing (mirrors the ranged-ammo landing model, scripts/items/CLAUDE.md's "Ammo items", but
+# with a thrown weapon's own rules): no target tile → lands on the ground at the thrown tile, no
+# use lost. A miss against an enemy → lands at the enemy's tile, -1 use (-2 on a nat-1 fumble). A
+# non-lethal hit → embeds in the enemy (Enemy.embedded_items) instead of landing anywhere, -1 use
+# (0 on a nat-20 crit) — dropped later at 100% chance whenever that enemy eventually dies, from
+# ANY cause, via Enemy.die()'s override. If durability hits 0 on this throw the weapon shatters
+# instead of landing/embedding (see _consume_throw_use()).
 func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
@@ -158,8 +165,9 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	player._ranged.show_projectile(target_world_pos, weapon)
 
 	if enemy == null:
-		GameState.game_log("[color=gray]You throw [b]%s[/b] — it lands with a clatter.[/color]" % weapon.item_name)
-		_consume_throw_use(weapon, 1)
+		GameState.game_log("[color=gray]You throw [b]%s[/b] — it lands on the ground.[/color]" % weapon.item_name)
+		GameState.remove_item(weapon)
+		player._dungeon_floor.place_item_on_floor(pos, weapon)
 		player._dungeon_floor.update_fog(player.grid_pos)
 		player._handle_post_attack_turn()
 		return
@@ -193,7 +201,9 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
 			GameState.screen_shake.emit(2.5)
-		_consume_throw_use(weapon, 2 if is_nat_one else 1)
+		if not _consume_throw_use(weapon, 2 if is_nat_one else 1):
+			GameState.remove_item(weapon)
+			player._dungeon_floor.place_item_on_floor(enemy.grid_pos, weapon)
 		player._dungeon_floor.update_fog(player.grid_pos)
 		player._handle_post_attack_turn()
 		return
@@ -231,7 +241,12 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	if weapon.weapon_mastery == "Sap" and stats.knows_mastery("Sap"):
 		enemy.disadv_next_attack = true
 
-	_consume_throw_use(weapon, 0 if is_crit else 1)
+	if not _consume_throw_use(weapon, 0 if is_crit else 1):
+		# Embed rather than drop — survives on the enemy until it dies (any cause, any turn),
+		# at which point Enemy.die() drops it at 100% chance. Embedding before the is_dead()
+		# check below means an immediate kill on this same throw drops it right away too.
+		GameState.remove_item(weapon)
+		enemy.embedded_items.append(weapon)
 
 	if enemy.stats.is_dead():
 		player._finish_kill(enemy)
@@ -239,11 +254,14 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	player._dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()
 
-func _consume_throw_use(weapon: Item, uses_lost: int) -> void:
+# Returns true if the weapon broke (already logged + removed from GameState) — callers should
+# skip landing/embedding it anywhere in that case, since it no longer physically exists.
+func _consume_throw_use(weapon: Item, uses_lost: int) -> bool:
 	if GameState.invincible or uses_lost <= 0:
-		return
+		return false
 	weapon.uses_remaining = maxi(0, weapon.uses_remaining - uses_lost)
-	GameState.inventory_changed.emit()
 	if weapon.uses_remaining <= 0:
 		GameState.game_log("[color=gray]Your %s breaks![/color]" % weapon.item_name)
 		GameState.remove_item(weapon)
+		return true
+	return false
