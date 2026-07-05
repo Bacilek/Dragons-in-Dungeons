@@ -609,9 +609,16 @@ if ab.ability_id.begins_with("spell:"):
     return
 ```
 
-Nine ability slots will not hold a real caster's list forever — v1 accepts this (a Wizard's
-prepared list at the game's level range fits; `add_ability()` already logs "Ability bar is
-full!"). A paged bar / spellbook overlay is a known future need, flagged in §13.
+Nine ability slots will not hold a real caster's list forever. **Owner decision: auto-paging,
+not a spellbook overlay.** When `add_ability()` would overflow slot 9, it opens a new page of
+9 slots instead of logging "Ability bar is full!" — same `Tab` toggle between item bar/ability
+bar, plus a secondary page indicator (small `1/2`-style control, same visual language as the
+rest-panel tabs) to flip between ability-bar pages. `GameState.player_ability_bar` becomes
+`Array[Array]` (a page = 9-slot array; `add_ability()` walks pages in order, appending a new
+page only when the last one is full) — `_use_ability_slot(idx)` needs the current page folded
+into its slot lookup. This keeps spells-as-Abilities as the **permanent** casting surface
+(resolves the open question previously flagged here — see §13.1) rather than a v1 bridge to a
+future overlay; no separate spellbook UI is needed.
 
 **`begin_cast(spell_id)` flow**:
 
@@ -1222,12 +1229,10 @@ never touches concentration.
 
 ## 13. Open questions / risks
 
-1. **Ability-bar capacity** (§5.4): 9 slots hold an early Wizard, not a level-10 one with
-   scrolled extras. Options: pages on the ability bar, or a spellbook overlay (I-key
-   sibling) with drag-to-bar. Needs an owner call before content outgrows it — the data
-   model doesn't care, only the HUD does. **This is the one I'd most want a decision on
-   early**, because it shapes whether spells-as-Abilities is the permanent surface or a v1
-   bridge.
+1. **Ability-bar capacity** (§5.4): **resolved** — auto-paging. `add_ability()` opens a new
+   9-slot page instead of failing once the current page is full; `player_ability_bar`
+   becomes `Array[Array]`; a small page indicator lets the player flip pages. Spells-as-
+   Abilities is the permanent casting surface, no spellbook overlay needed.
 2. **Enemy status intake** (§10.5): enemies today have bespoke fields (`prone_turns`,
    `rooted_turns`, `slowed_turns`, `disadv_next_attack`) and no poison/burn tick — a
    damage-over-time spell vs enemies needs either enemy `Stats` gaining tick fields (they
