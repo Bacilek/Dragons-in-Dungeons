@@ -27,7 +27,9 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"graze": "Mastery: Graze.\nOn a miss, still deal\ndamage equal to the\nability modifier used\nfor the attack (min 0).",
 	"reach": "Reach weapon.\n+1 tile melee range —\ncan attack (and chase-\nattack) from 2 tiles away\ninstead of 1.",
 	"topple": "Mastery: Topple.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ STR) or is knocked Prone,\nskipping its entire next turn.",
-	"versatile": "Versatile weapon.\nClick the Main Hand slot\nto switch grip: one-handed\nuses the die shown, two-\nhanded uses the die listed\nhere instead."
+	"versatile": "Versatile weapon.\nClick the Main Hand slot\nto switch grip: one-handed\nuses the die shown, two-\nhanded uses the die listed\nhere instead.",
+	"thrown": "Thrown weapon.\nRight-click to prime a\nthrow, then left-click a\ntarget tile — uses your\nmelee attack modifier.\nNormal range shown; beyond\nit (still within FOV) rolls\nwith Disadvantage. Has\nlimited uses before it\nbreaks.",
+	"sap": "Mastery: Sap.\nOn a hit, the target has\nDisadvantage on its very\nnext attack, next turn."
 }
 
 # Tooltip freeze state (Ctrl to freeze, enabling keyword link hover)
@@ -468,6 +470,8 @@ func _on_slot_hover(slot: Control) -> void:
 		if item.is_versatile:
 			var grip_str: String = "two" if item.is_two_handed else "one"
 			props.append("[url=keyword:versatile]Versatile (1d%d %s-handed)[/url]" % [item.versatile_die_max, grip_str])
+		if item.is_thrown:
+			props.append("[url=keyword:thrown]Thrown (%d/FOV)[/url]" % item.range)
 		if not props.is_empty():
 			text += "\n%s" % ", ".join(props)
 	elif item.item_type == Item.Type.POTION or item.item_type == Item.Type.FOOD:
@@ -477,6 +481,8 @@ func _on_slot_hover(slot: Control) -> void:
 			text += "\n+%d HP" % item.heal_amount
 	if not item.description.is_empty():
 		text += "\n[color=gray]%s[/color]" % item.description
+	if item.item_type == Item.Type.WEAPON and item.is_thrown:
+		text += "\n[color=#999][font_size=11][right]Uses: %d/%d[/right][/font_size][/color]" % [item.uses_remaining, item.uses_max]
 	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
 	_inv_tooltip_rtl.text = text
 	_inv_tooltip_rtl.size = Vector2(172.0, 0)
