@@ -69,9 +69,20 @@ func _apply_stats() -> void:
 # Used by World Tree's Grip of the Forest (STR) and Branching Strike R3 push (CON).
 # Returns true if the enemy RESISTS (roll >= dc).
 func resist_check(dc: int, use_con: bool = false) -> bool:
+	return resist_check_detailed(dc, use_con)["pass"]
+
+# Same roll as resist_check(), but returns the full breakdown so callers can log a chat-log
+# tooltip (see Topple's "save" meta in player.gd._try_topple()) instead of just the pass/fail
+# bool. "pass" here means the enemy RESISTS (roll >= dc), matching resist_check().
+func resist_check_detailed(dc: int, use_con: bool = false) -> Dictionary:
 	var mod: int = stats.con_modifier() if use_con else stats.str_modifier()
-	var roll: int = randi_range(1, 20) + GameState.current_floor / 3 + mod
-	return roll >= dc
+	var floor_bonus: int = GameState.current_floor / 3
+	var die: int = randi_range(1, 20)
+	var total: int = die + floor_bonus + mod
+	return {
+		"die": die, "mod": mod, "floor_bonus": floor_bonus, "dc": dc,
+		"total": total, "pass": total >= dc, "stat": "CON" if use_con else "STR",
+	}
 
 # Overrides Entity.die(): drop any thrown weapons embedded in this enemy (see embedded_items
 # above) at 100% chance before freeing — regardless of what actually killed it or how many turns
