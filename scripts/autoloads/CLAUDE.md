@@ -29,11 +29,11 @@ When you add signals, state fields, or change turn flow here, **immediately upda
 | `player_throw_primed` | `item: Item` | RMB food in quickbar |
 | `player_tool_primed` | `item: Item` | tool use primed |
 | `class_chosen` | `chosen_class: Stats.CharacterClass` | class select screen |
-| `hunger_changed` | `value: int` | each hunger tick |
 | `player_status_changed` | — | status effect change |
 | `short_rest_changed` | — | hit dice / rests update |
-| `short_rest_completed` | — | rest finished |
+| `short_rest_completed` | — | short rest finished |
 | `short_rest_aborted` | — | rest cancelled |
+| `long_rest_completed` | — | `GameState.long_rest()` finished restoring everything |
 | `stairs_discovered` | — | fog reveals stairs tile |
 | `camera_recenter_requested` | — | re-center camera |
 | `debug_jump_floor` | `floor_num: int` | debug jump |
@@ -54,7 +54,7 @@ AudioManager.play_music("res://audio/music_dungeon.ogg")  # looping track
 AudioManager.stop_music()
 ```
 
-**SFX names:** `hit_enemy, miss_enemy, crit, crit_fail, player_hurt, player_die, kill_enemy, shoot, open_door, close_door, lock_door, step_grass, step_mud, step_water, step_floor, trap_fire, trap_spike, trap_piston, trap_bear, eat_food, drink_potion, lockpick, hungry, starving, cook_meat, throw_item, bottle_fill`
+**SFX names:** `hit_enemy, miss_enemy, crit, crit_fail, player_hurt, player_die, kill_enemy, shoot, open_door, close_door, lock_door, step_grass, step_mud, step_water, step_floor, trap_fire, trap_spike, trap_piston, trap_bear, drink_potion, lockpick, cook_meat, throw_item, bottle_fill`
 
 **Music:** `music_dungeon.ogg` (normal floors), `music_boss.ogg` (boss floors: floor % 5 == 0). Enable **Loop** in Godot import settings for music files.
 
@@ -63,9 +63,12 @@ AudioManager.stop_music()
 ### Key state fields
 ```
 short_rest_open: bool        # blocks ALL player input while true
-short_rest_active: bool      # a rest is in progress (ticking turns)
-hit_dice: int                # available dice (refills to character_level on advance_floor = long rest)
-short_rests_remaining: int   # 2 per floor, resets on advance_floor
+short_rest_active: bool      # a rest is in progress (ticking turns) — short OR long, see long_rest_pending
+long_rest_pending: bool      # true when the in-progress short_rest_active countdown is actually a long rest
+hit_dice: int                # available dice (refills to character_level only in long_rest())
+short_rests_remaining: int   # 2 per long-rest cycle, resets in long_rest() (NOT advance_floor)
+LONG_REST_FOOD_COST: int     # const 100 — combined Item.food_value required to long rest
+LONG_REST_TURNS: int         # const 20 — turns a long rest takes (short rest: SHORT_REST_TURNS = 5)
 talent_picker_open: bool     # blocks ALL player input while talent picker is visible
 mastery_picker_open: bool    # blocks ALL player input while the Mastery Picker is visible (scripts/ui/mastery_picker.gd)
 talent_points_available: int # unspent talent points (Tier 1 + Tier 2)
@@ -92,15 +95,9 @@ pending_chasm_items: Array[Item]  # ammo (or any future item) that fell into a c
 
 **Debug subclass switching**: `TIER2_SUBCLASSES: PackedStringArray = ["Berserker", "Zealot", "World Tree", "Wild Heart"]`. `active_tier2_subclass: String` tracks current. `debug_switch_subclass(direction: int)` — clears tier 2 investments + ability bar entries + `_class_talents` tier 2 entries, then re-runs `_setup_tier2_for_active_subclass()` (dispatches to Berserker/Wild Heart/World Tree/Zealot setup — all four implemented). Called from talent_picker.gd's subclass arrow buttons (only visible in God Mode). Adding a 4th+ subclass only requires a new `match` case here plus its `_setup_X_tier2_talents()` — nothing else in the subclass-selection system assumes a fixed count.
 
-**Long rest = floor descent**: `advance_floor()` resets `rage_uses_remaining`, `hit_dice`, and `short_rests_remaining`. Level-up via `gain_exp()` only grants `+1 talent_points_available` and emits `player_leveled_up` — it does NOT reset resources or heal the player.
+**Rest system**: `advance_floor()` is floor bookkeeping ONLY (floor number, terrain AC reset) — it does not restore anything. `GameState.long_rest()` is the single chokepoint for every long-rest-gated resource: full HP heal, cleared status effects, `rage_uses_remaining`, `hit_dice = character_level`, `short_rests_remaining = max_short_rests`, Natural Sleeper form lock-in, Zealot `zealot_blessed_charges`/`zealot_zp_charges`, companion heal, `_sync_ability_uses()` (One with Nature charge). Triggered explicitly by the player via the Alt-menu's Long Rest tab (`scripts/ui/short_rest_panel.gd`), never automatically. **Any new "per long rest" resource must be refilled in `long_rest()` and nowhere else** — `advance_floor()` must never regain restore logic. `GameState.total_food_value() -> int` sums `Item.food_value × quantity` across quickbar+bag; `can_long_rest() -> bool` (always true when `invincible`) gates the button; `_consume_food_value(amount)` spends cheapest-value FOOD items first, skipped entirely while `invincible` (so God Mode long rests cost nothing). `long_rest_pending: bool` tells the shared short-rest turn-countdown in `player.gd._on_turn_started()` to call `long_rest()` instead of the short-rest heal when the countdown reaches 0; `rest_interrupt_panel.gd`'s abort path also clears it. Level-up via `gain_exp()` only grants `+1 talent_points_available` and emits `player_leveled_up` — it does NOT reset resources or heal the player.
 
 **Rage DR**: `take_damage_raw(amount, ignore_rage, damage_type: String) -> int` — returns actual damage after DR. Physical types ("Slashing"/"Piercing"/"Bludgeoning") are reduced at Rage talent rank ≥ 2 (25% DR) or ≥ 3 (50% DR). All callers must pass `damage_type`; missing/empty type bypasses DR.
-
-### Hunger thresholds
-`hunger` 0–1000. Computed property `hunger_state`:
-- `> 600` → SATIATED
-- `> 200` → HUNGRY
-- `<= 200` → STARVING (1 dmg / 10 turns, no HP regen)
 
 ### Equipment slots
 `GameState.equipment` dict: keys `"melee"` (Main Hand), `"hand2"` (Off-hand), `"ranged"`, `"armor"`, `"boots"`, `"gloves"`, `"head"`, `"trinket"`.
@@ -133,4 +130,4 @@ TurnManager.revert_to_waiting()         # Rager talent only — skips enemy phas
 3. `_process_enemies()` awaits each enemy's `take_turn()` sequentially
 4. Phase = WAITING_FOR_INPUT → `player_turn_started` signal fires
 
-Each turn: hunger −1, `Stats.tick_status()` deals status damage, HP regen every 10 turns (blocked while STARVING).
+Each turn: `Stats.tick_status()` deals status damage. Hunger has been removed — see "Rest system" above.

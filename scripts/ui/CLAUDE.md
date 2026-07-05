@@ -69,13 +69,18 @@ Pixel Dungeon style: tier header with star bar (gray=spent / yellow=available / 
 
 **Rank-gradient talent icons**: `_add_talent_icon()` no longer sets a texture at creation time — `_refresh()` (called on build and after every upgrade) loads `GameState.talent_icon_path(t.talent_id, max(rank,1))` into `btn.texture_normal` each time, so the icon art changes as the player invests ranks (falls back to `t.icon_path` if unmapped). Icons dim to alpha 0.5 while unranked.
 
-## Short rest panel (`short_rest_panel.gd`)
-CanvasLayer, layer = 25. Spawned by `PlayerActions.open_short_rest()` (`scripts/entities/player_actions.gd`).
+## Rest panel (`short_rest_panel.gd`)
+CanvasLayer, layer = 25. Spawned by `PlayerActions.open_short_rest()` (`scripts/entities/player_actions.gd`) — no longer gates on `short_rests_remaining` (a long rest may still be available at 0 short rests). Tabbed, browser-style: **Short Rest** (default) and **Long Rest** — `Tab` key or clicking a tab header switches; each tab has its own container (`_short_container`/`_long_container`) toggled `.visible`, sharing one Cancel button and swapping which of `_rest_btn`/`_long_rest_btn` is shown.
 
-Keyboard bindings: ←/A/KP4 = minus dice, →/D/KP6 = plus dice, **Space = rest**, Esc = close.
-On Rest: rolls `_dice_to_spend × hit_die_sides() + CON mod` (min 1 per die), heals player, decrements `GameState.hit_dice` and `GameState.short_rests_remaining`.
-Sets `GameState.short_rest_open = true` on open → blocks all player input until closed.
-**Important ordering in `_on_rest()`**: `GameState.short_rest_open = false` and `queue_free()` must be called **before** emitting `player_action_requested("short_rest_begin")` because the signal is synchronous — `_on_turn_started` fires inside the chain and checks `short_rest_open`.
+**Short Rest tab** (unchanged mechanics): ←/A/KP4 = minus dice, →/D/KP6 = plus dice, **Space = rest**. Rolls `_dice_to_spend × hit_die_sides() + CON mod` (min 1 per die), heals player, decrements `GameState.hit_dice` and `GameState.short_rests_remaining`, runs for `GameState.SHORT_REST_TURNS` (5) turns.
+
+**Long Rest tab**: shows `GameState.total_food_value() / GameState.LONG_REST_FOOD_COST` and a disabled-reason label when `not GameState.can_long_rest()`. On confirm, sets `GameState.long_rest_pending = true` (instead of computing a pending heal) and runs the same `short_rest_active` countdown for `GameState.LONG_REST_TURNS` (20) turns — reuses the exact short-rest turn-countdown/interrupt machinery in `player.gd._on_turn_started()`, which branches on `long_rest_pending` at completion to call `GameState.long_rest()` instead of applying a short-rest heal, then spawns `mastery_reselect_prompt.gd`. Food is only consumed on successful completion, not on start — an interrupted/aborted long rest costs nothing (`rest_interrupt_panel.gd`'s abort path clears `long_rest_pending`).
+
+Esc always closes/cancels regardless of tab. Sets `GameState.short_rest_open = true` on open → blocks all player input until closed.
+**Important ordering in `_on_rest()`/`_on_long_rest()`**: `GameState.short_rest_open = false` and `queue_free()` must be called **before** emitting `player_action_requested("short_rest_begin")` because the signal is synchronous — `_on_turn_started` fires inside the chain and checks `short_rest_open`.
+
+## Mastery reselect prompt (`mastery_reselect_prompt.gd`)
+CanvasLayer, layer = 26. Spawned by `player.gd` right after `GameState.long_rest()` completes — a simple Yes/No confirm ("Change your weapon masteries?"). Sets `GameState.mastery_picker_open = true` for its own duration (blocking input like the picker itself); "Yes" hands off to `mastery_picker.gd` (which keeps the flag set via its own `_ready()`), "No" clears the flag. Never shown after a short rest, only a completed long rest.
 
 ---
 
@@ -130,9 +135,8 @@ red if ever over cap (never auto-trimmed — see design doc §7.3). No icon asse
 render blank (`res://icons/masteries/<name>.png`, none exist) until supplied; the bordered slot
 frame keeps each button visible/clickable regardless.
 
-**Currently wired to fire only once per run**: right after class selection
-(`class_select.gd._on_class_selected()`). The design doc also specs a second trigger at long
-rest (`GameState.advance_floor()`/`floor_changed`, currently doubling as "new floor") — **not
-yet wired up**, per explicit instruction to leave long rest alone until it's a real standalone
-system distinct from floor descent. When that lands, add the `hud.gd._on_floor_changed()` spawn
-call the design doc already specs (§5.2) with zero changes needed to this file.
+**Wired to fire twice**: right after class selection (`class_select.gd._on_class_selected()`),
+and again after any completed long rest if the player opts in — `player.gd` spawns
+`mastery_reselect_prompt.gd` (a Yes/No confirm) right after `GameState.long_rest()` finishes;
+choosing "Yes" spawns this picker fresh, letting the player fully re-pick from scratch (subject
+to the same `mastery_cap()`). Never triggered by short rest or floor descent.

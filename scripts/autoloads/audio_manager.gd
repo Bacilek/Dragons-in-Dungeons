@@ -11,8 +11,7 @@ const SFX_NAMES: Array = [
 	"shoot", "open_door", "close_door", "lock_door",
 	"step_grass", "step_mud", "step_water", "step_floor",
 	"trap_fire", "trap_spike", "trap_piston", "trap_bear",
-	"eat_food", "drink_potion", "lockpick",
-	"hungry", "starving",
+	"drink_potion", "lockpick",
 	"cook_meat", "throw_item", "bottle_fill",
 ]
 

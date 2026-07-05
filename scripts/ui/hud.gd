@@ -23,7 +23,7 @@ var _item_slots: Array[Button] = []
 var _slot_qty_labels: Array[Label] = []
 var _log_messages: Array[String] = []
 const MAX_LOG_MESSAGES: int = 25
-var _hunger_label: Label
+var _food_value_label: Label  # shows total FOOD food_value (long rest fuel), see GameState.total_food_value()
 var _temp_hp_fill: ColorRect  # light-blue temp HP bar above the HP fill
 var _poison_icon: ColorRect
 var _burning_icon: ColorRect
@@ -123,7 +123,7 @@ func _ready() -> void:
 	GameState.combat_message.connect(_on_combat_message)
 	GameState.inventory_changed.connect(_refresh_inventory)
 	GameState.ability_bar_changed.connect(_refresh_inventory)
-	GameState.hunger_changed.connect(_on_hunger_changed)
+	GameState.inventory_changed.connect(_update_food_value_label)
 	GameState.player_status_changed.connect(_on_status_changed)
 	GameState.class_chosen.connect(_on_class_chosen)
 	GameState.short_rest_changed.connect(_update_hit_dice_label)
@@ -186,13 +186,14 @@ func _ready() -> void:
 	_temp_hp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	$StatsPanel.add_child(_temp_hp_fill)
 
-	# Hunger label — created programmatically below the HP bar
-	_hunger_label = Label.new()
-	_hunger_label.add_theme_font_size_override("font_size", 12)
-	_hunger_label.position = hp_fill.position + Vector2(0.0, HP_BAR_H + 1.0)
-	_hunger_label.size = Vector2(BAR_W, 14.0)
-	$StatsPanel.add_child(_hunger_label)
-	_update_hunger_label()
+	# Food value label — created programmatically below the HP bar
+	_food_value_label = Label.new()
+	_food_value_label.add_theme_font_size_override("font_size", 12)
+	_food_value_label.add_theme_color_override("font_color", Color(0.65, 0.65, 0.55))
+	_food_value_label.position = hp_fill.position + Vector2(0.0, HP_BAR_H + 1.0)
+	_food_value_label.size = Vector2(BAR_W, 14.0)
+	$StatsPanel.add_child(_food_value_label)
+	_update_food_value_label()
 
 	# Status icons (poison=green, burning=orange, bleeding=red, slowed=brown, rage=crimson) below portrait
 	_poison_icon   = _make_status_dot(Color(0.20, 0.85, 0.35), Vector2(2.0,  2.0))
@@ -302,8 +303,10 @@ func _exit_tree() -> void:
 
 # ── Signal handlers ───────────────────────────────────────────────────────────
 
-func _on_hunger_changed(_value: int) -> void:
-	_update_hunger_label()
+func _update_food_value_label() -> void:
+	if _food_value_label == null:
+		return
+	_food_value_label.text = "Food: %d / %d" % [GameState.total_food_value(), GameState.LONG_REST_FOOD_COST]
 
 func _on_status_changed() -> void:
 	_update_status_icons()
@@ -343,18 +346,6 @@ func _make_status_icon_rect(offset: Vector2) -> TextureRect:
 	rect.visible = false
 	return rect
 
-func _update_hunger_label() -> void:
-	if _hunger_label == null:
-		return
-	match GameState.hunger_state:
-		GameState.HungerState.SATIATED:
-			_hunger_label.text = ""
-		GameState.HungerState.HUNGRY:
-			_hunger_label.text = "Hungry"
-			_hunger_label.add_theme_color_override("font_color", Color(1.0, 0.80, 0.15))
-		GameState.HungerState.STARVING:
-			_hunger_label.text = "Starving!"
-			_hunger_label.add_theme_color_override("font_color", Color(1.0, 0.20, 0.20))
 
 func _on_class_chosen(cls: Stats.CharacterClass) -> void:
 	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/knight_m_idle_anim_f0.png")
