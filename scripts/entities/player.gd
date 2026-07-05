@@ -1482,8 +1482,14 @@ func _try_offhand_attack(enemy: Enemy, is_str_weapon: bool) -> void:
 	if off_hand == null or off_hand.item_type != Item.Type.WEAPON or off_hand.is_ranged or not off_hand.is_light:
 		return
 	_resolve_offhand_attack(enemy, off_hand)
+	# Nick (Dagger): while dual-wielding two Light weapons, if either one carries Nick, get one
+	# further attack this turn — identical to the Off-hand swing above (same "no ability modifier
+	# unless negative" rule) — for a maximum of 3 attacks total (Main Hand, Off-hand, Nick bonus).
+	if not enemy.stats.is_dead() and stats.knows_mastery("Nick") \
+			and (main_hand.weapon_mastery == "Nick" or off_hand.weapon_mastery == "Nick"):
+		_resolve_offhand_attack(enemy, off_hand, "Nick")
 
-func _resolve_offhand_attack(enemy: Enemy, weapon: Item) -> void:
+func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-hand") -> void:
 	var str_mod: int = stats.str_modifier()
 	var dex_mod: int = stats.dex_modifier()
 	var attack_mod: int = CombatMath.finesse_modifier(str_mod, dex_mod, weapon.is_finesse)
@@ -1511,7 +1517,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item) -> void:
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0]
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
-		GameState.game_log("[color=cyan]Off-hand:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
+		GameState.game_log("[color=cyan]%s:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [label, enemy.display_name, hit_meta, miss_color])
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		return
 	AudioManager.play("crit" if is_crit else "hit_enemy")
@@ -1537,7 +1543,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item) -> void:
 		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, rage_bonus, GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
-	GameState.game_log("[color=cyan]Off-hand:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag])
+	GameState.game_log("[color=cyan]%s:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [label, hit_meta, enemy.display_name, dmg_meta, actual, type_tag])
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
 
