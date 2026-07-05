@@ -146,4 +146,4 @@ Drinking any POTION adds an `Empty Bottle` (TOOL type, `sprites/items/Materials/
 Right-click food item in HUD quickbar → `GameState.player_throw_primed.emit(item)` → player enters throw mode. Left-click target tile → `_do_throw(pos)`. Rotten Meat + Fire Trap = Cooked Meat (see "Floor items" above). Esc cancels.
 
 ## Boss floors
-`DungeonData.boss_room: Rect2i` set on floors divisible by 5. `_spawn_boss()` spawns from `DungeonFloorData.BOSS_POOL`. Floor 5: Big Demon (hp=80). Floor 10: Necromancer (hp=120). Boss dies → `drop_boss_loot(pos)`. `enemy.is_boss: bool`.
+`DungeonData.boss_room: Rect2i` set on floors divisible by 5. `_spawn_boss()` spawns from `DungeonFloorData.BOSS_POOL`. Floor 5: Big Demon (hp=80). Floor 10: Necromancer (hp=120). Boss dies → `drop_boss_loot(pos)`. `enemy.is_boss: bool`. `ENEMY_POOL`/`BOSS_POOL` entries carry stable `"enemy_id"`/`"boss_id"` keys (see `scripts/entities/CLAUDE.md`'s "Enemy/boss pool ids") and may carry an `"attack_profile"` key for ranged enemies (see that file's "Attack profiles" section) — both are read generically by `Enemy`, no `dungeon_floor.gd` changes needed.

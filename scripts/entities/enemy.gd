@@ -11,11 +11,12 @@ var _dungeon_floor: Node
 var display_name: String = "Enemy"
 var exp_reward: int = 5
 var _type: Dictionary = {}
+var enemy_id: String = ""  # from pool "enemy_id"/"boss_id" key — stable id, unlike display_name (UI text)
 
 var is_boss: bool = false
 var initial_behavior: Behavior = Behavior.SLEEPING
 var behavior: Behavior = Behavior.SLEEPING
-var last_known_player_pos: Vector2i = Vector2i(-1, -1)
+var last_known_target_pos: Vector2i = Vector2i(-1, -1)
 
 var just_crossed_door: bool = false
 var oa_used_this_round: bool = false  # Opportunity Attack reaction cap — reset at the top of take_turn()
@@ -37,6 +38,7 @@ var _zzz_tween: Tween
 func configure(type_data: Dictionary) -> void:
 	_type = type_data
 	display_name = type_data.get("display_name", "Enemy")
+	enemy_id = type_data.get("enemy_id", type_data.get("boss_id", ""))
 
 func _ready() -> void:
 	stats = Stats.new()
@@ -127,6 +129,54 @@ func _wake_up() -> void:
 func melee_reach() -> int:
 	return _type.get("reach", 1)
 
+# --- Targeting (§5 of docs/architecture/enemy_system_architecture.md) ---
+# Both the player and the Wild Heart companion are valid targets: whoever first gets into the
+# enemy's attack range wins the fight, re-evaluated fresh every turn — no target-lock state.
+func _get_target_candidates() -> Array:
+	var out: Array = []
+	var player: Player = _dungeon_floor.get_player()
+	if player != null and is_instance_valid(player) and not player.stats.is_dead():
+		out.append(player)
+	var comp: Variant = GameState.player_companion
+	if comp != null and is_instance_valid(comp) and not comp.stats.is_dead():
+		out.append(comp)
+	return out
+
+func _dist_sq_to(e: Node) -> int:
+	var dx: int = e.grid_pos.x - grid_pos.x
+	var dy: int = e.grid_pos.y - grid_pos.y
+	return dx * dx + dy * dy
+
+func _chebyshev_to(e: Node) -> int:
+	return maxi(absi(e.grid_pos.x - grid_pos.x), absi(e.grid_pos.y - grid_pos.y))
+
+func _can_see_entity(e: Node) -> bool:
+	return _dist_sq_to(e) <= FOV_RADIUS * FOV_RADIUS and _dungeon_floor.has_line_of_sight(grid_pos, e.grid_pos)
+
+# Adjacency wins first (first to reach range gets attacked); ties broken by lower current HP.
+# Otherwise, whichever candidate is nearer is the one stepped toward / seen.
+func _select_target(candidates: Array) -> Node:
+	var adjacent: Array = []
+	for c: Node in candidates:
+		if _chebyshev_to(c) == 1:
+			adjacent.append(c)
+	if adjacent.size() == 1:
+		return adjacent[0]
+	if adjacent.size() > 1:
+		var best: Node = adjacent[0]
+		for c: Node in adjacent:
+			if c.stats.current_hp < best.stats.current_hp:
+				best = c
+		return best
+	var nearest: Node = candidates[0]
+	var nearest_d: int = _dist_sq_to(nearest)
+	for c: Node in candidates:
+		var d: int = _dist_sq_to(c)
+		if d < nearest_d:
+			nearest_d = d
+			nearest = c
+	return nearest
+
 func take_turn() -> void:
 	oa_used_this_round = false
 	if _dungeon_floor == null:
@@ -139,79 +189,93 @@ func take_turn() -> void:
 		slowed_turns -= 1
 		await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		return
-	var player: Player = _dungeon_floor.get_player()
-	if player == null:
-		return
+
+	var intent: Dictionary = _decide_action()
+	await _execute_action(intent)
+
+# Pure(ish) decision step — reads state, mutates only internal FSM/target-memory fields (not
+# visuals), returns an intent for _execute_action() to carry out. See docs/architecture/
+# enemy_system_architecture.md §1.
+func _decide_action() -> Dictionary:
+	var candidates: Array = _get_target_candidates()
+	if candidates.is_empty():
+		return {"type": "wait"}
+	var target: Node = _select_target(candidates)
 
 	# World Tree Grip of the Forest R2: rooted — no movement this turn, but can still attack if adjacent.
 	if rooted_turns > 0:
 		rooted_turns -= 1
-		var rdx: int = player.grid_pos.x - grid_pos.x
-		var rdy: int = player.grid_pos.y - grid_pos.y
-		if maxi(absi(rdx), absi(rdy)) == 1:
-			_attack_player(player)
-		else:
-			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
-		return
+		if _chebyshev_to(target) == 1:
+			return {"type": "attack", "target": target}
+		return {"type": "wait"}
 
-	var dx: int = player.grid_pos.x - grid_pos.x
-	var dy: int = player.grid_pos.y - grid_pos.y
-	var dist_sq: int = dx * dx + dy * dy
-	var can_see: bool = dist_sq <= FOV_RADIUS * FOV_RADIUS \
-		and _dungeon_floor.has_line_of_sight(grid_pos, player.grid_pos)
+	var dist_sq: int = _dist_sq_to(target)
+	var can_see: bool = _can_see_entity(target)
+	var dx: int = target.grid_pos.x - grid_pos.x
+	var dy: int = target.grid_pos.y - grid_pos.y
 
 	match behavior:
 		Behavior.SLEEPING:
 			if can_see or dist_sq <= WAKE_RADIUS_SQ:
 				_wake_up()
-				last_known_player_pos = player.grid_pos
-				await _act_toward(player)
-			else:
-				# Spend the turn doing nothing — keeps turn rhythm consistent
-				await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
+				last_known_target_pos = target.grid_pos
+				return {"type": "act_toward", "target": target, "can_see": can_see}
+			return {"type": "wait"}
 
 		Behavior.STATIONARY:
 			if can_see:
-				last_known_player_pos = player.grid_pos
+				last_known_target_pos = target.grid_pos
 				behavior = Behavior.CHASING
-				await _act_toward(player)
-			else:
-				await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
+				return {"type": "act_toward", "target": target, "can_see": can_see}
+			return {"type": "wait"}
 
 		Behavior.ROAMING:
 			if can_see:
-				last_known_player_pos = player.grid_pos
+				last_known_target_pos = target.grid_pos
 				behavior = Behavior.CHASING
 				_roam_path.clear()
 				_roam_target = Vector2i(-1, -1)
-				await _act_toward(player)
-			else:
-				await _do_roam_walk()
+				return {"type": "act_toward", "target": target, "can_see": can_see}
+			return {"type": "roam"}
 
 		Behavior.CHASING:
 			if can_see:
-				last_known_player_pos = player.grid_pos
-				# Record the direction toward the player so we can search that way if we lose sight
+				last_known_target_pos = target.grid_pos
 				_search_heading = Vector2i(sign(dx), sign(dy))
-			await _act_toward(player)
-			if not is_instance_valid(self) or stats.is_dead():
-				return
-			# Reached last known position without spotting player — enter search mode
-			if not can_see and last_known_player_pos != Vector2i(-1, -1) and grid_pos == last_known_player_pos:
-				behavior = Behavior.SEARCHING
-				_search_turns_remaining = 7
-				_search_target = last_known_player_pos + _search_heading * 5
-				_search_path.clear()
-				last_known_player_pos = Vector2i(-1, -1)
+			return {"type": "act_toward", "target": target, "can_see": can_see, "chasing": true}
 
 		Behavior.SEARCHING:
 			if can_see:
-				# Found the player — resume chasing
 				behavior = Behavior.CHASING
-				last_known_player_pos = player.grid_pos
+				last_known_target_pos = target.grid_pos
 				_search_heading = Vector2i(sign(dx), sign(dy))
-				await _act_toward(player)
-			elif _search_turns_remaining > 0:
+				return {"type": "act_toward", "target": target, "can_see": can_see}
+			return {"type": "search"}
+
+	return {"type": "wait"}
+
+# All the tween/animation/await/log side effects, dispatched on intent.type. See docs/
+# architecture/enemy_system_architecture.md §1.
+func _execute_action(intent: Dictionary) -> void:
+	match intent.get("type", "wait"):
+		"attack":
+			_attack_target(intent["target"])
+		"act_toward":
+			await _act_toward(intent["target"])
+			if not is_instance_valid(self) or stats.is_dead():
+				return
+			# Reached last known position without spotting the target — enter search mode.
+			if intent.get("chasing", false) and not intent.get("can_see", false) \
+					and last_known_target_pos != Vector2i(-1, -1) and grid_pos == last_known_target_pos:
+				behavior = Behavior.SEARCHING
+				_search_turns_remaining = 7
+				_search_target = last_known_target_pos + _search_heading * 5
+				_search_path.clear()
+				last_known_target_pos = Vector2i(-1, -1)
+		"roam":
+			await _do_roam_walk()
+		"search":
+			if _search_turns_remaining > 0:
 				_search_turns_remaining -= 1
 				if _search_path.is_empty() or grid_pos == _search_target:
 					_search_path = _bfs_to(_search_target)
@@ -227,18 +291,34 @@ func take_turn() -> void:
 				_search_path.clear()
 				_roam_path.clear()
 				_roam_target = Vector2i(-1, -1)
+		"wait":
+			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 
-# Attack if adjacent to player; otherwise step toward last known / player position.
-func _act_toward(player: Player) -> void:
-	var dx: int = player.grid_pos.x - grid_pos.x
-	var dy: int = player.grid_pos.y - grid_pos.y
-	if maxi(abs(dx), abs(dy)) == 1:
-		_attack_player(player)
+# True if `target` is within this enemy's current attack_profile range (melee default = adjacent).
+func _in_attack_range(target: Node) -> bool:
+	var profile: Dictionary = _type.get("attack_profile", {})
+	match profile.get("kind", "melee"):
+		"ranged":
+			var rng: int = profile.get("range", 4)
+			return _chebyshev_to(target) <= rng and _dungeon_floor.has_ranged_los(grid_pos, target.grid_pos)
+		_:
+			return _chebyshev_to(target) == 1
+
+func _attack_target(target: Node) -> void:
+	if target is Player:
+		_attack_player(target)
+	elif target is Companion:
+		_attack_companion(target)
+
+# Attack if in range of target; otherwise step toward last known / target position.
+func _act_toward(target: Node) -> void:
+	if _in_attack_range(target):
+		_attack_target(target)
 		return
 
-	var target: Vector2i = last_known_player_pos if last_known_player_pos != Vector2i(-1, -1) else player.grid_pos
-	var tdx: int = target.x - grid_pos.x
-	var tdy: int = target.y - grid_pos.y
+	var dest: Vector2i = last_known_target_pos if last_known_target_pos != Vector2i(-1, -1) else target.grid_pos
+	var tdx: int = dest.x - grid_pos.x
+	var tdy: int = dest.y - grid_pos.y
 
 	for step: Vector2i in _preferred_steps(tdx, tdy):
 		var next_pos: Vector2i = grid_pos + step
@@ -249,7 +329,7 @@ func _act_toward(player: Player) -> void:
 			return
 
 	# Greedy failed — BFS fallback to navigate around obstacles
-	var bfs_path: Array[Vector2i] = _bfs_to(target)
+	var bfs_path: Array[Vector2i] = _bfs_to(dest)
 	if not bfs_path.is_empty():
 		var next_pos: Vector2i = bfs_path[0]
 		var step: Vector2i = next_pos - grid_pos
@@ -393,13 +473,12 @@ func _bfs_to(target: Vector2i) -> Array[Vector2i]:
 				queue.append(nxt)
 	return []
 
-func _attack_player(_player: Player) -> void:
-	if GameState.invincible:
-		GameState.game_log("[color=tomato]%s[/color] strikes you — [color=gray]blocked (invincible)[/color]" % display_name)
-		return
-	# D&D attack roll: d20 + floor-scaled bonus vs player AC.
+# Shared d20-vs-AC roll used by every enemy attack (melee, ranged, vs-player, vs-companion) — see
+# docs/architecture/enemy_system_architecture.md §2. Only computes the roll; callers apply damage/log.
+func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1) -> Dictionary:
+	# D&D attack roll: d20 + floor-scaled bonus vs target AC.
 	# Reckless Attack rank 1: enemies get flat +2. Rank 2+: enemies get Advantage.
-	var attack_bonus: int = GameState.current_floor / 3
+	var attack_bonus: int = attack_bonus_override if attack_bonus_override >= 0 else GameState.current_floor / 3
 	var reckless_flat: int = 0
 	var die1: int = randi_range(1, 20)
 	var die2: int = die1
@@ -417,15 +496,27 @@ func _attack_player(_player: Player) -> void:
 		die2 = randi_range(1, 20)
 		die = maxi(die1, die2) if enemy_adv else mini(die1, die2)
 	var roll: int = die + attack_bonus + reckless_flat
-	var player_ac: int = GameState.player_stats.armor_class
+	var bonus: int = attack_bonus + reckless_flat
 	var is_crit: bool = die == 20
+	return {
+		"die": die, "die1": die1, "die2": die2, "bonus": bonus, "roll": roll, "target_ac": target_ac,
+		"is_crit": is_crit, "is_hit": is_crit or roll >= target_ac,
+		"adv": enemy_adv and not enemy_disadv, "disadv": enemy_disadv and not enemy_adv,
+	}
+
+func _attack_player(_player: Player) -> void:
+	if GameState.invincible:
+		GameState.game_log("[color=tomato]%s[/color] strikes you — [color=gray]blocked (invincible)[/color]" % display_name)
+		return
+	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class)
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d" % [
-		die, die1, die2, attack_bonus + reckless_flat, roll, player_ac,
-		1 if is_crit else 0, 1 if (enemy_adv and not enemy_disadv) else 0, 1 if (enemy_disadv and not enemy_adv) else 0]
-	if not is_crit and roll < player_ac:
-		var miss_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [attack_bonus + reckless_flat, roll, player_ac] if GameState.god_mode else ""
+		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
+		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0]
+	if not r["is_hit"]:
+		var miss_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [r["bonus"], r["roll"], r["target_ac"]] if GameState.god_mode else ""
 		GameState.game_log("[color=tomato]%s[/color] [url=%s]misses[/url]!%s" % [display_name, hit_meta, miss_suffix])
 		return
+	var is_crit: bool = r["is_crit"]
 	var dmg_roll: int = stats.roll_damage()
 	var dmg: int = dmg_roll * (2 if is_crit else 1)
 	if is_crit:
@@ -440,7 +531,7 @@ func _attack_player(_player: Player) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(_player.position, actual, true)
 	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,final=%d" % [dmg_roll, stats.min_damage, stats.max_damage, 1 if is_crit else 0, actual]
-	var god_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [attack_bonus + reckless_flat, roll, player_ac] if GameState.god_mode else ""
+	var god_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [r["bonus"], r["roll"], r["target_ac"]] if GameState.god_mode else ""
 	if is_crit:
 		GameState.game_log("[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg.%s" % [display_name, hit_meta, dmg_meta, actual, god_suffix])
 	else:
@@ -455,3 +546,21 @@ func _attack_player(_player: Player) -> void:
 	# enforces maxi(1, dmg) — checking actual would silently block retaliation.
 	if GameState.is_raging:
 		_player.try_retaliation(self)
+
+# Companion (Wild Heart summon) as attack target — see docs/architecture/enemy_system_architecture.md §5.
+# No invincible/poison/Retaliation hooks: those are player-only systems. Companion.take_damage_from_enemy()
+# already logs the hit/HP line and handles death, so only the miss line needs logging here.
+func _attack_companion(companion: Companion) -> void:
+	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class)
+	if not r["is_hit"]:
+		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [display_name, companion.animal_name])
+		return
+	var dmg_roll: int = stats.roll_damage()
+	var dmg: int = dmg_roll * (2 if r["is_crit"] else 1)
+	if r["is_crit"]:
+		GameState.crit_banner.emit("CRITICAL HIT!", Color(0.95, 0.15, 0.15))
+		GameState.screen_shake.emit(7.0)
+		AudioManager.play("crit")
+	else:
+		AudioManager.play("player_hurt")
+	companion.take_damage_from_enemy(dmg)

@@ -136,12 +136,27 @@ Full design doc: `docs/architecture/opportunity-attacks-design.md`. Core rule (5
 ## Enemy behavior states
 `SLEEPING → STATIONARY → ROAMING → CHASING → SEARCHING`
 
-**SLEEPING**: shows zzz label. Wakes when player within `WAKE_RADIUS_SQ = 4` (2-tile adjacency).
+**SLEEPING**: shows zzz label. Wakes when the selected target is within `WAKE_RADIUS_SQ = 4` (2-tile adjacency).
 **ROAMING**: waypoint BFS. `_pick_roam_target()` shuffles `DungeonFloor.get_room_centers()`, picks tile at Chebyshev ≥ 4. Follows `_roam_path: Array[Vector2i]` via `_bfs_to()`. Falls back to `_do_random_step()` if blocked.
-**CHASING**: follows player directly. Opens doors (sets `just_crossed_door = true` when stepping onto door tile). Records `_search_heading` (direction toward player) each turn player is visible.
-**SEARCHING**: entered when CHASING enemy reaches `last_known_player_pos` without LOS. Searches for 7 turns in `_search_heading` direction (BFS to `_search_target = last_known_pos + heading * 5`). If player spotted → CHASING. After 7 turns → ROAMING. Fields: `_search_heading: Vector2i`, `_search_turns_remaining: int`, `_search_target: Vector2i`, `_search_path: Array[Vector2i]`.
+**CHASING**: follows the selected target directly. Opens doors (sets `just_crossed_door = true` when stepping onto door tile). Records `_search_heading` (direction toward target) each turn target is visible.
+**SEARCHING**: entered when a CHASING enemy reaches `last_known_target_pos` without LOS. Searches for 7 turns in `_search_heading` direction (BFS to `_search_target = last_known_pos + heading * 5`). If the target is spotted → CHASING. After 7 turns → ROAMING. Fields: `_search_heading: Vector2i`, `_search_turns_remaining: int`, `_search_target: Vector2i`, `_search_path: Array[Vector2i]`.
 
 `_roam_path` and `_roam_target` are cleared on state transitions.
+
+### `take_turn()` split: decide vs execute
+Per `docs/architecture/enemy_system_architecture.md` §1: `take_turn()` handles only the prone/slowed early-return turns, then calls `_decide_action() -> Dictionary` (reads state, picks a target, advances the FSM, returns an intent like `{"type": "act_toward", "target": ..., "can_see": ...}` — does not await or touch visuals) followed by `await _execute_action(intent)` (all tweens/animation/logging, dispatched on `intent.type`: `attack`/`act_toward`/`roam`/`search`/`wait`). This is the seam every future need (archetypes, boss phases, Phase-2 determinism) hangs off of — see the architecture doc for why.
+
+### Targeting: player + companion
+`_decide_action()` no longer hardcodes the player as the target. `_get_target_candidates()` returns every live `is_friendly` entity currently relevant — `[player, GameState.player_companion]`, skipping either if null/dead. `_select_target(candidates)` picks: whichever candidate is already adjacent (Chebyshev 1) wins outright — "first to reach range" — tie-broken by lower current HP if both are adjacent; otherwise the nearer candidate by squared distance. No target-lock field: every turn re-asks "who's closest / who's adjacent" from current positions (see architecture doc §5 for why a lock was rejected). `_act_toward(target: Node)` and `_attack_target(target: Node)` work against either a `Player` or a `Companion` — attack dispatch is `if target is Player: _attack_player(target) elif target is Companion: _attack_companion(target)`. `Companion.take_damage_from_enemy()` is the damage-intake path for the latter (already existed on `Companion`, just never had an enemy-side caller before).
+
+### Attack profiles (ranged enemies)
+Pool entries may set `"attack_profile": {"kind": "ranged", "range": N, "projectile": "..."}` (absent = implicit melee, zero change for existing entries). `Enemy._in_attack_range(target)` reads `_type.get("attack_profile", {})`: melee requires Chebyshev == 1; ranged requires Chebyshev ≤ `range` AND `_dungeon_floor.has_ranged_los()`. `_act_toward()` calls `_attack_target()` once in range, otherwise steps toward the target exactly like melee (reuses the same BFS/greedy stepping — approaching until in range, not until adjacent). No caster archetype/enemy-ability machinery exists yet (deliberately not built speculatively — see architecture doc §3/§7 step 6); add it only when a concrete caster enemy needs it. Reference pool entry: `"Goblin Archer"` (`enemy_id: "goblin_archer"`, `DungeonFloorData.ENEMY_POOL`).
+
+### Shared attack resolver
+`Enemy._resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1) -> Dictionary` is the one d20-vs-AC roll (Reckless Attack ADV/flat bonus, Grip of the Forest R3 disadvantage, crit-on-nat-20) shared by every enemy attack — melee or ranged, vs player or vs companion. `_attack_player()` and `_attack_companion()` both call it, then handle their own damage application/logging (player routes through `take_damage_raw` for rage DR/poison/Retaliation; companion calls `Companion.take_damage_from_enemy()`, which has no such hooks — those are player-only systems).
+
+### Enemy/boss pool ids
+`DungeonFloorData.ENEMY_POOL` entries carry an `"enemy_id"` key, `BOSS_POOL` entries an `"boss_id"` key (e.g. `"orc_warrior"`, `"big_demon"`) — stable machine ids, unlike `display_name` which is UI text and shouldn't be load-bearing. `Enemy.enemy_id: String` is populated from either key in `configure()`. No behavior depends on these yet; they exist so future systems (boss-phase gating, per-enemy talent interactions) can key off a stable id instead of string-matching `display_name`.
 
 ---
 
