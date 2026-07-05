@@ -617,19 +617,25 @@ func _set_slot_item(source: String, idx: int, slot_name: String, item: Item) -> 
 # ── Item management ───────────────────────────────────────────────────────────
 
 func add_item(item: Item) -> bool:
-	# Try stacking in quickbar, then bag
-	for i: int in QUICKBAR_SIZE:
-		var ex: Item = player_quickbar[i] as Item
-		if ex != null and ex.item_name == item.item_name:
-			ex.quantity += item.quantity
-			inventory_changed.emit()
-			return true
-	for i: int in INVENTORY_SIZE:
-		var ex: Item = player_inventory[i] as Item
-		if ex != null and ex.item_name == item.item_name:
-			ex.quantity += item.quantity
-			inventory_changed.emit()
-			return true
+	# Weapons with individual durability (uses_max > 0, e.g. thrown weapons) never merge into a
+	# shared quantity stack — each carries its own uses_remaining, and merging would silently
+	# discard that per-instance state. Each one always lands in its own slot instead, so it can
+	# be thrown/equipped one at a time independently of any others of the same name.
+	var stackable: bool = not (item.item_type == Item.Type.WEAPON and item.uses_max > 0)
+	if stackable:
+		# Try stacking in quickbar, then bag
+		for i: int in QUICKBAR_SIZE:
+			var ex: Item = player_quickbar[i] as Item
+			if ex != null and ex.item_name == item.item_name:
+				ex.quantity += item.quantity
+				inventory_changed.emit()
+				return true
+		for i: int in INVENTORY_SIZE:
+			var ex: Item = player_inventory[i] as Item
+			if ex != null and ex.item_name == item.item_name:
+				ex.quantity += item.quantity
+				inventory_changed.emit()
+				return true
 	# Empty quickbar slot first, then bag
 	for i: int in QUICKBAR_SIZE:
 		if player_quickbar[i] == null:
