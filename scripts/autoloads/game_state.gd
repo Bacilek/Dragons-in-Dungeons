@@ -540,6 +540,21 @@ func unequip(slot_name: String, costs_turn: bool = false) -> void:
 	else:
 		combat_message.emit("[color=red]No bag space to unequip %s![/color]" % item.item_name)
 
+func toggle_versatile_grip() -> void:
+	var item: Item = equipment.get("melee") as Item
+	if item == null or not item.is_versatile:
+		return
+	var tmp_min: int = item.damage_die_min
+	var tmp_max: int = item.damage_die_max
+	item.damage_die_min = item.versatile_die_min
+	item.damage_die_max = item.versatile_die_max
+	item.versatile_die_min = tmp_min
+	item.versatile_die_max = tmp_max
+	item.is_two_handed = not item.is_two_handed
+	recalculate_stats()
+	combat_message.emit("[color=cyan]%s gripped %s-handed.[/color]" % [item.item_name, "two" if item.is_two_handed else "one"])
+	equipment_changed.emit()
+
 func recalculate_stats() -> void:
 	var s: Stats = player_stats
 	s.armor = 0

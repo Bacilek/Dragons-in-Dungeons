@@ -33,6 +33,7 @@ const ALL_ITEMS: Array = [
 	{"name": "Greatsword",      "type": 0, "src": "weapons", "icon": "weapon_knight_sword.png",                "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "die_min": 2, "die_max": 12, "dmg_type": "Slashing", "mastery": "Graze", "category": "Martial"},
 	{"name": "Glaive",          "type": 0, "src": "weapons", "icon": "weapon_spear.png",                       "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "reach": true, "die_min": 1, "die_max": 10, "dmg_type": "Slashing", "mastery": "Graze", "category": "Martial"},
 	{"name": "Maul",            "type": 0, "src": "weapons", "icon": "weapon_big_hammer.png",                  "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "two_handed": true, "heavy": true, "die_min": 2, "die_max": 12, "dmg_type": "Bludgeoning", "mastery": "Topple", "category": "Martial"},
+	{"name": "Quarterstaff",    "type": 0, "src": "weapons", "icon": "weapon_green_magic_staff.png",           "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "versatile": true, "die_min": 1, "die_max": 6, "vmin": 1, "vmax": 8, "dmg_type": "Bludgeoning", "mastery": "Topple", "category": "Simple"},
 ]
 
 var _main_panel:    Panel
@@ -550,6 +551,9 @@ func _on_give_item(d: Dictionary) -> void:
 	item.is_finesse         = d.get("finesse", false)
 	item.is_light           = d.get("light", false)
 	item.is_reach           = d.get("reach", false)
+	item.is_versatile       = d.get("versatile", false)
+	item.versatile_die_min  = d.get("vmin", 0)
+	item.versatile_die_max  = d.get("vmax", 0)
 	item.damage_die_min     = d.get("die_min", 0)
 	item.damage_die_max     = d.get("die_max", 0)
 	item.damage_type        = d.get("dmg_type", "")
