@@ -1,6 +1,11 @@
 # Weapon Mastery Selection ("Mastery Picker") — Design Doc
 
-Status: **spec only — no code written**. A future session implements this doc directly.
+Status: **implemented, partially** — data layer, UI, and the class-selection spawn (§5.1) are
+live. The long-rest spawn (§5.2) is **deliberately not wired up yet**, per explicit instruction:
+this repo's "long rest" is still just `advance_floor()`/new-floor-descent, not a distinct rest
+system, and the owner does not want the picker firing on every floor change. When long rest
+becomes its own real trigger, add the `hud.gd` spawn call this doc already specs — zero other
+changes needed.
 
 Scope: a full-screen picker overlay where the player chooses which weapon masteries they
 currently *know* (the entries in `Stats.known_weapon_masteries`), shown once after class
@@ -285,7 +290,10 @@ queue_free()
   `mastery_picker_open` blocks all input (§5.3), the player can't act until they close it —
   no TurnManager interaction needed (the picker is turn-free UI, same as the talent picker).
 
-### 5.2 At long rest (`advance_floor()`)
+### 5.2 At long rest (`advance_floor()`) — NOT YET WIRED UP
+
+Deferred on purpose (see Status header above) — this section is kept as the spec for when it
+happens, not a description of current behavior.
 
 `GameState.advance_floor()` (`game_state.gd:326-357`) is the current long-rest stand-in — it
 already refills the long-rest resource pools (`rage_uses_remaining`, `hit_dice`,

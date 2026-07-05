@@ -107,4 +107,32 @@ Quickbar: 9 slots (indices 0–8). Bag: 24 slots.
 ---
 
 ## Class select (`class_select.gd`)
-Shown at game start. Emits `GameState.class_chosen` when player selects a class.
+Shown at game start. Emits `GameState.class_chosen` when player selects a class. If the chosen
+class has `Stats.mastery_cap() > 0` (Barbarian, Ranger — not Wizard/Monk), spawns the Mastery
+Picker (below) right after `class_chosen` fires, before `queue_free()`.
+
+## Mastery picker (`mastery_picker.gd`)
+CanvasLayer, layer = 25. Modeled directly on the talent picker (dim overlay + centered bordered
+`Panel`, `TextureButton` icon grid, `focus_mode = FOCUS_NONE` everywhere). Lets the player choose
+which of `Stats.ALL_WEAPON_MASTERIES` (all 8: Cleave/Graze/Nick/Push/Sap/Slow/Topple/Vex) they
+currently *know* — populates `Stats.known_weapon_masteries`, the array every weapon-mastery
+combat effect already gates on (see `scripts/entities/CLAUDE.md`'s "Weapon mastery ownership").
+Full design: `docs/architecture/weapon-mastery-selection-design.md`.
+
+Sets `GameState.mastery_picker_open = true` on open → blocks all player input (same treatment
+as `talent_picker_open`, including the I-key inventory toggle and Tab bar-mode toggle — a
+deliberate deviation from talent-picker parity, since this is a mandatory onboarding step).
+4×2 icon grid (all 8 masteries, alphabetical, always shown regardless of class — only the
+**cap** differs per class/level, `Stats.mastery_cap()`). Click toggles via
+`GameState.toggle_mastery(name)`; hard-blocked at cap (icon dims, click ignored) by
+`GameState.can_select_mastery()`. Counter shows "`known / cap`", gold normally, gray at cap,
+red if ever over cap (never auto-trimmed — see design doc §7.3). No icon assets yet — icons
+render blank (`res://icons/masteries/<name>.png`, none exist) until supplied; the bordered slot
+frame keeps each button visible/clickable regardless.
+
+**Currently wired to fire only once per run**: right after class selection
+(`class_select.gd._on_class_selected()`). The design doc also specs a second trigger at long
+rest (`GameState.advance_floor()`/`floor_changed`, currently doubling as "new floor") — **not
+yet wired up**, per explicit instruction to leave long rest alone until it's a real standalone
+system distinct from floor descent. When that lands, add the `hud.gd._on_floor_changed()` spawn
+call the design doc already specs (§5.2) with zero changes needed to this file.

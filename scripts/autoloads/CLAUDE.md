@@ -41,6 +41,7 @@ When you add signals, state fields, or change turn flow here, **immediately upda
 | `debug_see_all` | `active: bool` | F3 See All toggle |
 | `crit_banner` | `text: String, color: Color` | nat 20 / nat 1 overlay banner |
 | `screen_shake` | `strength: float` | camera shake (handled by `PlayerVfx.screen_shake`, `scripts/entities/player_vfx.gd`) |
+| `known_masteries_changed` | — | `known_weapon_masteries` mutated via `toggle_mastery()` |
 
 ---
 
@@ -66,6 +67,7 @@ short_rest_active: bool      # a rest is in progress (ticking turns)
 hit_dice: int                # available dice (refills to character_level on advance_floor = long rest)
 short_rests_remaining: int   # 2 per floor, resets on advance_floor
 talent_picker_open: bool     # blocks ALL player input while talent picker is visible
+mastery_picker_open: bool    # blocks ALL player input while the Mastery Picker is visible (scripts/ui/mastery_picker.gd)
 talent_points_available: int # unspent talent points (Tier 1 + Tier 2)
 talent_investments: Dict     # talent_id → current_rank (int, 0 = not invested)
 _class_talents: Array[Talent]# all talents for current class (Tier 1 + unlocked Tier 2)
@@ -81,6 +83,8 @@ noclip: bool                 # debug flag
 player_grid_pos: Vector2i    # synced every move
 pending_chasm_items: Array[Item]  # ammo (or any future item) that fell into a chasm mid-shot; drained onto the NEXT floor's random walkable tiles by DungeonFloor._spawn_pending_chasm_items()
 ```
+
+**Weapon mastery selection**: `can_select_mastery(name) -> bool` / `toggle_mastery(name) -> bool` mutate `player_stats.known_weapon_masteries` (the single source of truth every combat mastery gate reads — no parallel copy on `GameState`). Hard-blocks selecting past `Stats.mastery_cap()`; deselection always allowed. Emits `known_masteries_changed`. Used by `scripts/ui/mastery_picker.gd` — see `scripts/ui/CLAUDE.md`'s "Mastery picker" and `docs/architecture/weapon-mastery-selection-design.md`.
 
 **Status chokepoint**: `apply_player_status(type: String, turns: int) -> bool` — single entry point for all player status/debuff application. If Rager R1 is active and raging, applies a % chance to negate and returns false (caller skips log). On success: sets `player_stats.{type}_turns = maxi(existing, turns)` and emits `player_status_changed`. All trap, enemy, terrain, and rotten-meat callers must use this — never set `player_stats.{status}_turns` directly.
 
