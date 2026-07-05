@@ -32,6 +32,7 @@ signal ability_bar_changed()
 signal equip_action_taken()
 signal talent_invested(talent_id: String, new_rank: int)
 signal talent_points_changed(available: int)
+signal known_masteries_changed
 
 const QUICKBAR_SIZE: int = 9
 const ABILITY_BAR_SIZE: int = 9
@@ -90,6 +91,7 @@ var short_rests_remaining: int = 2
 var max_short_rests: int = 2
 var short_rest_open: bool = false
 var talent_picker_open: bool = false
+var mastery_picker_open: bool = false
 
 # Talent system — points earned per level, invested per talent.
 # Points are tier-locked: Tier 1 levels fill tier1_talent_points, Tier 2 levels fill tier2_talent_points.
@@ -183,6 +185,7 @@ func start_new_run() -> void:
 	noclip = false
 	short_rest_open = false
 	talent_picker_open = false
+	mastery_picker_open = false
 	tier1_talent_points = 0
 	tier2_talent_points = 0
 	talent_investments = {}
@@ -917,6 +920,24 @@ func invest_talent(id: String) -> void:
 	_apply_talent_rank(id, new_rank)
 	talent_invested.emit(id, new_rank)
 	talent_points_changed.emit(talent_points_available)
+
+## Weapon mastery selection (Mastery Picker, scripts/ui/mastery_picker.gd) —
+## see docs/architecture/weapon-mastery-selection-design.md.
+func can_select_mastery(mastery_name: String) -> bool:
+	if player_stats.knows_mastery(mastery_name):
+		return true   # deselection is always allowed
+	return player_stats.known_weapon_masteries.size() < player_stats.mastery_cap()
+
+func toggle_mastery(mastery_name: String) -> bool:
+	if player_stats.knows_mastery(mastery_name):
+		player_stats.known_weapon_masteries.erase(mastery_name)
+		known_masteries_changed.emit()
+		return true
+	if not can_select_mastery(mastery_name):
+		return false   # hard-block at cap
+	player_stats.known_weapon_masteries.append(mastery_name)
+	known_masteries_changed.emit()
+	return true
 
 func debug_set_talent_rank(id: String, new_rank: int) -> void:
 	var talent: Talent = _find_talent(id)

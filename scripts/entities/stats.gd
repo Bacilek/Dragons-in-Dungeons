@@ -20,13 +20,32 @@ var proficient_simple_weapons: bool = false
 var proficient_martial_weapons: bool = false
 
 # Weapon mastery ownership — a weapon's Item.weapon_mastery (e.g. "Cleave", "Vex") only
-# triggers its effect if the character actually knows that mastery. Nothing grants
-# masteries yet (no class/talent populates this) — equipping a mastery weapon currently
-# has no mastery effect until something explicitly adds to this list.
+# triggers its effect if the character actually knows that mastery. Populated by the Mastery
+# Picker (scripts/ui/mastery_picker.gd, via GameState.toggle_mastery()) — see mastery_cap()
+# below for the per-class/level selection limit.
 var known_weapon_masteries: Array[String] = []
 
 func knows_mastery(mastery_name: String) -> bool:
 	return mastery_name in known_weapon_masteries
+
+# Canonical mastery vocabulary shown by the Mastery Picker (scripts/ui/mastery_picker.gd) —
+# see docs/architecture/weapon-mastery-selection-design.md. Alphabetical, stable render order.
+const ALL_WEAPON_MASTERIES: Array[String] = [
+	"Cleave", "Graze", "Nick", "Push", "Sap", "Slow", "Topple", "Vex"
+]
+
+# How many masteries this character may know at once. Computed live (never cached) so a
+# level-up silently raises the cap with no stale value — see design doc decision #4.
+func mastery_cap() -> int:
+	match character_class:
+		CharacterClass.BARBARIAN:
+			if character_level >= 10: return 4
+			if character_level >= 4:  return 3
+			return 2
+		CharacterClass.RANGER:
+			return 2
+		_:
+			return 0   # WIZARD, MONK
 
 @export var strength: int = 10
 @export var dexterity: int = 10
