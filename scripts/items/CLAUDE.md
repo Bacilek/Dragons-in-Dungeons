@@ -77,6 +77,8 @@ TOOL   = 7
 
 **Durability**: `uses_remaining` decrements by 1 per throw, by 2 on a natural-1 critical fumble, and by 0 (no cost) on a natural-20 critical hit — `PlayerThrowTool._consume_throw_use(weapon, uses_lost) -> bool`, guarded by `GameState.invincible` like every other consumption site. Returns `true` (and logs `"Your <name> breaks!"` in the chat log, plus `GameState.remove_item(weapon)`) when durability hits 0 on this throw — in that case the weapon shatters instead of landing/embedding anywhere; callers check the return value before doing any landing/embedding. Ordinary melee attacks with the same weapon never touch `uses_remaining` — only throwing does. Tooltips show current durability as a right-aligned `Uses: X/Y` line (thrown weapons only) just above the "Ctrl: inspect" hint, in both `inventory_overlay.gd`'s and `hud.gd`'s item tooltips.
 
+**No quantity-stacking**: `GameState.add_item()` never merges a weapon with `uses_max > 0` into an existing same-named stack (`ex.quantity += ...`) — each one always lands in its own quickbar/bag slot, since merging would silently discard the new instance's own `uses_remaining` into a shared `quantity` counter. This means carrying multiple Spears shows multiple separate slots (not a "×N" stack), each throwable/equippable independently — throwing or equipping one only ever touches that exact `Item` instance, leaving the others (and their own remaining uses) untouched.
+
 ---
 
 ## Ranged weapons (current)
