@@ -105,8 +105,8 @@ Heavy Crossbow and Longbow are both also `is_heavy=true` (DEX 13+ or Disadvantag
 **Landing resolution** (`PlayerAmmo.resolve_ammo_landing(ammo_item, impact_pos)`, generalized — not arrow-specific):
 - **WALL** tile impact → ammo destroyed, no pickup.
 - **CHASM** tile impact → not placed on this floor; pushed onto `GameState.pending_chasm_items` and reappears at a random walkable tile on the **next floor down** (drained by `DungeonFloor._spawn_pending_chasm_items()` during `_load_floor()`).
-- Any other floor tile → becomes a normal pickupable floor item via `DungeonFloor.place_item_on_floor()`.
-- **Miss against an enemy** → ammo lands at the enemy's tile (pickupable), same as any open-ground miss.
+- Any other floor tile → becomes a normal pickupable floor item via `DungeonFloor.place_item_on_floor()` (open-ground/wall shots via `PlayerRanged.ranged_attack_tile()` still call this — a miss into empty space is a genuine floor drop).
+- **Miss against a still-alive enemy** → `PlayerRanged.ranged_attack()`'s miss branch does **not** call `resolve_ammo_landing()` at all — the ammo stays lodged in the enemy with no floor pickup, identically to a non-lethal hit.
 - **Non-lethal hit on an enemy** → ammo is embedded in the (still-alive) enemy — no pickup at all.
 - **Killing hit** → handled inside `player.gd._finish_kill(enemy, dropped_ammo)`: 50% chance the ammo drops at the corpse's tile (pickupable), 50% chance it's lost with the kill.
 

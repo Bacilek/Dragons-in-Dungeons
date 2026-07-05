@@ -123,8 +123,9 @@ func ranged_attack(enemy: Enemy) -> void:
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
 			GameState.screen_shake.emit(2.5)
-		# Arrow flies to the (still-alive) enemy's tile and lands as a normal pickup on a miss.
-		player._ammo.resolve_ammo_landing(ammo_item, enemy.grid_pos)
+		# A miss against a still-alive enemy leaves the arrow lodged in it — no floor pickup at
+		# all, same as a non-lethal hit (see PlayerAmmo.resolve_ammo_landing()'s doc comment).
+		# Only a killing shot still rolls the existing 50% corpse-drop via _finish_kill().
 		if player._dungeon_floor != null:
 			player._dungeon_floor.update_fog(player.grid_pos)
 		player._handle_post_attack_turn()
@@ -159,9 +160,12 @@ func ranged_attack(enemy: Enemy) -> void:
 	if player._dungeon_floor != null:
 		player._dungeon_floor.show_damage(enemy.position, actual, false)
 
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,dex=%d,rage=0,frenzy=0,ironwood=0,divine=%d,divtype=%s,crit=%d,final=%d" % [
-		r_die_roll, r_dmin, r_dmax, r_wpn_enh, dex_mod, r_divine_bonus,
-		GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
+	var bonus_sources: String = CombatMath.encode_bonus_sources([
+		{"name": "%s — Divine Fury" % GameState.zealot_divine_fury_type, "amount": r_divine_bonus,
+			"color": "gold" if GameState.zealot_divine_fury_type == "Radiant" else "purple"},
+	])
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,dex=%d,bonus=%s,crit=%d,final=%d" % [
+		r_die_roll, r_dmin, r_dmax, r_wpn_enh, dex_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
 
