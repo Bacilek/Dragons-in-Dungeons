@@ -66,3 +66,28 @@ static func divine_fury_flat_bonus(rank: int, level: int) -> int:
 		2: return level / 4
 		3: return level / 2
 	return 0
+
+# Encodes a list of {name, amount, color} bonus-damage-source dicts into one dmg_meta field
+# ("bonus="), dropping zero-amount entries. Lets tooltip_formatters.gd render any number of
+# named bonus-damage lines (Rage, Frenzy, Ironwood Bark, Divine Fury, ...) generically — a
+# future damage source only needs to append a dict here, never a matching tooltip_formatters.gd
+# edit. Fields are "|"-joined and entries ";"-joined since dmg_meta itself splits on "," and "=".
+static func encode_bonus_sources(sources: Array) -> String:
+	var parts: PackedStringArray = []
+	for s: Dictionary in sources:
+		var amount: int = s.get("amount", 0)
+		if amount == 0:
+			continue
+		parts.append("%s|%d|%s" % [s.get("name", ""), amount, s.get("color", "red")])
+	return ";".join(parts)
+
+# Inverse of encode_bonus_sources() — returns Array[Dictionary] of {name, amount, color}.
+static func decode_bonus_sources(encoded: String) -> Array:
+	var result: Array = []
+	if encoded.is_empty():
+		return result
+	for part: String in encoded.split(";"):
+		var fields: PackedStringArray = part.split("|")
+		if fields.size() == 3:
+			result.append({"name": fields[0], "amount": int(fields[1]), "color": fields[2]})
+	return result

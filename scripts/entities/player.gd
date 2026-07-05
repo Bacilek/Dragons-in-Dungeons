@@ -1337,9 +1337,15 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
 
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,rage=%d,frenzy=%d,ironwood=%d,divine=%d,divtype=%s,crit=%d,final=%d" % [
-		die_roll, w_dmin, w_dmax, w_enh, mod_key, dmg_mod, rage_bonus, frenzy_bonus, ironwood_bonus, divine_bonus,
-		GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
+	var bonus_sources: String = CombatMath.encode_bonus_sources([
+		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
+		{"name": "Frenzy", "amount": frenzy_bonus, "color": "red"},
+		{"name": "Ironwood Bark", "amount": ironwood_bonus, "color": "cyan"},
+		{"name": "%s — Divine Fury" % GameState.zealot_divine_fury_type, "amount": divine_bonus,
+			"color": "gold" if GameState.zealot_divine_fury_type == "Radiant" else "purple"},
+	])
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,bonus=%s,crit=%d,final=%d" % [
+		die_roll, w_dmin, w_dmax, w_enh, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var verb: String = "strike" if is_monk_unarmed else ("punch" if is_unarmed else "strike")
 	var weapon_item: Item = GameState.equipped_weapon
 	var dmg_type: String = weapon_item.damage_type if weapon_item != null and not weapon_item.damage_type.is_empty() else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
@@ -1473,8 +1479,11 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,rage=%d,frenzy=0,ironwood=0,divine=0,divtype=%s,crit=%d,final=%d" % [
-		die_roll, w_dmin, w_dmax, weapon_bonus, str_mod, rage_bonus, GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
+	var bonus_sources: String = CombatMath.encode_bonus_sources([
+		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
+	])
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,bonus=%s,crit=%d,final=%d" % [
+		die_roll, w_dmin, w_dmax, weapon_bonus, str_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	GameState.game_log("[color=cyan]Cleave:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag])
@@ -1551,8 +1560,11 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,rage=%d,frenzy=0,ironwood=0,divine=0,divtype=%s,crit=%d,final=%d" % [
-		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, rage_bonus, GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
+	var bonus_sources: String = CombatMath.encode_bonus_sources([
+		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
+	])
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,bonus=%s,crit=%d,final=%d" % [
+		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	GameState.game_log("[color=cyan]%s:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [label, hit_meta, enemy.display_name, dmg_meta, actual, type_tag])
@@ -1624,8 +1636,11 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,rage=%d,frenzy=0,ironwood=0,divine=0,divtype=%s,crit=%d,final=%d" % [
-		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, rage_bonus, GameState.zealot_divine_fury_type, 1 if is_crit else 0, actual]
+	var bonus_sources: String = CombatMath.encode_bonus_sources([
+		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
+	])
+	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,bonus=%s,crit=%d,final=%d" % [
+		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var dmg_type: String = weapon.damage_type if (not is_unarmed and not weapon.damage_type.is_empty()) else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	GameState.game_log("[color=cyan]Opportunity attack:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag])

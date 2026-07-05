@@ -315,6 +315,9 @@ func _execute_action(intent: Dictionary) -> void:
 				_search_path.clear()
 				_roam_path.clear()
 				_roam_target = Vector2i(-1, -1)
+				# State transition only, no movement this turn — still await the idle timer
+				# (see the matching comment in _act_toward()'s BFS-fallback-failure path).
+				await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		"wait":
 			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 
@@ -352,7 +355,11 @@ func _act_toward(target: Node) -> void:
 			await _move_step(step, next_pos)
 			return
 
-	# Greedy failed — BFS fallback to navigate around obstacles
+	# Greedy failed — BFS fallback to navigate around obstacles. If the BFS route is also empty,
+	# or its first step turns out to be unwalkable, the enemy is stuck this turn: still await the
+	# idle timer so the turn takes real time instead of resolving instantly (a stuck-but-alive
+	# enemy previously made TurnManager burn through the enemy phase with zero elapsed time,
+	# which looked like an empty/cleared floor even with TurnManager.fast_mode == false).
 	var bfs_path: Array[Vector2i] = _bfs_to(dest)
 	if not bfs_path.is_empty():
 		var next_pos: Vector2i = bfs_path[0]
@@ -361,6 +368,8 @@ func _act_toward(target: Node) -> void:
 			_dungeon_floor.open_door(next_pos)
 		if _dungeon_floor.is_walkable_for_enemy(next_pos):
 			await _move_step(step, next_pos)
+			return
+	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 
 func _pick_roam_target() -> Vector2i:
 	var centers: Array[Vector2i] = _dungeon_floor.get_room_centers()
