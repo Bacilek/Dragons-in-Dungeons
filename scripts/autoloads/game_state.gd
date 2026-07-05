@@ -513,13 +513,8 @@ func equip(item: Item, slot_name: String = "", costs_turn: bool = false) -> void
 		return
 
 	var to_equip: Item = item
-	# A stacked thrown weapon (quantity > 1, all sharing the same uses_remaining — see add_item())
-	# only ever equips a single unit: split one off instead of moving the whole stack into the
-	# slot, so the rest keep sitting in the bag with their own durability untouched.
-	if item.quantity > 1 and item.item_type == Item.Type.WEAPON and item.uses_max > 0:
-		to_equip = item.duplicate()
-		to_equip.quantity = 1
-		item.quantity -= 1
+	if _should_split_for_equip(item):
+		to_equip = _split_one_unit(item)
 	else:
 		_remove_from_bags(item)
 
@@ -533,6 +528,19 @@ func equip(item: Item, slot_name: String = "", costs_turn: bool = false) -> void
 	inventory_changed.emit()
 	if costs_turn and class_selected:
 		equip_action_taken.emit()
+
+# A stacked thrown weapon (quantity > 1, all sharing the same uses_remaining — see add_item())
+# only ever equips a single unit: split one off instead of moving the whole stack into a slot,
+# so the rest keep sitting in the bag with their own durability untouched. Shared by equip()
+# and move_item()'s drag-to-equipment-slot path.
+func _should_split_for_equip(item: Item) -> bool:
+	return item.quantity > 1 and item.item_type == Item.Type.WEAPON and item.uses_max > 0
+
+func _split_one_unit(item: Item) -> Item:
+	var unit: Item = item.duplicate()
+	unit.quantity = 1
+	item.quantity -= 1
+	return unit
 
 func unequip(slot_name: String, costs_turn: bool = false) -> void:
 	if not equipment.has(slot_name):
@@ -593,8 +601,16 @@ func move_item(src: String, src_idx: int, src_slot: String,
 		return
 	var src_item: Item  = _get_slot_item(src, src_idx, src_slot)
 	var dest_item: Item = _get_slot_item(dest, dest_idx, dest_slot)
-	_set_slot_item(src, src_idx, src_slot, dest_item)
-	_set_slot_item(dest, dest_idx, dest_slot, src_item)
+	# Dragging a stacked weapon (e.g. Handaxe/Dagger, quantity > 1) into an equipment slot only
+	# equips a single unit — the rest of the stack stays put instead of the whole pile moving
+	# into the slot. Mirrors equip()'s splitting rule (see _should_split_for_equip()).
+	if dest == "equipment" and src_item != null and _should_split_for_equip(src_item):
+		_set_slot_item(dest, dest_idx, dest_slot, _split_one_unit(src_item))
+		if dest_item != null:
+			_add_to_bags_silent(dest_item)
+	else:
+		_set_slot_item(src, src_idx, src_slot, dest_item)
+		_set_slot_item(dest, dest_idx, dest_slot, src_item)
 	recalculate_stats()
 	equipment_changed.emit()
 	inventory_changed.emit()
