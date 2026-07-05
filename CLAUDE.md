@@ -55,6 +55,9 @@ Opportunity Attacks (movement out of threat range provokes a free reactive melee
 ### Ability system
 `Ability` (`scripts/items/ability.gd`) — resource with `ability_id`, `ability_name`, `description`, `icon_path`, `uses_remaining`, `uses_max`, `is_active`. `uses_max == 0` means infinite/passive. `GameState.player_ability_bar: Array` holds 9 slots (parallel to `player_quickbar`). `Tab` toggles HUD between item bar and ability bar. `GameState.add_ability(ability)` places in first empty slot. Ability activation dispatched in `player.gd._use_ability_slot(idx)` by `ability_id`. New abilities are granted by `GameState._apply_talent_rank()` and `GameState._apply_monk_level_features(level)`.
 
+### Spellcasting (design only, not yet implemented)
+Full D&D 5.5e spellcasting framework — spell data model, spell slots (long-rest/pact-magic/enemy-cooldown behind one interface), prepared vs. known spell lists, upcasting, concentration, BG3-style reactions, and tile-grid AoE targeting (cone/sphere/line/cube). Wizard (already in `Stats.CharacterClass`) is the first integration target. No code ships with the design: `docs/architecture/spellcasting-design.md`.
+
 ### Talent system (`scripts/items/talent.gd`, `scripts/autoloads/game_state.gd`)
 `Talent` is a reusable Resource: `talent_id`, `talent_name`, `description`, `icon_path`, `tier`, `class_id`, `max_rank`, `ranks: Array[Dictionary]`. `rank_description(rank)` returns the description string for a given rank.
 
