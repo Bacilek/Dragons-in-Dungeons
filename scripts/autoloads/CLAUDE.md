@@ -108,11 +108,21 @@ pending_chasm_items: Array[Item]  # ammo (or any future item) that fell into a c
 
 ## SaveManager (`save_manager.gd`)
 
-Save-file plumbing for the single-slot run save (design: `docs/architecture/SAVE_LOAD_ARCHITECTURE.md`). **Phase A sessions 3a + 3b are done** — file mechanics AND full Phase-A serialization are live; only the Continue-flow UI (session 3c: main menu button, floor reload, lifecycle-notification autosave triggers) remains. Nothing calls `save_run()`/`load_run()` in gameplay yet.
+Save-file plumbing for the single-slot run save (design: `docs/architecture/SAVE_LOAD_ARCHITECTURE.md`). **Phase A is FULLY done (sessions 3a + 3b + 3c)** — file mechanics, full Phase-A serialization, AND the Continue flow + autosave triggers are live. Phase B (mid-floor state) has not started.
+
+### Continue flow (session 3c)
+- **Entry point**: `class_select.gd` shows a gold "Continue Saved Run" button (below the class cards) only when `SaveManager.has_save()`. Pressing it: `load_run()` → `GameState.class_chosen.emit(restored class)` (player sprite + HUD portrait re-derive; `from_dict()` deliberately doesn't emit it) → `DungeonFloor.reload_from_save()` → `queue_free()` (class select skipped entirely). New-game path unchanged.
+- **`DungeonFloor.reload_from_save()`**: runs `_load_floor()` against the restored `run_seed`/`current_floor` (floor regenerates fresh from the seeded generator — Phase A restores floor-entry state only), then emits `GameState.floor_changed` (HUD floor label / log clear / compass reset).
+- **Companion restore**: `GameState.pending_companion_restore` (set by `from_dict()`) is consumed by `DungeonFloor._restore_companion_from_save()` inside `_load_floor()` (after spawns, before the checkpoint) — rebuilds the Wild Heart companion from `WILD_HEART_COMPANION_STATS[one_with_nature rank]` adjacent to the player start and clamps its HP to the saved value. No-op on normal floor loads (dict empty).
+
+### Autosave triggers (doc §2 — exactly these, no others)
+- **Floor entry**: `SaveManager.checkpoint()` at the end of `DungeonFloor._load_floor()` (after all spawns) — snapshots `GameState.to_dict()` into memory (`_snapshot`) and writes it. Also fired on `GameState.class_chosen` (floor 1 is loaded *before* class selection, so class pick is the run-start checkpoint). No-op while `class_selected == false`, after death (`is_game_over`), or after the run ended (`_run_over` — set on `player_died`/`player_won`, cleared on class pick / `load_run()`).
+- **Lifecycle**: `SaveManager._notification()` calls `save_run()` on `NOTIFICATION_WM_CLOSE_REQUEST` and `NOTIFICATION_APPLICATION_PAUSED` (Android backgrounding).
+- **`save_run()` writes the in-memory floor-entry snapshot, never live state** — quitting mid-floor persists floor-entry state, so mid-floor HP/inventory can't be saved against a freshly regenerated floor (doc §2's dupe/loss rule). Consequence: mid-floor progress (including talent points spent or masteries re-picked since floor entry) is lost on load — accepted MVP limitation.
 
 ### Serialization (Phase A schema, doc §4)
 - `save_run()` writes `{"save_version": 1}` merged with **`GameState.to_dict()`**: `run_seed`, `current_floor`, `player_stats` (`Stats.to_dict()` — scores, level/XP, HP, base damage, rage uses, temp HP, status turns, `known_weapon_masteries`), `talents` (investments, per-tier points, `tier2_unlocked`, `active_tier2_subclass`, Wild Heart forms, Zealot charges, plus small `ability_uses`/`ability_active` id-keyed maps), `inventory` (quickbar/bag as positional arrays of `Item.to_dict()` or null, `equipment` slot dict, `pending_chasm_items`, companion `{alive, current_hp}`), `rest` (`hit_dice`, `short_rests_remaining`).
-- `load_run()` applies via **`GameState.from_dict()`** (doc §4.3 order): `start_new_run()` clean slate → class + `apply_class_defaults()` + `give_class_starting_items()` → **talent replay** (`_apply_talent_rank(id, r)` for rank 1..saved per invested talent — abilities are derived state, never serialized as objects) → inventory/equipment/rest → **Stats restored LAST** (so replay one-shots like Danger Sense R3's STR +2 don't double-apply) → `recalculate_stats()` + `_sync_ability_uses()` → per-ability `uses_remaining`/`is_active` patches → UI-refresh signals. `floor_changed` is deliberately NOT emitted — 3c drives the floor reload from `run_seed` + `current_floor`. Companion save state lands in `GameState.pending_companion_restore` for 3c's floor-load path to consume.
+- `load_run()` applies via **`GameState.from_dict()`** (doc §4.3 order): `start_new_run()` clean slate → class + `apply_class_defaults()` + `give_class_starting_items()` → **talent replay** (`_apply_talent_rank(id, r)` for rank 1..saved per invested talent — abilities are derived state, never serialized as objects) → inventory/equipment/rest → **Stats restored LAST** (so replay one-shots like Danger Sense R3's STR +2 don't double-apply) → `recalculate_stats()` + `_sync_ability_uses()` → per-ability `uses_remaining`/`is_active` patches → UI-refresh signals. `floor_changed` is deliberately NOT emitted — `DungeonFloor.reload_from_save()` drives the floor reload from `run_seed` + `current_floor` and emits it after. Companion save state lands in `GameState.pending_companion_restore`, consumed by `DungeonFloor._restore_companion_from_save()` (see "Continue flow" above).
 - **Every serialized class uses hand-written `to_dict()`/`from_dict()`** (`Stats` instance pair, `Item.to_dict()` + `static Item.from_dict()`) — never `store_var()` a Resource. Adding an `Item`/`Stats` field means adding it to both functions.
 - Per-floor world state (enemies/doors/traps/fog/floor items/`player_grid_pos`) is NOT serialized in Phase A — the floor reloads fresh from the seeded generator (doc §2 accepted limitation; mid-floor state is Phase B).
 
@@ -124,9 +134,10 @@ Save-file plumbing for the single-slot run save (design: `docs/architecture/SAVE
 ### API
 ```gdscript
 SaveManager.has_save() -> bool   # a parseable, version-compatible run.json (or .bak) exists
-SaveManager.save_run()           # atomic write: .tmp → rotate old save to .bak → rename into place
-SaveManager.load_run() -> bool   # parses + fully repopulates GameState via from_dict(); floor reload is 3c's job
-SaveManager.delete_save()        # removes run.json + .bak + .tmp
+SaveManager.checkpoint()         # snapshot GameState.to_dict() into memory + write (floor entry / class pick)
+SaveManager.save_run()           # atomic write of the SNAPSHOT: .tmp → rotate old save to .bak → rename into place
+SaveManager.load_run() -> bool   # parses + fully repopulates GameState via from_dict(); caller drives the floor reload
+SaveManager.delete_save()        # removes run.json + .bak + .tmp and clears the in-memory snapshot
 SaveManager.v2i_to_arr(v) / SaveManager.arr_to_v2i(a)  # shared Vector2i↔[x,y] JSON helpers (static)
 ```
 

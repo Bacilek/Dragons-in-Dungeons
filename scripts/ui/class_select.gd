@@ -5,6 +5,8 @@ const CARD_H: int = 500
 const CARD_GAP: int = 24
 const CHAR_PATH := "res://sprites/characters/"
 
+var _continue_btn: Button = null
+
 const CLASS_DATA: Array = [
 	{
 		"cls":    0,  # Stats.CharacterClass.BARBARIAN
@@ -84,6 +86,51 @@ func _build_ui() -> void:
 
 	for i: int in CLASS_DATA.size():
 		_build_card(CLASS_DATA[i], Vector2(origin_x + i * (CARD_W + CARD_GAP), origin_y))
+
+	# Save/Load Phase A Continue flow: only offered when a valid run.json (or .bak) exists.
+	if SaveManager.has_save():
+		_build_continue_button(vp, origin_y)
+
+func _build_continue_button(vp: Vector2, origin_y: float) -> void:
+	var btn := Button.new()
+	btn.text = "Continue Saved Run"
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.position = Vector2(vp.x / 2.0 - 130.0, origin_y + CARD_H + 16.0)
+	btn.size = Vector2(260.0, 36.0)
+	var gold := Color(0.95, 0.85, 0.50)
+	var btn_normal := StyleBoxFlat.new()
+	btn_normal.bg_color = gold * 0.30
+	btn_normal.set_border_width_all(1)
+	btn_normal.border_color = gold * 0.8
+	btn_normal.set_corner_radius_all(4)
+	var btn_hover := StyleBoxFlat.new()
+	btn_hover.bg_color = gold * 0.50
+	btn_hover.set_corner_radius_all(4)
+	btn.add_theme_stylebox_override("normal", btn_normal)
+	btn.add_theme_stylebox_override("hover", btn_hover)
+	btn.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+	btn.add_theme_font_size_override("font_size", 14)
+	btn.pressed.connect(_on_continue_pressed)
+	add_child(btn)
+	_continue_btn = btn
+
+# Continue flow (Save/Load Phase A, session 3c): restore GameState from the save, then
+# rebuild the saved floor from run_seed + current_floor via the seeded generator —
+# skipping class select entirely. Phase A restores floor-entry state only; the floor
+# itself regenerates fresh (doc §2).
+func _on_continue_pressed() -> void:
+	if not SaveManager.load_run():
+		GameState.game_log("[color=gray]Saved run could not be loaded.[/color]")
+		if _continue_btn != null:
+			_continue_btn.visible = false
+		return
+	# Player sprite + HUD portrait re-derive from the restored class (from_dict()
+	# deliberately does not emit this — the Continue flow owns presentation updates).
+	GameState.class_chosen.emit(GameState.player_stats.character_class)
+	var df := get_tree().get_first_node_in_group("dungeon_floor") as DungeonFloor
+	if df != null:
+		df.reload_from_save()
+	queue_free()
 
 func _build_card(data: Dictionary, pos: Vector2) -> void:
 	var card := Panel.new()

@@ -1,10 +1,14 @@
 extends Node
 
-# SaveManager — save-file plumbing (Save/Load Phase A, sessions 3a + 3b).
+# SaveManager — save-file plumbing (Save/Load Phase A, sessions 3a + 3b + 3c).
 # Atomic write + backup + delete-on-death per docs/architecture/SAVE_LOAD_ARCHITECTURE.md §1.
-# save_run() serializes the full Phase-A snapshot via GameState.to_dict() (doc §4);
-# load_run() applies it via GameState.from_dict(). The Continue-flow UI that decides
-# WHEN to call load_run() (main menu / floor reload) is session 3c.
+# checkpoint() snapshots the full Phase-A run state via GameState.to_dict() (doc §4) at
+# floor entry; save_run() writes that in-memory snapshot (never anything newer — doc §2's
+# "quitting mid-floor must not persist mid-floor state against a fresh floor" rule).
+# load_run() applies a parsed save via GameState.from_dict(); the Continue flow
+# (class_select.gd → DungeonFloor.reload_from_save()) drives the actual floor reload.
+# Lifecycle autosave: _notification() writes the snapshot on NOTIFICATION_WM_CLOSE_REQUEST
+# and NOTIFICATION_APPLICATION_PAUSED (the Android "user switched apps" event) — doc §2.
 
 const SAVE_DIR: String = "user://save"
 const SAVE_PATH: String = "user://save/run.json"
@@ -17,10 +21,30 @@ const SAVE_VERSION: int = 1
 # Empty until a schema change ever bumps SAVE_VERSION.
 var _migrations: Dictionary = {}
 
+# In-memory floor-entry snapshot (doc §2). save_run() only ever writes THIS — it is
+# refreshed exclusively by checkpoint() (floor entry / class selection) and load_run(),
+# so a mid-floor quit persists floor-entry state, never mid-floor state.
+var _snapshot: Dictionary = {}
+# True once the current run ended (death or win) — blocks any further checkpoint/save
+# until a new run starts (class selection or a Continue load). Guards the win-path edge
+# where _load_floor() still runs after player_won already deleted the save.
+var _run_over: bool = false
+
 
 func _ready() -> void:
-	GameState.player_died.connect(delete_save)
-	GameState.player_won.connect(delete_save)
+	GameState.player_died.connect(_on_run_ended)
+	GameState.player_won.connect(_on_run_ended)
+	# Floor-1 "floor entry" happens BEFORE class selection (the floor is generated under
+	# the class-select overlay), so class selection is the run-start checkpoint (doc §2).
+	GameState.class_chosen.connect(_on_class_chosen)
+
+
+# Lifecycle autosave (doc §2): persist the run when the window is closed or the app is
+# backgrounded (Android). Death/win already cleared the snapshot, so this never
+# resurrects a finished run.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED:
+		save_run()
 
 
 ## True when a valid, loadable save exists (run.json or its backup).
@@ -28,29 +52,56 @@ func has_save() -> bool:
 	return not _read_save().is_empty()
 
 
-## Write the current run to disk (full Phase-A snapshot, doc §4).
+## Floor-entry checkpoint (doc §2): capture the current run state into the in-memory
+## snapshot and write it to disk. Called at _load_floor() completion (after spawns) and
+## on class_chosen (the floor-1 run-start equivalent). No-op before a class is picked
+## or after the run ended.
+func checkpoint() -> void:
+	if not GameState.class_selected or GameState.is_game_over or _run_over:
+		return
+	_snapshot = _build_save_dict()
+	save_run()
+
+
+## Write the floor-entry snapshot to disk (doc §2 — never live mid-floor state).
+## No-op when no snapshot exists yet (game just launched, class not picked, run over).
 func save_run() -> void:
-	var data: Dictionary = _build_save_dict()
-	var text: String = JSON.stringify(data, "\t")
+	if _snapshot.is_empty() or _run_over:
+		return
+	var text: String = JSON.stringify(_snapshot, "\t")
 	_write_atomically(SAVE_PATH, text)
 
 
 ## Parse the save and, on success, fully repopulate GameState via from_dict().
 ## Returns false when no usable save exists. Does NOT reload the floor — the
-## Continue flow (session 3c) drives that from the restored run_seed/current_floor.
+## Continue flow (class_select.gd → DungeonFloor.reload_from_save()) drives that
+## from the restored run_seed/current_floor.
 func load_run() -> bool:
 	var data: Dictionary = _read_save()
 	if data.is_empty():
 		return false
 	GameState.from_dict(data)
+	_run_over = false
+	_snapshot = data  # the loaded state IS the floor-entry snapshot for this floor
 	return true
 
 
-## Remove the active save (and backup/temp). Called on death and win.
+## Remove the active save (and backup/temp) and drop the in-memory snapshot.
 func delete_save() -> void:
+	_snapshot = {}
 	for path: String in [SAVE_PATH, BACKUP_PATH, TEMP_PATH]:
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(path)
+
+
+func _on_run_ended() -> void:
+	_run_over = true
+	delete_save()
+
+
+func _on_class_chosen(_cls: Stats.CharacterClass) -> void:
+	_run_over = false
+	checkpoint()
 
 
 # --- Internals ---------------------------------------------------------------
