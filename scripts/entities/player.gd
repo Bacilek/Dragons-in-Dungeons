@@ -1389,11 +1389,14 @@ func _try_topple(enemy: Enemy, is_str_weapon: bool, prof: int, str_mod: int) -> 
 			or not is_str_weapon or enemy.stats.is_dead():
 		return
 	var topple_dc: int = 8 + prof + str_mod
-	if not enemy.resist_check(topple_dc, true):
+	var save: Dictionary = enemy.resist_check_detailed(topple_dc, true)
+	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d" % [
+		save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"])]
+	if not save["pass"]:
 		enemy.prone_turns = 1
-		GameState.game_log("[color=cyan]Topple:[/color] %s is knocked [color=orange]Prone[/color]!" % enemy.display_name)
+		GameState.game_log("[color=cyan]Topple:[/color] %s [url=%s]is knocked[/url] [color=orange]Prone[/color]!" % [enemy.display_name, save_meta])
 	else:
-		GameState.game_log("[color=gray]Topple: %s resists being knocked prone.[/color]" % enemy.display_name)
+		GameState.game_log("[color=gray]Topple: %s [url=%s]resists[/url] being knocked prone.[/color]" % [enemy.display_name, save_meta])
 
 # Cleave mastery (Greataxe): if 2+ distinct enemies are within melee reach, the swing also
 # rolls a fully independent attack + damage roll against a second target — the one closest
