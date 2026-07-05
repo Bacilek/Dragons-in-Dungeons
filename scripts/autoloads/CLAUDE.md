@@ -1,6 +1,6 @@
 # scripts/autoloads
 
-Core singletons — loaded at engine start, affect the entire game. Two files: `game_state.gd` and `turn_manager.gd`.
+Core singletons — loaded at engine start, affect the entire game. Files: `game_state.gd`, `turn_manager.gd`, `audio_manager.gd`, `save_manager.gd`.
 
 ## Maintenance rule
 When you add signals, state fields, or change turn flow here, **immediately update this file and root `CLAUDE.md`** to reflect the change — without waiting to be asked.
@@ -103,6 +103,32 @@ pending_chasm_items: Array[Item]  # ammo (or any future item) that fell into a c
 `GameState.equipment` dict: keys `"melee"` (Main Hand), `"hand2"` (Off-hand), `"ranged"`, `"armor"`, `"boots"`, `"gloves"`, `"head"`, `"trinket"`.
 `GameState.equipped_ranged` property returns ranged slot item.
 `equip()` auto-routes by `item.is_ranged` (weapons always land in `"melee"`/`"ranged"`, never `"hand2"` — Off-hand is only reachable via explicit drag in `inventory_overlay.gd`). `"hand2"` accepts a Light melee weapon only when Main Hand is also Light — dual-wielding two Light weapons (Handaxe, Dagger) fires a bonus Off-hand attack on every melee swing (`player.gd._try_offhand_attack()`) — see `scripts/items/CLAUDE.md`'s "Dual-wielding". Dragging a stacked durability weapon (`quantity > 1`) onto any equipment slot equips only one unit (`move_item()`'s `_should_split_for_equip()`/`_split_one_unit()`, shared with `equip()`) — see `scripts/items/CLAUDE.md`'s "Dragging a stack".
+
+---
+
+## SaveManager (`save_manager.gd`)
+
+Save-file plumbing for the single-slot run save (design: `docs/architecture/SAVE_LOAD_ARCHITECTURE.md`). **Phase A session 3a only** — file mechanics exist, but the payload is still a version-only stub `{"save_version": 1}`; real `to_dict()/from_dict()` serialization is session 3b, Continue-flow UI is 3c.
+
+### Files
+- `user://save/run.json` — active run (versioned JSON, `save_version` first key)
+- `user://save/run.json.bak` — previous good save (auto-created on every write)
+- `user://save/run.json.tmp` — transient atomic-write staging file
+
+### API
+```gdscript
+SaveManager.has_save() -> bool   # a parseable, version-compatible run.json (or .bak) exists
+SaveManager.save_run()           # atomic write: .tmp → rotate old save to .bak → rename into place
+SaveManager.load_run() -> bool   # validates/parses only (stub); 3b/3c will apply the state
+SaveManager.delete_save()        # removes run.json + .bak + .tmp
+SaveManager.v2i_to_arr(v) / SaveManager.arr_to_v2i(a)  # shared Vector2i↔[x,y] JSON helpers (static)
+```
+
+### Behavior rules
+- **Permadeath**: `_ready()` connects `GameState.player_died` and `player_won` → `delete_save()`.
+- **Never crashes on a bad file**: unreadable/unparseable/unknown-version saves fall back to `.bak`, then to "no run" (`{}`/false). Saves with `save_version > SAVE_VERSION` (newer build) are refused.
+- **Migrations**: `_migrations: Dictionary` of `save_version → Callable` upgraders, applied in a loop until current. Dev-phase policy: a missing migrator silently discards the save (doc §7).
+- No checksums/encryption — save-scumming via OS copy is explicitly not defended against.
 
 ---
 
