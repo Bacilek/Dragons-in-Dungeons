@@ -268,9 +268,7 @@ func _on_turn_started() -> void:
 			_actions.do_rest_wait_turn()
 			return
 		GameState.short_rest_turns_remaining -= 1
-		if GameState.short_rest_turns_remaining > 0:
-			GameState.game_log("[color=gray]Resting... (%d turn(s) remaining)[/color]" % GameState.short_rest_turns_remaining)
-		else:
+		if GameState.short_rest_turns_remaining <= 0:
 			GameState.short_rest_active = false
 			_rest_interrupt_shown = false
 			if GameState.long_rest_pending:
