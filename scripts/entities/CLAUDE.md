@@ -29,6 +29,8 @@ Z-index: enemies = 1, player = 3.
 3. Add entry to `DungeonFloorData.ENEMY_POOL` (`scripts/world/dungeon_floor_data.gd`); add `idle_fmt`/`run_fmt` keys if sprite naming is non-standard
 4. If boss: add to `DungeonFloorData.BOSS_POOL`, set `is_boss = true`
 
+For a full D&D-style stat block (CR, ability-score modifiers, damage resist/immune/vuln, condition immunities, creature type, size, senses, traits, multiattack, limited-use/recharge abilities, reactions, conditional triggers, legendary resistance) — target schema specced, not yet implemented — see `docs/architecture/enemy-stat-block-design.md`.
+
 ---
 
 ## Stats (`stats.gd`)
