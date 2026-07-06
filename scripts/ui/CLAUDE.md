@@ -42,6 +42,13 @@ Connects to `GameState` signals only — never poll `GameState` in `_process()`.
 - `crit_banner.gd` (`CritBanner`, composition child-node, `extends Node`) — `show_banner(text, color)` (was `hud.gd._show_crit_banner`). Instantiated once in `hud.gd._ready()` (`_crit_banner`), added as a child, and `GameState.crit_banner` connects directly to `_crit_banner.show_banner`.
 - `compass.gd` (`Compass`, composition child-node, `extends Panel`) — owns the top-center stairs compass UI and its `_stairs_found_this_floor` state internally. Public methods: `on_stairs_discovered()`, `update_display()`, `reset_for_new_floor()`. Instantiated once in `hud.gd._ready()` (`_compass`); `GameState.stairs_discovered` connects to `on_stairs_discovered`, `TurnManager.player_turn_started` connects to `update_display`, and `hud.gd._on_floor_changed()` calls `reset_for_new_floor()`.
 
+**Status/buff/debuff icon tray (design only, not yet implemented)**: current poison/burning/
+bleeding/slowed/rage indicators (`hud.gd:200-211`, `_make_status_dot()`/`_make_status_icon_rect()`)
+are 5 hardcoded nodes overlapping the portrait's own left edge, with no tooltip. Full design for
+reworking these into a generic, data-driven, clickable icon row properly positioned under the
+portrait — covering every buff/debuff/toggle state (including future talent-driven ones) via one
+`StatusEffectEntry` descriptor list instead of one bespoke node per effect: `docs/architecture/status-icon-tray-design.md`.
+
 ### Z-index reference
 | Element | Z |
 |---|---|
