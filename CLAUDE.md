@@ -66,7 +66,7 @@ Full D&D 5.5e spellcasting framework — spell data model, spell slots (long-res
 
 **Rank-gradient icons**: `GameState.TALENT_ICON_FOLDER` maps every Barbarian talent_id to `res://icons/barbarian/<subclass>/<name>_<rank>.png`. `GameState.talent_icon_path(id, rank)` clamps rank to 1–3 and returns the matching file. Every Talent/Ability sets `icon_path` via this helper so both the talent-tree icon and the ability-bar icon "gradate" as ranks are invested.
 
-**Barbarian (Tier 1: Rage/Reckless Attack/Danger Sense; Tier 2 at level 7: Berserker/Zealot/World Tree/Wild Heart, 3 talents each) and Monk full talent/ability tables: `scripts/entities/CLAUDE.md`.**
+**Barbarian (Tier 1: Rage/Reckless Attack/Danger Sense; Tier 2 at level 7: Berserker/Zealot/World Tree/Wild Heart, 3 talents each) and Monk full talent/ability tables: `scripts/entities/CLAUDE.md`.** At level 7 the player picks their subclass once via the blocking `scripts/ui/subclass_select.gd` overlay (`GameState.subclass_choice_required` → `choose_subclass()`); the God-Mode talent-picker arrows remain a debug-only override — see `scripts/autoloads/CLAUDE.md`.
 
 ### Weapon mastery selection ("Mastery Picker")
 `Stats.ALL_WEAPON_MASTERIES` (all 8) + `Stats.mastery_cap()` (per-class/level, computed live) back `scripts/ui/mastery_picker.gd`, which populates `Stats.known_weapon_masteries` — the array every weapon-mastery combat effect already gates on. Spawns once right after class selection (`class_select.gd`), and again after any completed long rest if the player opts in (see "Rest system" below). Full design: `docs/architecture/weapon-mastery-selection-design.md`; implementation detail: `scripts/ui/CLAUDE.md`.

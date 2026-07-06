@@ -31,6 +31,9 @@ signal ability_bar_changed()
 signal equip_action_taken()
 signal talent_invested(talent_id: String, new_rank: int)
 signal talent_points_changed(available: int)
+# Fired when Tier 2 unlocks (level 7) and the player must pick a subclass.
+# hud.gd listens and spawns scripts/ui/subclass_select.gd — GameState never instantiates UI.
+signal subclass_choice_required
 signal known_masteries_changed
 signal long_rest_completed()
 
@@ -93,6 +96,7 @@ var max_short_rests: int = 2
 var short_rest_open: bool = false
 var talent_picker_open: bool = false
 var mastery_picker_open: bool = false
+var subclass_picker_open: bool = false  # blocks ALL player input while the subclass-select overlay is visible
 
 # Talent system — points earned per level, invested per talent.
 # Points are tier-locked: Tier 1 levels fill tier1_talent_points, Tier 2 levels fill tier2_talent_points.
@@ -103,9 +107,11 @@ var talent_points_available: int:
 	get: return tier1_talent_points + tier2_talent_points
 var talent_investments: Dictionary = {}   # talent_id → current_rank (int)
 var _class_talents: Array[Talent] = []    # all talents for current class, populated on class select
-# Tier 2 auto-unlocks at level 7 (no boss kill required).
+# Tier 2 unlocks at level 7 (no boss kill required). For classes with subclasses (Barbarian),
+# gain_exp() emits subclass_choice_required instead of unlocking directly — the player picks a
+# subclass in scripts/ui/subclass_select.gd, whose confirm calls choose_subclass() → unlock_tier2().
 var tier2_unlocked: bool = false
-# Debug subclass cycling — only Berserker is fully implemented; others are placeholders.
+var subclass_chosen: bool = false  # true once the player has made their one-time subclass choice
 const TIER2_SUBCLASSES: PackedStringArray = ["Berserker", "Zealot", "World Tree", "Wild Heart"]
 var active_tier2_subclass: String = "Berserker"
 var short_rest_active: bool = false
@@ -185,11 +191,13 @@ func start_new_run() -> void:
 	short_rest_open = false
 	talent_picker_open = false
 	mastery_picker_open = false
+	subclass_picker_open = false
 	tier1_talent_points = 0
 	tier2_talent_points = 0
 	talent_investments = {}
 	_class_talents = []
 	tier2_unlocked = false
+	subclass_chosen = false
 	active_tier2_subclass = "Berserker"
 	zealot_divine_fury_type = "Radiant"
 	zealot_blessed_charges = 0
@@ -471,9 +479,14 @@ func gain_exp(amount: int) -> void:
 			tier1_talent_points += 1
 			talent_points_changed.emit(talent_points_available)
 		elif lv >= 7 and lv <= 12:
-			# Tier 2 auto-unlocks on first Tier 2 level-up (level 7).
+			# Tier 2 opens on the first Tier 2 level-up (level 7). Classes with subclasses
+			# (Barbarian) get a one-time, player-facing subclass choice first — the overlay's
+			# confirm calls choose_subclass() → unlock_tier2(). Other classes unlock directly.
 			if not tier2_unlocked:
-				unlock_tier2()
+				if player_stats.character_class == Stats.CharacterClass.BARBARIAN and not subclass_chosen:
+					subclass_choice_required.emit()
+				else:
+					unlock_tier2()
 			tier2_talent_points += 1
 			talent_points_changed.emit(talent_points_available)
 		# Level 6 and 13+: no talent points (gap between tiers)
@@ -500,6 +513,16 @@ func unlock_tier2() -> void:
 	tier2_unlocked = true
 	_setup_tier2_for_active_subclass()
 	game_log("[color=gold]%s Tier 2 talents unlocked![/color]" % active_tier2_subclass)
+
+# One-time, permanent player subclass choice — called by subclass_select.gd's confirm button.
+# Reuses the same setup path as unlock_tier2()/debug_switch_subclass(); after this only the
+# God-Mode debug arrows in talent_picker.gd can change the subclass.
+func choose_subclass(subclass_name: String) -> void:
+	if subclass_chosen or not TIER2_SUBCLASSES.has(subclass_name):
+		return
+	active_tier2_subclass = subclass_name
+	subclass_chosen = true
+	unlock_tier2()
 
 func _setup_tier2_for_active_subclass() -> void:
 	match active_tier2_subclass:
@@ -1455,7 +1478,7 @@ func _setup_barbarian_talents() -> void:
 
 
 func _setup_barbarian_tier2_talents() -> void:
-	# Called by unlock_tier2() when Necromancer is defeated. Appends Tier 2 to _class_talents.
+	# Called via unlock_tier2() → _setup_tier2_for_active_subclass(). Appends Tier 2 to _class_talents.
 	var chance_str: String = "%d%%" % (player_stats.rage_bonus_damage * 10)
 
 	var rager_talent := Talent.new()
