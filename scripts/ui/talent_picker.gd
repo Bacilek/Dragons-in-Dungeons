@@ -152,12 +152,23 @@ func _build_tier_section(tier: int, y: float) -> float:
 
 	if tier == 2 and not GameState.tier2_unlocked:
 		var locked_lbl := Label.new()
-		locked_lbl.text = "Tier 2  —  unlocks at level 7"
+		locked_lbl.text = "Tier 2  —  defeat the floor-5 boss to unlock"
 		locked_lbl.add_theme_font_size_override("font_size", 14)
 		locked_lbl.add_theme_color_override("font_color", Color(0.33, 0.33, 0.33))
 		locked_lbl.position = Vector2(20.0, y + 10.0)
 		locked_lbl.size = Vector2(PANEL_W - 40.0, 28.0)
 		_panel.add_child(locked_lbl)
+		# Pending-points badge: Tier 2 points earned at levels 7-12 accumulate while locked.
+		var pending: int = GameState.talent_points.get(2, 0)
+		if pending > 0:
+			var badge := Label.new()
+			badge.text = "%d point%s pending — defeat the floor-5 boss" % [pending, "s" if pending != 1 else ""]
+			badge.add_theme_font_size_override("font_size", 13)
+			badge.add_theme_color_override("font_color", Color(0.85, 0.68, 0.25))
+			badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			badge.position = Vector2(PANEL_W - 400.0, y + 10.0)
+			badge.size = Vector2(380.0, 28.0)
+			_panel.add_child(badge)
 		y += 44.0
 	else:
 		var n: int = tier_talents.size()
@@ -308,7 +319,7 @@ func _close() -> void:
 
 func _star_bar(tier: int) -> String:
 	var max_pts: int = 5 if tier == 1 else 6
-	var available: int = GameState.tier1_talent_points if tier == 1 else GameState.tier2_talent_points
+	var available: int = GameState.talent_points.get(tier, 0)
 	var spent: int = _compute_spent(tier)
 	var shown_spent: int     = min(spent, max_pts)
 	var shown_available: int = min(available, max_pts - shown_spent)

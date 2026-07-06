@@ -1698,10 +1698,12 @@ func _finish_kill(enemy: Enemy, dropped_ammo: Item = null) -> void:
 	var was_boss: bool = enemy.is_boss
 	var kill_pos: Vector2i = enemy.grid_pos
 	var killed_name: String = enemy.display_name
+	var killed_boss_id: String = enemy.enemy_id
 	_dungeon_floor.remove_enemy(enemy)
 	enemy.die()
 	if was_boss:
 		_dungeon_floor.drop_boss_loot(kill_pos)
+		GameState.boss_defeated.emit(killed_boss_id)
 	if killed_name in UNDEAD_NAMES and randf() < 0.20:
 		var rotten := Item.new()
 		rotten.item_name = "Rotten Meat"

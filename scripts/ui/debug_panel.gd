@@ -485,8 +485,8 @@ func _on_level_up_pressed() -> void:
 func _on_talents_pressed() -> void:
 	# Auto: unlock all tiers + give 99 pts so the debug panel is immediately usable
 	GameState.unlock_tier2()
-	GameState.tier1_talent_points = 99
-	GameState.tier2_talent_points = 99
+	GameState.talent_points[1] = 99
+	GameState.talent_points[2] = 99
 	GameState.talent_points_changed.emit(GameState.talent_points_available)
 	_talent_sub.visible = not _talent_sub.visible
 	if _talent_sub.visible:
@@ -496,8 +496,8 @@ func _on_talents_pressed() -> void:
 		_spawn_sub.visible = false
 
 func _on_give_99_points() -> void:
-	GameState.tier1_talent_points = 99
-	GameState.tier2_talent_points = 99
+	GameState.talent_points[1] = 99
+	GameState.talent_points[2] = 99
 	GameState.talent_points_changed.emit(GameState.talent_points_available)
 	GameState.game_log("[color=green][DEBUG] 99 talent points granted to each tier.[/color]")
 
@@ -509,10 +509,8 @@ func _on_unlock_all_tiers() -> void:
 func _on_talent_plus(id: String) -> void:
 	var talent: Talent = GameState._find_talent(id)
 	if talent != null:
-		if talent.tier == 1 and GameState.tier1_talent_points <= 0:
-			GameState.tier1_talent_points = 1
-		elif talent.tier == 2 and GameState.tier2_talent_points <= 0:
-			GameState.tier2_talent_points = 1
+		if GameState.talent_points.get(talent.tier, 0) <= 0:
+			GameState.talent_points[talent.tier] = 1
 	GameState.invest_talent(id)
 	_refresh_rank_label(id)
 

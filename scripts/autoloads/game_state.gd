@@ -31,9 +31,13 @@ signal ability_bar_changed()
 signal equip_action_taken()
 signal talent_invested(talent_id: String, new_rank: int)
 signal talent_points_changed(available: int)
-# Fired when Tier 2 unlocks (level 7) and the player must pick a subclass.
+# Fired when the Tier 2 gating boss dies and the player must pick a subclass.
 # hud.gd listens and spawns scripts/ui/subclass_select.gd — GameState never instantiates UI.
 signal subclass_choice_required
+# Fired on every boss kill (player.gd._finish_kill() and the resolve_push() chasm path),
+# carrying the BOSS_POOL "boss_id". GameState listens to its own signal (_on_boss_defeated)
+# to run the Tier 2 unlock gate; future systems can also connect.
+signal boss_defeated(boss_id: String)
 signal known_masteries_changed
 signal long_rest_completed()
 
@@ -99,18 +103,31 @@ var mastery_picker_open: bool = false
 var subclass_picker_open: bool = false  # blocks ALL player input while the subclass-select overlay is visible
 
 # Talent system — points earned per level, invested per talent.
-# Points are tier-locked: Tier 1 levels fill tier1_talent_points, Tier 2 levels fill tier2_talent_points.
+# Points are tier-locked pools: talent_points[tier] holds that tier's unspent points
+# (levels 1-5 → tier 1, 7-12 → tier 2, 13-17 → tier 3, 18-20 → tier 4; see TIER_LEVEL_RANGES).
+# Points accumulate even while a tier is locked (Tier 2 points pend until the gating boss dies).
 # talent_points_available is a computed sum used for backward-compat (signals, auto-close logic).
-var tier1_talent_points: int = 0
-var tier2_talent_points: int = 0
+var talent_points: Dictionary = {1: 0, 2: 0, 3: 0, 4: 0}   # tier → unspent points
 var talent_points_available: int:
-	get: return tier1_talent_points + tier2_talent_points
+	get:
+		var total: int = 0
+		for t: int in talent_points:
+			total += talent_points[t]
+		return total
+# Level → talent-point tier schedule. Levels outside every range (6, 21+) grant nothing.
+const TIER_LEVEL_RANGES: Dictionary = {1: [1, 5], 2: [7, 12], 3: [13, 17], 4: [18, 20]}
 var talent_investments: Dictionary = {}   # talent_id → current_rank (int)
 var _class_talents: Array[Talent] = []    # all talents for current class, populated on class select
-# Tier 2 unlocks at level 7 (no boss kill required). For classes with subclasses (Barbarian),
-# gain_exp() emits subclass_choice_required instead of unlocking directly — the player picks a
-# subclass in scripts/ui/subclass_select.gd, whose confirm calls choose_subclass() → unlock_tier2().
+# Tier 2 unlocks when the gating boss (TIER2_GATING_BOSS_ID, the floor-5 boss) is defeated —
+# NOT at level 7. Levels 7-12 still fill talent_points[2], pending until the kill. On the kill,
+# classes with subclasses (Barbarian) get the one-time subclass choice (subclass_choice_required
+# → scripts/ui/subclass_select.gd → choose_subclass() → unlock_tier2()); other classes unlock
+# directly. See _on_boss_defeated().
 var tier2_unlocked: bool = false
+const TIER2_GATING_BOSS_ID: String = "big_demon"
+# Tier 3 (multiclass) selection stub — no Tier 3 content yet; -1 = no multiclass chosen.
+# tier_unlocked(3) reads it so the accessor shape is final before Tier 3 lands.
+var tier3_selected_class: int = -1
 var subclass_chosen: bool = false  # true once the player has made their one-time subclass choice
 const TIER2_SUBCLASSES: PackedStringArray = ["Berserker", "Zealot", "World Tree", "Wild Heart"]
 var active_tier2_subclass: String = "Berserker"
@@ -179,6 +196,7 @@ var equipped_armor: Item:
 func _ready() -> void:
 	start_new_run()
 	short_rest_completed.connect(_on_short_rest_completed)
+	boss_defeated.connect(_on_boss_defeated)
 
 func start_new_run() -> void:
 	run_seed = randi()
@@ -192,8 +210,8 @@ func start_new_run() -> void:
 	talent_picker_open = false
 	mastery_picker_open = false
 	subclass_picker_open = false
-	tier1_talent_points = 0
-	tier2_talent_points = 0
+	talent_points = {1: 0, 2: 0, 3: 0, 4: 0}
+	tier3_selected_class = -1
 	talent_investments = {}
 	_class_talents = []
 	tier2_unlocked = false
@@ -474,22 +492,14 @@ func gain_exp(amount: int) -> void:
 		player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 		var hp_gained: int = player_stats.max_hp - old_max_hp
 		var lv: int = player_stats.character_level
-		if lv >= 1 and lv <= 5:
-			# Tier 1 points: immediately available (tier-locked to Tier 1 talents)
-			tier1_talent_points += 1
+		var point_tier: int = tier_for_level(lv)
+		if point_tier > 0:
+			# Points accumulate into their tier pool even while the tier is locked —
+			# Tier 2 points earned at levels 7-12 sit pending until the gating boss dies
+			# (see _on_boss_defeated(); Tier 2 is NOT auto-unlocked by leveling).
+			talent_points[point_tier] += 1
 			talent_points_changed.emit(talent_points_available)
-		elif lv >= 7 and lv <= 12:
-			# Tier 2 opens on the first Tier 2 level-up (level 7). Classes with subclasses
-			# (Barbarian) get a one-time, player-facing subclass choice first — the overlay's
-			# confirm calls choose_subclass() → unlock_tier2(). Other classes unlock directly.
-			if not tier2_unlocked:
-				if player_stats.character_class == Stats.CharacterClass.BARBARIAN and not subclass_chosen:
-					subclass_choice_required.emit()
-				else:
-					unlock_tier2()
-			tier2_talent_points += 1
-			talent_points_changed.emit(talent_points_available)
-		# Level 6 and 13+: no talent points (gap between tiers)
+		# Levels outside TIER_LEVEL_RANGES (6, 21+): no talent points (gap between tiers)
 		# Rage uses scale by level — grant the extra use immediately on the triggering level-up.
 		if player_stats.character_class == Stats.CharacterClass.BARBARIAN:
 			var new_rage_max: int = player_stats.rage_uses_max
@@ -499,13 +509,41 @@ func gain_exp(amount: int) -> void:
 					new_rage_max)
 				_sync_ability_uses()
 		var lv_str: String = ""
-		if (lv >= 1 and lv <= 5) or (lv >= 7 and lv <= 12):
+		if point_tier > 0:
 			lv_str = " +1 talent point."
 		var level_msg: String = "[color=yellow]Level up! You are now level %d. (+%d max HP.%s)[/color]" % [player_stats.character_level, hp_gained, lv_str]
 		combat_message.emit(level_msg)
 		short_rest_changed.emit()
 		_apply_monk_level_features(player_stats.character_level)
 		player_leveled_up.emit(player_stats.character_level)
+
+## Which tier's pool a level-up at `lv` feeds. 0 = no talent point (level 6, 21+).
+func tier_for_level(lv: int) -> int:
+	for tier: int in TIER_LEVEL_RANGES:
+		var r: Array = TIER_LEVEL_RANGES[tier]
+		if lv >= r[0] and lv <= r[1]:
+			return tier
+	return 0
+
+## Whether talents of `tier` can currently be invested in. Points accumulate while locked.
+func tier_unlocked(tier: int) -> bool:
+	match tier:
+		1: return true
+		2: return tier2_unlocked
+		3: return tier3_selected_class != -1 and player_stats.character_level >= 13
+		4: return player_stats.character_level >= 18
+		_: return false
+
+# The Tier 2 gate. Fires on every boss kill; only TIER2_GATING_BOSS_ID matters. Classes with
+# subclasses (Barbarian) get the one-time subclass overlay; other classes unlock directly.
+# God-Mode debug arrows / debug panel remain the escape hatch if Jump-to-Floor skips floor 5.
+func _on_boss_defeated(boss_id: String) -> void:
+	if boss_id != TIER2_GATING_BOSS_ID or tier2_unlocked:
+		return
+	if player_stats.character_class == Stats.CharacterClass.BARBARIAN and not subclass_chosen:
+		subclass_choice_required.emit()
+	else:
+		unlock_tier2()
 
 func unlock_tier2() -> void:
 	if tier2_unlocked:
@@ -938,8 +976,13 @@ func can_invest_talent(id: String) -> bool:
 		return false
 	if get_talent_rank(id) >= t.max_rank:
 		return false
-	var pool: int = tier1_talent_points if t.tier == 1 else tier2_talent_points
-	return pool > 0
+	# Belt-and-braces: while Tier 2 is locked, _class_talents holds no tier-2 talents anyway,
+	# but the explicit guard protects against future ordering changes.
+	if t.tier == 2 and not tier2_unlocked:
+		return false
+	if not tier_unlocked(t.tier):
+		return false
+	return talent_points.get(t.tier, 0) > 0
 
 func invest_talent(id: String) -> void:
 	if not can_invest_talent(id):
@@ -948,10 +991,7 @@ func invest_talent(id: String) -> void:
 	var new_rank: int = get_talent_rank(id) + 1
 	talent_investments[id] = new_rank
 	if not invincible:
-		if t.tier == 1:
-			tier1_talent_points -= 1
-		else:
-			tier2_talent_points -= 1
+		talent_points[t.tier] -= 1
 	_apply_talent_rank(id, new_rank)
 	talent_invested.emit(id, new_rank)
 	talent_points_changed.emit(talent_points_available)

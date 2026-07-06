@@ -1,7 +1,8 @@
 extends CanvasLayer
 
-# Subclass-select overlay — one-time, mandatory Tier 2 subclass choice at level 7.
-# Spawned by hud.gd on GameState.subclass_choice_required (emitted from gain_exp()).
+# Subclass-select overlay — one-time, mandatory Tier 2 subclass choice, triggered when the
+# gating boss (GameState.TIER2_GATING_BOSS_ID, floor 5) is defeated. Spawned by hud.gd on
+# GameState.subclass_choice_required (emitted from GameState._on_boss_defeated()).
 # Modeled on talent_picker.gd / mastery_picker.gd conventions: dim overlay + centered
 # bordered Panel, focus_mode = FOCUS_NONE everywhere, blocks input via a GameState flag.
 # NOT dismissible (no close button, Esc ignored) — the choice is permanent; confirm calls
@@ -90,7 +91,7 @@ func _build_ui() -> void:
 	_panel.add_child(title)
 
 	var hint := Label.new()
-	hint.text = "Level 7 — pick one of the four paths below. This choice is permanent."
+	hint.text = "The floor-5 boss has fallen — pick one of the four paths below. This choice is permanent."
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.add_theme_color_override("font_color", Color(0.65, 0.65, 0.70))
 	hint.position = Vector2(MARGIN, 50.0)

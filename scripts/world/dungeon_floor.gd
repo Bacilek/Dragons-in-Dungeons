@@ -1516,6 +1516,7 @@ func resolve_push(enemy: Enemy, direction: Vector2i) -> void:
 		GameState.game_log("[color=cyan]%s is pushed into the chasm and vanishes![/color]" % enemy.display_name)
 		if enemy.is_boss:
 			GameState.pending_chasm_items.append(_roll_boss_loot_item())
+			GameState.boss_defeated.emit(enemy.enemy_id)
 		GameState.gain_exp(maxi(1, enemy.exp_reward / 2))
 		remove_enemy(enemy)
 		enemy.die()

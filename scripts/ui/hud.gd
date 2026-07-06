@@ -380,7 +380,7 @@ func _on_player_leveled_up(level: int) -> void:
 	level_label.text = "Lv.%d" % level
 
 func _on_subclass_choice_required() -> void:
-	# One-time Tier 2 subclass choice (level 7) — spawn the blocking overlay.
+	# One-time Tier 2 subclass choice (gating boss defeated) — spawn the blocking overlay.
 	if GameState.subclass_picker_open:
 		return
 	var picker = load("res://scripts/ui/subclass_select.gd").new()
