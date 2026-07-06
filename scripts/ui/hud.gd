@@ -92,7 +92,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		var key := event as InputEventKey
 		if key.pressed and not key.echo and key.physical_keycode == KEY_TAB:
-			if not GameState.is_game_over and GameState.class_selected and not GameState.mastery_picker_open:
+			if not GameState.is_game_over and GameState.class_selected and not GameState.mastery_picker_open \
+					and not GameState.subclass_picker_open:
 				_toggle_ability_bar()
 				get_viewport().set_input_as_handled()
 
@@ -118,6 +119,7 @@ func _ready() -> void:
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_exp_changed.connect(_on_player_exp_changed)
 	GameState.player_leveled_up.connect(_on_player_leveled_up)
+	GameState.subclass_choice_required.connect(_on_subclass_choice_required)
 	GameState.player_died.connect(_on_player_died)
 	GameState.player_won.connect(_on_player_won)
 	GameState.combat_message.connect(_on_combat_message)
@@ -376,6 +378,13 @@ func _on_player_exp_changed(exp: int, exp_needed: int, level: int) -> void:
 
 func _on_player_leveled_up(level: int) -> void:
 	level_label.text = "Lv.%d" % level
+
+func _on_subclass_choice_required() -> void:
+	# One-time Tier 2 subclass choice (gating boss defeated) — spawn the blocking overlay.
+	if GameState.subclass_picker_open:
+		return
+	var picker = load("res://scripts/ui/subclass_select.gd").new()
+	get_tree().root.add_child(picker)
 
 func _on_player_died() -> void:
 	var game_over: PackedScene = preload("res://scenes/ui/game_over.tscn")

@@ -19,6 +19,8 @@ When you add signals, state fields, or change turn flow here, **immediately upda
 | `player_hp_changed` | `current_hp, max_hp` | after heal/damage |
 | `player_exp_changed` | `exp, exp_needed, level` | XP update |
 | `player_leveled_up` | `level: int` | XP threshold crossed — hud.gd spawns talent_picker if points > 0 |
+| `subclass_choice_required` | — | Tier 2 gating boss defeated with an unchosen subclass — hud.gd spawns `subclass_select.gd` |
+| `boss_defeated` | `boss_id: String` | any boss killed (player kill or Push-into-chasm) — GameState's own `_on_boss_defeated()` runs the Tier 2 gate |
 | `player_died` | — | HP hits 0 |
 | `player_won` | — | win condition |
 | `combat_message` | `msg: String` | combat log entries |
@@ -71,11 +73,16 @@ LONG_REST_FOOD_COST: int     # const 100 — combined Item.food_value required t
 LONG_REST_TURNS: int         # const 20 — turns a long rest takes (short rest: SHORT_REST_TURNS = 5)
 talent_picker_open: bool     # blocks ALL player input while talent picker is visible
 mastery_picker_open: bool    # blocks ALL player input while the Mastery Picker is visible (scripts/ui/mastery_picker.gd)
-talent_points_available: int # unspent talent points (Tier 1 + Tier 2)
+subclass_picker_open: bool   # blocks ALL player input while the subclass-select overlay is visible (scripts/ui/subclass_select.gd)
+talent_points: Dictionary    # {1:0, 2:0, 3:0, 4:0} tier → unspent points; accumulates even while a tier is locked
+talent_points_available: int # computed sum over talent_points (backward-compat: signals, auto-close logic)
 talent_investments: Dict     # talent_id → current_rank (int, 0 = not invested)
 _class_talents: Array[Talent]# all talents for current class (Tier 1 + unlocked Tier 2)
-tier2_unlocked: bool         # auto-set at level 7 via gain_exp() → unlock_tier2()
-active_tier2_subclass: String# current Tier 2 subclass name ("Berserker" default); debug-switchable
+tier2_unlocked: bool         # set when the gating boss dies — via choose_subclass() (Barbarian) or unlock_tier2() directly (other classes); NOT level-gated
+TIER2_GATING_BOSS_ID: String # const "big_demon" — the floor-5 boss whose death unlocks Tier 2
+tier3_selected_class: int    # -1 until a Tier 3 multiclass is chosen (stub — no Tier 3 content yet; read by tier_unlocked(3))
+subclass_chosen: bool        # true once the player has made the one-time subclass choice (reset in start_new_run)
+active_tier2_subclass: String# current Tier 2 subclass name ("Berserker" default until chosen); God-Mode debug-switchable
 TIER2_SUBCLASSES: PackedStringArray  # ["Berserker", "Zealot", "World Tree", "Wild Heart"]
 zealot_divine_fury_type: String      # "Radiant"/"Necrotic", persists across turns (toggle only, not per-turn)
 zealot_blessed_charges: int          # long-rest resource, max via BLESSED_WARRIOR_MAX_CHARGES[rank] = [0,2,4,6]
@@ -91,9 +98,11 @@ pending_chasm_items: Array[Item]  # ammo (or any future item) that fell into a c
 
 **Status chokepoint**: `apply_player_status(type: String, turns: int) -> bool` — single entry point for all player status/debuff application. If Rager R1 is active and raging, applies a % chance to negate and returns false (caller skips log). On success: sets `player_stats.{type}_turns = maxi(existing, turns)` and emits `player_status_changed`. All trap, enemy, terrain, and rotten-meat callers must use this — never set `player_stats.{status}_turns` directly.
 
-**Tier 2 unlock**: `unlock_tier2()` — auto-called from `gain_exp()` at level 7. Calls `_setup_barbarian_tier2_talents()` to append Rager/Frenzy/Retaliation to `_class_talents`. No longer tied to Necromancer kill.
+**Tier 2 unlock + subclass selection (boss-gated)**: Tier 2 does NOT unlock by level. Every boss kill emits `boss_defeated(boss_id)` (from `player.gd._finish_kill()` and `DungeonFloor.resolve_push()`'s chasm path); GameState's own `_on_boss_defeated()` ignores everything except `TIER2_GATING_BOSS_ID` ("big_demon", floor 5). On that kill: Barbarian (has subclasses) with `not subclass_chosen` emits `subclass_choice_required` — hud.gd spawns `scripts/ui/subclass_select.gd` (blocking, non-dismissable overlay showing all four subclasses); its confirm calls `choose_subclass(name)` which sets `active_tier2_subclass` + `subclass_chosen = true` and calls `unlock_tier2()`. Other classes (or an already-made choice) call `unlock_tier2()` directly. `unlock_tier2()` sets `tier2_unlocked` and runs `_setup_tier2_for_active_subclass()` (dispatches to the four `_setup_X_tier2_talents()` — all implemented). `choose_subclass()` is one-time: it no-ops once `subclass_chosen` is true. Levels 7–12 fill `talent_points[2]` unconditionally — points earned before the boss kill sit **pending** (the talent picker shows a pending badge) and become spendable the instant Tier 2 unlocks. If the player never kills the gating boss, Tier 2 points stay pending for the rest of the run — intentional, no special handling. If debug Jump-to-Floor skips floor 5, the God-Mode subclass arrows / debug panel unlock button remain the escape hatch.
 
-**Debug subclass switching**: `TIER2_SUBCLASSES: PackedStringArray = ["Berserker", "Zealot", "World Tree", "Wild Heart"]`. `active_tier2_subclass: String` tracks current. `debug_switch_subclass(direction: int)` — clears tier 2 investments + ability bar entries + `_class_talents` tier 2 entries, then re-runs `_setup_tier2_for_active_subclass()` (dispatches to Berserker/Wild Heart/World Tree/Zealot setup — all four implemented). Called from talent_picker.gd's subclass arrow buttons (only visible in God Mode). Adding a 4th+ subclass only requires a new `match` case here plus its `_setup_X_tier2_talents()` — nothing else in the subclass-selection system assumes a fixed count.
+**Tier scaffolding (Tiers 1–4)**: `TIER_LEVEL_RANGES = {1: [1,5], 2: [7,12], 3: [13,17], 4: [18,20]}` + `tier_for_level(lv) -> int` (returns 0 for level 6 and 21+) drive point grants in `gain_exp()`. `tier_unlocked(tier) -> bool`: 1 = always; 2 = `tier2_unlocked`; 3 = `tier3_selected_class != -1` and level ≥ 13; 4 = level ≥ 18. `can_invest_talent()` gates on `tier_unlocked(t.tier)` plus `talent_points[t.tier] > 0` (with an extra explicit tier-2 lock guard). Tier 3/4 content is NOT implemented — only the accessor shape exists (see `docs/architecture/TALENT_SYSTEM_ARCHITECTURE.md` §4).
+
+**Debug subclass switching (God-Mode-only override, NOT the player path)**: `TIER2_SUBCLASSES: PackedStringArray = ["Berserker", "Zealot", "World Tree", "Wild Heart"]`. `debug_switch_subclass(direction: int)` — clears tier 2 investments + ability bar entries + `_class_talents` tier 2 entries, then re-runs `_setup_tier2_for_active_subclass()`. Called from talent_picker.gd's subclass arrow buttons (only visible in God Mode); it deliberately does NOT set `subclass_chosen`. Adding a 4th+ subclass requires a new `match` case here plus its `_setup_X_tier2_talents()`, plus a card entry in `subclass_select.gd`'s `SUBCLASSES` const.
 
 **Rest system**: `advance_floor()` is floor bookkeeping ONLY (floor number, terrain AC reset) — it does not restore anything. `GameState.long_rest()` is the single chokepoint for every long-rest-gated resource: full HP heal, cleared status effects, `rage_uses_remaining`, `hit_dice = character_level`, `short_rests_remaining = max_short_rests`, Natural Sleeper form lock-in, Zealot `zealot_blessed_charges`/`zealot_zp_charges`, companion heal, `_sync_ability_uses()` (One with Nature charge). Triggered explicitly by the player via the Alt-menu's Long Rest tab (`scripts/ui/short_rest_panel.gd`), never automatically. **Any new "per long rest" resource must be refilled in `long_rest()` and nowhere else** — `advance_floor()` must never regain restore logic. `GameState.total_food_value() -> int` sums `Item.food_value × quantity` across quickbar+bag; `can_long_rest() -> bool` (always true when `invincible`) gates the button; `_consume_food_value(amount)` spends cheapest-value FOOD items first, skipped entirely while `invincible` (so God Mode long rests cost nothing). `long_rest_pending: bool` tells the shared short-rest turn-countdown in `player.gd._on_turn_started()` to call `long_rest()` instead of the short-rest heal when the countdown reaches 0; `rest_interrupt_panel.gd`'s abort path also clears it. Level-up via `gain_exp()` only grants `+1 talent_points_available` and emits `player_leveled_up` — it does NOT reset resources or heal the player.
 
