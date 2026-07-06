@@ -35,10 +35,10 @@ func attempt_disarm(trap_pos: Vector2i) -> void:
 	var has_prof: bool = s.check_prof_dex
 	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
 	var has_adv: bool = danger_rank >= 1 or s.zealous_presence_turns > 0
-	var die1: int = randi_range(1, 20)
+	var die1: int = Rng.roll(20)
 	var die2: int = die1
 	if has_adv:
-		die2 = randi_range(1, 20)
+		die2 = Rng.roll(20)
 	var die: int = maxi(die1, die2)
 	var total: int = die + dex_mod + prof_bonus
 	const DC: int = 10
@@ -66,7 +66,7 @@ func attempt_lock_door(door_pos: Vector2i) -> void:
 	TurnManager.begin_player_action()
 	AudioManager.play("lockpick")
 	var dex_mod: int = player.stats.dex_modifier()
-	var die: int = randi_range(1, 20)
+	var die: int = Rng.roll(20)
 	var total: int = die + dex_mod
 	const LOCK_DC: int = 10
 	var door_world: Vector2 = Vector2(door_pos * Entity.TILE_SIZE) + Vector2(Entity.TILE_SIZE * 0.5, Entity.TILE_SIZE * 0.5)
@@ -101,10 +101,10 @@ func attempt_disarm_lock(door_pos: Vector2i) -> void:
 	var has_prof: bool = s.check_prof_dex
 	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
 	var has_adv: bool = danger_rank >= 1 or s.zealous_presence_turns > 0
-	var die1: int = randi_range(1, 20)
+	var die1: int = Rng.roll(20)
 	var die2: int = die1
 	if has_adv:
-		die2 = randi_range(1, 20)
+		die2 = Rng.roll(20)
 	var die: int = maxi(die1, die2)
 	var total: int = die + dex_mod + prof_bonus
 	var dc: int = 10 + GameState.current_floor / 3

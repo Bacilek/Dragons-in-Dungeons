@@ -38,6 +38,12 @@ var _floor_items: Dictionary = {}
 var _floor_item_sprites: Dictionary = {}
 var _blood_decals: Array[Sprite2D] = []
 var _lock_icon_tex: Texture2D = null
+# Seeded per-floor population RNG (SEEDED_FLOOR_POPULATION.md): valid only during
+# _load_floor()'s spawn block — never use elsewhere. Kept separate from the Rng
+# autoload's gameplay stream so population stays a pure function of (run_seed, floor)
+# and a reloaded save regenerates the identical floor.
+var _pop_rng: RandomNumberGenerator
+const POPULATION_SEED_MIX: int = 0x1234ABCD
 
 var _fog_image: Image
 var _fog_texture: ImageTexture
@@ -211,6 +217,11 @@ func _load_floor() -> void:
 
 	if ResourceLoader.exists(DungeonFloorData.ITEMS_PATH + "Misc/KeyIron.png"):
 		_lock_icon_tex = load(DungeonFloorData.ITEMS_PATH + "Misc/KeyIron.png")
+	# Seeded floor population (SEEDED_FLOOR_POPULATION.md §2). The call order below AND
+	# the number of _pop_rng draws inside each function are load-bearing for
+	# reproducibility — reordering or inserting a draw changes everything downstream.
+	_pop_rng = RandomNumberGenerator.new()
+	_pop_rng.seed = GameState.run_seed ^ (GameState.current_floor * POPULATION_SEED_MIX)
 	_spawn_enemies()
 	_spawn_traps()
 	_spawn_doors()
@@ -666,7 +677,7 @@ func _spawn_enemies() -> void:
 					if is_boss_floor and _data.boss_room.has_point(pos):
 						continue  # reserve boss room for the boss
 					candidates.append(pos)
-	candidates.shuffle()
+	RngUtil.shuffle(candidates, _pop_rng)
 
 	var eligible: Array = []
 	for entry in DungeonFloorData.ENEMY_POOL:
@@ -677,16 +688,14 @@ func _spawn_enemies() -> void:
 		eligible = [DungeonFloorData.ENEMY_POOL[0]]
 
 	var enemy_scene: PackedScene = preload("res://scenes/game/enemy.tscn")
-	var count: int = mini(randi_range(ENEMY_COUNT_MIN, ENEMY_COUNT_MAX), candidates.size())
-	var rng := RandomNumberGenerator.new()
-	rng.seed = GameState.run_seed ^ (GameState.current_floor * 0x1234ABCD)
+	var count: int = mini(_pop_rng.randi_range(ENEMY_COUNT_MIN, ENEMY_COUNT_MAX), candidates.size())
 
 	for i: int in count:
-		var type_data: Dictionary = eligible[randi() % eligible.size()]
+		var type_data: Dictionary = eligible[_pop_rng.randi_range(0, eligible.size() - 1)]
 		var enemy: Enemy = enemy_scene.instantiate() as Enemy
 		enemy.configure(type_data)
 		# Assign random initial behavior
-		var behavior_roll: int = rng.randi() % 3
+		var behavior_roll: int = _pop_rng.randi() % 3
 		match behavior_roll:
 			0: enemy.initial_behavior = Enemy.Behavior.SLEEPING
 			1: enemy.initial_behavior = Enemy.Behavior.STATIONARY
@@ -799,8 +808,8 @@ func _spawn_traps() -> void:
 						wall_cands.append({"floor_pos": pos, "wall_pos": wp, "push_dir": push_d})
 					break
 
-	floor_cands.shuffle()
-	wall_cands.shuffle()
+	RngUtil.shuffle(floor_cands, _pop_rng)
+	RngUtil.shuffle(wall_cands, _pop_rng)
 
 	var floor_pool: Array = []
 	var wall_pool: Array = []
@@ -812,9 +821,9 @@ func _spawn_traps() -> void:
 			floor_pool.append(t)
 
 	var used: Dictionary = {}
-	var floor_count: int = mini(randi_range(TRAP_COUNT_MIN, TRAP_COUNT_MAX), floor_cands.size())
+	var floor_count: int = mini(_pop_rng.randi_range(TRAP_COUNT_MIN, TRAP_COUNT_MAX), floor_cands.size())
 	for i: int in floor_count:
-		var t: Dictionary = floor_pool[randi() % floor_pool.size()]
+		var t: Dictionary = floor_pool[_pop_rng.randi_range(0, floor_pool.size() - 1)]
 		var pos: Vector2i = floor_cands[i]
 		used[pos] = true
 		var tex: Texture2D = load(TRAP_PATH + t["sprite"])
@@ -840,10 +849,10 @@ func _spawn_traps() -> void:
 			var wcd: Dictionary = wc
 			if not used.has(wcd["floor_pos"]):
 				valid_wc.append(wcd)
-		var push_count: int = mini(randi_range(2, 3), valid_wc.size())
+		var push_count: int = mini(_pop_rng.randi_range(2, 3), valid_wc.size())
 		for i: int in push_count:
 			var wcd: Dictionary = valid_wc[i]
-			var t: Dictionary = wall_pool[randi() % wall_pool.size()]
+			var t: Dictionary = wall_pool[_pop_rng.randi_range(0, wall_pool.size() - 1)]
 			var floor_pos: Vector2i = wcd["floor_pos"]
 			var wall_pos: Vector2i  = wcd["wall_pos"]
 			var push_dir: Vector2i  = wcd["push_dir"]
@@ -901,10 +910,10 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 		var prof_bonus: int = s.proficiency_bonus if has_prof else 0
 		var danger_rank: int = GameState.get_talent_rank("danger_sense")
 		var has_adv: bool = danger_rank >= 1 or s.zealous_presence_turns > 0
-		var die1: int = randi_range(1, 20)
+		var die1: int = Rng.roll(20)
 		var die2: int = die1
 		if has_adv:
-			die2 = randi_range(1, 20)
+			die2 = Rng.roll(20)
 		var die: int = maxi(die1, die2)
 		# Danger Sense rank 2: use max(DEX mod, STR mod) for DEX/WIS/CHA checks
 		var effective_stat: String = "DEX"
@@ -1233,7 +1242,7 @@ func _spawn_doors() -> void:
 		tex_open = load(DungeonFloorData.OBJECTS_PATH + "doors_leaf_open.png")
 
 	for pos: Vector2i in door_candidates:
-		if randf() > 0.65:
+		if _pop_rng.randf() > 0.65:
 			continue
 		if _traps.has(pos) or _floor_items.has(pos):
 			continue
@@ -1403,11 +1412,11 @@ func _spawn_items() -> void:
 			if _traps.has(pos) or _doors.has(pos):
 				continue
 			candidates.append(pos)
-	candidates.shuffle()
+	RngUtil.shuffle(candidates, _pop_rng)
 
-	var count: int = mini(randi_range(2, 3), candidates.size())
+	var count: int = mini(_pop_rng.randi_range(2, 3), candidates.size())
 	for i: int in count:
-		var d: Dictionary = eligible[randi() % eligible.size()]
+		var d: Dictionary = eligible[_pop_rng.randi_range(0, eligible.size() - 1)]
 		_build_floor_item(candidates[i], d)
 
 # Drains GameState.pending_chasm_items (arrows/ammo that fell into a chasm on the previous
@@ -1430,7 +1439,7 @@ func _spawn_pending_chasm_items() -> void:
 			candidates.append(pos)
 	if candidates.is_empty():
 		return
-	candidates.shuffle()
+	RngUtil.shuffle(candidates, _pop_rng)
 	var items: Array[Item] = GameState.pending_chasm_items.duplicate()
 	GameState.pending_chasm_items.clear()
 	for i: int in items.size():
@@ -1447,7 +1456,7 @@ func _spawn_locked_doors() -> void:
 		return
 
 	var door_positions: Array = _doors.keys()
-	door_positions.shuffle()
+	RngUtil.shuffle(door_positions, _pop_rng)
 
 	for pos: Vector2i in door_positions:
 		# Skip already-locked doors (shouldn't happen at gen time, but be safe)
@@ -1487,10 +1496,10 @@ func _spawn_locked_doors() -> void:
 		_add_lock_icon_at(pos)
 
 		# Spawn 2–3 reward items in the locked room
-		reward_candidates.shuffle()
-		var count: int = mini(randi_range(2, 3), reward_candidates.size())
+		RngUtil.shuffle(reward_candidates, _pop_rng)
+		var count: int = mini(_pop_rng.randi_range(2, 3), reward_candidates.size())
 		for i: int in count:
-			var d: Dictionary = eligible[randi() % eligible.size()]
+			var d: Dictionary = eligible[_pop_rng.randi_range(0, eligible.size() - 1)]
 			_build_floor_item(reward_candidates[i], d)
 
 		break  # max 1 locked door per floor
@@ -1522,7 +1531,7 @@ const BOSS_LOOT_POOL: Array = [
 ]
 
 func _roll_boss_loot_item() -> Item:
-	var d: Dictionary = BOSS_LOOT_POOL[randi() % BOSS_LOOT_POOL.size()]
+	var d: Dictionary = Rng.pick(BOSS_LOOT_POOL)  # rolled at kill time → gameplay Rng stream
 	var item := Item.new()
 	item.item_name = d["name"]
 	item.item_type = d["type"] as Item.Type
@@ -1571,7 +1580,7 @@ func resolve_push(enemy: Enemy, direction: Vector2i) -> void:
 		enemy.die()
 		return
 	if not _data.is_walkable(dest):
-		var dmg: int = randi_range(1, 4)
+		var dmg: int = Rng.roll(4)
 		var actual: int = enemy.stats.take_damage(dmg)
 		enemy.update_hp_bar()
 		show_damage(enemy.position, actual, false)

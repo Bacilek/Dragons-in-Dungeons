@@ -206,7 +206,7 @@ func _on_turn_started() -> void:
 				(_af == "Owl" and _ct == DungeonData.TileType.CHASM)
 			)
 			if _terrain_match:
-				var _thp: int = randi_range(1, 6) + randi_range(1, 6)
+				var _thp: int = Rng.roll(6) + Rng.roll(6)
 				GameState.player_stats.temp_hp = _thp  # replace, not stack
 				GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 				GameState.game_log("[color=cyan]%s Form: %d temp HP (2d6).[/color]" % [_af, _thp])
@@ -219,7 +219,7 @@ func _on_turn_started() -> void:
 		if _ib_rank >= 2 and _is_raging:
 			var _ib_snapshot_thp: int = GameState.player_stats.temp_hp
 			if _ib_snapshot_thp == 0:
-				var _ib_thp: int = randi_range(1, 6) * GameState.player_stats.rage_bonus_damage
+				var _ib_thp: int = Rng.roll(6) * GameState.player_stats.rage_bonus_damage
 				GameState.player_stats.temp_hp = _ib_thp
 				GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 				GameState.game_log("[color=cyan]Ironwood Bark: %d temp HP (1d6 × rage bonus).[/color]" % _ib_thp)
@@ -1029,7 +1029,7 @@ func _try_move(dir: Vector2i) -> void:
 			GameState.recalculate_stats()
 	# Rager R2: chance to grant a free action after moving (skips enemy turn + slowed penalty)
 	if _is_raging and GameState.get_talent_rank("rager") >= 2 and not _rager_move_triggered:
-		if randi_range(1, 100) <= GameState.player_stats.rage_bonus_damage * 10:
+		if Rng.roll(100) <= GameState.player_stats.rage_bonus_damage * 10:
 			_rager_move_triggered = true
 			_rage_attacked_this_turn = true  # pause rage countdown on the reverted turn
 			GameState.game_log("[color=orange]Rager: fury drives you — the move didn't cost a turn![/color]")
@@ -1039,7 +1039,7 @@ func _try_move(dir: Vector2i) -> void:
 	# Natural Rager Eagle: free-move. R1 = 50% chance (max 1×/round); R2 = guaranteed (max 1×/round).
 	var _nr_rank: int = GameState.get_talent_rank("natural_rager")
 	if _is_raging and _nr_rank >= 1 and GameState.natural_rager_form == "Eagle" and not _eagle_free_move_used:
-		var _should_eagle_free: bool = _nr_rank >= 2 or randi_range(1, 100) <= 50
+		var _should_eagle_free: bool = _nr_rank >= 2 or Rng.roll(100) <= 50
 		if _should_eagle_free:
 			_eagle_free_move_used = true
 			_rage_attacked_this_turn = true  # pause rage countdown on reverted turn
@@ -1107,7 +1107,7 @@ func _activate_rage() -> void:
 	GameState.game_log("[color=red]You fly into a RAGE! +%d STR damage.%s (%d turns, %d use(s) left)[/color]" % [rage_dmg_bonus, dr_note, _rage_turns, ab.uses_remaining])
 	# Ironwood Bark R1: activating Rage grants temp HP (1d6 × rage bonus).
 	if GameState.get_talent_rank("ironwood_bark") >= 1:
-		var ib_thp: int = randi_range(1, 6) * rage_dmg_bonus
+		var ib_thp: int = Rng.roll(6) * rage_dmg_bonus
 		GameState.player_stats.temp_hp = ib_thp
 		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 		GameState.game_log("[color=cyan]Ironwood Bark: %d temp HP (1d6 × rage bonus).[/color]" % ib_thp)
@@ -1130,7 +1130,7 @@ func _execute_hook(enemy: Enemy) -> void:
 	TurnManager.begin_player_action()
 	var rank: int = GameState.get_talent_rank("grip_of_the_forest")
 	var dc: int = 8 + stats.str_modifier() + stats.proficiency_bonus
-	var die1: int = randi_range(1, 20)
+	var die1: int = Rng.roll(20)
 	var roll: int = die1 + enemy.stats.str_modifier() + GameState.current_floor / 3
 	var check_meta: String = "check:stat=STR,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=0" % [
 		die1, die1, die1, enemy.stats.str_modifier(), GameState.current_floor / 3, roll, dc, 1 if roll >= dc else 0]
@@ -1294,7 +1294,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if weapon_item_ref != null and weapon_item_ref.weapon_mastery == "Vex" and stats.knows_mastery("Vex"):
 		_vex_adv_target = enemy
 
-	var die_roll: int = randi_range(w_dmin, w_dmax)
+	var die_roll: int = Rng.range_i(w_dmin, w_dmax)
 	var rage_bonus: int = stats.rage_bonus_damage if (_is_raging and is_str_weapon) else 0
 	# Monk unarmed uses DEX for damage; Finesse weapons use max(STR, DEX); all others use STR.
 	var dmg_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
@@ -1318,7 +1318,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if frenzy_rank >= 1 and _is_raging and is_str_weapon and not _frenzy_triggered_this_turn:
 		_frenzy_triggered_this_turn = true
 		var frenzy_sides: int = [0, 4, 6, 8][frenzy_rank]
-		var frenzy_roll: int = randi_range(1, frenzy_sides)
+		var frenzy_roll: int = Rng.roll(frenzy_sides)
 		frenzy_bonus = frenzy_roll * stats.rage_bonus_damage
 
 	# Ironwood Bark R3: next attack this turn deals bonus damage equal to the temp HP snapshotted at turn start.
@@ -1330,7 +1330,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var df_rank: int = GameState.get_talent_rank("divine_fury")
 	if df_rank >= 1 and not _divine_fury_triggered_this_turn:
 		_divine_fury_triggered_this_turn = true
-		divine_bonus = randi_range(1, 6) + CombatMath.divine_fury_flat_bonus(df_rank, stats.character_level)
+		divine_bonus = Rng.roll(6) + CombatMath.divine_fury_flat_bonus(df_rank, stats.character_level)
 
 	var bonus_dmg: int = frenzy_bonus + ironwood_bonus + divine_bonus
 	var actual: int = enemy.stats.take_damage(pre_crit + bonus_dmg)
@@ -1469,7 +1469,7 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	_vfx.flash_hit(enemy)
 	var w_dmin: int = weapon.damage_die_min if weapon.damage_die_min > 0 else stats.base_min_damage
 	var w_dmax: int = weapon.damage_die_max if weapon.damage_die_max > 0 else stats.base_max_damage
-	var die_roll: int = randi_range(w_dmin, w_dmax)
+	var die_roll: int = Rng.range_i(w_dmin, w_dmax)
 	var rage_bonus: int = stats.rage_bonus_damage if _is_raging else 0
 	var pre_crit: int = die_roll + weapon_bonus + rage_bonus + str_mod
 	if is_crit:
@@ -1548,7 +1548,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 		_vex_adv_target = enemy
 	var w_dmin: int = weapon.damage_die_min if weapon.damage_die_min > 0 else stats.base_min_damage
 	var w_dmax: int = weapon.damage_die_max if weapon.damage_die_max > 0 else stats.base_max_damage
-	var die_roll: int = randi_range(w_dmin, w_dmax)
+	var die_roll: int = Rng.range_i(w_dmin, w_dmax)
 	var rage_bonus: int = stats.rage_bonus_damage if _is_raging else 0
 	# Off-hand damage drops the positive ability modifier; a negative modifier still always applies.
 	var dmg_mod: int = mini(attack_mod, 0)
@@ -1625,7 +1625,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	else:
 		w_dmin = stats.base_min_damage
 		w_dmax = stats.base_max_damage
-	var die_roll: int = randi_range(w_dmin, w_dmax)
+	var die_roll: int = Rng.range_i(w_dmin, w_dmax)
 	var rage_bonus: int = stats.rage_bonus_damage if (_is_raging and is_str_weapon) else 0
 	var dmg_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
 	var pre_crit: int = die_roll + weapon_bonus + rage_bonus + dmg_mod
@@ -1651,7 +1651,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
 	# Rager R3: chance to grant a free action after attacking (once per round)
 	if _is_raging and GameState.get_talent_rank("rager") >= 3 and not _rager_attack_triggered:
-		if randi_range(1, 100) <= GameState.player_stats.rage_bonus_damage * 10:
+		if Rng.roll(100) <= GameState.player_stats.rage_bonus_damage * 10:
 			_rager_attack_triggered = true
 			_rage_attacked_this_turn = true  # pause rage countdown on revert
 			GameState.game_log("[color=orange]Rager: fury drives you — the attack didn't cost a turn![/color]")
@@ -1669,7 +1669,7 @@ func try_retaliation(attacker: Enemy) -> void:
 	var wpn_roll: int = 0
 	var wpn_bonus: int = 0
 	if melee_item != null:
-		wpn_roll = randi_range(melee_item.damage_die_min, melee_item.damage_die_max)
+		wpn_roll = Rng.range_i(melee_item.damage_die_min, melee_item.damage_die_max)
 		wpn_bonus = melee_item.bonus_damage
 	var wpn_dmg: int = wpn_roll + wpn_bonus
 	var ret_dmg: int = 0
@@ -1704,7 +1704,7 @@ func _finish_kill(enemy: Enemy, dropped_ammo: Item = null) -> void:
 	if was_boss:
 		_dungeon_floor.drop_boss_loot(kill_pos)
 		GameState.boss_defeated.emit(killed_boss_id)
-	if killed_name in UNDEAD_NAMES and randf() < 0.20:
+	if killed_name in UNDEAD_NAMES and Rng.chance(0.20):
 		var rotten := Item.new()
 		rotten.item_name = "Rotten Meat"
 		rotten.item_type = Item.Type.FOOD
@@ -1714,7 +1714,7 @@ func _finish_kill(enemy: Enemy, dropped_ammo: Item = null) -> void:
 		_dungeon_floor.place_item_on_floor(kill_pos, rotten)
 		GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)
 	# Ammo drop-from-corpse: 50% chance the killing shot's arrow/bolt is recoverable.
-	if dropped_ammo != null and randf() < 0.5:
+	if dropped_ammo != null and Rng.chance(0.5):
 		_ammo.resolve_ammo_landing(dropped_ammo, kill_pos)
 		GameState.game_log("[color=gray]The %s drops from the corpse.[/color]" % dropped_ammo.item_name)
 

@@ -38,7 +38,7 @@ func resolve_blessed_warrior_heal() -> void:
 	if not GameState.zealot_blessed_heal_queued:
 		return
 	GameState.zealot_blessed_heal_queued = false
-	var heal_roll: int = randi_range(1, 12)
+	var heal_roll: int = Rng.roll(12)
 	var before: int = player.stats.current_hp
 	GameState.heal(heal_roll)
 	var healed: int = player.stats.current_hp - before

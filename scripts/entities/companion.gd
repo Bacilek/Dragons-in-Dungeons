@@ -129,15 +129,15 @@ func _find_nearest_visible_enemy() -> Enemy:
 func _attack_enemy(target: Enemy) -> void:
 	if not is_instance_valid(target) or target.stats.is_dead():
 		return
-	var die_roll: int = randi_range(1, 20)
+	var die_roll: int = Rng.roll(20)
 	# Zealous Presence: Advantage on all attack rolls while buffed.
 	if stats.zealous_presence_turns > 0:
-		die_roll = maxi(die_roll, randi_range(1, 20))
+		die_roll = maxi(die_roll, Rng.roll(20))
 	var roll: int = die_roll  # no proficiency — animal instinct, not trained combat
 	if die_roll == 20 or roll >= target.stats.armor_class:
 		var dmg: int = 0
 		for _i: int in die_count:
-			dmg += randi_range(1, die_sides)
+			dmg += Rng.roll(die_sides)
 		dmg = maxi(1, dmg)
 		if die_roll == 20:
 			dmg *= 2

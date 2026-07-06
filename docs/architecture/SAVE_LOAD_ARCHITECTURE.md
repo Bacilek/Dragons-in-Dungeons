@@ -99,7 +99,9 @@ Constraint this places on new world features **now**: any new per-floor mutable 
 
 ## 6. Determinism & Phase 2 multiplayer constraints
 
-Current combat rolls use the **global, unseeded RNG** (`randi_range` in player.gd, enemy.gd, stats.gd) plus `Array.shuffle()` — fine for singleplayer, unusable for lockstep sync or replay-verification.
+**Status (2026-07): the Rng retrofit described below is IMPLEMENTED** — done for seeded-run determinism (Isaac-style seed sharing), not multiplayer (which remains ruled out). `Rng` autoload lives at `scripts/autoloads/rng.gd`; its `rng_state` is persisted in the save as a String (JSON floats corrupt raw int64s) under SAVE_VERSION 2. See `scripts/autoloads/CLAUDE.md`. Historical framing kept below.
+
+Combat rolls previously used the **global, unseeded RNG** (`randi_range` in player.gd, enemy.gd, stats.gd) plus `Array.shuffle()` — fine for singleplayer, unusable for lockstep sync or replay-verification.
 
 Rules for future code (write into CLAUDE.md when SaveManager lands):
 1. **New systems** route gameplay randomness through one service — recommended: `Rng` autoload wrapping a single `RandomNumberGenerator` with `Rng.roll(sides)`, `Rng.pick(arr)`, `Rng.shuffle(arr)`; seeded from `run_seed` at run start; its `state` (int64) is saved/restored in the save file. Cosmetic randomness (tween jitter, particle offsets) stays on the global RNG deliberately.

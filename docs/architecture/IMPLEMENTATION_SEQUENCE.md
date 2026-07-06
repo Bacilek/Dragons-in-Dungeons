@@ -34,7 +34,7 @@ depends on infrastructure only fully proven once the above sessions have shipped
 4. Talent boss-gate + subclass-select overlay (Tier 2 unlock machinery — the parts of the Talent doc not already implemented)
 5. Dungeon pipeline, step-by-step per the Dungeon doc's own §8 migration path (wrap-BSP commit first)
 6. Enemy decide/execute split + attack-resolver extraction
-7. Last, in any order once the above have soaked: Tier 3/4 multiclass talents, Save/Load Phase B, project-wide Rng retrofit
+7. Last, in any order once the above have soaked: Tier 3/4 multiclass talents, Save/Load Phase B, project-wide Rng retrofit *(Rng retrofit: **DONE 2026-07** — implemented for seeded-run determinism, see `scripts/autoloads/rng.gd` + `scripts/autoloads/CLAUDE.md`)*
 
 ---
 
@@ -84,6 +84,6 @@ Additive to the existing root `CLAUDE.md` conventions (`game_log()`, explicit ty
 5. **Room placeholder = inherit `StandardRoom`, don't override `paint()`.** Never write an `if not room.has_content(): fallback()` runtime check — the fallback is structural (inheritance), not conditional.
 6. **Builders are duck-typed drop-ins**: `build(rooms: Array[Room], rng: RandomNumberGenerator) -> DungeonData`, return `null` on failure, never partially mutate a returned `DungeonData` that the caller might keep.
 7. **`DungeonData`'s existing public fields never break.** New fields (`feeling`, `room_metadata`) are additive; `grid`/`rooms`/`player_start`/`stairs_pos`/`boss_room`/`start_room`/`width`/`height` and their current semantics are permanent load-bearing API for `DungeonFloor`.
-8. **New gameplay-affecting randomness goes through the shared `Rng` service once it exists** (post project-wide retrofit) — cosmetic randomness (tween jitter, particle offsets, animation timing) stays on the global unseeded RNG deliberately and is never migrated.
+8. **New gameplay-affecting randomness goes through the shared `Rng` service** (it exists now — `scripts/autoloads/rng.gd`, retrofit done 2026-07) — cosmetic randomness (tween jitter, particle offsets, animation timing) stays on the global unseeded RNG deliberately and is never migrated.
 9. **New per-floor mutable state lives in `Vector2i`-keyed dictionaries on `DungeonFloor`** (mirroring `_doors`/`_traps`/`_floor_items`), never as loose per-node-only state — this is what makes Save/Load Phase B possible later without another audit sweep.
 10. **`Enemy` gains archetypes/abilities/phases via pool data + the `_decide_action()`/`_execute_action()` seam, never via subclassing.** A new enemy type is a new `ENEMY_POOL`/`BOSS_POOL` entry, not a new `.gd` file extending `Enemy` (that path stays reserved for genuinely novel movement/rendering, which none of the currently planned content needs).
