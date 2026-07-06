@@ -1752,8 +1752,7 @@ func to_dict() -> Dictionary:
 		"player_stats": player_stats.to_dict(),
 		"talents": {
 			"talent_investments": talent_investments.duplicate(),
-			"tier1_talent_points": tier1_talent_points,
-			"tier2_talent_points": tier2_talent_points,
+			"talent_points": talent_points.duplicate(),
 			"tier2_unlocked": tier2_unlocked,
 			"active_tier2_subclass": active_tier2_subclass,
 			"natural_rager_form": natural_rager_form,
@@ -1819,8 +1818,9 @@ func from_dict(d: Dictionary) -> void:
 		var rank: int = talent_investments[id]
 		for r: int in range(1, rank + 1):
 			_apply_talent_rank(id, r)
-	tier1_talent_points = int(talents_d.get("tier1_talent_points", 0))
-	tier2_talent_points = int(talents_d.get("tier2_talent_points", 0))
+	var saved_points: Dictionary = talents_d.get("talent_points", {})
+	for t: int in talent_points:
+		talent_points[t] = int(saved_points.get(String(t), saved_points.get(t, 0)))
 	# Wild Heart / Zealot state — restored AFTER the replay, which resets charge pools to max.
 	natural_rager_form = String(talents_d.get("natural_rager_form", "Bear"))
 	natural_sleeper_form = String(talents_d.get("natural_sleeper_form", ""))
