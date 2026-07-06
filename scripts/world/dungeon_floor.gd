@@ -217,6 +217,7 @@ func _load_floor() -> void:
 	_spawn_items()
 	_spawn_locked_doors()
 	_spawn_pending_chasm_items()
+	_restore_companion_from_save()
 	_setup_fog()
 	_see_all_active = false
 	update_fog(_data.player_start)
@@ -226,6 +227,54 @@ func _load_floor() -> void:
 		GameState.debug_see_all.connect(_on_debug_see_all)
 	if GameState.god_mode:
 		_on_debug_see_all(true)
+
+	# Floor-entry checkpoint (Save/Load Phase A, doc §2) — snapshot + write once the
+	# floor is fully populated. No-op before class selection or after the run ended.
+	SaveManager.checkpoint()
+
+# ── Save/Load Continue flow (Phase A, session 3c) ─────────────────────────────
+
+# Rebuild the current floor from the restored run_seed + current_floor after
+# SaveManager.load_run(). Phase A does not restore mid-floor state — the floor
+# regenerates fresh from the seeded generator, exactly like a normal floor load
+# (doc §2 accepted limitation). Emits floor_changed so the HUD floor label /
+# compass reset, since GameState.from_dict() deliberately does not.
+func reload_from_save() -> void:
+	_load_floor()
+	GameState.floor_changed.emit(GameState.current_floor)
+
+# Consume GameState.pending_companion_restore (set by GameState.from_dict()):
+# rebuild the Wild Heart companion from WILD_HEART_COMPANION_STATS[rank] adjacent
+# to the player start and restore its saved HP (doc §4.4). No-op on any normal
+# (non-Continue) floor load — the dict is empty then.
+func _restore_companion_from_save() -> void:
+	var saved: Dictionary = GameState.pending_companion_restore
+	GameState.pending_companion_restore = {}
+	if saved.is_empty() or not bool(saved.get("alive", false)):
+		return
+	var rank: int = GameState.get_talent_rank("one_with_nature")
+	if rank <= 0:
+		return
+	var stats_data: Dictionary = GameState.WILD_HEART_COMPANION_STATS.get(rank, {})
+	var spawn_pos: Vector2i = Vector2i(-1, -1)
+	var dirs: Array[Vector2i] = [
+		Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+		Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1),
+	]
+	for dir: Vector2i in dirs:
+		var p: Vector2i = _data.player_start + dir
+		if is_walkable_for_companion(p):
+			spawn_pos = p
+			break
+	if spawn_pos == Vector2i(-1, -1):
+		return
+	var companion: Companion = Companion.new()
+	companion.configure(stats_data)
+	spawn_companion(companion, spawn_pos)  # add_child inside → _ready() creates stats
+	GameState.player_companion = companion
+	var max_hp: int = int(stats_data.get("hp", 10))
+	companion.stats.current_hp = clampi(int(saved.get("current_hp", max_hp)), 1, max_hp)
+	companion.update_hp_bar()
 
 # ── Tilemap queries ───────────────────────────────────────────────────────────
 

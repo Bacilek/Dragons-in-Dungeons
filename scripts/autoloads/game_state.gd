@@ -128,6 +128,10 @@ var wild_heart_sleeper_active: bool = false
 var player_evades_opportunity_attacks: bool = false
 # Reference to living companion node (null when no companion). Set by player.gd.
 var player_companion: Variant = null
+# Companion state loaded from a save ({alive: bool, current_hp: int}, {} = none) —
+# populated by from_dict(); consumed by the Continue-flow floor load (session 3c),
+# which rebuilds the node from WILD_HEART_COMPANION_STATS[rank] (doc §4.4).
+var pending_companion_restore: Dictionary = {}
 # AC bonus from Natural Sleeper R3 terrain — added in recalculate_stats().
 var terrain_ac_bonus: int = 0
 
@@ -218,6 +222,7 @@ func start_new_run() -> void:
 	wild_heart_sleeper_active = false
 	player_evades_opportunity_attacks = false
 	player_companion = null
+	pending_companion_restore = {}
 	terrain_ac_bonus = 0
 	_give_starting_items()
 
@@ -1646,3 +1651,164 @@ func _setup_zealot_tier2_talents() -> void:
 		{"description": "Duration increases to 5 turns."},
 	]
 	_class_talents.append(zp_talent)
+
+# ── Save/load (Phase A — docs/architecture/SAVE_LOAD_ARCHITECTURE.md §4) ────────
+# Assembles/restores the full Phase-A run snapshot. SaveManager owns file I/O and the
+# top-level save_version key; GameState only produces/consumes the payload. Per-floor
+# world state (enemies, doors, traps, fog, floor items, player_grid_pos) is deliberately
+# NOT serialized — Phase A reloads the floor fresh from run_seed + current_floor.
+# Abilities are DERIVED state (doc §4.3): never serialized as objects, always rebuilt by
+# replaying _apply_talent_rank() per saved talent_investments, then patched with the small
+# ability_uses / ability_active maps below.
+
+func to_dict() -> Dictionary:
+	var ability_uses: Dictionary = {}
+	var ability_active: Dictionary = {}
+	for slot in player_ability_bar:
+		if slot != null:
+			var ab := slot as Ability
+			ability_uses[ab.ability_id] = ab.uses_remaining
+			ability_active[ab.ability_id] = ab.is_active
+	var companion: Dictionary = {}
+	if player_companion != null and is_instance_valid(player_companion):
+		companion = {"alive": true, "current_hp": int(player_companion.stats.current_hp)}
+	var equipment_dicts: Dictionary = {}
+	for key: String in equipment:
+		var it: Item = equipment[key] as Item
+		equipment_dicts[key] = it.to_dict() if it != null else null
+	var chasm_dicts: Array = []
+	for it: Item in pending_chasm_items:
+		chasm_dicts.append(it.to_dict())
+	return {
+		"run_seed": run_seed,
+		"current_floor": current_floor,
+		"player_stats": player_stats.to_dict(),
+		"talents": {
+			"talent_investments": talent_investments.duplicate(),
+			"tier1_talent_points": tier1_talent_points,
+			"tier2_talent_points": tier2_talent_points,
+			"tier2_unlocked": tier2_unlocked,
+			"active_tier2_subclass": active_tier2_subclass,
+			"natural_rager_form": natural_rager_form,
+			"natural_sleeper_form": natural_sleeper_form,
+			"active_sleeper_form": active_sleeper_form,
+			"wild_heart_sleeper_active": wild_heart_sleeper_active,
+			"zealot_divine_fury_type": zealot_divine_fury_type,
+			"zealot_blessed_charges": zealot_blessed_charges,
+			"zealot_zp_charges": zealot_zp_charges,
+			"ability_uses": ability_uses,
+			"ability_active": ability_active,
+		},
+		"inventory": {
+			"quickbar": _item_slots_to_dicts(player_quickbar),
+			"bag": _item_slots_to_dicts(player_inventory),
+			"equipment": equipment_dicts,
+			"pending_chasm_items": chasm_dicts,
+			"companion": companion,
+		},
+		"rest": {
+			"hit_dice": hit_dice,
+			"short_rests_remaining": short_rests_remaining,
+		},
+	}
+
+# Restores the full run state from a parsed save dict (load order per doc §4.3):
+# clean slate → class defaults + starting gear rebuild → talent replay → inventory/
+# equipment → rest → Stats LAST (so stat-mutating replay one-shots like Danger Sense R3's
+# STR +2 are overwritten by the saved, already-buffed values instead of double-applying) →
+# per-ability uses/toggle patches. Does NOT load the floor — the caller (session 3c's
+# Continue flow) decides when to reload the floor from run_seed + current_floor.
+func from_dict(d: Dictionary) -> void:
+	start_new_run()
+	run_seed = int(d.get("run_seed", run_seed))
+	current_floor = int(d.get("current_floor", 1))
+	var stats_d: Dictionary = d.get("player_stats", {})
+	var talents_d: Dictionary = d.get("talents", {})
+	var inv_d: Dictionary = d.get("inventory", {})
+	var rest_d: Dictionary = d.get("rest", {})
+	# 1. Class + defaults + baseline class gear/abilities/talent definitions.
+	player_stats.character_class = int(stats_d.get("character_class", Stats.CharacterClass.BARBARIAN)) as Stats.CharacterClass
+	player_stats.apply_class_defaults()
+	class_selected = true
+	give_class_starting_items()
+	# 2. Talent replay. Investments are set in full BEFORE replaying so the _build_*
+	# description helpers (which read get_talent_rank()) see final ranks. Tier 2 setup
+	# runs silently (no unlock_tier2() log line) via _setup_tier2_for_active_subclass().
+	active_tier2_subclass = String(talents_d.get("active_tier2_subclass", "Berserker"))
+	if bool(talents_d.get("tier2_unlocked", false)):
+		tier2_unlocked = true
+		_setup_tier2_for_active_subclass()
+	talent_investments = {}
+	var saved_investments: Dictionary = talents_d.get("talent_investments", {})
+	for id: String in saved_investments:
+		talent_investments[id] = int(saved_investments[id])
+	for id: String in talent_investments:
+		var rank: int = talent_investments[id]
+		for r: int in range(1, rank + 1):
+			_apply_talent_rank(id, r)
+	tier1_talent_points = int(talents_d.get("tier1_talent_points", 0))
+	tier2_talent_points = int(talents_d.get("tier2_talent_points", 0))
+	# Wild Heart / Zealot state — restored AFTER the replay, which resets charge pools to max.
+	natural_rager_form = String(talents_d.get("natural_rager_form", "Bear"))
+	natural_sleeper_form = String(talents_d.get("natural_sleeper_form", ""))
+	active_sleeper_form = String(talents_d.get("active_sleeper_form", ""))
+	wild_heart_sleeper_active = bool(talents_d.get("wild_heart_sleeper_active", false))
+	zealot_divine_fury_type = String(talents_d.get("zealot_divine_fury_type", "Radiant"))
+	zealot_blessed_charges = int(talents_d.get("zealot_blessed_charges", 0))
+	zealot_zp_charges = int(talents_d.get("zealot_zp_charges", 0))
+	# 3. Inventory / equipment (null slots preserved to keep positions).
+	_dicts_into_item_slots(inv_d.get("quickbar", []), player_quickbar, QUICKBAR_SIZE)
+	_dicts_into_item_slots(inv_d.get("bag", []), player_inventory, INVENTORY_SIZE)
+	var eq_d: Dictionary = inv_d.get("equipment", {})
+	for key: String in equipment:
+		var slot_d: Variant = eq_d.get(key)
+		equipment[key] = Item.from_dict(slot_d) if slot_d is Dictionary else null
+	pending_chasm_items.clear()
+	for cd: Variant in (inv_d.get("pending_chasm_items", []) as Array):
+		if cd is Dictionary:
+			pending_chasm_items.append(Item.from_dict(cd))
+	pending_companion_restore = inv_d.get("companion", {})
+	# 4. Rest resources.
+	hit_dice = int(rest_d.get("hit_dice", 1))
+	short_rests_remaining = int(rest_d.get("short_rests_remaining", max_short_rests))
+	# 5. Stats LAST (restore-stats-last rule, doc §4.3), then derive AC/damage from equipment.
+	player_stats.from_dict(stats_d)
+	recalculate_stats()
+	# Re-derive level-scaled ability maxima (e.g. Rage uses_max) from the restored stats;
+	# the saved ability_uses patches below then overwrite uses_remaining where applicable.
+	_sync_ability_uses()
+	# 6. Per-ability derived-state patches (uses_remaining / toggle state).
+	var uses_d: Dictionary = talents_d.get("ability_uses", {})
+	var active_d: Dictionary = talents_d.get("ability_active", {})
+	for slot in player_ability_bar:
+		if slot == null:
+			continue
+		var ab := slot as Ability
+		if uses_d.has(ab.ability_id):
+			ab.uses_remaining = int(uses_d[ab.ability_id])
+		if active_d.has(ab.ability_id):
+			ab.is_active = bool(active_d[ab.ability_id])
+			if ab.ability_id == "reckless_attack":
+				reckless_attack_active = ab.is_active
+	# 7. UI refresh (signals only — HUD never polls). floor_changed is deliberately NOT
+	# emitted here; the Continue flow (3c) drives the actual floor load.
+	inventory_changed.emit()
+	equipment_changed.emit()
+	ability_bar_changed.emit()
+	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
+	player_exp_changed.emit(player_stats.experience, player_stats.exp_to_next(), player_stats.character_level)
+	player_status_changed.emit()
+	short_rest_changed.emit()
+	talent_points_changed.emit(talent_points_available)
+	known_masteries_changed.emit()
+
+func _item_slots_to_dicts(slots: Array) -> Array:
+	var out: Array = []
+	for slot in slots:
+		out.append((slot as Item).to_dict() if slot != null else null)
+	return out
+
+func _dicts_into_item_slots(dicts: Array, slots: Array, size: int) -> void:
+	for i: int in size:
+		var entry: Variant = dicts[i] if i < dicts.size() else null
+		slots[i] = Item.from_dict(entry) if entry is Dictionary else null

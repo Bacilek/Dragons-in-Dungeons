@@ -116,6 +116,15 @@ Shown at game start. Emits `GameState.class_chosen` when player selects a class.
 class has `Stats.mastery_cap() > 0` (Barbarian, Ranger — not Wizard/Monk), spawns the Mastery
 Picker (below) right after `class_chosen` fires, before `queue_free()`.
 
+**Continue button** (Save/Load Phase A): a gold "Continue Saved Run" button appears centered
+below the class cards only when `SaveManager.has_save()`. Pressing it calls
+`SaveManager.load_run()`, emits `class_chosen` with the *restored* class (player sprite + HUD
+portrait re-derive; no starting gear is re-given — `from_dict()` already rebuilt everything),
+then calls `DungeonFloor.reload_from_save()` and `queue_free()` — skipping class select AND the
+Mastery Picker (masteries are restored from the save). If `load_run()` fails (save vanished or
+corrupt), the button hides and the class cards stay usable. The New Game path is untouched.
+See `scripts/autoloads/CLAUDE.md`'s SaveManager "Continue flow" section.
+
 ## Mastery picker (`mastery_picker.gd`)
 CanvasLayer, layer = 25. Modeled directly on the talent picker (dim overlay + centered bordered
 `Panel`, `TextureButton` icon grid, `focus_mode = FOCUS_NONE` everywhere). Lets the player choose

@@ -71,3 +71,85 @@ func get_display_name() -> String:
 	if quantity > 1:
 		return "%s ×%d" % [item_name, quantity]
 	return item_name
+
+# ── Save/load (Phase A — docs/architecture/SAVE_LOAD_ARCHITECTURE.md §4.4) ──────
+# Every field above is a flat primitive, so the pair below is a mechanical listing.
+# When adding a new Item field, add it to BOTH functions (and see scripts/items/CLAUDE.md).
+
+func to_dict() -> Dictionary:
+	return {
+		"item_name": item_name,
+		"item_type": int(item_type),
+		"quantity": quantity,
+		"description": description,
+		"icon_path": icon_path,
+		"bonus_damage": bonus_damage,
+		"bonus_ac": bonus_ac,
+		"heal_amount": heal_amount,
+		"food_value": food_value,
+		"str_bonus": str_bonus,
+		"floor_min": floor_min,
+		"floor_max": floor_max,
+		"is_ranged": is_ranged,
+		"range": range,
+		"consumes_on_ranged": consumes_on_ranged,
+		"is_two_handed": is_two_handed,
+		"is_heavy_armor": is_heavy_armor,
+		"is_heavy": is_heavy,
+		"is_versatile": is_versatile,
+		"versatile_die_min": versatile_die_min,
+		"versatile_die_max": versatile_die_max,
+		"is_finesse": is_finesse,
+		"is_light": is_light,
+		"is_reach": is_reach,
+		"damage_die_min": damage_die_min,
+		"damage_die_max": damage_die_max,
+		"damage_type": damage_type,
+		"heal_dice_count": heal_dice_count,
+		"heal_dice_sides": heal_dice_sides,
+		"weapon_mastery": weapon_mastery,
+		"weapon_category": weapon_category,
+		"ammo_item_name": ammo_item_name,
+		"is_thrown": is_thrown,
+		"uses_max": uses_max,
+		"uses_remaining": uses_remaining,
+	}
+
+static func from_dict(d: Dictionary) -> Item:
+	var it := Item.new()
+	it.item_name = String(d.get("item_name", ""))
+	it.item_type = int(d.get("item_type", Type.POTION)) as Type
+	it.quantity = int(d.get("quantity", 1))
+	it.description = String(d.get("description", ""))
+	it.icon_path = String(d.get("icon_path", ""))
+	it.bonus_damage = int(d.get("bonus_damage", 0))
+	it.bonus_ac = int(d.get("bonus_ac", 0))
+	it.heal_amount = int(d.get("heal_amount", 0))
+	it.food_value = int(d.get("food_value", 0))
+	it.str_bonus = int(d.get("str_bonus", 0))
+	it.floor_min = int(d.get("floor_min", 1))
+	it.floor_max = int(d.get("floor_max", 10))
+	it.is_ranged = bool(d.get("is_ranged", false))
+	it.range = int(d.get("range", 0))
+	it.consumes_on_ranged = bool(d.get("consumes_on_ranged", false))
+	it.is_two_handed = bool(d.get("is_two_handed", false))
+	it.is_heavy_armor = bool(d.get("is_heavy_armor", false))
+	it.is_heavy = bool(d.get("is_heavy", false))
+	it.is_versatile = bool(d.get("is_versatile", false))
+	it.versatile_die_min = int(d.get("versatile_die_min", 0))
+	it.versatile_die_max = int(d.get("versatile_die_max", 0))
+	it.is_finesse = bool(d.get("is_finesse", false))
+	it.is_light = bool(d.get("is_light", false))
+	it.is_reach = bool(d.get("is_reach", false))
+	it.damage_die_min = int(d.get("damage_die_min", 0))
+	it.damage_die_max = int(d.get("damage_die_max", 0))
+	it.damage_type = String(d.get("damage_type", ""))
+	it.heal_dice_count = int(d.get("heal_dice_count", 0))
+	it.heal_dice_sides = int(d.get("heal_dice_sides", 0))
+	it.weapon_mastery = String(d.get("weapon_mastery", ""))
+	it.weapon_category = String(d.get("weapon_category", ""))
+	it.ammo_item_name = String(d.get("ammo_item_name", ""))
+	it.is_thrown = bool(d.get("is_thrown", false))
+	it.uses_max = int(d.get("uses_max", 0))
+	it.uses_remaining = int(d.get("uses_remaining", 0))
+	return it
