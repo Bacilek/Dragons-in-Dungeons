@@ -139,7 +139,7 @@ func ranged_attack(enemy: Enemy) -> void:
 		player._vex_adv_target = enemy
 	var r_dmin: int = weapon.damage_die_min if weapon != null and weapon.damage_die_min > 0 else player.stats.base_min_damage
 	var r_dmax: int = weapon.damage_die_max if weapon != null and weapon.damage_die_max > 0 else player.stats.base_max_damage
-	var r_die_roll: int = randi_range(r_dmin, r_dmax)
+	var r_die_roll: int = Rng.range_i(r_dmin, r_dmax)
 	var r_pre_crit: int = r_die_roll + r_wpn_enh + dex_mod
 	if is_crit:
 		r_pre_crit *= 2
@@ -153,7 +153,7 @@ func ranged_attack(enemy: Enemy) -> void:
 	var r_df_rank: int = GameState.get_talent_rank("divine_fury")
 	if r_df_rank >= 1 and not player._divine_fury_triggered_this_turn:
 		player._divine_fury_triggered_this_turn = true
-		r_divine_bonus = randi_range(1, 6) + CombatMath.divine_fury_flat_bonus(r_df_rank, player.stats.character_level)
+		r_divine_bonus = Rng.roll(6) + CombatMath.divine_fury_flat_bonus(r_df_rank, player.stats.character_level)
 
 	var actual: int = enemy.stats.take_damage(r_pre_crit + r_divine_bonus)
 	enemy.update_hp_bar()

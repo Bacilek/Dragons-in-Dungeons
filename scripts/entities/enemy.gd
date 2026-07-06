@@ -77,7 +77,7 @@ func resist_check(dc: int, use_con: bool = false) -> bool:
 func resist_check_detailed(dc: int, use_con: bool = false) -> Dictionary:
 	var mod: int = stats.con_modifier() if use_con else stats.str_modifier()
 	var floor_bonus: int = GameState.current_floor / 3
-	var die: int = randi_range(1, 20)
+	var die: int = Rng.roll(20)
 	var total: int = die + floor_bonus + mod
 	return {
 		"die": die, "mod": mod, "floor_bonus": floor_bonus, "dc": dc,
@@ -373,7 +373,7 @@ func _act_toward(target: Node) -> void:
 
 func _pick_roam_target() -> Vector2i:
 	var centers: Array[Vector2i] = _dungeon_floor.get_room_centers()
-	centers.shuffle()
+	Rng.shuffle(centers)
 	for c: Vector2i in centers:
 		if maxi(absi(c.x - grid_pos.x), absi(c.y - grid_pos.y)) < 4:
 			continue
@@ -406,7 +406,7 @@ func _do_roam_walk() -> void:
 func _do_random_step() -> void:
 	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
 			Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]
-	dirs.shuffle()
+	Rng.shuffle(dirs)
 	for dir: Vector2i in dirs:
 		var target: Vector2i = grid_pos + dir
 		if _dungeon_floor.has_door_at(target):
@@ -513,7 +513,7 @@ func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1) -> Di
 	# Reckless Attack rank 1: enemies get flat +2. Rank 2+: enemies get Advantage.
 	var attack_bonus: int = attack_bonus_override if attack_bonus_override >= 0 else GameState.current_floor / 3
 	var reckless_flat: int = 0
-	var die1: int = randi_range(1, 20)
+	var die1: int = Rng.roll(20)
 	var die2: int = die1
 	var die: int = die1
 	var enemy_adv: bool = false
@@ -526,7 +526,7 @@ func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1) -> Di
 			2, 3:
 				enemy_adv = true
 	if enemy_adv != enemy_disadv:
-		die2 = randi_range(1, 20)
+		die2 = Rng.roll(20)
 		die = maxi(die1, die2) if enemy_adv else mini(die1, die2)
 	var roll: int = die + attack_bonus + reckless_flat
 	var bonus: int = attack_bonus + reckless_flat

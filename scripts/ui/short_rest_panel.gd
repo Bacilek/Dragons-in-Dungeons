@@ -323,7 +323,7 @@ func _on_rest() -> void:
 	var con_mod: int = GameState.player_stats.con_modifier()
 	var total_heal: int = 0
 	for _i: int in _dice_to_spend:
-		total_heal += maxi(1, randi_range(1, sides) + con_mod)
+		total_heal += maxi(1, Rng.roll(sides) + con_mod)
 	if not GameState.invincible:
 		GameState.hit_dice -= _dice_to_spend
 	GameState.short_rests_remaining -= 1

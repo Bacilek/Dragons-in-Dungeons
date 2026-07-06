@@ -79,8 +79,8 @@ func search_action() -> void:
 	TurnManager.begin_player_action()
 	var wis_mod: int = GameState.player_stats.wis_modifier()
 	var dc: int = maxi(10, 10 + GameState.current_floor / 3)
-	var die1: int = randi_range(1, 20)
-	var die2: int = randi_range(1, 20)
+	var die1: int = Rng.roll(20)
+	var die2: int = Rng.roll(20)
 	var roll: int = maxi(die1, die2) + wis_mod
 	if roll >= dc:
 		var found: int = player._dungeon_floor.search_around(player.grid_pos)
@@ -152,7 +152,7 @@ func passive_trap_check() -> void:
 		now_in_range.append(trap_pos)
 		if trap_pos in _traps_in_proximity:
 			continue  # already knew it was near — don't re-roll
-		var die: int = randi_range(1, 20)
+		var die: int = Rng.roll(20)
 		if die + wis_mod >= dc:
 			player._dungeon_floor.reveal_trap(trap_pos)
 			if player._queued_path.size() > 0:

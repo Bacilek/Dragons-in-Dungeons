@@ -70,6 +70,8 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 
 `Stats.take_damage(dmg) = maxi(1, dmg)` — no damage reduction. `stats.armor` is always 0.
 
+**RNG source rule**: every roll in this table — and every other gameplay-affecting random draw in entity code (damage dice, resist checks, talent proc chances, enemy roam/wander shuffles, loot rolled at kill time) — goes through the **`Rng` autoload** (`Rng.roll(20)`, `Rng.range_i(min,max)`, `Rng.chance(p)`, `Rng.shuffle(arr)`), never global `randi_range`/`randf`/`Array.shuffle()`. Seeded from `run_seed` for reproducible runs; see `scripts/autoloads/CLAUDE.md`. Cosmetic jitter (camera shake in `player_vfx.gd`) deliberately stays on the global RNG.
+
 ### Advantage / Disadvantage
 - **ADV**: attacking a SLEEPING enemy; attacking enemy whose `just_crossed_door == true` (consumed one-shot after check)
 - **DISADV**: ranged attack at Chebyshev distance 1 (melee range); melee with a `is_heavy` weapon when STR < 13; ranged with a `is_heavy` weapon when DEX < 13; ranged shot beyond the weapon's normal range but within FOV (`player.gd._ranged_shot_disadvantage()` — every ranged weapon's "long range" is the player's live FOV, not a per-weapon field, see `scripts/items/CLAUDE.md`); a Thrown weapon (Spear/Handaxe/Dagger) thrown at Chebyshev distance 1, and a thrown weapon's own long-throw equivalent, both applied in `PlayerThrowTool._throw_weapon()` (`scripts/entities/player_throw_tool.gd`)

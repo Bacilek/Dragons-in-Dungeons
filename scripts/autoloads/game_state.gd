@@ -204,6 +204,7 @@ func _ready() -> void:
 
 func start_new_run() -> void:
 	run_seed = randi()
+	Rng.reseed(run_seed)  # gameplay RNG stream — same seed → same run (rng.gd)
 	current_floor = 1
 	is_game_over = false
 	inventory_open = false
@@ -799,7 +800,7 @@ func use_item(item: Item) -> void:
 				# Dice-based heal (e.g. 2d4+CON for Health Potion)
 				var raw_roll: int = 0
 				for _i: int in item.heal_dice_count:
-					raw_roll += randi_range(1, item.heal_dice_sides)
+					raw_roll += Rng.roll(item.heal_dice_sides)
 				var con_mod: int = player_stats.con_modifier()
 				var amount: int = maxi(1, raw_roll + con_mod)
 				var before: int = player_stats.current_hp
@@ -930,7 +931,7 @@ func apply_player_status(type: String, turns: int) -> bool:
 	# Rager rank 1: chance to negate a status/debuff while raging.
 	if get_talent_rank("rager") >= 1 and is_raging:
 		var chance: int = player_stats.rage_bonus_damage * 10  # 20%/30%/40%
-		if randi_range(1, 100) <= chance:
+		if Rng.roll(100) <= chance:
 			game_log("[color=orange]Rager shrugs off the %s![/color]" % type)
 			return false
 	match type:
@@ -1744,6 +1745,9 @@ func to_dict() -> Dictionary:
 		chasm_dicts.append(it.to_dict())
 	return {
 		"run_seed": run_seed,
+		# Exact gameplay-RNG stream position (rng.gd). Stored as String: JSON parses
+		# all numbers as float, which silently corrupts int64 states above 2^53.
+		"rng_state": str(Rng.get_state()),
 		"current_floor": current_floor,
 		"player_stats": player_stats.to_dict(),
 		"talents": {
@@ -1784,6 +1788,12 @@ func to_dict() -> Dictionary:
 func from_dict(d: Dictionary) -> void:
 	start_new_run()
 	run_seed = int(d.get("run_seed", run_seed))
+	# Resume the exact gameplay-RNG stream position; saves that predate rng_state
+	# (v1) fall back to re-seeding from run_seed — a fresh but still seeded stream.
+	if d.has("rng_state"):
+		Rng.set_state(str(d["rng_state"]).to_int())
+	else:
+		Rng.reseed(run_seed)
 	current_floor = int(d.get("current_floor", 1))
 	var stats_d: Dictionary = d.get("player_stats", {})
 	var talents_d: Dictionary = d.get("talents", {})

@@ -147,12 +147,12 @@ func wis_modifier() -> int: return modifier(wisdom)
 func cha_modifier() -> int: return modifier(charisma)
 
 func ability_check(score: int, proficient: bool, dc: int) -> bool:
-	var roll: int = randi_range(1, 20)
+	var roll: int = Rng.roll(20)
 	var bonus: int = modifier(score) + (proficiency_bonus if proficient else 0)
 	return (roll + bonus) >= dc
 
 func roll_damage() -> int:
-	return randi_range(min_damage, max_damage)
+	return Rng.range_i(min_damage, max_damage)
 
 func take_damage(amount: int) -> int:
 	var clamped: int = maxi(1, amount)

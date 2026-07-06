@@ -15,10 +15,10 @@ const SAVE_PATH: String = "user://save/run.json"
 const BACKUP_PATH: String = "user://save/run.json.bak"
 const TEMP_PATH: String = "user://save/run.json.tmp"
 
-const SAVE_VERSION: int = 1
+const SAVE_VERSION: int = 2
 
 # save_version → Callable(data: Dictionary) -> Dictionary upgraders (doc §7).
-# Empty until a schema change ever bumps SAVE_VERSION.
+# Populated in _ready() (method references as Callables).
 var _migrations: Dictionary = {}
 
 # In-memory floor-entry snapshot (doc §2). save_run() only ever writes THIS — it is
@@ -32,6 +32,7 @@ var _run_over: bool = false
 
 
 func _ready() -> void:
+	_migrations[1] = _migrate_v1_to_v2
 	GameState.player_died.connect(_on_run_ended)
 	GameState.player_won.connect(_on_run_ended)
 	# Floor-1 "floor entry" happens BEFORE class selection (the floor is generated under
@@ -105,6 +106,13 @@ func _on_class_chosen(_cls: Stats.CharacterClass) -> void:
 
 
 # --- Internals ---------------------------------------------------------------
+
+# v1 → v2: adds top-level "rng_state" (gameplay Rng stream position, rng.gd). Old
+# saves simply lack the key — GameState.from_dict() re-seeds Rng from run_seed when
+# it's absent, so the migrator only needs to stamp the version.
+func _migrate_v1_to_v2(data: Dictionary) -> Dictionary:
+	data["save_version"] = 2
+	return data
 
 func _build_save_dict() -> Dictionary:
 	# save_version stays the first key (doc §1.1); GameState supplies the payload (doc §4).

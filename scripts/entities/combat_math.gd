@@ -19,14 +19,14 @@ static func roll_with_adv_disadv(adv_count: int, disadv_count: int) -> Dictionar
 	var net: int = adv_count - disadv_count
 	var adv: bool = net > 0
 	var disadv: bool = net < 0
-	var die1: int = randi_range(1, 20)
+	var die1: int = Rng.roll(20)
 	var die2: int = die1
 	var die: int = die1
 	if adv and not disadv:
-		die2 = randi_range(1, 20)
+		die2 = Rng.roll(20)
 		die = maxi(die1, die2)
 	elif disadv and not adv:
-		die2 = randi_range(1, 20)
+		die2 = Rng.roll(20)
 		die = mini(die1, die2)
 	return {"die1": die1, "die2": die2, "die": die, "adv": adv, "disadv": disadv}
 

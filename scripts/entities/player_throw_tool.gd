@@ -98,7 +98,7 @@ func try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 		return
 	TurnManager.begin_player_action()
 	# Nat 1: bottle shatters
-	var fill_roll: int = randi_range(1, 20)
+	var fill_roll: int = Rng.roll(20)
 	if fill_roll == 1:
 		GameState.game_log("[color=red]You fumble — the bottle shatters![/color]")
 		if not GameState.invincible:
@@ -230,7 +230,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 
 	var dmin: int = weapon.damage_die_min if weapon.damage_die_min > 0 else stats.base_min_damage
 	var dmax: int = weapon.damage_die_max if weapon.damage_die_max > 0 else stats.base_max_damage
-	var die_roll: int = randi_range(dmin, dmax)
+	var die_roll: int = Rng.range_i(dmin, dmax)
 	var pre_crit: int = die_roll + weapon.bonus_damage + atk_mod
 	if is_crit:
 		pre_crit *= 2
