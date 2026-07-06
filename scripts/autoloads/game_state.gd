@@ -1820,7 +1820,7 @@ func from_dict(d: Dictionary) -> void:
 			_apply_talent_rank(id, r)
 	var saved_points: Dictionary = talents_d.get("talent_points", {})
 	for t: int in talent_points:
-		talent_points[t] = int(saved_points.get(String(t), saved_points.get(t, 0)))
+		talent_points[t] = int(saved_points.get(str(t), saved_points.get(t, 0)))
 	# Wild Heart / Zealot state — restored AFTER the replay, which resets charge pools to max.
 	natural_rager_form = String(talents_d.get("natural_rager_form", "Bear"))
 	natural_sleeper_form = String(talents_d.get("natural_sleeper_form", ""))
