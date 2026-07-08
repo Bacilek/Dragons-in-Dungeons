@@ -325,8 +325,7 @@ func _update_status_icons() -> void:
 	if _rage_icon != null:
 		_rage_icon.visible = GameState.is_raging
 		if GameState.is_raging:
-			var rage_rank: int = maxi(GameState.get_talent_rank("rage"), 1)
-			var icon_path: String = GameState.talent_icon_path("rage", rage_rank)
+			var icon_path: String = GameState.talent_icon_path("rage", 3)
 			if icon_path != "" and ResourceLoader.exists(icon_path):
 				_rage_icon.texture = load(icon_path)
 

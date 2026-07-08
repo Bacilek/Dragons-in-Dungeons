@@ -10,6 +10,8 @@ var _dungeon_floor: Node
 # See "Split-out modules" in scripts/entities/CLAUDE.md for what moved where and why.
 var _wild_heart: PlayerWildHeart
 var _zealot: PlayerZealot
+var _berserker: PlayerBerserker
+var _scarred_warrior: PlayerScarredWarrior
 var _ammo: PlayerAmmo
 var _throw_tool: PlayerThrowTool
 var _thief_tools: PlayerThiefTools
@@ -51,18 +53,11 @@ var _hover_last_icon_path: String = ""
 var _hover_last_texture: Texture2D = null
 
 # ── Rage state ────────────────────────────────────────────────────────────────
-# Baseline: lasts 10 turns, countdown each turn. Talent rank 1: pause when attacking or hit.
+# Baseline: lasts 1 turn, refreshed to 1 by attacking or being attacked (unconditional).
 # _rage_attacked_this_turn: set in _bump_attack when raging + STR weapon; cleared at turn start.
 var _is_raging: bool = false
 var _rage_turns: int = 0
 var _rage_attacked_this_turn: bool = false
-
-# ── Rager state (Tier 2) ──────────────────────────────────────────────────────
-# Per-round free-action caps for Rager R2 (move) and R3 (attack). Reset at turn start.
-var _rager_move_triggered: bool = false
-var _rager_attack_triggered: bool = false
-# Per-turn Frenzy cap: fires once per turn. Reset at turn start.
-var _frenzy_triggered_this_turn: bool = false
 
 # ── Wild Heart state (Tier 2) ─────────────────────────────────────────────────
 # Eagle Natural Rager: per-round free-move cap (max 1×/round). Only resets on REAL turns.
@@ -82,12 +77,6 @@ var _ironwood_bark_bonus_pending: int = 0
 # Grip of the Forest: once-per-turn hook-targeting mode (armed via ability bar, resolved on click).
 var _hook_mode_active: bool = false
 var _grip_used_this_turn: bool = false
-
-# ── Zealot state (Tier 2) ──────────────────────────────────────────────────────
-# Divine Fury: per-turn cap, fires once per turn regardless of how many attacks land. Reset at turn
-# start. Stays here (not on PlayerZealot) since both melee (_bump_attack) and ranged (PlayerRanged)
-# read/write it. Blessed Warrior's own per-turn cap lives on PlayerZealot (_zealot).
-var _divine_fury_triggered_this_turn: bool = false
 
 # ── Weapon mastery state ────────────────────────────────────────────────────────
 # Vex (Short Bow): after a Short-Bow hit, grants Advantage on the very next attack THIS ROUND
@@ -115,6 +104,8 @@ func _ready() -> void:
 
 	_wild_heart = PlayerWildHeart.new(); _wild_heart.player = self; add_child(_wild_heart)
 	_zealot = PlayerZealot.new(); _zealot.player = self; add_child(_zealot)
+	_berserker = PlayerBerserker.new(); _berserker.player = self; add_child(_berserker)
+	_scarred_warrior = PlayerScarredWarrior.new(); _scarred_warrior.player = self; add_child(_scarred_warrior)
 	_ammo = PlayerAmmo.new(); _ammo.player = self; add_child(_ammo)
 	_throw_tool = PlayerThrowTool.new(); _throw_tool.player = self; add_child(_throw_tool)
 	_thief_tools = PlayerThiefTools.new(); _thief_tools.player = self; add_child(_thief_tools)
@@ -173,30 +164,26 @@ func _on_player_hp_changed(_c: int, _m: int) -> void:
 
 func _on_turn_started() -> void:
 	GameState.player_grid_pos = grid_pos
-	# Determine whether this is a reverted turn (Rager/Eagle free action) or a real new round.
+	# Determine whether this is a reverted turn (Eagle free action) or a real new round.
 	var came_from_revert: bool = _reverted_this_round
 	_reverted_this_round = false
 	# Per-round caps only reset on REAL turns (after enemies resolve).
-	# On reverted turns, Eagle/Rager free-action flags persist so they can't fire again this round.
+	# On reverted turns, Eagle's free-move flag persists so it can't fire again this round.
 	if not came_from_revert:
 		GameState.reckless_locked_this_turn = false
-		_rager_move_triggered = false
-		_rager_attack_triggered = false
-		_frenzy_triggered_this_turn = false
 		_eagle_free_move_used = false
 		_grip_used_this_turn = false
-		_divine_fury_triggered_this_turn = false
-		_zealot.blessed_warrior_used_this_turn = false
 		_vex_adv_target = null
 		_oa_used_this_round = false
-	# Zealous Presence: buff decrements at the start of THIS entity's own turn (real turns only).
-	if not came_from_revert and stats.zealous_presence_turns > 0:
-		stats.zealous_presence_turns -= 1
+		_berserker.clear_turn_start_ac_bonus()
+		_berserker.tick_frenzied_killer()
+		# Zealot Strike deactivates with no effect if the turn ends without a melee attack.
+		_zealot.zealot_strike_armed = false
 	GameState.ability_bar_changed.emit()
 	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
 	# Only fires on real turns, not on reverted turns.
 	if not came_from_revert and GameState.wild_heart_sleeper_active:
-		var _ns_rank_ts: int = GameState.get_talent_rank("natural_sleeper")
+		var _ns_rank_ts: int = GameState.get_talent_rank("expanded_forms")
 		if _ns_rank_ts >= 2 and _dungeon_floor != null:
 			var _af: String = GameState.active_sleeper_form
 			var _ct: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
@@ -210,6 +197,10 @@ func _on_turn_started() -> void:
 				GameState.player_stats.temp_hp = _thp  # replace, not stack
 				GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 				GameState.game_log("[color=cyan]%s Form: %d temp HP (2d6).[/color]" % [_af, _thp])
+
+	# Bloodied Regen (Scarred Warrior): temp HP each real turn while Bloodied.
+	if not came_from_revert:
+		_scarred_warrior.tick_bloodied_regen()
 
 	# Ironwood Bark R2/R3: mutually exclusive per turn — both ranks read the SAME pre-turn
 	# temp HP snapshot, so R2's refresh this tick cannot also trigger R3 this same tick.
@@ -240,12 +231,16 @@ func _on_turn_started() -> void:
 		TurnManager.on_player_action_complete()
 		return
 
-	# Tick rage countdown. Talent rank 1: pause if player attacked or was hit last turn.
+	# Tick rage duration. Baseline: lasts 1 turn, refreshed to 1 turn by attacking or being
+	# attacked last turn (Masochist Monster R3 can further override expiry — see below).
 	if _is_raging:
-		var rage_rank: int = GameState.get_talent_rank("rage")
 		var combat_last_turn: bool = _rage_attacked_this_turn or GameState.player_was_hit_this_turn
-		if rage_rank >= 1 and combat_last_turn:
-			pass  # countdown paused — active combat extended rage
+		var masochist_r3_active: bool = GameState.get_talent_rank("masochist_monster") >= 3 \
+				and not _fov_this_turn.is_empty()
+		if masochist_r3_active:
+			pass  # Masochist Monster R3: Rage doesn't expire while an enemy is in FOV
+		elif combat_last_turn:
+			_rage_turns = 1
 		else:
 			_rage_turns -= 1
 		_rage_attacked_this_turn = false
@@ -492,6 +487,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _hook_mode_active:
 				_hook_mode_active = false
 				GameState.game_log("[color=gray]Grip of the Forest cancelled.[/color]")
+			if _berserker.frenzy_mode_active:
+				_berserker.frenzy_mode_active = false
+				GameState.game_log("[color=gray]Frenzy cancelled.[/color]")
+			if _scarred_warrior.limit_break_mode_active:
+				_scarred_warrior.limit_break_mode_active = false
+				GameState.game_log("[color=gray]Limit Break cancelled.[/color]")
 			return
 		# Tab toggles between item bar and ability bar (valid any time except game over)
 		if key.physical_keycode == KEY_TAB:
@@ -648,6 +649,40 @@ func _unhandled_input(event: InputEvent) -> void:
 						GameState.game_log("[color=gray]No clear line to target.[/color]")
 					else:
 						_execute_hook(target_enemy)
+			return
+
+		# Frenzy targeting mode (Berserker) — melee only, must be adjacent.
+		if _berserker.frenzy_mode_active:
+			_berserker.frenzy_mode_active = false
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				var frenzy_target: Enemy = _dungeon_floor.get_enemy_at(clicked)
+				if frenzy_target == null:
+					GameState.game_log("[color=gray]Frenzy: no target there.[/color]")
+				else:
+					var dv2: Vector2i = clicked - grid_pos
+					if maxi(absi(dv2.x), absi(dv2.y)) > 1:
+						GameState.game_log("[color=gray]Frenzy: target must be adjacent.[/color]")
+					else:
+						_berserker.execute_frenzy(frenzy_target)
+			return
+
+		# Limit Break targeting mode (Scarred Warrior) — range depends on Enough is Enough rank.
+		if _scarred_warrior.limit_break_mode_active:
+			_scarred_warrior.limit_break_mode_active = false
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				var lb_target: Enemy = _dungeon_floor.get_enemy_at(clicked)
+				if lb_target == null:
+					GameState.game_log("[color=gray]Limit Break: no target there.[/color]")
+				else:
+					var lb_rank: int = GameState.get_talent_rank("enough_is_enough")
+					var lb_range: int = 5 if lb_rank >= 3 else 1
+					var dv3: Vector2i = clicked - grid_pos
+					if maxi(absi(dv3.x), absi(dv3.y)) > lb_range:
+						GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % lb_range)
+					elif lb_range > 1 and not _dungeon_floor.has_ranged_los(grid_pos, clicked):
+						GameState.game_log("[color=gray]No clear line to target.[/color]")
+					else:
+						_scarred_warrior.execute_limit_break(lb_target)
 			return
 
 		# Tool targeting mode — route by tool type
@@ -937,7 +972,7 @@ func _try_move(dir: Vector2i) -> void:
 		GameState.game_log("[color=gray]Nothing to interact with.[/color]")
 
 
-	var _ns_rank: int = GameState.get_talent_rank("natural_sleeper")
+	var _ns_rank: int = GameState.get_talent_rank("expanded_forms")
 	var _ns_form: String = GameState.active_sleeper_form  # locked in at last floor descent
 	var _sleeper_on: bool = GameState.wild_heart_sleeper_active and _ns_rank >= 1
 	var _target_tile: DungeonData.TileType = _dungeon_floor.get_tile_type(target)
@@ -1027,26 +1062,6 @@ func _try_move(dir: Vector2i) -> void:
 		if _new_ac_bonus != GameState.terrain_ac_bonus:
 			GameState.terrain_ac_bonus = _new_ac_bonus
 			GameState.recalculate_stats()
-	# Rager R2: chance to grant a free action after moving (skips enemy turn + slowed penalty)
-	if _is_raging and GameState.get_talent_rank("rager") >= 2 and not _rager_move_triggered:
-		if Rng.roll(100) <= GameState.player_stats.rage_bonus_damage * 10:
-			_rager_move_triggered = true
-			_rage_attacked_this_turn = true  # pause rage countdown on the reverted turn
-			GameState.game_log("[color=orange]Rager: fury drives you — the move didn't cost a turn![/color]")
-			_reverted_this_round = true
-			TurnManager.revert_to_waiting()
-			return
-	# Natural Rager Eagle: free-move. R1 = 50% chance (max 1×/round); R2 = guaranteed (max 1×/round).
-	var _nr_rank: int = GameState.get_talent_rank("natural_rager")
-	if _is_raging and _nr_rank >= 1 and GameState.natural_rager_form == "Eagle" and not _eagle_free_move_used:
-		var _should_eagle_free: bool = _nr_rank >= 2 or Rng.roll(100) <= 50
-		if _should_eagle_free:
-			_eagle_free_move_used = true
-			_rage_attacked_this_turn = true  # pause rage countdown on reverted turn
-			GameState.game_log("[color=lime]Eagle Form: wings carry you — the move didn't cost a turn![/color]")
-			_reverted_this_round = true
-			TurnManager.revert_to_waiting()
-			return
 	TurnManager.on_player_action_complete()
 	# Slowed extra turn cost (skip if Panther/Salmon bypassed the terrain penalty)
 	if GameState.player_stats.slowed_turns > 0 and not _panther_bypass and not _salmon_bypass:
@@ -1087,24 +1102,17 @@ func _activate_rage() -> void:
 		GameState.game_log("[color=red]No Rage uses remaining (resets on floor descent).[/color]")
 		return
 	_is_raging = true
-	_rage_turns = 10  # baseline: 10-turn countdown
+	_rage_turns = 1  # baseline: lasts 1 turn, refreshed to 1 by attacking or being attacked
 	_rage_attacked_this_turn = false
 	GameState.is_raging = true
 	GameState.rage_turns_remaining = _rage_turns
-	# Natural Rager Eagle R3: evades Opportunity Attacks only while Raging in Eagle form.
-	GameState.player_evades_opportunity_attacks = GameState.get_talent_rank("natural_rager") >= 3 \
-			and GameState.natural_rager_form == "Eagle"
 	if not GameState.invincible:
 		ab.uses_remaining -= 1
 	GameState.player_stats.rage_uses_remaining = ab.uses_remaining
 	GameState.ability_bar_changed.emit()
 	$AnimatedSprite2D.modulate = Color(1.6, 0.55, 0.55)  # red tint
-	var rage_rank: int = GameState.get_talent_rank("rage")
-	var dr_note: String = ""
-	if rage_rank >= 3: dr_note = " 50% physical DR."
-	elif rage_rank >= 2: dr_note = " 25% physical DR."
 	var rage_dmg_bonus: int = stats.rage_bonus_damage
-	GameState.game_log("[color=red]You fly into a RAGE! +%d STR damage.%s (%d turns, %d use(s) left)[/color]" % [rage_dmg_bonus, dr_note, _rage_turns, ab.uses_remaining])
+	GameState.game_log("[color=red]You fly into a RAGE! +%d STR damage. 50%% physical DR. (%d use(s) left)[/color]" % [rage_dmg_bonus, ab.uses_remaining])
 	# Ironwood Bark R1: activating Rage grants temp HP (1d6 × rage bonus).
 	if GameState.get_talent_rank("ironwood_bark") >= 1:
 		var ib_thp: int = Rng.roll(6) * rage_dmg_bonus
@@ -1161,7 +1169,6 @@ func _end_rage() -> void:
 	_rage_turns = 0
 	GameState.is_raging = false
 	GameState.rage_turns_remaining = 0
-	GameState.player_evades_opportunity_attacks = false
 	$AnimatedSprite2D.modulate = Color(1.0, 1.0, 1.0)
 
 # Branching Strike reach bonus, Divine Fury flat bonus, and weapon proficiency bonus are all
@@ -1222,11 +1229,14 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Heavy weapon penalty: STR < 13 imposes Disadvantage
 	var weapon_item_ref: Item = GameState.equipped_weapon
 	if weapon_item_ref != null and weapon_item_ref.is_heavy and stats.strength < 13: disadv_count += 1
-	# Natural Rager Wolf: ADV when enough enemies are in FOV while Raging
-	var wolf_nr_rank: int = GameState.get_talent_rank("natural_rager")
-	if wolf_nr_rank >= 1 and _is_raging and GameState.natural_rager_form == "Wolf" and is_str_weapon:
-		var wolf_threshold: int = [0, 4, 3, 2][mini(wolf_nr_rank, 3)]
-		if _dungeon_floor != null and _dungeon_floor.get_visible_enemies().size() >= wolf_threshold:
+	# Animal Form Wolf: ADV when enough enemies are in FOV — always active in Wolf form (no
+	# Rage required). Enhanced Forms lowers the threshold; R3 also counts 1 enemy + 1 friendly.
+	if GameState.natural_rager_form == "Wolf" and is_str_weapon and _dungeon_floor != null:
+		var enh_rank: int = GameState.get_talent_rank("enhanced_forms")
+		var wolf_threshold: int = [4, 4, 3, 2][mini(enh_rank, 3)]
+		var visible_enemies: int = _dungeon_floor.get_visible_enemies().size()
+		var r3_alt: bool = enh_rank >= 3 and visible_enemies >= 1 and GameState.player_companion != null and is_instance_valid(GameState.player_companion)
+		if visible_enemies >= wolf_threshold or r3_alt:
 			adv_count += 1
 	if vex_triggered:
 		_vex_adv_target = null
@@ -1268,8 +1278,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
 		1 if is_crit else 0, 1 if is_nat_one else 0]
 
-	# Blessed Warrior heal resolves off the very next attack this turn regardless of hit/miss.
-	_zealot.resolve_blessed_warrior_heal()
+	# Zealot Strike heal resolves off the very next melee attack this turn regardless of hit/miss.
+	_zealot.resolve_zealot_strike_heal()
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_verb: String = "strike at" if is_monk_unarmed else ("punch" if is_unarmed else "swing")
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
@@ -1304,35 +1314,30 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
 
-	# All bonus damage sources (Frenzy, Ironwood Bark, Divine Fury) are computed BEFORE
+	# All bonus damage sources (Ironwood Bark, Judgement Day) are computed BEFORE
 	# take_damage/show_damage and folded into one number — see "damage stacking" rule in
 	# scripts/entities/CLAUDE.md. Never call take_damage/show_damage separately per source.
 	# Each source keeps its own named amount in dmg_meta (not just a combined "bonus" total)
 	# so the hover tooltip can name exactly which source(s) fired — the visible log line only
 	# ever shows the single combined damage number, never a per-source text breakdown.
+	# Frenzy (Berserker) is its own action (player_berserker.gd) — it no longer piggybacks a
+	# bonus onto ordinary attacks.
 	var frenzy_bonus: int = 0
 	var ironwood_bonus: int = 0
-	var divine_bonus: int = 0
-
-	var frenzy_rank: int = GameState.get_talent_rank("frenzy")
-	if frenzy_rank >= 1 and _is_raging and is_str_weapon and not _frenzy_triggered_this_turn:
-		_frenzy_triggered_this_turn = true
-		var frenzy_sides: int = [0, 4, 6, 8][frenzy_rank]
-		var frenzy_roll: int = Rng.roll(frenzy_sides)
-		frenzy_bonus = frenzy_roll * stats.rage_bonus_damage
+	var judgement_bonus: int = 0
 
 	# Ironwood Bark R3: next attack this turn deals bonus damage equal to the temp HP snapshotted at turn start.
 	if _ironwood_bark_bonus_pending > 0:
 		ironwood_bonus = _ironwood_bark_bonus_pending
 		_ironwood_bark_bonus_pending = 0
 
-	# Divine Fury: first attack each turn (any weapon), regardless of Rage state.
-	var df_rank: int = GameState.get_talent_rank("divine_fury")
-	if df_rank >= 1 and not _divine_fury_triggered_this_turn:
-		_divine_fury_triggered_this_turn = true
-		divine_bonus = Rng.roll(6) + CombatMath.divine_fury_flat_bonus(df_rank, stats.character_level)
+	# Judgement Day: consumed on the attack AFTER the Zealot Strike heal that armed it.
+	if _zealot.judgement_day_pending:
+		_zealot.judgement_day_pending = false
+		var jd_rank: int = GameState.get_talent_rank("judgement_day")
+		judgement_bonus = jd_rank * stats.rage_bonus_damage * Rng.roll(6)
 
-	var bonus_dmg: int = frenzy_bonus + ironwood_bonus + divine_bonus
+	var bonus_dmg: int = frenzy_bonus + ironwood_bonus + judgement_bonus
 	var actual: int = enemy.stats.take_damage(pre_crit + bonus_dmg)
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
@@ -1342,8 +1347,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
 		{"name": "Frenzy", "amount": frenzy_bonus, "color": "red"},
 		{"name": "Ironwood Bark", "amount": ironwood_bonus, "color": "cyan"},
-		{"name": "%s — Divine Fury" % GameState.zealot_divine_fury_type, "amount": divine_bonus,
-			"color": "gold" if GameState.zealot_divine_fury_type == "Radiant" else "purple"},
+		{"name": "%s — Judgement Day" % _zealot.judgement_day_damage_type(), "amount": judgement_bonus,
+			"color": "gold"},
 	])
 	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,bonus=%s,crit=%d,final=%d" % [
 		die_roll, w_dmin, w_dmax, w_enh, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
@@ -1649,47 +1654,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 		_finish_kill(enemy)
 
 func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
-	# Rager R3: chance to grant a free action after attacking (once per round)
-	if _is_raging and GameState.get_talent_rank("rager") >= 3 and not _rager_attack_triggered:
-		if Rng.roll(100) <= GameState.player_stats.rage_bonus_damage * 10:
-			_rager_attack_triggered = true
-			_rage_attacked_this_turn = true  # pause rage countdown on revert
-			GameState.game_log("[color=orange]Rager: fury drives you — the attack didn't cost a turn![/color]")
-			_reverted_this_round = true
-			TurnManager.revert_to_waiting()
-			return
 	TurnManager.on_player_action_complete()
-
-func try_retaliation(attacker: Enemy) -> void:
-	var rank: int = GameState.get_talent_rank("retaliation")
-	if rank < 1:
-		return
-	var rage_bonus: int = stats.rage_bonus_damage
-	var melee_item: Item = GameState.equipment.get("melee", null)
-	var wpn_roll: int = 0
-	var wpn_bonus: int = 0
-	if melee_item != null:
-		wpn_roll = Rng.range_i(melee_item.damage_die_min, melee_item.damage_die_max)
-		wpn_bonus = melee_item.bonus_damage
-	var wpn_dmg: int = wpn_roll + wpn_bonus
-	var ret_dmg: int = 0
-	match rank:
-		1: ret_dmg = rage_bonus                            # rage bonus only
-		2: ret_dmg = wpn_dmg                               # weapon only — rage bonus NOT included at rank 2 (intentional)
-		3: ret_dmg = wpn_dmg + rage_bonus + stats.str_modifier()
-	ret_dmg = maxi(0, ret_dmg)
-	if ret_dmg <= 0:
-		return
-	var dmg_type: String = melee_item.damage_type if melee_item != null else "Slashing"
-	attacker.stats.take_damage(ret_dmg)
-	if _dungeon_floor != null:
-		_dungeon_floor.show_damage(attacker.position, ret_dmg, false)
-	var ret_meta: String = "ret:rank=%d,wpn_roll=%d,wpn_bonus=%d,rage=%d,str=%d,final=%d" % [
-		rank, wpn_roll, wpn_bonus, rage_bonus, stats.str_modifier(), ret_dmg]
-	GameState.game_log("[color=orange]Retaliation! [url=%s][color=yellow]%d[/color][/url] %s back to %s.[/color]" % [
-		ret_meta, ret_dmg, dmg_type, attacker.display_name])
-	if attacker.stats.is_dead():
-		_finish_kill(attacker)
 
 
 func _finish_kill(enemy: Enemy, dropped_ammo: Item = null) -> void:
@@ -1769,14 +1734,22 @@ func _use_ability_slot(idx: int) -> void:
 		"danger_sense":            GameState.game_log("[color=gray]Danger Sense is passive — no activation needed.[/color]")
 		"unarmored_defense_monk":  GameState.game_log("[color=gray]Unarmored Defense is passive — active when unarmored (AC = 10+DEX+WIS).[/color]")
 		"martial_arts":            GameState.game_log("[color=gray]Martial Arts is passive — attack unarmed to trigger a bonus-action strike.[/color]")
-		"one_with_nature":         _wild_heart.activate_one_with_nature(ab)
-		"natural_rager":           _wild_heart.cycle_natural_rager_form(ab)
-		"natural_sleeper":         _wild_heart.cycle_natural_sleeper_form(ab)
+		"wild_companion":         _wild_heart.activate_one_with_nature(ab)
+		"animal_form":             _wild_heart.cycle_animal_form(ab)
+		"enhanced_forms":
+			GameState.game_log("[color=gray]%s is passive — upgrades Animal Form automatically.[/color]" % ab.ability_name)
+		"expanded_forms":         _wild_heart.cycle_natural_sleeper_form(ab)
 		"ironwood_bark":           GameState.game_log("[color=gray]Ironwood Bark is passive — triggers on Rage activation and while Raging.[/color]")
 		"grip_of_the_forest":      _activate_grip_of_the_forest()
 		"branching_strike":        GameState.game_log("[color=gray]Branching Strike is passive — reach and push apply automatically.[/color]")
-		"divine_fury":             _zealot.toggle_divine_fury(ab)
-		"blessed_warrior":         _zealot.activate_blessed_warrior(ab)
-		"zealous_presence":        _zealot.activate_zealous_presence(ab)
+		"zealot_strike":           _zealot.activate_zealot_strike(ab)
+		"judgement_day", "overheal_shield", "never_back_down":
+			GameState.game_log("[color=gray]%s is passive — upgrades Zealot Strike automatically.[/color]" % ab.ability_name)
+		"frenzy":                  _berserker.activate_frenzy()
+		"sadist_monster", "masochist_monster", "frenzied_killer":
+			GameState.game_log("[color=gray]%s is passive — upgrades Frenzy automatically.[/color]" % ab.ability_name)
+		"limit_break":             _scarred_warrior.activate_limit_break()
+		"born_in_blood", "enough_is_enough", "bloodied_regen":
+			GameState.game_log("[color=gray]%s is passive — upgrades Limit Break or triggers automatically.[/color]" % ab.ability_name)
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
 

@@ -9,7 +9,7 @@ const _CompanionClass = preload("res://scripts/entities/companion.gd")
 var player: Player
 
 func activate_one_with_nature(ab: Ability) -> void:
-	var rank: int = GameState.get_talent_rank("one_with_nature")
+	var rank: int = GameState.get_talent_rank("wild_companion")
 	if ab.uses_remaining <= 0:
 		GameState.game_log("[color=gray]One with Nature: no charge available (rest to restore).[/color]")
 		return
@@ -59,16 +59,21 @@ func find_free_adjacent() -> Vector2i:
 			return p
 	return Vector2i(-1, -1)
 
-func cycle_natural_rager_form(ab: Ability) -> void:
-	if GameState.is_raging:
-		GameState.game_log("[color=orange]Natural Rager: cannot switch form while raging.[/color]")
-		return
+func cycle_animal_form(ab: Ability) -> void:
 	var forms: PackedStringArray = ["Bear", "Eagle", "Wolf"]
 	var idx: int = forms.find(GameState.natural_rager_form)
 	GameState.natural_rager_form = forms[(idx + 1) % forms.size()]
+	# Eagle's "no Opportunity Attacks against you" is always-on while in Eagle form — no Rage
+	# or talent rank required, see markdowns/wild_heart.md.
+	GameState.player_evades_opportunity_attacks = GameState.natural_rager_form == "Eagle"
+	# Enhanced Forms R1: +1 FOV radius while in Eagle form.
+	var enh_rank: int = GameState.get_talent_rank("enhanced_forms")
+	GameState.fov_radius_bonus = 1 if (GameState.natural_rager_form == "Eagle" and enh_rank >= 1) else 0
+	if player._dungeon_floor != null:
+		player._dungeon_floor.update_fog(player.grid_pos)
 	ab.description = GameState._build_natural_rager_description()
 	GameState.ability_bar_changed.emit()
-	GameState.game_log("[color=orange]Natural Rager: switched to %s Form.[/color]" % GameState.natural_rager_form)
+	GameState.game_log("[color=orange]Animal Form: switched to %s Form.[/color]" % GameState.natural_rager_form)
 
 func cycle_natural_sleeper_form(ab: Ability) -> void:
 	# "" is the initial state (never chosen), not part of the cycle.

@@ -263,7 +263,7 @@ func _restore_companion_from_save() -> void:
 	GameState.pending_companion_restore = {}
 	if saved.is_empty() or not bool(saved.get("alive", false)):
 		return
-	var rank: int = GameState.get_talent_rank("one_with_nature")
+	var rank: int = GameState.get_talent_rank("wild_companion")
 	if rank <= 0:
 		return
 	var stats_data: Dictionary = GameState.WILD_HEART_COMPANION_STATS.get(rank, {})
@@ -340,7 +340,7 @@ func update_fog(player_pos: Vector2i) -> void:
 	_fov_player_pos = player_pos
 	var stairs_was_known: bool = _explored.get(_data.stairs_pos, false)
 
-	_visible_tiles = _compute_shadowcast(player_pos)
+	_visible_tiles = _compute_shadowcast(player_pos, FOV_RADIUS + GameState.fov_radius_bonus)
 
 	for y: int in _data.height:
 		for x: int in _data.width:
@@ -360,11 +360,11 @@ func update_fog(player_pos: Vector2i) -> void:
 	if not stairs_was_known and _explored.get(_data.stairs_pos, false):
 		GameState.stairs_discovered.emit()
 
-func _compute_shadowcast(center: Vector2i) -> Dictionary:
+func _compute_shadowcast(center: Vector2i, radius: int = FOV_RADIUS) -> Dictionary:
 	var visible: Dictionary = {}
 	visible[center] = true
 	for i: int in 8:
-		_cast_light(visible, center, FOV_RADIUS, 1, 1.0, 0.0,
+		_cast_light(visible, center, radius, 1, 1.0, 0.0,
 			_SC_XX[i], _SC_XY[i], _SC_YX[i], _SC_YY[i])
 	return visible
 
@@ -645,7 +645,8 @@ func get_visible_enemies() -> Array[Enemy]:
 	var result: Array[Enemy] = []
 	if _player == null:
 		return result
-	var r2: int = FOV_RADIUS * FOV_RADIUS
+	var eff_radius: int = FOV_RADIUS + GameState.fov_radius_bonus
+	var r2: int = eff_radius * eff_radius
 	for e: Enemy in _enemies:
 		if not is_instance_valid(e):
 			continue

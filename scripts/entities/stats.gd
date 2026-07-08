@@ -169,6 +169,11 @@ func take_damage(amount: int) -> int:
 func is_dead() -> bool:
 	return current_hp <= 0
 
+# Shared "Bloodied" mechanic (Scarred Warrior and any future consumer) — see markdowns/scarred_warrior.md.
+# Below 50% max HP (integer division, round down), recomputed live from current/max HP.
+func is_bloodied() -> bool:
+	return current_hp < max_hp / 2
+
 func tick_status() -> int:
 	var dmg: int = 0
 	if poison_turns > 0:

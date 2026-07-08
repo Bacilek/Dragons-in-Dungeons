@@ -275,7 +275,7 @@ func _refresh() -> void:
 func _refresh_short() -> void:
 	var sides: int = GameState.hit_die_sides()
 	var con_mod: int = GameState.player_stats.con_modifier()
-	var level: int = GameState.player_stats.character_level
+	var level: int = GameState.max_hit_dice()
 	_rests_label.text = "Short rests remaining: %d / %d" % [GameState.short_rests_remaining, GameState.max_short_rests]
 	_dice_avail_label.text = "Hit dice available: %d / %d   (d%d)" % [GameState.hit_dice, level, sides]
 	_dice_label.text = str(_dice_to_spend)

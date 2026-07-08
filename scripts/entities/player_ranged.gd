@@ -114,8 +114,7 @@ func ranged_attack(enemy: Enemy) -> void:
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
 		1 if is_crit else 0, 1 if is_nat_one else 0]
 
-	# Blessed Warrior heal resolves off the very next attack this turn regardless of hit/miss.
-	player._zealot.resolve_blessed_warrior_heal()
+	# Zealot Strike / Judgement Day are melee-only (see markdowns/zealot.md) — no ranged hook here.
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
 		GameState.game_log("You shoot at [color=orange]%s[/color] — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
@@ -146,24 +145,12 @@ func ranged_attack(enemy: Enemy) -> void:
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
 
-	# Divine Fury folded into the same hit/floater — see damage stacking rule in
-	# scripts/entities/CLAUDE.md. Named breakdown lives only in dmg_meta (for the hover
-	# tooltip); the visible log line always shows just the single combined number.
-	var r_divine_bonus: int = 0
-	var r_df_rank: int = GameState.get_talent_rank("divine_fury")
-	if r_df_rank >= 1 and not player._divine_fury_triggered_this_turn:
-		player._divine_fury_triggered_this_turn = true
-		r_divine_bonus = Rng.roll(6) + CombatMath.divine_fury_flat_bonus(r_df_rank, player.stats.character_level)
-
-	var actual: int = enemy.stats.take_damage(r_pre_crit + r_divine_bonus)
+	var actual: int = enemy.stats.take_damage(r_pre_crit)
 	enemy.update_hp_bar()
 	if player._dungeon_floor != null:
 		player._dungeon_floor.show_damage(enemy.position, actual, false)
 
-	var bonus_sources: String = CombatMath.encode_bonus_sources([
-		{"name": "%s — Divine Fury" % GameState.zealot_divine_fury_type, "amount": r_divine_bonus,
-			"color": "gold" if GameState.zealot_divine_fury_type == "Radiant" else "purple"},
-	])
+	var bonus_sources: String = CombatMath.encode_bonus_sources([])
 	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,dex=%d,bonus=%s,crit=%d,final=%d" % [
 		r_die_roll, r_dmin, r_dmax, r_wpn_enh, dex_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
