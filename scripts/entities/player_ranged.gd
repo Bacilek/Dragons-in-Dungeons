@@ -84,6 +84,7 @@ func ranged_attack(enemy: Enemy) -> void:
 	# Advantage / Disadvantage: sources are counted (house rule — net decides outcome, not
 	# a simple boolean OR/cancel). See player.gd._bump_attack() for the reference melee implementation.
 	var adv_count: int = 0
+	adv_count += player._base_talents.consume_psycho_or_battlefield_adv()
 	var disadv_count: int = 0
 	if player._vfx.has_advantage(enemy): adv_count += 1
 	if player.stats.zealous_presence_turns > 0: adv_count += 1
@@ -105,7 +106,8 @@ func ranged_attack(enemy: Enemy) -> void:
 	if vex_triggered:
 		player._vex_adv_target = null
 	var roll: int = die + dex_mod + weapon_bonus
-	var is_crit: bool = die == 20
+	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
+	if is_crit: player._base_talents.on_crit_or_kill()
 	var is_nat_one: bool = die == 1
 
 	var r_wpn_enh: int = weapon.bonus_damage if weapon != null else 0

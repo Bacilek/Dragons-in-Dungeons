@@ -60,6 +60,14 @@ static func melee_reach(weapon: Item, branching_strike_rank: int) -> int:
 		bonus += 1
 	return 1 + bonus
 
+# Psycho R3 (Barbarian Tier 1): while attacking with Advantage, crit range widens to 19-20.
+# Shared by every player attack-roll site (melee, cleave, off-hand, ranged, thrown, OA) instead
+# of duplicating the one-line condition — see markdowns/barbarian_base.md.
+static func is_critical_hit(die: int, adv: bool) -> bool:
+	if die == 20:
+		return true
+	return adv and die == 19 and GameState.get_talent_rank("psycho") >= 3
+
 # Divine Fury: rank 3 replaces rank 2's formula (not additive) — always exactly one formula per rank.
 static func divine_fury_flat_bonus(rank: int, level: int) -> int:
 	match rank:

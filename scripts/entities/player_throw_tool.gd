@@ -185,6 +185,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 		return
 
 	var adv_count: int = 0
+	adv_count += player._base_talents.consume_psycho_or_battlefield_adv()
 	var disadv_count: int = 0
 	if player._vfx.has_advantage(enemy): adv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
@@ -200,7 +201,8 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
 	var roll: int = die + total_hit_bonus
-	var is_crit: bool = die == 20
+	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
+	if is_crit: player._base_talents.on_crit_or_kill()
 	var is_nat_one: bool = die == 1
 
 	var mod_key: String = "dex" if (weapon.is_finesse and dex_mod > str_mod) else "str"

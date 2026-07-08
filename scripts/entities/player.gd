@@ -12,6 +12,7 @@ var _wild_heart: PlayerWildHeart
 var _zealot: PlayerZealot
 var _berserker: PlayerBerserker
 var _scarred_warrior: PlayerScarredWarrior
+var _base_talents: PlayerBaseTalents
 var _ammo: PlayerAmmo
 var _throw_tool: PlayerThrowTool
 var _thief_tools: PlayerThiefTools
@@ -106,6 +107,8 @@ func _ready() -> void:
 	_zealot = PlayerZealot.new(); _zealot.player = self; add_child(_zealot)
 	_berserker = PlayerBerserker.new(); _berserker.player = self; add_child(_berserker)
 	_scarred_warrior = PlayerScarredWarrior.new(); _scarred_warrior.player = self; add_child(_scarred_warrior)
+	_base_talents = PlayerBaseTalents.new(); _base_talents.player = self; add_child(_base_talents)
+	GameState.force_rage_end.connect(_end_rage)
 	_ammo = PlayerAmmo.new(); _ammo.player = self; add_child(_ammo)
 	_throw_tool = PlayerThrowTool.new(); _throw_tool.player = self; add_child(_throw_tool)
 	_thief_tools = PlayerThiefTools.new(); _thief_tools.player = self; add_child(_thief_tools)
@@ -179,6 +182,10 @@ func _on_turn_started() -> void:
 		_berserker.tick_frenzied_killer()
 		# Zealot Strike deactivates with no effect if the turn ends without a melee attack.
 		_zealot.zealot_strike_armed = false
+		# Battlefield Expert R3: reads "was hit last turn" — same flag the rage-tick block below
+		# reads. Read-only here (not cleared) so Rage's own combat_last_turn check further down
+		# still sees the value; the flag is cleared once, after both readers, further below.
+		_base_talents.tick_free_sidestep(GameState.player_was_hit_this_turn)
 	GameState.ability_bar_changed.emit()
 	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
 	# Only fires on real turns, not on reverted turns.
@@ -250,6 +257,11 @@ func _on_turn_started() -> void:
 		if _rage_turns <= 0:
 			_end_rage()
 			GameState.game_log("[color=gray]Your Rage fades.[/color]")
+	# player_was_hit_this_turn is otherwise only cleared above while raging — clear it here too
+	# so non-raging Barbarians' Battlefield Expert R3 check (read further up) is scoped to
+	# "last turn" instead of leaking true forever after the first hit of the run.
+	if not came_from_revert:
+		GameState.player_was_hit_this_turn = false
 
 	# Short rest in progress — player waits in place
 	if GameState.short_rest_active:
@@ -918,6 +930,11 @@ func _resolve_enemy_opportunity_attacks(prev: Vector2i, next: Vector2i) -> void:
 		var reach: int = e.melee_reach()
 		var d_prev: int = maxi(absi(prev.x - e.grid_pos.x), absi(prev.y - e.grid_pos.y))
 		var d_next: int = maxi(absi(next.x - e.grid_pos.x), absi(next.y - e.grid_pos.y))
+		# Battlefield Expert: a side-step (still-adjacent lateral move around this same enemy)
+		# already falls through the no-OA branch below with zero changes to OA logic itself —
+		# see markdowns/barbarian_base.md.
+		if d_prev <= reach and d_next <= reach and prev != next:
+			_base_talents.on_sidestep(e)
 		if d_prev > reach or d_next <= reach:
 			continue
 		if evading:
@@ -1022,6 +1039,9 @@ func _try_move(dir: Vector2i) -> void:
 	_resolve_enemy_opportunity_attacks(prev_pos, target)
 	if GameState.is_game_over:
 		return
+	# Battlefield Expert R3: captured here (right after side-step detection) since
+	# consume_free_sidestep() clears sidestep_detected_this_move — used at the end of this move.
+	var _free_sidestep: bool = _base_talents.consume_free_sidestep()
 	TurnManager.begin_player_action()
 	$AnimatedSprite2D.flip_h = dir.x < 0
 	$AnimatedSprite2D.play("run")
@@ -1068,6 +1088,11 @@ func _try_move(dir: Vector2i) -> void:
 		if _new_ac_bonus != GameState.terrain_ac_bonus:
 			GameState.terrain_ac_bonus = _new_ac_bonus
 			GameState.recalculate_stats()
+	if _free_sidestep:
+		GameState.game_log("[color=cyan]Battlefield Expert: that side-step didn't cost you your turn.[/color]")
+		_reverted_this_round = true
+		TurnManager.revert_to_waiting()
+		return
 	TurnManager.on_player_action_complete()
 	# Slowed extra turn cost (skip if Panther/Salmon bypassed the terrain penalty)
 	if GameState.player_stats.slowed_turns > 0 and not _panther_bypass and not _salmon_bypass:
@@ -1215,6 +1240,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Advantage sources are counted; net ADV count vs DISADV count decides outcome.
 	# Two ADV sources + one DISADV = net +1 = ADV (house rule: count beats cancel).
 	var adv_count: int = 0
+	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	var disadv_count: int = 0
 	var reckless_flat_bonus: int = 0  # rank 1 flat +2 (not ADV)
 	if _vfx.has_advantage(enemy): adv_count += 1
@@ -1258,7 +1284,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
 	var roll: int = die + total_hit_bonus + reckless_flat_bonus
-	var is_crit: bool = die == 20
+	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
+	if is_crit: _base_talents.on_crit_or_kill()
 	var is_nat_one: bool = die == 1
 
 	# Track that we attacked while raging (for rank 1 countdown pause)
@@ -1333,6 +1360,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var frenzy_bonus: int = 0
 	var ironwood_bonus: int = 0
 	var judgement_bonus: int = 0
+	var psycho_bonus: int = 0
 
 	# Ironwood Bark R3: next attack this turn deals bonus damage equal to the temp HP snapshotted at turn start.
 	if _ironwood_bark_bonus_pending > 0:
@@ -1345,7 +1373,12 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		var jd_rank: int = GameState.get_talent_rank("judgement_day")
 		judgement_bonus = jd_rank * stats.rage_bonus_damage * Rng.roll(6)
 
-	var bonus_dmg: int = frenzy_bonus + ironwood_bonus + judgement_bonus
+	# Psycho R2: attacking with Advantage (from ANY source, not just this talent's own R1 trigger)
+	# adds a second flat STR modifier to damage.
+	if adv and GameState.get_talent_rank("psycho") >= 2:
+		psycho_bonus = str_mod
+
+	var bonus_dmg: int = frenzy_bonus + ironwood_bonus + judgement_bonus + psycho_bonus
 	var actual: int = enemy.stats.take_damage(pre_crit + bonus_dmg)
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
@@ -1357,6 +1390,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		{"name": "Ironwood Bark", "amount": ironwood_bonus, "color": "cyan"},
 		{"name": "%s — Judgement Day" % _zealot.judgement_day_damage_type(), "amount": judgement_bonus,
 			"color": "gold"},
+		{"name": "Psycho", "amount": psycho_bonus, "color": "red"},
 	])
 	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,bonus=%s,crit=%d,final=%d" % [
 		die_roll, w_dmin, w_dmax, w_enh, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
@@ -1454,6 +1488,7 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var prof: int = CombatMath.weapon_prof_bonus(weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
 	var weapon_bonus: int = weapon.bonus_damage
 	var adv_count: int = 0
+	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	var disadv_count: int = 0
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	# Vex (Short Bow): future-proofing — a weapon could carry both Cleave and Vex.
@@ -1468,7 +1503,8 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
 	var roll: int = die + str_mod + prof + weapon_bonus
-	var is_crit: bool = die == 20
+	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
+	if is_crit: _base_talents.on_crit_or_kill()
 	var is_nat_one: bool = die == 1
 	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
 		die, die1, die2, str_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
@@ -1532,6 +1568,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	var prof: int = CombatMath.weapon_prof_bonus(weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
 	var weapon_bonus: int = weapon.bonus_damage
 	var adv_count: int = 0
+	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	var disadv_count: int = 0
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	var vex_triggered: bool = _vex_adv_target == enemy
@@ -1545,7 +1582,8 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
 	var roll: int = die + attack_mod + prof + weapon_bonus
-	var is_crit: bool = die == 20
+	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
+	if is_crit: _base_talents.on_crit_or_kill()
 	var is_nat_one: bool = die == 1
 	var mod_key: String = "dex" if (weapon.is_finesse and dex_mod > str_mod) else "str"
 	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
@@ -1606,6 +1644,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	var is_finesse_weapon: bool = not is_unarmed and weapon.is_finesse
 	var attack_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
 	var adv_count: int = 0
+	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	var disadv_count: int = 0
 	if weapon != null and weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
@@ -1616,7 +1655,8 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
 	var roll: int = die + attack_mod + prof + weapon_bonus
-	var is_crit: bool = die == 20
+	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
+	if is_crit: _base_talents.on_crit_or_kill()
 	var is_nat_one: bool = die == 1
 	var mod_key: String = "dex" if (is_monk_unarmed or (is_finesse_weapon and dex_mod > str_mod)) else "str"
 	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
@@ -1669,6 +1709,7 @@ func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
 
 
 func _finish_kill(enemy: Enemy, dropped_ammo: Item = null) -> void:
+	_base_talents.on_crit_or_kill()
 	GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
 	GameState.gain_exp(maxi(1, enemy.exp_reward / 2))
 	var was_boss: bool = enemy.is_boss
