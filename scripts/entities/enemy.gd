@@ -573,12 +573,6 @@ func _attack_player(_player: Player) -> void:
 	if display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
 		if GameState.apply_player_status("poison", 3):
 			GameState.game_log("[color=lime]You are poisoned! (3 turns)[/color]")
-	# Retaliation: Barbarian Berserker T2 counter-damage when hit while raging.
-	# Guard on actual > 0 removed: we're past miss/invincible early returns so the enemy
-	# landed a hit. Rage DR can floor final_amount to 0 while Stats.take_damage still
-	# enforces maxi(1, dmg) — checking actual would silently block retaliation.
-	if GameState.is_raging:
-		_player.try_retaliation(self)
 
 # Companion (Wild Heart summon) as attack target — see docs/architecture/enemy_system_architecture.md §5.
 # No invincible/poison/Retaliation hooks: those are player-only systems. Companion.take_damage_from_enemy()

@@ -9,7 +9,8 @@ extends CanvasLayer
 # GameState.choose_subclass(), which routes through the same unlock_tier2() machinery the
 # God-Mode debug arrows use.
 
-const PANEL_W: float = 920.0
+const PANEL_W: float = 1360.0
+const GRID_COLS: int = 3
 const MARGIN: float = 24.0
 const CARD_GAP: float = 16.0
 const ICON_SIZE: float = 44.0
@@ -21,17 +22,17 @@ const SUBCLASSES: Array[Dictionary] = [
 	{
 		"name": "Berserker",
 		"talents": [
-			{"id": "rager", "name": "Rager", "blurb": "Berserker fury bends the flow of combat while Raging."},
-			{"id": "frenzy", "name": "Frenzy", "blurb": "First attack each turn deals bonus Rage-scaled damage while Raging."},
-			{"id": "retaliation", "name": "Retaliation", "blurb": "Strike back at enemies who hit you in melee."},
+			{"id": "sadist_monster", "name": "Sadist Monster", "blurb": "Frenzy deals bonus damage to the enemy only, not to you."},
+			{"id": "masochist_monster", "name": "Masochist Monster", "blurb": "Being hurt on your turn fuels your AC and temp HP."},
+			{"id": "frenzied_killer", "name": "Frenzied Killer", "blurb": "Frenzy's use refreshes on kills, crits, and every 3 turns."},
 		],
 	},
 	{
 		"name": "Zealot",
 		"talents": [
-			{"id": "divine_fury", "name": "Divine Fury", "blurb": "Your first attack each turn is charged with Radiant or Necrotic power."},
-			{"id": "blessed_warrior", "name": "Blessed Warrior", "blurb": "A pool of divine healing charges you can call on mid-fight."},
-			{"id": "zealous_presence", "name": "Zealous Presence", "blurb": "Rally yourself and nearby allies with Advantage on all rolls."},
+			{"id": "judgement_day", "name": "Judgement Day", "blurb": "After healing from Zealot Strike, your next attack deals bonus Radiant damage."},
+			{"id": "overheal_shield", "name": "Overheal Shield", "blurb": "Overhealing from Zealot Strike generates Temporary HP."},
+			{"id": "never_back_down", "name": "Never Back Down", "blurb": "Gain additional max Hit Dice."},
 		],
 	},
 	{
@@ -45,9 +46,17 @@ const SUBCLASSES: Array[Dictionary] = [
 	{
 		"name": "Wild Heart",
 		"talents": [
-			{"id": "one_with_nature", "name": "One with Nature", "blurb": "Summon an animal companion that fights alongside you."},
-			{"id": "natural_rager", "name": "Natural Rager", "blurb": "Unlock Bear/Eagle/Wolf forms while Raging. 1 rank grants all 3 forms."},
-			{"id": "natural_sleeper", "name": "Natural Sleeper", "blurb": "Unlock Owl/Panther/Salmon terrain forms. Activate on floor entry."},
+			{"id": "wild_companion", "name": "Wild Companion", "blurb": "After each long rest, summon an animal companion that fights alongside you."},
+			{"id": "enhanced_forms", "name": "Enhanced Forms", "blurb": "Upgrades the base Bear/Eagle/Wolf Animal Forms."},
+			{"id": "expanded_forms", "name": "Expanded Forms", "blurb": "Unlock Owl/Panther/Salmon terrain forms. Activates on long rest."},
+		],
+	},
+	{
+		"name": "Scarred Warrior",
+		"talents": [
+			{"id": "born_in_blood", "name": "Born in Blood", "blurb": "Damage scaling changes based on Bloodied status."},
+			{"id": "enough_is_enough", "name": "Enough is Enough", "blurb": "Upgrades Limit Break with mastery, splash, and piercing range."},
+			{"id": "bloodied_regen", "name": "Spite", "blurb": "While Bloodied, regenerate Temporary HP each turn."},
 		],
 	},
 ]
@@ -91,7 +100,7 @@ func _build_ui() -> void:
 	_panel.add_child(title)
 
 	var hint := Label.new()
-	hint.text = "The floor-5 boss has fallen — pick one of the four paths below. This choice is permanent."
+	hint.text = "The floor-5 boss has fallen — pick one of the paths below. This choice is permanent."
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.add_theme_color_override("font_color", Color(0.65, 0.65, 0.70))
 	hint.position = Vector2(MARGIN, 50.0)
@@ -103,17 +112,19 @@ func _build_ui() -> void:
 	sep.size = Vector2(PANEL_W - 24.0, 2.0)
 	_panel.add_child(sep)
 
-	# ── 2×2 card grid ─────────────────────────────────────────────────────────────
-	var card_w: float = (PANEL_W - MARGIN * 2.0 - CARD_GAP) * 0.5
+	# ── N-column card grid (GRID_COLS wide, as many rows as needed) ────────────────
+	var cols: int = mini(GRID_COLS, SUBCLASSES.size())
+	var rows: int = ceili(float(SUBCLASSES.size()) / float(cols))
+	var card_w: float = (PANEL_W - MARGIN * 2.0 - CARD_GAP * float(cols - 1)) / float(cols)
 	var card_h: float = 46.0 + 3.0 * ROW_H + 8.0
 	var y0: float = 92.0
 	for i: int in SUBCLASSES.size():
-		var col: int = i % 2
-		var row: int = floori(i / 2.0)
+		var col: int = i % cols
+		var row: int = i / cols
 		var pos := Vector2(MARGIN + col * (card_w + CARD_GAP), y0 + row * (card_h + CARD_GAP))
 		_build_card(SUBCLASSES[i], pos, Vector2(card_w, card_h))
 
-	var grid_h: float = 2.0 * card_h + CARD_GAP
+	var grid_h: float = float(rows) * card_h + float(rows - 1) * CARD_GAP
 
 	# ── Confirm button ────────────────────────────────────────────────────────────
 	var confirm_y: float = y0 + grid_h + 18.0

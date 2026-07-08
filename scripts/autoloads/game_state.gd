@@ -57,18 +57,30 @@ const TALENT_ICON_FOLDER: Dictionary = {
 	"rage": "base/primal_fury",
 	"reckless_attack": "base/reckless_attack",
 	"danger_sense": "base/feral_instinct",
-	"rager": "berserker/unchained_momentum",
+	# Berserker
 	"frenzy": "berserker/crimson_cleaver",
-	"retaliation": "berserker/vengeful_reflex",
-	"one_with_nature": "wild_heart/primal_bond",
-	"natural_rager": "wild_heart/aspect_of_the_wild",
-	"natural_sleeper": "wild_heart/dreamwalker_instinct",
+	"sadist_monster": "berserker/unchained_momentum",
+	"masochist_monster": "berserker/vengeful_reflex",
+	"frenzied_killer": "berserker/frenzied_killer",
+	# Scarred Warrior
+	"limit_break": "scarred_warrior/limit_break",
+	"born_in_blood": "scarred_warrior/born_in_blood",
+	"enough_is_enough": "scarred_warrior/enough_is_enough",
+	"bloodied_regen": "scarred_warrior/bloodied_regen",
+	# Wild Heart
+	"animal_form": "wild_heart/aspect_of_the_wild",
+	"expanded_forms": "wild_heart/dreamwalker_instinct",
+	"enhanced_forms": "wild_heart/primal_bond",
+	"wild_companion": "wild_heart/wild_companion",
+	# World Tree (unchanged)
 	"ironwood_bark": "world_tree/ironwood_bark",
 	"grip_of_the_forest": "world_tree/grip_of_the_forest",
 	"branching_strike": "world_tree/branching_strike",
-	"divine_fury": "zealot/divine_fury",
-	"blessed_warrior": "zealot/blessed_warrior",
-	"zealous_presence": "zealot/zealous_presence",
+	# Zealot
+	"zealot_strike": "zealot/divine_fury",
+	"judgement_day": "zealot/zealous_presence",
+	"overheal_shield": "zealot/blessed_warrior",
+	"never_back_down": "zealot/never_back_down",
 }
 
 ## Returns the rank-specific icon for a talent/ability (rank clamped to 1-3); "" if unmapped.
@@ -129,8 +141,17 @@ const TIER2_GATING_BOSS_ID: String = "big_demon"
 # tier_unlocked(3) reads it so the accessor shape is final before Tier 3 lands.
 var tier3_selected_class: int = -1
 var subclass_chosen: bool = false  # true once the player has made their one-time subclass choice
-const TIER2_SUBCLASSES: PackedStringArray = ["Berserker", "Zealot", "World Tree", "Wild Heart"]
+const TIER2_SUBCLASSES: PackedStringArray = ["Berserker", "Scarred Warrior", "Wild Heart", "Zealot", "World Tree"]
 var active_tier2_subclass: String = "Berserker"
+# Each subclass's free, rank-independent activation ability (granted on subclass selection,
+# not gated by any talent investment) — see the *.md specs in /markdowns/. World Tree has no
+# such base ability; its three Tier 2 talents are all still individually rank-1-gated.
+const TIER2_BASE_ABILITY_ID: Dictionary = {
+	"Berserker": "frenzy",
+	"Scarred Warrior": "limit_break",
+	"Wild Heart": "animal_form",
+	"Zealot": "zealot_strike",
+}
 var short_rest_active: bool = false
 var short_rest_turns_remaining: int = 0
 var short_rest_pending_heal: int = 0
@@ -149,6 +170,8 @@ var active_sleeper_form: String = ""    # locks in on long_rest() only
 var wild_heart_sleeper_active: bool = false
 # Eagle R3: no-op pending future Opportunity Attack system — do NOT remove this flag.
 var player_evades_opportunity_attacks: bool = false
+# Wild Heart Enhanced Forms R1: +1 while in Eagle form, threaded into DungeonFloor's FOV radius.
+var fov_radius_bonus: int = 0
 # Reference to living companion node (null when no companion). Set by player.gd.
 var player_companion: Variant = null
 # Companion state loaded from a save ({alive: bool, current_hp: int}, {} = none) —
@@ -309,7 +332,7 @@ func _give_barbarian_starting_items() -> void:
 	rage.ability_id = "rage"
 	rage.ability_name = "Rage"
 	rage.description = _build_rage_description()
-	rage.icon_path = talent_icon_path("rage", maxi(get_talent_rank("rage"), 1))
+	rage.icon_path = talent_icon_path("rage", 3)
 	rage.uses_remaining = player_stats.rage_uses_remaining
 	rage.uses_max = player_stats.rage_uses_max
 	add_ability(rage)
@@ -355,6 +378,21 @@ func add_ability(ability: Ability) -> bool:
 			return true
 	game_log("[color=red]Ability bar is full![/color]")
 	return false
+
+## Grants a subclass's free, rank-independent Tier 2 activation ability (Frenzy, Limit Break,
+## Animal Form, Zealot Strike) directly at subclass selection — NOT gated by any talent rank.
+## No-op if already present (idempotent — safe to call from every _setup_X_tier2_talents()).
+func _grant_tier2_base_ability(id: String, ability_name: String, description: String) -> void:
+	if _find_ability_by_id(id) != null:
+		return
+	var ab := Ability.new()
+	ab.ability_id = id
+	ab.ability_name = ability_name
+	ab.description = description
+	ab.icon_path = talent_icon_path(id, 1)
+	ab.uses_remaining = 0
+	ab.uses_max = 0
+	add_ability(ab)
 
 func advance_floor() -> void:
 	current_floor += 1
@@ -421,22 +459,19 @@ func long_rest() -> void:
 	player_stats.slowed_turns = 0
 	player_status_changed.emit()
 	player_stats.rage_uses_remaining = player_stats.rage_uses_max
-	hit_dice = player_stats.character_level
+	hit_dice = max_hit_dice()
 	short_rests_remaining = max_short_rests
+	berserker_frenzy_used = false
+	berserker_turns_since_frenzy = 0
+	scarred_warrior_limit_break_used = false
 	# Natural Sleeper activates/locks in on long rest only (not short rest, not floor descent).
-	wild_heart_sleeper_active = get_talent_rank("natural_sleeper") >= 1
+	wild_heart_sleeper_active = get_talent_rank("expanded_forms") >= 1
 	active_sleeper_form = natural_sleeper_form
 	if wild_heart_sleeper_active:
 		if active_sleeper_form != "":
 			game_log("[color=cyan]Natural Sleeper: you wake — %s Form is active.[/color]" % active_sleeper_form)
 		else:
 			game_log("[color=gray]Natural Sleeper: no form chosen — press the ability to select one.[/color]")
-	# Zealot long-rest resources (independent pools — see CLAUDE.md "long-rest-recharged resource" pattern).
-	var bw_rank: int = get_talent_rank("blessed_warrior")
-	if bw_rank >= 1:
-		zealot_blessed_charges = BLESSED_WARRIOR_MAX_CHARGES[bw_rank]
-	if get_talent_rank("zealous_presence") >= 1:
-		zealot_zp_charges = 1
 	if player_companion != null and is_instance_valid(player_companion):
 		player_companion.heal_to_max()
 		game_log("[color=lime]%s rests and recovers fully.[/color]" % player_companion.animal_name)
@@ -455,21 +490,32 @@ func _sync_ability_uses() -> void:
 		if ab.ability_id == "rage":
 			ab.uses_remaining = player_stats.rage_uses_remaining
 			ab.uses_max = player_stats.rage_uses_max
-		elif ab.ability_id == "one_with_nature":
+		elif ab.ability_id == "wild_companion":
 			ab.uses_remaining = 1  # always restore on long rest
 	ability_bar_changed.emit()
 
 # Triggered on short rest completion. Heals companion (if alive) AND restores One with Nature charge.
 # Natural Sleeper's form lock does NOT happen here — long rest only (see long_rest()).
 func _on_short_rest_completed() -> void:
+	if berserker_frenzy_used and _find_ability_by_id("frenzy") != null:
+		game_log("[color=lime]Frenzy: use refreshed.[/color]")
+	berserker_frenzy_used = false
+	berserker_turns_since_frenzy = 0
 	if player_companion != null and is_instance_valid(player_companion):
 		player_companion.heal_to_max()
 		game_log("[color=lime]%s rests and recovers fully.[/color]" % player_companion.animal_name)
-	var owtn: Ability = _find_ability_by_id("one_with_nature")
+	var owtn: Ability = _find_ability_by_id("wild_companion")
 	if owtn != null:
 		owtn.uses_remaining = 1
 		ability_bar_changed.emit()
 		game_log("[color=lime]One with Nature: companion charge refreshed.[/color]")
+
+## Never Back Down (Zealot): +1/+2/+4 max Hit Dice by rank (non-cumulative — matches every other
+## Barbarian talent's "higher rank replaces, doesn't stack with" convention).
+func max_hit_dice() -> int:
+	var rank: int = get_talent_rank("never_back_down")
+	var bonus: int = [0, 1, 2, 4][mini(rank, 3)]
+	return player_stats.character_level + bonus
 
 func hit_die_sides() -> int:
 	match player_stats.character_class:
@@ -571,12 +617,14 @@ func choose_subclass(subclass_name: String) -> void:
 func _setup_tier2_for_active_subclass() -> void:
 	match active_tier2_subclass:
 		"Berserker": _setup_barbarian_tier2_talents()
+		"Scarred Warrior": _setup_scarred_warrior_tier2_talents()
 		"Wild Heart": _setup_wild_heart_tier2_talents()
 		"World Tree": _setup_world_tree_tier2_talents()
 		"Zealot": _setup_zealot_tier2_talents()
 		_: pass
 
 func debug_switch_subclass(direction: int) -> void:
+	var old_base_ability_id: String = String(TIER2_BASE_ABILITY_ID.get(active_tier2_subclass, ""))
 	var idx: int = TIER2_SUBCLASSES.find(active_tier2_subclass)
 	if idx < 0:
 		idx = 0
@@ -587,6 +635,8 @@ func debug_switch_subclass(direction: int) -> void:
 	for t: Talent in _class_talents:
 		if t.tier == 2:
 			tier2_ids.append(t.talent_id)
+	if old_base_ability_id != "":
+		tier2_ids.append(old_base_ability_id)
 	# Clear tier 2 investments
 	for id: String in tier2_ids:
 		talent_investments.erase(id)
@@ -711,6 +761,7 @@ func recalculate_stats() -> void:
 			continue  # already handled above
 		s.armor_class += it.bonus_ac
 	s.armor_class += terrain_ac_bonus
+	s.armor_class += masochist_ac_bonus
 
 func move_item(src: String, src_idx: int, src_slot: String,
 			   dest: String, dest_idx: int, dest_slot: String) -> void:
@@ -878,6 +929,17 @@ func game_log(msg: String) -> void:
 
 # is_raging is set by player.gd and read here to apply damage resistance.
 var is_raging: bool = false
+# Berserker Frenzy — once per short rest (also resets on long rest). Frenzied Killer talent
+# refreshes it early on kill/crit/every-3-turns — see player_berserker.gd.
+var berserker_frenzy_used: bool = false
+# Frenzied Killer R3: turns since Frenzy was last used, incremented every real turn in
+# player.gd._on_turn_started(), reset to 0 whenever Frenzy is used or auto-refreshed.
+var berserker_turns_since_frenzy: int = 0
+# Masochist Monster R1: +1 AC until the start of the player's next turn, folded into
+# recalculate_stats() alongside terrain_ac_bonus. Set/cleared by player_berserker.gd.
+var masochist_ac_bonus: int = 0
+# Scarred Warrior Limit Break — once per long rest.
+var scarred_warrior_limit_break_used: bool = false
 # reckless_attack_active is set by player.gd; enemies read it to decide their attack bonus type.
 var reckless_attack_active: bool = false
 # Set true after first reckless attack this turn — locks the toggle and blocks further bonus.
@@ -896,24 +958,32 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 	if is_game_over or invincible:
 		return 0
 	var final_amount: int = amount
-	# Rage talent ranks 2+: physical damage reduction (Bludgeoning/Piercing/Slashing only).
-	# Status effects and traps pass damage_type="" — they bypass reduction intentionally.
+	# Rage baseline: flat 50% physical damage reduction while raging (Bludgeoning/Piercing/
+	# Slashing only), unconditional — no longer talent-gated. Status effects and traps pass
+	# damage_type="" — they bypass reduction intentionally.
 	const PHYSICAL_TYPES: Array = ["Slashing", "Piercing", "Bludgeoning"]
-	const CELESTIAL_TYPES: Array = ["Necrotic", "Radiant", "Psychic"]
+	const ELEMENTAL_TYPES: Array = ["Fire", "Cold", "Lightning", "Thunder", "Acid", "Poison"]
+	const MAGICAL_TYPES: Array = ["Radiant", "Necrotic", "Force"]
 	var is_physical: bool = damage_type in PHYSICAL_TYPES
-	var rage_rank: int = get_talent_rank("rage")
-	if is_raging and not ignore_rage and rage_rank >= 2 and is_physical:
-		var reduction: float = 0.5 if rage_rank >= 3 else 0.25
-		final_amount = int(floor(float(amount) * (1.0 - reduction)))
-	# Natural Rager Bear form: magical DR while raging (R1: 25%, R2+: 50%, R3: +50% celestial)
-	var nr_rank: int = get_talent_rank("natural_rager")
-	if nr_rank >= 1 and is_raging and natural_rager_form == "Bear" and not ignore_rage:
-		var is_magical: bool = not (damage_type in PHYSICAL_TYPES or damage_type == "")
-		if is_magical:
-			var bear_dr: float = 0.25 if nr_rank == 1 else 0.5
+	if is_raging and not ignore_rage and is_physical:
+		final_amount = int(floor(float(amount) * 0.5))
+	# Animal Form Bear: always-active elemental DR (no Rage or talent rank required — see
+	# markdowns/wild_heart.md). Enhanced Forms R1 also covers magical damage; R2/R3 raise the %.
+	if natural_rager_form == "Bear" and not ignore_rage:
+		var enh_rank: int = get_talent_rank("enhanced_forms")
+		var resisted: bool = damage_type in ELEMENTAL_TYPES or (enh_rank >= 1 and damage_type in MAGICAL_TYPES)
+		if resisted:
+			var bear_dr: float = 0.25
+			if enh_rank >= 3: bear_dr = 0.5
+			elif enh_rank >= 2: bear_dr = 1.0 / 3.0
 			final_amount = int(floor(float(final_amount) * (1.0 - bear_dr)))
-			if nr_rank >= 3 and damage_type in CELESTIAL_TYPES:
-				final_amount = int(floor(float(final_amount) * 0.5))
+	# Born in Blood (Scarred Warrior): NOT Bloodied -> take MORE incoming damage; Bloodied ->
+	# take LESS. Applied after Rage/Bear DR, on top of the reduced amount.
+	var bib_rank: int = get_talent_rank("born_in_blood")
+	if bib_rank >= 1 and not ignore_rage:
+		var bib_delta: int = bib_rank * player_stats.rage_bonus_damage
+		final_amount += bib_delta if not player_stats.is_bloodied() else -bib_delta
+		final_amount = maxi(0, final_amount)
 	# DR can reduce damage to 0 — skip Stats.take_damage() which floors at 1.
 	if final_amount <= 0:
 		if is_physical and not ignore_rage:
@@ -928,12 +998,6 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 
 
 func apply_player_status(type: String, turns: int) -> bool:
-	# Rager rank 1: chance to negate a status/debuff while raging.
-	if get_talent_rank("rager") >= 1 and is_raging:
-		var chance: int = player_stats.rage_bonus_damage * 10  # 20%/30%/40%
-		if Rng.roll(100) <= chance:
-			game_log("[color=orange]Rager shrugs off the %s![/color]" % type)
-			return false
 	match type:
 		"poison":   player_stats.poison_turns  = maxi(player_stats.poison_turns, turns)
 		"burning":  player_stats.burning_turns = maxi(player_stats.burning_turns, turns)
@@ -1032,7 +1096,7 @@ func debug_set_talent_rank(id: String, new_rank: int) -> void:
 		if id == "danger_sense" and old_rank >= 3 and new_rank < 3:
 			player_stats.strength = maxi(10, player_stats.strength - 2)
 			recalculate_stats()
-		if new_rank == 0 and id != "rage":
+		if new_rank == 0:
 			for i: int in player_ability_bar.size():
 				var ab: Ability = player_ability_bar[i]
 				if ab != null and ab.ability_id == id:
@@ -1055,12 +1119,6 @@ func debug_set_talent_rank(id: String, new_rank: int) -> void:
 
 func _apply_talent_rank(id: String, rank: int) -> void:
 	match id:
-		"rage":
-			_sync_ability_uses()
-			var rage_ab: Ability = _find_ability_by_id("rage")
-			if rage_ab != null:
-				rage_ab.description = _build_rage_description()
-				rage_ab.icon_path = talent_icon_path("rage", rank)
 		"reckless_attack":
 			if rank == 1:
 				var ra := Ability.new()
@@ -1076,54 +1134,18 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				if ra != null:
 					ra.description = _build_reckless_description(rank)
 					ra.icon_path = talent_icon_path("reckless_attack", rank)
-		"rager":
-			if rank == 1:
-				var rager_ab := Ability.new()
-				rager_ab.ability_id = "rager"
-				rager_ab.ability_name = "Rager"
-				rager_ab.description = _build_rager_description()
-				rager_ab.icon_path = talent_icon_path("rager", 1)
-				rager_ab.uses_remaining = 0
-				rager_ab.uses_max = 0
-				rager_ab.is_passive = true
-				add_ability(rager_ab)
-			else:
-				var rager_ab: Ability = _find_ability_by_id("rager")
-				if rager_ab != null:
-					rager_ab.description = _build_rager_description()
-					rager_ab.icon_path = talent_icon_path("rager", rank)
-		"frenzy":
-			if rank == 1:
-				var frenzy_ab := Ability.new()
-				frenzy_ab.ability_id = "frenzy"
-				frenzy_ab.ability_name = "Frenzy"
+		"sadist_monster", "masochist_monster", "frenzied_killer":
+			# All three upgrade the free base Frenzy ability rather than granting their own
+			# ability-bar entry — refresh Frenzy's description so its tooltip stays current.
+			var frenzy_ab: Ability = _find_ability_by_id("frenzy")
+			if frenzy_ab != null:
 				frenzy_ab.description = _build_frenzy_description()
-				frenzy_ab.icon_path = talent_icon_path("frenzy", 1)
-				frenzy_ab.uses_remaining = 0
-				frenzy_ab.uses_max = 0
-				frenzy_ab.is_passive = true
-				add_ability(frenzy_ab)
-			else:
-				var frenzy_ab: Ability = _find_ability_by_id("frenzy")
-				if frenzy_ab != null:
-					frenzy_ab.description = _build_frenzy_description()
-					frenzy_ab.icon_path = talent_icon_path("frenzy", rank)
-		"retaliation":
-			if rank == 1:
-				var ret_ab := Ability.new()
-				ret_ab.ability_id = "retaliation"
-				ret_ab.ability_name = "Retaliation"
-				ret_ab.description = _build_retaliation_description()
-				ret_ab.icon_path = talent_icon_path("retaliation", 1)
-				ret_ab.uses_remaining = 0
-				ret_ab.uses_max = 0
-				ret_ab.is_passive = true
-				add_ability(ret_ab)
-			else:
-				var ret_ab: Ability = _find_ability_by_id("retaliation")
-				if ret_ab != null:
-					ret_ab.description = _build_retaliation_description()
-					ret_ab.icon_path = talent_icon_path("retaliation", rank)
+		"born_in_blood", "bloodied_regen":
+			pass  # pure stat-modifier talents — no ability to refresh
+		"enough_is_enough":
+			var lb_ab: Ability = _find_ability_by_id("limit_break")
+			if lb_ab != null:
+				lb_ab.description = _build_limit_break_description()
 		"danger_sense":
 			if rank == 1:
 				var ds := Ability.new()
@@ -1148,51 +1170,42 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 					ds.description = _build_danger_sense_description(3)
 					ds.icon_path = talent_icon_path("danger_sense", 3)
 				combat_message.emit("[color=cyan]Danger Sense 3: STR +2 (now [b]%d[/b])![/color]" % player_stats.strength)
-		"one_with_nature":
+		"wild_companion":
 			if rank == 1:
 				var owtn := Ability.new()
-				owtn.ability_id = "one_with_nature"
-				owtn.ability_name = "One with Nature"
+				owtn.ability_id = "wild_companion"
+				owtn.ability_name = "Wild Companion"
 				owtn.description = _build_one_with_nature_description()
-				owtn.icon_path = talent_icon_path("one_with_nature", 1)
+				owtn.icon_path = talent_icon_path("wild_companion", 1)
 				owtn.uses_remaining = 1
 				owtn.uses_max = 1
 				add_ability(owtn)
 			else:
-				var owtn: Ability = _find_ability_by_id("one_with_nature")
+				var owtn: Ability = _find_ability_by_id("wild_companion")
 				if owtn != null:
 					owtn.description = _build_one_with_nature_description()
-					owtn.icon_path = talent_icon_path("one_with_nature", rank)
-		"natural_rager":
-			if rank == 1:
-				var nr := Ability.new()
-				nr.ability_id = "natural_rager"
-				nr.ability_name = "Natural Rager"
-				nr.description = _build_natural_rager_description()
-				nr.icon_path = talent_icon_path("natural_rager", 1)
-				nr.uses_remaining = 0
-				nr.uses_max = 0
-				add_ability(nr)
-			else:
-				var nr: Ability = _find_ability_by_id("natural_rager")
-				if nr != null:
-					nr.description = _build_natural_rager_description()
-					nr.icon_path = talent_icon_path("natural_rager", rank)
-		"natural_sleeper":
+					owtn.icon_path = talent_icon_path("wild_companion", rank)
+		"enhanced_forms":
+			# Upgrades the free base Animal Form ability rather than granting its own
+			# ability-bar entry — refresh Animal Form's description so its tooltip stays current.
+			var af_ab: Ability = _find_ability_by_id("animal_form")
+			if af_ab != null:
+				af_ab.description = _build_natural_rager_description()
+		"expanded_forms":
 			if rank == 1:
 				var ns := Ability.new()
-				ns.ability_id = "natural_sleeper"
+				ns.ability_id = "expanded_forms"
 				ns.ability_name = "Natural Sleeper"
 				ns.description = _build_natural_sleeper_description()
-				ns.icon_path = talent_icon_path("natural_sleeper", 1)
+				ns.icon_path = talent_icon_path("expanded_forms", 1)
 				ns.uses_remaining = 0
 				ns.uses_max = 0
 				add_ability(ns)
 			else:
-				var ns: Ability = _find_ability_by_id("natural_sleeper")
+				var ns: Ability = _find_ability_by_id("expanded_forms")
 				if ns != null:
 					ns.description = _build_natural_sleeper_description()
-					ns.icon_path = talent_icon_path("natural_sleeper", rank)
+					ns.icon_path = talent_icon_path("expanded_forms", rank)
 		"ironwood_bark":
 			if rank == 1:
 				var ib := Ability.new()
@@ -1240,105 +1253,46 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 				if bs != null:
 					bs.description = _build_branching_strike_description()
 					bs.icon_path = talent_icon_path("branching_strike", rank)
-		"divine_fury":
-			if rank == 1:
-				var df := Ability.new()
-				df.ability_id = "divine_fury"
-				df.ability_name = "Divine Fury"
-				df.description = _build_divine_fury_description()
-				df.icon_path = talent_icon_path("divine_fury", 1)
-				df.uses_remaining = 0
-				df.uses_max = 0
-				add_ability(df)
-			else:
-				var df: Ability = _find_ability_by_id("divine_fury")
-				if df != null:
-					df.description = _build_divine_fury_description()
-					df.icon_path = talent_icon_path("divine_fury", rank)
-		"blessed_warrior":
-			var new_max: int = BLESSED_WARRIOR_MAX_CHARGES[rank]
-			if rank == 1:
-				zealot_blessed_charges = new_max
-				var bw := Ability.new()
-				bw.ability_id = "blessed_warrior"
-				bw.ability_name = "Blessed Warrior"
-				bw.description = _build_blessed_warrior_description()
-				bw.icon_path = talent_icon_path("blessed_warrior", 1)
-				bw.uses_remaining = zealot_blessed_charges
-				bw.uses_max = new_max
-				add_ability(bw)
-			else:
-				# Rank-up mid-run: new pool size is the new rank's max, minus charges
-				# already spent this long-rest cycle (spec: preserve "already used", not "already left").
-				var old_max: int = BLESSED_WARRIOR_MAX_CHARGES[rank - 1]
-				var used: int = old_max - zealot_blessed_charges
-				zealot_blessed_charges = maxi(0, new_max - used)
-				var bw: Ability = _find_ability_by_id("blessed_warrior")
-				if bw != null:
-					bw.description = _build_blessed_warrior_description()
-					bw.icon_path = talent_icon_path("blessed_warrior", rank)
-					bw.uses_remaining = zealot_blessed_charges
-					bw.uses_max = new_max
-		"zealous_presence":
-			if rank == 1:
-				zealot_zp_charges = 1
-				var zp := Ability.new()
-				zp.ability_id = "zealous_presence"
-				zp.ability_name = "Zealous Presence"
-				zp.description = _build_zealous_presence_description()
-				zp.icon_path = talent_icon_path("zealous_presence", 1)
-				zp.uses_remaining = zealot_zp_charges
-				zp.uses_max = 1
-				add_ability(zp)
-			else:
-				var zp: Ability = _find_ability_by_id("zealous_presence")
-				if zp != null:
-					zp.icon_path = talent_icon_path("zealous_presence", rank)
-					zp.description = _build_zealous_presence_description()
+		"judgement_day", "overheal_shield":
+			# Both upgrade the free base Zealot Strike ability rather than granting their own
+			# ability-bar entry — refresh its description so the tooltip stays current.
+			var zs_ab: Ability = _find_ability_by_id("zealot_strike")
+			if zs_ab != null:
+				zs_ab.description = _build_zealot_strike_description()
+		"never_back_down":
+			hit_dice = mini(hit_dice + ([0, 1, 1, 2][mini(rank, 3)]), max_hit_dice())
 	ability_bar_changed.emit()
 
-func _build_rager_description() -> String:
-	var rank: int = get_talent_rank("rager")
-	var chance: int = player_stats.rage_bonus_damage * 10
-	var lines: Array[String] = []
-	lines.append("While Raging: %d%% chance per trigger (scales with Rage damage bonus)." % chance)
-	if rank >= 1: lines.append("R1: Negate incoming status/debuff effects.")
-	if rank >= 2: lines.append("R2: Move may not end your turn (once per round).")
-	if rank >= 3: lines.append("R3: Attack may not end your turn (once per round, independent).")
+func _build_frenzy_description() -> String:
+	var sadist_rank: int = get_talent_rank("sadist_monster")
+	var lines: Array[String] = [
+		"Requires Raging. Click an adjacent enemy: roll to hit (d20 + attack modifier).",
+		"Nat 1: miss — only you take weapon damage. 2-19: hit — enemy AND you both take the same weapon damage roll. Nat 20: enemy takes double damage, you take none.",
+		"Once per short rest (also resets on long rest).",
+	]
+	if sadist_rank >= 1:
+		lines.append("Sadist Monster: enemy also takes +%dd6 bonus damage (self-damage unaffected)." % sadist_rank)
 	return "\n".join(lines)
 
 
-func _build_frenzy_description() -> String:
-	var rank: int = get_talent_rank("frenzy")
-	var bonus: int = player_stats.rage_bonus_damage
-	var die_sides: int = [0, 4, 6, 8][mini(rank, 3)]
-	return "While Raging, first STR attack each turn: +1d%d × %d (%s) Slashing bonus damage." % [
-		die_sides, bonus, "current die" if rank > 0 else ""]
-
-
-func _build_retaliation_description() -> String:
-	var rank: int = get_talent_rank("retaliation")
-	var bonus: int = player_stats.rage_bonus_damage
-	var lines: Array[String] = []
-	match rank:
-		1: lines.append("When hit by adjacent melee: deal %d back (rage bonus)." % bonus)
-		2: lines.append("When hit by adjacent melee: deal weapon damage back (no rage bonus at this rank).")
-		3: lines.append("When hit by adjacent melee: deal weapon damage + %d rage + STR mod back." % bonus)
+func _build_limit_break_description() -> String:
+	var rank: int = get_talent_rank("enough_is_enough")
+	var lines: Array[String] = [
+		"Deal damage equal to your missing HP (Max HP - Current HP) to target enemy — no roll to hit, no damage roll.",
+		"Once per long rest.",
+	]
+	if rank >= 1: lines.append("Enough is Enough: automatically applies your weapon's mastery effect.")
+	if rank >= 2: lines.append("Also deals full damage to every entity adjacent to the target.")
+	if rank >= 3: lines.append("Becomes ranged (5 tiles) and pierces every entity in a line to the target.")
 	return "\n".join(lines)
 
 
 func _build_rage_description() -> String:
-	var rank: int = get_talent_rank("rage")
 	var uses: int = player_stats.rage_uses_max
 	var bonus: int = player_stats.rage_bonus_damage
 	var lines: Array[String] = []
-	lines.append("Lasts 10 turns. +%d damage on STR attacks." % bonus)
-	if rank >= 1:
-		lines.append("Countdown pauses when you attack or are hit.")
-	if rank >= 2:
-		lines.append("25% DR vs Bludgeoning/Piercing/Slashing.")
-	if rank >= 3:
-		lines.append("50% DR vs Bludgeoning/Piercing/Slashing.")
+	lines.append("+%d damage on STR attacks. 50%% DR vs Bludgeoning/Piercing/Slashing." % bonus)
+	lines.append("Lasts 1 turn; refreshed to 1 turn by attacking or being attacked.")
 	lines.append("%d use%s per floor (scales with level)." % [uses, "s" if uses != 1 else ""])
 	return "\n".join(lines)
 
@@ -1360,7 +1314,7 @@ func _build_danger_sense_description(rank: int) -> String:
 	return "\n".join(lines)
 
 func _build_one_with_nature_description() -> String:
-	var rank: int = get_talent_rank("one_with_nature")
+	var rank: int = get_talent_rank("wild_companion")
 	var d: Dictionary = WILD_HEART_COMPANION_STATS.get(maxi(rank, 1), {})
 	var animal: String = d.get("animal", "Squirrel")
 	var hp: int = d.get("hp", 10)
@@ -1370,26 +1324,29 @@ func _build_one_with_nature_description() -> String:
 	return "Summon a %s (HP %d, AC %d, %dd%d) to fight by your side.\n1 charge — refreshes on rest. Re-activate to dismiss and resummon." % [animal, hp, ac, dc, ds_]
 
 func _build_natural_rager_description() -> String:
-	var rank: int = get_talent_rank("natural_rager")
+	var rank: int = get_talent_rank("enhanced_forms")
 	var form: String = natural_rager_form
 	var lines: Array[String] = []
-	lines.append("[%s Form] — effects active while Raging. Click to cycle forms." % form)
+	lines.append("[%s Form] — always active (no Rage required). Click to cycle forms." % form)
 	match form:
 		"Bear":
-			if rank >= 1: lines.append("R1: −25% incoming magical damage.")
-			if rank >= 2: lines.append("R2: −50% incoming magical damage.")
-			if rank >= 3: lines.append("R3: Also −50% Necrotic/Radiant/Psychic (total 75%).")
+			lines.append("25% resistance to elemental damage (Fire/Cold/Lightning/Thunder/Acid/Poison).")
+			if rank >= 1: lines.append("Enhanced Forms R1: resistance also covers magical damage (Radiant/Necrotic/Force).")
+			if rank >= 2: lines.append("Enhanced Forms R2: resistance increased to 33%.")
+			if rank >= 3: lines.append("Enhanced Forms R3: resistance increased to 50%.")
 		"Eagle":
-			if rank >= 1: lines.append("R1: 50%% chance a move doesn't end your turn (once/round).")
-			if rank >= 2: lines.append("R2: Guaranteed second move each turn (replaces R1).")
-			if rank >= 3: lines.append("R3: Evade opportunity attacks. [color=gray](No-op until OA system added.)[/color]")
+			lines.append("Enemies do not gain Opportunity Attacks against you.")
+			if rank >= 1: lines.append("Enhanced Forms R1: +1 FOV radius.")
+			if rank >= 2: lines.append("Enhanced Forms R2: ranged attacks against you have -2 to hit.")
+			if rank >= 3: lines.append("Enhanced Forms R3: ranged enemies have Disadvantage to hit you.")
 		"Wolf":
-			var threshold: int = [0, 4, 3, 2][mini(rank, 3)]
+			var threshold: int = [4, 4, 3, 2][mini(rank, 3)]
 			lines.append("ADV on attack rolls when %d+ enemies are in your FOV." % threshold)
+			if rank >= 3: lines.append("Enhanced Forms R3: also ADV when 1 enemy + 1 friendly entity are in your FOV.")
 	return "\n".join(lines)
 
 func _build_natural_sleeper_description() -> String:
-	var rank: int = get_talent_rank("natural_sleeper")
+	var rank: int = get_talent_rank("expanded_forms")
 	var form: String = natural_sleeper_form  # chosen form (preview for next rest)
 	var lines: Array[String] = []
 	# No form chosen yet
@@ -1449,48 +1406,22 @@ func _build_branching_strike_description() -> String:
 	return "\n".join(lines)
 
 
-func _build_divine_fury_description() -> String:
-	var rank: int = get_talent_rank("divine_fury")
-	var lvl: int = player_stats.character_level
-	var lines: Array[String] = ["[%s] — click to switch damage type." % zealot_divine_fury_type]
-	match rank:
-		1: lines.append("First attack each turn: +1d6 bonus damage.")
-		2: lines.append("First attack each turn: +1d6 + %d bonus damage (level/4)." % (lvl / 4))
-		3: lines.append("First attack each turn: +1d6 + %d bonus damage (level/2)." % (lvl / 2))
-	return "\n".join(lines)
-
-func _build_blessed_warrior_description() -> String:
-	var rank: int = get_talent_rank("blessed_warrior")
-	var max_charges: int = BLESSED_WARRIOR_MAX_CHARGES[maxi(rank, 1)]
-	return "Activate (max once/turn, %d/%d charges) to queue a 1d12 heal on your next successful hit this turn. A miss still spends the charge. Recharges on long rest." % [zealot_blessed_charges, max_charges]
-
-func _build_zealous_presence_description() -> String:
-	var rank: int = get_talent_rank("zealous_presence")
-	var duration: int = [0, 1, 3, 5][mini(rank, 3)]
+func _build_zealot_strike_description() -> String:
+	var jd_rank: int = get_talent_rank("judgement_day")
+	var os_rank: int = get_talent_rank("overheal_shield")
 	var lines: Array[String] = [
-		"Grant Advantage on all attack rolls and checks to yourself and friendly entities in FOV for %d turn(s)." % duration,
-		"%d/1 Zealous Presence charge — recharges on long rest." % zealot_zp_charges,
-		"If out of charges, consumes 1 Rage charge instead (silently, only if a ZP charge isn't available).",
+		"Your next melee attack this turn (hit or miss) consumes 1 Hit Die and heals you for the roll (1d%d + CON mod)." % hit_die_sides(),
+		"Hit dice: %d/%d." % [hit_dice, max_hit_dice()],
 	]
+	if jd_rank >= 1:
+		lines.append("Judgement Day: your next attack after the heal deals +%d× Rage bonus × 1d6 bonus damage." % jd_rank)
+	if os_rank >= 1:
+		var os_desc: String = ["", "the overheal amount", "the entire heal amount", "the entire heal + overheal amount"][os_rank]
+		lines.append("Overheal Shield: gain Temporary HP equal to %s." % os_desc)
 	return "\n".join(lines)
 
 func _setup_barbarian_talents() -> void:
 	_class_talents = []
-
-	var rage_talent := Talent.new()
-	rage_talent.talent_id = "rage"
-	rage_talent.talent_name = "Rage"
-	rage_talent.description = "Upgrade your Rage ability."
-	rage_talent.icon_path = talent_icon_path("rage", 1)
-	rage_talent.tier = 1
-	rage_talent.class_id = Stats.CharacterClass.BARBARIAN
-	rage_talent.max_rank = 3
-	rage_talent.ranks = [
-		{"description": "Rage countdown pauses when you attack or are hit (active combat extends duration)."},
-		{"description": "25% damage reduction vs Bludgeoning, Piercing, and Slashing damage while raging."},
-		{"description": "50% damage reduction vs Bludgeoning, Piercing, and Slashing damage while raging."},
-	]
-	_class_talents.append(rage_talent)
 
 	var reckless_talent := Talent.new()
 	reckless_talent.talent_id = "reckless_attack"
@@ -1525,63 +1456,118 @@ func _setup_barbarian_talents() -> void:
 
 func _setup_barbarian_tier2_talents() -> void:
 	# Called via unlock_tier2() → _setup_tier2_for_active_subclass(). Appends Tier 2 to _class_talents.
-	var chance_str: String = "%d%%" % (player_stats.rage_bonus_damage * 10)
+	# Frenzy itself is a free, rank-independent activation ability (see markdowns/berserker.md) —
+	# granted directly, not gated by talent investment.
+	_grant_tier2_base_ability("frenzy", "Frenzy", _build_frenzy_description())
 
-	var rager_talent := Talent.new()
-	rager_talent.talent_id = "rager"
-	rager_talent.talent_name = "Rager"
-	rager_talent.description = "Berserker fury bends the flow of combat while Raging."
-	rager_talent.icon_path = talent_icon_path("rager", 1)
-	rager_talent.tier = 2
-	rager_talent.class_id = Stats.CharacterClass.BARBARIAN
-	rager_talent.max_rank = 3
-	rager_talent.ranks = [
-		{"description": "%s chance to fully negate an incoming status/debuff while Raging." % chance_str},
-		{"description": "%s chance after moving that the move doesn't end your turn (once per round)." % chance_str},
-		{"description": "%s chance after attacking that the attack doesn't end your turn (once per round, independent of rank 2)." % chance_str},
+	var sadist_talent := Talent.new()
+	sadist_talent.talent_id = "sadist_monster"
+	sadist_talent.talent_name = "Sadist Monster"
+	sadist_talent.description = "Frenzy deals bonus damage to the enemy only (not to you)."
+	sadist_talent.icon_path = talent_icon_path("sadist_monster", 1)
+	sadist_talent.tier = 2
+	sadist_talent.class_id = Stats.CharacterClass.BARBARIAN
+	sadist_talent.max_rank = 3
+	sadist_talent.ranks = [
+		{"description": "Frenzy's hit deals +1d6 bonus damage to the enemy (self-damage unaffected)."},
+		{"description": "+2d6 bonus damage to the enemy."},
+		{"description": "+3d6 bonus damage to the enemy."},
 	]
-	_class_talents.append(rager_talent)
+	_class_talents.append(sadist_talent)
 
-	var frenzy_talent := Talent.new()
-	frenzy_talent.talent_id = "frenzy"
-	frenzy_talent.talent_name = "Frenzy"
-	frenzy_talent.description = "First attack each turn deals bonus Rage-scaled damage while Raging."
-	frenzy_talent.icon_path = talent_icon_path("frenzy", 1)
-	frenzy_talent.tier = 2
-	frenzy_talent.class_id = Stats.CharacterClass.BARBARIAN
-	frenzy_talent.max_rank = 3
-	frenzy_talent.ranks = [
-		{"description": "First STR attack while Raging: +1d4 × rage bonus (%d) extra damage." % player_stats.rage_bonus_damage},
-		{"description": "Die increases to 1d6 × rage bonus (%d)." % player_stats.rage_bonus_damage},
-		{"description": "Die increases to 1d8 × rage bonus (%d)." % player_stats.rage_bonus_damage},
+	var masochist_talent := Talent.new()
+	masochist_talent.talent_id = "masochist_monster"
+	masochist_talent.talent_name = "Masochist Monster"
+	masochist_talent.description = "Being hurt on your turn fuels your defense."
+	masochist_talent.icon_path = talent_icon_path("masochist_monster", 1)
+	masochist_talent.tier = 2
+	masochist_talent.class_id = Stats.CharacterClass.BARBARIAN
+	masochist_talent.max_rank = 3
+	masochist_talent.ranks = [
+		{"description": "If you take any damage on your turn (including Frenzy self-damage): +1 AC until the start of your next turn."},
+		{"description": "Also gain Temporary HP equal to Rage bonus damage × 1d4."},
+		{"description": "Rage does not expire while at least 1 enemy is in your Field of View."},
 	]
-	_class_talents.append(frenzy_talent)
+	_class_talents.append(masochist_talent)
 
-	var retaliation_talent := Talent.new()
-	retaliation_talent.talent_id = "retaliation"
-	retaliation_talent.talent_name = "Retaliation"
-	retaliation_talent.description = "Strike back at enemies who hit you in melee."
-	retaliation_talent.icon_path = talent_icon_path("retaliation", 1)
-	retaliation_talent.tier = 2
-	retaliation_talent.class_id = Stats.CharacterClass.BARBARIAN
-	retaliation_talent.max_rank = 3
-	retaliation_talent.ranks = [
-		{"description": "When hit by a melee attack: deal %d damage back (rage bonus only)." % player_stats.rage_bonus_damage},
-		{"description": "Deal weapon damage back instead (no rage bonus at this rank — intentional)."},
-		{"description": "Deal weapon damage + rage bonus (%d) + STR modifier back." % player_stats.rage_bonus_damage},
+	var frenzied_killer_talent := Talent.new()
+	frenzied_killer_talent.talent_id = "frenzied_killer"
+	frenzied_killer_talent.talent_name = "Frenzied Killer"
+	frenzied_killer_talent.description = "Frenzy refreshes its use more frequently."
+	frenzied_killer_talent.icon_path = talent_icon_path("frenzied_killer", 1)
+	frenzied_killer_talent.tier = 2
+	frenzied_killer_talent.class_id = Stats.CharacterClass.BARBARIAN
+	frenzied_killer_talent.max_rank = 3
+	frenzied_killer_talent.ranks = [
+		{"description": "Frenzy's use refreshes after a killing blow on any enemy."},
+		{"description": "Also refreshes after landing a critical hit."},
+		{"description": "Also refreshes every 3 turns."},
 	]
-	_class_talents.append(retaliation_talent)
+	_class_talents.append(frenzied_killer_talent)
+
+
+func _setup_scarred_warrior_tier2_talents() -> void:
+	# Limit Break is a free, rank-independent activation ability — see markdowns/scarred_warrior.md.
+	_grant_tier2_base_ability("limit_break", "Limit Break", _build_limit_break_description())
+
+	var born_talent := Talent.new()
+	born_talent.talent_id = "born_in_blood"
+	born_talent.talent_name = "Born in Blood"
+	born_talent.description = "Damage scaling changes based on Bloodied status."
+	born_talent.icon_path = talent_icon_path("born_in_blood", 1)
+	born_talent.tier = 2
+	born_talent.class_id = Stats.CharacterClass.BARBARIAN
+	born_talent.max_rank = 3
+	born_talent.ranks = [
+		{"description": "Not Bloodied: +1× Rage bonus incoming damage. Bloodied: -1× Rage bonus incoming damage (min 0)."},
+		{"description": "+/- 2× Rage bonus incoming damage."},
+		{"description": "+/- 3× Rage bonus incoming damage."},
+	]
+	_class_talents.append(born_talent)
+
+	var enough_talent := Talent.new()
+	enough_talent.talent_id = "enough_is_enough"
+	enough_talent.talent_name = "Enough is Enough"
+	enough_talent.description = "Upgrades Limit Break."
+	enough_talent.icon_path = talent_icon_path("enough_is_enough", 1)
+	enough_talent.tier = 2
+	enough_talent.class_id = Stats.CharacterClass.BARBARIAN
+	enough_talent.max_rank = 3
+	enough_talent.ranks = [
+		{"description": "Limit Break automatically applies your equipped weapon's mastery effect to the target."},
+		{"description": "Limit Break also deals full damage to every entity adjacent to the primary target."},
+		{"description": "Limit Break becomes ranged (5 tiles) and pierces — it hits every entity in a line to the target."},
+	]
+	_class_talents.append(enough_talent)
+
+	var regen_talent := Talent.new()
+	regen_talent.talent_id = "bloodied_regen"
+	regen_talent.talent_name = "Spite"
+	regen_talent.description = "While Bloodied, regenerate Temporary HP each turn."
+	regen_talent.icon_path = talent_icon_path("bloodied_regen", 1)
+	regen_talent.tier = 2
+	regen_talent.class_id = Stats.CharacterClass.BARBARIAN
+	regen_talent.max_rank = 3
+	regen_talent.ranks = [
+		{"description": "While Bloodied, gain 1× Rage bonus Temporary HP at the start of your turn."},
+		{"description": "2× Rage bonus Temporary HP."},
+		{"description": "3× Rage bonus Temporary HP."},
+	]
+	_class_talents.append(regen_talent)
 
 
 func _setup_wild_heart_tier2_talents() -> void:
 	# Wild Heart is an experimental subclass — balance will change significantly after playtesting.
-	# Key design deviation: taking rank 1 of Natural Rager/Sleeper grants 3 simultaneous
-	# switchable form effects (not 1 per point like standard talents). This is intentional.
+	# Animal Form (Bear/Eagle/Wolf) is a free, rank-independent activation ability — see
+	# markdowns/wild_heart.md — granted directly, not gated by talent investment.
+	_grant_tier2_base_ability("animal_form", "Animal Form", _build_natural_rager_description())
+	player_evades_opportunity_attacks = natural_rager_form == "Eagle"
+
 	var owtn_talent := Talent.new()
-	owtn_talent.talent_id = "one_with_nature"
-	owtn_talent.talent_name = "One with Nature"
-	owtn_talent.description = "Summon an animal companion that fights alongside you."
-	owtn_talent.icon_path = talent_icon_path("one_with_nature", 1)
+	owtn_talent.talent_id = "wild_companion"
+	owtn_talent.talent_name = "Wild Companion"
+	owtn_talent.description = "After each long rest, summon an animal companion that fights alongside you."
+	owtn_talent.icon_path = talent_icon_path("wild_companion", 1)
 	owtn_talent.tier = 2
 	owtn_talent.class_id = Stats.CharacterClass.BARBARIAN
 	owtn_talent.max_rank = 3
@@ -1593,25 +1579,25 @@ func _setup_wild_heart_tier2_talents() -> void:
 	_class_talents.append(owtn_talent)
 
 	var nr_talent := Talent.new()
-	nr_talent.talent_id = "natural_rager"
-	nr_talent.talent_name = "Natural Rager"
-	nr_talent.description = "Unlock Bear/Eagle/Wolf forms while Raging. 1 rank grants all 3 forms."
-	nr_talent.icon_path = talent_icon_path("natural_rager", 1)
+	nr_talent.talent_id = "enhanced_forms"
+	nr_talent.talent_name = "Enhanced Forms"
+	nr_talent.description = "Upgrades the base Bear/Eagle/Wolf Animal Forms."
+	nr_talent.icon_path = talent_icon_path("enhanced_forms", 1)
 	nr_talent.tier = 2
 	nr_talent.class_id = Stats.CharacterClass.BARBARIAN
 	nr_talent.max_rank = 3
 	nr_talent.ranks = [
-		{"description": "Bear: −25% magical DMG. Eagle: 50%% free-move chance. Wolf: ADV at 4+ enemies."},
-		{"description": "Bear: −50% magical. Eagle: guaranteed 2nd move (replaces R1). Wolf: threshold 3+."},
-		{"description": "Bear: +−50% celestial. Eagle: OA evasion (flag only). Wolf: threshold 2+."},
+		{"description": "Bear: resistance also covers magical damage. Eagle: +1 FOV radius. Wolf: ADV threshold drops to 3+ enemies."},
+		{"description": "Bear: resistance increased to 33%. Eagle: ranged attacks against you have -2 to hit. Wolf: threshold drops to 2+ enemies."},
+		{"description": "Bear: resistance increased to 50%. Eagle: ranged enemies have Disadvantage to hit you. Wolf: also ADV at 1 enemy + 1 friendly in FOV."},
 	]
 	_class_talents.append(nr_talent)
 
 	var ns_talent := Talent.new()
-	ns_talent.talent_id = "natural_sleeper"
-	ns_talent.talent_name = "Natural Sleeper"
-	ns_talent.description = "Unlock Owl/Panther/Salmon terrain forms. Activate on floor entry."
-	ns_talent.icon_path = talent_icon_path("natural_sleeper", 1)
+	ns_talent.talent_id = "expanded_forms"
+	ns_talent.talent_name = "Expanded Forms"
+	ns_talent.description = "Unlock Owl/Panther/Salmon terrain forms. Activates on long rest."
+	ns_talent.icon_path = talent_icon_path("expanded_forms", 1)
 	ns_talent.tier = 2
 	ns_talent.class_id = Stats.CharacterClass.BARBARIAN
 	ns_talent.max_rank = 3
@@ -1671,50 +1657,53 @@ func _setup_world_tree_tier2_talents() -> void:
 	_class_talents.append(bs_talent)
 
 func _setup_zealot_tier2_talents() -> void:
-	var df_talent := Talent.new()
-	df_talent.talent_id = "divine_fury"
-	df_talent.talent_name = "Divine Fury"
-	df_talent.description = "Your first attack each turn is charged with Radiant or Necrotic power."
-	df_talent.icon_path = talent_icon_path("divine_fury", 1)
-	df_talent.tier = 2
-	df_talent.class_id = Stats.CharacterClass.BARBARIAN
-	df_talent.max_rank = 3
-	df_talent.ranks = [
-		{"description": "First attack each turn: +1d6 bonus damage (Radiant or Necrotic, your choice)."},
-		{"description": "+1d6 + floor(level/4) bonus damage (replaces rank 1's formula)."},
-		{"description": "+1d6 + floor(level/2) bonus damage (replaces rank 2's formula)."},
-	]
-	_class_talents.append(df_talent)
+	# Zealot Strike is a free, rank-independent activation ability — see markdowns/zealot.md.
+	_grant_tier2_base_ability("zealot_strike", "Zealot Strike", _build_zealot_strike_description())
 
-	var bw_talent := Talent.new()
-	bw_talent.talent_id = "blessed_warrior"
-	bw_talent.talent_name = "Blessed Warrior"
-	bw_talent.description = "A pool of divine healing charges you can call on mid-fight."
-	bw_talent.icon_path = talent_icon_path("blessed_warrior", 1)
-	bw_talent.tier = 2
-	bw_talent.class_id = Stats.CharacterClass.BARBARIAN
-	bw_talent.max_rank = 3
-	bw_talent.ranks = [
-		{"description": "2 charges/long rest. Activate (max once/turn) to queue a 1d12 heal on your next successful hit this turn."},
-		{"description": "4 charges/long rest."},
-		{"description": "6 charges/long rest."},
+	var jd_talent := Talent.new()
+	jd_talent.talent_id = "judgement_day"
+	jd_talent.talent_name = "Judgement Day"
+	jd_talent.description = "After healing from Zealot Strike, your next attack deals bonus Radiant damage."
+	jd_talent.icon_path = talent_icon_path("judgement_day", 1)
+	jd_talent.tier = 2
+	jd_talent.class_id = Stats.CharacterClass.BARBARIAN
+	jd_talent.max_rank = 3
+	jd_talent.ranks = [
+		{"description": "Bonus damage: 1× Rage bonus × 1d6."},
+		{"description": "2× Rage bonus × 1d6."},
+		{"description": "3× Rage bonus × 1d6."},
 	]
-	_class_talents.append(bw_talent)
+	_class_talents.append(jd_talent)
 
-	var zp_talent := Talent.new()
-	zp_talent.talent_id = "zealous_presence"
-	zp_talent.talent_name = "Zealous Presence"
-	zp_talent.description = "Rally yourself and nearby allies with Advantage on all rolls."
-	zp_talent.icon_path = talent_icon_path("zealous_presence", 1)
-	zp_talent.tier = 2
-	zp_talent.class_id = Stats.CharacterClass.BARBARIAN
-	zp_talent.max_rank = 3
-	zp_talent.ranks = [
-		{"description": "Grant Advantage on all attack rolls and checks to yourself and friendly entities in FOV for 1 turn. 1 charge/long rest (falls back to consuming a Rage charge if out)."},
-		{"description": "Duration increases to 3 turns."},
-		{"description": "Duration increases to 5 turns."},
+	var os_talent := Talent.new()
+	os_talent.talent_id = "overheal_shield"
+	os_talent.talent_name = "Overheal Shield"
+	os_talent.description = "Overhealing from Zealot Strike generates Temporary HP."
+	os_talent.icon_path = talent_icon_path("overheal_shield", 1)
+	os_talent.tier = 2
+	os_talent.class_id = Stats.CharacterClass.BARBARIAN
+	os_talent.max_rank = 3
+	os_talent.ranks = [
+		{"description": "Gain Temporary HP equal to the overheal amount."},
+		{"description": "Gain Temporary HP equal to the entire heal amount."},
+		{"description": "Gain Temporary HP equal to the entire heal + overheal amount."},
 	]
-	_class_talents.append(zp_talent)
+	_class_talents.append(os_talent)
+
+	var nbd_talent := Talent.new()
+	nbd_talent.talent_id = "never_back_down"
+	nbd_talent.talent_name = "Never Back Down"
+	nbd_talent.description = "Gain additional max Hit Dice."
+	nbd_talent.icon_path = talent_icon_path("never_back_down", 1)
+	nbd_talent.tier = 2
+	nbd_talent.class_id = Stats.CharacterClass.BARBARIAN
+	nbd_talent.max_rank = 3
+	nbd_talent.ranks = [
+		{"description": "+1 max Hit Dice."},
+		{"description": "+2 max Hit Dice (replaces rank 1)."},
+		{"description": "+4 max Hit Dice (replaces rank 2)."},
+	]
+	_class_talents.append(nbd_talent)
 
 # ── Save/load (Phase A — docs/architecture/SAVE_LOAD_ARCHITECTURE.md §4) ────────
 # Assembles/restores the full Phase-A run snapshot. SaveManager owns file I/O and the

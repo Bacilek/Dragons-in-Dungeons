@@ -1,75 +1,61 @@
 class_name PlayerZealot
 extends Node
 
-# Zealot Tier 2 talents: Divine Fury toggle, Blessed Warrior, Zealous Presence.
-# Composition child-node split out of player.gd — see scripts/entities/CLAUDE.md.
+# Zealot Tier 2: Zealot Strike activation + Judgement Day / Overheal Shield / Never Back Down
+# talents. Composition child-node split out of player.gd — see scripts/entities/CLAUDE.md.
+# Spec: markdowns/zealot.md.
 
 var player: Player
 
-# "max once per turn" activation cap. Reset by player.gd._on_turn_started(). The charge pool
-# itself lives on GameState (zealot_blessed_charges) since it's a long-rest resource.
-var blessed_warrior_used_this_turn: bool = false
+# Armed by activate_zealot_strike(); consumed (or silently dropped) on the player's next melee
+# attack this turn. Cleared at turn start if never consumed — matches spec: "if the turn ends
+# without a melee attack, the toggle deactivates with no effect (Hit Die is NOT consumed)".
+var zealot_strike_armed: bool = false
+# Judgement Day: set true when a Zealot Strike heal resolves; consumed by the NEXT attack
+# (not the same attack that triggered the heal) — mirrors Ironwood Bark R3's pending-bonus pattern.
+var judgement_day_pending: bool = false
 
-func toggle_divine_fury(ab: Ability) -> void:
-	GameState.zealot_divine_fury_type = "Necrotic" if GameState.zealot_divine_fury_type == "Radiant" else "Radiant"
-	ab.description = GameState._build_divine_fury_description()
-	GameState.ability_bar_changed.emit()
-	GameState.game_log("[color=cyan]Divine Fury: switched to %s.[/color]" % GameState.zealot_divine_fury_type)
-	# Free action — persists between turns, does NOT consume the turn.
-
-func activate_blessed_warrior(ab: Ability) -> void:
-	if blessed_warrior_used_this_turn:
-		GameState.game_log("[color=gray]Blessed Warrior: already used this turn.[/color]")
+func activate_zealot_strike(ab: Ability) -> void:
+	if GameState.hit_dice <= 0:
+		GameState.game_log("[color=gray]Zealot Strike: no Hit Dice remaining (rest to recover).[/color]")
 		return
-	if GameState.zealot_blessed_charges <= 0:
-		GameState.game_log("[color=gray]Blessed Warrior: no charges remaining (recovers on long rest).[/color]")
-		return
-	blessed_warrior_used_this_turn = true
-	if not GameState.invincible:
-		GameState.zealot_blessed_charges -= 1
-	GameState.zealot_blessed_heal_queued = true
-	ab.uses_remaining = GameState.zealot_blessed_charges
-	ab.description = GameState._build_blessed_warrior_description()
-	GameState.ability_bar_changed.emit()
-	GameState.game_log("[color=cyan]Blessed Warrior: readied — your next successful hit this turn heals 1d12. (%d charge%s left)[/color]" % [GameState.zealot_blessed_charges, "" if GameState.zealot_blessed_charges == 1 else "s"])
+	zealot_strike_armed = true
+	GameState.game_log("[color=gold]Zealot Strike armed — your next melee attack this turn heals you.[/color]")
 	# Free action — does NOT consume the turn.
 
-func resolve_blessed_warrior_heal() -> void:
-	if not GameState.zealot_blessed_heal_queued:
+# Called right before the hit/miss check in _bump_attack() (melee only — see markdowns/zealot.md:
+# "your next melee attack"). Heals regardless of hit or miss, consumes 1 Hit Die.
+func resolve_zealot_strike_heal() -> void:
+	if not zealot_strike_armed:
 		return
-	GameState.zealot_blessed_heal_queued = false
-	var heal_roll: int = Rng.roll(12)
+	zealot_strike_armed = false
+	if not GameState.invincible:
+		GameState.hit_dice -= 1
+	var heal_roll: int = Rng.roll(GameState.hit_die_sides()) + player.stats.con_modifier()
+	heal_roll = maxi(1, heal_roll)
 	var before: int = player.stats.current_hp
+	var overheal: int = maxi(0, (before + heal_roll) - player.stats.max_hp)
 	GameState.heal(heal_roll)
 	var healed: int = player.stats.current_hp - before
 	if healed > 0:
-		GameState.game_log("[color=lime]Blessed Warrior: divine vigor mends your wounds (+%d HP).[/color]" % healed)
+		GameState.game_log("[color=lime]Zealot Strike mends your wounds (+%d HP).[/color]" % healed)
 
-func activate_zealous_presence(ab: Ability) -> void:
-	var rank: int = GameState.get_talent_rank("zealous_presence")
-	if rank <= 0:
-		return
-	var use_zp: bool = GameState.zealot_zp_charges > 0
-	var use_rage: bool = not use_zp and GameState.player_stats.rage_uses_remaining > 0
-	if not use_zp and not use_rage:
-		GameState.game_log("[color=gray]Zealous Presence: no charges available (needs a Zealous Presence or Rage charge).[/color]")
-		return
-	if not GameState.invincible:
-		if use_zp:
-			GameState.zealot_zp_charges -= 1
-		else:
-			GameState.player_stats.rage_uses_remaining -= 1
-			var rage_ab: Ability = player._find_ability("rage")
-			if rage_ab != null:
-				rage_ab.uses_remaining = GameState.player_stats.rage_uses_remaining
-	var duration: int = [0, 1, 3, 5][mini(rank, 3)]
-	player.stats.zealous_presence_turns = maxi(player.stats.zealous_presence_turns, duration)
-	var comp = GameState.player_companion
-	if comp != null and is_instance_valid(comp):
-		comp.stats.zealous_presence_turns = maxi(comp.stats.zealous_presence_turns, duration)
-	ab.uses_remaining = GameState.zealot_zp_charges
-	ab.description = GameState._build_zealous_presence_description()
-	GameState.ability_bar_changed.emit()
-	var source_note: String = "" if use_zp else " [color=orange](no ZP charge left — consumed a Rage charge instead)[/color]"
-	GameState.game_log("[color=gold]Zealous Presence! You and nearby allies gain Advantage for %d turn(s).%s[/color]" % [duration, source_note])
-	# Free action — does NOT consume the turn.
+	var shield_rank: int = GameState.get_talent_rank("overheal_shield")
+	if shield_rank >= 1:
+		var thp: int = 0
+		match shield_rank:
+			1: thp = overheal
+			2: thp = heal_roll
+			3: thp = heal_roll + overheal
+		if thp > 0:
+			player.stats.temp_hp = thp  # replace, not stack
+			GameState.player_hp_changed.emit(player.stats.current_hp, player.stats.max_hp)
+			GameState.game_log("[color=cyan]Overheal Shield: %d temp HP.[/color]" % thp)
+
+	if GameState.get_talent_rank("judgement_day") >= 1:
+		judgement_day_pending = true
+
+# Radiant vs Necrotic — the full Morale/NPC-reputation system described in markdowns/zealot.md
+# is out of scope for this pass; defaults to Radiant (see GameState._build_judgement_day_bonus()).
+func judgement_day_damage_type() -> String:
+	return "Radiant"
