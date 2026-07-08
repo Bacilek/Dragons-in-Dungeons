@@ -277,6 +277,7 @@ func _on_turn_started() -> void:
 				var healed: int = GameState.short_rest_pending_heal
 				GameState.short_rest_pending_heal = 0
 				GameState.heal(healed)
+				AudioManager.play("rest")
 				GameState.game_log("[color=cyan]You finish your short rest and recover [b]+%d HP[/b].[/color]" % healed)
 				GameState.short_rest_completed.emit()
 			GameState.short_rest_changed.emit()
@@ -770,6 +771,7 @@ func _execute_queued_path() -> void:
 				if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 					_dungeon_floor.destroy_grass(grid_pos)
 				_actions.check_pickup()
+				_play_footstep_sound()
 				var trap_c: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 				if not trap_c.is_empty():
 					await _dungeon_floor.trigger_trap(grid_pos, self)
@@ -848,6 +850,7 @@ func _execute_queued_path() -> void:
 				_dungeon_floor.destroy_grass(grid_pos)
 				_dungeon_floor.update_fog(grid_pos)
 			_actions.check_pickup()
+			_play_footstep_sound()
 			var trap_p: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 			if not trap_p.is_empty():
 				await _dungeon_floor.trigger_trap(grid_pos, self)
@@ -926,6 +929,17 @@ func _resolve_enemy_opportunity_attacks(prev: Vector2i, next: Vector2i) -> void:
 			return
 	if evaded_any:
 		GameState.game_log("[color=gray]Eagle Form: you slip past their reach.[/color]")
+
+func _play_footstep_sound() -> void:
+	match _dungeon_floor.get_tile_type(grid_pos):
+		DungeonData.TileType.GRASS, DungeonData.TileType.TRAMPLED_GRASS:
+			AudioManager.play("step_grass")
+		DungeonData.TileType.MUD:
+			AudioManager.play("step_mud")
+		DungeonData.TileType.WATER:
+			AudioManager.play("step_water")
+		_:
+			AudioManager.play("step_floor")
 
 func _try_move(dir: Vector2i) -> void:
 	if _dungeon_floor == null:
@@ -1023,15 +1037,7 @@ func _try_move(dir: Vector2i) -> void:
 		_dungeon_floor.update_fog(grid_pos)
 		_actions.passive_trap_check()
 		_actions.check_pickup()
-		match _dungeon_floor.get_tile_type(grid_pos):
-			DungeonData.TileType.GRASS, DungeonData.TileType.TRAMPLED_GRASS:
-				AudioManager.play("step_grass")
-			DungeonData.TileType.MUD:
-				AudioManager.play("step_mud")
-			DungeonData.TileType.WATER:
-				AudioManager.play("step_water")
-			_:
-				AudioManager.play("step_floor")
+		_play_footstep_sound()
 		var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 		if not trap.is_empty():
 			await _dungeon_floor.trigger_trap(grid_pos, self)  # push trap still awaits; others return instantly
@@ -1110,6 +1116,7 @@ func _activate_rage() -> void:
 		ab.uses_remaining -= 1
 	GameState.player_stats.rage_uses_remaining = ab.uses_remaining
 	GameState.ability_bar_changed.emit()
+	AudioManager.play("rage")
 	$AnimatedSprite2D.modulate = Color(1.6, 0.55, 0.55)  # red tint
 	var rage_dmg_bonus: int = stats.rage_bonus_damage
 	GameState.game_log("[color=red]You fly into a RAGE! +%d STR damage. 50%% physical DR. (%d use(s) left)[/color]" % [rage_dmg_bonus, ab.uses_remaining])
@@ -1296,7 +1303,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_handle_post_attack_turn(is_monk_unarmed)
 		return
 
-	AudioManager.play("crit" if is_crit else "hit_enemy")
+	if is_crit: AudioManager.play_crit(weapon_item_ref)
+	else: AudioManager.play_hit(enemy.enemy_id)
 	_vfx.flash_hit(enemy)
 	if adv:
 		_vfx.show_surprise_mark(enemy)
@@ -1470,7 +1478,8 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 		GameState.game_log("[color=cyan]Cleave:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		return
-	AudioManager.play("crit" if is_crit else "hit_enemy")
+	if is_crit: AudioManager.play_crit(weapon)
+	else: AudioManager.play_hit(enemy.enemy_id)
 	_vfx.flash_hit(enemy)
 	var w_dmin: int = weapon.damage_die_min if weapon.damage_die_min > 0 else stats.base_min_damage
 	var w_dmax: int = weapon.damage_die_max if weapon.damage_die_max > 0 else stats.base_max_damage
@@ -1547,7 +1556,8 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 		GameState.game_log("[color=cyan]%s:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [label, enemy.display_name, hit_meta, miss_color])
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		return
-	AudioManager.play("crit" if is_crit else "hit_enemy")
+	if is_crit: AudioManager.play_crit(weapon)
+	else: AudioManager.play_hit(enemy.enemy_id)
 	_vfx.flash_hit(enemy)
 	if weapon.weapon_mastery == "Vex" and stats.knows_mastery("Vex"):
 		_vex_adv_target = enemy
@@ -1617,7 +1627,8 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 		GameState.game_log("[color=cyan]Opportunity attack:[/color] you swing at [color=orange]%s[/color] as it flees — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		return
-	AudioManager.play("crit" if is_crit else "hit_enemy")
+	if is_crit: AudioManager.play_crit(weapon)
+	else: AudioManager.play_hit(enemy.enemy_id)
 	_vfx.flash_hit(enemy)
 	var w_dmin: int
 	var w_dmax: int
@@ -1752,4 +1763,3 @@ func _use_ability_slot(idx: int) -> void:
 		"born_in_blood", "enough_is_enough", "bloodied_regen":
 			GameState.game_log("[color=gray]%s is passive — upgrades Limit Break or triggers automatically.[/color]" % ab.ability_name)
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
-

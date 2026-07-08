@@ -428,6 +428,8 @@ func _move_step(step: Vector2i, next_pos: Vector2i) -> void:
 	if not is_instance_valid(self):
 		return
 	$AnimatedSprite2D.play("idle")
+	if visible:
+		AudioManager.play("footstep")
 	if stepping_through_door:
 		just_crossed_door = true
 	if _dungeon_floor.has_door_at(prev_pos):

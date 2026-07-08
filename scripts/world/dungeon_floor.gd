@@ -173,11 +173,11 @@ func _load_floor() -> void:
 
 	_data = DungeonGenerator.generate(GameState.run_seed, GameState.current_floor)
 
-	# Music: boss floors get boss theme, others get dungeon ambient
+	# Music: boss floors get boss theme, others get a random dungeon-ambient track
 	if GameState.current_floor % 5 == 0:
-		AudioManager.play_music("res://audio/music_boss.ogg")
+		AudioManager.play_boss_music()
 	else:
-		AudioManager.play_music("res://audio/music_dungeon.ogg")
+		AudioManager.play_random_bgm()
 
 	tilemap.clear()
 	_grass_layer.clear()
@@ -657,6 +657,7 @@ func get_visible_enemies() -> Array[Enemy]:
 	return result
 
 func on_player_reached_stairs() -> void:
+	AudioManager.play("next_floor")
 	GameState.advance_floor()
 	if GameState.current_floor > 10:
 		return

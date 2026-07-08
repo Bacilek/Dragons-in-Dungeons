@@ -478,6 +478,7 @@ func long_rest() -> void:
 	_sync_ability_uses()
 	_consume_food_value(LONG_REST_FOOD_COST)
 	short_rest_changed.emit()
+	AudioManager.play("rest")
 	game_log("[color=cyan]You finish your long rest, fully healed and refreshed.[/color]")
 	long_rest_completed.emit()
 
@@ -567,6 +568,7 @@ func gain_exp(amount: int) -> void:
 		combat_message.emit(level_msg)
 		short_rest_changed.emit()
 		_apply_monk_level_features(player_stats.character_level)
+		AudioManager.play("level_up")
 		player_leveled_up.emit(player_stats.character_level)
 
 ## Which tier's pool a level-up at `lv` feeds. 0 = no talent point (level 6, 21+).
@@ -1063,6 +1065,7 @@ func invest_talent(id: String) -> void:
 	if not invincible:
 		talent_points[t.tier] -= 1
 	_apply_talent_rank(id, new_rank)
+	AudioManager.play("talent_point_spent")
 	talent_invested.emit(id, new_rank)
 	talent_points_changed.emit(talent_points_available)
 
