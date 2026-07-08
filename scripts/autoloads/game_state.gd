@@ -40,6 +40,9 @@ signal subclass_choice_required
 signal boss_defeated(boss_id: String)
 signal known_masteries_changed
 signal long_rest_completed()
+# Bruiser R3: fired instead of player_died when the revive triggers. player.gd connects this to
+# _end_rage() since Rage state lives there, not on GameState.
+signal force_rage_end()
 
 const QUICKBAR_SIZE: int = 9
 const ABILITY_BAR_SIZE: int = 9
@@ -57,6 +60,9 @@ const TALENT_ICON_FOLDER: Dictionary = {
 	"rage": "base/primal_fury",
 	"reckless_attack": "base/reckless_attack",
 	"danger_sense": "base/feral_instinct",
+	"psycho": "base/psycho",
+	"bruiser": "base/bruiser",
+	"battlefield_expert": "base/battlefield_expert",
 	# Berserker
 	"frenzy": "berserker/crimson_cleaver",
 	"sadist_monster": "berserker/unchained_momentum",
@@ -399,6 +405,7 @@ func advance_floor() -> void:
 	# Floor descent is no longer a rest — see long_rest() for every long-rest-gated resource.
 	# Only floor bookkeeping and terrain reset happen here.
 	terrain_ac_bonus = 0  # reset terrain AC; player.gd will reapply on next move
+	bruiser_revive_used_this_floor = false
 	short_rest_changed.emit()
 	floor_changed.emit(current_floor)
 	if current_floor > 10:
@@ -528,13 +535,26 @@ func hit_die_sides() -> int:
 
 func check_player_death() -> void:
 	if player_stats.is_dead() and not is_game_over and not invincible:
+		if get_talent_rank("bruiser") >= 3 and is_raging and not bruiser_revive_used_this_floor:
+			bruiser_revive_used_this_floor = true
+			player_stats.current_hp = 1
+			player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
+			force_rage_end.emit()
+			game_log("[color=gold]Bruiser: you refuse to fall! (1 HP, Rage ends)[/color]")
+			return
 		is_game_over = true
 		AudioManager.play("player_die")
 		player_died.emit()
 
 func heal(amount: int) -> void:
-	player_stats.current_hp = mini(player_stats.current_hp + amount, player_stats.max_hp)
+	var final_amount: int = amount
+	# Bruiser R1: +1d4 to any incoming heal while Bloodied.
+	if get_talent_rank("bruiser") >= 1 and player_stats.is_bloodied():
+		final_amount += Rng.roll(4)
+	player_stats.current_hp = mini(player_stats.current_hp + final_amount, player_stats.max_hp)
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
+	if get_talent_rank("bruiser") >= 2:
+		recalculate_stats()
 
 func gain_exp(amount: int) -> void:
 	var old_max_hp: int = player_stats.max_hp
@@ -764,6 +784,9 @@ func recalculate_stats() -> void:
 		s.armor_class += it.bonus_ac
 	s.armor_class += terrain_ac_bonus
 	s.armor_class += masochist_ac_bonus
+	# Bruiser R2: +1 AC while Bloodied.
+	if get_talent_rank("bruiser") >= 2 and s.is_bloodied():
+		s.armor_class += 1
 
 func move_item(src: String, src_idx: int, src_slot: String,
 			   dest: String, dest_idx: int, dest_slot: String) -> void:
@@ -942,6 +965,8 @@ var berserker_turns_since_frenzy: int = 0
 var masochist_ac_bonus: int = 0
 # Scarred Warrior Limit Break — once per long rest.
 var scarred_warrior_limit_break_used: bool = false
+# Bruiser R3 (base Barbarian Tier 1) — once per floor, resets in advance_floor().
+var bruiser_revive_used_this_floor: bool = false
 # reckless_attack_active is set by player.gd; enemies read it to decide their attack bonus type.
 var reckless_attack_active: bool = false
 # Set true after first reckless attack this turn — locks the toggle and blocks further bonus.
@@ -995,6 +1020,10 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 	if is_physical and not ignore_rage:
 		player_was_hit_this_turn = true
+	# Bruiser R2's +1 AC is Bloodied-conditional — recompute AC live whenever HP crosses the
+	# threshold (only bothers if the talent is actually invested).
+	if get_talent_rank("bruiser") >= 2:
+		recalculate_stats()
 	check_player_death()
 	return actual
 
@@ -1143,8 +1172,8 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 			var frenzy_ab: Ability = _find_ability_by_id("frenzy")
 			if frenzy_ab != null:
 				frenzy_ab.description = _build_frenzy_description()
-		"born_in_blood", "bloodied_regen":
-			pass  # pure stat-modifier talents — no ability to refresh
+		"born_in_blood", "bloodied_regen", "psycho", "bruiser", "battlefield_expert":
+			pass  # pure stat-modifier/reactive talents — no ability to refresh
 		"enough_is_enough":
 			var lb_ab: Ability = _find_ability_by_id("limit_break")
 			if lb_ab != null:
@@ -1455,6 +1484,51 @@ func _setup_barbarian_talents() -> void:
 		{"description": "STR +2 (flat stat increase)."},
 	]
 	_class_talents.append(ds_talent)
+
+	var psycho_talent := Talent.new()
+	psycho_talent.talent_id = "psycho"
+	psycho_talent.talent_name = "Psycho"
+	psycho_talent.description = "Momentum: kills and crits feed into your next strike."
+	psycho_talent.icon_path = talent_icon_path("psycho", 1)
+	psycho_talent.tier = 1
+	psycho_talent.class_id = Stats.CharacterClass.BARBARIAN
+	psycho_talent.max_rank = 3
+	psycho_talent.ranks = [
+		{"description": "After a kill or a critical hit, your next attack is made with Advantage."},
+		{"description": "When attacking with Advantage, add your STR modifier to the damage."},
+		{"description": "When attacking with Advantage, your crit range expands to 19-20."},
+	]
+	_class_talents.append(psycho_talent)
+
+	var bruiser_talent := Talent.new()
+	bruiser_talent.talent_id = "bruiser"
+	bruiser_talent.talent_name = "Bruiser"
+	bruiser_talent.description = "The lower you fall, the harder you hit back."
+	bruiser_talent.icon_path = talent_icon_path("bruiser", 1)
+	bruiser_talent.tier = 1
+	bruiser_talent.class_id = Stats.CharacterClass.BARBARIAN
+	bruiser_talent.max_rank = 3
+	bruiser_talent.ranks = [
+		{"description": "While Bloodied (below 50% max HP), any healing you receive is improved by +1d4."},
+		{"description": "While Bloodied, gain +1 AC."},
+		{"description": "Once per floor: if a hit while Raging would drop you to 0 HP, survive at 1 HP instead and Rage ends immediately."},
+	]
+	_class_talents.append(bruiser_talent)
+
+	var battlefield_talent := Talent.new()
+	battlefield_talent.talent_id = "battlefield_expert"
+	battlefield_talent.talent_name = "Battlefield Expert"
+	battlefield_talent.description = "Use footwork to dictate the fight."
+	battlefield_talent.icon_path = talent_icon_path("battlefield_expert", 1)
+	battlefield_talent.tier = 1
+	battlefield_talent.class_id = Stats.CharacterClass.BARBARIAN
+	battlefield_talent.max_rank = 3
+	battlefield_talent.ranks = [
+		{"description": "After side-stepping around an adjacent enemy, your next attack is made with Advantage."},
+		{"description": "After side-stepping, the enemy you side-stepped around has Disadvantage on their next attack."},
+		{"description": "Once per turn: if you were hit last turn, your first side-step this turn is free (doesn't cost the turn)."},
+	]
+	_class_talents.append(battlefield_talent)
 
 
 func _setup_barbarian_tier2_talents() -> void:
