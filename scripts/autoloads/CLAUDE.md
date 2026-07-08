@@ -72,19 +72,21 @@ Rng.get_state() / Rng.set_state(s)  # exact stream position (int64) for save/loa
 ---
 
 ## AudioManager (`audio_manager.gd`)
-Autoload singleton. Drop `.ogg` files into `res://audio/` with these names; missing files are silently ignored.
+Autoload singleton, all one-shot SFX + music routed through it — never call `AudioStreamPlayer` directly from gameplay code. `SFX_FILES` (single file) and `SFX_BANKS` (array of files, one picked at random per `play()` call — used for `player_hurt` and `footstep`) map logical names to real filenames under `res://audio/`; unmapped names (`miss_enemy`, `player_die`, `open_door`, `close_door`, `lock_door`, `trap_spike`, `trap_bear`, `drink_potion`, `cook_meat`, `bottle_fill`) have no asset yet and silently no-op — owed assets, not bugs.
 
 ```gdscript
-AudioManager.play("hit_enemy")          # one-shot SFX
-AudioManager.play_music("res://audio/music_dungeon.ogg")  # looping track
+AudioManager.play("hit_enemy")            # one-shot SFX by logical name
+AudioManager.play_crit(weapon)            # nat-20 stinger, auto-picks bludgeon/piercing variant from weapon.damage_type (null/empty = bludgeon)
+AudioManager.play_hit(enemy.enemy_id)     # normal hit, auto-picks a per-enemy-type variant if one exists (else "hit_enemy")
+AudioManager.play_random_bgm()            # random normal-floor track (bgm.mp3 / bgm2.mp3)
+AudioManager.play_boss_music()            # boss.mp3
 AudioManager.stop_music()
 ```
 
-**SFX names:** `hit_enemy, miss_enemy, crit, crit_fail, player_hurt, player_die, kill_enemy, shoot, open_door, close_door, lock_door, step_grass, step_mud, step_water, step_floor, trap_fire, trap_spike, trap_piston, trap_bear, drink_potion, lockpick, cook_meat, throw_item, bottle_fill`
-
-**Music:** `music_dungeon.ogg` (normal floors), `music_boss.ogg` (boss floors: floor % 5 == 0). Enable **Loop** in Godot import settings for music files.
-
-**Recommended free asset sources:** [kenney.nl](https://kenney.nl/assets) RPG pack, [freesound.org](https://freesound.org) (CC0 filter).
+**Single-file SFX:** `hit_enemy, hit_skeleton, hit_zombie, ranged_hit, shoot, crit, crit_piercing, crit_fail, kill_enemy, level_up, lockpick, next_floor, open_inventory, rage, rest, step_grass, step_floor, step_water, step_mud, talent_point_spent, trap_fire, trap_piston, weapon_break, throw_item`.
+**Random-variant banks:** `player_hurt` (5 files under `audio/get_hit/`), `footstep` (10 files `audio/footstep/footstepNN.ogg` — used for enemy movement; player movement uses the tile-typed `step_*` names instead, via `Player._play_footstep_sound()`).
+**Music:** `audio/bgm/bgm.mp3` + `bgm2.mp3` (normal floors, `play_random_bgm()`), `audio/bgm/boss.mp3` (boss floors, `play_boss_music()`) — picked in `DungeonFloor._load_floor()`. Enable **Loop** in Godot import settings for all three.
+**Adding a new SFX**: drop the file under `res://audio/`, add a `logical_name: "relative/path.ext"` entry to `SFX_FILES` (or a new key in `SFX_BANKS` for randomized variants), then call `AudioManager.play("logical_name")` at the trigger site — no other plumbing needed.
 
 ### Key state fields
 ```

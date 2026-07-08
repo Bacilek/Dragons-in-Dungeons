@@ -223,7 +223,8 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 		player._handle_post_attack_turn()
 		return
 
-	AudioManager.play("crit" if is_crit else "hit_enemy")
+	if is_crit: AudioManager.play_crit(weapon)
+	else: AudioManager.play_hit(enemy.enemy_id)
 	player._vfx.flash_hit(enemy)
 	if adv and not disadv:
 		player._vfx.show_surprise_mark(enemy)
@@ -276,6 +277,7 @@ func _consume_throw_use(weapon: Item, uses_lost: int) -> bool:
 		return false
 	weapon.uses_remaining = maxi(0, weapon.uses_remaining - uses_lost)
 	if weapon.uses_remaining <= 0:
+		AudioManager.play("weapon_break")
 		GameState.game_log("[color=gray]Your %s breaks![/color]" % weapon.item_name)
 		GameState.remove_item(weapon)
 		return true

@@ -58,6 +58,7 @@ func _on_toggle() -> void:
 	visible = not visible
 	GameState.inventory_open = visible
 	if visible:
+		AudioManager.play("open_inventory")
 		_refresh()
 
 func _safe_refresh() -> void:

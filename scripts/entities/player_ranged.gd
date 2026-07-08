@@ -130,7 +130,8 @@ func ranged_attack(enemy: Enemy) -> void:
 		player._handle_post_attack_turn()
 		return
 
-	AudioManager.play("crit" if is_crit else "hit_enemy")
+	if is_crit: AudioManager.play_crit(weapon)
+	else: AudioManager.play("ranged_hit")
 	player._vfx.flash_hit(enemy)
 	if adv and not disadv:
 		player._vfx.show_surprise_mark(enemy)
