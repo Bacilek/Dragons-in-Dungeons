@@ -202,7 +202,9 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var disadv: bool = r["disadv"]
 	var roll: int = die + total_hit_bonus
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
-	if is_crit: player._base_talents.on_crit_or_kill()
+	if is_crit:
+		player._base_talents.on_crit_or_kill()
+		player._berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 
 	var mod_key: String = "dex" if (weapon.is_finesse and dex_mod > str_mod) else "str"

@@ -85,24 +85,44 @@ static func fmt_grz_tooltip(p: Dictionary) -> String:
 	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
 	return "\n".join(lines)
 
-# Frenzy (Berserker): a plain d20 with no AC comparison — nat 1 = self-damage only, 2-19 = a
-# shared dice roll to both sides (+ Sadist Monster bonus to the enemy), nat 20 = doubled +
-# doubled Sadist Monster bonus, no self-damage. No STR/prof/weapon-enhancement modifiers at all.
-static func fmt_frenzy_tooltip(p: Dictionary) -> String:
-	var die: int    = int(p.get("die", "0"))
+# Frenzy (Berserker) — the attack roll and the damage roll are shown as two SEPARATE hover
+# tooltips (mirrors every normal attack's hit:/dmg: split), since Frenzy's resolution is
+# unusual enough (plain d20, no AC) that folding both into one number was confusing.
+
+# "frzhit" — what the plain d20 roll means. No AC comparison, no attack modifier: nat 1 always
+# misses (self-damage only), nat 20 always crits (double enemy damage, no self-damage), anything
+# else is a shared hit.
+static func fmt_frenzy_hit_tooltip(p: Dictionary) -> String:
+	var die: int = int(p.get("die", "0"))
 	var outcome: String = p.get("outcome", "hit")
-	var roll: int   = int(p.get("roll", "0"))
-	var dmax: int   = int(p.get("dmax", "0"))
-	var sadist: int = int(p.get("sadist", "0"))
-	var final_dmg: int = int(p.get("final", "0"))
 	var lines: PackedStringArray = []
 	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if outcome == "crit" else ("  [color=red]✕ FAIL[/color]" if outcome == "miss" else "")
-	lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
-	lines.append("1d%d = [color=yellow]%d[/color]  (weapon dice, no modifiers)" % [dmax, roll])
+	lines.append("d20 = [color=yellow]%d[/color]%s  (no modifier, no AC)" % [die, die_suffix])
+	lines.append("─────────────────")
+	match outcome:
+		"miss": lines.append("Nat 1: you take the damage instead — target unharmed.")
+		"crit": lines.append("Nat 20: target takes double damage — you take none.")
+		_: lines.append("2–19: you and the target take the same damage.")
+	return "\n".join(lines)
+
+# "frzdmg" — the weapon-dice + STR/Rage modifier + Sadist Monster + crit-doubling breakdown for
+# one of Frenzy's two damage numbers (the enemy's or the player's self-damage — same formula,
+# just with sadist/crit zeroed out for the self-damage number).
+static func fmt_frenzy_dmg_tooltip(p: Dictionary) -> String:
+	var dmax: int   = int(p.get("dmax", "0"))
+	var roll: int   = int(p.get("roll", "0"))
+	var mod: int    = int(p.get("mod", "0"))
+	var sadist: int = int(p.get("sadist", "0"))
+	var crit: bool  = p.get("crit", "0") == "1"
+	var final_dmg: int = int(p.get("final", "0"))
+	var lines: PackedStringArray = []
+	lines.append("1d%d = [color=yellow]%d[/color]" % [dmax, roll])
+	if mod != 0:
+		lines.append("[color=lightblue]%+d[/color]  (STR mod + Rage bonus)" % mod)
 	if sadist != 0:
 		lines.append("[color=red]+%d[/color]  (Sadist Monster)" % sadist)
 	lines.append("─────────────────")
-	if outcome == "crit":
+	if crit:
 		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
 	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
 	return "\n".join(lines)

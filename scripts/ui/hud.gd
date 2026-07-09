@@ -895,5 +895,6 @@ func _format_tooltip(meta: String) -> String:
 		"ret":           return TooltipFormatters.fmt_ret_tooltip(params)
 		"catk":          return TooltipFormatters.fmt_catk_tooltip(params)
 		"grz":           return TooltipFormatters.fmt_grz_tooltip(params)
-		"frz":           return TooltipFormatters.fmt_frenzy_tooltip(params)
+		"frzhit":        return TooltipFormatters.fmt_frenzy_hit_tooltip(params)
+		"frzdmg":        return TooltipFormatters.fmt_frenzy_dmg_tooltip(params)
 	return ""
