@@ -36,34 +36,47 @@ func execute_frenzy(enemy: Enemy) -> void:
 	if melee != null and melee.damage_die_min > 0:
 		w_dmin = melee.damage_die_min
 		w_dmax = melee.damage_die_max
-	var dmg_roll: int = Rng.range_i(w_dmin, w_dmax)
+	var weapon_dice: int = Rng.range_i(w_dmin, w_dmax)
+	# Frenzy's shared damage includes the same modifiers a normal attack would — STR mod +
+	# Rage bonus (Frenzy requires Raging, so this is always active). Both sides take this
+	# identical modified roll on a 2-19; only Sadist Monster (enemy-only) and crit doubling
+	# break the symmetry.
+	var mod_total: int = player.stats.str_modifier() + player.stats.rage_bonus_damage
+	var dmg_roll: int = weapon_dice + mod_total
 	var sadist_rank: int = GameState.get_talent_rank("sadist_monster")
 	var sadist_bonus: int = 0
 	if sadist_rank >= 1:
 		for i: int in sadist_rank:
 			sadist_bonus += Rng.roll(6)
 
+	# The attack roll (d20 outcome: miss/hit/crit) and the damage roll are two separate numbers
+	# with their own hover tooltips — "frzhit" explains what the d20 result means, "frzdmg"
+	# breaks down the weapon dice + modifiers + Sadist Monster + crit doubling, same two-tooltip
+	# convention (hit/dmg) every normal attack already uses.
 	if die_roll == 1:
+		var attack_meta: String = "frzhit:die=%d,outcome=miss" % die_roll
 		var self_dmg: int = player.stats.take_damage(dmg_roll)
 		GameState.player_hp_changed.emit(player.stats.current_hp, player.stats.max_hp)
-		var meta: String = "frz:die=%d,outcome=miss,roll=%d,dmin=%d,dmax=%d,sadist=0,final=%d" % [die_roll, dmg_roll, w_dmin, w_dmax, self_dmg]
-		GameState.game_log("[color=red]Frenzy misses! You tear into yourself for [url=%s][color=orange]%d[/color][/url] damage.[/color]" % [meta, self_dmg])
+		var dmg_meta: String = "frzdmg:dmax=%d,roll=%d,mod=%d,sadist=0,crit=0,final=%d" % [w_dmax, weapon_dice, mod_total, self_dmg]
+		GameState.game_log("[color=red][url=%s]Frenzy misses![/url] You tear into yourself for [url=%s][color=orange]%d[/color][/url] damage.[/color]" % [attack_meta, dmg_meta, self_dmg])
 		_note_self_damage()
 		GameState.check_player_death()
 	elif die_roll == 20:
+		var attack_meta: String = "frzhit:die=%d,outcome=crit" % die_roll
 		var crit_bonus: int = sadist_bonus * 2
 		var total: int = dmg_roll * 2 + crit_bonus
 		var actual: int = enemy.stats.take_damage(total)
 		enemy.update_hp_bar()
 		if player._dungeon_floor != null:
 			player._dungeon_floor.show_damage(enemy.position, actual, true)
-		var meta: String = "frz:die=%d,outcome=crit,roll=%d,dmin=%d,dmax=%d,sadist=%d,final=%d" % [die_roll, dmg_roll, w_dmin, w_dmax, crit_bonus, actual]
-		GameState.game_log("[color=gold]FRENZY CRIT! %s takes [url=%s][color=yellow]%d[/color][/url] damage — you feel nothing.[/color]" % [enemy.display_name, meta, actual])
+		var dmg_meta: String = "frzdmg:dmax=%d,roll=%d,mod=%d,sadist=%d,crit=1,final=%d" % [w_dmax, weapon_dice, mod_total, sadist_bonus, actual]
+		GameState.game_log("[color=gold][url=%s]FRENZY CRIT![/url] %s takes [url=%s][color=yellow]%d[/color][/url] damage — you feel nothing.[/color]" % [attack_meta, enemy.display_name, dmg_meta, actual])
 		_refresh_frenzy_on("crit")
 		if enemy.stats.is_dead():
 			player._finish_kill(enemy)
 			_refresh_frenzy_on("kill")
 	else:
+		var attack_meta: String = "frzhit:die=%d,outcome=hit" % die_roll
 		var self_dmg2: int = player.stats.take_damage(dmg_roll)
 		GameState.player_hp_changed.emit(player.stats.current_hp, player.stats.max_hp)
 		var total2: int = dmg_roll + sadist_bonus
@@ -71,8 +84,9 @@ func execute_frenzy(enemy: Enemy) -> void:
 		enemy.update_hp_bar()
 		if player._dungeon_floor != null:
 			player._dungeon_floor.show_damage(enemy.position, actual2, false)
-		var meta: String = "frz:die=%d,outcome=hit,roll=%d,dmin=%d,dmax=%d,sadist=%d,final=%d" % [die_roll, dmg_roll, w_dmin, w_dmax, sadist_bonus, actual2]
-		GameState.game_log("[color=red]Frenzy! %s takes [url=%s][color=orange]%d[/color][/url] damage — you take [color=orange]%d[/color] back.[/color]" % [enemy.display_name, meta, actual2, self_dmg2])
+		var dmg_meta: String = "frzdmg:dmax=%d,roll=%d,mod=%d,sadist=%d,crit=0,final=%d" % [w_dmax, weapon_dice, mod_total, sadist_bonus, actual2]
+		var self_meta: String = "frzdmg:dmax=%d,roll=%d,mod=%d,sadist=0,crit=0,final=%d" % [w_dmax, weapon_dice, mod_total, self_dmg2]
+		GameState.game_log("[color=red][url=%s]Frenzy![/url] %s takes [url=%s][color=orange]%d[/color][/url] damage — you take [url=%s][color=orange]%d[/color][/url] back.[/color]" % [attack_meta, enemy.display_name, dmg_meta, actual2, self_meta, self_dmg2])
 		_note_self_damage()
 		GameState.check_player_death()
 		if enemy.stats.is_dead():
@@ -84,6 +98,14 @@ func execute_frenzy(enemy: Enemy) -> void:
 	# Frenzy is a free action — doesn't cost the turn (per spec).
 	player._reverted_this_round = true
 	TurnManager.revert_to_waiting()
+
+# Frenzied Killer R2: refreshes on ANY critical hit the player lands this turn — normal attack,
+# cleave, ranged, thrown, or Frenzy's own crit — not scoped to Frenzy's own crit like R1's kill
+# trigger is. Hooked alongside PlayerBaseTalents.on_crit_or_kill() at every player attack-roll
+# site (Frenzy's own nat-20 branch calls _refresh_frenzy_on("crit") directly instead, since it
+# isn't one of those shared sites).
+func refresh_on_any_crit() -> void:
+	_refresh_frenzy_on("crit")
 
 func _refresh_frenzy_on(trigger: String) -> void:
 	var rank: int = GameState.get_talent_rank("frenzied_killer")

@@ -1311,8 +1311,8 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 func _build_frenzy_description() -> String:
 	var sadist_rank: int = get_talent_rank("sadist_monster")
 	var lines: Array[String] = [
-		"Requires Raging. Click an adjacent enemy: roll to hit (d20 + attack modifier).",
-		"Nat 1: miss — only you take weapon damage. 2-19: hit — enemy AND you both take the same weapon damage roll. Nat 20: enemy takes double damage, you take none.",
+		"Requires Raging. Move into or click an adjacent enemy. Rolls a plain d20 (no attack modifier, no AC) to decide the outcome — weapon damage always includes your STR mod + Rage bonus, same as a normal attack.",
+		"Nat 1: miss — only you take the damage. 2-19: hit — enemy AND you both take the same damage roll. Nat 20: enemy takes double damage, you take none.",
 		"Once per short rest (also resets on long rest).",
 	]
 	if sadist_rank >= 1:
@@ -1542,9 +1542,9 @@ func _setup_barbarian_tier2_talents() -> void:
 	frenzied_killer_talent.class_id = Stats.CharacterClass.BARBARIAN
 	frenzied_killer_talent.max_rank = 3
 	frenzied_killer_talent.ranks = [
-		{"description": "Frenzy's use refreshes after a killing blow on any enemy."},
-		{"description": "Also refreshes after landing a critical hit."},
-		{"description": "Also refreshes every 3 turns."},
+		{"description": "Frenzy's use refreshes whenever Frenzy itself lands the killing blow."},
+		{"description": "Also refreshes whenever you land a critical hit with ANY attack, not just Frenzy."},
+		{"description": "Also refreshes automatically every 3 turns."},
 	]
 	_class_talents.append(frenzied_killer_talent)
 

@@ -1261,7 +1261,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var disadv: bool = r["disadv"]
 	var roll: int = die + total_hit_bonus
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
-	if is_crit: _base_talents.on_crit_or_kill()
+	if is_crit:
+		_base_talents.on_crit_or_kill()
+		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 
 	# Track that we attacked while raging (for rank 1 countdown pause)
@@ -1484,7 +1486,9 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var disadv: bool = r["disadv"]
 	var roll: int = die + str_mod + prof + weapon_bonus
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
-	if is_crit: _base_talents.on_crit_or_kill()
+	if is_crit:
+		_base_talents.on_crit_or_kill()
+		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
 		die, die1, die2, str_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
@@ -1563,7 +1567,9 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	var disadv: bool = r["disadv"]
 	var roll: int = die + attack_mod + prof + weapon_bonus
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
-	if is_crit: _base_talents.on_crit_or_kill()
+	if is_crit:
+		_base_talents.on_crit_or_kill()
+		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 	var mod_key: String = "dex" if (weapon.is_finesse and dex_mod > str_mod) else "str"
 	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
@@ -1636,7 +1642,9 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	var disadv: bool = r["disadv"]
 	var roll: int = die + attack_mod + prof + weapon_bonus
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
-	if is_crit: _base_talents.on_crit_or_kill()
+	if is_crit:
+		_base_talents.on_crit_or_kill()
+		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 	var mod_key: String = "dex" if (is_monk_unarmed or (is_finesse_weapon and dex_mod > str_mod)) else "str"
 	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
