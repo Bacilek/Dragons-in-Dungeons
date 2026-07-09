@@ -58,8 +58,10 @@ const SFX_BANKS: Dictionary = {
 const BGM_TRACKS: Array = ["res://audio/bgm/bgm.mp3", "res://audio/bgm/bgm2.mp3"]
 const BOSS_TRACK := "res://audio/bgm/boss.mp3"
 
-# -6.02 dB == 50% linear volume (20*log10(0.5)). All SFX and music are played at half volume.
+# -6.02 dB == 50% linear volume (20*log10(0.5)). Music stays at half volume (-8.0 base).
 const VOLUME_50_PCT_DB := -6.0206
+# SFX are turned down further below the 50% baseline.
+const SFX_VOLUME_DB := -9.0
 
 var _players: Dictionary = {}       # single-file name -> AudioStreamPlayer
 var _bank_players: Dictionary = {}  # bank name -> Array[AudioStreamPlayer] (one per file)
@@ -70,6 +72,7 @@ func _ready() -> void:
 	_music = AudioStreamPlayer.new()
 	_music.bus = "Master"
 	_music.volume_db = -8.0 + VOLUME_50_PCT_DB
+	_music.finished.connect(_on_music_finished)
 	add_child(_music)
 
 	for sfx_name: String in SFX_FILES:
@@ -84,11 +87,16 @@ func _ready() -> void:
 func _make_player(path: String) -> AudioStreamPlayer:
 	var p := AudioStreamPlayer.new()
 	p.bus = "Master"
-	p.volume_db = VOLUME_50_PCT_DB
+	p.volume_db = SFX_VOLUME_DB
 	add_child(p)
 	if ResourceLoader.exists(path):
 		p.stream = load(path)
 	return p
+
+# Loops BGM/boss music even if the imported stream's own "Loop" import setting is off.
+func _on_music_finished() -> void:
+	if not _current_music_path.is_empty():
+		_music.play()
 
 func play(sfx_name: String) -> void:
 	if _bank_players.has(sfx_name):
@@ -129,7 +137,6 @@ func play_music(path: String) -> void:
 		return
 	_music.stream = load(path)
 	_music.play()
-	# Note: enable "Loop" in Godot import settings for music files
 
 # Picks a random normal-floor BGM track (cosmetic randomness — not gameplay-affecting).
 func play_random_bgm() -> void:

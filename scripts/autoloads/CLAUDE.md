@@ -85,8 +85,9 @@ AudioManager.stop_music()
 
 **Single-file SFX:** `hit_enemy, hit_skeleton, hit_zombie, ranged_hit, shoot, crit, crit_piercing, crit_fail, kill_enemy, level_up, lockpick, next_floor, open_inventory, rage, rest, step_grass, step_floor, step_water, step_mud, talent_point_spent, trap_fire, trap_piston, weapon_break, throw_item`.
 **Random-variant banks:** `player_hurt` (5 files under `audio/get_hit/`), `footstep` (10 files `audio/footstep/footstepNN.ogg` — used for enemy movement; player movement uses the tile-typed `step_*` names instead, via `Player._play_footstep_sound()`).
-**Music:** `audio/bgm/bgm.mp3` + `bgm2.mp3` (normal floors, `play_random_bgm()`), `audio/bgm/boss.mp3` (boss floors, `play_boss_music()`) — picked in `DungeonFloor._load_floor()`. Enable **Loop** in Godot import settings for all three.
+**Music:** `audio/bgm/bgm.mp3` + `bgm2.mp3` (normal floors, `play_random_bgm()`), `audio/bgm/boss.mp3` (boss floors, `play_boss_music()`) — picked in `DungeonFloor._load_floor()`. Looping is handled in code, not the import setting: `_music.finished` is connected to `_on_music_finished()`, which replays the same stream from the start — works regardless of each file's own "Loop" import flag.
 **Adding a new SFX**: drop the file under `res://audio/`, add a `logical_name: "relative/path.ext"` entry to `SFX_FILES` (or a new key in `SFX_BANKS` for randomized variants), then call `AudioManager.play("logical_name")` at the trigger site — no other plumbing needed.
+**Volume**: SFX play at `SFX_VOLUME_DB` (-9.0 dB), music at `-8.0 + VOLUME_50_PCT_DB` (≈-14.02 dB, i.e. half of its original -8.0 dB baseline). `VOLUME_50_PCT_DB` (-6.0206 dB) is the linear-to-dB constant for "50% volume" — reuse it rather than hardcoding another half-volume dB value.
 
 ### Key state fields
 ```
