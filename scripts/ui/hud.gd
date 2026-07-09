@@ -480,7 +480,7 @@ func _refresh_item_bar() -> void:
 		var raw = GameState.player_quickbar[i]
 		var slot: Button = _item_slots[i]
 		var qty_lbl: Label = _slot_qty_labels[i]
-		slot.modulate = Color(1.0, 1.0, 1.0)  # reset tint from ability bar (e.g. reckless orange)
+		slot.modulate = Color(1.0, 1.0, 1.0)  # reset tint from ability bar (e.g. active-toggle orange)
 		if _slot_use_labels.size() > i:
 			_slot_use_labels[i].visible = false
 		if raw == null:
@@ -519,12 +519,7 @@ func _refresh_ability_bar() -> void:
 				use_lbl.visible = true
 				if ab.uses_max == 0:
 					# Passive / infinite uses.
-					match ab.ability_id:
-						"danger_sense":
-							use_lbl.text = "passive"
-							use_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-						_:
-							use_lbl.text = ""
+					use_lbl.text = ""
 				elif ab.ability_id == "rage" and GameState.is_raging:
 					# While raging: show remaining turns instead of use count.
 					use_lbl.text = "%dt" % GameState.rage_turns_remaining
@@ -533,11 +528,8 @@ func _refresh_ability_bar() -> void:
 					use_lbl.text = "%d/%d" % [ab.uses_remaining, ab.uses_max]
 					var clr: Color = Color(1.0, 0.7, 0.2) if ab.uses_remaining > 0 else Color(0.5, 0.5, 0.5)
 					use_lbl.add_theme_color_override("font_color", clr)
-			# Modulate: locked-reckless = darker gray; active toggle = orange; exhausted = gray; else white
-			var reckless_locked: bool = ab.ability_id == "reckless_attack" and GameState.reckless_locked_this_turn
-			if reckless_locked:
-				slot.modulate = Color(0.45, 0.45, 0.45)
-			elif ab.is_active:
+			# Modulate: active toggle = orange; exhausted = gray; else white
+			if ab.is_active:
 				slot.modulate = Color(1.0, 0.55, 0.1)
 			elif ab.uses_remaining > 0 or ab.uses_max == 0:
 				slot.modulate = Color(1.0, 1.0, 1.0)

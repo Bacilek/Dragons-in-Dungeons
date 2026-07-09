@@ -72,7 +72,6 @@ const TALENT_ICON_FLAT: Dictionary = {
 	"psycho": "t1/psycho_killer",
 	"bruiser": "t1/bruiser",
 	"battlefield_expert": "t1/battlefield_expert",
-	# Reckless Attack / Danger Sense: owed assets, no t1 art supplied yet — left unmapped.
 	# Berserker
 	"frenzy": "t2/berserker/frenzy",
 	"sadist_monster": "t2/berserker/sadist",
@@ -1019,16 +1018,9 @@ var masochist_ac_bonus: int = 0
 var scarred_warrior_limit_break_used: bool = false
 # Bruiser R3 (base Barbarian Tier 1) — once per floor, resets in advance_floor().
 var bruiser_revive_used_this_floor: bool = false
-# reckless_attack_active is set by player.gd; enemies read it to decide their attack bonus type.
-var reckless_attack_active: bool = false
-# Set true after first reckless attack this turn — locks the toggle and blocks further bonus.
-var reckless_locked_this_turn: bool = false
 # Set true by take_damage_raw when the player takes physical hit damage (not status effects).
 # Player.gd reads this in _on_turn_started to decide whether to pause the rage countdown.
 var player_was_hit_this_turn: bool = false
-
-var reckless_rank: int:
-	get: return get_talent_rank("reckless_attack")
 
 # Synced by player.gd each turn so HUD can display remaining rage turns on the ability slot.
 var rage_turns_remaining: int = 0
@@ -1177,9 +1169,6 @@ func debug_set_talent_rank(id: String, new_rank: int) -> void:
 	if new_rank == old_rank:
 		return
 	if new_rank < old_rank:
-		if id == "danger_sense" and old_rank >= 3 and new_rank < 3:
-			player_stats.strength = maxi(10, player_stats.strength - 2)
-			recalculate_stats()
 		if new_rank == 0:
 			for i: int in player_ability_bar.size():
 				var ab: Ability = player_ability_bar[i]
@@ -1203,21 +1192,6 @@ func debug_set_talent_rank(id: String, new_rank: int) -> void:
 
 func _apply_talent_rank(id: String, rank: int) -> void:
 	match id:
-		"reckless_attack":
-			if rank == 1:
-				var ra := Ability.new()
-				ra.ability_id = "reckless_attack"
-				ra.ability_name = "Reckless"
-				ra.description = _build_reckless_description(1)
-				ra.icon_path = talent_icon_path("reckless_attack", 1)
-				ra.uses_remaining = 0
-				ra.uses_max = 0
-				add_ability(ra)
-			else:
-				var ra: Ability = _find_ability_by_id("reckless_attack")
-				if ra != null:
-					ra.description = _build_reckless_description(rank)
-					ra.icon_path = talent_icon_path("reckless_attack", rank)
 		"sadist_monster", "masochist_monster", "frenzied_killer":
 			# All three upgrade the free base Frenzy ability rather than granting their own
 			# ability-bar entry — refresh Frenzy's description so its tooltip stays current.
@@ -1230,30 +1204,6 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 			var lb_ab: Ability = _find_ability_by_id("limit_break")
 			if lb_ab != null:
 				lb_ab.description = _build_limit_break_description()
-		"danger_sense":
-			if rank == 1:
-				var ds := Ability.new()
-				ds.ability_id = "danger_sense"
-				ds.ability_name = "Danger Sense"
-				ds.description = _build_danger_sense_description(1)
-				ds.icon_path = talent_icon_path("danger_sense", 1)
-				ds.uses_remaining = 0
-				ds.uses_max = 0
-				ds.is_passive = true
-				add_ability(ds)
-			elif rank == 2:
-				var ds: Ability = _find_ability_by_id("danger_sense")
-				if ds != null:
-					ds.description = _build_danger_sense_description(2)
-					ds.icon_path = talent_icon_path("danger_sense", 2)
-			elif rank == 3:
-				player_stats.strength += 2
-				recalculate_stats()
-				var ds: Ability = _find_ability_by_id("danger_sense")
-				if ds != null:
-					ds.description = _build_danger_sense_description(3)
-					ds.icon_path = talent_icon_path("danger_sense", 3)
-				combat_message.emit("[color=cyan]Danger Sense 3: STR +2 (now [b]%d[/b])![/color]" % player_stats.strength)
 		"wild_companion":
 			if rank == 1:
 				var owtn := Ability.new()
@@ -1380,23 +1330,6 @@ func _build_rage_description() -> String:
 	lines.append("%d use%s per floor (scales with level)." % [uses, "s" if uses != 1 else ""])
 	return "\n".join(lines)
 
-func _build_reckless_description(rank: int) -> String:
-	match rank:
-		1: return "Toggle (free action): +2 to your first STR melee attack roll this turn. Enemies also get +2 to their attack rolls against you."
-		2: return "Toggle (free action): Advantage on your first STR melee attack roll. Enemies gain Advantage against you."
-		3: return "Toggle (free action): Advantage on all STR melee attack rolls. Enemies gain Advantage against you."
-	return ""
-
-func _build_danger_sense_description(rank: int) -> String:
-	var lines: Array[String] = ["Passive."]
-	if rank >= 1:
-		lines.append("Advantage on DEX checks (traps, locks).")
-	if rank >= 2:
-		lines.append("For DEX/WIS/CHA checks, use whichever is higher: normal modifier or STR modifier.")
-	if rank >= 3:
-		lines.append("STR +2.")
-	return "\n".join(lines)
-
 func _build_one_with_nature_description() -> String:
 	var rank: int = get_talent_rank("wild_companion")
 	var d: Dictionary = WILD_HEART_COMPANION_STATS.get(maxi(rank, 1), {})
@@ -1506,36 +1439,6 @@ func _build_zealot_strike_description() -> String:
 
 func _setup_barbarian_talents() -> void:
 	_class_talents = []
-
-	var reckless_talent := Talent.new()
-	reckless_talent.talent_id = "reckless_attack"
-	reckless_talent.talent_name = "Reckless Attack"
-	reckless_talent.description = "Unlock and upgrade Reckless Attack."
-	reckless_talent.icon_path = talent_icon_path("reckless_attack", 1)
-	reckless_talent.tier = 1
-	reckless_talent.class_id = Stats.CharacterClass.BARBARIAN
-	reckless_talent.max_rank = 3
-	reckless_talent.ranks = [
-		{"description": "Toggle: +2 to first STR attack roll. Enemies +2 to attacks vs you."},
-		{"description": "Toggle: Advantage on first STR attack roll. Enemies gain Advantage vs you."},
-		{"description": "Toggle: Advantage on all STR attack rolls. Enemies gain Advantage vs you."},
-	]
-	_class_talents.append(reckless_talent)
-
-	var ds_talent := Talent.new()
-	ds_talent.talent_id = "danger_sense"
-	ds_talent.talent_name = "Danger Sense"
-	ds_talent.description = "Unlock and upgrade Danger Sense."
-	ds_talent.icon_path = talent_icon_path("danger_sense", 1)
-	ds_talent.tier = 1
-	ds_talent.class_id = Stats.CharacterClass.BARBARIAN
-	ds_talent.max_rank = 3
-	ds_talent.ranks = [
-		{"description": "Advantage on DEX checks (traps, locks, Sleight of Hand)."},
-		{"description": "For DEX/WIS/CHA checks, use max(normal mod, STR mod) automatically."},
-		{"description": "STR +2 (flat stat increase)."},
-	]
-	_class_talents.append(ds_talent)
 
 	var psycho_talent := Talent.new()
 	psycho_talent.talent_id = "psycho"
@@ -1898,8 +1801,8 @@ func to_dict() -> Dictionary:
 
 # Restores the full run state from a parsed save dict (load order per doc §4.3):
 # clean slate → class defaults + starting gear rebuild → talent replay → inventory/
-# equipment → rest → Stats LAST (so stat-mutating replay one-shots like Danger Sense R3's
-# STR +2 are overwritten by the saved, already-buffed values instead of double-applying) →
+# equipment → rest → Stats LAST (so any stat-mutating replay one-shots are overwritten by
+# the saved, already-buffed values instead of double-applying) →
 # per-ability uses/toggle patches. Does NOT load the floor — the caller (session 3c's
 # Continue flow) decides when to reload the floor from run_seed + current_floor.
 func from_dict(d: Dictionary) -> void:
@@ -1979,8 +1882,6 @@ func from_dict(d: Dictionary) -> void:
 			ab.uses_remaining = int(uses_d[ab.ability_id])
 		if active_d.has(ab.ability_id):
 			ab.is_active = bool(active_d[ab.ability_id])
-			if ab.ability_id == "reckless_attack":
-				reckless_attack_active = ab.is_active
 	# 7. UI refresh (signals only — HUD never polls). floor_changed is deliberately NOT
 	# emitted here; the Continue flow (3c) drives the actual floor load.
 	inventory_changed.emit()

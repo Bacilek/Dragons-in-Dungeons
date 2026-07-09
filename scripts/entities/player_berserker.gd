@@ -17,8 +17,30 @@ func activate_frenzy() -> void:
 	if GameState.berserker_frenzy_used:
 		GameState.game_log("[color=gray]Frenzy: already used (resets on short/long rest).[/color]")
 		return
+	var adjacent: Enemy = _find_single_adjacent_enemy()
+	if adjacent != null:
+		execute_frenzy(adjacent)
+		return
 	frenzy_mode_active = true
 	GameState.game_log("[color=red]Frenzy — click an adjacent enemy. [Esc] to cancel.[/color]")
+
+# Hotkey convenience: if exactly one enemy is adjacent, hotkey activation bumps straight into it
+# (same feel as a normal melee attack) instead of requiring a follow-up click. Ambiguous (0 or 2+
+# adjacent enemies) still falls back to click-to-target mode below.
+func _find_single_adjacent_enemy() -> Enemy:
+	if player._dungeon_floor == null:
+		return null
+	var found: Enemy = null
+	for dx: int in range(-1, 2):
+		for dy: int in range(-1, 2):
+			if dx == 0 and dy == 0:
+				continue
+			var e: Enemy = player._dungeon_floor.get_enemy_at(player.grid_pos + Vector2i(dx, dy))
+			if e != null:
+				if found != null:
+					return null
+				found = e
+	return found
 
 func execute_frenzy(enemy: Enemy) -> void:
 	if not GameState.invincible:
@@ -75,7 +97,9 @@ func execute_frenzy(enemy: Enemy) -> void:
 
 	if player._dungeon_floor != null:
 		player._dungeon_floor.update_fog(player.grid_pos)
-	TurnManager.on_player_action_complete()
+	# Frenzy is a free action — doesn't cost the turn (per spec).
+	player._reverted_this_round = true
+	TurnManager.revert_to_waiting()
 
 func _refresh_frenzy_on(trigger: String) -> void:
 	var rank: int = GameState.get_talent_rank("frenzied_killer")

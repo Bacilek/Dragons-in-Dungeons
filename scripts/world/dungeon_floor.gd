@@ -904,27 +904,21 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 	var target: Node2D = entity if entity != null else _player
 
 	# DEX check for player: 1d20 + DEX mod + prof (only if DEX check proficiency) vs DC
-	# Danger Sense talent rank 1: advantage on DEX checks vs traps — roll 2d20 take higher.
 	if target is Player:
 		var s: Stats = GameState.player_stats
 		var dex_mod: int = s.dex_modifier()
 		var has_prof: bool = s.check_prof_dex
 		var prof_bonus: int = s.proficiency_bonus if has_prof else 0
-		var danger_rank: int = GameState.get_talent_rank("danger_sense")
-		var has_adv: bool = danger_rank >= 1 or s.zealous_presence_turns > 0
+		var has_adv: bool = s.zealous_presence_turns > 0
 		var die1: int = Rng.roll(20)
 		var die2: int = die1
 		if has_adv:
 			die2 = Rng.roll(20)
 		var die: int = maxi(die1, die2)
-		# Danger Sense rank 2: use max(DEX mod, STR mod) for DEX/WIS/CHA checks
 		var effective_stat: String = "DEX"
-		if danger_rank >= 2 and s.str_modifier() > dex_mod:
-			dex_mod = s.str_modifier()
-			effective_stat = "STR"
 		var roll: int = die + dex_mod + prof_bonus
 		var dc: int = 10 + GameState.current_floor
-		var adv_tag: String = " [color=gray](%s)[/color]" % ("Danger Sense" if danger_rank >= 1 else "Zealous Presence") if has_adv else ""
+		var adv_tag: String = " [color=gray](Zealous Presence)[/color]" if has_adv else ""
 		var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [
 			effective_stat, die, die1, die2, dex_mod, prof_bonus, roll, dc, 1 if roll >= dc else 0, 1 if has_adv else 0]
 		if roll >= dc:

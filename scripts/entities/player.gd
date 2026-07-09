@@ -67,11 +67,6 @@ var _eagle_free_move_used: bool = false
 # Per-round caps are NOT reset on reverted turns — only after enemies go.
 var _reverted_this_round: bool = false
 
-# ── Reckless Attack state ─────────────────────────────────────────────────────
-# Talent-gated toggle (not available at rank 0). Free action — toggling does not consume a turn.
-# Rank 1: +2 flat to first STR attack / enemies +2. Rank 2+: ADV / enemies ADV.
-var _reckless_active: bool = false
-
 # ── World Tree state (Tier 2) ─────────────────────────────────────────────────
 # Ironwood Bark R3: bonus damage from temp HP snapshotted at turn start, consumed by next attack.
 var _ironwood_bark_bonus_pending: int = 0
@@ -173,7 +168,6 @@ func _on_turn_started() -> void:
 	# Per-round caps only reset on REAL turns (after enemies resolve).
 	# On reverted turns, Eagle's free-move flag persists so it can't fire again this round.
 	if not came_from_revert:
-		GameState.reckless_locked_this_turn = false
 		_eagle_free_move_used = false
 		_grip_used_this_turn = false
 		_vex_adv_target = null
@@ -1103,27 +1097,6 @@ func _try_move(dir: Vector2i) -> void:
 
 # ── Rage helpers ─────────────────────────────────────────────────────────────
 
-func _activate_reckless() -> void:
-	var ab: Ability = _find_ability("reckless_attack")
-	if ab == null:
-		return
-	if GameState.reckless_locked_this_turn:
-		GameState.game_log("[color=gray]Reckless Attack can only be toggled before your first attack.[/color]")
-		return
-	_reckless_active = not _reckless_active
-	ab.is_active = _reckless_active
-	GameState.reckless_attack_active = _reckless_active
-	GameState.ability_bar_changed.emit()
-	var rank: int = GameState.get_talent_rank("reckless_attack")
-	if _reckless_active:
-		match rank:
-			1: GameState.game_log("[color=yellow]Reckless Attack: ON — +2 to STR attack roll, enemies +2 to attack you.[/color]")
-			2: GameState.game_log("[color=yellow]Reckless Attack: ON — ADV on first STR attack, enemies ADV against you.[/color]")
-			3: GameState.game_log("[color=yellow]Reckless Attack: ON — ADV on all STR attacks, enemies ADV against you.[/color]")
-	else:
-		GameState.game_log("[color=gray]Reckless Attack: OFF.[/color]")
-	# Free action: does NOT consume the turn.
-
 func _activate_rage() -> void:
 	if _is_raging:
 		GameState.game_log("[color=red]You are already raging![/color]")
@@ -1242,23 +1215,12 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var adv_count: int = 0
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	var disadv_count: int = 0
-	var reckless_flat_bonus: int = 0  # rank 1 flat +2 (not ADV)
 	if _vfx.has_advantage(enemy): adv_count += 1
 	# Zealous Presence: Advantage on all attack rolls while buffed.
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	# Vex (Short Bow): ADV on the attack immediately following a Short-Bow hit on this same enemy.
 	var vex_triggered: bool = _vex_adv_target == enemy
 	if vex_triggered: adv_count += 1
-	# Reckless Attack: rank 1 = flat +2 on first attack; rank 2+ = ADV on first; rank 3 = ADV on all.
-	var reckless_rank: int = GameState.get_talent_rank("reckless_attack")
-	var reckless_applies: bool = _reckless_active and is_str_weapon and not GameState.reckless_locked_this_turn
-	var reckless_all_attacks: bool = _reckless_active and is_str_weapon and reckless_rank >= 3
-	if reckless_applies or reckless_all_attacks:
-		match reckless_rank:
-			1:
-				reckless_flat_bonus = 2
-			2, 3:
-				adv_count += 1
 	# Heavy weapon penalty: STR < 13 imposes Disadvantage
 	var weapon_item_ref: Item = GameState.equipped_weapon
 	if weapon_item_ref != null and weapon_item_ref.is_heavy and stats.strength < 13: disadv_count += 1
@@ -1273,17 +1235,13 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			adv_count += 1
 	if vex_triggered:
 		_vex_adv_target = null
-	# Commit Reckless: lock toggle after first attack (not needed for rank 3 all-attacks mode).
-	if reckless_applies and reckless_rank < 3:
-		GameState.reckless_locked_this_turn = true
-		GameState.ability_bar_changed.emit()
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]
 	var die2: int = r["die2"]
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + total_hit_bonus + reckless_flat_bonus
+	var roll: int = die + total_hit_bonus
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit: _base_talents.on_crit_or_kill()
 	var is_nat_one: bool = die == 1
@@ -1307,8 +1265,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var w_enh: int = weapon_bonus  # weapon.bonus_damage
 	# Use dex= key for Monk unarmed, or for a Finesse weapon whose DEX mod is the one actually used.
 	var mod_key: String = "dex" if (is_monk_unarmed or (is_finesse_weapon and dex_mod > str_mod)) else "str"
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
-		die, die1, die2, mod_key, attack_mod, prof, w_enh, reckless_flat_bonus, roll, enemy.stats.armor_class,
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
+		die, die1, die2, mod_key, attack_mod, prof, w_enh, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
 		1 if is_crit else 0, 1 if is_nat_one else 0]
 
@@ -1627,8 +1585,8 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 
 # Opportunity Attack: a self-contained, turn-free melee swing triggered when an enemy leaves the
 # player's threat range (see docs/architecture/opportunity-attacks-design.md). Modeled on
-# _resolve_cleave_attack() — no TurnManager involvement, no per-turn talent effects. Reckless/
-# Vex/Frenzy/Divine-Fury/Ironwood-Bark are deliberately excluded — those are per-turn action
+# _resolve_cleave_attack() — no TurnManager involvement, no per-turn talent effects. Vex/
+# Frenzy/Divine-Fury/Ironwood-Bark are deliberately excluded — those are per-turn action
 # effects, and this fires on the enemy's turn, not the player's.
 func resolve_opportunity_attack(enemy: Enemy) -> void:
 	if not is_instance_valid(enemy) or enemy.stats.is_dead():
@@ -1782,8 +1740,6 @@ func _use_ability_slot(idx: int) -> void:
 	var ab := raw as Ability
 	match ab.ability_id:
 		"rage":                    _activate_rage()
-		"reckless_attack":         _activate_reckless()
-		"danger_sense":            GameState.game_log("[color=gray]Danger Sense is passive — no activation needed.[/color]")
 		"unarmored_defense_monk":  GameState.game_log("[color=gray]Unarmored Defense is passive — active when unarmored (AC = 10+DEX+WIS).[/color]")
 		"martial_arts":            GameState.game_log("[color=gray]Martial Arts is passive — attack unarmed to trigger a bonus-action strike.[/color]")
 		"wild_companion":         _wild_heart.activate_one_with_nature(ab)
