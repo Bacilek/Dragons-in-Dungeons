@@ -31,14 +31,17 @@ func resolve_zealot_strike_heal() -> void:
 	zealot_strike_armed = false
 	if not GameState.invincible:
 		GameState.hit_dice -= 1
-	var heal_roll: int = Rng.roll(GameState.hit_die_sides()) + player.stats.con_modifier()
-	heal_roll = maxi(1, heal_roll)
+	var raw_roll: int = Rng.roll(GameState.hit_die_sides())
+	var con_mod: int = player.stats.con_modifier()
+	var heal_roll: int = maxi(1, raw_roll + con_mod)
 	var before: int = player.stats.current_hp
 	var overheal: int = maxi(0, (before + heal_roll) - player.stats.max_hp)
-	GameState.heal(heal_roll)
+	var bruiser_bonus: int = GameState.heal(heal_roll)
 	var healed: int = player.stats.current_hp - before
 	if healed > 0:
-		GameState.game_log("[color=lime]Zealot Strike mends your wounds (+%d HP).[/color]" % healed)
+		var bonus_sources: String = CombatMath.encode_bonus_sources([{"name": "Bruiser", "amount": bruiser_bonus, "color": "cyan"}])
+		var _hm: String = "heal:dice=1,sides=%d,con=%d,roll=%d,bonus=%s,total=%d" % [GameState.hit_die_sides(), con_mod, raw_roll, bonus_sources, healed]
+		GameState.game_log("[color=lime]Zealot Strike mends your wounds ([url=%s]+%d HP[/url]).[/color]" % [_hm, healed])
 
 	var shield_rank: int = GameState.get_talent_rank("overheal_shield")
 	if shield_rank >= 1:

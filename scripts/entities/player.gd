@@ -232,10 +232,13 @@ func _on_turn_started() -> void:
 		TurnManager.on_player_action_complete()
 		return
 
-	# Tick rage duration. Baseline: lasts 1 turn, refreshed to 1 turn by attacking or being
-	# attacked last turn (Masochist Monster R3 can further override expiry — see below).
-	if _is_raging:
-		var combat_last_turn: bool = _rage_attacked_this_turn or GameState.player_was_hit_this_turn
+	# Tick rage duration. Baseline: lasts 1 turn, refreshed to 1 turn by attacking (hit or miss)
+	# or being attacked (hit or miss) last turn (Masochist Monster R3 can further override expiry
+	# — see below). Gated on real turns only — a reverted/free-action turn (Frenzy, Battlefield
+	# Expert's free side-step) hasn't actually let a round pass, so it must never tick Rage down
+	# or count as "no combat this turn".
+	if _is_raging and not came_from_revert:
+		var combat_last_turn: bool = _rage_attacked_this_turn or GameState.player_was_hit_this_turn or GameState.player_attacked_this_turn
 		var masochist_r3_active: bool = GameState.get_talent_rank("masochist_monster") >= 3 \
 				and not _fov_this_turn.is_empty()
 		if masochist_r3_active:
@@ -244,18 +247,18 @@ func _on_turn_started() -> void:
 			_rage_turns = 1
 		else:
 			_rage_turns -= 1
-		_rage_attacked_this_turn = false
-		GameState.player_was_hit_this_turn = false
 		GameState.rage_turns_remaining = _rage_turns
 		GameState.ability_bar_changed.emit()
 		if _rage_turns <= 0:
 			_end_rage()
 			GameState.game_log("[color=gray]Your Rage fades.[/color]")
-	# player_was_hit_this_turn is otherwise only cleared above while raging — clear it here too
-	# so non-raging Barbarians' Battlefield Expert R3 check (read further up) is scoped to
-	# "last turn" instead of leaking true forever after the first hit of the run.
+	# Cleared once per real turn regardless of Rage state, so Battlefield Expert R3's "was hit
+	# last turn" check (read further up) stays scoped to "last turn" instead of leaking true
+	# forever after the first hit of the run.
 	if not came_from_revert:
+		_rage_attacked_this_turn = false
 		GameState.player_was_hit_this_turn = false
+		GameState.player_attacked_this_turn = false
 
 	# Short rest in progress — player waits in place
 	if GameState.short_rest_active:
@@ -280,11 +283,15 @@ func _on_turn_started() -> void:
 				var prompt_script = load("res://scripts/ui/mastery_reselect_prompt.gd")
 				get_tree().root.call_deferred("add_child", prompt_script.new())
 			else:
-				var healed: int = GameState.short_rest_pending_heal
+				var pending_heal: int = GameState.short_rest_pending_heal
 				GameState.short_rest_pending_heal = 0
-				GameState.heal(healed)
+				var before_hp: int = GameState.player_stats.current_hp
+				var bruiser_bonus: int = GameState.heal(pending_heal)
+				var healed: int = GameState.player_stats.current_hp - before_hp
 				AudioManager.play("rest")
-				GameState.game_log("[color=cyan]You finish your short rest and recover [b]+%d HP[/b].[/color]" % healed)
+				var bonus_sources: String = CombatMath.encode_bonus_sources([{"name": "Bruiser", "amount": bruiser_bonus, "color": "cyan"}])
+				var _hm: String = "heal:dice=0,sides=0,con=0,roll=0,bonus=%s,total=%d" % [bonus_sources, healed]
+				GameState.game_log("[color=cyan]You finish your short rest and recover [url=%s][b]+%d HP[/b][/url].[/color]" % [_hm, healed])
 				GameState.short_rest_completed.emit()
 			GameState.short_rest_changed.emit()
 		_actions.do_rest_wait_turn()
@@ -960,6 +967,17 @@ func _try_move(dir: Vector2i) -> void:
 
 	var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
 	if enemy != null:
+		# Frenzy/Limit Break armed: a directional bump into an adjacent enemy targets it, same
+		# as a normal melee attack — mouse click-to-target (player.gd's click handler) still
+		# works as the alternative. Neither auto-fires without an explicit bump or click.
+		if _berserker.frenzy_mode_active:
+			_berserker.frenzy_mode_active = false
+			_berserker.execute_frenzy(enemy)
+			return
+		if _scarred_warrior.limit_break_mode_active:
+			_scarred_warrior.limit_break_mode_active = false
+			_scarred_warrior.execute_limit_break(enemy)
+			return
 		if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
 			_ranged.ranged_attack(enemy)
 		else:
@@ -1301,13 +1319,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var rage_bonus: int = stats.rage_bonus_damage if (_is_raging and is_str_weapon) else 0
 	# Monk unarmed uses DEX for damage; Finesse weapons use max(STR, DEX); all others use STR.
 	var dmg_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
-	var pre_crit: int = die_roll + w_enh + rage_bonus + dmg_mod
-	if is_crit:
-		pre_crit *= 2
-		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
-		GameState.screen_shake.emit(5.0)
 
-	# All bonus damage sources (Ironwood Bark, Judgement Day) are computed BEFORE
+	# All bonus damage sources (Ironwood Bark, Judgement Day, Psycho) are computed BEFORE
 	# take_damage/show_damage and folded into one number — see "damage stacking" rule in
 	# scripts/entities/CLAUDE.md. Never call take_damage/show_damage separately per source.
 	# Each source keeps its own named amount in dmg_meta (not just a combined "bonus" total)
@@ -1337,7 +1350,16 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		psycho_bonus = str_mod
 
 	var bonus_dmg: int = frenzy_bonus + ironwood_bonus + judgement_bonus + psycho_bonus
-	var actual: int = enemy.stats.take_damage(pre_crit + bonus_dmg)
+	# Multiplication always happens LAST: sum every source (dice, weapon enh, rage, ability mod,
+	# and every bonus source above) into one total, THEN double it on a crit — never double a
+	# partial subtotal and tack bonuses on afterward, or a crit silently skips doubling whichever
+	# source was computed after the multiply.
+	var pre_crit: int = die_roll + w_enh + rage_bonus + dmg_mod + bonus_dmg
+	if is_crit:
+		pre_crit *= 2
+		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
+		GameState.screen_shake.emit(5.0)
+	var actual: int = enemy.stats.take_damage(pre_crit)
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)

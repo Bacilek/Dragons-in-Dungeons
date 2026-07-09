@@ -14,32 +14,10 @@ func activate_limit_break() -> void:
 	if GameState.scarred_warrior_limit_break_used:
 		GameState.game_log("[color=gray]Limit Break: already used (resets on long rest).[/color]")
 		return
-	var adjacent: Enemy = _find_single_adjacent_enemy()
-	if adjacent != null:
-		execute_limit_break(adjacent)
-		return
 	limit_break_mode_active = true
 	var rank: int = GameState.get_talent_rank("enough_is_enough")
 	var range_note: String = " within 5 tiles (piercing line)" if rank >= 3 else "an adjacent"
-	GameState.game_log("[color=gold]Limit Break — click %s enemy. [Esc] to cancel.[/color]" % range_note)
-
-# Hotkey convenience: if exactly one enemy is adjacent, hotkey activation bumps straight into it
-# (same feel as a normal melee attack) instead of requiring a follow-up click. Ambiguous (0 or 2+
-# adjacent enemies) still falls back to click-to-target mode below.
-func _find_single_adjacent_enemy() -> Enemy:
-	if player._dungeon_floor == null:
-		return null
-	var found: Enemy = null
-	for dx: int in range(-1, 2):
-		for dy: int in range(-1, 2):
-			if dx == 0 and dy == 0:
-				continue
-			var e: Enemy = player._dungeon_floor.get_enemy_at(player.grid_pos + Vector2i(dx, dy))
-			if e != null:
-				if found != null:
-					return null
-				found = e
-	return found
+	GameState.game_log("[color=gold]Limit Break — move into or click %s enemy. [Esc] to cancel.[/color]" % range_note)
 
 func execute_limit_break(primary: Enemy) -> void:
 	if not GameState.invincible:

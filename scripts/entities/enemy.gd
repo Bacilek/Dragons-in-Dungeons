@@ -535,6 +535,9 @@ func _attack_player(_player: Player) -> void:
 	if GameState.invincible:
 		GameState.game_log("[color=tomato]%s[/color] strikes you — [color=gray]blocked (invincible)[/color]" % display_name)
 		return
+	# Rage's duration refresh cares about being attacked at all, not just being hit — set
+	# regardless of the roll's outcome (see player.gd._on_turn_started()'s rage tick).
+	GameState.player_attacked_this_turn = true
 	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class)
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
