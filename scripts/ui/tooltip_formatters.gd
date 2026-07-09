@@ -63,14 +63,15 @@ static func fmt_dmg_tooltip(p: Dictionary) -> String:
 		lines.append("[color=lightblue]%+d[/color]  (STR mod)" % str_mod)
 	if dex_mod != 0:
 		lines.append("[color=lightblue]%+d[/color]  (DEX mod)" % dex_mod)
-	if crit:
-		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
 	# Generic bonus-damage sources (Rage, Frenzy, Ironwood Bark, Divine Fury, ...) — see
 	# CombatMath.encode_bonus_sources()/decode_bonus_sources() in scripts/entities/combat_math.gd.
 	# A future damage source only needs to be added to the encode call site, never here.
 	for src: Dictionary in CombatMath.decode_bonus_sources(p.get("bonus", "")):
 		lines.append("[color=%s]+%d[/color]  (%s)" % [src["color"], src["amount"], src["name"]])
 	lines.append("─────────────────")
+	# Multiplication always happens LAST — every source above is summed first, then doubled.
+	if crit:
+		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
 	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
 	return "\n".join(lines)
 
@@ -84,27 +85,52 @@ static func fmt_grz_tooltip(p: Dictionary) -> String:
 	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
 	return "\n".join(lines)
 
+# Frenzy (Berserker): a plain d20 with no AC comparison — nat 1 = self-damage only, 2-19 = a
+# shared dice roll to both sides (+ Sadist Monster bonus to the enemy), nat 20 = doubled +
+# doubled Sadist Monster bonus, no self-damage. No STR/prof/weapon-enhancement modifiers at all.
+static func fmt_frenzy_tooltip(p: Dictionary) -> String:
+	var die: int    = int(p.get("die", "0"))
+	var outcome: String = p.get("outcome", "hit")
+	var roll: int   = int(p.get("roll", "0"))
+	var dmax: int   = int(p.get("dmax", "0"))
+	var sadist: int = int(p.get("sadist", "0"))
+	var final_dmg: int = int(p.get("final", "0"))
+	var lines: PackedStringArray = []
+	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if outcome == "crit" else ("  [color=red]✕ FAIL[/color]" if outcome == "miss" else "")
+	lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
+	lines.append("1d%d = [color=yellow]%d[/color]  (weapon dice, no modifiers)" % [dmax, roll])
+	if sadist != 0:
+		lines.append("[color=red]+%d[/color]  (Sadist Monster)" % sadist)
+	lines.append("─────────────────")
+	if outcome == "crit":
+		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
+	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
+	return "\n".join(lines)
+
 static func fmt_heal_tooltip(p: Dictionary) -> String:
 	var dice: int  = int(p.get("dice", "0"))
 	var sides: int = int(p.get("sides", "0"))
 	var con: int   = int(p.get("con", "0"))
 	var total: int = int(p.get("total", "0"))
 	var lines: PackedStringArray = []
+	var uncapped: int = 0
 	if dice > 0 and sides > 0:
 		var roll: int = int(p.get("roll", "0"))
 		lines.append("%dd%d = [color=lime]%d[/color]" % [dice, sides, roll])
-		if con != 0:
-			lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)
-		lines.append("─────────────────")
-		var uncapped: int = maxi(1, roll + con)
-		if total < uncapped:
-			lines.append("= [color=gray]+%d HP[/color]  →  [color=lime]+%d HP[/color] healed" % [uncapped, total])
-		else:
-			lines.append("= [color=lime]+%d HP[/color]" % total)
+		uncapped += roll
+	if con != 0:
+		lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)
+		uncapped += con
+	# Generic bonus-heal sources (Bruiser R1, ...) — see CombatMath.encode_bonus_sources()/
+	# decode_bonus_sources(). A future bonus-heal source only needs to be added at the call site.
+	for src: Dictionary in CombatMath.decode_bonus_sources(p.get("bonus", "")):
+		lines.append("[color=%s]+%d[/color]  (%s)" % [src["color"], src["amount"], src["name"]])
+		uncapped += src["amount"]
+	lines.append("─────────────────")
+	uncapped = maxi(1, uncapped)
+	if total < uncapped:
+		lines.append("= [color=gray]+%d HP[/color]  →  [color=lime]+%d HP[/color] healed" % [uncapped, total])
 	else:
-		if con != 0:
-			lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)
-			lines.append("─────────────────")
 		lines.append("= [color=lime]+%d HP[/color]" % total)
 	return "\n".join(lines)
 

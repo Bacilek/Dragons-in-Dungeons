@@ -17,36 +17,17 @@ func activate_frenzy() -> void:
 	if GameState.berserker_frenzy_used:
 		GameState.game_log("[color=gray]Frenzy: already used (resets on short/long rest).[/color]")
 		return
-	var adjacent: Enemy = _find_single_adjacent_enemy()
-	if adjacent != null:
-		execute_frenzy(adjacent)
-		return
 	frenzy_mode_active = true
-	GameState.game_log("[color=red]Frenzy — click an adjacent enemy. [Esc] to cancel.[/color]")
-
-# Hotkey convenience: if exactly one enemy is adjacent, hotkey activation bumps straight into it
-# (same feel as a normal melee attack) instead of requiring a follow-up click. Ambiguous (0 or 2+
-# adjacent enemies) still falls back to click-to-target mode below.
-func _find_single_adjacent_enemy() -> Enemy:
-	if player._dungeon_floor == null:
-		return null
-	var found: Enemy = null
-	for dx: int in range(-1, 2):
-		for dy: int in range(-1, 2):
-			if dx == 0 and dy == 0:
-				continue
-			var e: Enemy = player._dungeon_floor.get_enemy_at(player.grid_pos + Vector2i(dx, dy))
-			if e != null:
-				if found != null:
-					return null
-				found = e
-	return found
+	GameState.game_log("[color=red]Frenzy — move into or click an adjacent enemy. [Esc] to cancel.[/color]")
 
 func execute_frenzy(enemy: Enemy) -> void:
 	if not GameState.invincible:
 		GameState.berserker_frenzy_used = true
 	GameState.berserker_turns_since_frenzy = 0
 	TurnManager.begin_player_action()
+	# Frenzy is an attack — it must refresh Rage's duration just like a normal attack does,
+	# regardless of hit/miss (see player.gd._on_turn_started()'s rage tick).
+	player._rage_attacked_this_turn = true
 
 	var die_roll: int = Rng.roll(20)
 	var w_dmin: int = player.stats.base_min_damage
@@ -65,7 +46,8 @@ func execute_frenzy(enemy: Enemy) -> void:
 	if die_roll == 1:
 		var self_dmg: int = player.stats.take_damage(dmg_roll)
 		GameState.player_hp_changed.emit(player.stats.current_hp, player.stats.max_hp)
-		GameState.game_log("[color=red]Frenzy misses! You tear into yourself for [color=orange]%d[/color] damage.[/color]" % self_dmg)
+		var meta: String = "frz:die=%d,outcome=miss,roll=%d,dmin=%d,dmax=%d,sadist=0,final=%d" % [die_roll, dmg_roll, w_dmin, w_dmax, self_dmg]
+		GameState.game_log("[color=red]Frenzy misses! You tear into yourself for [url=%s][color=orange]%d[/color][/url] damage.[/color]" % [meta, self_dmg])
 		_note_self_damage()
 		GameState.check_player_death()
 	elif die_roll == 20:
@@ -75,7 +57,8 @@ func execute_frenzy(enemy: Enemy) -> void:
 		enemy.update_hp_bar()
 		if player._dungeon_floor != null:
 			player._dungeon_floor.show_damage(enemy.position, actual, true)
-		GameState.game_log("[color=gold]FRENZY CRIT! %s takes [color=yellow]%d[/color] damage — you feel nothing.[/color]" % [enemy.display_name, actual])
+		var meta: String = "frz:die=%d,outcome=crit,roll=%d,dmin=%d,dmax=%d,sadist=%d,final=%d" % [die_roll, dmg_roll, w_dmin, w_dmax, crit_bonus, actual]
+		GameState.game_log("[color=gold]FRENZY CRIT! %s takes [url=%s][color=yellow]%d[/color][/url] damage — you feel nothing.[/color]" % [enemy.display_name, meta, actual])
 		_refresh_frenzy_on("crit")
 		if enemy.stats.is_dead():
 			player._finish_kill(enemy)
@@ -88,7 +71,8 @@ func execute_frenzy(enemy: Enemy) -> void:
 		enemy.update_hp_bar()
 		if player._dungeon_floor != null:
 			player._dungeon_floor.show_damage(enemy.position, actual2, false)
-		GameState.game_log("[color=red]Frenzy! %s takes [color=orange]%d[/color] damage — you take [color=orange]%d[/color] back.[/color]" % [enemy.display_name, actual2, self_dmg2])
+		var meta: String = "frz:die=%d,outcome=hit,roll=%d,dmin=%d,dmax=%d,sadist=%d,final=%d" % [die_roll, dmg_roll, w_dmin, w_dmax, sadist_bonus, actual2]
+		GameState.game_log("[color=red]Frenzy! %s takes [url=%s][color=orange]%d[/color][/url] damage — you take [color=orange]%d[/color] back.[/color]" % [enemy.display_name, meta, actual2, self_dmg2])
 		_note_self_damage()
 		GameState.check_player_death()
 		if enemy.stats.is_dead():

@@ -597,15 +597,19 @@ func check_player_death() -> void:
 		AudioManager.play("player_die")
 		player_died.emit()
 
-func heal(amount: int) -> void:
+func heal(amount: int) -> int:
 	var final_amount: int = amount
-	# Bruiser R1: +1d4 to any incoming heal while Bloodied.
+	# Bruiser R1: +1d4 to any incoming heal while Bloodied. Returned so callers can name it as
+	# its own bonus source in the heal tooltip, instead of it silently vanishing into the total.
+	var bruiser_bonus: int = 0
 	if get_talent_rank("bruiser") >= 1 and player_stats.is_bloodied():
-		final_amount += Rng.roll(4)
+		bruiser_bonus = Rng.roll(4)
+		final_amount += bruiser_bonus
 	player_stats.current_hp = mini(player_stats.current_hp + final_amount, player_stats.max_hp)
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 	if get_talent_rank("bruiser") >= 2:
 		recalculate_stats()
+	return bruiser_bonus
 
 func gain_exp(amount: int) -> void:
 	var old_max_hp: int = player_stats.max_hp
@@ -931,19 +935,22 @@ func use_item(item: Item) -> void:
 				var con_mod: int = player_stats.con_modifier()
 				var amount: int = maxi(1, raw_roll + con_mod)
 				var before: int = player_stats.current_hp
-				heal(amount)
+				var bruiser_bonus: int = heal(amount)
 				var healed: int = player_stats.current_hp - before
 				if healed > 0:
-					var _hm: String = "heal:dice=%d,sides=%d,con=%d,roll=%d,total=%d" % [item.heal_dice_count, item.heal_dice_sides, con_mod, raw_roll, healed]
+					var bonus_sources: String = CombatMath.encode_bonus_sources([{"name": "Bruiser", "amount": bruiser_bonus, "color": "cyan"}])
+					var _hm: String = "heal:dice=%d,sides=%d,con=%d,roll=%d,bonus=%s,total=%d" % [item.heal_dice_count, item.heal_dice_sides, con_mod, raw_roll, bonus_sources, healed]
 					combat_message.emit("You drink [b]%s[/b] and heal [url=%s][color=lime]+%d HP[/color][/url]" % [item.item_name, _hm, healed])
 				else:
 					combat_message.emit("[color=gray]Already at full health.[/color]")
 			elif item.heal_amount > 0:
 				var before: int = player_stats.current_hp
-				heal(item.heal_amount)
+				var bruiser_bonus2: int = heal(item.heal_amount)
 				var healed: int = player_stats.current_hp - before
 				if healed > 0:
-					combat_message.emit("[color=green]You drink [b]%s[/b] and recover %d HP.[/color]" % [item.item_name, healed])
+					var bonus_sources2: String = CombatMath.encode_bonus_sources([{"name": "Bruiser", "amount": bruiser_bonus2, "color": "cyan"}])
+					var _hm2: String = "heal:dice=0,sides=0,con=0,roll=0,bonus=%s,total=%d" % [bonus_sources2, healed]
+					combat_message.emit("[color=green]You drink [b]%s[/b] and recover [url=%s]%d HP[/url].[/color]" % [item.item_name, _hm2, healed])
 				else:
 					combat_message.emit("[color=gray]Already at full health.[/color]")
 			if item.str_bonus > 0:
@@ -1021,6 +1028,10 @@ var bruiser_revive_used_this_floor: bool = false
 # Set true by take_damage_raw when the player takes physical hit damage (not status effects).
 # Player.gd reads this in _on_turn_started to decide whether to pause the rage countdown.
 var player_was_hit_this_turn: bool = false
+# Set true by enemy.gd._attack_player() on ANY attack roll against the player, hit or miss.
+# Separate from player_was_hit_this_turn (which specifically means damage landed) because
+# Rage's duration refresh triggers on being attacked at all — see _on_turn_started()'s rage tick.
+var player_attacked_this_turn: bool = false
 
 # Synced by player.gd each turn so HUD can display remaining rage turns on the ability slot.
 var rage_turns_remaining: int = 0
