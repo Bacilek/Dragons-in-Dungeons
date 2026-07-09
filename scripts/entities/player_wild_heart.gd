@@ -72,6 +72,7 @@ func cycle_animal_form(ab: Ability) -> void:
 	if player._dungeon_floor != null:
 		player._dungeon_floor.update_fog(player.grid_pos)
 	ab.description = GameState._build_natural_rager_description()
+	ab.icon_path = GameState.talent_icon_path("animal_form", 0)
 	GameState.ability_bar_changed.emit()
 	GameState.game_log("[color=orange]Animal Form: switched to %s Form.[/color]" % GameState.natural_rager_form)
 
@@ -82,6 +83,7 @@ func cycle_natural_sleeper_form(ab: Ability) -> void:
 	var idx: int = forms.find(GameState.natural_sleeper_form)
 	GameState.natural_sleeper_form = forms[(idx + 1) % forms.size()]
 	ab.description = GameState._build_natural_sleeper_description()
+	ab.icon_path = GameState.talent_icon_path("expanded_forms", 0)
 	GameState.ability_bar_changed.emit()
 	var chosen: String = GameState.natural_sleeper_form
 	if GameState.wild_heart_sleeper_active and GameState.active_sleeper_form != chosen:

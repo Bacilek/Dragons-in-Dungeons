@@ -55,46 +55,86 @@ const WILD_HEART_COMPANION_STATS: Dictionary = {
 	3: {"animal": "Bear",     "ac": 16, "hp": 30, "die_count": 3, "die_sides": 6},
 }
 
-# talent_id → icons/barbarian/<folder>_<rank>.png stem. Rank-specific art (1-3), see icons/barbarian/CLAUDE.md.
+# talent_id → icons/classes/barbarian/<path>_<rank>.png stem. Rank-gradient art (1-3) —
+# World Tree only, see icons/classes/barbarian/t2/world_tree/.
 const TALENT_ICON_FOLDER: Dictionary = {
-	"rage": "base/primal_fury",
-	"reckless_attack": "base/reckless_attack",
-	"danger_sense": "base/feral_instinct",
-	"psycho": "base/psycho",
-	"bruiser": "base/bruiser",
-	"battlefield_expert": "base/battlefield_expert",
-	# Berserker
-	"frenzy": "berserker/crimson_cleaver",
-	"sadist_monster": "berserker/unchained_momentum",
-	"masochist_monster": "berserker/vengeful_reflex",
-	"frenzied_killer": "berserker/frenzied_killer",
-	# Scarred Warrior
-	"limit_break": "scarred_warrior/limit_break",
-	"born_in_blood": "scarred_warrior/born_in_blood",
-	"enough_is_enough": "scarred_warrior/enough_is_enough",
-	"bloodied_regen": "scarred_warrior/bloodied_regen",
-	# Wild Heart
-	"animal_form": "wild_heart/aspect_of_the_wild",
-	"expanded_forms": "wild_heart/dreamwalker_instinct",
-	"enhanced_forms": "wild_heart/primal_bond",
-	"wild_companion": "wild_heart/wild_companion",
-	# World Tree (unchanged)
-	"ironwood_bark": "world_tree/ironwood_bark",
-	"grip_of_the_forest": "world_tree/grip_of_the_forest",
-	"branching_strike": "world_tree/branching_strike",
-	# Zealot
-	"zealot_strike": "zealot/divine_fury",
-	"judgement_day": "zealot/zealous_presence",
-	"overheal_shield": "zealot/blessed_warrior",
-	"never_back_down": "zealot/never_back_down",
+	"ironwood_bark": "t2/world_tree/ironwood_bark",
+	"grip_of_the_forest": "t2/world_tree/grip_of_the_forest",
+	"branching_strike": "t2/world_tree/branching_strike",
 }
 
-## Returns the rank-specific icon for a talent/ability (rank clamped to 1-3); "" if unmapped.
+# talent_id/ability_id → icons/classes/barbarian/<path>.png. Single flat icon (no rank
+# gradient) — everything except World Tree (TALENT_ICON_FOLDER above) and the Wild Heart
+# form-driven abilities (WILD_HEART_*_ICON below, keyed by current form/rank instead of a
+# fixed file).
+const TALENT_ICON_FLAT: Dictionary = {
+	"rage": "t0/rage",
+	"psycho": "t1/psycho_killer",
+	"bruiser": "t1/bruiser",
+	"battlefield_expert": "t1/battlefield_expert",
+	# Reckless Attack / Danger Sense: owed assets, no t1 art supplied yet — left unmapped.
+	# Berserker
+	"frenzy": "t2/berserker/frenzy",
+	"sadist_monster": "t2/berserker/sadist",
+	"masochist_monster": "t2/berserker/masochist",
+	"frenzied_killer": "t2/berserker/blood-rush",
+	# Scarred Warrior
+	"limit_break": "t2/scarred_warrior/limit_break",
+	"born_in_blood": "t2/scarred_warrior/blood_born",
+	"enough_is_enough": "t2/scarred_warrior/enough_is_enough",
+	"bloodied_regen": "t2/scarred_warrior/blood_flow",
+	# Wild Heart (Enhanced Forms only — Animal Form/Natural Sleeper/Wild Companion are
+	# form-driven, see WILD_HEART_*_ICON below)
+	"enhanced_forms": "t2/wild_heart/animal_instincts",
+	# Zealot
+	"zealot_strike": "t2/zealot/zealous_strike",
+	"judgement_day": "t2/zealot/judgement_day",
+	"overheal_shield": "t2/zealot/overheal",
+	"never_back_down": "t2/zealot/never_back_down",
+	# Barbarian passive, no talent — see _give_barbarian_starting_items()
+	"unarmored_defense": "t0/unarmored_defence",
+}
+
+# Animal Form's icon follows the currently active form (Bear/Eagle/Wolf) instead of rank.
+const WILD_HEART_FORM_ICON: Dictionary = {
+	"Bear": "res://icons/classes/barbarian/t2/wild_heart/wild_form_bear.png",
+	"Eagle": "res://icons/classes/barbarian/t2/wild_heart/wild_form_eagle.png",
+	"Wolf": "res://icons/classes/barbarian/t2/wild_heart/wild_form_wolf.png",
+}
+
+# Natural Sleeper's icon follows the previewed/active form (Owl/Panther/Salmon) instead of rank.
+const WILD_HEART_SLEEPER_ICON: Dictionary = {
+	"Owl": "res://icons/classes/barbarian/t2/wild_heart/sleeper_form_owl.png",
+	"Panther": "res://icons/classes/barbarian/t2/wild_heart/sleeper_form_panther.png",
+	"Salmon": "res://icons/classes/barbarian/t2/wild_heart/sleeper_form_salmon.png",
+}
+
+# Wild Companion's icon follows the rank's summoned animal — matches WILD_HEART_COMPANION_STATS.
+const WILD_HEART_COMPANION_ICON: Dictionary = {
+	1: "res://icons/classes/barbarian/t2/wild_heart/companion_squirrel.png",
+	2: "res://icons/classes/barbarian/t2/wild_heart/companion_boar.png",
+	3: "res://icons/classes/barbarian/t2/wild_heart/companion_bear.png",
+}
+
+## Returns the icon for a talent/ability; "" if unmapped. Most talents resolve to a single flat
+## icon (rank ignored) via TALENT_ICON_FLAT; World Tree talents still gradient 1-3 via
+## TALENT_ICON_FOLDER; Wild Heart's form-driven abilities (Animal Form/Natural Sleeper/Wild
+## Companion) read current form/rank state directly instead of a fixed mapping.
 func talent_icon_path(id: String, rank: int) -> String:
-	if not TALENT_ICON_FOLDER.has(id):
-		return ""
-	var r: int = clampi(rank, 1, 3)
-	return "res://icons/barbarian/%s_%d.png" % [TALENT_ICON_FOLDER[id], r]
+	match id:
+		"animal_form":
+			return WILD_HEART_FORM_ICON.get(natural_rager_form, WILD_HEART_FORM_ICON["Bear"])
+		"expanded_forms":
+			var preview: String = natural_sleeper_form if natural_sleeper_form != "" else "Owl"
+			return WILD_HEART_SLEEPER_ICON.get(preview, WILD_HEART_SLEEPER_ICON["Owl"])
+		"wild_companion":
+			return WILD_HEART_COMPANION_ICON.get(clampi(rank, 1, 3), WILD_HEART_COMPANION_ICON[1])
+	if TALENT_ICON_FLAT.has(id):
+		return "res://icons/classes/barbarian/%s.png" % TALENT_ICON_FLAT[id]
+	if TALENT_ICON_FOLDER.has(id):
+		var r: int = clampi(rank, 1, 3)
+		return "res://icons/classes/barbarian/%s_%d.png" % [TALENT_ICON_FOLDER[id], r]
+	return ""
 
 # Long rest: an explicit, Alt-menu-triggered rest (NOT floor descent — see long_rest()).
 # Requires sacrificing FOOD items worth LONG_REST_FOOD_COST combined food_value, and takes
@@ -342,6 +382,18 @@ func _give_barbarian_starting_items() -> void:
 	rage.uses_remaining = player_stats.rage_uses_remaining
 	rage.uses_max = player_stats.rage_uses_max
 	add_ability(rage)
+
+	# Unarmored Defense passive (AC = 10 + DEX + CON while unarmored — see Stats.recalc_ac()).
+	# No talent rank, no activation — ability-bar entry exists purely to surface the icon/tooltip.
+	var ud := Ability.new()
+	ud.ability_id = "unarmored_defense"
+	ud.ability_name = "Unarmored Defense"
+	ud.description = "Passive: AC = 10 + DEX + CON while wearing no armor."
+	ud.icon_path = talent_icon_path("unarmored_defense", 1)
+	ud.uses_remaining = 0
+	ud.uses_max = 0
+	ud.is_passive = true
+	add_ability(ud)
 
 func _give_monk_starting_items() -> void:
 	# Monks start unarmed — fists are their weapons.
