@@ -512,26 +512,18 @@ func _bfs_to(target: Vector2i) -> Array[Vector2i]:
 # docs/architecture/enemy_system_architecture.md §2. Only computes the roll; callers apply damage/log.
 func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1) -> Dictionary:
 	# D&D attack roll: d20 + floor-scaled bonus vs target AC.
-	# Reckless Attack rank 1: enemies get flat +2. Rank 2+: enemies get Advantage.
 	var attack_bonus: int = attack_bonus_override if attack_bonus_override >= 0 else GameState.current_floor / 3
-	var reckless_flat: int = 0
 	var die1: int = Rng.roll(20)
 	var die2: int = die1
 	var die: int = die1
 	var enemy_adv: bool = false
 	var enemy_disadv: bool = disadv_next_attack
 	disadv_next_attack = false  # World Tree Grip of the Forest R3 — consumed after one attack
-	if GameState.reckless_attack_active:
-		match GameState.reckless_rank:
-			1:
-				reckless_flat = 2
-			2, 3:
-				enemy_adv = true
 	if enemy_adv != enemy_disadv:
 		die2 = Rng.roll(20)
 		die = maxi(die1, die2) if enemy_adv else mini(die1, die2)
-	var roll: int = die + attack_bonus + reckless_flat
-	var bonus: int = attack_bonus + reckless_flat
+	var roll: int = die + attack_bonus
+	var bonus: int = attack_bonus
 	var is_crit: bool = die == 20
 	return {
 		"die": die, "die1": die1, "die2": die2, "bonus": bonus, "roll": roll, "target_ac": target_ac,

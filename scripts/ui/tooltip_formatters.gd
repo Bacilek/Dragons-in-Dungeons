@@ -10,7 +10,6 @@ static func fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 	var stat_mod: int = int(p.get("dex" if use_dex else "str", "0"))
 	var prof: int   = int(p.get("prof", "0"))
 	var wpn: int    = int(p.get("wpn", "0"))
-	var reck: int   = int(p.get("reck", "0"))
 	var total: int  = int(p.get("total", "0"))
 	var ac: int     = int(p.get("ac", "0"))
 	var adv: bool   = p.get("adv", "0") == "1"
@@ -32,8 +31,6 @@ static func fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 		lines.append("[color=lightblue]+%d[/color]  (Proficiency)" % prof)
 	if wpn != 0:
 		lines.append("[color=lightblue]%+d[/color]  (weapon +%d)" % [wpn, wpn])
-	if reck != 0:
-		lines.append("[color=orange]%+d[/color]  (Reckless Attack)" % reck)
 	lines.append("─────────────────")
 	var vs: String
 	if n20:

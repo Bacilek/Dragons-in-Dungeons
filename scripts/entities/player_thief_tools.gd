@@ -26,15 +26,11 @@ func attempt_disarm(trap_pos: Vector2i) -> void:
 	TurnManager.begin_player_action()
 	AudioManager.play("lockpick")
 	var s: Stats = GameState.player_stats
-	var danger_rank: int = GameState.get_talent_rank("danger_sense")
 	var dex_mod: int = s.dex_modifier()
 	var effective_stat: String = "DEX"
-	if danger_rank >= 2 and s.str_modifier() > dex_mod:
-		dex_mod = s.str_modifier()
-		effective_stat = "STR"
 	var has_prof: bool = s.check_prof_dex
 	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
-	var has_adv: bool = danger_rank >= 1 or s.zealous_presence_turns > 0
+	var has_adv: bool = s.zealous_presence_turns > 0
 	var die1: int = Rng.roll(20)
 	var die2: int = die1
 	if has_adv:
@@ -44,7 +40,7 @@ func attempt_disarm(trap_pos: Vector2i) -> void:
 	const DC: int = 10
 	var trap: Dictionary = player._dungeon_floor.get_trap_at(trap_pos)
 	var trap_name: String = trap.get("name", "trap")
-	var adv_tag: String = " [color=gray](%s)[/color]" % ("Danger Sense" if danger_rank >= 1 else "Zealous Presence") if has_adv else ""
+	var adv_tag: String = " [color=gray](Zealous Presence)[/color]" if has_adv else ""
 	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, DC, 1 if total >= DC else 0, 1 if has_adv else 0]
 
 	if total >= DC:
@@ -92,15 +88,11 @@ func attempt_disarm_lock(door_pos: Vector2i) -> void:
 	TurnManager.begin_player_action()
 	AudioManager.play("lockpick")
 	var s: Stats = GameState.player_stats
-	var danger_rank: int = GameState.get_talent_rank("danger_sense")
 	var dex_mod: int = s.dex_modifier()
 	var effective_stat: String = "DEX"
-	if danger_rank >= 2 and s.str_modifier() > dex_mod:
-		dex_mod = s.str_modifier()
-		effective_stat = "STR"
 	var has_prof: bool = s.check_prof_dex
 	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
-	var has_adv: bool = danger_rank >= 1 or s.zealous_presence_turns > 0
+	var has_adv: bool = s.zealous_presence_turns > 0
 	var die1: int = Rng.roll(20)
 	var die2: int = die1
 	if has_adv:
@@ -108,7 +100,7 @@ func attempt_disarm_lock(door_pos: Vector2i) -> void:
 	var die: int = maxi(die1, die2)
 	var total: int = die + dex_mod + prof_bonus
 	var dc: int = 10 + GameState.current_floor / 3
-	var adv_tag: String = " [color=gray](%s)[/color]" % ("Danger Sense" if danger_rank >= 1 else "Zealous Presence") if has_adv else ""
+	var adv_tag: String = " [color=gray](Zealous Presence)[/color]" if has_adv else ""
 	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, dc, 1 if total >= dc else 0, 1 if has_adv else 0]
 	var door_world: Vector2 = Vector2(door_pos * Entity.TILE_SIZE) + Vector2(Entity.TILE_SIZE * 0.5, Entity.TILE_SIZE * 0.5)
 	if total >= dc:
