@@ -58,6 +58,9 @@ const SFX_BANKS: Dictionary = {
 const BGM_TRACKS: Array = ["res://audio/bgm/bgm.mp3", "res://audio/bgm/bgm2.mp3"]
 const BOSS_TRACK := "res://audio/bgm/boss.mp3"
 
+# -6.02 dB == 50% linear volume (20*log10(0.5)). All SFX and music are played at half volume.
+const VOLUME_50_PCT_DB := -6.0206
+
 var _players: Dictionary = {}       # single-file name -> AudioStreamPlayer
 var _bank_players: Dictionary = {}  # bank name -> Array[AudioStreamPlayer] (one per file)
 var _music: AudioStreamPlayer
@@ -66,7 +69,7 @@ var _current_music_path: String = ""
 func _ready() -> void:
 	_music = AudioStreamPlayer.new()
 	_music.bus = "Master"
-	_music.volume_db = -8.0
+	_music.volume_db = -8.0 + VOLUME_50_PCT_DB
 	add_child(_music)
 
 	for sfx_name: String in SFX_FILES:
@@ -81,7 +84,7 @@ func _ready() -> void:
 func _make_player(path: String) -> AudioStreamPlayer:
 	var p := AudioStreamPlayer.new()
 	p.bus = "Master"
-	p.volume_db = 0.0
+	p.volume_db = VOLUME_50_PCT_DB
 	add_child(p)
 	if ResourceLoader.exists(path):
 		p.stream = load(path)
