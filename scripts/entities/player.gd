@@ -931,10 +931,13 @@ func _resolve_enemy_opportunity_attacks(prev: Vector2i, next: Vector2i) -> void:
 		var reach: int = e.melee_reach()
 		var d_prev: int = maxi(absi(prev.x - e.grid_pos.x), absi(prev.y - e.grid_pos.y))
 		var d_next: int = maxi(absi(next.x - e.grid_pos.x), absi(next.y - e.grid_pos.y))
-		# Battlefield Expert: a side-step (still-adjacent lateral move around this same enemy)
-		# already falls through the no-OA branch below with zero changes to OA logic itself —
-		# see markdowns/barbarian_base.md.
-		if d_prev <= reach and d_next <= reach and prev != next:
+		# Battlefield Expert: a side-step (still-adjacent move around this same enemy) falls
+		# through the no-OA branch below with zero changes to OA logic itself — see
+		# markdowns/barbarian_base.md. Only counts as a genuine "around the enemy" pivot when the
+		# step itself is diagonal (dx and dy both nonzero) — a pure lateral slide along one side
+		# of the enemy (e.g. NW -> N) stays adjacent too but isn't really going around it.
+		var is_diagonal_step: bool = absi(next.x - prev.x) == 1 and absi(next.y - prev.y) == 1
+		if d_prev <= reach and d_next <= reach and prev != next and is_diagonal_step:
 			_base_talents.on_sidestep(e)
 		if d_prev > reach or d_next <= reach:
 			continue
@@ -1262,7 +1265,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var roll: int = die + total_hit_bonus
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
-		_base_talents.on_crit_or_kill()
+		_base_talents.on_crit()
 		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 
@@ -1322,7 +1325,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Monk unarmed uses DEX for damage; Finesse weapons use max(STR, DEX); all others use STR.
 	var dmg_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
 
-	# All bonus damage sources (Ironwood Bark, Judgement Day, Psycho) are computed BEFORE
+	# All bonus damage sources (Ironwood Bark, Judgement Day) are computed BEFORE
 	# take_damage/show_damage and folded into one number — see "damage stacking" rule in
 	# scripts/entities/CLAUDE.md. Never call take_damage/show_damage separately per source.
 	# Each source keeps its own named amount in dmg_meta (not just a combined "bonus" total)
@@ -1333,7 +1336,6 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var frenzy_bonus: int = 0
 	var ironwood_bonus: int = 0
 	var judgement_bonus: int = 0
-	var psycho_bonus: int = 0
 
 	# Ironwood Bark R3: next attack this turn deals bonus damage equal to the temp HP snapshotted at turn start.
 	if _ironwood_bark_bonus_pending > 0:
@@ -1346,12 +1348,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		var jd_rank: int = GameState.get_talent_rank("judgement_day")
 		judgement_bonus = jd_rank * stats.rage_bonus_damage * Rng.roll(6)
 
-	# Psycho R2: attacking with Advantage (from ANY source, not just this talent's own R1 trigger)
-	# adds a second flat STR modifier to damage.
-	if adv and GameState.get_talent_rank("psycho") >= 2:
-		psycho_bonus = str_mod
-
-	var bonus_dmg: int = frenzy_bonus + ironwood_bonus + judgement_bonus + psycho_bonus
+	var bonus_dmg: int = frenzy_bonus + ironwood_bonus + judgement_bonus
 	# Multiplication always happens LAST: sum every source (dice, weapon enh, rage, ability mod,
 	# and every bonus source above) into one total, THEN double it on a crit — never double a
 	# partial subtotal and tack bonuses on afterward, or a crit silently skips doubling whichever
@@ -1372,7 +1369,6 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		{"name": "Ironwood Bark", "amount": ironwood_bonus, "color": "cyan"},
 		{"name": "%s — Judgement Day" % _zealot.judgement_day_damage_type(), "amount": judgement_bonus,
 			"color": "gold"},
-		{"name": "Psycho", "amount": psycho_bonus, "color": "red"},
 	])
 	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,bonus=%s,crit=%d,final=%d" % [
 		die_roll, w_dmin, w_dmax, w_enh, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
@@ -1487,7 +1483,7 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var roll: int = die + str_mod + prof + weapon_bonus
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
-		_base_talents.on_crit_or_kill()
+		_base_talents.on_crit()
 		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
@@ -1568,7 +1564,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	var roll: int = die + attack_mod + prof + weapon_bonus
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
-		_base_talents.on_crit_or_kill()
+		_base_talents.on_crit()
 		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 	var mod_key: String = "dex" if (weapon.is_finesse and dex_mod > str_mod) else "str"
@@ -1643,7 +1639,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	var roll: int = die + attack_mod + prof + weapon_bonus
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
-		_base_talents.on_crit_or_kill()
+		_base_talents.on_crit()
 		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 	var mod_key: String = "dex" if (is_monk_unarmed or (is_finesse_weapon and dex_mod > str_mod)) else "str"
@@ -1697,7 +1693,7 @@ func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
 
 
 func _finish_kill(enemy: Enemy, dropped_ammo: Item = null) -> void:
-	_base_talents.on_crit_or_kill()
+	_base_talents.on_kill()
 	GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
 	GameState.gain_exp(maxi(1, enemy.exp_reward / 2))
 	var was_boss: bool = enemy.is_boss

@@ -108,7 +108,7 @@ func ranged_attack(enemy: Enemy) -> void:
 	var roll: int = die + dex_mod + weapon_bonus
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
-		player._base_talents.on_crit_or_kill()
+		player._base_talents.on_crit()
 		player._berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 

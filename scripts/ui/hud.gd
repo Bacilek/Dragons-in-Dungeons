@@ -25,11 +25,7 @@ var _log_messages: Array[String] = []
 const MAX_LOG_MESSAGES: int = 25
 var _food_value_label: Label  # shows total FOOD food_value (long rest fuel), see GameState.total_food_value()
 var _temp_hp_fill: ColorRect  # light-blue temp HP bar above the HP fill
-var _poison_icon: ColorRect
-var _burning_icon: ColorRect
-var _bleeding_icon: ColorRect
-var _slowed_icon: ColorRect
-var _rage_icon: TextureRect      # Primal Fury icon (rank-gradient) shown while raging
+var _status_tray: StatusTray  # status/buff/debuff/passive icon row under the portrait
 var _inventory_overlay_ref: Node = null
 var _debug_panel_ref: Node = null
 var _hit_dice_label: Label
@@ -197,17 +193,14 @@ func _ready() -> void:
 	$StatsPanel.add_child(_food_value_label)
 	_update_food_value_label()
 
-	# Status icons (poison=green, burning=orange, bleeding=red, slowed=brown, rage=crimson) below portrait
-	_poison_icon   = _make_status_dot(Color(0.20, 0.85, 0.35), Vector2(2.0,  2.0))
-	_burning_icon  = _make_status_dot(Color(1.00, 0.45, 0.10), Vector2(16.0, 2.0))
-	_bleeding_icon = _make_status_dot(Color(0.80, 0.0,  0.0),  Vector2(30.0, 2.0))
-	_slowed_icon   = _make_status_dot(Color(0.55, 0.35, 0.10), Vector2(44.0, 2.0))
-	_rage_icon     = _make_status_icon_rect(Vector2(58.0, 2.0))
-	$StatsPanel.add_child(_poison_icon)
-	$StatsPanel.add_child(_burning_icon)
-	$StatsPanel.add_child(_bleeding_icon)
-	$StatsPanel.add_child(_slowed_icon)
-	$StatsPanel.add_child(_rage_icon)
+	# Status/buff/debuff/passive icon tray — a data-driven row directly below the portrait+level
+	# +hit-dice column (see status_tray.gd / docs/architecture/status-icon-tray-design.md).
+	_status_tray = StatusTray.new()
+	_status_tray.position = Vector2(4.0, 124.0)
+	_status_tray.size = Vector2(388.0, 18.0)
+	$StatsPanel.add_child(_status_tray)
+	_status_tray.icon_hovered.connect(_on_status_tray_icon_hovered)
+	_status_tray.icon_unhovered.connect(_on_qbar_slot_hover_end)
 	_update_status_icons()
 
 	# Bar mode label — anchored to bottom, just above the action bar (which sits at bottom -135px)
@@ -314,39 +307,41 @@ func _on_status_changed() -> void:
 	_update_status_icons()
 
 func _update_status_icons() -> void:
-	if _poison_icon != null:
-		_poison_icon.visible = GameState.player_stats.poison_turns > 0
-	if _burning_icon != null:
-		_burning_icon.visible = GameState.player_stats.burning_turns > 0
-	if _bleeding_icon != null:
-		_bleeding_icon.visible = GameState.player_stats.bleeding_turns > 0
-	if _slowed_icon != null:
-		_slowed_icon.visible = GameState.player_stats.slowed_turns > 0
-	if _rage_icon != null:
-		_rage_icon.visible = GameState.is_raging
-		if GameState.is_raging:
-			var icon_path: String = GameState.talent_icon_path("rage", 3)
-			if icon_path != "" and ResourceLoader.exists(icon_path):
-				_rage_icon.texture = load(icon_path)
+	if _status_tray == null:
+		return
+	var s: Stats = GameState.player_stats
+	var entries: Array = []
+	if s.poison_turns > 0:
+		entries.append({"id": "poisoned", "icon_path": "res://icons/status/poisoned.png", "fallback_color": Color(0.20, 0.85, 0.35)})
+	if s.burning_turns > 0:
+		entries.append({"id": "burning", "icon_path": "res://icons/status/burning.png", "fallback_color": Color(1.00, 0.45, 0.10)})
+	if s.bleeding_turns > 0:
+		entries.append({"id": "bleeding", "icon_path": "res://icons/status/bleeding.png", "fallback_color": Color(0.80, 0.0, 0.0)})
+	if s.slowed_turns > 0:
+		entries.append({"id": "slowed", "icon_path": "res://icons/status/slowed.png", "fallback_color": Color(0.55, 0.35, 0.10)})
+	if GameState.is_raging:
+		entries.append({"id": "raging", "icon_path": GameState.talent_icon_path("rage", 3), "fallback_color": Color(0.85, 0.15, 0.05)})
+	if s.temp_hp > 0:
+		entries.append({"id": "temp_hp", "icon_path": "res://icons/status/temp_hp.png", "fallback_color": Color(0.4, 0.8, 1.0)})
+	if (s.character_class == Stats.CharacterClass.BARBARIAN or s.character_class == Stats.CharacterClass.MONK) \
+			and (GameState.equipment.get("armor") as Item) == null:
+		entries.append({"id": "unarmored_defense", "icon_path": GameState.talent_icon_path("unarmored_defense", 1), "fallback_color": Color(0.70, 0.90, 1.0)})
+	if GameState.battlefield_adv_pending:
+		entries.append({"id": "tactician", "icon_path": GameState.talent_icon_path("battlefield_expert", maxi(1, GameState.get_talent_rank("battlefield_expert"))), "fallback_color": Color(0.3, 0.9, 0.9)})
+	if GameState.psycho_adv_pending:
+		entries.append({"id": "psycho_adv", "icon_path": GameState.talent_icon_path("psycho", maxi(1, GameState.get_talent_rank("psycho"))), "fallback_color": Color(0.9, 0.3, 0.3)})
+	_status_tray.refresh(entries)
 
-func _make_status_dot(color: Color, offset: Vector2) -> ColorRect:
-	var dot := ColorRect.new()
-	dot.color = color
-	dot.size = Vector2(12.0, 12.0)
-	dot.position = portrait.position + offset
-	dot.visible = false
-	return dot
-
-func _make_status_icon_rect(offset: Vector2) -> TextureRect:
-	var rect := TextureRect.new()
-	rect.size = Vector2(12.0, 12.0)
-	rect.position = portrait.position + offset
-	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	rect.ignore_texture_size = true  # without this, assigning a texture forces the control to its native pixel size (talent icons are 2048x2048)
-	rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	rect.visible = false
-	return rect
-
+func _on_status_tray_icon_hovered(id: String) -> void:
+	if _qbar_tooltip == null:
+		return
+	var text: String = StatusTooltips.build_bbcode(id)
+	if text.is_empty():
+		return
+	_qbar_tooltip_rtl.text = text
+	_qbar_tooltip_rtl.size = Vector2(172.0, 0)
+	_qbar_tooltip.size = Vector2(180.0, 60)
+	_qbar_tooltip.visible = true
 
 func _on_class_chosen(cls: Stats.CharacterClass) -> void:
 	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/knight_m_idle_anim_f0.png")
