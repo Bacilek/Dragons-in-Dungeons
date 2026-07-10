@@ -138,15 +138,13 @@ func try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 # ANY cause, via Enemy.die()'s override. If durability hits 0 on this throw the weapon shatters
 # instead of landing/embedding (see _consume_throw_use()).
 func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
-	# Throwing from a stack (quantity > 1, all sharing the same uses_remaining — see
-	# GameState.add_item()) only ever throws a single unit: split one off so the rest of the
-	# stack keeps sitting in the bag untouched, same pattern as GameState.equip()'s stack split.
+	# Throwing from a stack (quantity > 1, units may carry different durability — see
+	# GameState.add_item()) only ever throws a single unit: split the most-damaged one off
+	# (GameState._split_one_unit(), shared with equip()'s identical stack split) so the rest of
+	# the stack keeps sitting in the bag with its own durability untouched.
 	if weapon.quantity > 1:
-		var single: Item = weapon.duplicate()
-		single.quantity = 1
-		weapon.quantity -= 1
+		weapon = GameState._split_one_unit(weapon)
 		GameState.inventory_changed.emit()
-		weapon = single
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = pos.x < player.grid_pos.x
