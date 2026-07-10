@@ -29,69 +29,109 @@ func execute_frenzy(enemy: Enemy) -> void:
 	# regardless of hit/miss (see player.gd._on_turn_started()'s rage tick).
 	player._rage_attacked_this_turn = true
 
-	var die_roll: int = Rng.roll(20)
-	var w_dmin: int = player.stats.base_min_damage
-	var w_dmax: int = player.stats.base_max_damage
+	var stats: Stats = player.stats
 	var melee: Item = GameState.equipped_weapon
-	if melee != null and melee.damage_die_min > 0:
-		w_dmin = melee.damage_die_min
-		w_dmax = melee.damage_die_max
-	var weapon_dice: int = Rng.range_i(w_dmin, w_dmax)
-	# Frenzy's shared damage includes the same modifiers a normal attack would — STR mod +
-	# Rage bonus (Frenzy requires Raging, so this is always active). Both sides take this
-	# identical modified roll on a 2-19; only Sadist Monster (enemy-only) and crit doubling
-	# break the symmetry.
-	var mod_total: int = player.stats.str_modifier() + player.stats.rage_bonus_damage
-	var dmg_roll: int = weapon_dice + mod_total
+	var is_unarmed: bool = melee == null
+	var is_str_weapon: bool = not is_unarmed and not melee.is_ranged
+	var str_mod: int = stats.str_modifier()
+	var dex_mod: int = stats.dex_modifier()
+	var is_finesse_weapon: bool = not is_unarmed and melee.is_finesse
+	var dmg_mod: int = CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
+	var prof: int = CombatMath.weapon_prof_bonus(melee, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
+	var w_dmin: int = stats.base_min_damage
+	var w_dmax: int = stats.base_max_damage
+	var w_enh: int = 0
+	if melee != null:
+		w_enh = melee.bonus_damage
+		if melee.damage_die_min > 0:
+			w_dmin = melee.damage_die_min
+			w_dmax = melee.damage_die_max
+	var dmg_type: String = melee.damage_type if melee != null and not melee.damage_type.is_empty() else "Bludgeoning"
+	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
+	var rage_bonus: int = stats.rage_bonus_damage
 	var sadist_rank: int = GameState.get_talent_rank("sadist_monster")
 	var sadist_bonus: int = 0
 	if sadist_rank >= 1:
 		for i: int in sadist_rank:
 			sadist_bonus += Rng.roll(6)
 
+	var die_roll: int = Rng.roll(20)
+	var weapon_dice: int = Rng.range_i(w_dmin, w_dmax)
+	# Shared base damage now mirrors a normal attack's formula exactly (dice + weapon
+	# enhancement + Rage bonus + STR/finesse mod) instead of the old flat "weapon dice + STR
+	# + Rage" shortcut — see scripts/entities/CLAUDE.md's "Frenzy" bullet.
+	var base_dmg: int = weapon_dice + w_enh + rage_bonus + dmg_mod
+	var bonus_sources_self: String = CombatMath.encode_bonus_sources([
+		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
+	])
+	var bonus_sources_enemy: String = CombatMath.encode_bonus_sources([
+		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
+		{"name": "Sadist Monster", "amount": sadist_bonus, "color": "red"},
+	])
+
 	# The attack roll (d20 outcome: miss/hit/crit) and the damage roll are two separate numbers
-	# with their own hover tooltips — "frzhit" explains what the d20 result means, "frzdmg"
-	# breaks down the weapon dice + modifiers + Sadist Monster + crit doubling, same two-tooltip
-	# convention (hit/dmg) every normal attack already uses.
+	# with their own hover tooltips — "frzhit" explains what the d20 result means, the damage
+	# numbers now reuse the standard "dmg:" tooltip format (same as a normal attack) since the
+	# damage calculation mirrors _bump_attack()'s formula exactly. Weapon masteries the wielded
+	# weapon carries (Cleave/Vex/Graze/Topple/Nick) fire the same as they would off a normal
+	# attack — see scripts/entities/CLAUDE.md's "Frenzy" bullet.
 	if die_roll == 1:
 		var attack_meta: String = "frzhit:die=%d,outcome=miss" % die_roll
-		var self_dmg: int = player.stats.take_damage(dmg_roll)
-		GameState.player_hp_changed.emit(player.stats.current_hp, player.stats.max_hp)
-		var dmg_meta: String = "frzdmg:dmax=%d,roll=%d,mod=%d,sadist=0,crit=0,final=%d" % [w_dmax, weapon_dice, mod_total, self_dmg]
-		GameState.game_log("[color=red][url=%s]Frenzy misses![/url] You tear into yourself for [url=%s][color=orange]%d[/color][/url] damage.[/color]" % [attack_meta, dmg_meta, self_dmg])
+		# Self-damage routes through the single damage-intake chokepoint so Rage's 50% physical
+		# DR (and any other take_damage_raw hook) applies exactly like it would to enemy damage.
+		var self_dmg: int = GameState.take_damage_raw(base_dmg, false, dmg_type)
+		var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,bonus=%s,crit=0,final=%d" % [
+			weapon_dice, w_dmin, w_dmax, w_enh, dmg_mod, bonus_sources_self, self_dmg]
+		GameState.game_log("[color=red][url=%s]Frenzy misses![/url] You tear into yourself for [url=%s][color=orange]%d[/color][/url]%s damage.[/color]" % [attack_meta, dmg_meta, self_dmg, type_tag])
 		_note_self_damage()
 		GameState.check_player_death()
+		player._try_graze(enemy, is_str_weapon, dmg_mod)
+		player._try_cleave(enemy, is_str_weapon)
+		player._try_offhand_attack(enemy, is_str_weapon)
 	elif die_roll == 20:
 		var attack_meta: String = "frzhit:die=%d,outcome=crit" % die_roll
-		var crit_bonus: int = sadist_bonus * 2
-		var total: int = dmg_roll * 2 + crit_bonus
+		var total: int = base_dmg * 2 + sadist_bonus * 2
 		var actual: int = enemy.stats.take_damage(total)
 		enemy.update_hp_bar()
 		if player._dungeon_floor != null:
 			player._dungeon_floor.show_damage(enemy.position, actual, true)
-		var dmg_meta: String = "frzdmg:dmax=%d,roll=%d,mod=%d,sadist=%d,crit=1,final=%d" % [w_dmax, weapon_dice, mod_total, sadist_bonus, actual]
-		GameState.game_log("[color=gold][url=%s]FRENZY CRIT![/url] %s takes [url=%s][color=yellow]%d[/color][/url] damage — you feel nothing.[/color]" % [attack_meta, enemy.display_name, dmg_meta, actual])
+		var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,bonus=%s,crit=1,final=%d" % [
+			weapon_dice, w_dmin, w_dmax, w_enh, dmg_mod, bonus_sources_enemy, actual]
+		GameState.game_log("[color=gold][url=%s]FRENZY CRIT![/url] %s takes [url=%s][color=yellow]%d[/color][/url]%s damage — you feel nothing.[/color]" % [attack_meta, enemy.display_name, dmg_meta, actual, type_tag])
 		_refresh_frenzy_on("crit")
+		if melee != null and melee.weapon_mastery == "Vex" and stats.knows_mastery("Vex"):
+			player._vex_adv_target = enemy
+		if not enemy.stats.is_dead():
+			player._try_topple(enemy, is_str_weapon, prof, str_mod)
 		if enemy.stats.is_dead():
 			player._finish_kill(enemy)
 			_refresh_frenzy_on("kill")
+		player._try_cleave(enemy, is_str_weapon)
+		player._try_offhand_attack(enemy, is_str_weapon)
 	else:
 		var attack_meta: String = "frzhit:die=%d,outcome=hit" % die_roll
-		var self_dmg2: int = player.stats.take_damage(dmg_roll)
-		GameState.player_hp_changed.emit(player.stats.current_hp, player.stats.max_hp)
-		var total2: int = dmg_roll + sadist_bonus
+		var self_dmg2: int = GameState.take_damage_raw(base_dmg, false, dmg_type)
+		var total2: int = base_dmg + sadist_bonus
 		var actual2: int = enemy.stats.take_damage(total2)
 		enemy.update_hp_bar()
 		if player._dungeon_floor != null:
 			player._dungeon_floor.show_damage(enemy.position, actual2, false)
-		var dmg_meta: String = "frzdmg:dmax=%d,roll=%d,mod=%d,sadist=%d,crit=0,final=%d" % [w_dmax, weapon_dice, mod_total, sadist_bonus, actual2]
-		var self_meta: String = "frzdmg:dmax=%d,roll=%d,mod=%d,sadist=0,crit=0,final=%d" % [w_dmax, weapon_dice, mod_total, self_dmg2]
-		GameState.game_log("[color=red][url=%s]Frenzy![/url] %s takes [url=%s][color=orange]%d[/color][/url] damage — you take [url=%s][color=orange]%d[/color][/url] back.[/color]" % [attack_meta, enemy.display_name, dmg_meta, actual2, self_meta, self_dmg2])
+		var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,bonus=%s,crit=0,final=%d" % [
+			weapon_dice, w_dmin, w_dmax, w_enh, dmg_mod, bonus_sources_enemy, actual2]
+		var self_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,bonus=%s,crit=0,final=%d" % [
+			weapon_dice, w_dmin, w_dmax, w_enh, dmg_mod, bonus_sources_self, self_dmg2]
+		GameState.game_log("[color=red][url=%s]Frenzy![/url] %s takes [url=%s][color=orange]%d[/color][/url]%s damage — you take [url=%s][color=orange]%d[/color][/url]%s back.[/color]" % [attack_meta, enemy.display_name, dmg_meta, actual2, type_tag, self_meta, self_dmg2, type_tag])
 		_note_self_damage()
 		GameState.check_player_death()
+		if melee != null and melee.weapon_mastery == "Vex" and stats.knows_mastery("Vex"):
+			player._vex_adv_target = enemy
+		if not enemy.stats.is_dead():
+			player._try_topple(enemy, is_str_weapon, prof, str_mod)
 		if enemy.stats.is_dead():
 			player._finish_kill(enemy)
 			_refresh_frenzy_on("kill")
+		player._try_cleave(enemy, is_str_weapon)
+		player._try_offhand_attack(enemy, is_str_weapon)
 
 	if player._dungeon_floor != null:
 		player._dungeon_floor.update_fog(player.grid_pos)
@@ -136,12 +176,14 @@ func _note_self_damage() -> void:
 	if GameState.masochist_ac_bonus == 0:
 		GameState.masochist_ac_bonus = 1
 		GameState.recalculate_stats()
-		GameState.game_log("[color=cyan]Masochist Monster: +1 AC until your next turn.[/color]")
 	if rank >= 2:
-		var thp: int = GameState.player_stats.rage_bonus_damage * Rng.roll(4)
+		var rage_bonus: int = GameState.player_stats.rage_bonus_damage
+		var die: int = Rng.roll(4)
+		var thp: int = rage_bonus * die
 		GameState.player_stats.temp_hp = thp
 		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
-		GameState.game_log("[color=cyan]Masochist Monster: %d temp HP.[/color]" % thp)
+		var meta: String = "msn:rage=%d,die=%d,final=%d" % [rage_bonus, die, thp]
+		GameState.game_log("[color=cyan][url=%s]Masochist Monster: %d temp HP.[/url][/color]" % [meta, thp])
 
 # Called externally (enemy hit resolution) so Masochist Monster also triggers on ordinary damage
 # taken during the player's own turn (e.g. Retaliation is gone, but reactive/terrain damage still

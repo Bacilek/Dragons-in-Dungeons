@@ -127,6 +127,18 @@ static func fmt_frenzy_dmg_tooltip(p: Dictionary) -> String:
 	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
 	return "\n".join(lines)
 
+# Masochist Monster R2 — rage bonus x 1d4 temp HP breakdown.
+static func fmt_masochist_tooltip(p: Dictionary) -> String:
+	var rage: int = int(p.get("rage", "0"))
+	var die: int = int(p.get("die", "0"))
+	var final_dmg: int = int(p.get("final", "0"))
+	var lines: PackedStringArray = []
+	lines.append("[color=lightblue]%d[/color]  (Rage bonus)" % rage)
+	lines.append("[color=yellow]× %d[/color]  (1d4 roll)" % die)
+	lines.append("─────────────────")
+	lines.append("= [color=yellow]%d[/color] temp HP" % final_dmg)
+	return "\n".join(lines)
+
 static func fmt_heal_tooltip(p: Dictionary) -> String:
 	var dice: int  = int(p.get("dice", "0"))
 	var sides: int = int(p.get("sides", "0"))
