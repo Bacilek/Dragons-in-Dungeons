@@ -66,6 +66,23 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 # (GameState.remove_item()). Not consumed by ordinary melee attacks — only by throwing.
 @export var uses_max: int = 0
 @export var uses_remaining: int = 0
+# Thrown weapons only: per-unit durability when `quantity > 1` (same-named thrown weapons of
+# DIFFERENT durability now merge into one stack instead of separate piles). Sorted ascending —
+# index 0 (lowest uses_remaining, most-damaged unit) is always "on top": it's what's displayed
+# (mirrored into uses_remaining) and what gets thrown/equipped first. Empty = not yet
+# materialized (fresh single unit, or a stack where every unit shares uses_remaining) — see
+# get_stack_uses(). Populated/kept in sync by GameState._merge_into_stack()/_split_one_unit().
+@export var stack_uses: Array[int] = []
+
+# Returns one durability value per unit in the stack (size == quantity). Falls back to repeating
+# `uses_remaining` when stack_uses hasn't been materialized (fresh item, or every unit identical).
+func get_stack_uses() -> Array:
+	if stack_uses.size() == quantity and quantity > 0:
+		return stack_uses.duplicate()
+	var arr: Array = []
+	for _i: int in maxi(quantity, 1):
+		arr.append(uses_remaining)
+	return arr
 
 func get_display_name() -> String:
 	if quantity > 1:
@@ -113,6 +130,7 @@ func to_dict() -> Dictionary:
 		"is_thrown": is_thrown,
 		"uses_max": uses_max,
 		"uses_remaining": uses_remaining,
+		"stack_uses": stack_uses,
 	}
 
 static func from_dict(d: Dictionary) -> Item:
@@ -152,4 +170,9 @@ static func from_dict(d: Dictionary) -> Item:
 	it.is_thrown = bool(d.get("is_thrown", false))
 	it.uses_max = int(d.get("uses_max", 0))
 	it.uses_remaining = int(d.get("uses_remaining", 0))
+	var su: Array = d.get("stack_uses", [])
+	var su_typed: Array[int] = []
+	for v: Variant in su:
+		su_typed.append(int(v))
+	it.stack_uses = su_typed
 	return it

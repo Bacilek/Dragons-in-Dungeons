@@ -88,10 +88,6 @@ var _vex_adv_target: Enemy = null
 var _oa_used_this_round: bool = false
 
 
-# ── Equip action tracking ─────────────────────────────────────────────────────
-var _pending_equip_turn: bool = false  # set by equip_action_taken signal; consumed in next action gate
-
-
 func _ready() -> void:
 	stats = GameState.player_stats
 	is_friendly = true
@@ -119,7 +115,6 @@ func _ready() -> void:
 	GameState.class_chosen.connect(_on_class_chosen)
 	GameState.camera_recenter_requested.connect(_reset_camera_offset)
 	GameState.screen_shake.connect(_vfx.screen_shake)
-	GameState.equip_action_taken.connect(_on_equip_action_taken)
 	GameState.equipment_changed.connect(_on_equipment_changed)
 	GameState.potion_drunk.connect(func():
 		if GameState.add_item(_throw_tool.make_empty_bottle()):
@@ -137,17 +132,6 @@ func _on_equipment_changed() -> void:
 		if armor != null and armor.is_heavy_armor:
 			_end_rage()
 			GameState.game_log("[color=gray]The heavy armor weighs you down — Rage ends![/color]")
-
-func _on_equip_action_taken() -> void:
-	# Consume 1 turn the next time we have control (may be immediately if WAITING_FOR_INPUT)
-	if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing \
-			and not GameState.short_rest_open and not GameState.short_rest_active:
-		TurnManager.begin_player_action()
-		if _dungeon_floor != null:
-			_dungeon_floor.update_fog(grid_pos)
-		TurnManager.on_player_action_complete()
-	else:
-		_pending_equip_turn = true
 
 func _on_player_died() -> void:
 	visible = false
@@ -222,15 +206,6 @@ func _on_turn_started() -> void:
 		_dungeon_floor.update_fog(grid_pos)
 		_fov_prev_turn = _fov_this_turn
 		_fov_this_turn = _dungeon_floor.get_visible_enemies()
-
-	# Consume a pending equip turn (couldn't be spent last frame)
-	if _pending_equip_turn:
-		_pending_equip_turn = false
-		TurnManager.begin_player_action()
-		if _dungeon_floor != null:
-			_dungeon_floor.update_fog(grid_pos)
-		TurnManager.on_player_action_complete()
-		return
 
 	# Tick rage duration. Baseline: lasts 1 turn, refreshed to 1 turn by attacking (hit or miss)
 	# or being attacked (hit or miss) last turn (Masochist Monster R3 can further override expiry

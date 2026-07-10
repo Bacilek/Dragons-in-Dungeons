@@ -27,8 +27,6 @@ signal crit_banner(text: String, color: Color)
 signal screen_shake(strength: float)
 signal potion_drunk
 signal ability_bar_changed()
-# Emitted when equip/unequip is done intentionally (costs 1 turn). Not emitted on auto-pickup.
-signal equip_action_taken()
 signal talent_invested(talent_id: String, new_rank: int)
 signal talent_points_changed(available: int)
 # Fired when the Tier 2 gating boss dies and the player must pick a subclass.
@@ -747,9 +745,8 @@ func debug_level_up() -> void:
 
 # ── Equipment ─────────────────────────────────────────────────────────────────
 
-# costs_turn: if true, emits equip_action_taken so player.gd consumes 1 turn.
-# Pass false for auto-equip on pickup and startup.
-func equip(item: Item, slot_name: String = "", costs_turn: bool = false) -> void:
+# Equip/unequip/re-equip is always a free action — never costs a turn.
+func equip(item: Item, slot_name: String = "") -> void:
 	if slot_name == "":
 		match item.item_type:
 			Item.Type.WEAPON:
@@ -772,27 +769,53 @@ func equip(item: Item, slot_name: String = "", costs_turn: bool = false) -> void
 	equipment[slot_name] = to_equip
 	if prev != null:
 		_add_to_bags_silent(prev)
+	# Equipping a two-handed weapon into the main hand can't coexist with an off-hand
+	# weapon — kick whatever's in "hand2" back to the bag automatically.
+	if slot_name == "melee" and to_equip.is_two_handed:
+		_auto_unequip_offhand()
 	recalculate_stats()
 	combat_message.emit("[color=cyan]Equipped [b]%s[/b].[/color]" % to_equip.item_name)
 	equipment_changed.emit()
 	inventory_changed.emit()
-	if costs_turn and class_selected:
-		equip_action_taken.emit()
 
-# A stacked thrown weapon (quantity > 1, all sharing the same uses_remaining — see add_item())
+# Silently returns whatever's in the off-hand slot to the bag (no log line of its own —
+# called as a side effect of equipping a two-handed main-hand weapon, see equip()/move_item()).
+func _auto_unequip_offhand() -> void:
+	var hand2: Item = equipment.get("hand2") as Item
+	if hand2 == null:
+		return
+	equipment["hand2"] = null
+	_add_to_bags_silent(hand2)
+
+# A stacked thrown weapon (quantity > 1, units may carry different durability — see add_item())
 # only ever equips a single unit: split one off instead of moving the whole stack into a slot,
-# so the rest keep sitting in the bag with their own durability untouched. Shared by equip()
-# and move_item()'s drag-to-equipment-slot path.
+# so the rest keep sitting in the bag with their own durability untouched. Shared by equip(),
+# move_item()'s drag-to-equipment-slot path, and PlayerThrowTool._throw_weapon().
 func _should_split_for_equip(item: Item) -> bool:
 	return item.quantity > 1 and item.item_type == Item.Type.WEAPON and item.uses_max > 0
 
+# Splits the most-damaged unit (lowest uses_remaining — the one "on top" of the stack) off into
+# its own single-quantity Item, leaving the rest of the stack behind with their own durability.
 func _split_one_unit(item: Item) -> Item:
 	var unit: Item = item.duplicate()
 	unit.quantity = 1
+	unit.stack_uses = []
+	if item.uses_max > 0:
+		var stack: Array = item.get_stack_uses()
+		stack.sort()
+		var taken: int = int(stack[0])
+		stack.remove_at(0)
+		unit.uses_remaining = taken
+		var remaining: Array[int] = []
+		for v: Variant in stack:
+			remaining.append(int(v))
+		item.stack_uses = remaining if remaining.size() > 1 else []
+		if not remaining.is_empty():
+			item.uses_remaining = remaining[0]
 	item.quantity -= 1
 	return unit
 
-func unequip(slot_name: String, costs_turn: bool = false) -> void:
+func unequip(slot_name: String) -> void:
 	if not equipment.has(slot_name):
 		return
 	var item: Item = equipment[slot_name] as Item
@@ -803,8 +826,6 @@ func unequip(slot_name: String, costs_turn: bool = false) -> void:
 		recalculate_stats()
 		combat_message.emit("[color=cyan]Unequipped [b]%s[/b].[/color]" % item.item_name)
 		equipment_changed.emit()
-		if costs_turn and class_selected:
-			equip_action_taken.emit()
 	else:
 		combat_message.emit("[color=red]No bag space to unequip %s![/color]" % item.item_name)
 
@@ -865,13 +886,13 @@ func move_item(src: String, src_idx: int, src_slot: String,
 	else:
 		_set_slot_item(src, src_idx, src_slot, dest_item)
 		_set_slot_item(dest, dest_idx, dest_slot, src_item)
+	# Dragging a two-handed weapon into the main hand can't coexist with an off-hand
+	# weapon — kick whatever's in "hand2" back to the bag automatically (mirrors equip()).
+	if dest == "equipment" and dest_slot == "melee" and src_item != null and src_item.is_two_handed:
+		_auto_unequip_offhand()
 	recalculate_stats()
 	equipment_changed.emit()
 	inventory_changed.emit()
-	# Drag-drop into/from equipment slot costs 1 turn
-	var touches_equip: bool = (src == "equipment" or dest == "equipment")
-	if touches_equip and class_selected:
-		equip_action_taken.emit()
 
 func _get_slot_item(source: String, idx: int, slot_name: String) -> Item:
 	match source:
@@ -897,22 +918,22 @@ func _set_slot_item(source: String, idx: int, slot_name: String, item: Item) -> 
 # ── Item management ───────────────────────────────────────────────────────────
 
 func add_item(item: Item) -> bool:
-	# Weapons with individual durability (uses_max > 0, e.g. thrown weapons) only stack with an
-	# existing pile that has the exact same uses_remaining — different durability never merges,
-	# so a stack always holds interchangeable units (throwing/equipping one from a stack is safe
-	# no matter which unit gets picked, see equip()/PlayerThrowTool._throw_weapon() splitting).
+	# Weapons with individual durability (uses_max > 0, e.g. thrown weapons) stack with any
+	# existing same-named pile regardless of durability — each unit's own uses_remaining is kept
+	# via Item.stack_uses (see _merge_into_stack()), so a mixed-durability stack still throws/
+	# equips its most-damaged unit first (equip()/PlayerThrowTool._throw_weapon() splitting).
 	var is_durability_weapon: bool = item.item_type == Item.Type.WEAPON and item.uses_max > 0
 	# Try stacking in quickbar, then bag
 	for i: int in QUICKBAR_SIZE:
 		var ex: Item = player_quickbar[i] as Item
-		if ex != null and ex.item_name == item.item_name and (not is_durability_weapon or ex.uses_remaining == item.uses_remaining):
-			ex.quantity += item.quantity
+		if ex != null and ex.item_name == item.item_name and (not is_durability_weapon or ex.uses_max == item.uses_max):
+			_merge_into_stack(ex, item)
 			inventory_changed.emit()
 			return true
 	for i: int in INVENTORY_SIZE:
 		var ex: Item = player_inventory[i] as Item
-		if ex != null and ex.item_name == item.item_name and (not is_durability_weapon or ex.uses_remaining == item.uses_remaining):
-			ex.quantity += item.quantity
+		if ex != null and ex.item_name == item.item_name and (not is_durability_weapon or ex.uses_max == item.uses_max):
+			_merge_into_stack(ex, item)
 			inventory_changed.emit()
 			return true
 	# Empty quickbar slot first, then bag
@@ -928,6 +949,22 @@ func add_item(item: Item) -> bool:
 			return true
 	combat_message.emit("[color=red]Your bag is full![/color]")
 	return false
+
+# Merges `incoming` into existing stack `ex`. Durability weapons keep every unit's own
+# uses_remaining (Item.stack_uses, sorted ascending — index 0/most-damaged mirrors into
+# ex.uses_remaining so it's always the one shown/thrown/equipped first). Plain items just sum.
+func _merge_into_stack(ex: Item, incoming: Item) -> void:
+	if ex.item_type == Item.Type.WEAPON and ex.uses_max > 0:
+		var merged: Array = ex.get_stack_uses() + incoming.get_stack_uses()
+		merged.sort()
+		var typed: Array[int] = []
+		for v: Variant in merged:
+			typed.append(int(v))
+		ex.stack_uses = typed
+		ex.quantity = typed.size()
+		ex.uses_remaining = typed[0]
+	else:
+		ex.quantity += incoming.quantity
 
 func use_item(item: Item) -> void:
 	match item.item_type:
@@ -970,7 +1007,7 @@ func use_item(item: Item) -> void:
 		Item.Type.FOOD:
 			game_log("[color=gray]%s isn't eaten directly — it's saved as fuel for your next long rest (hold Alt).[/color]" % item.item_name)
 		Item.Type.WEAPON, Item.Type.ARMOR:
-			equip(item, "", false)  # equipping from bag/quickbar is a free action
+			equip(item)  # equipping from bag/quickbar is always a free action
 		Item.Type.TOOL:
 			player_tool_primed.emit(item)
 
