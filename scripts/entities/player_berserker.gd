@@ -101,9 +101,9 @@ func execute_frenzy(enemy: Enemy) -> void:
 
 # Frenzied Killer R2: refreshes on ANY critical hit the player lands this turn — normal attack,
 # cleave, ranged, thrown, or Frenzy's own crit — not scoped to Frenzy's own crit like R1's kill
-# trigger is. Hooked alongside PlayerBaseTalents.on_crit_or_kill() at every player attack-roll
-# site (Frenzy's own nat-20 branch calls _refresh_frenzy_on("crit") directly instead, since it
-# isn't one of those shared sites).
+# trigger is. Hooked alongside PlayerBaseTalents.on_crit() at every player attack-roll site
+# (Frenzy's own nat-20 branch calls _refresh_frenzy_on("crit") directly instead, since it isn't
+# one of those shared sites).
 func refresh_on_any_crit() -> void:
 	_refresh_frenzy_on("crit")
 

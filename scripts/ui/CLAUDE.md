@@ -41,13 +41,36 @@ Connects to `GameState` signals only — never poll `GameState` in `_process()`.
 - `tooltip_formatters.gd` (`TooltipFormatters`, static-func-only helper) — the 8 combat tooltip formatters (`fmt_hit_tooltip`, `fmt_dmg_tooltip`, `fmt_heal_tooltip`, `fmt_save_tooltip`, `fmt_ehit_tooltip`, `fmt_edmg_tooltip`, `fmt_catk_tooltip`, `fmt_ret_tooltip`). Each takes only a `Dictionary` and returns a `String`. `hud.gd._format_tooltip()` still owns the `kind` dispatch match and calls into these.
 - `crit_banner.gd` (`CritBanner`, composition child-node, `extends Node`) — `show_banner(text, color)` (was `hud.gd._show_crit_banner`). Instantiated once in `hud.gd._ready()` (`_crit_banner`), added as a child, and `GameState.crit_banner` connects directly to `_crit_banner.show_banner`.
 - `compass.gd` (`Compass`, composition child-node, `extends Panel`) — owns the top-center stairs compass UI and its `_stairs_found_this_floor` state internally. Public methods: `on_stairs_discovered()`, `update_display()`, `reset_for_new_floor()`. Instantiated once in `hud.gd._ready()` (`_compass`); `GameState.stairs_discovered` connects to `on_stairs_discovered`, `TurnManager.player_turn_started` connects to `update_display`, and `hud.gd._on_floor_changed()` calls `reset_for_new_floor()`.
+- `status_tray.gd` (`StatusTray`, composition child-node, `extends Control`) + `status_tooltips.gd` (`StatusTooltips`, static-func-only helper) — the status/buff/debuff/passive icon tray under the portrait. See "Status/buff/debuff/passive icon tray" below.
 
-**Status/buff/debuff icon tray (design only, not yet implemented)**: current poison/burning/
-bleeding/slowed/rage indicators (`hud.gd:200-211`, `_make_status_dot()`/`_make_status_icon_rect()`)
-are 5 hardcoded nodes overlapping the portrait's own left edge, with no tooltip. Full design for
-reworking these into a generic, data-driven, clickable icon row properly positioned under the
-portrait — covering every buff/debuff/toggle state (including future talent-driven ones) via one
-`StatusEffectEntry` descriptor list instead of one bespoke node per effect: `docs/architecture/status-icon-tray-design.md`.
+**Status/buff/debuff/passive icon tray** (`status_tray.gd`, `StatusTray extends Control`,
+composition child-node instantiated once in `hud.gd._ready()` as `_status_tray`, added under
+`$StatsPanel` at local position `(4, 124)` — `StatsPanel`'s `offset_bottom` was grown from 114 to
+144 in `scenes/ui/hud.tscn` to make room below the portrait/level/hit-dice column). Replaces the
+old 5 hardcoded dot nodes (formerly `hud.gd:200-211`, `_make_status_dot()`/`_make_status_icon_rect()`).
+Fully data-driven: `hud.gd._update_status_icons()` builds a fresh `Array[Dictionary]` of
+`{id, icon_path, fallback_color}` every refresh (wired to the same chokepoint as before —
+`TurnManager.player_turn_started`, `GameState.player_status_changed`, `GameState.ability_bar_changed`)
+and calls `_status_tray.refresh(entries)`. `StatusTray` pools `TextureRect` icon nodes
+(`ignore_texture_size = true` per the rule above), tints them with `fallback_color` when
+`icon_path` doesn't resolve via `ResourceLoader.exists()` (no separate `ColorRect` fallback type),
+and emits `icon_hovered(id)`/`icon_unhovered()` on mouse enter/exit. `hud.gd` connects these to
+reuse the existing qbar-tooltip pair (`_qbar_tooltip`/`_qbar_tooltip_rtl`) via
+`_on_status_tray_icon_hovered(id)`, which pulls description text from `status_tooltips.gd`
+(`StatusTooltips`, static-func-only helper mirroring `tooltip_formatters.gd`'s pattern — one
+`get_text(id)` case per effect id). Sources at launch: `poisoned`/`burning`/`bleeding`/`slowed`
+(`Stats.*_turns`), `raging` (`GameState.is_raging`), `temp_hp` (`Stats.temp_hp`),
+`unarmored_defense` (Barbarian/Monk with no armor equipped — reads the live AC formula),
+`tactician` (`GameState.battlefield_adv_pending`, Battlefield Expert R1's pending-Advantage
+window — see `scripts/entities/CLAUDE.md`'s Barbarian Tier 1 talents), `psycho_adv`
+(`GameState.psycho_adv_pending`, Psycho's identical pending-Advantage window). Both pending-ADV
+flags live on `GameState` (not on `PlayerBaseTalents`, where they used to live) specifically so
+this tray can read them without a live `Player` node reference — matches "HUD only reads
+GameState" above. No `icons/status/` art exists yet — every entry currently renders as a tinted
+placeholder square until real icons are supplied (`unarmored_defense`/`tactician`/`psycho_adv`
+already reuse existing talent icons, so those three render properly today). Design doc (now
+implemented per this section, open questions resolved: hover-only tooltip, shared tooltip panel,
+grow-panel layout): `docs/architecture/status-icon-tray-design.md`.
 
 ### Z-index reference
 | Element | Z |

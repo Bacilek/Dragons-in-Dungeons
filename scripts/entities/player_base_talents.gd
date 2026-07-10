@@ -8,25 +8,31 @@ extends Node
 var player: Player
 
 # ── Psycho ──────────────────────────────────────────────────────────────────────
-# R1: after a kill or crit, the next attack (any type) is made with Advantage. Persists across
-# turns until consumed — not reset in _on_turn_started().
-var psycho_adv_pending: bool = false
+# R1: after a kill, the next attack (any type) is made with Advantage. R2: a critical hit also
+# triggers it. Persists across turns until consumed — not reset in _on_turn_started().
+# Lives on GameState (GameState.psycho_adv_pending), not here, so the status tray (hud.gd, which
+# only ever reads GameState per scripts/ui/CLAUDE.md's convention) can display it without a
+# live Player node reference.
 
-func on_crit_or_kill() -> void:
+func on_kill() -> void:
 	if GameState.get_talent_rank("psycho") >= 1:
-		psycho_adv_pending = true
+		GameState.psycho_adv_pending = true
+
+func on_crit() -> void:
+	if GameState.get_talent_rank("psycho") >= 2:
+		GameState.psycho_adv_pending = true
 
 # Called once per attack-roll site right after adv_count is otherwise finalized; returns 1 if
 # consumed (caller adds it into their own adv_count), else 0.
 func consume_psycho_adv() -> int:
-	if not psycho_adv_pending:
+	if not GameState.psycho_adv_pending:
 		return 0
-	psycho_adv_pending = false
+	GameState.psycho_adv_pending = false
 	return 1
 
 # ── Battlefield Expert ────────────────────────────────────────────────────────────
-# R1: after a side-step, next attack (any type) is made with Advantage. Persists like Psycho's.
-var battlefield_adv_pending: bool = false
+# R1: after a side-step, next attack (any type) is made with Advantage. Lives on GameState
+# (GameState.battlefield_adv_pending) for the same reason as psycho_adv_pending above.
 # R3: set at turn start if the player was hit last turn; consumed by the first side-step this turn.
 var free_sidestep_available: bool = false
 # Set true by on_sidestep() during _resolve_enemy_opportunity_attacks(); read+cleared by
@@ -38,7 +44,8 @@ func on_sidestep(enemy: Enemy) -> void:
 	if rank < 1:
 		return
 	sidestep_detected_this_move = true
-	battlefield_adv_pending = true
+	GameState.battlefield_adv_pending = true
+	GameState.game_log("[color=cyan]Battlefield Expert: side-step! You gain Tactician — Advantage on your next attack this turn.[/color]")
 	if rank >= 2:
 		enemy.disadv_next_attack = true
 
@@ -46,9 +53,9 @@ func consume_psycho_or_battlefield_adv() -> int:
 	return consume_psycho_adv() + consume_battlefield_adv()
 
 func consume_battlefield_adv() -> int:
-	if not battlefield_adv_pending:
+	if not GameState.battlefield_adv_pending:
 		return 0
-	battlefield_adv_pending = false
+	GameState.battlefield_adv_pending = false
 	return 1
 
 # Called from _on_turn_started() on real turns only, before GameState.player_was_hit_this_turn

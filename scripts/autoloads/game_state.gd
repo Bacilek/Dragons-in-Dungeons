@@ -161,7 +161,7 @@ var subclass_picker_open: bool = false  # blocks ALL player input while the subc
 
 # Talent system — points earned per level, invested per talent.
 # Points are tier-locked pools: talent_points[tier] holds that tier's unspent points
-# (levels 1-5 → tier 1, 7-12 → tier 2, 13-17 → tier 3, 18-20 → tier 4; see TIER_LEVEL_RANGES).
+# (levels 1-6 → tier 1, 7-12 → tier 2, 13-17 → tier 3, 18-20 → tier 4; see TIER_LEVEL_RANGES).
 # Points accumulate even while a tier is locked (Tier 2 points pend until the gating boss dies).
 # talent_points_available is a computed sum used for backward-compat (signals, auto-close logic).
 var talent_points: Dictionary = {1: 0, 2: 0, 3: 0, 4: 0}   # tier → unspent points
@@ -171,8 +171,8 @@ var talent_points_available: int:
 		for t: int in talent_points:
 			total += talent_points[t]
 		return total
-# Level → talent-point tier schedule. Levels outside every range (6, 21+) grant nothing.
-const TIER_LEVEL_RANGES: Dictionary = {1: [1, 5], 2: [7, 12], 3: [13, 17], 4: [18, 20]}
+# Level → talent-point tier schedule. Levels outside every range (21+) grant nothing.
+const TIER_LEVEL_RANGES: Dictionary = {1: [1, 6], 2: [7, 12], 3: [13, 17], 4: [18, 20]}
 var talent_investments: Dictionary = {}   # talent_id → current_rank (int)
 var _class_talents: Array[Talent] = []    # all talents for current class, populated on class select
 # Tier 2 unlocks when the gating boss (TIER2_GATING_BOSS_ID, the floor-5 boss) is defeated —
@@ -225,6 +225,12 @@ var player_companion: Variant = null
 var pending_companion_restore: Dictionary = {}
 # AC bonus from Natural Sleeper R3 terrain — added in recalculate_stats().
 var terrain_ac_bonus: int = 0
+# Psycho R1/R2 and Battlefield Expert R1's pending-Advantage windows — live here (not on
+# PlayerBaseTalents) so the HUD status tray can display them while only reading GameState, per
+# scripts/ui/CLAUDE.md's "HUD only reads GameState" convention. See scripts/entities/CLAUDE.md's
+# Barbarian Tier 1 talents section.
+var psycho_adv_pending: bool = false
+var battlefield_adv_pending: bool = false
 
 # ── Zealot Tier 2 state ────────────────────────────────────────────────────
 # Divine Fury: toggle-only damage type selector, persists between turns (does NOT reset per turn).
@@ -627,7 +633,7 @@ func gain_exp(amount: int) -> void:
 			# (see _on_boss_defeated(); Tier 2 is NOT auto-unlocked by leveling).
 			talent_points[point_tier] += 1
 			talent_points_changed.emit(talent_points_available)
-		# Levels outside TIER_LEVEL_RANGES (6, 21+): no talent points (gap between tiers)
+		# Levels outside TIER_LEVEL_RANGES (21+ past tier 4): no talent points (gap between tiers)
 		# Rage uses scale by level — grant the extra use immediately on the triggering level-up.
 		if player_stats.character_class == Stats.CharacterClass.BARBARIAN:
 			var new_rage_max: int = player_stats.rage_uses_max
@@ -646,7 +652,7 @@ func gain_exp(amount: int) -> void:
 		AudioManager.play("level_up")
 		player_leveled_up.emit(player_stats.character_level)
 
-## Which tier's pool a level-up at `lv` feeds. 0 = no talent point (level 6, 21+).
+## Which tier's pool a level-up at `lv` feeds. 0 = no talent point (level 21+).
 func tier_for_level(lv: int) -> int:
 	for tier: int in TIER_LEVEL_RANGES:
 		var r: Array = TIER_LEVEL_RANGES[tier]
@@ -1454,14 +1460,14 @@ func _setup_barbarian_talents() -> void:
 	var psycho_talent := Talent.new()
 	psycho_talent.talent_id = "psycho"
 	psycho_talent.talent_name = "Psycho"
-	psycho_talent.description = "Momentum: kills and crits feed into your next strike."
+	psycho_talent.description = "Momentum: kills (and, at higher ranks, crits) feed into your next strike."
 	psycho_talent.icon_path = talent_icon_path("psycho", 1)
 	psycho_talent.tier = 1
 	psycho_talent.class_id = Stats.CharacterClass.BARBARIAN
 	psycho_talent.max_rank = 3
 	psycho_talent.ranks = [
-		{"description": "After a kill or a critical hit, your next attack is made with Advantage."},
-		{"description": "When attacking with Advantage, add your STR modifier to the damage."},
+		{"description": "After a kill, your next attack is made with Advantage."},
+		{"description": "After a critical hit, your next attack is made with Advantage."},
 		{"description": "When attacking with Advantage, your crit range expands to 19-20."},
 	]
 	_class_talents.append(psycho_talent)
