@@ -55,15 +55,20 @@ Opportunity Attacks (movement out of threat range provokes a free reactive melee
 ### D&D stats (`scripts/entities/stats.gd`)
 `Stats` extends `Resource`. `modifier(score)` = `floor((score-10)/2)`. `apply_class_defaults()` sets scores, derives `max_hp`, and calls `recalc_ac(has_armor)`. Classes: BARBARIAN (d12, STR/CON check prof), RANGER (d10, STR/DEX), WIZARD (d6, INT/WIS), MONK (d8, STR/DEX). Barbarian and Monk both get unarmored-defense AC formulas — see `scripts/entities/CLAUDE.md` for the full combat-roll table, proficiency scaling, and class-specific mechanics.
 
-### Race system (design only, not yet implemented)
-Planned onboarding order: **class select → race select → game starts**, a second one-time blocking
-overlay spawned right after class selection (mirrors `subclass_select.gd`'s pattern). 6 races
-(Orc, Human, Halfling, Dwarf, Elf w/ 3 sub-races, Dragonborn) each with distinct traits —
-darkvision/FOV bonus, long-rest-gated charges (Orc Relentless Endurance, Human Heroic
-Inspiration), a d20-reroll mechanic (Human miss-reroll, Halfling nat-1-reroll), Dwarf per-level
-HP, Elf shorter rests + sub-race spell-like ability, Dragonborn ancestry-based resistance/breath
-type. No code ships yet — full design incl. data model, UI, FOV hook, save/load, and open
-questions for owner sign-off: `docs/architecture/race-selection-design.md`.
+### Race system
+Onboarding order: **class select → race select → mastery picker → game starts**. `race_select.gd`
+is a one-time blocking overlay spawned right after class selection (mirrors `subclass_select.gd`'s
+pattern), and itself spawns the Mastery Picker on confirm. 6 races (Orc, Human, Halfling, Dwarf,
+Elf w/ 3 sub-races, Dragonborn) each with distinct traits — darkvision/FOV bonus, long-rest-gated
+charges (Orc Relentless Endurance, Human Heroic Inspiration), a d20-reroll mechanic (Human
+miss-reroll, Halfling nat-1-reroll), Dwarf per-level HP, Elf shorter rests + sub-race spell-like
+ability, Dragonborn ancestry-based resistance/breath type. Still deferred/stubbed: Halfling
+nat-1 reroll, Human miss-reroll, Elf sub-race spell-like ability, Dragonborn breath weapon —
+these are cosmetic/flavor gaps, not blockers. `Stats.apply_race_defaults()`
+(`scripts/entities/stats.gd`) and `GameState.choose_race()`/`give_race_starting_items()`
+(`scripts/autoloads/CLAUDE.md`) hold the mechanical hooks; UI is `scripts/ui/race_select.gd`
+(`scripts/ui/CLAUDE.md`). Full design + data model + open questions:
+`docs/architecture/race-selection-design.md`.
 
 ### Ability system
 `Ability` (`scripts/items/ability.gd`) — resource with `ability_id`, `ability_name`, `description`, `icon_path`, `uses_remaining`, `uses_max`, `is_active`. `uses_max == 0` means infinite/passive. `GameState.player_ability_bar: Array` holds 9 slots (parallel to `player_quickbar`). `Tab` toggles HUD between item bar and ability bar. `GameState.add_ability(ability)` places in first empty slot. Ability activation dispatched in `player.gd._use_ability_slot(idx)` by `ability_id`. New abilities are granted by `GameState._apply_talent_rank()` and `GameState._apply_monk_level_features(level)`.

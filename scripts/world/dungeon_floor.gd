@@ -340,7 +340,7 @@ func update_fog(player_pos: Vector2i) -> void:
 	_fov_player_pos = player_pos
 	var stairs_was_known: bool = _explored.get(_data.stairs_pos, false)
 
-	_visible_tiles = _compute_shadowcast(player_pos, FOV_RADIUS + GameState.fov_radius_bonus)
+	_visible_tiles = _compute_shadowcast(player_pos, FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus)
 
 	for y: int in _data.height:
 		for x: int in _data.width:
@@ -645,7 +645,7 @@ func get_visible_enemies() -> Array[Enemy]:
 	var result: Array[Enemy] = []
 	if _player == null:
 		return result
-	var eff_radius: int = FOV_RADIUS + GameState.fov_radius_bonus
+	var eff_radius: int = FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus
 	var r2: int = eff_radius * eff_radius
 	for e: Enemy in _enemies:
 		if not is_instance_valid(e):

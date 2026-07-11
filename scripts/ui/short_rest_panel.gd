@@ -207,7 +207,7 @@ func _build_long_container(panel: Panel) -> void:
 	_duration_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_duration_label.size = Vector2(PANEL_SIZE.x, 22.0)
 	_duration_label.position = Vector2(0.0, 92.0)
-	_duration_label.text = "Takes %d turns to complete (enemies can interrupt)." % GameState.LONG_REST_TURNS
+	_duration_label.text = "Takes %d turns to complete (enemies can interrupt)." % GameState.long_rest_turns_needed()
 	_long_container.add_child(_duration_label)
 
 	_long_reason_label = Label.new()
@@ -344,8 +344,8 @@ func _on_long_rest() -> void:
 		return
 	GameState.long_rest_pending = true
 	GameState.short_rest_active = true
-	GameState.short_rest_turns_remaining = GameState.LONG_REST_TURNS
-	GameState.game_log("[color=cyan]You settle in for a long rest... (%d turns)[/color]" % GameState.LONG_REST_TURNS)
+	GameState.short_rest_turns_remaining = GameState.long_rest_turns_needed()
+	GameState.game_log("[color=cyan]You settle in for a long rest... (%d turns)[/color]" % GameState.long_rest_turns_needed())
 	GameState.short_rest_changed.emit()
 	GameState.short_rest_open = false
 	queue_free()

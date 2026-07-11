@@ -147,9 +147,9 @@ Quickbar: 9 slots (indices 0–8). Bag: 24 slots.
 ---
 
 ## Class select (`class_select.gd`)
-Shown at game start. Emits `GameState.class_chosen` when player selects a class. If the chosen
-class has `Stats.mastery_cap() > 0` (Barbarian, Ranger — not Wizard/Monk), spawns the Mastery
-Picker (below) right after `class_chosen` fires, before `queue_free()`.
+Shown at game start. Emits `GameState.class_chosen` when player selects a class, then spawns
+`race_select.gd` (below) and `queue_free()`s itself — race select owns spawning the Mastery
+Picker afterward, not this script.
 
 **Continue button** (Save/Load Phase A): a gold "Continue Saved Run" button appears centered
 below the class cards only when `SaveManager.has_save()`. Pressing it calls
@@ -159,6 +159,20 @@ then calls `DungeonFloor.reload_from_save()` and `queue_free()` — skipping cla
 Mastery Picker (masteries are restored from the save). If `load_run()` fails (save vanished or
 corrupt), the button hides and the class cards stay usable. The New Game path is untouched.
 See `scripts/autoloads/CLAUDE.md`'s SaveManager "Continue flow" section.
+
+## Race select (`race_select.gd`)
+CanvasLayer, layer = 25. One-time, mandatory choice spawned by `class_select.gd._on_class_selected()`
+right after `class_chosen` fires, **before** the Mastery Picker. Modeled directly on
+`subclass_select.gd`'s conventions (dim overlay + centered bordered `Panel`, `focus_mode =
+FOCUS_NONE` everywhere, `race_picker_open` input-gate flag, non-dismissible — no close button,
+`_unhandled_input` swallows Esc/keys). 6 race cards (Orc/Human/Halfling/Dwarf/Elf/Dragonborn);
+Human/Elf/Dragonborn additionally show an inline sub-choice row (ability-score proficiency /
+sub-race / ancestry) that must be picked before Confirm enables. Confirm calls
+`GameState.choose_race(race, variant, prof_ability)`, then spawns `mastery_picker.gd` itself
+(same `mastery_cap() > 0` gate class_select used to apply) before `queue_free()` — so the full
+onboarding order is **class select → race select → mastery picker**. The Continue-saved-run flow
+(`class_select.gd._on_continue_pressed()`) skips all three; race is restored via `Stats.to_dict()`/
+`from_dict()` (`character_race`/`race_variant`/`race_prof_ability`) same as any other stat.
 
 ## Mastery picker (`mastery_picker.gd`)
 CanvasLayer, layer = 25. Modeled directly on the talent picker (dim overlay + centered bordered

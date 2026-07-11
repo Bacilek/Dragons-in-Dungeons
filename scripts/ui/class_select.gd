@@ -318,7 +318,6 @@ func _on_class_selected(cls_idx: int) -> void:
 	GameState.class_selected = true
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 	GameState.class_chosen.emit(GameState.player_stats.character_class)
-	if GameState.player_stats.mastery_cap() > 0:
-		var picker = load("res://scripts/ui/mastery_picker.gd").new()
-		get_tree().root.call_deferred("add_child", picker)
+	var race_picker = load("res://scripts/ui/race_select.gd").new()
+	get_tree().root.call_deferred("add_child", race_picker)
 	queue_free()

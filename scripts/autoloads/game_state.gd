@@ -14,6 +14,7 @@ signal player_action_requested(action_name: String)
 signal player_throw_primed(item: Item)
 signal player_tool_primed(item: Item)
 signal class_chosen(chosen_class: Stats.CharacterClass)
+signal race_chosen(race: Stats.CharacterRace)
 signal player_status_changed()
 signal debug_jump_floor(floor_num: int)
 signal short_rest_changed
@@ -156,6 +157,7 @@ var short_rest_open: bool = false
 var talent_picker_open: bool = false
 var mastery_picker_open: bool = false
 var subclass_picker_open: bool = false  # blocks ALL player input while the subclass-select overlay is visible
+var race_picker_open: bool = false  # blocks ALL player input while the race-select overlay is visible (scripts/ui/race_select.gd)
 
 # Talent system — points earned per level, invested per talent.
 # Points are tier-locked pools: talent_points[tier] holds that tier's unspent points
@@ -287,6 +289,7 @@ func start_new_run() -> void:
 	talent_picker_open = false
 	mastery_picker_open = false
 	subclass_picker_open = false
+	race_picker_open = false
 	talent_points = {1: 0, 2: 0, 3: 0, 4: 0}
 	tier3_selected_class = -1
 	talent_investments = {}
@@ -353,6 +356,24 @@ func give_class_starting_items() -> void:
 			_setup_barbarian_talents()
 		Stats.CharacterClass.MONK:
 			_give_monk_starting_items()
+
+# One-time, permanent race choice — called by race_select.gd's confirm button, fired between
+# class selection and the Mastery Picker. Mirrors choose_subclass()'s shape: sets the choice on
+# Stats, re-derives race-defined state via apply_race_defaults(), then any starting gear.
+func choose_race(race: Stats.CharacterRace, variant: int = 0, prof_ability: int = -1) -> void:
+	player_stats.character_race = race
+	player_stats.race_variant = variant
+	player_stats.race_prof_ability = prof_ability
+	player_stats.apply_race_defaults()
+	give_race_starting_items()
+	recalculate_stats()
+	race_chosen.emit(race)
+
+# Idempotency-guard pattern mirrors give_class_starting_items() — safe to call again on save
+# replay. No race currently grants starting gear/abilities (Elf sub-race spells and the
+# Dragonborn breath weapon are deferred — see docs/architecture/race-selection-design.md §8).
+func give_race_starting_items() -> void:
+	pass
 
 func _give_barbarian_starting_items() -> void:
 	var axe := Item.new()
@@ -512,6 +533,12 @@ func _consume_food_value(amount: int) -> void:
 # The single chokepoint for every "per long rest" resource. Triggered explicitly by the player
 # via the Alt-menu Long Rest tab (see short_rest_panel.gd) — NEVER by advance_floor(). Any new
 # long-rest-gated resource must be refilled here and nowhere else.
+# Elf: Trance halves the long rest's turn count (long-rest-only, per race-selection-design.md §3.5).
+func long_rest_turns_needed() -> int:
+	if player_stats.character_race == Stats.CharacterRace.ELF:
+		return int(LONG_REST_TURNS * 0.5)
+	return LONG_REST_TURNS
+
 func long_rest() -> void:
 	player_stats.current_hp = player_stats.max_hp
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
@@ -526,6 +553,8 @@ func long_rest() -> void:
 	berserker_frenzy_used = false
 	berserker_turns_since_frenzy = 0
 	scarred_warrior_limit_break_used = false
+	player_stats.relentless_endurance_used = false
+	player_stats.heroic_inspiration_available = true
 	# Natural Sleeper activates/locks in on long rest only (not short rest, not floor descent).
 	wild_heart_sleeper_active = get_talent_rank("expanded_forms") >= 1
 	active_sleeper_form = natural_sleeper_form
@@ -616,6 +645,12 @@ func check_player_death() -> void:
 			player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 			force_rage_end.emit()
 			game_log("[color=gold]Bruiser: you refuse to fall! (1 HP, Rage ends)[/color]")
+			return
+		if player_stats.character_race == Stats.CharacterRace.ORC and not player_stats.relentless_endurance_used:
+			player_stats.relentless_endurance_used = true
+			player_stats.current_hp = 1
+			player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
+			game_log("[color=orange]Relentless Endurance holds you at 1 HP![/color]")
 			return
 		is_game_over = true
 		AudioManager.play("player_die")

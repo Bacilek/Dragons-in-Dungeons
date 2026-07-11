@@ -2,6 +2,13 @@ class_name Stats
 extends Resource
 
 enum CharacterClass { BARBARIAN, RANGER, WIZARD, MONK }
+enum CharacterRace { ORC, HUMAN, HALFLING, DWARF, ELF, DRAGONBORN }
+enum ElfSubrace { DROW, HIGH_ELF, WOOD_ELF }          # only meaningful when character_race == ELF
+enum DragonbornAncestry { BLACK, BLUE, BRASS, BRONZE, COPPER, GOLD, GREEN, RED, SILVER, WHITE }
+
+const DRAGONBORN_DAMAGE_TYPE: Array[String] = [
+	"Acid", "Lightning", "Fire", "Fire", "Acid", "Fire", "Poison", "Fire", "Lightning", "Cold"
+]
 
 # Check proficiency flags — which ability checks the class rolls with proficiency bonus.
 # Barbarian: STR + CON. Ranger: STR + DEX. Wizard: INT + WIS. Monk: STR + DEX.
@@ -56,6 +63,19 @@ func mastery_cap() -> int:
 
 @export var character_class: CharacterClass = CharacterClass.BARBARIAN
 @export var character_level: int = 1
+
+@export var character_race: CharacterRace = CharacterRace.HUMAN
+@export var race_variant: int = 0        # ElfSubrace or DragonbornAncestry ordinal; unused otherwise
+@export var race_prof_ability: int = -1  # Human only: which of STR..CHA got proficiency; -1 = unset
+
+# Always re-derived by apply_race_defaults() — never saved directly (mirrors check_prof_* above).
+var darkvision_bonus: int = 0            # 0 = none, 1 = standard (+1 FOV tile), 2 = superior (+2)
+var damage_resistances: Array[String] = []
+
+# Per-long-rest race charge trackers — reset in GameState.long_rest(), same chokepoint as
+# rage_uses_remaining/hit_dice.
+var relentless_endurance_used: bool = false     # Orc
+var heroic_inspiration_available: bool = false  # Human
 
 @export var max_hp: int = 10
 @export var current_hp: int = 10
@@ -129,12 +149,16 @@ func gain_exp(amount: int) -> bool:
 	return leveled
 
 func _hp_per_level() -> int:
+	var gain: int
 	match character_class:
-		CharacterClass.BARBARIAN: return 7 + con_modifier()
-		CharacterClass.RANGER:    return 6 + con_modifier()
-		CharacterClass.WIZARD:    return 4 + con_modifier()
-		CharacterClass.MONK:      return 5 + con_modifier()  # d8 avg = 5
-		_:                        return 5 + con_modifier()
+		CharacterClass.BARBARIAN: gain = 7 + con_modifier()
+		CharacterClass.RANGER:    gain = 6 + con_modifier()
+		CharacterClass.WIZARD:    gain = 4 + con_modifier()
+		CharacterClass.MONK:      gain = 5 + con_modifier()  # d8 avg = 5
+		_:                        gain = 5 + con_modifier()
+	if character_race == CharacterRace.DWARF:
+		gain += 1
+	return gain
 
 func modifier(score: int) -> int:
 	return floori((score - 10) / 2.0)
@@ -216,6 +240,11 @@ func to_dict() -> Dictionary:
 		"charisma": charisma,
 		"character_class": int(character_class),
 		"character_level": character_level,
+		"character_race": int(character_race),
+		"race_variant": race_variant,
+		"race_prof_ability": race_prof_ability,
+		"relentless_endurance_used": relentless_endurance_used,
+		"heroic_inspiration_available": heroic_inspiration_available,
 		"experience": experience,
 		"max_hp": max_hp,
 		"current_hp": current_hp,
@@ -237,6 +266,12 @@ func to_dict() -> Dictionary:
 func from_dict(d: Dictionary) -> void:
 	character_class = int(d.get("character_class", CharacterClass.BARBARIAN)) as CharacterClass
 	apply_class_defaults()
+	character_race = int(d.get("character_race", CharacterRace.HUMAN)) as CharacterRace
+	race_variant = int(d.get("race_variant", 0))
+	race_prof_ability = int(d.get("race_prof_ability", -1))
+	apply_race_defaults()
+	relentless_endurance_used = bool(d.get("relentless_endurance_used", false))
+	heroic_inspiration_available = bool(d.get("heroic_inspiration_available", true))
 	strength = int(d.get("strength", strength))
 	dexterity = int(d.get("dexterity", dexterity))
 	constitution = int(d.get("constitution", constitution))
@@ -293,3 +328,40 @@ func apply_class_defaults() -> void:
 	current_hp = max_hp
 	# Barbarian and Monk start unarmored — apply unarmored defense formulas.
 	recalc_ac(false)
+
+# Race defaults apply strictly AFTER class defaults, additively, and never touch the base
+# ability scores — none of the six races grant a raw ability-score bonus (see
+# docs/architecture/race-selection-design.md §2.3). Always fully re-derives darkvision_bonus/
+# damage_resistances from character_race/race_variant (idempotent — safe to call again on respec
+# or from_dict()).
+func apply_race_defaults() -> void:
+	darkvision_bonus = 0
+	damage_resistances.clear()
+	match character_race:
+		CharacterRace.ORC:
+			darkvision_bonus = 2
+		CharacterRace.HUMAN:
+			darkvision_bonus = 0
+			heroic_inspiration_available = true
+			if race_prof_ability >= 0:
+				_grant_ability_proficiency(race_prof_ability)
+		CharacterRace.HALFLING:
+			darkvision_bonus = 0
+		CharacterRace.DWARF:
+			darkvision_bonus = 2
+		CharacterRace.ELF:
+			darkvision_bonus = 1
+			check_prof_wis = true
+		CharacterRace.DRAGONBORN:
+			darkvision_bonus = 1
+			var dmg_type: String = DRAGONBORN_DAMAGE_TYPE[clampi(race_variant, 0, DRAGONBORN_DAMAGE_TYPE.size() - 1)]
+			damage_resistances = [dmg_type]
+
+func _grant_ability_proficiency(idx: int) -> void:
+	match idx:
+		0: check_prof_str = true
+		1: check_prof_dex = true
+		2: check_prof_con = true
+		3: check_prof_int = true
+		4: check_prof_wis = true
+		5: check_prof_cha = true
