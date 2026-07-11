@@ -532,42 +532,41 @@ func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1) -> Di
 	}
 
 func _attack_player(_player: Player) -> void:
-	if GameState.invincible:
-		GameState.game_log("[color=tomato]%s[/color] strikes you — [color=gray]blocked (invincible)[/color]" % display_name)
-		return
 	# Rage's duration refresh cares about being attacked at all, not just being hit — set
 	# regardless of the roll's outcome (see player.gd._on_turn_started()'s rage tick).
 	GameState.player_attacked_this_turn = true
+	var invincible: bool = GameState.invincible
+	var bracket_l: String = "[" if invincible else ""
+	var bracket_r: String = "]" if invincible else ""
 	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class)
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0]
 	if not r["is_hit"]:
 		var miss_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [r["bonus"], r["roll"], r["target_ac"]] if GameState.god_mode else ""
-		GameState.game_log("[color=tomato]%s[/color] [url=%s]misses[/url]!%s" % [display_name, hit_meta, miss_suffix])
+		GameState.game_log("%s[color=tomato]%s[/color] [url=%s]misses[/url]!%s%s" % [bracket_l, display_name, hit_meta, miss_suffix, bracket_r])
 		return
 	var is_crit: bool = r["is_crit"]
 	var dmg_roll: int = stats.roll_damage()
 	var dmg: int = dmg_roll * (2 if is_crit else 1)
 	if is_crit:
-		GameState.crit_banner.emit("CRITICAL HIT!", Color(0.95, 0.15, 0.15))
-		GameState.screen_shake.emit(7.0)
 		AudioManager.play("crit")
 	else:
 		AudioManager.play("player_hurt")
 	# Route through take_damage_raw for rage DR; enemies deal Bludgeoning by default.
 	# take_damage_raw handles player_hp_changed and check_player_death internally.
-	var actual: int = GameState.take_damage_raw(dmg, false, "Bludgeoning")
-	if _dungeon_floor != null:
+	# Invincible: skip the actual HP change but still roll/log normally (wrapped in [] for debugging).
+	var actual: int = 0 if invincible else GameState.take_damage_raw(dmg, false, "Bludgeoning")
+	if _dungeon_floor != null and not invincible:
 		_dungeon_floor.show_damage(_player.position, actual, true)
 	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,final=%d" % [dmg_roll, stats.min_damage, stats.max_damage, 1 if is_crit else 0, actual]
 	var god_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [r["bonus"], r["roll"], r["target_ac"]] if GameState.god_mode else ""
 	if is_crit:
-		GameState.game_log("[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg.%s" % [display_name, hit_meta, dmg_meta, actual, god_suffix])
+		GameState.game_log("%s[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [bracket_l, display_name, hit_meta, dmg_meta, actual, god_suffix, bracket_r])
 	else:
-		GameState.game_log("[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg.%s" % [display_name, hit_meta, dmg_meta, actual, god_suffix])
+		GameState.game_log("%s[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [bracket_l, display_name, hit_meta, dmg_meta, actual, god_suffix, bracket_r])
 	# Orc Shaman applies poison on hit
-	if display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
+	if not invincible and display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
 		if GameState.apply_player_status("poison", 3):
 			GameState.game_log("[color=lime]You are poisoned! (3 turns)[/color]")
 
@@ -582,8 +581,6 @@ func _attack_companion(companion: Companion) -> void:
 	var dmg_roll: int = stats.roll_damage()
 	var dmg: int = dmg_roll * (2 if r["is_crit"] else 1)
 	if r["is_crit"]:
-		GameState.crit_banner.emit("CRITICAL HIT!", Color(0.95, 0.15, 0.15))
-		GameState.screen_shake.emit(7.0)
 		AudioManager.play("crit")
 	else:
 		AudioManager.play("player_hurt")
