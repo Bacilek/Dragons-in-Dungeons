@@ -94,7 +94,7 @@ AudioManager.stop_music()
 short_rest_open: bool        # blocks ALL player input while true
 short_rest_active: bool      # a rest is in progress (ticking turns) — short OR long, see long_rest_pending
 long_rest_pending: bool      # true when the in-progress short_rest_active countdown is actually a long rest
-hit_dice: int                # available dice (refills to character_level only in long_rest())
+hit_dice: int                # available dice (refills to max_hit_dice() in long_rest(); gain_exp() also grants the level-up's +1 die to CURRENT hit_dice, not just the cap, so it's usable in a short rest before the next long rest)
 short_rests_remaining: int   # 2 per long-rest cycle, resets in long_rest() (NOT advance_floor)
 LONG_REST_FOOD_COST: int     # const 100 — combined Item.food_value required to long rest
 LONG_REST_TURNS: int         # const 20 — turns a long rest takes (short rest: SHORT_REST_TURNS = 5)
@@ -120,6 +120,8 @@ noclip: bool                 # debug flag
 player_grid_pos: Vector2i    # synced every move
 pending_chasm_items: Array[Item]  # ammo (or any future item) that fell into a chasm mid-shot; drained onto the NEXT floor's random walkable tiles by DungeonFloor._spawn_pending_chasm_items()
 ```
+
+**Ability usability check**: `GameState.is_ability_usable(ab: Ability) -> bool` — beyond the generic `uses_remaining`/`uses_max` pool (`Ability.has_uses()`), several free base-abilities (`uses_max == 0`, always "has uses") are additionally gated by external state that isn't visible from the `Ability` resource alone: `"frenzy"` needs `is_raging` and `not berserker_frenzy_used`, `"limit_break"` needs `not scarred_warrior_limit_break_used`, `"zealot_strike"` needs `hit_dice > 0`, `"grip_of_the_forest"` needs `is_raging`. Used only by `hud.gd`'s ability-bar greying (`scripts/ui/CLAUDE.md`) — never gates the actual activation logic, which each ability's own function (`player_berserker.gd` etc.) still owns independently.
 
 **Weapon mastery selection**: `can_select_mastery(name) -> bool` / `toggle_mastery(name) -> bool` mutate `player_stats.known_weapon_masteries` (the single source of truth every combat mastery gate reads — no parallel copy on `GameState`). Hard-blocks selecting past `Stats.mastery_cap()`; deselection always allowed. Emits `known_masteries_changed`. Used by `scripts/ui/mastery_picker.gd` — see `scripts/ui/CLAUDE.md`'s "Mastery picker" and `docs/architecture/weapon-mastery-selection-design.md`.
 

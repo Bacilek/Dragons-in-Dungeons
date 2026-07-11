@@ -183,14 +183,20 @@ func _refresh() -> void:
 		var known_here: bool = name in known
 		var fbox: StyleBoxFlat = frame.get_theme_stylebox("panel") as StyleBoxFlat
 		if known_here:
+			# Selected — bright gold tint + thick gold border, made to pop against the dimmed rest.
 			btn.modulate = Color(1.4, 1.1, 0.4)
-			fbox.border_color = Color(0.78, 0.55, 0.22)
+			fbox.border_color = Color(0.95, 0.72, 0.28)
+			fbox.set_border_width_all(3)
 		elif at_cap:
-			btn.modulate = Color(1.0, 1.0, 1.0, 0.5)
-			fbox.border_color = Color(0.35, 0.35, 0.35)
+			# Locked out (cap reached) — heavily dimmed, unmistakably unselectable.
+			btn.modulate = Color(0.45, 0.45, 0.45, 0.55)
+			fbox.border_color = Color(0.28, 0.28, 0.28)
+			fbox.set_border_width_all(2)
 		else:
-			btn.modulate = Color(1.0, 1.0, 1.0)
-			fbox.border_color = Color(0.35, 0.35, 0.35)
+			# Selectable but not selected — clearly dimmed relative to a selected slot.
+			btn.modulate = Color(0.55, 0.55, 0.55)
+			fbox.border_color = Color(0.4, 0.4, 0.4)
+			fbox.set_border_width_all(2)
 
 	var count_color: String = "#FFD700"
 	if known.size() > cap:

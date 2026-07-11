@@ -557,6 +557,26 @@ func _sync_ability_uses() -> void:
 			ab.uses_remaining = 1  # always restore on long rest
 	ability_bar_changed.emit()
 
+## Whether an ability-bar entry can currently be activated — beyond the generic uses_remaining
+## pool, several free base-abilities (uses_max == 0, i.e. always "has_uses") are additionally
+## gated by external boolean state (a requirement to be raging, a once-per-rest flag, a spent
+## Hit Die). Used by hud.gd to grey out slots that LOOK available (infinite uses) but currently
+## aren't actionable — never call this to block the actual activation logic in player.gd, each
+## ability's own activation function is still the source of truth for its own gate.
+func is_ability_usable(ab: Ability) -> bool:
+	if not ab.has_uses():
+		return false
+	match ab.ability_id:
+		"frenzy":
+			return is_raging and not berserker_frenzy_used
+		"limit_break":
+			return not scarred_warrior_limit_break_used
+		"zealot_strike":
+			return hit_dice > 0
+		"grip_of_the_forest":
+			return is_raging
+	return true
+
 # Triggered on short rest completion. Heals companion (if alive) AND restores One with Nature charge.
 # Natural Sleeper's form lock does NOT happen here — long rest only (see long_rest()).
 func _on_short_rest_completed() -> void:
@@ -618,6 +638,7 @@ func heal(amount: int) -> int:
 func gain_exp(amount: int) -> void:
 	var old_max_hp: int = player_stats.max_hp
 	var old_rage_max: int = player_stats.rage_uses_max
+	var old_max_hit_dice: int = max_hit_dice()
 	var leveled_up := player_stats.gain_exp(amount)
 	player_exp_changed.emit(player_stats.experience, player_stats.exp_to_next(), player_stats.character_level)
 	if leveled_up:
@@ -632,6 +653,12 @@ func gain_exp(amount: int) -> void:
 			talent_points[point_tier] += 1
 			talent_points_changed.emit(talent_points_available)
 		# Levels outside TIER_LEVEL_RANGES (21+ past tier 4): no talent points (gap between tiers)
+		# Max hit dice grows by 1 per level (character_level term of max_hit_dice()) — grant the
+		# extra die immediately to CURRENT hit_dice too (not just the cap), so it's usable in a
+		# short rest right away instead of only after the next long rest.
+		var new_max_hit_dice: int = max_hit_dice()
+		if new_max_hit_dice > old_max_hit_dice:
+			hit_dice = mini(hit_dice + (new_max_hit_dice - old_max_hit_dice), new_max_hit_dice)
 		# Rage uses scale by level — grant the extra use immediately on the triggering level-up.
 		if player_stats.character_class == Stats.CharacterClass.BARBARIAN:
 			var new_rage_max: int = player_stats.rage_uses_max
