@@ -68,6 +68,12 @@ var _bank_players: Dictionary = {}  # bank name -> Array[AudioStreamPlayer] (one
 var _music: AudioStreamPlayer
 var _current_music_path: String = ""
 
+var is_muted: bool = false
+
+signal mute_changed(muted: bool)
+
+const SETTINGS_PATH := "user://audio_settings.cfg"
+
 func _ready() -> void:
 	_music = AudioStreamPlayer.new()
 	_music.bus = "Master"
@@ -83,6 +89,30 @@ func _ready() -> void:
 		for rel_path: String in SFX_BANKS[bank_name]:
 			arr.append(_make_player(AUDIO_PATH + rel_path))
 		_bank_players[bank_name] = arr
+
+	_load_mute_setting()
+
+# Mutes the whole Master bus (music + every SFX player, since they all route through it) —
+# survives floor/level transitions for free because AudioManager is an autoload singleton,
+# and survives app restarts via a tiny persisted settings file.
+func set_muted(muted: bool) -> void:
+	is_muted = muted
+	AudioServer.set_bus_mute(AudioServer.get_bus_index("Master"), muted)
+	mute_changed.emit(muted)
+	_save_mute_setting()
+
+func toggle_mute() -> void:
+	set_muted(not is_muted)
+
+func _load_mute_setting() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) == OK:
+		set_muted(bool(cfg.get_value("audio", "muted", false)))
+
+func _save_mute_setting() -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("audio", "muted", is_muted)
+	cfg.save(SETTINGS_PATH)
 
 func _make_player(path: String) -> AudioStreamPlayer:
 	var p := AudioStreamPlayer.new()

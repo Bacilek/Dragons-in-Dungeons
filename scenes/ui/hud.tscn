@@ -88,6 +88,16 @@ offset_bottom = 92.0
 text = "Floor: 1"
 theme_override_font_sizes/font_size = 13
 
+[node name="MuteButton" type="Button" parent="."]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -60.0
+offset_top = 4.0
+offset_right = -4.0
+offset_bottom = 40.0
+theme_override_font_sizes/font_size = 20
+text = "🔊"
+
 [node name="LogPanel" type="Panel" parent="."]
 anchor_top = 1.0
 anchor_bottom = 1.0

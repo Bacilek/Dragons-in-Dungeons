@@ -12,6 +12,7 @@ extends CanvasLayer
 @onready var wait_button: Button      = $ActionBar/WaitButton
 @onready var search_button: Button    = $ActionBar/SearchButton
 @onready var interact_button: Button  = $ActionBar/InteractButton
+@onready var mute_button: Button      = $MuteButton
 
 const BAR_W: float    = 320.0
 const HP_BAR_H: float = 38.0
@@ -142,6 +143,10 @@ func _ready() -> void:
 	wait_button.pressed.connect(_on_wait_pressed)
 	search_button.pressed.connect(_on_search_pressed)
 	interact_button.pressed.connect(_on_interact_pressed)
+	mute_button.focus_mode = Control.FOCUS_NONE
+	mute_button.pressed.connect(_on_mute_pressed)
+	AudioManager.mute_changed.connect(_on_mute_changed)
+	_on_mute_changed(AudioManager.is_muted)
 
 	for i: int in SLOT_COUNT:
 		var slot: Button = get_node("ActionBar/ItemSlot%d" % i)
@@ -428,6 +433,12 @@ func _on_search_pressed() -> void:
 
 func _on_interact_pressed() -> void:
 	GameState.player_action_requested.emit("interact")
+
+func _on_mute_pressed() -> void:
+	AudioManager.toggle_mute()
+
+func _on_mute_changed(muted: bool) -> void:
+	mute_button.text = "🔇" if muted else "🔊"
 
 func _on_slot_pressed(slot_index: int) -> void:
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
