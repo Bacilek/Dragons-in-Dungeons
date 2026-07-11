@@ -21,6 +21,7 @@ const SLOT_COUNT: int = 9
 
 var _item_slots: Array[Button] = []
 var _slot_qty_labels: Array[Label] = []
+var _slot_num_labels: Array[Label] = []  # 1-9 hotkey number, top-left corner of each slot
 var _log_messages: Array[String] = []
 const MAX_LOG_MESSAGES: int = 25
 var _food_value_label: Label  # shows total FOOD food_value (long rest fuel), see GameState.total_food_value()
@@ -167,6 +168,25 @@ func _ready() -> void:
 		qty_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		slot.add_child(qty_lbl)
 		_slot_qty_labels.append(qty_lbl)
+		# Hotkey number badge, top-left corner (1-9, matches KEY_1..KEY_9 -> slot i).
+		var num_lbl := Label.new()
+		num_lbl.add_theme_font_size_override("font_size", 14)
+		num_lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85, 0.85))
+		num_lbl.add_theme_color_override("font_shadow_color", Color.BLACK)
+		num_lbl.add_theme_constant_override("shadow_offset_x", 1)
+		num_lbl.add_theme_constant_override("shadow_offset_y", 1)
+		num_lbl.text = str(i + 1)
+		num_lbl.anchor_left = 0.0
+		num_lbl.anchor_right = 0.0
+		num_lbl.anchor_top = 0.0
+		num_lbl.anchor_bottom = 0.0
+		num_lbl.offset_left = 3.0
+		num_lbl.offset_top = 1.0
+		num_lbl.offset_right = 20.0
+		num_lbl.offset_bottom = 18.0
+		num_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slot.add_child(num_lbl)
+		_slot_num_labels.append(num_lbl)
 	_apply_slot_styles()
 
 	var s: Stats = GameState.player_stats
@@ -509,10 +529,17 @@ func _refresh_ability_bar() -> void:
 				slot.expand_icon = true
 			else:
 				slot.text = ab.ability_name.left(4)
+			var frenzy_cooldown_turns: int = -1
+			if ab.ability_id == "frenzy" and GameState.berserker_frenzy_used and GameState.get_talent_rank("frenzied_killer") >= 3:
+				frenzy_cooldown_turns = maxi(0, 3 - GameState.berserker_turns_since_frenzy)
 			if _slot_use_labels.size() > i:
 				var use_lbl: Label = _slot_use_labels[i]
 				use_lbl.visible = true
-				if ab.uses_max == 0:
+				if frenzy_cooldown_turns >= 0:
+					# Frenzied Killer R3: visible countdown until Frenzy auto-refreshes.
+					use_lbl.text = "%dt" % frenzy_cooldown_turns
+					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
+				elif ab.uses_max == 0:
 					# Passive / infinite uses.
 					use_lbl.text = ""
 				elif ab.ability_id == "rage" and GameState.is_raging:
@@ -523,13 +550,13 @@ func _refresh_ability_bar() -> void:
 					use_lbl.text = "%d/%d" % [ab.uses_remaining, ab.uses_max]
 					var clr: Color = Color(1.0, 0.7, 0.2) if ab.uses_remaining > 0 else Color(0.5, 0.5, 0.5)
 					use_lbl.add_theme_color_override("font_color", clr)
-			# Modulate: active toggle = orange; exhausted = gray; else white
+			# Modulate: active toggle = orange; unusable (exhausted / requirement not met) = gray; else white
 			if ab.is_active:
 				slot.modulate = Color(1.0, 0.55, 0.1)
-			elif ab.uses_remaining > 0 or ab.uses_max == 0:
+			elif GameState.is_ability_usable(ab):
 				slot.modulate = Color(1.0, 1.0, 1.0)
 			else:
-				slot.modulate = Color(0.5, 0.5, 0.5)
+				slot.modulate = Color(0.45, 0.45, 0.45)
 
 func _apply_slot_styles() -> void:
 	for slot: Button in _item_slots:
