@@ -29,23 +29,12 @@ func check_pickup() -> void:
 		return
 	player._dungeon_floor.remove_floor_item(player.grid_pos)
 	# Multiple items can be stacked on one tile (e.g. every arrow that landed on the same
-	# spot) — pick up the whole stack in one step, but collapse same-named items into a
-	# single "xN" log line instead of spamming one line per item.
-	var stack_counts: Dictionary = {}
+	# spot) — pick up the whole stack in one step. Silent: no chat log line per pickup.
 	for item: Item in items:
 		var is_first_weapon: bool = item.item_type == Item.Type.WEAPON and GameState.equipped_weapon == null
 		GameState.add_item(item)
 		if is_first_weapon:
 			GameState.equip(item)
-			GameState.game_log("[color=cyan]You pick up [b]%s[/b] and equip it.[/color]" % item.item_name)
-		else:
-			stack_counts[item.item_name] = stack_counts.get(item.item_name, 0) + item.quantity
-	for item_name: String in stack_counts:
-		var qty: int = stack_counts[item_name]
-		if qty > 1:
-			GameState.game_log("[color=cyan]You pick up [b]%s x%d[/b].[/color]" % [item_name, qty])
-		else:
-			GameState.game_log("[color=cyan]You pick up [b]%s[/b].[/color]" % item_name)
 
 func wait_action() -> void:
 	TurnManager.begin_player_action()

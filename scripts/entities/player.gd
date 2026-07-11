@@ -1688,11 +1688,9 @@ func _finish_kill(enemy: Enemy, dropped_ammo: Item = null) -> void:
 		rotten.icon_path = "res://sprites/items/Food/Meat.png"
 		rotten.description = "Throw into fire to cook into Cooked Meat."
 		_dungeon_floor.place_item_on_floor(kill_pos, rotten)
-		GameState.game_log("[color=gray]%s dropped [b]Rotten Meat[/b].[/color]" % killed_name)
 	# Ammo drop-from-corpse: 50% chance the killing shot's arrow/bolt is recoverable.
 	if dropped_ammo != null and Rng.chance(0.5):
 		_ammo.resolve_ammo_landing(dropped_ammo, kill_pos)
-		GameState.game_log("[color=gray]The %s drops from the corpse.[/color]" % dropped_ammo.item_name)
 
 func _on_action_requested(action_name: String) -> void:
 	if action_name == "short_rest_begin":
