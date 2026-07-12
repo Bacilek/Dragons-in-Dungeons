@@ -1266,17 +1266,17 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var w_enh: int = weapon_bonus  # weapon.bonus_damage
 	# Use dex= key for Monk unarmed, or for a Finesse weapon whose DEX mod is the one actually used.
 	var mod_key: String = "dex" if (is_monk_unarmed or (is_finesse_weapon and dex_mod > str_mod)) else "str"
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
 		die, die1, die2, mod_key, attack_mod, prof, w_enh, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
-		1 if is_crit else 0, 1 if is_nat_one else 0]
+		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
 
 	# Zealot Strike heal resolves off the very next melee attack this turn regardless of hit/miss.
 	_zealot.resolve_zealot_strike_heal()
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_verb: String = "strike at" if is_monk_unarmed else ("punch" if is_unarmed else "swing")
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
-		GameState.game_log("You %s [color=orange]%s[/color] — [url=%s]%s[/url]." % [miss_verb, enemy.display_name, hit_meta, miss_color])
+		GameState.game_log(CombatMath.wrap_halfling_luck("You %s [color=orange]%s[/color] — [url=%s]%s[/url]." % [miss_verb, enemy.display_name, hit_meta, miss_color], r["lucky"]))
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
@@ -1356,9 +1356,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag])
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
 	else:
-		GameState.game_log("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag])
+		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
 
 	# Branching Strike R3: push the target 1 tile away on a hit with a Heavy/Versatile melee weapon.
 	if GameState.get_talent_rank("branching_strike") >= 3 and is_str_weapon and not enemy.stats.is_dead() \
@@ -1464,12 +1464,13 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 		_base_talents.on_crit()
 		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
 		die, die1, die2, str_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
-		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0]
+		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0,
+		1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
-		GameState.game_log("[color=cyan]Cleave:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]Cleave:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color], r["lucky"]))
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		return
 	if is_crit: AudioManager.play_crit(weapon)
@@ -1495,7 +1496,7 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 		die_roll, w_dmin, w_dmax, weapon_bonus, str_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
-	GameState.game_log("[color=cyan]Cleave:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag])
+	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]Cleave:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
 
@@ -1546,12 +1547,13 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 	var mod_key: String = "dex" if (weapon.is_finesse and dex_mod > str_mod) else "str"
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
 		die, die1, die2, mod_key, attack_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
-		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0]
+		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0,
+		1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
-		GameState.game_log("[color=cyan]%s:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [label, enemy.display_name, hit_meta, miss_color])
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]%s:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [label, enemy.display_name, hit_meta, miss_color], r["lucky"]))
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		return
 	if is_crit: AudioManager.play_crit(weapon)
@@ -1581,7 +1583,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
-	GameState.game_log("[color=cyan]%s:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [label, hit_meta, enemy.display_name, dmg_meta, actual, type_tag])
+	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]%s:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [label, hit_meta, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
 
@@ -1621,12 +1623,13 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 	var mod_key: String = "dex" if (is_monk_unarmed or (is_finesse_weapon and dex_mod > str_mod)) else "str"
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
 		die, die1, die2, mod_key, attack_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
-		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0]
+		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0,
+		1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
-		GameState.game_log("[color=cyan]Opportunity attack:[/color] you swing at [color=orange]%s[/color] as it flees — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color])
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]Opportunity attack:[/color] you swing at [color=orange]%s[/color] as it flees — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color], r["lucky"]))
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		return
 	if is_crit: AudioManager.play_crit(weapon)
@@ -1662,7 +1665,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var dmg_type: String = weapon.damage_type if (not is_unarmed and not weapon.damage_type.is_empty()) else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
-	GameState.game_log("[color=cyan]Opportunity attack:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag])
+	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]Opportunity attack:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
 

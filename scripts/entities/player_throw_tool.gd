@@ -206,14 +206,14 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var is_nat_one: bool = die == 1
 
 	var mod_key: String = "dex" if (weapon.is_finesse and dex_mod > str_mod) else "str"
-	var hit_meta: String = "thrhit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d" % [
+	var hit_meta: String = "thrhit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
 		die, die1, die2, mod_key, atk_mod, prof, weapon.bonus_damage, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
-		1 if is_crit else 0, 1 if is_nat_one else 0]
+		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
 
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
-		GameState.game_log("You throw [b]%s[/b] at [color=orange]%s[/color] — [url=%s]%s[/url]." % [weapon.item_name, enemy.display_name, hit_meta, miss_color])
+		GameState.game_log(CombatMath.wrap_halfling_luck("You throw [b]%s[/b] at [color=orange]%s[/color] — [url=%s]%s[/url]." % [weapon.item_name, enemy.display_name, hit_meta, miss_color], r["lucky"]))
 		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
@@ -250,9 +250,9 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 
 	if is_crit:
-		GameState.game_log("[color=red]CRIT![/color] You [url=%s]throw[/url] [b]%s[/b] at [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, weapon.item_name, enemy.display_name, dmg_meta, actual, type_tag])
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]throw[/url] [b]%s[/b] at [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, weapon.item_name, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
 	else:
-		GameState.game_log("You [url=%s]throw[/url] [b]%s[/b] at [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, weapon.item_name, enemy.display_name, dmg_meta, actual, type_tag])
+		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]throw[/url] [b]%s[/b] at [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, weapon.item_name, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
 
 	# Sap: on a hit, the target has Disadvantage on its very next attack, next turn. Reuses the
 	# same Enemy.disadv_next_attack flag/consumption point as Grip of the Forest R3.
