@@ -39,6 +39,7 @@ Each turn: status effects tick (`Stats.tick_status()` → dmg). Hunger has been 
 - **`DungeonGenerator.generate(seed, floor_num)`** — pure static, returns `DungeonData`. Seed: `run_seed XOR (floor * 0x9e3779b9)`. BSP depth 5, 48×48 grid, L-shaped corridors. Internally a three-phase pipeline (`FloorPlanner` → `BspBuilder` → `LevelPainter`, with `Room` type classes) — details in `scripts/dungeon/CLAUDE.md`.
 - **`DungeonData`** — `grid: Array[Array[int]]` indexed `[y][x]`. `TileType`: `VOID=0, FLOOR=1, WALL=2, STAIRS_DOWN=3, CHASM=4, WATER=5, MUD=6, GRASS=7, TRAMPLED_GRASS=8`. `boss_room: Rect2i` (empty if not boss floor). `rooms: Array[Rect2i]` — all BSP leaf rooms. `feeling: String` — Floor Feeling id, `""` on boss floors (see `scripts/dungeon/CLAUDE.md`).
 - **`DungeonFloor`** (`scripts/world/dungeon_floor.gd`) — owns TileMapLayer, Entities node, enemy list, fog overlay, traps, doors, floor items. Full query-method list, FOV algorithm, traps, doors, floor items, spawning, water/bottle/throw mechanics, and boss floors: **`scripts/world/CLAUDE.md`**.
+- Special rooms (Shop/Treasure/Garden/Secret, left as placeholder-fallback stubs by the dungeon-generation doc) plus a gold currency to make a shop meaningful — full data model, `ROOM_POOL` mechanism, and session-sized implementation sequence: design only, not yet implemented, `docs/architecture/special-rooms-economy-design.md`.
 
 ### Entity hierarchy
 ```
