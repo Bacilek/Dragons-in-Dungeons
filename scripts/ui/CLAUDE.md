@@ -172,12 +172,18 @@ safe regardless of ordering. Modeled on `race_select.gd`'s conventions (dim over
 bordered `Panel`, `focus_mode = FOCUS_NONE` everywhere, `GameState.point_buy_open` input-gate
 flag, non-dismissible — no close button, `_unhandled_input` swallows Esc/keys).
 
-All six scores (STR/DEX/CON/INT/WIS/CHA) start at 8; a `-`/`+` button pair per row adjusts each
-within `Stats.POINT_BUY_MIN`(8)`..POINT_BUY_MAX`(15), spending from a shared
+All six scores (STR/DEX/CON/INT/WIS/CHA) start at 8; a `Min`/`-`/`+`/`Max` button row per stat
+adjusts each within `Stats.POINT_BUY_MIN`(8)`..POINT_BUY_MAX`(15), spending from a shared
 `Stats.POINT_BUY_BUDGET`(27) pool. Cost per step comes from `Stats.POINT_BUY_COST` (the standard
 D&D point-buy table: 8→13 cost 1 point/step, 14 and 15 cost 2 points/step — reaching 15 from 8
 costs 9 total). `+` disables per-row at `POINT_BUY_MAX` or when the next step's cost exceeds
-points remaining; `-` disables at `POINT_BUY_MIN`. Confirm is always enabled (unspent points are
+points remaining; `-` disables at `POINT_BUY_MIN`. `Min` jumps the row straight to 8 (always
+legal — freeing points never fails); `Max` jumps to `_max_affordable_score()`, the highest score
+this row can reach given the points currently tied up in every *other* stat (that row's own
+current cost is credited back first, then the highest affordable score ≤ 15 is picked) — so
+maxing one stat first, then hitting Max on another, correctly caps at whatever the remaining
+budget allows rather than always jumping to 15. `Min`/`Max` share the same disabled condition as
+`-`/`+` respectively (already at that extreme). Confirm is always enabled (unspent points are
 simply left on the table — not enforced to be fully spent). Confirm calls
 `GameState.player_stats.apply_point_buy_scores(_scores)` (`scripts/entities/stats.gd` — overrides
 the six base scores set by `apply_class_defaults()` and re-derives `max_hp`/`current_hp`/
