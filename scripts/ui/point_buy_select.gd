@@ -9,10 +9,11 @@ extends CanvasLayer
 # dim overlay + centered bordered Panel, focus_mode = FOCUS_NONE everywhere, blocks input via
 # GameState.point_buy_open, non-dismissible (no close button, Esc ignored).
 
-const PANEL_W: float = 520.0
+const PANEL_W: float = 620.0
 const MARGIN: float = 24.0
 const ROW_H: float = 40.0
 const STEP_BTN_SIZE: float = 32.0
+const MINMAX_BTN_W: float = 52.0
 
 const ORDER: Array[String] = ["str", "dex", "con", "int", "wis", "cha"]
 const LABELS: Dictionary = {
@@ -24,6 +25,8 @@ var _scores: Dictionary = {"str": 8, "dex": 8, "con": 8, "int": 8, "wis": 8, "ch
 var _value_labels: Dictionary = {}   # key -> Label
 var _minus_btns: Dictionary = {}     # key -> Button
 var _plus_btns: Dictionary = {}      # key -> Button
+var _min_btns: Dictionary = {}       # key -> Button
+var _max_btns: Dictionary = {}       # key -> Button
 var _points_label: Label
 var _confirm_btn: Button
 var _panel: Panel
@@ -109,13 +112,24 @@ func _build_row(key: String, pos: Vector2) -> void:
 	name_lbl.add_theme_font_size_override("font_size", 16)
 	name_lbl.add_theme_color_override("font_color", Color(0.90, 0.90, 0.94))
 	name_lbl.position = pos + Vector2(0.0, 4.0)
-	name_lbl.size = Vector2(150.0, 28.0)
+	name_lbl.size = Vector2(130.0, 28.0)
 	_panel.add_child(name_lbl)
+
+	var min_btn := Button.new()
+	min_btn.text = "Min"
+	min_btn.size = Vector2(MINMAX_BTN_W, STEP_BTN_SIZE)
+	min_btn.position = pos + Vector2(136.0, 0.0)
+	min_btn.focus_mode = Control.FOCUS_NONE
+	min_btn.add_theme_font_size_override("font_size", 12)
+	_style_btn(min_btn, Color(0.14, 0.12, 0.08), Color(0.45, 0.40, 0.28))
+	min_btn.pressed.connect(_on_min.bind(key))
+	_panel.add_child(min_btn)
+	_min_btns[key] = min_btn
 
 	var minus_btn := Button.new()
 	minus_btn.text = "-"
 	minus_btn.size = Vector2(STEP_BTN_SIZE, STEP_BTN_SIZE)
-	minus_btn.position = pos + Vector2(170.0, 0.0)
+	minus_btn.position = pos + Vector2(194.0, 0.0)
 	minus_btn.focus_mode = Control.FOCUS_NONE
 	_style_btn(minus_btn, Color(0.18, 0.10, 0.10), Color(0.55, 0.28, 0.28))
 	minus_btn.pressed.connect(_on_minus.bind(key))
@@ -126,20 +140,31 @@ func _build_row(key: String, pos: Vector2) -> void:
 	value_lbl.add_theme_font_size_override("font_size", 17)
 	value_lbl.add_theme_color_override("font_color", Color(1.0, 0.82, 0.22))
 	value_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	value_lbl.position = pos + Vector2(210.0, 3.0)
-	value_lbl.size = Vector2(110.0, 28.0)
+	value_lbl.position = pos + Vector2(232.0, 3.0)
+	value_lbl.size = Vector2(100.0, 28.0)
 	_panel.add_child(value_lbl)
 	_value_labels[key] = value_lbl
 
 	var plus_btn := Button.new()
 	plus_btn.text = "+"
 	plus_btn.size = Vector2(STEP_BTN_SIZE, STEP_BTN_SIZE)
-	plus_btn.position = pos + Vector2(328.0, 0.0)
+	plus_btn.position = pos + Vector2(338.0, 0.0)
 	plus_btn.focus_mode = Control.FOCUS_NONE
 	_style_btn(plus_btn, Color(0.10, 0.18, 0.10), Color(0.28, 0.55, 0.28))
 	plus_btn.pressed.connect(_on_plus.bind(key))
 	_panel.add_child(plus_btn)
 	_plus_btns[key] = plus_btn
+
+	var max_btn := Button.new()
+	max_btn.text = "Max"
+	max_btn.size = Vector2(MINMAX_BTN_W, STEP_BTN_SIZE)
+	max_btn.position = pos + Vector2(376.0, 0.0)
+	max_btn.focus_mode = Control.FOCUS_NONE
+	max_btn.add_theme_font_size_override("font_size", 12)
+	_style_btn(max_btn, Color(0.08, 0.14, 0.12), Color(0.28, 0.45, 0.40))
+	max_btn.pressed.connect(_on_max.bind(key))
+	_panel.add_child(max_btn)
+	_max_btns[key] = max_btn
 
 func _points_spent() -> int:
 	var total: int = 0
@@ -167,17 +192,45 @@ func _on_minus(key: String) -> void:
 	_scores[key] = score - 1
 	_refresh()
 
+# Highest score this stat can reach given the points currently tied up in every OTHER stat —
+# i.e. the budget available to this row alone (its own current cost is freed up first).
+func _max_affordable_score(key: String) -> int:
+	var other_spent: int = _points_spent() - Stats.POINT_BUY_COST[_scores[key]]
+	var budget_for_row: int = Stats.POINT_BUY_BUDGET - other_spent
+	var best: int = Stats.POINT_BUY_MIN
+	for s: int in range(Stats.POINT_BUY_MIN, Stats.POINT_BUY_MAX + 1):
+		if Stats.POINT_BUY_COST[s] <= budget_for_row:
+			best = s
+	return best
+
+func _on_min(key: String) -> void:
+	if _scores[key] == Stats.POINT_BUY_MIN:
+		return
+	_scores[key] = Stats.POINT_BUY_MIN
+	_refresh()
+
+func _on_max(key: String) -> void:
+	var best: int = _max_affordable_score(key)
+	if best == _scores[key]:
+		return
+	_scores[key] = best
+	_refresh()
+
 func _refresh() -> void:
 	for key: String in ORDER:
 		var score: int = _scores[key]
 		var mod: int = floori((score - 10) / 2.0)
 		var mod_str: String = ("+%d" % mod) if mod >= 0 else str(mod)
 		(_value_labels[key] as Label).text = "%d (%s)" % [score, mod_str]
-		(_minus_btns[key] as Button).disabled = score <= Stats.POINT_BUY_MIN
+		var at_min: bool = score <= Stats.POINT_BUY_MIN
 		var next_cost: int = 0
 		if score < Stats.POINT_BUY_MAX:
 			next_cost = Stats.POINT_BUY_COST[score + 1] - Stats.POINT_BUY_COST[score]
-		(_plus_btns[key] as Button).disabled = score >= Stats.POINT_BUY_MAX or _points_remaining() < next_cost
+		var at_max_affordable: bool = score >= Stats.POINT_BUY_MAX or _points_remaining() < next_cost
+		(_minus_btns[key] as Button).disabled = at_min
+		(_plus_btns[key] as Button).disabled = at_max_affordable
+		(_min_btns[key] as Button).disabled = at_min
+		(_max_btns[key] as Button).disabled = at_max_affordable
 
 	var remaining: int = _points_remaining()
 	_points_label.text = "Points remaining: %d / %d" % [remaining, Stats.POINT_BUY_BUDGET]
