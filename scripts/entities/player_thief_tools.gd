@@ -31,23 +31,29 @@ func attempt_disarm(trap_pos: Vector2i) -> void:
 	var has_prof: bool = s.check_prof_dex
 	var prof_bonus: int = s.proficiency_bonus if has_prof else 0
 	var has_adv: bool = s.zealous_presence_turns > 0
-	var die1: int = Rng.roll(20)
+	var lr1: Dictionary = CombatMath.halfling_reroll(Rng.roll(20))
+	var die1: int = lr1["value"]
+	var lucky1: bool = lr1["lucky"]
 	var die2: int = die1
+	var lucky2: bool = false
 	if has_adv:
-		die2 = Rng.roll(20)
+		var lr2: Dictionary = CombatMath.halfling_reroll(Rng.roll(20))
+		die2 = lr2["value"]
+		lucky2 = lr2["lucky"]
 	var die: int = maxi(die1, die2)
+	var lucky: bool = lucky1 or lucky2
 	var total: int = die + dex_mod + prof_bonus
 	const DC: int = 10
 	var trap: Dictionary = player._dungeon_floor.get_trap_at(trap_pos)
 	var trap_name: String = trap.get("name", "trap")
 	var adv_tag: String = " [color=gray](Zealous Presence)[/color]" if has_adv else ""
-	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, DC, 1 if total >= DC else 0, 1 if has_adv else 0]
+	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d,lucky1=%d,lucky2=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, DC, 1 if total >= DC else 0, 1 if has_adv else 0, 1 if lucky1 else 0, 1 if lucky2 else 0]
 
 	if total >= DC:
-		GameState.game_log("[color=green]Disarmed [b]%s[/b]!%s [url=%s]%d vs DC %d[/url][/color]" % [trap_name, adv_tag, check_meta, total, DC])
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=green]Disarmed [b]%s[/b]!%s [url=%s]%d vs DC %d[/url][/color]" % [trap_name, adv_tag, check_meta, total, DC], lucky))
 		player._dungeon_floor.disarm_trap(trap_pos)
 	else:
-		GameState.game_log("[color=red]Failed to disarm [b]%s[/b]!%s [url=%s]%d vs DC %d[/url]%s[/color]" % [trap_name, adv_tag, check_meta, total, DC, " — Thief Tools lost!" if not GameState.invincible else ""])
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]Failed to disarm [b]%s[/b]!%s [url=%s]%d vs DC %d[/url]%s[/color]" % [trap_name, adv_tag, check_meta, total, DC, " — Thief Tools lost!" if not GameState.invincible else ""], lucky))
 		if not GameState.invincible:
 			GameState.consume_one(tools)
 

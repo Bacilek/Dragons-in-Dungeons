@@ -71,10 +71,18 @@ starts**. `race_select.gd` is a one-time blocking overlay spawned right after po
 (mirrors `subclass_select.gd`'s pattern), and itself spawns the Mastery Picker on confirm. 6 races (Orc, Human, Halfling, Dwarf,
 Elf w/ 3 sub-races, Dragonborn) each with distinct traits — darkvision/FOV bonus, long-rest-gated
 charges (Orc Relentless Endurance, Human Heroic Inspiration), a d20-reroll mechanic (Human
-miss-reroll, Halfling nat-1-reroll), Dwarf per-level HP, Elf shorter rests + sub-race spell-like
-ability, Dragonborn ancestry-based resistance/breath type. Still deferred/stubbed: Halfling
-nat-1 reroll, Human miss-reroll, Elf sub-race spell-like ability, Dragonborn breath weapon —
-these are cosmetic/flavor gaps, not blockers. `Stats.apply_race_defaults()`
+miss-reroll — still stubbed; Halfling nat-1-reroll — implemented, see below), Dwarf +1 HP/level
+(including level 1), Elf shorter rests + sub-race spell-like ability, Dragonborn ancestry-based
+resistance/breath type. Still deferred/stubbed: Human miss-reroll, Elf sub-race spell-like
+ability, Dragonborn breath weapon — these are cosmetic/flavor gaps, not blockers.
+**Halfling Lucky**: rolling a natural 1 on any player d20 roll (attack roll or the trap-disarm
+check) triggers an automatic, must-use reroll — `CombatMath.halfling_reroll(die)`
+(`scripts/entities/combat_math.gd`), baked into `CombatMath.roll_with_adv_disadv()` (the shared
+roll used by all 6 player attack sites) so every attack gets it for free; `player_thief_tools.gd`'s
+`attempt_disarm()` calls it directly. The chat log line wraps in dark green with a ☘ marker
+(`CombatMath.wrap_halfling_luck()`) and the hover tooltip shows a struck-through "1 → N" line
+(`fmt_hit_tooltip()`/`fmt_save_tooltip()` in `scripts/ui/tooltip_formatters.gd`) whenever it fires.
+`Stats.apply_race_defaults()`
 (`scripts/entities/stats.gd`) and `GameState.choose_race()`/`give_race_starting_items()`
 (`scripts/autoloads/CLAUDE.md`) hold the mechanical hooks; UI is `scripts/ui/race_select.gd`
 (`scripts/ui/CLAUDE.md`). Full design + data model + open questions:

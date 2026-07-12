@@ -16,6 +16,8 @@ static func fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 	var disadv: bool = p.get("disadv", "0") == "1"
 	var n20: bool   = p.get("n20", "0") == "1"
 	var n1: bool    = p.get("n1", "0") == "1"
+	var lucky1: bool = p.get("lucky1", "0") == "1"
+	var lucky2: bool = p.get("lucky2", "0") == "1"
 	var stat_name: String = "DEX" if use_dex else "STR"
 	var lines: PackedStringArray = []
 	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if n20 else ("  [color=red]✕ FAIL[/color]" if n1 else "")
@@ -25,6 +27,10 @@ static func fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
 	else:
 		lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
+	if lucky1:
+		lines.append("[color=#2e8b3d]☘ Halfling Luck: [s]1[/s] → %d[/color]" % d1)
+	if lucky2:
+		lines.append("[color=#2e8b3d]☘ Halfling Luck: [s]1[/s] → %d[/color]" % d2)
 	if stat_mod != 0:
 		lines.append("[color=lightblue]%+d[/color]  (%s mod)" % [stat_mod, stat_name])
 	if prof != 0:
@@ -178,6 +184,8 @@ static func fmt_save_tooltip(p: Dictionary) -> String:
 	var passed: bool = p.get("pass", "0") == "1"
 	var adv: bool  = p.get("adv", "0") == "1"
 	var disadv: bool = p.get("disadv", "0") == "1"
+	var lucky1: bool = p.get("lucky1", "0") == "1"
+	var lucky2: bool = p.get("lucky2", "0") == "1"
 	var lines: PackedStringArray = []
 	if adv and d1 != d2:
 		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
@@ -185,6 +193,10 @@ static func fmt_save_tooltip(p: Dictionary) -> String:
 		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
 	else:
 		lines.append("d20 = [color=yellow]%d[/color]" % die)
+	if lucky1:
+		lines.append("[color=#2e8b3d]☘ Halfling Luck: [s]1[/s] → %d[/color]" % d1)
+	if lucky2:
+		lines.append("[color=#2e8b3d]☘ Halfling Luck: [s]1[/s] → %d[/color]" % d2)
 	if mod != 0:
 		lines.append("[color=lightblue]%+d[/color]  (%s mod)" % [mod, stat])
 	if prof != 0:

@@ -379,6 +379,16 @@ func apply_race_defaults() -> void:
 			darkvision_bonus = 0
 		CharacterRace.DWARF:
 			darkvision_bonus = 2
+			# Dwarven Toughness: +1 HP per level, including level 1. _hp_per_level() already adds
+			# +1 on every level-up gain, but that formula never runs for the character's starting
+			# HP (set by apply_class_defaults()/apply_point_buy_scores() before race is chosen) —
+			# so level 1 was silently missing its +1. Safe to apply unconditionally here: this
+			# function always runs immediately after apply_class_defaults() (choose_race() during
+			# onboarding, or from_dict()'s class-then-race replay, where max_hp is overwritten by
+			# the saved value right after anyway) — never twice in a row without max_hp having
+			# been freshly reset first.
+			max_hp += 1
+			current_hp += 1
 		CharacterRace.ELF:
 			darkvision_bonus = 1
 			check_prof_wis = true

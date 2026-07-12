@@ -10,25 +10,52 @@ extends RefCounted
 # with early returns) and deliberately stay in player.gd's _bump_attack()/_ranged_attack() —
 # see the "Bonus damage stacking" rule in scripts/entities/CLAUDE.md.
 
+# Halfling Lucky: rolling a natural 1 on a d20 (attack roll or ability check) triggers an
+# automatic reroll that MUST be used, even if the new roll is also a 1 (single reroll only,
+# per 5e Lucky). Centralized here so every player d20 roll goes through the same rule — never
+# applies to enemy rolls (GameState.player_stats is the player's own Stats). Returns
+# {value, lucky} — value is the die result callers should actually use downstream.
+static func halfling_reroll(die: int) -> Dictionary:
+	if die == 1 and GameState.player_stats != null and GameState.player_stats.character_race == Stats.CharacterRace.HALFLING:
+		return {"value": Rng.roll(20), "lucky": true}
+	return {"value": die, "lucky": false}
+
+# Wraps a finished chat-log line in dark green + a shamrock marker whenever Halfling Luck fired
+# on this roll — the "Saint Patrick's luck" visual cue.
+static func wrap_halfling_luck(text: String, lucky: bool) -> String:
+	return "[color=#2e8b3d]☘ %s[/color]" % text if lucky else text
+
 # ADV/DISADV house rule: sources are counted (adv_count, disadv_count); net = adv_count -
 # disadv_count decides the outcome (>0 ADV, <0 DISADV, ==0 normal). die2 is ALWAYS rolled
-# independently when ADV/DISADV is active — nat 1 on die1 does NOT skip it.
-# Returns {die1, die2, die, adv, disadv} — die1/die2 are the raw rolls, die is the resolved
-# value (max for ADV, min for DISADV, die1 otherwise), adv/disadv are the resolved booleans.
+# independently when ADV/DISADV is active — nat 1 on die1 does NOT skip it. Each d20 individually
+# goes through halfling_reroll() (a Halfling attacking with Advantage can get BOTH dice rerolled
+# if both come up 1).
+# Returns {die1, die2, die, adv, disadv, lucky1, lucky2, lucky} — die1/die2 are the (post-reroll)
+# rolls, die is the resolved value (max for ADV, min for DISADV, die1 otherwise), adv/disadv are
+# the resolved booleans, lucky1/lucky2 flag which die (if any) was Halfling-rerolled, lucky is
+# their OR (convenience for callers that don't care which die).
 static func roll_with_adv_disadv(adv_count: int, disadv_count: int) -> Dictionary:
 	var net: int = adv_count - disadv_count
 	var adv: bool = net > 0
 	var disadv: bool = net < 0
-	var die1: int = Rng.roll(20)
+	var r1: Dictionary = halfling_reroll(Rng.roll(20))
+	var die1: int = r1["value"]
+	var lucky1: bool = r1["lucky"]
 	var die2: int = die1
+	var lucky2: bool = false
 	var die: int = die1
 	if adv and not disadv:
-		die2 = Rng.roll(20)
+		var r2: Dictionary = halfling_reroll(Rng.roll(20))
+		die2 = r2["value"]
+		lucky2 = r2["lucky"]
 		die = maxi(die1, die2)
 	elif disadv and not adv:
-		die2 = Rng.roll(20)
+		var r2: Dictionary = halfling_reroll(Rng.roll(20))
+		die2 = r2["value"]
+		lucky2 = r2["lucky"]
 		die = mini(die1, die2)
-	return {"die1": die1, "die2": die2, "die": die, "adv": adv, "disadv": disadv}
+	return {"die1": die1, "die2": die2, "die": die, "adv": adv, "disadv": disadv,
+		"lucky1": lucky1, "lucky2": lucky2, "lucky": lucky1 or lucky2}
 
 # Weapon proficiency: unarmed strikes are always proficient. A Simple/Martial weapon only adds
 # proficiency_bonus to the attack roll if the matching proficiency flag is set — lacking
