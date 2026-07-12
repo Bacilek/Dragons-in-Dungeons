@@ -91,7 +91,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		var key := event as InputEventKey
 		if key.pressed and not key.echo and key.physical_keycode == KEY_TAB:
 			if not GameState.is_game_over and GameState.class_selected and not GameState.mastery_picker_open \
-					and not GameState.subclass_picker_open and not GameState.race_picker_open:
+					and not GameState.subclass_picker_open and not GameState.race_picker_open \
+					and not GameState.point_buy_open:
 				_toggle_ability_bar()
 				get_viewport().set_input_as_handled()
 

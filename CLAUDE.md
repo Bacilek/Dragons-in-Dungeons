@@ -55,10 +55,20 @@ Opportunity Attacks (movement out of threat range provokes a free reactive melee
 ### D&D stats (`scripts/entities/stats.gd`)
 `Stats` extends `Resource`. `modifier(score)` = `floor((score-10)/2)`. `apply_class_defaults()` sets scores, derives `max_hp`, and calls `recalc_ac(has_armor)`. Classes: BARBARIAN (d12, STR/CON check prof), RANGER (d10, STR/DEX), WIZARD (d6, INT/WIS), MONK (d8, STR/DEX). Barbarian and Monk both get unarmored-defense AC formulas — see `scripts/entities/CLAUDE.md` for the full combat-roll table, proficiency scaling, and class-specific mechanics.
 
+### Point buy (ability score allocation)
+Custom-path onboarding order: **class select → point buy → race select → mastery picker → game
+starts**. `point_buy_select.gd` is a one-time blocking overlay spawned right after class
+selection, before race select (premade heroes bypass it entirely). D&D 2024 point-buy: all six
+scores start at 8, `-`/`+` per score within 8–15, 27-point budget, 14/15 cost 2 points/step
+(others 1) — matches the standard 5e point-buy cost table exactly. No racial ability-score
+bonuses (race select runs after and never touches base scores). `Stats.apply_point_buy_scores()`
+(`scripts/entities/stats.gd`) applies the result and re-derives HP/AC; UI is
+`scripts/ui/point_buy_select.gd` (`scripts/ui/CLAUDE.md`).
+
 ### Race system
-Onboarding order: **class select → race select → mastery picker → game starts**. `race_select.gd`
-is a one-time blocking overlay spawned right after class selection (mirrors `subclass_select.gd`'s
-pattern), and itself spawns the Mastery Picker on confirm. 6 races (Orc, Human, Halfling, Dwarf,
+Onboarding order (Custom path): **class select → point buy → race select → mastery picker → game
+starts**. `race_select.gd` is a one-time blocking overlay spawned right after point buy confirms
+(mirrors `subclass_select.gd`'s pattern), and itself spawns the Mastery Picker on confirm. 6 races (Orc, Human, Halfling, Dwarf,
 Elf w/ 3 sub-races, Dragonborn) each with distinct traits — darkvision/FOV bonus, long-rest-gated
 charges (Orc Relentless Endurance, Human Heroic Inspiration), a d20-reroll mechanic (Human
 miss-reroll, Halfling nat-1-reroll), Dwarf per-level HP, Elf shorter rests + sub-race spell-like

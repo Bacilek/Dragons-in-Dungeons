@@ -36,6 +36,7 @@ For a full D&D-style stat block (CR, ability-score modifiers, damage resist/immu
 ## Stats (`stats.gd`)
 `modifier(score) -> int` = `floor((score - 10) / 2)`.
 `apply_class_defaults()` sets all six ability scores and derives `max_hp` and `armor_class`.
+**Point buy** (Custom character-creation path, `scripts/ui/point_buy_select.gd`): `apply_point_buy_scores(scores: Dictionary)` overrides the six scores set by `apply_class_defaults()` and re-derives `max_hp`/`current_hp`/`armor_class` the same way — called strictly after `apply_class_defaults()`, before `apply_race_defaults()` (race never touches base scores, so ordering vs. race is safe either way). Cost table `POINT_BUY_COST`, budget `POINT_BUY_BUDGET` (27), range `POINT_BUY_MIN`/`POINT_BUY_MAX` (8/15) — standard 5e point-buy costs (14/15 cost 2 points/step, others 1). See root `CLAUDE.md`'s "Point buy" section.
 `hit_die_sides() -> int`: Barbarian 12, Ranger 10, Monk 8, Wizard 6.
 `_hp_per_level()`: class HP gain per level-up.
 `to_dict()`/`from_dict(d)` (Save/Load Phase A): hand-written serialization of every mutable field (scores, class, level/XP, HP, base damage, rage uses, temp HP, status turns, `known_weapon_masteries`). Computed properties and class-set flags are never saved — `from_dict()` calls `apply_class_defaults()` first, then overwrites with saved values; `armor_class`/`min/max_damage` are re-derived by `GameState.recalculate_stats()` after load. **Any new mutable Stats field must be added to both functions** — see `scripts/autoloads/CLAUDE.md`'s SaveManager section.
