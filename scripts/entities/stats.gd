@@ -295,6 +295,36 @@ func from_dict(d: Dictionary) -> void:
 	for m: Variant in (d.get("known_weapon_masteries", []) as Array):
 		known_weapon_masteries.append(String(m))
 
+# ── Point buy (custom character creation, scripts/ui/point_buy_select.gd) ──────
+# D&D 2024 point-buy costs: 8-13 cost 1 point per step, 14 and 15 cost 2 points per step.
+const POINT_BUY_COST: Dictionary = {8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9}
+const POINT_BUY_BUDGET: int = 27
+const POINT_BUY_MIN: int = 8
+const POINT_BUY_MAX: int = 15
+
+func point_buy_hit_die_base() -> int:
+	match character_class:
+		CharacterClass.BARBARIAN: return 12
+		CharacterClass.RANGER: return 10
+		CharacterClass.WIZARD: return 6
+		CharacterClass.MONK: return 8
+	return 8
+
+# Overrides the six base ability scores with a player-allocated point-buy result, then
+# re-derives max_hp/current_hp/armor_class exactly like the tail of apply_class_defaults()
+# (called strictly after apply_class_defaults() — see class_select.gd/point_buy_select.gd —
+# so class-set flags like check_prof_*/rage_uses_remaining are already in place and untouched).
+func apply_point_buy_scores(scores: Dictionary) -> void:
+	strength = int(scores.get("str", POINT_BUY_MIN))
+	dexterity = int(scores.get("dex", POINT_BUY_MIN))
+	constitution = int(scores.get("con", POINT_BUY_MIN))
+	intelligence = int(scores.get("int", POINT_BUY_MIN))
+	wisdom = int(scores.get("wis", POINT_BUY_MIN))
+	charisma = int(scores.get("cha", POINT_BUY_MIN))
+	max_hp = point_buy_hit_die_base() + modifier(constitution)
+	current_hp = max_hp
+	recalc_ac(false)
+
 func apply_class_defaults() -> void:
 	match character_class:
 		CharacterClass.BARBARIAN:

@@ -307,7 +307,8 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 func _process(_delta: float) -> void:
 	_update_hover_indicator()
 	if GameState.is_game_over or GameState.inventory_open or GameState.short_rest_open \
-			or GameState.subclass_picker_open or GameState.race_picker_open or not GameState.class_selected:
+			or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
+			or not GameState.class_selected:
 		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
 		_interrupted = false
@@ -447,7 +448,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		# I key toggles inventory regardless of turn phase (blocked during short rest)
 		if key.physical_keycode == KEY_I:
 			if not GameState.short_rest_open and not GameState.mastery_picker_open \
-					and not GameState.subclass_picker_open and not GameState.race_picker_open:
+					and not GameState.subclass_picker_open and not GameState.race_picker_open \
+					and not GameState.point_buy_open:
 				GameState.inventory_toggle.emit()
 			return
 		# T key opens talent screen regardless of turn phase; bypasses phase gate
@@ -455,13 +457,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			if not GameState.inventory_open and not GameState.short_rest_open \
 					and not GameState.short_rest_active and not GameState.talent_picker_open \
 					and not GameState.mastery_picker_open and not GameState.subclass_picker_open \
-					and not GameState.race_picker_open:
+					and not GameState.race_picker_open and not GameState.point_buy_open:
 				_actions.open_talent_picker()
 				get_viewport().set_input_as_handled()
 			return
 		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active \
 				or GameState.talent_picker_open or GameState.mastery_picker_open \
-				or GameState.subclass_picker_open or GameState.race_picker_open:
+				or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
 			if _inspect_mode:

@@ -158,6 +158,7 @@ var talent_picker_open: bool = false
 var mastery_picker_open: bool = false
 var subclass_picker_open: bool = false  # blocks ALL player input while the subclass-select overlay is visible
 var race_picker_open: bool = false  # blocks ALL player input while the race-select overlay is visible (scripts/ui/race_select.gd)
+var point_buy_open: bool = false  # blocks ALL player input while the point-buy overlay is visible (scripts/ui/point_buy_select.gd, Custom path only)
 
 # Talent system — points earned per level, invested per talent.
 # Points are tier-locked pools: talent_points[tier] holds that tier's unspent points
@@ -290,6 +291,7 @@ func start_new_run() -> void:
 	mastery_picker_open = false
 	subclass_picker_open = false
 	race_picker_open = false
+	point_buy_open = false
 	talent_points = {1: 0, 2: 0, 3: 0, 4: 0}
 	tier3_selected_class = -1
 	talent_investments = {}

@@ -147,9 +147,11 @@ Quickbar: 9 slots (indices 0–8). Bag: 24 slots.
 ---
 
 ## Class select (`class_select.gd`)
-Shown at game start. Emits `GameState.class_chosen` when player selects a class, then spawns
-`race_select.gd` (below) and `queue_free()`s itself — race select owns spawning the Mastery
-Picker afterward, not this script.
+Shown at game start (Custom character-creation path only — premade heroes in
+`character_select.gd` bypass this entire chain). Emits `GameState.class_chosen` when player
+selects a class, then spawns `point_buy_select.gd` (below) and `queue_free()`s itself — point
+buy owns spawning race select, which in turn owns spawning the Mastery Picker, not this script.
+Full onboarding order: **class select → point buy → race select → mastery picker**.
 
 **Continue button** (Save/Load Phase A): a gold "Continue Saved Run" button appears centered
 below the class cards only when `SaveManager.has_save()`. Pressing it calls
@@ -160,9 +162,31 @@ Mastery Picker (masteries are restored from the save). If `load_run()` fails (sa
 corrupt), the button hides and the class cards stay usable. The New Game path is untouched.
 See `scripts/autoloads/CLAUDE.md`'s SaveManager "Continue flow" section.
 
+## Point buy select (`point_buy_select.gd`)
+CanvasLayer, layer = 22. One-time, mandatory ability-score allocation spawned by
+`class_select.gd._on_class_selected()` right after `class_chosen` fires, **before** race select
+— Custom character-creation path only (premade heroes never reach it). D&D 2024 rules: no race
+grants a raw ability-score bonus (`Stats.apply_race_defaults()` never touches base scores), so
+this is the only ability-score input point in onboarding, and running it before race select is
+safe regardless of ordering. Modeled on `race_select.gd`'s conventions (dim overlay + centered
+bordered `Panel`, `focus_mode = FOCUS_NONE` everywhere, `GameState.point_buy_open` input-gate
+flag, non-dismissible — no close button, `_unhandled_input` swallows Esc/keys).
+
+All six scores (STR/DEX/CON/INT/WIS/CHA) start at 8; a `-`/`+` button pair per row adjusts each
+within `Stats.POINT_BUY_MIN`(8)`..POINT_BUY_MAX`(15), spending from a shared
+`Stats.POINT_BUY_BUDGET`(27) pool. Cost per step comes from `Stats.POINT_BUY_COST` (the standard
+D&D point-buy table: 8→13 cost 1 point/step, 14 and 15 cost 2 points/step — reaching 15 from 8
+costs 9 total). `+` disables per-row at `POINT_BUY_MAX` or when the next step's cost exceeds
+points remaining; `-` disables at `POINT_BUY_MIN`. Confirm is always enabled (unspent points are
+simply left on the table — not enforced to be fully spent). Confirm calls
+`GameState.player_stats.apply_point_buy_scores(_scores)` (`scripts/entities/stats.gd` — overrides
+the six base scores set by `apply_class_defaults()` and re-derives `max_hp`/`current_hp`/
+`armor_class`, mirroring that function's own tail), re-emits `GameState.player_hp_changed`, then
+spawns `race_select.gd` itself before `queue_free()`.
+
 ## Race select (`race_select.gd`)
-CanvasLayer, layer = 25. One-time, mandatory choice spawned by `class_select.gd._on_class_selected()`
-right after `class_chosen` fires, **before** the Mastery Picker. Modeled directly on
+CanvasLayer, layer = 25. One-time, mandatory choice spawned by `point_buy_select.gd._on_confirm()`
+(Custom path) — see "Point buy select" above. Modeled directly on
 `subclass_select.gd`'s conventions (dim overlay + centered bordered `Panel`, `focus_mode =
 FOCUS_NONE` everywhere, `race_picker_open` input-gate flag, non-dismissible — no close button,
 `_unhandled_input` swallows Esc/keys). 6 race cards (Orc/Human/Halfling/Dwarf/Elf/Dragonborn);
@@ -170,9 +194,9 @@ Human/Elf/Dragonborn additionally show an inline sub-choice row (ability-score p
 sub-race / ancestry) that must be picked before Confirm enables. Confirm calls
 `GameState.choose_race(race, variant, prof_ability)`, then spawns `mastery_picker.gd` itself
 (same `mastery_cap() > 0` gate class_select used to apply) before `queue_free()` — so the full
-onboarding order is **class select → race select → mastery picker**. The Continue-saved-run flow
-(`class_select.gd._on_continue_pressed()`) skips all three; race is restored via `Stats.to_dict()`/
-`from_dict()` (`character_race`/`race_variant`/`race_prof_ability`) same as any other stat.
+onboarding order is **class select → point buy → race select → mastery picker**. The
+Continue-saved-run flow (`class_select.gd._on_continue_pressed()`) skips all four; ability scores
+and race are both restored via `Stats.to_dict()`/`from_dict()` same as any other stat.
 
 ## Mastery picker (`mastery_picker.gd`)
 CanvasLayer, layer = 25. Modeled directly on the talent picker (dim overlay + centered bordered
