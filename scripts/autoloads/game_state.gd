@@ -713,7 +713,14 @@ func gain_exp(amount: int) -> void:
 		var lv_str: String = ""
 		if point_tier > 0:
 			lv_str = " +1 talent point."
-		var level_msg: String = "[color=yellow]Level up! You are now level %d. (+%d max HP.%s)[/color]" % [player_stats.character_level, hp_gained, lv_str]
+		# A single gain_exp() call can cross more than one level threshold on a large XP grant —
+		# the breakdown's per-component values are per-level (CON mod / Dwarf bonus don't change
+		# level to level), so scale by how many levels this call actually applied.
+		var b: Dictionary = player_stats.hp_per_level_breakdown()
+		var levels_gained: int = 1 if b["total"] <= 0 else roundi(float(hp_gained) / float(b["total"]))
+		var hplvl_meta: String = "hplvl:die=%d,avg=%d,con=%d,dwarf=%d,n=%d,total=%d" % [
+			b["die_sides"], b["avg"], b["con"], b["dwarf"], levels_gained, hp_gained]
+		var level_msg: String = "[color=yellow]Level up! You are now level %d. ([url=%s]+%d max HP[/url].%s)[/color]" % [player_stats.character_level, hplvl_meta, hp_gained, lv_str]
 		combat_message.emit(level_msg)
 		short_rest_changed.emit()
 		_apply_monk_level_features(player_stats.character_level)

@@ -148,17 +148,25 @@ func gain_exp(amount: int) -> bool:
 		leveled = true
 	return leveled
 
-func _hp_per_level() -> int:
-	var gain: int
+# Per-level HP gain, broken out into its components for the level-up chat tooltip
+# (GameState.gain_exp()'s "hplvl:" meta / TooltipFormatters.fmt_hplvl_tooltip()) — same
+# "never log a bare number" convention the combat damage/heal tooltips follow.
+# {die_sides, avg, con, dwarf, total} — avg is the fixed per-class hit-die average (not rolled).
+func hp_per_level_breakdown() -> Dictionary:
+	var die_sides: int = point_buy_hit_die_base()
+	var avg: int
 	match character_class:
-		CharacterClass.BARBARIAN: gain = 7 + con_modifier()
-		CharacterClass.RANGER:    gain = 6 + con_modifier()
-		CharacterClass.WIZARD:    gain = 4 + con_modifier()
-		CharacterClass.MONK:      gain = 5 + con_modifier()  # d8 avg = 5
-		_:                        gain = 5 + con_modifier()
-	if character_race == CharacterRace.DWARF:
-		gain += 1
-	return gain
+		CharacterClass.BARBARIAN: avg = 7
+		CharacterClass.RANGER:    avg = 6
+		CharacterClass.WIZARD:    avg = 4
+		CharacterClass.MONK:      avg = 5  # d8 avg = 5
+		_:                        avg = 5
+	var con: int = con_modifier()
+	var dwarf: int = 1 if character_race == CharacterRace.DWARF else 0
+	return {"die_sides": die_sides, "avg": avg, "con": con, "dwarf": dwarf, "total": avg + con + dwarf}
+
+func _hp_per_level() -> int:
+	return hp_per_level_breakdown()["total"]
 
 func modifier(score: int) -> int:
 	return floori((score - 10) / 2.0)
