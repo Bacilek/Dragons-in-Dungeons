@@ -153,11 +153,12 @@ Quickbar: 9 slots (indices 0–8). Bag: 24 slots.
 CanvasLayer, layer = 20. **The actual first screen of a new run** — `hud.gd._ready()` now spawns
 this instead of `class_select.gd` directly. Shows 5 cards side by side: 4 premade characters
 (`PREMADE` const — Garrem Ogar/Orc Barbarian/Cleave+Graze, Tish/Wood Elf Ranger/Slow+Nick, Grok
-the White/White Dragonborn Monk, Jace/Halfling Wizard) plus a 5th "Custom" card. Clicking a
+the White/White Dragonborn Monk, Jace/Halfling Wizard/Fire Bolt) plus a 5th "Custom" card. Clicking a
 premade card (`_on_premade_selected()`) applies class + `GameState.give_class_starting_items()` +
 `GameState.choose_race(race, variant, prof_ability)` + (for Barbarian/Ranger) directly populates
-`Stats.known_weapon_masteries` and emits `known_masteries_changed` — bypassing class_select/
-point_buy_select/race_select/mastery_picker entirely and dropping straight into the already-loaded
+`Stats.known_weapon_masteries` and emits `known_masteries_changed` + (for Wizard) a `"cantrip"` key
+in the `PREMADE` entry calls `GameState.choose_cantrip(id)` directly — bypassing class_select/
+point_buy_select/race_select/mastery_picker/cantrip_select entirely and dropping straight into the already-loaded
 floor 1 (premade heroes use `apply_class_defaults()`'s fixed scores, no point buy). Clicking
 "Custom" (`_on_custom_selected()`) spawns `class_select.gd` unchanged, preserving the full
 **class select → point buy → race select → mastery picker** chain for a from-scratch build. Also

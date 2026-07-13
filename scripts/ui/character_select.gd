@@ -57,6 +57,7 @@ const PREMADE: Array = [
 		"variant": 0,
 		"prof":    -1,
 		"masteries": [],
+		"cantrip": "fire_bolt",
 		"sprite":  CHAR_PATH + "wizzard_m_idle_anim_f0.png",
 		"subtitle": "Halfling Wizard",
 		"desc":    "Frail but brilliant,\nlucky in a pinch.",
@@ -371,6 +372,10 @@ func _on_premade_selected(data: Dictionary) -> void:
 		for m: Variant in masteries:
 			GameState.player_stats.known_weapon_masteries.append(String(m))
 		GameState.known_masteries_changed.emit()
+
+	var cantrip: String = String(data.get("cantrip", ""))
+	if not cantrip.is_empty():
+		GameState.choose_cantrip(cantrip)
 
 	queue_free()
 

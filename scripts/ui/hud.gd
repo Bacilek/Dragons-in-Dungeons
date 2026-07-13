@@ -565,10 +565,11 @@ func _refresh_ability_bar() -> void:
 		else:
 			var ab := raw as Ability
 			slot.text = ""
-			if ab.icon_path != "":
+			if ab.icon_path != "" and ResourceLoader.exists(ab.icon_path):
 				slot.icon = load(ab.icon_path)
 				slot.expand_icon = true
 			else:
+				slot.icon = null
 				slot.text = ab.ability_name.left(4)
 			var frenzy_cooldown_turns: int = -1
 			if ab.ability_id == "frenzy" and GameState.berserker_frenzy_used and GameState.get_talent_rank("frenzied_killer") >= 3:

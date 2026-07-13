@@ -278,7 +278,13 @@ reactions. Data classes (`Spell`, `SpellDb`, `SpellcasterState`) live in `script
   `add_ability()`. Persisted as `Stats.to_dict()`'s `"known_cantrip"` field; save/load replays it
   silently via `GameState.from_dict()` calling `choose_cantrip(id, true)` right after
   `give_class_starting_items()` (mirrors talent replay's "derive abilities, don't serialize them"
-  convention).
+  convention). The premade Jace (Halfling Wizard, `character_select.gd`'s `PREMADE` list) bypasses
+  the picker like every other premade hero: a `"cantrip": "fire_bolt"` key in her entry makes
+  `_on_premade_selected()` call `GameState.choose_cantrip("fire_bolt")` directly.
+- **No icon assets exist yet** (`res://icons/spells/*.png`) — `hud.gd._refresh_ability_bar()`
+  guards the ability-bar icon load with `ResourceLoader.exists()` (same guard the design doc
+  calls for) and falls back to the ability name's first 4 letters as slot text, so a spell
+  ability is never silently invisible in the bar.
 - **Casting UX**: `player.gd._use_ability_slot()` has one guard — `ability_id.begins_with("spell:")`
   routes to `PlayerSpellcasting.begin_cast()` (`scripts/entities/player_spellcasting.gd`, a
   composition child-node registered in `player.gd._ready()` alongside `_ranged`/`_zealot`/etc.).
