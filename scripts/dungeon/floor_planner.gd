@@ -39,7 +39,9 @@ const MIN_ROOM_BUDGET: int = 4
 # max_per_floor generically and instantiates entry["script"].new(). Adding a
 # room type = one class file + one pool entry. DECLARATION ORDER IS LOAD-BEARING:
 # it fixes the rng draw order for every seed.
-const ROOM_POOL: Array[Dictionary] = [
+# NOTE: static var, not const — GDScript does not treat a class_name reference
+# (TreasureRoom etc.) as a constant expression, so `const` fails to parse here.
+static var ROOM_POOL: Array[Dictionary] = [
 	{"script": TreasureRoom, "chance": 0.30, "min_depth": 2, "max_per_floor": 1},
 	{"script": ShopRoom,     "chance": 0.40, "min_depth": 3, "max_per_floor": 1},
 	{"script": GardenRoom,   "chance": 0.35, "min_depth": 2, "max_per_floor": 1},
