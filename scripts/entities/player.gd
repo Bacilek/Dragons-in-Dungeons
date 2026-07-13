@@ -164,6 +164,9 @@ func _on_turn_started() -> void:
 		# reads. Read-only here (not cleared) so Rage's own combat_last_turn check further down
 		# still sees the value; the flag is cleared once, after both readers, further below.
 		_base_talents.tick_free_sidestep(GameState.player_was_hit_this_turn)
+		# Tactician (Battlefield Expert R1) buff expiry — only ticks on a real turn, never on a
+		# reverted/free-action turn (R3's own free side-step).
+		_base_talents.tick_battlefield_adv_expiry()
 	GameState.ability_bar_changed.emit()
 	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
 	# Only fires on real turns, not on reverted turns.
