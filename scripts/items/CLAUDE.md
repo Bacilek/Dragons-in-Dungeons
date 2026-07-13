@@ -149,3 +149,30 @@ DungeonFloorData.ITEMS_PATH   = "res://sprites/items/"           # subfolders: F
 DungeonFloorData.OBJECTS_PATH = "res://sprites/objects/"
 ```
 (`debug_panel.gd` keeps its own local `WEAPONS_PATH`/`ITEMS_PATH` constants — unrelated duplicates used only for its Give Item icon lookups, not part of this refactor.)
+
+---
+
+## Spellcasting data (`spell.gd`, `spell_db.gd`, `spellcaster_state.gd`)
+
+The cantrip-only slice of `docs/architecture/spellcasting-design.md` (Wizard cantrips — see
+`scripts/entities/CLAUDE.md`'s "Wizard spellcasting" section for the full cast-resolution
+walkthrough). No `SpellSlotPool`/`ActiveSpellEffect`/AoE-shape classes exist yet — add them per
+the design doc when leveled spells are implemented.
+
+- **`Spell`** (`Resource`) — `spell_id`, `spell_name`, `description`, `icon_path`, `level` (always
+  0 here), `school`, `range_tiles`, `resolution` (enum, only `ATTACK_ROLL` used), `dice_count`,
+  `dice_sides`, `damage_type`, `cantrip_tier_scaling: bool` (dice_count × tier at character levels
+  1/5/11/17), `effect_id` (`""` = pure generic damage path; else dispatched in
+  `SpellEffects.cast_spell()`), `class_list`. Deliberately missing every AoE/concentration/
+  upcast/component field the full design doc's `Spell` has — not needed until leveled spells
+  exist.
+- **`SpellDb`** (static factory, `RefCounted`) — `get_spell(id) -> Spell` builds the three
+  cantrips in code (`CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost",
+  "shocking_grasp"]`), same "no `.tres` files" convention as `Talent`/`SpriteFrames`.
+- **`SpellcasterState`** (`Resource`) — lives on `Stats.caster` (null for every class but Wizard),
+  not `GameState`, so a future enemy/companion caster can carry its own instance.
+  `spellcasting_ability: String` ("INT"/"WIS"/"CHA"), `known_spells: Array[String]` (just the one
+  chosen cantrip in this slice). `spell_attack_bonus(stats)` / `spell_save_dc(stats)` are computed
+  **live, never cached** (`proficiency_bonus + ability_mod`, `8 + proficiency_bonus + ability_mod`)
+  — mirrors `Stats.mastery_cap()`'s "recompute every time" convention, and deliberately does NOT
+  derive from `character_class` (keeps a future multiclass caster sane — see the design doc §10.3).

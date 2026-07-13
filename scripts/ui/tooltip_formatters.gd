@@ -50,6 +50,53 @@ static func fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 	lines.append("= [color=yellow]%d[/color] vs AC %d  →  %s" % [total, ac, vs])
 	return "\n".join(lines)
 
+# Wizard cantrip spell attack roll — same shape as fmt_hit_tooltip but always labels the ability
+# mod "INT" (the only spellcasting_ability Wizard uses in this slice — see
+# scripts/items/spellcaster_state.gd). Kept as its own small function rather than threading a
+# third stat-label mode through fmt_hit_tooltip.
+static func fmt_sphit_tooltip(p: Dictionary) -> String:
+	var die: int    = int(p.get("die", "0"))
+	var d1: int     = int(p.get("d1", str(die)))
+	var d2: int     = int(p.get("d2", str(die)))
+	var stat_mod: int = int(p.get("int", "0"))
+	var prof: int   = int(p.get("prof", "0"))
+	var total: int  = int(p.get("total", "0"))
+	var ac: int     = int(p.get("ac", "0"))
+	var adv: bool   = p.get("adv", "0") == "1"
+	var disadv: bool = p.get("disadv", "0") == "1"
+	var n20: bool   = p.get("n20", "0") == "1"
+	var n1: bool    = p.get("n1", "0") == "1"
+	var lucky1: bool = p.get("lucky1", "0") == "1"
+	var lucky2: bool = p.get("lucky2", "0") == "1"
+	var lines: PackedStringArray = []
+	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if n20 else ("  [color=red]✕ FAIL[/color]" if n1 else "")
+	if adv and d1 != d2:
+		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
+	elif disadv and d1 != d2:
+		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
+	else:
+		lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
+	if lucky1:
+		lines.append("[color=#2e8b3d]☘ Halfling Luck: [s]1[/s] → %d[/color]" % d1)
+	if lucky2:
+		lines.append("[color=#2e8b3d]☘ Halfling Luck: [s]1[/s] → %d[/color]" % d2)
+	if stat_mod != 0:
+		lines.append("[color=lightblue]%+d[/color]  (INT mod)" % stat_mod)
+	if prof != 0:
+		lines.append("[color=lightblue]+%d[/color]  (Proficiency)" % prof)
+	lines.append("─────────────────")
+	var vs: String
+	if n20:
+		vs = "[color=gold]CRITICAL HIT[/color]"
+	elif n1:
+		vs = "[color=red]CRITICAL FAIL[/color]"
+	elif total >= ac:
+		vs = "[color=green]HIT[/color]"
+	else:
+		vs = "[color=red]MISS[/color]"
+	lines.append("= [color=yellow]%d[/color] vs AC %d  →  %s" % [total, ac, vs])
+	return "\n".join(lines)
+
 static func fmt_dmg_tooltip(p: Dictionary) -> String:
 	var roll: int  = int(p.get("roll", "0"))
 	var dmax: int  = int(p.get("dmax", "0"))

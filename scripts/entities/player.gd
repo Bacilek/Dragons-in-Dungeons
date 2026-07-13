@@ -19,6 +19,7 @@ var _thief_tools: PlayerThiefTools
 var _vfx: PlayerVfx
 var _actions: PlayerActions
 var _ranged: PlayerRanged
+var _spellcasting: PlayerSpellcasting
 
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
@@ -106,6 +107,7 @@ func _ready() -> void:
 	_vfx = PlayerVfx.new(); _vfx.player = self; add_child(_vfx)
 	_actions = PlayerActions.new(); _actions.player = self; add_child(_actions)
 	_ranged = PlayerRanged.new(); _ranged.player = self; add_child(_ranged)
+	_spellcasting = PlayerSpellcasting.new(); _spellcasting.player = self; add_child(_spellcasting)
 
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
@@ -452,7 +454,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if key.physical_keycode == KEY_I:
 			if not GameState.short_rest_open and not GameState.mastery_picker_open \
 					and not GameState.subclass_picker_open and not GameState.race_picker_open \
-					and not GameState.point_buy_open:
+					and not GameState.point_buy_open and not GameState.cantrip_picker_open:
 				GameState.inventory_toggle.emit()
 			return
 		# T key opens talent screen regardless of turn phase; bypasses phase gate
@@ -460,13 +462,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			if not GameState.inventory_open and not GameState.short_rest_open \
 					and not GameState.short_rest_active and not GameState.talent_picker_open \
 					and not GameState.mastery_picker_open and not GameState.subclass_picker_open \
-					and not GameState.race_picker_open and not GameState.point_buy_open:
+					and not GameState.race_picker_open and not GameState.point_buy_open \
+					and not GameState.cantrip_picker_open:
 				_actions.open_talent_picker()
 				get_viewport().set_input_as_handled()
 			return
 		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active \
 				or GameState.talent_picker_open or GameState.mastery_picker_open \
-				or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open:
+				or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
+				or GameState.cantrip_picker_open:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
 			if _inspect_mode:
@@ -482,6 +486,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _hook_mode_active:
 				_hook_mode_active = false
 				GameState.game_log("[color=gray]Grip of the Forest cancelled.[/color]")
+			if _spellcasting.spell_targeting_active:
+				_spellcasting.cancel()
+				GameState.game_log("[color=gray]Spell cancelled.[/color]")
 			if _berserker.frenzy_mode_active:
 				_berserker.frenzy_mode_active = false
 				GameState.game_log("[color=gray]Frenzy cancelled.[/color]")
@@ -625,6 +632,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_inspect_mode = false
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT:
 				_actions.do_inspect(clicked)
+			return
+
+		# Cantrip targeting mode
+		if _spellcasting.spell_targeting_active:
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				_spellcasting.try_cast_at(clicked)
+			else:
+				_spellcasting.cancel()
 			return
 
 		# Grip of the Forest hook-targeting mode
@@ -1759,6 +1774,9 @@ func _use_ability_slot(idx: int) -> void:
 	if raw == null:
 		return
 	var ab := raw as Ability
+	if ab.ability_id.begins_with("spell:"):
+		_spellcasting.begin_cast(ab.ability_id.trim_prefix("spell:"))
+		return
 	match ab.ability_id:
 		"rage":                    _activate_rage()
 		"unarmored_defense_monk":  GameState.game_log("[color=gray]Unarmored Defense is passive — active when unarmored (AC = 10+DEX+WIS).[/color]")

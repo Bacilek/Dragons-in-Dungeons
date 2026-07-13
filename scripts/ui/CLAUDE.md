@@ -216,6 +216,18 @@ four; ability scores and race are both restored via `Stats.to_dict()`/`from_dict
 (`character_race`/`race_variant`/`race_prof_ability` plus the plain score ints) same as any other
 stat.
 
+## Cantrip picker (`cantrip_select.gd`)
+CanvasLayer, layer = 25. Wizard-only, one-time mandatory pick spawned by
+`race_select.gd._on_confirm()` in the same slot the Mastery Picker would occupy (Wizard's
+`mastery_cap()` is already 0, so the two branches are mutually exclusive — `elif` off of it).
+Dim overlay + centered bordered `Panel`, `focus_mode = FOCUS_NONE`, non-dismissible (no close
+button, `_unhandled_input` swallows all keys — mirrors `race_select.gd`'s conventions). Unlike
+the Mastery Picker's toggle-and-Done multi-select, each of the three cantrip cards (Fire Bolt /
+Ray of Frost / Shocking Grasp, `SpellDb.CANTRIP_IDS`) commits immediately on click
+(`subclass_select.gd`'s card-click-commits style) since there's no multi-select here — a single
+irreversible pick. Confirm calls `GameState.choose_cantrip(spell_id)` and frees itself. See
+`scripts/entities/CLAUDE.md`'s "Wizard spellcasting" section for what the pick actually grants.
+
 ## Mastery picker (`mastery_picker.gd`)
 CanvasLayer, layer = 25. Modeled directly on the talent picker (dim overlay + centered bordered
 `Panel`, `TextureButton` icon grid, `focus_mode = FOCUS_NONE` everywhere). Lets the player choose

@@ -24,6 +24,8 @@ var slowed_turns: int = 0
 var rooted_turns: int = 0        # World Tree Grip of the Forest R2 — skips movement, still attacks if adjacent
 var disadv_next_attack: bool = false  # World Tree Grip of the Forest R3 — consumed on next attack roll
 var prone_turns: int = 0         # Maul's Topple mastery — skips the ENTIRE turn (no movement, no attack)
+var frozen_feet_turns: int = 0   # Ray of Frost's STR-save-fail — skips movement, still attacks if adjacent (same shape as rooted_turns, kept separate so inspect can name it "Frozen Feet")
+var shocked_no_oa: bool = false  # Shocking Grasp — blocks this enemy's next Opportunity Attack exposure, whenever it next happens
 var embedded_items: Array[Item] = []  # thrown weapons stuck in a non-lethal hit (PlayerThrowTool._throw_weapon) — dropped at 100% chance wherever/whenever this enemy eventually dies, see die() override below
 var _roam_target: Vector2i = Vector2i(-1, -1)
 var _roam_path: Array[Vector2i] = []
@@ -235,6 +237,13 @@ func _decide_action() -> Dictionary:
 	# World Tree Grip of the Forest R2: rooted — no movement this turn, but can still attack if adjacent.
 	if rooted_turns > 0:
 		rooted_turns -= 1
+		if _chebyshev_to(target) == 1:
+			return {"type": "attack", "target": target}
+		return {"type": "wait"}
+
+	# Ray of Frost's Frozen Feet — same shape as rooted_turns above (no movement, can still attack).
+	if frozen_feet_turns > 0:
+		frozen_feet_turns -= 1
 		if _chebyshev_to(target) == 1:
 			return {"type": "attack", "target": target}
 		return {"type": "wait"}
@@ -455,6 +464,9 @@ func _move_step(step: Vector2i, next_pos: Vector2i) -> void:
 # resolve_push) intentionally bypasses this and must NOT call it.
 func _check_opportunity_attacks_on_move(prev_pos: Vector2i, next_pos: Vector2i) -> void:
 	if _dungeon_floor == null or not _dungeon_floor.is_tile_visible(prev_pos):
+		return
+	if shocked_no_oa:
+		shocked_no_oa = false
 		return
 	var player: Player = _dungeon_floor.get_player()
 	if player != null and is_instance_valid(player) and not player.stats.is_dead() and not player._oa_used_this_round:

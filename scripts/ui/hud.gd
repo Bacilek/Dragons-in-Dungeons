@@ -949,6 +949,7 @@ func _format_tooltip(meta: String) -> String:
 	match kind:
 		"hit", "miss":   return TooltipFormatters.fmt_hit_tooltip(params, false)
 		"rhit", "rmiss": return TooltipFormatters.fmt_hit_tooltip(params, true)
+		"sphit":         return TooltipFormatters.fmt_sphit_tooltip(params)
 		"thrhit":        return TooltipFormatters.fmt_hit_tooltip(params, false)
 		"dmg":           return TooltipFormatters.fmt_dmg_tooltip(params)
 		"heal":          return TooltipFormatters.fmt_heal_tooltip(params)
