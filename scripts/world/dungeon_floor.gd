@@ -229,6 +229,7 @@ func _load_floor() -> void:
 	_spawn_locked_doors()
 	_spawn_pending_chasm_items()
 	_spawn_gold_piles()
+	_spawn_special_rooms()
 	_restore_companion_from_save()
 	_setup_fog()
 	_see_all_active = false
@@ -1480,6 +1481,22 @@ func _spawn_gold_piles() -> void:
 	for i: int in count:
 		var amount: int = _pop_rng.randi_range(5, 10) + GameState.current_floor
 		place_item_on_floor(candidates[i], _make_gold_item(amount))
+
+# Special-room population dispatcher (special-rooms-economy-design.md §3.3, session 7b).
+# The ONE place a room type_id string is matched — it dispatches *population*, not generation.
+# Runs LAST in the _load_floor() spawn order (after _spawn_gold_piles()) so every pre-existing
+# _pop_rng draw keeps its position; consumes zero _pop_rng draws while the branches are stubs.
+func _spawn_special_rooms() -> void:
+	for meta: Dictionary in _data.room_metadata:
+		match meta["type_id"]:
+			"shop":
+				pass  # _spawn_shop(meta["rect"]) — session 7e
+			"treasure":
+				pass  # _spawn_treasure(meta["rect"]) — session 7c
+			"garden":
+				pass  # _spawn_garden_items(meta["rect"]) — session 7d
+			"secret":
+				pass  # _spawn_secret_room(meta["rect"]) — session 7f
 
 # Enemy gold drop: 30% chance on any non-boss enemy death (bosses drop a guaranteed pile in
 # drop_boss_loot() instead). Kill-time randomness → gameplay Rng stream, same load-time-vs-runtime

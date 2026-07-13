@@ -102,6 +102,18 @@ static func generate(seed_val: int, floor_num: int) -> DungeonData:
 
 	data.feeling = feeling
 
+	# Generation→runtime bridge (special-rooms-economy-design.md §3.3): after Build
+	# (rects assigned), before Paint — export each placed special room's geometry
+	# for DungeonFloor._spawn_special_rooms(). On BSP-fallback floors the planned
+	# specials never got a rect (BspBuilder ignores the list), so the empty-rect
+	# filter makes them silently not materialize — no fallback machinery needed.
+	for room_obj: Room in rooms:
+		if room_obj.type_id == "standard" or room_obj.type_id == "entrance" or room_obj.type_id == "exit":
+			continue
+		if room_obj.rect == Rect2i():
+			continue
+		data.room_metadata.append({"type_id": room_obj.type_id, "rect": room_obj.rect})
+
 	# Paint — per-room paint (all no-ops currently) + level-wide overlays.
 	LevelPainter.paint(data, rooms, rng, feeling)
 

@@ -13,6 +13,10 @@ var width: int = 0
 var height: int = 0
 var feeling: String = ""           # Floor Feeling id ("" = none; always "" on boss floors).
                                    # Display/debug only — gameplay code reads FloorFeeling.FEELINGS multipliers, never switches on this.
+var room_metadata: Array = []      # Array[Dictionary]: {"type_id": String, "rect": Rect2i} — one entry
+                                   # per placed special room (special-rooms-economy-design.md §3.3).
+                                   # Additive generation→runtime bridge; regenerated from seed every
+                                   # _load_floor(), never serialized. Empty on BSP-fallback floors.
 
 func get_tile(x: int, y: int) -> TileType:
 	if x < 0 or y < 0 or x >= width or y >= height:

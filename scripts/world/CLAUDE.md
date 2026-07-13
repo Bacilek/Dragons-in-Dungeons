@@ -103,7 +103,8 @@ _spawn_items()          # 2-3 random items from DungeonFloorData.ITEM_POOL; call
 _spawn_traps()          # places traps by type
 _spawn_locked_doors()   # locks 1 door/floor that doesn't block spawn→stairs; places 2-3 rewards inside
 _spawn_pending_chasm_items()  # drains GameState.pending_chasm_items (ammo that fell into a chasm on the PREVIOUS floor) onto random walkable tiles of this floor; called after _spawn_locked_doors(), before _setup_fog()
-_spawn_gold_piles()     # 1-2 Type.GOLD piles of randi_range(5,10)+floor gold on random walkable tiles; LAST in the spawn order (appended after _spawn_pending_chasm_items() so every pre-existing _pop_rng draw keeps its position)
+_spawn_gold_piles()     # 1-2 Type.GOLD piles of randi_range(5,10)+floor gold on random walkable tiles; appended after _spawn_pending_chasm_items() so every pre-existing _pop_rng draw keeps its position
+_spawn_special_rooms()  # session 7b dispatcher: matches _data.room_metadata's type_id ("shop"/"treasure"/"garden"/"secret") — the ONE place a type_id string is matched. ALL BRANCHES ARE STUBS (pass) pending sessions 7c-7f (_spawn_treasure/_spawn_garden_items/_spawn_shop/_spawn_secret_room don't exist yet). LAST in the spawn order; currently consumes zero _pop_rng draws
 ```
 **Seeded population (`_pop_rng`)**: all `_spawn_*()` randomness draws from `_pop_rng`, a `RandomNumberGenerator` re-created in `_load_floor()` with seed `run_seed ^ (current_floor * POPULATION_SEED_MIX)` — same run seed + floor always produces the identical population, which Phase-A save reloads depend on. Shuffles use `RngUtil.shuffle(arr, _pop_rng)`. **The spawn call order and the number of draws inside each function are load-bearing for reproducibility.** `_pop_rng` is load-time only — runtime rolls (trap triggers, boss loot at kill time, `resolve_push()` damage) use the `Rng` autoload's gameplay stream instead; never mix the two.
 Item helper:
