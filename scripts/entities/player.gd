@@ -1340,6 +1340,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false)
+	var is_lethal: bool = enemy.stats.is_dead()
 
 	var bonus_sources: String = CombatMath.encode_bonus_sources([
 		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
@@ -1354,11 +1355,12 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var weapon_item: Item = GameState.equipped_weapon
 	var dmg_type: String = weapon_item.damage_type if weapon_item != null and not weapon_item.damage_type.is_empty() else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
+	var death_tag: String = CombatMath.death_suffix(is_lethal)
 
 	if is_crit:
-		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, death_tag], r["lucky"]))
 	else:
-		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
+		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, death_tag], r["lucky"]))
 
 	# Branching Strike R3: push the target 1 tile away on a hit with a Heavy/Versatile melee weapon.
 	if GameState.get_talent_rank("branching_strike") >= 3 and is_str_weapon and not enemy.stats.is_dead() \
@@ -1394,7 +1396,7 @@ func _try_graze(enemy: Enemy, is_str_weapon: bool, attack_mod: int) -> void:
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, graze_dmg, false)
 	var graze_meta: String = "grz:mod=%d,final=%d" % [attack_mod, graze_dmg]
-	GameState.game_log("[color=cyan]Graze:[/color] %s still takes [url=%s][color=yellow]%d[/color][/url] dmg." % [enemy.display_name, graze_meta, graze_dmg])
+	GameState.game_log("[color=cyan]Graze:[/color] %s still takes [url=%s][color=yellow]%d[/color][/url] dmg.%s" % [enemy.display_name, graze_meta, graze_dmg, CombatMath.death_suffix(enemy.stats.is_dead())])
 	if enemy.stats.is_dead():
 		_finish_kill(enemy)
 
@@ -1496,8 +1498,9 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 		die_roll, w_dmin, w_dmax, weapon_bonus, str_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
-	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]Cleave:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
-	if enemy.stats.is_dead():
+	var is_lethal: bool = enemy.stats.is_dead()
+	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]Cleave:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
+	if is_lethal:
 		_finish_kill(enemy)
 
 # Dual-wielding (Two-Weapon Fighting): if Main Hand and the Off-hand (GameState.equipment["hand2"])
@@ -1583,8 +1586,9 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
-	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]%s:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [label, hit_meta, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
-	if enemy.stats.is_dead():
+	var is_lethal: bool = enemy.stats.is_dead()
+	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]%s:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [label, hit_meta, enemy.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
+	if is_lethal:
 		_finish_kill(enemy)
 
 # Opportunity Attack: a self-contained, turn-free melee swing triggered when an enemy leaves the
@@ -1665,8 +1669,9 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var dmg_type: String = weapon.damage_type if (not is_unarmed and not weapon.damage_type.is_empty()) else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
-	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]Opportunity attack:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
-	if enemy.stats.is_dead():
+	var is_lethal: bool = enemy.stats.is_dead()
+	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]Opportunity attack:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
+	if is_lethal:
 		_finish_kill(enemy)
 
 func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
@@ -1674,8 +1679,9 @@ func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
 
 
 func _finish_kill(enemy: Enemy, dropped_ammo: Item = null) -> void:
+	# The "and died" text is folded into the attack's own hit-log line (CombatMath.death_suffix(),
+	# one call per attack site) rather than logged again here as a separate message.
 	_base_talents.on_kill()
-	GameState.game_log("[color=orange]%s[/color] [color=gray]dies.[/color]" % enemy.display_name)
 	GameState.gain_exp(maxi(1, enemy.exp_reward / 2))
 	var was_boss: bool = enemy.is_boss
 	var kill_pos: Vector2i = enemy.grid_pos

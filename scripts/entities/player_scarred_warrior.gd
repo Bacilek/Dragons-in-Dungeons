@@ -53,10 +53,11 @@ func execute_limit_break(primary: Enemy) -> void:
 		target.update_hp_bar()
 		if player._dungeon_floor != null:
 			player._dungeon_floor.show_damage(target.position, actual, false)
-		GameState.game_log("[color=gold]Limit Break! %s takes [color=yellow]%d[/color] damage.[/color]" % [target.display_name, actual])
+		var is_lethal: bool = target.stats.is_dead()
+		GameState.game_log("[color=gold]Limit Break! %s takes [color=yellow]%d[/color] damage.%s[/color]" % [target.display_name, actual, CombatMath.death_suffix(is_lethal)])
 		if rank >= 1:
 			_apply_weapon_mastery_effect(target)
-		if target.stats.is_dead():
+		if is_lethal:
 			player._finish_kill(target)
 
 	if player._dungeon_floor != null:

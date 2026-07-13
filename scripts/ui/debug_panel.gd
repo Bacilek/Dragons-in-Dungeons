@@ -1,7 +1,7 @@
 extends CanvasLayer
 
 const PANEL_W:    int = 280
-const PANEL_H:    int = 285
+const PANEL_H:    int = 322
 const FLOOR_SW:   int = 234
 const FLOOR_SH:   int = 96
 const ITEMS_SW:   int = 390
@@ -49,6 +49,7 @@ var _talent_sub:    Panel
 var _talent_vbox:   VBoxContainer
 var _talent_rank_labels: Dictionary = {}   # talent_id -> Label
 var _god_check:     CheckBox
+var _mute_btn:      Button
 
 func _ready() -> void:
 	layer = 25
@@ -137,6 +138,15 @@ func _build_main_panel() -> void:
 	gold_btn.size = Vector2(PANEL_W - 12.0, 30.0)
 	gold_btn.pressed.connect(_on_give_gold_pressed)
 	_main_panel.add_child(gold_btn)
+
+	# Mute — mirrors the HUD's top-right MuteButton (scenes/ui/hud.tscn), just easier to find.
+	_mute_btn = _make_btn("", Color(0.55, 0.75, 1.0))
+	_mute_btn.position = Vector2(6.0, 286.0)
+	_mute_btn.size = Vector2(PANEL_W - 12.0, 30.0)
+	_mute_btn.pressed.connect(_on_mute_pressed)
+	_main_panel.add_child(_mute_btn)
+	AudioManager.mute_changed.connect(_on_mute_changed)
+	_on_mute_changed(AudioManager.is_muted)
 
 func _build_floor_sub() -> void:
 	_floor_sub = Panel.new()
@@ -545,6 +555,12 @@ func _on_spawn_enemy(type_data: Dictionary) -> void:
 func _on_give_gold_pressed() -> void:
 	GameState.add_gold(100)
 	GameState.game_log("[color=gold][DEBUG] +100 gold (now %d).[/color]" % GameState.gold)
+
+func _on_mute_pressed() -> void:
+	AudioManager.toggle_mute()
+
+func _on_mute_changed(muted: bool) -> void:
+	_mute_btn.text = "🔇 Unmute" if muted else "🔊 Mute"
 
 func _on_give_item(d: Dictionary) -> void:
 	var item := Item.new()

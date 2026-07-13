@@ -136,11 +136,13 @@ static func fmt_frenzy_dmg_tooltip(p: Dictionary) -> String:
 # Masochist Monster R2 — rage bonus x 1d4 temp HP breakdown.
 static func fmt_masochist_tooltip(p: Dictionary) -> String:
 	var rage: int = int(p.get("rage", "0"))
-	var die: int = int(p.get("die", "0"))
+	var rolls_str: String = String(p.get("rolls", ""))
 	var final_dmg: int = int(p.get("final", "0"))
 	var lines: PackedStringArray = []
-	lines.append("[color=lightblue]%d[/color]  (Rage bonus)" % rage)
-	lines.append("[color=yellow]× %d[/color]  (1d4 roll)" % die)
+	lines.append("[color=lightblue]%d[/color]d4  (Rage bonus dice)" % rage)
+	if not rolls_str.is_empty():
+		var rolls: PackedStringArray = rolls_str.split("|")
+		lines.append("[color=yellow]%s[/color]" % " + ".join(rolls))
 	lines.append("─────────────────")
 	lines.append("= [color=yellow]%d[/color] temp HP" % final_dmg)
 	return "\n".join(lines)
@@ -265,6 +267,7 @@ static func fmt_edmg_tooltip(p: Dictionary) -> String:
 	var dmin: int  = int(p.get("min", "0"))
 	var dmax: int  = int(p.get("max", "0"))
 	var crit: bool = p.get("crit", "0") == "1"
+	var rage: bool = p.get("rage", "0") == "1"
 	var final_dmg: int = int(p.get("final", "0"))
 	var lines: PackedStringArray = []
 	if dmax > 0:
@@ -273,6 +276,8 @@ static func fmt_edmg_tooltip(p: Dictionary) -> String:
 		lines.append("damage = [color=yellow]%d[/color]" % roll)
 	if crit:
 		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
+	if rage:
+		lines.append("[color=lightgreen]÷ 2[/color]  (Rage)")
 	lines.append("─────────────────")
 	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
 	return "\n".join(lines)

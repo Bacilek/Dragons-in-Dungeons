@@ -909,7 +909,11 @@ func _split_one_unit(item: Item) -> Item:
 		var remaining: Array[int] = []
 		for v: Variant in stack:
 			remaining.append(int(v))
-		item.stack_uses = remaining if remaining.size() > 1 else []
+		if remaining.size() > 1:
+			item.stack_uses = remaining
+		else:
+			var empty: Array[int] = []
+			item.stack_uses = empty
 		if not remaining.is_empty():
 			item.uses_remaining = remaining[0]
 	item.quantity -= 1
@@ -1180,9 +1184,8 @@ var player_attacked_this_turn: bool = false
 var rage_turns_remaining: int = 0
 
 func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String = "") -> int:
-	if is_game_over or invincible:
+	if is_game_over:
 		return 0
-	var final_amount: int = amount
 	# Rage baseline: flat 50% physical damage reduction while raging (Bludgeoning/Piercing/
 	# Slashing only), unconditional — no longer talent-gated. Status effects and traps pass
 	# damage_type="" — they bypass reduction intentionally.
@@ -1190,6 +1193,14 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 	const ELEMENTAL_TYPES: Array = ["Fire", "Cold", "Lightning", "Thunder", "Acid", "Poison"]
 	const MAGICAL_TYPES: Array = ["Radiant", "Necrotic", "Force"]
 	var is_physical: bool = damage_type in PHYSICAL_TYPES
+	if invincible:
+		# Skip the actual HP change, but still register "the player was hit this turn" so
+		# god-mode play doesn't silently break turn-based triggers that key off it (e.g.
+		# Battlefield Expert R3's free Side Step charge — see player_base_talents.gd).
+		if is_physical and not ignore_rage:
+			player_was_hit_this_turn = true
+		return 0
+	var final_amount: int = amount
 	if is_raging and not ignore_rage and is_physical:
 		final_amount = int(floor(float(amount) * 0.5))
 	# Animal Form Bear: always-active elemental DR (no Rage or talent rank required — see
@@ -1671,7 +1682,7 @@ func _setup_barbarian_tier2_talents() -> void:
 	masochist_talent.max_rank = 3
 	masochist_talent.ranks = [
 		{"description": "If you take any damage on your turn (including Frenzy self-damage): +1 AC until the start of your next turn."},
-		{"description": "Also gain Temporary HP equal to Rage bonus damage × 1d4."},
+		{"description": "Also gain Temporary HP equal to (Rage bonus damage) d4, rolled separately and summed."},
 		{"description": "Rage does not expire while at least 1 enemy is in your Field of View."},
 	]
 	_class_talents.append(masochist_talent)

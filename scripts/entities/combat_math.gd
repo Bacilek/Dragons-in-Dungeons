@@ -126,3 +126,10 @@ static func decode_bonus_sources(encoded: String) -> Array:
 		if fields.size() == 3:
 			result.append({"name": fields[0], "amount": int(fields[1]), "color": fields[2]})
 	return result
+
+# Appends an "and died" suffix to an attack's own hit/damage log line when that hit was lethal —
+# folds the kill into one chat message instead of a separate "X dies." line (Player._finish_kill()
+# no longer logs its own death line; every attack call site appends this to its damage string
+# right before checking is_dead() and calling _finish_kill()).
+static func death_suffix(is_lethal: bool) -> String:
+	return " [color=gray]and died.[/color]" if is_lethal else ""
