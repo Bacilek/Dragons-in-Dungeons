@@ -1,9 +1,9 @@
 # Special Rooms + Gold Economy — Design Doc
 
 Status: **design only, not implemented.** No code ships with this doc. It specs the content for
-the four special room types the dungeon-generation doc left as placeholder-fallback stubs
-(`ShopRoom`, `TreasureRoom`, `GardenRoom`, `SecretRoom` — `DUNGEON_GENERATION_ARCHITECTURE.md`
-§3/§8 step 5+), plus the gold currency that makes a shop meaningful. This is the "Pixel Dungeon
+the four special room types the (now-implemented and removed) dungeon-generation design doc left
+as placeholder-fallback stubs (`ShopRoom`, `TreasureRoom`, `GardenRoom`, `SecretRoom` — see
+`scripts/dungeon/CLAUDE.md`), plus the gold currency that makes a shop meaningful. This is the "Pixel Dungeon
 half" of the game's identity — risk/reward room choices and an item economy — which is currently
 entirely absent: floors today are BSP/Loop-generated standard rooms with no currency, no shops,
 no guaranteed-loot rooms, no secret-room discovery play.
@@ -33,7 +33,8 @@ existing patterns (`short_rest_panel.gd` for overlays, `_spawn_locked_doors()` f
   `type_id`, `rect: Rect2i`, `connections`, `required`; virtuals `min_size()`/`max_size()`/
   `max_connections()`/`paint(data, rng)`. The placeholder-fallback mechanism is plain
   inheritance (`ShopRoom extends StandardRoom`, don't override `paint()` until content exists) —
-  `IMPLEMENTATION_SEQUENCE.md` §4 rule 5. This doc writes the four `paint()` bodies; zero new
+  an established repo invariant: never write an `if not room.has_content(): fallback()` runtime
+  check, the fallback is structural. This doc writes the four `paint()` bodies; zero new
   room-class architecture is needed.
 - **Floor population** (`dungeon_floor.gd`): seeded `_pop_rng` (`run_seed ^ (floor *
   POPULATION_SEED_MIX)`), `_spawn_items()`/`_spawn_traps()`/`_spawn_locked_doors()` with their
@@ -206,8 +207,9 @@ static func plan(floor_num: int, feeling: String, rng: RandomNumberGenerator) ->
 **Determinism / byte-identical preservation:**
 - **Floor 1** (below every `min_depth`) and **boss floors** consume zero extra rng calls and emit
   the exact room list today's code emits → byte-identical `DungeonData` for every existing seed.
-  This is the invariant `IMPLEMENTATION_SEQUENCE.md` §4 protects; verify with the existing
-  `scripts/dungeon/_verify/dump_gen.gd` harness on floor 1 before merging.
+  This preserves the repo's "same seed+floor → identical output" reproducibility invariant
+  (`scripts/dungeon/CLAUDE.md`); verify with the existing `scripts/dungeon/_verify/dump_gen.gd`
+  harness on floor 1 before merging.
 - **Floors 2+** intentionally change output (extra `rng.randf()` calls shift the stream). This is
   an *intentional generation change*, same precedent as Phase 3's documented "RNG FOOTPRINT
   CHANGE" in `floor_planner.gd`'s header — document it the same way there and in
@@ -225,9 +227,11 @@ occasional shopless floor — consistent with the structural-placeholder philoso
 ### 3.3 The generation→runtime bridge — `DungeonData.room_metadata`
 
 `paint()` can only mutate `data.grid` (tiles). Shop stock, vendors, guaranteed items, traps, and
-hidden doors are all *runtime* state owned by `DungeonFloor`'s Vector2i-keyed dictionaries
-(invariant 9). The bridge is the additive `DungeonData` field that `IMPLEMENTATION_SEQUENCE.md`
-§4 rule 7 already reserved by name:
+hidden doors are all *runtime* state owned by `DungeonFloor`'s Vector2i-keyed dictionaries — the
+established pattern mirroring `_doors`/`_traps`/`_floor_items` (`scripts/world/CLAUDE.md`), never
+loose per-node-only state, so it stays serializable later without another audit sweep. The bridge
+is the additive `DungeonData` field this pattern implies, following `DungeonData`'s existing rule
+that new fields (like `feeling`) are additive and never break existing public fields:
 
 ```gdscript
 # dungeon_data.gd — additive, existing fields untouched
@@ -421,8 +425,8 @@ early economy.
 
 ## 5. Risk ranking and implementation sequence
 
-Written in `IMPLEMENTATION_SEQUENCE.md`'s format so it can be appended there as sessions 7a–7f
-when work starts (the "5d+ content sessions" that doc deferred are exactly these).
+Session-numbered 7a–7f (this repo's now-retired roadmap doc had already sequenced items 1–6;
+these six pick up where it left off, as the "content sessions" it deferred until design time).
 
 ### 5.1 Dependency graph (why this order)
 

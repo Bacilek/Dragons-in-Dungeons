@@ -70,9 +70,8 @@ flags live on `GameState` (not on `PlayerBaseTalents`, where they used to live) 
 this tray can read them without a live `Player` node reference — matches "HUD only reads
 GameState" above. No `icons/status/` art exists yet — every entry currently renders as a tinted
 placeholder square until real icons are supplied (`unarmored_defense`/`tactician`/`psycho_adv`
-already reuse existing talent icons, so those three render properly today). Design doc (now
-implemented per this section, open questions resolved: hover-only tooltip, shared tooltip panel,
-grow-panel layout): `docs/architecture/status-icon-tray-design.md`.
+already reuse existing talent icons, so those three render properly today). Open questions
+resolved: hover-only tooltip, shared tooltip panel, grow-panel layout.
 
 ### Z-index reference
 | Element | Z |
@@ -219,7 +218,6 @@ CanvasLayer, layer = 25. Modeled directly on the talent picker (dim overlay + ce
 which of `Stats.ALL_WEAPON_MASTERIES` (all 8: Cleave/Graze/Nick/Push/Sap/Slow/Topple/Vex) they
 currently *know* — populates `Stats.known_weapon_masteries`, the array every weapon-mastery
 combat effect already gates on (see `scripts/entities/CLAUDE.md`'s "Weapon mastery ownership").
-Full design: `docs/architecture/weapon-mastery-selection-design.md`.
 
 Sets `GameState.mastery_picker_open = true` on open → blocks all player input (same treatment
 as `talent_picker_open`, including the I-key inventory toggle and Tab bar-mode toggle — a
