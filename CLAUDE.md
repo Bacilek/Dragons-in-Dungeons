@@ -56,6 +56,13 @@ Opportunity Attacks (movement out of threat range provokes a free reactive melee
 ### D&D stats (`scripts/entities/stats.gd`)
 `Stats` extends `Resource`. `modifier(score)` = `floor((score-10)/2)`. `apply_class_defaults()` sets scores, derives `max_hp`, and calls `recalc_ac(has_armor)`. Classes: BARBARIAN (d12, STR/CON check prof), RANGER (d10, STR/DEX), WIZARD (d6, INT/WIS), MONK (d8, STR/DEX). Barbarian and Monk both get unarmored-defense AC formulas — see `scripts/entities/CLAUDE.md` for the full combat-roll table, proficiency scaling, and class-specific mechanics.
 
+### Character select
+The very first screen of a new run is `scripts/ui/character_select.gd` (`hud.gd` spawns it, not
+`class_select.gd` directly): 5 side-by-side cards — 4 premade heroes (fixed class+race+weapon
+masteries, click drops straight into the already-loaded floor 1, bypassing every picker below)
+and a "Custom" card that hands off unchanged to the class/race/mastery flow. Also owns the
+"Continue Saved Run" button. Full detail: `scripts/ui/CLAUDE.md`'s "Character select" section.
+
 ### Point buy (ability score allocation)
 Custom-path onboarding order: **class select → point buy → race select → mastery picker → game
 starts**. `point_buy_select.gd` is a one-time blocking overlay spawned right after class

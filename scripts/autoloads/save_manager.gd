@@ -6,7 +6,7 @@ extends Node
 # floor entry; save_run() writes that in-memory snapshot (never anything newer — doc §2's
 # "quitting mid-floor must not persist mid-floor state against a fresh floor" rule).
 # load_run() applies a parsed save via GameState.from_dict(); the Continue flow
-# (class_select.gd → DungeonFloor.reload_from_save()) drives the actual floor reload.
+# (character_select.gd → DungeonFloor.reload_from_save()) drives the actual floor reload.
 # Lifecycle autosave: _notification() writes the snapshot on NOTIFICATION_WM_CLOSE_REQUEST
 # and NOTIFICATION_APPLICATION_PAUSED (the Android "user switched apps" event) — doc §2.
 
@@ -75,7 +75,7 @@ func save_run() -> void:
 
 ## Parse the save and, on success, fully repopulate GameState via from_dict().
 ## Returns false when no usable save exists. Does NOT reload the floor — the
-## Continue flow (class_select.gd → DungeonFloor.reload_from_save()) drives that
+## Continue flow (character_select.gd → DungeonFloor.reload_from_save()) drives that
 ## from the restored run_seed/current_floor.
 func load_run() -> bool:
 	var data: Dictionary = _read_save()

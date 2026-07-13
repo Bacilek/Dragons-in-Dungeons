@@ -290,8 +290,8 @@ func _ready() -> void:
 	_inventory_overlay_ref = overlay_script.new()
 	get_tree().root.call_deferred("add_child", _inventory_overlay_ref)
 
-	# Class select screen — shown once per run before the first move
-	var cs_script = load("res://scripts/ui/class_select.gd")
+	# Character select screen — shown once per run before the first move
+	var cs_script = load("res://scripts/ui/character_select.gd")
 	get_tree().root.call_deferred("add_child", cs_script.new())
 
 	# Debug panel

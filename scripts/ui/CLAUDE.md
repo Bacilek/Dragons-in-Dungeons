@@ -146,21 +146,28 @@ Quickbar: 9 slots (indices 0–8). Bag: 24 slots.
 
 ---
 
-## Class select (`class_select.gd`)
-Shown at game start (Custom character-creation path only — premade heroes in
-`character_select.gd` bypass this entire chain). Emits `GameState.class_chosen` when player
-selects a class, then spawns `point_buy_select.gd` (below) and `queue_free()`s itself — point
-buy owns spawning race select, which in turn owns spawning the Mastery Picker, not this script.
-Full onboarding order: **class select → point buy → race select → mastery picker**.
+## Character select (`character_select.gd`)
+CanvasLayer, layer = 20. **The actual first screen of a new run** — `hud.gd._ready()` now spawns
+this instead of `class_select.gd` directly. Shows 5 cards side by side: 4 premade characters
+(`PREMADE` const — Garrem Ogar/Orc Barbarian/Cleave+Graze, Tish/Wood Elf Ranger/Slow+Nick, Grok
+the White/White Dragonborn Monk, Jace/Halfling Wizard) plus a 5th "Custom" card. Clicking a
+premade card (`_on_premade_selected()`) applies class + `GameState.give_class_starting_items()` +
+`GameState.choose_race(race, variant, prof_ability)` + (for Barbarian/Ranger) directly populates
+`Stats.known_weapon_masteries` and emits `known_masteries_changed` — bypassing class_select/
+point_buy_select/race_select/mastery_picker entirely and dropping straight into the already-loaded
+floor 1 (premade heroes use `apply_class_defaults()`'s fixed scores, no point buy). Clicking
+"Custom" (`_on_custom_selected()`) spawns `class_select.gd` unchanged, preserving the full
+**class select → point buy → race select → mastery picker** chain for a from-scratch build. Also
+owns the "Continue Saved Run" button (moved here from `class_select.gd` since this is now the true
+entry point) — same behavior as before, see `scripts/autoloads/CLAUDE.md`'s SaveManager
+"Continue flow" section.
 
-**Continue button** (Save/Load Phase A): a gold "Continue Saved Run" button appears centered
-below the class cards only when `SaveManager.has_save()`. Pressing it calls
-`SaveManager.load_run()`, emits `class_chosen` with the *restored* class (player sprite + HUD
-portrait re-derive; no starting gear is re-given — `from_dict()` already rebuilt everything),
-then calls `DungeonFloor.reload_from_save()` and `queue_free()` — skipping class select AND the
-Mastery Picker (masteries are restored from the save). If `load_run()` fails (save vanished or
-corrupt), the button hides and the class cards stay usable. The New Game path is untouched.
-See `scripts/autoloads/CLAUDE.md`'s SaveManager "Continue flow" section.
+## Class select (`class_select.gd`)
+The **Custom** path only now (see `character_select.gd` above) — no longer spawned directly by
+`hud.gd`. Emits `GameState.class_chosen` when player selects a class, then spawns
+`point_buy_select.gd` (below) and `queue_free()`s itself — point buy owns spawning race select,
+which in turn owns spawning the Mastery Picker, not this script. No longer has its own
+Continue-Saved-Run button (that moved to `character_select.gd`, the actual entry point).
 
 ## Point buy select (`point_buy_select.gd`)
 CanvasLayer, layer = 22. One-time, mandatory ability-score allocation spawned by
@@ -200,9 +207,11 @@ Human/Elf/Dragonborn additionally show an inline sub-choice row (ability-score p
 sub-race / ancestry) that must be picked before Confirm enables. Confirm calls
 `GameState.choose_race(race, variant, prof_ability)`, then spawns `mastery_picker.gd` itself
 (same `mastery_cap() > 0` gate class_select used to apply) before `queue_free()` — so the full
-onboarding order is **class select → point buy → race select → mastery picker**. The
-Continue-saved-run flow (`class_select.gd._on_continue_pressed()`) skips all four; ability scores
-and race are both restored via `Stats.to_dict()`/`from_dict()` same as any other stat.
+onboarding order for the Custom path is **class select → point buy → race select → mastery
+picker**. The Continue-saved-run flow (`character_select.gd._on_continue_pressed()`) skips all
+four; ability scores and race are both restored via `Stats.to_dict()`/`from_dict()`
+(`character_race`/`race_variant`/`race_prof_ability` plus the plain score ints) same as any other
+stat.
 
 ## Mastery picker (`mastery_picker.gd`)
 CanvasLayer, layer = 25. Modeled directly on the talent picker (dim overlay + centered bordered
