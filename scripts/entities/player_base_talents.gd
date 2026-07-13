@@ -45,6 +45,12 @@ func on_sidestep(enemy: Enemy) -> void:
 		return
 	sidestep_detected_this_move = true
 	GameState.battlefield_adv_pending = true
+	# Expires at the end of the NEXT real turn if unused (2, not 1: a side-step normally ends
+	# the current turn, so the first real turn-start after granting is "next turn" — that one
+	# doesn't expire it, the one after does. R3's free/reverted side-step doesn't end the turn
+	# at all, so the buff is also usable immediately, same turn, before this countdown even
+	# starts ticking — see tick_battlefield_adv_expiry()).
+	GameState.battlefield_adv_expire_turns = 2
 	GameState.game_log("[color=cyan]Battlefield Expert: side-step! You gain Tactician — Advantage on your next attack this turn.[/color]")
 	if rank >= 2:
 		enemy.disadv_next_attack = true
@@ -56,7 +62,19 @@ func consume_battlefield_adv() -> int:
 	if not GameState.battlefield_adv_pending:
 		return 0
 	GameState.battlefield_adv_pending = false
+	GameState.battlefield_adv_expire_turns = 0
 	return 1
+
+# Called from player.gd._on_turn_started() on real turns only (never on Battlefield Expert R3's
+# own free/reverted side-step turn) — counts down the Tactician buff and clears it if the player
+# never attacked with it.
+func tick_battlefield_adv_expiry() -> void:
+	if not GameState.battlefield_adv_pending:
+		return
+	GameState.battlefield_adv_expire_turns -= 1
+	if GameState.battlefield_adv_expire_turns <= 0:
+		GameState.battlefield_adv_pending = false
+		GameState.battlefield_adv_expire_turns = 0
 
 # Called from _on_turn_started() on real turns only, before GameState.player_was_hit_this_turn
 # is cleared for the Rage-duration check.

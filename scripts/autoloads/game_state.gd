@@ -234,6 +234,11 @@ var terrain_ac_bonus: int = 0
 # Barbarian Tier 1 talents section.
 var psycho_adv_pending: bool = false
 var battlefield_adv_pending: bool = false
+# Battlefield Expert R1's Tactician buff expires if unused: counts down by 1 on every REAL
+# player turn-start (not on Battlefield Expert R3's free/reverted side-step turns) and clears
+# battlefield_adv_pending when it hits 0 — see PlayerBaseTalents.on_sidestep()/
+# tick_battlefield_adv_expiry() and scripts/entities/CLAUDE.md's Barbarian Tier 1 talents.
+var battlefield_adv_expire_turns: int = 0
 
 # ── Zealot Tier 2 state ────────────────────────────────────────────────────
 # Divine Fury: toggle-only damage type selector, persists between turns (does NOT reset per turn).
