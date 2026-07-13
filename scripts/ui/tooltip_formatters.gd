@@ -172,6 +172,28 @@ static func fmt_heal_tooltip(p: Dictionary) -> String:
 		lines.append("= [color=lime]+%d HP[/color]" % total)
 	return "\n".join(lines)
 
+# Level-up max HP gain breakdown — see Stats.hp_per_level_breakdown()/GameState.gain_exp()'s
+# "hplvl:" meta. avg is the fixed per-class hit-die average (not rolled); n is how many level
+# thresholds this single gain_exp() call crossed (usually 1 — the per-component lines below are
+# per-level and get scaled by n so a multi-level XP grant still adds up).
+static func fmt_hplvl_tooltip(p: Dictionary) -> String:
+	var die: int   = int(p.get("die", "0"))
+	var avg: int   = int(p.get("avg", "0"))
+	var con: int   = int(p.get("con", "0"))
+	var dwarf: int = int(p.get("dwarf", "0"))
+	var n: int     = maxi(1, int(p.get("n", "1")))
+	var total: int = int(p.get("total", "0"))
+	var lines: PackedStringArray = []
+	var lvl_tag: String = " × %d levels" % n if n > 1 else ""
+	lines.append("d%d avg = [color=yellow]%d[/color]%s" % [die, avg * n, lvl_tag])
+	if con != 0:
+		lines.append("[color=lightblue]%+d[/color]  (CON mod%s)" % [con * n, lvl_tag])
+	if dwarf != 0:
+		lines.append("[color=lightblue]+%d[/color]  (Dwarven Toughness%s)" % [dwarf * n, lvl_tag])
+	lines.append("─────────────────")
+	lines.append("= [color=yellow]+%d[/color] max HP" % total)
+	return "\n".join(lines)
+
 static func fmt_save_tooltip(p: Dictionary) -> String:
 	var die: int   = int(p.get("die", "0"))
 	var d1: int    = int(p.get("d1", str(die)))
