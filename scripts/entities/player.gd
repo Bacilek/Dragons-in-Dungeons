@@ -895,8 +895,13 @@ func _has_new_enemy_in_fov(snapshot: Array[Enemy]) -> bool:
 # round gets one free inline attack — Retaliation-style, no TurnManager involvement, no phase
 # change. See docs/architecture/opportunity-attacks-design.md.
 func _resolve_enemy_opportunity_attacks(prev: Vector2i, next: Vector2i) -> void:
-	if GameState.noclip or _dungeon_floor == null:
+	if _dungeon_floor == null:
 		return
+	# Noclip suppresses actual Opportunity Attacks (the player can move through/past enemies
+	# freely), but Battlefield Expert's Side Step detection below is independent of OA resolution
+	# and must still run in God Mode (God Mode sets noclip alongside invincible) — otherwise the
+	# whole Tactician/Side Step trigger silently never fires while debugging.
+	var noclip: bool = GameState.noclip
 	var evading: bool = GameState.player_evades_opportunity_attacks
 	var evaded_any: bool = false
 	for e: Enemy in _dungeon_floor.get_all_enemies():
@@ -917,6 +922,8 @@ func _resolve_enemy_opportunity_attacks(prev: Vector2i, next: Vector2i) -> void:
 		var is_diagonal_step: bool = absi(next.x - prev.x) == 1 and absi(next.y - prev.y) == 1
 		if d_prev <= reach and d_next <= reach and prev != next and is_diagonal_step:
 			_base_talents.on_sidestep(e)
+		if noclip:
+			continue
 		if d_prev > reach or d_next <= reach:
 			continue
 		if evading:
