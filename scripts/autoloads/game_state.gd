@@ -369,6 +369,12 @@ func choose_race(race: Stats.CharacterRace, variant: int = 0, prof_ability: int 
 	player_stats.apply_race_defaults()
 	give_race_starting_items()
 	recalculate_stats()
+	# apply_race_defaults() can change max_hp (Dwarf's +1) — re-emit so the HUD's HP bar picks
+	# it up. Every onboarding path emits player_hp_changed with the PRE-race max_hp before this
+	# function runs (character_select.gd's premade path, or point_buy_select.gd's confirm), and
+	# nothing else re-syncs it afterward, so without this the bar silently under-reports Dwarf's
+	# bonus HP even though player_stats.max_hp itself is correct.
+	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 	race_chosen.emit(race)
 
 # Idempotency-guard pattern mirrors give_class_starting_items() — safe to call again on save
