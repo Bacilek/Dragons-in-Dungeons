@@ -149,8 +149,9 @@ deliberately excluded so the economy can be balanced against one sink first (§6
 ### 3.1 Pool structure
 
 ```gdscript
-# floor_planner.gd
-const ROOM_POOL: Array[Dictionary] = [
+# floor_planner.gd — static var, NOT const: GDScript doesn't accept a class_name
+# reference (TreasureRoom etc.) as a constant expression inside a const array literal.
+static var ROOM_POOL: Array[Dictionary] = [
     # chance = independent per-floor spawn probability (see §3.2 for why not weights)
     {"script": TreasureRoom, "chance": 0.30, "min_depth": 2, "max_per_floor": 1},
     {"script": ShopRoom,     "chance": 0.40, "min_depth": 3, "max_per_floor": 1},
