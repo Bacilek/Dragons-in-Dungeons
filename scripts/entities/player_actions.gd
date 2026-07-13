@@ -102,16 +102,22 @@ func do_inspect(pos: Vector2i) -> void:
 		return
 	var enemy: Enemy = player._dungeon_floor.get_enemy_at(pos)
 	if enemy != null and enemy.visible:
+		var status_suffix: String = ""
+		if enemy.frozen_feet_turns > 0:
+			status_suffix += " [color=cyan]Frozen Feet[/color]"
+		if enemy.shocked_no_oa:
+			status_suffix += " [color=cyan]Shocked[/color]"
 		if GameState.god_mode:
-			GameState.game_log("[color=orange]%s[/color] — HP: %d/%d  AC: %d  Dmg: %d–%d  EXP: %d%s" % [
+			GameState.game_log("[color=orange]%s[/color] — HP: %d/%d  AC: %d  Dmg: %d–%d  EXP: %d%s%s" % [
 				enemy.display_name,
 				enemy.stats.current_hp, enemy.stats.max_hp,
 				enemy.stats.armor_class,
 				enemy.stats.min_damage, enemy.stats.max_damage,
 				enemy.exp_reward,
-				"  [color=red]BOSS[/color]" if enemy.is_boss else ""])
+				"  [color=red]BOSS[/color]" if enemy.is_boss else "",
+				status_suffix])
 		else:
-			GameState.game_log("[color=orange]%s[/color] — HP: %d/%d, AC: %d" % [enemy.display_name, enemy.stats.current_hp, enemy.stats.max_hp, enemy.stats.armor_class])
+			GameState.game_log("[color=orange]%s[/color] — HP: %d/%d, AC: %d%s" % [enemy.display_name, enemy.stats.current_hp, enemy.stats.max_hp, enemy.stats.armor_class, status_suffix])
 		return
 	var trap: Dictionary = player._dungeon_floor.get_trap_at(pos)
 	if not trap.is_empty() and trap.get("revealed", false):

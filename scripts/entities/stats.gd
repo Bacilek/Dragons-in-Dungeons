@@ -119,6 +119,11 @@ var slowed_turns: int = 0
 var temp_hp: int = 0  # Natural Sleeper R2 — consumed before regular HP damage
 var zealous_presence_turns: int = 0  # Zealot Zealous Presence — Advantage on attacks/checks while > 0
 
+# Wizard cantrip spellcasting (scoped slice of docs/architecture/spellcasting-design.md — cantrips
+# only, no spell slots/leveled spells). Built in apply_class_defaults()'s WIZARD branch; null for
+# every other class. See scripts/items/spellcaster_state.gd.
+var caster: SpellcasterState = null
+
 
 # Monk: Martial Arts die scales with level. Global default 1d4 is used by all other classes.
 var martial_arts_die_sides: int:
@@ -266,6 +271,7 @@ func to_dict() -> Dictionary:
 		"slowed_turns": slowed_turns,
 		"zealous_presence_turns": zealous_presence_turns,
 		"known_weapon_masteries": known_weapon_masteries.duplicate(),
+		"known_cantrip": caster.known_spells[0] if caster != null and not caster.known_spells.is_empty() else "",
 	}
 
 # Order matters (doc §4.1): apply_class_defaults() first (resets scores/HP/flags),
@@ -356,6 +362,9 @@ func apply_class_defaults() -> void:
 			max_hp = 6 + modifier(constitution)    # Wizard HD d6
 			check_prof_int = true
 			check_prof_wis = true
+			proficient_simple_weapons = true        # simple weapons only — no martial, no armor training
+			caster = SpellcasterState.new()
+			caster.spellcasting_ability = "INT"
 		CharacterClass.MONK:
 			dexterity = 16; wisdom = 14; constitution = 12
 			strength = 10; intelligence = 10; charisma = 8

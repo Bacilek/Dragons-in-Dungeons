@@ -161,6 +161,7 @@ var mastery_picker_open: bool = false
 var subclass_picker_open: bool = false  # blocks ALL player input while the subclass-select overlay is visible
 var race_picker_open: bool = false  # blocks ALL player input while the race-select overlay is visible (scripts/ui/race_select.gd)
 var point_buy_open: bool = false  # blocks ALL player input while the point-buy overlay is visible (scripts/ui/point_buy_select.gd, Custom path only)
+var cantrip_picker_open: bool = false  # blocks ALL player input while the cantrip-select overlay is visible (scripts/ui/cantrip_select.gd, Wizard only)
 
 # Talent system — points earned per level, invested per talent.
 # Points are tier-locked pools: talent_points[tier] holds that tier's unspent points
@@ -299,6 +300,7 @@ func start_new_run() -> void:
 	subclass_picker_open = false
 	race_picker_open = false
 	point_buy_open = false
+	cantrip_picker_open = false
 	talent_points = {1: 0, 2: 0, 3: 0, 4: 0}
 	tier3_selected_class = -1
 	talent_investments = {}
@@ -390,6 +392,27 @@ func choose_race(race: Stats.CharacterRace, variant: int = 0, prof_ability: int 
 # Dragonborn breath weapon are deferred — see docs/architecture/race-selection-design.md §8).
 func give_race_starting_items() -> void:
 	pass
+
+# Wizard's one-time cantrip pick (cantrip_select.gd, spawned after race select in place of the
+# Mastery Picker — Wizard's mastery_cap() is already 0). `silent` skips the log line for save/load
+# replay (game_state.gd from_dict()), mirroring how talent replay never re-logs old investments.
+func choose_cantrip(spell_id: String, silent: bool = false) -> void:
+	if player_stats.caster == null:
+		return
+	var spell: Spell = SpellDb.get_spell(spell_id)
+	if spell == null:
+		return
+	player_stats.caster.known_spells = [spell_id]
+	var ab := Ability.new()
+	ab.ability_id = "spell:" + spell_id
+	ab.ability_name = spell.spell_name
+	ab.description = spell.description
+	ab.icon_path = spell.icon_path
+	ab.uses_remaining = 0
+	ab.uses_max = 0   # cantrips are free/infinite
+	add_ability(ab)
+	if not silent:
+		game_log("[color=lime]You learn %s![/color]" % spell.spell_name)
 
 func _give_barbarian_starting_items() -> void:
 	var axe := Item.new()
@@ -1996,6 +2019,10 @@ func from_dict(d: Dictionary) -> void:
 	player_stats.apply_class_defaults()
 	class_selected = true
 	give_class_starting_items()
+	if player_stats.character_class == Stats.CharacterClass.WIZARD:
+		var saved_cantrip: String = String(stats_d.get("known_cantrip", ""))
+		if not saved_cantrip.is_empty():
+			choose_cantrip(saved_cantrip, true)
 	# 2. Talent replay. Investments are set in full BEFORE replaying so the _build_*
 	# description helpers (which read get_talent_rank()) see final ranks. Tier 2 setup
 	# runs silently (no unlock_tier2() log line) via _setup_tier2_for_active_subclass().

@@ -243,6 +243,9 @@ func _on_confirm() -> void:
 	if GameState.player_stats.mastery_cap() > 0:
 		var picker = load("res://scripts/ui/mastery_picker.gd").new()
 		get_tree().root.call_deferred("add_child", picker)
+	elif GameState.player_stats.character_class == Stats.CharacterClass.WIZARD:
+		var cantrip_picker = load("res://scripts/ui/cantrip_select.gd").new()
+		get_tree().root.call_deferred("add_child", cantrip_picker)
 	queue_free()
 
 func _race_enum(race_id: String) -> Stats.CharacterRace:

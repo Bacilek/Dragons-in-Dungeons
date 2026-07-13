@@ -257,6 +257,67 @@ Tier 1 (levels 1–6): earns 5 talent points, spent across 3 talents — Psycho,
 - **Overheal Shield** (`talent_id: "overheal_shield"`, max 3): When a Zealot Strike heal resolves, grants Temporary HP (replace, not stack) based on rank: R1 = overheal amount only (`max(0, (pre-heal HP + heal roll) - max HP)`); R2 = the entire heal roll; R3 = heal roll + overheal. Scoped to Zealot Strike's own heal only (the source spec left "applies to all healing?" as an open question — this pass keeps it Zealot-Strike-only, the narrower/safer reading).
 - **Never Back Down** (`talent_id: "never_back_down"`, max 3): +1/+2/+4 max Hit Dice by rank (**non-cumulative** — higher rank replaces, doesn't stack with, the previous rank's bonus; matches every other Barbarian talent's rank-replaces convention). `GameState.max_hit_dice() -> int` returns `character_level + bonus_by_rank`, used by `long_rest()`'s `hit_dice` refill and `short_rest_panel.gd`'s displayed cap instead of the raw level.
 
+## Wizard spellcasting (cantrips)
+
+A deliberately-scoped slice of `docs/architecture/spellcasting-design.md`: at-will, free-to-cast
+attack-roll cantrips only — no spell slots, no leveled spells, no concentration, no AoE, no
+reactions. Data classes (`Spell`, `SpellDb`, `SpellcasterState`) live in `scripts/items/` — see
+`scripts/items/CLAUDE.md`.
+
+- **Wizard class defaults** (`Stats.apply_class_defaults()`): `proficient_simple_weapons = true`
+  (martial stays false — simple weapons only, no armor training enforced yet, same pre-existing
+  gap as Monk's TODO). Builds `Stats.caster = SpellcasterState.new()` with
+  `spellcasting_ability = "INT"`.
+- **Onboarding**: right after race select confirms (`scripts/ui/race_select.gd`, in the same slot
+  the Mastery Picker would occupy — Wizard's `mastery_cap()` is already 0, so the two are mutually
+  exclusive), a Wizard spawns `scripts/ui/cantrip_select.gd` — a one-time, mandatory,
+  non-dismissible pick of one of the three starting cantrips (Fire Bolt / Ray of Frost / Shocking
+  Grasp, `SpellDb.CANTRIP_IDS`). Confirm calls `GameState.choose_cantrip(spell_id)`, which sets
+  `Stats.caster.known_spells` and wraps the spell in an `Ability` (`ability_id = "spell:" +
+  spell_id`, `uses_max = 0` — infinite/free) placed on the ability bar via the existing
+  `add_ability()`. Persisted as `Stats.to_dict()`'s `"known_cantrip"` field; save/load replays it
+  silently via `GameState.from_dict()` calling `choose_cantrip(id, true)` right after
+  `give_class_starting_items()` (mirrors talent replay's "derive abilities, don't serialize them"
+  convention).
+- **Casting UX**: `player.gd._use_ability_slot()` has one guard — `ability_id.begins_with("spell:")`
+  routes to `PlayerSpellcasting.begin_cast()` (`scripts/entities/player_spellcasting.gd`, a
+  composition child-node registered in `player.gd._ready()` alongside `_ranged`/`_zealot`/etc.).
+  Arms `spell_targeting_active` exactly like Grip of the Forest's `_hook_mode_active` hook-mode
+  (single-target, no picker, no AoE preview needed): next LMB click on an enemy within
+  `min(spell.range_tiles, DungeonFloor.FOV_RADIUS)` (Euclidean, `has_ranged_los()`-gated, no
+  long-range-disadvantage tier unlike weapons) resolves the cast; Esc cancels (branch beside
+  `_hook_mode_active`'s in `_unhandled_input()`).
+- **Cast resolution** (`scripts/entities/spell_effects.gd`, `SpellEffects.cast_spell()`, static —
+  self-contained like `PlayerRanged.ranged_attack()`, owns its own `TurnManager.begin_player_action()`
+  … `_handle_post_attack_turn()` turn envelope): attack roll = `d20 + SpellcasterState.
+  spell_attack_bonus()` (`proficiency_bonus + INT mod`, computed live — never cached, never
+  derived from `character_class`, per the design doc's multiclass-safety warning) vs target AC,
+  same ADV/DISADV house rule and nat-20/nat-1 crit/fumble handling as `PlayerRanged`. Damage dice
+  scale by cantrip tier (`SpellEffects._cantrip_tier()`: ×1/2/3/4 at character levels 1/5/11/17,
+  the same D&D cantrip-scaling table as weapon dice would use). New `sphit:` tooltip meta
+  (`TooltipFormatters.fmt_sphit_tooltip()`, dispatched in `hud.gd._format_tooltip()`) — same shape
+  as `fmt_hit_tooltip()` but always labels the ability mod "INT".
+- **The three cantrips** (`SpellDb`, `scripts/items/spell_db.gd`), all Evocation, 1 action, tier-
+  scaling dice:
+  - **Fire Bolt** — 12 tiles, 1d10 Fire. No `effect_id` (pure generic damage path) — if the target
+    stands on a `GRASS` tile, the hit also calls `DungeonFloor.destroy_grass()` as the scoped-down
+    stand-in for "flammable objects ignite" (no burning-terrain system exists to build more than
+    that yet).
+  - **Ray of Frost** — 6 tiles, 1d8 Cold. `effect_id = "ray_of_frost"`: on a hit, the target rolls
+    a STR save (`resist_check()`, `dc = SpellcasterState.spell_save_dc()`); on a fail,
+    `Enemy.frozen_feet_turns` is set — checked in `Enemy._decide_action()` right after the existing
+    `rooted_turns` block, same shape (skip movement, still attack if already adjacent). Kept as its
+    own field rather than reusing `rooted_turns` so the inspect line can name it "Frozen Feet"
+    distinctly from Grip of the Forest's root.
+  - **Shocking Grasp** — 1 tile (touch), 1d8 Lightning. `effect_id = "shocking_grasp"`: on a hit,
+    sets `Enemy.shocked_no_oa = true` — checked at the very top of
+    `Enemy._check_opportunity_attacks_on_move()` (before either the player or companion OA check):
+    if true, consumes it and returns, blocking this enemy's next Opportunity-Attack exposure
+    whenever it next happens (per spec, "doesn't matter when").
+- **Inspect** (`PlayerActions.do_inspect()`): the enemy info line gains a status suffix —
+  `Frozen Feet` / `Shocked` — whenever either field is active (inspect previously showed no status
+  effects at all; this is new, not a change to prior text).
+
 ## Monk class
 Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: STR + DEX. Weapon proficiency: intended to be simple weapons + martial weapons with the light property, but `Stats.proficient_simple_weapons`/`proficient_martial_weapons` are not yet set in `apply_class_defaults()` for Monk (TODO — currently only wired up for Barbarian). No armor training (any armor → DISADV on STR/DEX checks/saves + DISADV on attacks; TODO: enforce). Starting abilities (slot 0–1 of ability bar):
 - **Unarmored Defense** (passive, ability_id `"unarmored_defense_monk"`): AC = 10 + DEX + WIS while wearing no armor. Handled in `Stats.recalc_ac(has_armor_equipped)`.
