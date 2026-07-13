@@ -132,11 +132,11 @@ func try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 #
 # Landing (mirrors the ranged-ammo landing model, scripts/items/CLAUDE.md's "Ammo items", but
 # with a thrown weapon's own rules): no target tile → lands on the ground at the thrown tile, no
-# use lost. A miss against an enemy → lands at the enemy's tile, -1 use (-2 on a nat-1 fumble). A
-# non-lethal hit → embeds in the enemy (Enemy.embedded_items) instead of landing anywhere, -1 use
-# (0 on a nat-20 crit) — dropped later at 100% chance whenever that enemy eventually dies, from
-# ANY cause, via Enemy.die()'s override. If durability hits 0 on this throw the weapon shatters
-# instead of landing/embedding (see _consume_throw_use()).
+# use lost. A miss OR a non-lethal hit against an enemy → embeds in the enemy (Enemy.embedded_items)
+# instead of landing anywhere (-1 use, -2 on a nat-1 fumble, 0 on a nat-20 crit) — dropped later at
+# 100% chance whenever that enemy eventually dies, from ANY cause, via Enemy.die()'s override. If
+# durability hits 0 on this throw the weapon shatters instead of landing/embedding (see
+# _consume_throw_use()).
 func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	# Throwing from a stack (quantity > 1, units may carry different durability — see
 	# GameState.add_item()) only ever throws a single unit: split the most-damaged one off
@@ -220,7 +220,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 			GameState.screen_shake.emit(2.5)
 		if not _consume_throw_use(weapon, 2 if is_nat_one else 1):
 			GameState.remove_item(weapon)
-			player._dungeon_floor.place_item_on_floor(enemy.grid_pos, weapon)
+			enemy.embedded_items.append(weapon)
 		player._dungeon_floor.update_fog(player.grid_pos)
 		player._handle_post_attack_turn()
 		return
@@ -248,11 +248,12 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 		die_roll, dmin, dmax, weapon.bonus_damage, mod_key, atk_mod, 1 if is_crit else 0, actual]
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
+	var is_lethal: bool = enemy.stats.is_dead()
 
 	if is_crit:
-		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]throw[/url] [b]%s[/b] at [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, weapon.item_name, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]throw[/url] [b]%s[/b] at [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, weapon.item_name, enemy.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
 	else:
-		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]throw[/url] [b]%s[/b] at [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, weapon.item_name, enemy.display_name, dmg_meta, actual, type_tag], r["lucky"]))
+		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]throw[/url] [b]%s[/b] at [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, weapon.item_name, enemy.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
 
 	# Sap: on a hit, the target has Disadvantage on its very next attack, next turn. Reuses the
 	# same Enemy.disadv_next_attack flag/consumption point as Grip of the Forest R3.
@@ -266,7 +267,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 		GameState.remove_item(weapon)
 		enemy.embedded_items.append(weapon)
 
-	if enemy.stats.is_dead():
+	if is_lethal:
 		player._finish_kill(enemy)
 
 	player._dungeon_floor.update_fog(player.grid_pos)

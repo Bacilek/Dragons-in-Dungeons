@@ -160,13 +160,14 @@ func ranged_attack(enemy: Enemy) -> void:
 		r_die_roll, r_dmin, r_dmax, r_wpn_enh, dex_mod, bonus_sources, 1 if is_crit else 0, actual]
 	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
+	var is_lethal: bool = enemy.stats.is_dead()
 
 	if is_crit:
-		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag], r["lucky"]))
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
 	else:
-		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg." % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag], r["lucky"]))
+		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
 
-	if enemy.stats.is_dead():
+	if is_lethal:
 		# Enemy died to this shot — arrow drop-from-corpse (50% chance) is handled inside
 		# _finish_kill so it can use the corpse's final tile after remove_enemy()/die().
 		# If the enemy survives (branch not taken), the arrow stays embedded — no pickup.

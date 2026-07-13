@@ -560,12 +560,16 @@ func _attack_player(_player: Player) -> void:
 	else:
 		AudioManager.play("player_hurt")
 	# Route through take_damage_raw for rage DR; enemies deal Bludgeoning by default.
-	# take_damage_raw handles player_hp_changed and check_player_death internally.
-	# Invincible: skip the actual HP change but still roll/log normally (wrapped in [] for debugging).
-	var actual: int = 0 if invincible else GameState.take_damage_raw(dmg, false, "Bludgeoning")
+	# take_damage_raw handles player_hp_changed and check_player_death internally, and (while
+	# invincible) still registers "player was hit this turn" without changing HP — see its own
+	# invincible branch — so god-mode play doesn't break turn-based triggers keyed off that flag.
+	var actual: int = GameState.take_damage_raw(dmg, false, "Bludgeoning")
 	if _dungeon_floor != null and not invincible:
 		_dungeon_floor.show_damage(_player.position, actual, true)
-	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,final=%d" % [dmg_roll, stats.min_damage, stats.max_damage, 1 if is_crit else 0, actual]
+	# "Bludgeoning" (this attack's damage_type, hardcoded above) is always physical, so Rage's
+	# 50% DR (take_damage_raw()) was live for this hit whenever the player was raging.
+	var rage_applied: int = 1 if GameState.is_raging else 0
+	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,rage=%d,final=%d" % [dmg_roll, stats.min_damage, stats.max_damage, 1 if is_crit else 0, rage_applied, actual]
 	var god_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [r["bonus"], r["roll"], r["target_ac"]] if GameState.god_mode else ""
 	if is_crit:
 		GameState.game_log("%s[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [bracket_l, display_name, hit_meta, dmg_meta, actual, god_suffix, bracket_r])

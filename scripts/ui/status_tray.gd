@@ -10,8 +10,8 @@ extends Control
 signal icon_hovered(id: String)
 signal icon_unhovered()
 
-const ICON_SIZE: float = 16.0
-const GUTTER: float = 2.0
+const ICON_SIZE: float = 28.0
+const GUTTER: float = 3.0
 
 var _icon_nodes: Array[Control] = []  # pooled TextureRect/ColorRect, reused across refreshes
 

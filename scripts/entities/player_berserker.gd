@@ -97,13 +97,14 @@ func execute_frenzy(enemy: Enemy) -> void:
 			player._dungeon_floor.show_damage(enemy.position, actual, true)
 		var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,bonus=%s,crit=1,final=%d" % [
 			weapon_dice, w_dmin, w_dmax, w_enh, dmg_mod, bonus_sources_enemy, actual]
-		GameState.game_log("[color=gold][url=%s]FRENZY CRIT![/url] %s takes [url=%s][color=yellow]%d[/color][/url]%s damage — you feel nothing.[/color]" % [attack_meta, enemy.display_name, dmg_meta, actual, type_tag])
+		var is_lethal: bool = enemy.stats.is_dead()
+		GameState.game_log("[color=gold][url=%s]FRENZY CRIT![/url] %s takes [url=%s][color=yellow]%d[/color][/url]%s damage — you feel nothing.%s[/color]" % [attack_meta, enemy.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)])
 		_refresh_frenzy_on("crit")
 		if melee != null and melee.weapon_mastery == "Vex" and stats.knows_mastery("Vex"):
 			player._vex_adv_target = enemy
-		if not enemy.stats.is_dead():
+		if not is_lethal:
 			player._try_topple(enemy, is_str_weapon, prof, str_mod)
-		if enemy.stats.is_dead():
+		if is_lethal:
 			player._finish_kill(enemy)
 			_refresh_frenzy_on("kill")
 		player._try_cleave(enemy, is_str_weapon)
@@ -120,14 +121,15 @@ func execute_frenzy(enemy: Enemy) -> void:
 			weapon_dice, w_dmin, w_dmax, w_enh, dmg_mod, bonus_sources_enemy, actual2]
 		var self_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,bonus=%s,crit=0,final=%d" % [
 			weapon_dice, w_dmin, w_dmax, w_enh, dmg_mod, bonus_sources_self, self_dmg2]
-		GameState.game_log("[color=red][url=%s]Frenzy![/url] %s takes [url=%s][color=orange]%d[/color][/url]%s damage — you take [url=%s][color=orange]%d[/color][/url]%s back.[/color]" % [attack_meta, enemy.display_name, dmg_meta, actual2, type_tag, self_meta, self_dmg2, type_tag])
+		var is_lethal: bool = enemy.stats.is_dead()
+		GameState.game_log("[color=red][url=%s]Frenzy![/url] %s takes [url=%s][color=orange]%d[/color][/url]%s damage — you take [url=%s][color=orange]%d[/color][/url]%s back.%s[/color]" % [attack_meta, enemy.display_name, dmg_meta, actual2, type_tag, self_meta, self_dmg2, type_tag, CombatMath.death_suffix(is_lethal)])
 		_note_self_damage()
 		GameState.check_player_death()
 		if melee != null and melee.weapon_mastery == "Vex" and stats.knows_mastery("Vex"):
 			player._vex_adv_target = enemy
-		if not enemy.stats.is_dead():
+		if not is_lethal:
 			player._try_topple(enemy, is_str_weapon, prof, str_mod)
-		if enemy.stats.is_dead():
+		if is_lethal:
 			player._finish_kill(enemy)
 			_refresh_frenzy_on("kill")
 		player._try_cleave(enemy, is_str_weapon)
@@ -168,7 +170,7 @@ func tick_frenzied_killer() -> void:
 
 # Masochist Monster R1/R2: called whenever the player takes damage on their own turn (Frenzy
 # self-damage counts — intentional synergy per spec). R1 grants +1 AC until next turn start;
-# R2 also grants Rage-bonus × 1d4 temp HP.
+# R2 also grants (Rage bonus damage) separate d4 rolls, summed, as temp HP.
 func _note_self_damage() -> void:
 	var rank: int = GameState.get_talent_rank("masochist_monster")
 	if rank < 1:
@@ -177,12 +179,19 @@ func _note_self_damage() -> void:
 		GameState.masochist_ac_bonus = 1
 		GameState.recalculate_stats()
 	if rank >= 2:
+		# Rolls one d4 PER point of Rage bonus damage (2/3/4 separate dice by level), summed —
+		# not a single d4 multiplied by the rage bonus.
 		var rage_bonus: int = GameState.player_stats.rage_bonus_damage
-		var die: int = Rng.roll(4)
-		var thp: int = rage_bonus * die
+		var roll_strs: PackedStringArray = []
+		var thp: int = 0
+		for _i: int in rage_bonus:
+			var die: int = Rng.roll(4)
+			roll_strs.append(str(die))
+			thp += die
 		GameState.player_stats.temp_hp = thp
 		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
-		var meta: String = "msn:rage=%d,die=%d,final=%d" % [rage_bonus, die, thp]
+		var rolls_str: String = "|".join(roll_strs)
+		var meta: String = "msn:rage=%d,rolls=%s,final=%d" % [rage_bonus, rolls_str, thp]
 		GameState.game_log("[color=cyan][url=%s]Masochist Monster: %d temp HP.[/url][/color]" % [meta, thp])
 
 # Called externally (enemy hit resolution) so Masochist Monster also triggers on ordinary damage

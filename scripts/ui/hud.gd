@@ -223,8 +223,8 @@ func _ready() -> void:
 	# Status/buff/debuff/passive icon tray — a data-driven row directly below the portrait+level
 	# +hit-dice column (see status_tray.gd / docs/architecture/status-icon-tray-design.md).
 	_status_tray = StatusTray.new()
-	_status_tray.position = Vector2(4.0, 124.0)
-	_status_tray.size = Vector2(388.0, 18.0)
+	_status_tray.position = Vector2(4.0, 122.0)
+	_status_tray.size = Vector2(388.0, 32.0)
 	$StatsPanel.add_child(_status_tray)
 	_status_tray.icon_hovered.connect(_on_status_tray_icon_hovered)
 	_status_tray.icon_unhovered.connect(_on_qbar_slot_hover_end)

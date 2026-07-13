@@ -49,8 +49,10 @@ Connects to `GameState` signals only — never poll `GameState` in `_process()`.
 
 **Status/buff/debuff/passive icon tray** (`status_tray.gd`, `StatusTray extends Control`,
 composition child-node instantiated once in `hud.gd._ready()` as `_status_tray`, added under
-`$StatsPanel` at local position `(4, 124)` — `StatsPanel`'s `offset_bottom` was grown from 114 to
-144 in `scenes/ui/hud.tscn` to make room below the portrait/level/hit-dice column). Replaces the
+`$StatsPanel` at local position `(4, 122)` size `(388, 32)` — `StatsPanel`'s `offset_bottom` was
+grown from 114 → 144 → 158 in `scenes/ui/hud.tscn` to make room below the portrait/level/hit-dice
+column as the tray's own icon size grew). `StatusTray.ICON_SIZE` is `28.0` (bumped up from the
+original `16.0` — the icons were reported hard to see at that size), `GUTTER = 3.0`. Replaces the
 old 5 hardcoded dot nodes (formerly `hud.gd:200-211`, `_make_status_dot()`/`_make_status_icon_rect()`).
 Fully data-driven: `hud.gd._update_status_icons()` builds a fresh `Array[Dictionary]` of
 `{id, icon_path, fallback_color}` every refresh (wired to the same chokepoint as before —
@@ -122,7 +124,7 @@ CanvasLayer, layer = 26. Spawned by `player.gd` right after `GameState.long_rest
 
 ## Debug panel (`debug_panel.gd`)
 F3 toggle. CanvasLayer, layer = 25.
-Features: **God Mode** (checkbox — activates invincible + noclip + see_all + exposes enemy rolls/HP in chat log), Invincible, Noclip, Jump to Floor, Give Item, **Spawn Enemy** (sub-panel listing all `DungeonFloorData.ENEMY_POOL` + `BOSS_POOL`, spawns adjacent to player via `dungeon_floor.debug_spawn_enemy()`), **Level Up** (`GameState.debug_level_up()`), **Give 100 Gold** (`GameState.add_gold(100)`), See All.
+Features: **God Mode** (checkbox — activates invincible + noclip + see_all + exposes enemy rolls/HP in chat log), Invincible, Noclip, Jump to Floor, Give Item, **Spawn Enemy** (sub-panel listing all `DungeonFloorData.ENEMY_POOL` + `BOSS_POOL`, spawns adjacent to player via `dungeon_floor.debug_spawn_enemy()`), **Level Up** (`GameState.debug_level_up()`), **Give 100 Gold** (`GameState.add_gold(100)`), See All, **Mute** (bottom of the main panel, below Give 100 Gold — calls `AudioManager.toggle_mute()`, label swaps 🔊/🔇 in sync with `AudioManager.mute_changed`, same signal the HUD's own top-right `MuteButton` listens to; added as a more-discoverable second entry point since that corner button is easy to miss).
 
 DungeonFloor registers itself in group `"dungeon_floor"` in `_ready()` so the debug panel can locate it via `get_tree().get_first_node_in_group("dungeon_floor")`. Pool data (`ENEMY_POOL`/`BOSS_POOL`/`ITEM_POOL`) is read directly off `DungeonFloorData` (`scripts/world/dungeon_floor_data.gd`, global via `class_name`) — no `load()` of `dungeon_floor.gd` needed.
 
