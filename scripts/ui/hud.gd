@@ -31,6 +31,7 @@ var _status_tray: StatusTray  # status/buff/debuff/passive icon row under the po
 var _inventory_overlay_ref: Node = null
 var _debug_panel_ref: Node = null
 var _hit_dice_label: Label
+var _gold_label: Label        # gold counter (coin icon + amount), wired to GameState.gold_changed
 var _compass: Compass
 var _crit_banner: CritBanner
 
@@ -285,6 +286,29 @@ func _ready() -> void:
 	$StatsPanel.add_child(_ac_label)
 	_update_ac_label()
 
+	# Gold counter — coin icon + amount, next to the hit-dice label. Wired to
+	# GameState.gold_changed (signals only, never polled).
+	var coin_icon := TextureRect.new()
+	coin_icon.ignore_texture_size = true  # small fixed-size icon rule (scripts/ui/CLAUDE.md)
+	coin_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	coin_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	coin_icon.position = Vector2(72.0, 107.0)
+	coin_icon.size = Vector2(12.0, 12.0)
+	coin_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var coin_path: String = "res://sprites/items/Misc/CoinGold.png"
+	if ResourceLoader.exists(coin_path):
+		coin_icon.texture = load(coin_path)
+	$StatsPanel.add_child(coin_icon)
+	_gold_label = Label.new()
+	_gold_label.add_theme_font_size_override("font_size", 12)
+	_gold_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.30))
+	_gold_label.position = Vector2(87.0, 105.0)
+	_gold_label.size = Vector2(105.0, 16.0)
+	_gold_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$StatsPanel.add_child(_gold_label)
+	GameState.gold_changed.connect(_on_gold_changed)
+	_on_gold_changed(GameState.gold)
+
 	# Inventory overlay — add as sibling CanvasLayer so it floats above HUD
 	var overlay_script = load("res://scripts/ui/inventory_overlay.gd")
 	_inventory_overlay_ref = overlay_script.new()
@@ -373,6 +397,11 @@ func _on_class_chosen(cls: Stats.CharacterClass) -> void:
 	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/knight_m_idle_anim_f0.png")
 	portrait.texture_normal = load(path)
 	_update_hit_dice_label()
+
+func _on_gold_changed(new_amount: int) -> void:
+	if _gold_label == null:
+		return
+	_gold_label.text = str(new_amount)
 
 func _update_hit_dice_label() -> void:
 	if _hit_dice_label == null:

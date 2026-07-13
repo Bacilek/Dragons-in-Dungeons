@@ -13,6 +13,9 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 @export var heal_amount: int = 0
 # FOOD items only: value sacrificed toward GameState.LONG_REST_FOOD_COST at a long rest.
 @export var food_value: int = 0
+# Base shop price in gold (0 = unpriced / not for sale). For Type.GOLD items, the pile size —
+# picked up into GameState.gold, never into the inventory (see PlayerActions.check_pickup()).
+@export var gold_value: int = 0
 @export var str_bonus: int = 0
 @export var floor_min: int = 1
 @export var floor_max: int = 10
@@ -104,6 +107,7 @@ func to_dict() -> Dictionary:
 		"bonus_ac": bonus_ac,
 		"heal_amount": heal_amount,
 		"food_value": food_value,
+		"gold_value": gold_value,
 		"str_bonus": str_bonus,
 		"floor_min": floor_min,
 		"floor_max": floor_max,
@@ -144,6 +148,7 @@ static func from_dict(d: Dictionary) -> Item:
 	it.bonus_ac = int(d.get("bonus_ac", 0))
 	it.heal_amount = int(d.get("heal_amount", 0))
 	it.food_value = int(d.get("food_value", 0))
+	it.gold_value = int(d.get("gold_value", 0))
 	it.str_bonus = int(d.get("str_bonus", 0))
 	it.floor_min = int(d.get("floor_min", 1))
 	it.floor_max = int(d.get("floor_max", 10))

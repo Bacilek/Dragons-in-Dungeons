@@ -90,6 +90,12 @@ func resist_check_detailed(dc: int, use_con: bool = false) -> Dictionary:
 # deaths in dungeon_floor.gd) already calls enemy.die() as its last step, so this single override
 # covers all of them with no other call site changes needed.
 func die() -> void:
+	# Gold economy (special-rooms-economy-design.md §2.3): non-boss enemies have a 30% chance
+	# to drop a gold pile at their death tile — resolved by DungeonFloor.maybe_drop_enemy_gold()
+	# on the gameplay Rng stream. Hooked here for the same reason as embedded_items below: every
+	# death call site already ends with die(), so one hook covers them all.
+	if _dungeon_floor != null:
+		_dungeon_floor.maybe_drop_enemy_gold(self)
 	if not embedded_items.is_empty() and _dungeon_floor != null:
 		for it: Item in embedded_items:
 			_dungeon_floor.place_item_on_floor(grid_pos, it)

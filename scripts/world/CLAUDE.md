@@ -103,6 +103,7 @@ _spawn_items()          # 2-3 random items from DungeonFloorData.ITEM_POOL; call
 _spawn_traps()          # places traps by type
 _spawn_locked_doors()   # locks 1 door/floor that doesn't block spawn→stairs; places 2-3 rewards inside
 _spawn_pending_chasm_items()  # drains GameState.pending_chasm_items (ammo that fell into a chasm on the PREVIOUS floor) onto random walkable tiles of this floor; called after _spawn_locked_doors(), before _setup_fog()
+_spawn_gold_piles()     # 1-2 Type.GOLD piles of randi_range(5,10)+floor gold on random walkable tiles; LAST in the spawn order (appended after _spawn_pending_chasm_items() so every pre-existing _pop_rng draw keeps its position)
 ```
 **Seeded population (`_pop_rng`)**: all `_spawn_*()` randomness draws from `_pop_rng`, a `RandomNumberGenerator` re-created in `_load_floor()` with seed `run_seed ^ (current_floor * POPULATION_SEED_MIX)` — same run seed + floor always produces the identical population, which Phase-A save reloads depend on. Shuffles use `RngUtil.shuffle(arr, _pop_rng)`. **The spawn call order and the number of draws inside each function are load-bearing for reproducibility.** `_pop_rng` is load-time only — runtime rolls (trap triggers, boss loot at kill time, `resolve_push()` damage) use the `Rng` autoload's gameplay stream instead; never mix the two.
 Item helper:
@@ -116,6 +117,13 @@ match d["src"]:
     "items":   DungeonFloorData.ITEMS_PATH
     _:         DungeonFloorData.OBJECTS_PATH
 ```
+
+## Gold (special-rooms-economy-design.md §2, session 7a)
+Gold piles are ordinary floor items of `Item.Type.GOLD` whose `gold_value` IS the pile size, built by `_make_gold_item(amount)` (name "Gold", icon `Misc/CoinGold.png`). Three sources:
+- **Floor scatter** — `_spawn_gold_piles()` (see spawn list above, `_pop_rng`).
+- **Enemy drops** — `maybe_drop_enemy_gold(enemy)`: 30% chance (`Rng.chance`, gameplay stream — kill-time randomness, same split as `_roll_boss_loot_item()`) of `Rng.range_i(1,4) + floor/2` gold at the death tile. Called from `Enemy.die()` (the single chokepoint every death site ends with, same reasoning as `embedded_items`); no-ops for bosses.
+- **Boss kill** — `drop_boss_loot()` additionally places a guaranteed `20 + 5 × floor` pile alongside the potion.
+Pickup: `PlayerActions.check_pickup()` routes GOLD items into `GameState.add_gold()` (one coalesced "Picked up N gold." log line per tile stack) — gold never occupies an inventory slot. `_build_floor_item()`/`_roll_boss_loot_item()` also read a `"gold"` pool key into `Item.gold_value` (base shop price for ordinary items — see `scripts/items/CLAUDE.md`).
 
 ---
 

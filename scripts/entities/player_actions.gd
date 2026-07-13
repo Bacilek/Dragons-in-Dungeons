@@ -30,11 +30,20 @@ func check_pickup() -> void:
 	player._dungeon_floor.remove_floor_item(player.grid_pos)
 	# Multiple items can be stacked on one tile (e.g. every arrow that landed on the same
 	# spot) — pick up the whole stack in one step. Silent: no chat log line per pickup.
+	# Exception: GOLD never enters the inventory — it coalesces into the wallet
+	# (GameState.gold) with one combined log line for the whole stack.
+	var gold_total: int = 0
 	for item: Item in items:
+		if item.item_type == Item.Type.GOLD:
+			gold_total += item.gold_value
+			continue
 		var is_first_weapon: bool = item.item_type == Item.Type.WEAPON and GameState.equipped_weapon == null
 		GameState.add_item(item)
 		if is_first_weapon:
 			GameState.equip(item)
+	if gold_total > 0:
+		GameState.add_gold(gold_total)
+		GameState.game_log("[color=gold]Picked up %d gold.[/color]" % gold_total)
 
 func wait_action() -> void:
 	TurnManager.begin_player_action()

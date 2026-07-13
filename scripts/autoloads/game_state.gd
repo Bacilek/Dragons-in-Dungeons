@@ -38,6 +38,7 @@ signal subclass_choice_required
 # to run the Tier 2 unlock gate; future systems can also connect.
 signal boss_defeated(boss_id: String)
 signal known_masteries_changed
+signal gold_changed(new_amount: int)
 signal long_rest_completed()
 # Bruiser R3: fired instead of player_died when the revive triggers. player.gd connects this to
 # _end_rage() since Rage state lives there, not on GameState.
@@ -153,6 +154,7 @@ var god_mode: bool = false
 var hit_dice: int = 1
 var short_rests_remaining: int = 2
 var max_short_rests: int = 2
+var gold: int = 0   # the wallet — plain int counter, earned via add_gold(), spent via spend_gold()
 var short_rest_open: bool = false
 var talent_picker_open: bool = false
 var mastery_picker_open: bool = false
@@ -306,6 +308,7 @@ func start_new_run() -> void:
 	hit_dice = 1
 	short_rests_remaining = 2
 	max_short_rests = 2
+	gold = 0
 	long_rest_pending = false
 	player_stats = Stats.new()
 	player_stats.apply_class_defaults()  # defaults until class select overrides
@@ -483,6 +486,26 @@ func _grant_tier2_base_ability(id: String, ability_name: String, description: St
 	ab.uses_remaining = 0
 	ab.uses_max = 0
 	add_ability(ab)
+
+# ── Gold economy (design: docs/architecture/special-rooms-economy-design.md §2) ──────
+
+func add_gold(amount: int) -> void:
+	if amount <= 0:
+		return
+	gold += amount
+	gold_changed.emit(gold)
+
+# Returns true if the purchase went through. While invincible, spending always succeeds
+# WITHOUT decrementing (project invariant: invincible skips all consumption).
+func spend_gold(amount: int) -> bool:
+	if invincible:
+		gold_changed.emit(gold)  # re-emit so UI refreshes anyway
+		return true
+	if amount > gold:
+		return false
+	gold -= amount
+	gold_changed.emit(gold)
+	return true
 
 func advance_floor() -> void:
 	current_floor += 1
@@ -1901,6 +1924,7 @@ func to_dict() -> Dictionary:
 		# all numbers as float, which silently corrupts int64 states above 2^53.
 		"rng_state": str(Rng.get_state()),
 		"current_floor": current_floor,
+		"gold": gold,
 		"player_stats": player_stats.to_dict(),
 		"talents": {
 			"talent_investments": talent_investments.duplicate(),
@@ -1946,6 +1970,7 @@ func from_dict(d: Dictionary) -> void:
 	else:
 		Rng.reseed(run_seed)
 	current_floor = int(d.get("current_floor", 1))
+	gold = int(d.get("gold", 0))  # old saves predating the gold economy load as 0
 	var stats_d: Dictionary = d.get("player_stats", {})
 	var talents_d: Dictionary = d.get("talents", {})
 	var inv_d: Dictionary = d.get("inventory", {})
@@ -2024,6 +2049,7 @@ func from_dict(d: Dictionary) -> void:
 	short_rest_changed.emit()
 	talent_points_changed.emit(talent_points_available)
 	known_masteries_changed.emit()
+	gold_changed.emit(gold)
 
 func _item_slots_to_dicts(slots: Array) -> Array:
 	var out: Array = []

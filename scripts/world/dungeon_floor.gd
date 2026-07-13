@@ -228,6 +228,7 @@ func _load_floor() -> void:
 	_spawn_items()
 	_spawn_locked_doors()
 	_spawn_pending_chasm_items()
+	_spawn_gold_piles()
 	_restore_companion_from_save()
 	_setup_fog()
 	_see_all_active = false
@@ -1352,6 +1353,7 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.bonus_damage = d["bonus_dmg"]
 	item.heal_amount = d["heal"]
 	item.food_value = d.get("food_value", 0)
+	item.gold_value = d.get("gold", 0)
 	item.heal_dice_count = d.get("heal_dice", 0)
 	item.heal_dice_sides = d.get("heal_sides", 0)
 	item.damage_type = d.get("dmg_type", "")
@@ -1441,6 +1443,56 @@ func _spawn_pending_chasm_items() -> void:
 	for i: int in items.size():
 		place_item_on_floor(candidates[i % candidates.size()], items[i])
 
+# ── Gold (docs/architecture/special-rooms-economy-design.md §2.3) ─────────────
+
+# Builds a Type.GOLD floor item — gold_value doubles as the pile size. Picked up into
+# GameState.gold by PlayerActions.check_pickup(), never into the inventory.
+func _make_gold_item(amount: int) -> Item:
+	var item := Item.new()
+	item.item_name = "Gold"
+	item.item_type = Item.Type.GOLD
+	item.gold_value = maxi(1, amount)
+	item.description = "A pile of gold coins."
+	item.icon_path = DungeonFloorData.ITEMS_PATH + "Misc/CoinGold.png"
+	return item
+
+# Floor scatter: 1-2 gold piles on random walkable tiles. Same candidate-picking pattern as
+# _spawn_items(). Runs LAST in the _load_floor() spawn order (after _spawn_pending_chasm_items())
+# so every pre-existing _pop_rng draw keeps its position — the spawn call order and per-function
+# draw counts are load-bearing for reproducibility (scripts/world/CLAUDE.md).
+func _spawn_gold_piles() -> void:
+	var candidates: Array[Vector2i] = []
+	for y: int in _data.height:
+		for x: int in _data.width:
+			var pos := Vector2i(x, y)
+			var tile: DungeonData.TileType = _data.get_tile(x, y)
+			if tile != DungeonData.TileType.FLOOR and tile != DungeonData.TileType.MUD:
+				continue
+			if pos == _data.player_start or pos == _data.stairs_pos:
+				continue
+			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos):
+				continue
+			candidates.append(pos)
+	if candidates.is_empty():
+		return
+	RngUtil.shuffle(candidates, _pop_rng)
+	var count: int = mini(_pop_rng.randi_range(1, 2), candidates.size())
+	for i: int in count:
+		var amount: int = _pop_rng.randi_range(5, 10) + GameState.current_floor
+		place_item_on_floor(candidates[i], _make_gold_item(amount))
+
+# Enemy gold drop: 30% chance on any non-boss enemy death (bosses drop a guaranteed pile in
+# drop_boss_loot() instead). Kill-time randomness → gameplay Rng stream, same load-time-vs-runtime
+# split as _roll_boss_loot_item(). Called from Enemy.die() — the single chokepoint every death
+# call site already ends with (same reasoning as embedded_items).
+func maybe_drop_enemy_gold(enemy: Enemy) -> void:
+	if enemy.is_boss:
+		return
+	if not Rng.chance(0.3):
+		return
+	var amount: int = Rng.range_i(1, 4) + GameState.current_floor / 2
+	place_item_on_floor(enemy.grid_pos, _make_gold_item(amount))
+
 func _spawn_locked_doors() -> void:
 	if _doors.is_empty():
 		return
@@ -1522,8 +1574,8 @@ func remove_floor_item(pos: Vector2i) -> void:
 	_floor_items.erase(pos)
 
 const BOSS_LOOT_POOL: Array = [
-	{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png",     "src": "items", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)"},
-	{"name": "Health Potion",  "type": 2, "icon": "Potions/Health/HealthPotionMedium.png",  "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 2d4+CON HP", "heal_dice": 2, "heal_sides": 4},
+	{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png",     "src": "items", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)", "gold": 80},
+	{"name": "Health Potion",  "type": 2, "icon": "Potions/Health/HealthPotionMedium.png",  "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 2d4+CON HP", "heal_dice": 2, "heal_sides": 4, "gold": 30},
 ]
 
 func _roll_boss_loot_item() -> Item:
@@ -1534,6 +1586,7 @@ func _roll_boss_loot_item() -> Item:
 	item.bonus_damage = d["bonus_dmg"]
 	item.heal_amount = d["heal"]
 	item.food_value = d.get("food_value", 0)
+	item.gold_value = d.get("gold", 0)
 	item.heal_dice_count = d.get("heal_dice", 0)
 	item.heal_dice_sides = d.get("heal_sides", 0)
 	item.str_bonus = d.get("str_bonus", 0)
@@ -1552,6 +1605,10 @@ func drop_boss_loot(pos: Vector2i) -> void:
 	var item: Item = _roll_boss_loot_item()
 	place_item_on_floor(pos, item)
 	GameState.game_log("[color=yellow][b]The boss dropped [/b][color=white]%s[/color][b]![/b][/color]" % item.item_name)
+	# Guaranteed gold pile alongside the potion loot (special-rooms-economy-design.md §2.3).
+	var gold_amount: int = 20 + 5 * GameState.current_floor
+	place_item_on_floor(pos, _make_gold_item(gold_amount))
+	GameState.game_log("[color=gold][b]The boss dropped %d gold![/b][/color]" % gold_amount)
 
 ## Push weapon mastery (Heavy Crossbow): shoves `enemy` exactly 1 tile in `direction`.
 ## Distinct from force_move_entity() because a CHASM destination here is a valid outcome
