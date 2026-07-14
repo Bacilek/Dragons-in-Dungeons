@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dpjkh36c6uhvp"
-path="res://.godot/imported/grip_of_the_forest_2.png-019cfc5dbdbcd5a5f5b83651b07169a3.ctex"
+path="res://.godot/imported/grip_of_the_forest_2.png-7e49e9e218ba33f65160a80772dd5564.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/classes/barbarian/t2/world-tree/grip_of_the_forest_2.png"
-dest_files=["res://.godot/imported/grip_of_the_forest_2.png-019cfc5dbdbcd5a5f5b83651b07169a3.ctex"]
+source_file="res://icons/classes/barbarian/t2/world_tree/grip_of_the_forest_2.png"
+dest_files=["res://.godot/imported/grip_of_the_forest_2.png-7e49e9e218ba33f65160a80772dd5564.ctex"]
 
 [params]
 

@@ -15,7 +15,7 @@ After every feature, fix, or refactor that changes architecture, adds a system, 
 
 Open `project.godot` in **Godot 4.6 (Mono build)**. Press **F5** to run. No CLI build commands.
 
-**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait (also forfeits Extra Attack). Ctrl = search. Alt = rest (short/long tabs). RMB on world = interact. 1–9 = use active quickbar slot 0–8. **Tab = toggle between item bar and ability bar**. I = open inventory. Left-click enemy = chase+attack (melee). Shift+left-click enemy/tile = ranged attack (if ranged weapon equipped and in range). Left-click floor = pathfind. RMB on food in quickbar = throw mode, then LMB = throw. Esc = cancel throw/tool. **Thief Tools keyboard**: prime via quickbar hotkey → WASD into open/closed door = lock attempt; WASD into locked door = pick/unlock attempt. Note: F key no longer opens doors.
+**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait (also forfeits Extra Attack). Ctrl = search. Alt = rest (short/long tabs). RMB on world = interact. 1–9 = use active quickbar slot 0–8. **Tab = toggle between item bar and ability bar**. I = open inventory. **R = open Wizard Spellbook** (choose prepared leveled spells; no-op for non-casters). Left-click enemy = chase+attack (melee). Shift+left-click enemy/tile = ranged attack (if ranged weapon equipped and in range). Left-click floor = pathfind. RMB on food in quickbar = throw mode, then LMB = throw. Esc = cancel throw/tool. **Thief Tools keyboard**: prime via quickbar hotkey → WASD into open/closed door = lock attempt; WASD into locked door = pick/unlock attempt. Note: F key no longer opens doors.
 
 ## Architecture
 
@@ -99,13 +99,23 @@ roll used by all 6 player attack sites) so every attack gets it for free; `playe
 `Ability` (`scripts/items/ability.gd`) — resource with `ability_id`, `ability_name`, `description`, `icon_path`, `uses_remaining`, `uses_max`, `is_active`. `uses_max == 0` means infinite/passive. `GameState.player_ability_bar: Array` holds 9 slots (parallel to `player_quickbar`). `Tab` toggles HUD between item bar and ability bar. `GameState.add_ability(ability)` places in first empty slot. Ability activation dispatched in `player.gd._use_ability_slot(idx)` by `ability_id`. New abilities are granted by `GameState._apply_talent_rank()` and `GameState._apply_monk_level_features(level)`.
 
 ### Spellcasting
-**Wizard cantrips are implemented** (a deliberately-scoped slice of the full design): free, at-will,
-attack-roll cantrips — Fire Bolt / Ray of Frost / Shocking Grasp — picked one-time right after
-race select (`scripts/ui/cantrip_select.gd`). No spell slots, no leveled spells, no concentration,
-no AoE, no reactions yet — see `scripts/entities/CLAUDE.md`'s "Wizard spellcasting" section and
-`scripts/items/CLAUDE.md`'s `Spell`/`SpellDb`/`SpellcasterState` section. The full D&D 5.5e
-framework (spell slots long-rest/pact-magic/enemy-cooldown, prepared vs. known lists, upcasting,
-concentration, BG3-style reactions, tile-grid AoE) remains design-only: `docs/architecture/spellcasting-design.md`.
+**Wizard cantrips** (free, at-will, attack-roll — Fire Bolt / Ray of Frost / Shocking Grasp,
+picked one-time right after race select via `scripts/ui/cantrip_select.gd`) **and leveled spells
+with real D&D 2024 spell slots are both implemented.** Leveled spells: `StandardSlotPool`'s
+1–20 full-caster slot table (long-rest-only recharge), prepared count = character level, a
+level-up "pick 1 of 3" spellbook-growth picker (`scripts/ui/spell_learn_picker.gd`), scroll-taught
+spells, and an **R-key Spellbook overlay** (`scripts/ui/spellbook_overlay.gd`) — level tabs,
+hover description, click-to-prepare, drag-and-drop onto a specific ability-bar slot, bottom-right
+"X / Y prepared" counter. 4 example spells (Magic Missile, Shield, Misty Step, Fireball). No
+concentration, no reactions, no cone/line/cube AoE (sphere only), no upcast slot-level picker
+(always casts at the cheapest available slot) — see `scripts/entities/CLAUDE.md`'s "Wizard
+leveled spells (spell slots)" section, `scripts/items/CLAUDE.md`'s spellcasting-data section, and
+`scripts/ui/CLAUDE.md`'s Spellbook/spell-learn-picker sections for the full implementation.
+Design docs: `docs/architecture/spellcasting-design.md` (the original full-framework design —
+concentration/reactions/enemy-casters/half-casters/multiclass remain design-only per that doc)
+and `docs/architecture/leveled-spells-and-slots-plan.md` (the narrower plan actually implemented
+here, which supersedes the framework doc's prepared-count formula and casting-surface UI for
+Wizard).
 
 ### Talent system (`scripts/items/talent.gd`, `scripts/autoloads/game_state.gd`)
 `Talent` is a reusable Resource: `talent_id`, `talent_name`, `description`, `icon_path`, `tier`, `class_id`, `max_rank`, `ranks: Array[Dictionary]`. `rank_description(rank)` returns the description string for a given rank.

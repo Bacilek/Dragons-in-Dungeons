@@ -76,6 +76,10 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 # materialized (fresh single unit, or a stack where every unit shares uses_remaining) — see
 # get_stack_uses(). Populated/kept in sync by GameState._merge_into_stack()/_split_one_unit().
 @export var stack_uses: Array[int] = []
+# SCROLL items only: spell_id taught into the reader's spellbook on use (classic D&D
+# scroll-copying — see docs/architecture/leveled-spells-and-slots-plan.md §4.2). "" = not a spell
+# scroll — every pre-existing SCROLL item stays a no-op.
+@export var taught_spell_id: String = ""
 
 # Returns one durability value per unit in the stack (size == quantity). Falls back to repeating
 # `uses_remaining` when stack_uses hasn't been materialized (fresh item, or every unit identical).
@@ -135,6 +139,7 @@ func to_dict() -> Dictionary:
 		"uses_max": uses_max,
 		"uses_remaining": uses_remaining,
 		"stack_uses": stack_uses,
+		"taught_spell_id": taught_spell_id,
 	}
 
 static func from_dict(d: Dictionary) -> Item:
@@ -180,4 +185,5 @@ static func from_dict(d: Dictionary) -> Item:
 	for v: Variant in su:
 		su_typed.append(int(v))
 	it.stack_uses = su_typed
+	it.taught_spell_id = String(d.get("taught_spell_id", ""))
 	return it

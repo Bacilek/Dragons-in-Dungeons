@@ -141,3 +141,132 @@ static func cast_spell_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()
+
+# ── Leveled spells (docs/architecture/leveled-spells-and-slots-plan.md) ──────────────────────
+# Deliberately simplified vs. the framework doc: always casts at the LOWEST available slot level
+# (no upcast slot-level picker UI for v1 — plan §2/§9), and AoE is sphere-only (no cone/line/cube).
+
+static func _consume_slot(player: Player, cast_level: int) -> void:
+	if cast_level > 0 and not GameState.invincible:
+		player.stats.caster.slot_pool.consume(cast_level)
+	GameState.spell_slots_changed.emit()
+
+# SELF target (Shield) — no targeting, no attack roll, resolves on activation.
+static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dungeon_floor: Node) -> void:
+	TurnManager.begin_player_action()
+	_consume_slot(player, cast_level)
+	match spell.effect_id:
+		"shield":
+			player.stats.shield_ac_bonus = 5
+			GameState.recalculate_stats()
+			GameState.game_log("[color=cyan]You cast [b]%s[/b] — AC +5 until your next turn.[/color]" % spell.spell_name)
+		_:
+			GameState.game_log("[color=cyan]You cast [b]%s[/b].[/color]" % spell.spell_name)
+	if dungeon_floor != null:
+		dungeon_floor.update_fog(player.grid_pos)
+	player._handle_post_attack_turn()
+
+# TILE target (Misty Step teleport, Fireball AoE) — no attack roll against the tile itself.
+static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, tile_pos: Vector2i, dungeon_floor: Node) -> void:
+	TurnManager.begin_player_action()
+	_consume_slot(player, cast_level)
+	match spell.effect_id:
+		"misty_step":
+			player.set_grid_pos(tile_pos)
+			GameState.player_grid_pos = tile_pos
+			GameState.game_log("[color=cyan]You blink in a puff of silver mist.[/color]")
+		_:
+			if spell.shape == "sphere":
+				_resolve_sphere_aoe(player, spell, cast_level, tile_pos, dungeon_floor)
+	if dungeon_floor != null:
+		dungeon_floor.update_fog(player.grid_pos)
+	player._handle_post_attack_turn()
+
+# Sphere AoE damage-SAVE resolution (Fireball). Friendly fire is real — hits the player and any
+# enemy within shape_size tiles (Euclidean, matching the framework doc §6.1 convention) with LOS
+# from the impact tile. Damage-stacking RULE: one take_damage()/show_damage() call per target.
+static func _resolve_sphere_aoe(player: Player, spell: Spell, cast_level: int, center: Vector2i, dungeon_floor: Node) -> void:
+	var stats: Stats = player.stats
+	var caster: SpellcasterState = stats.caster
+	var r: int = spell.shape_size
+	var extra_dice: int = spell.upcast_dice_per_level * maxi(0, cast_level - spell.level)
+	var dice_count: int = spell.dice_count + extra_dice
+	var roll_total: int = 0
+	for _i: int in dice_count:
+		roll_total += Rng.range_i(1, spell.dice_sides)
+	var dmg_meta: String = "dmg:roll=%d,dmax=%d,wpn=0,bonus=%s,crit=0,final=%d" % [
+		roll_total, spell.dice_sides, CombatMath.encode_bonus_sources([]), roll_total]
+
+	var targets: Array[Enemy] = []
+	if dungeon_floor != null:
+		for e: Enemy in dungeon_floor.get_all_enemies():
+			if not is_instance_valid(e) or e.stats.is_dead():
+				continue
+			var d: Vector2i = e.grid_pos - center
+			if d.x * d.x + d.y * d.y > r * r:
+				continue
+			if not dungeon_floor.has_ranged_los(center, e.grid_pos):
+				continue
+			targets.append(e)
+
+	GameState.game_log("[color=orange]A sphere of fire erupts![/color]")
+	# Book-accurate Fireball is a DEX save, but Enemy.resist_check_detailed() only supports
+	# STR/CON (no enemy DEX data exists yet — same limitation Ray of Frost's cantrip already
+	# accepts). Reusing the STR-flavored check here rather than inventing enemy DEX stats.
+	for e: Enemy in targets:
+		var dc: int = caster.spell_save_dc(stats)
+		var save: Dictionary = e.resist_check_detailed(dc, false)
+		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=STR,pass=%d" % [
+			save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], int(save["pass"])]
+		var dmg: int = roll_total if not save["pass"] else roll_total / 2
+		var actual: int = e.stats.take_damage(dmg)
+		e.update_hp_bar()
+		if dungeon_floor != null:
+			dungeon_floor.show_damage(e.position, actual, false)
+		var is_lethal: bool = e.stats.is_dead()
+		GameState.game_log("%s is [url=%s]%s[/url] by the flames for [url=%s][color=yellow]%d[/color][/url] Fire dmg.%s" % [
+			e.display_name, save_meta, "caught" if not save["pass"] else "singed", dmg_meta, actual, CombatMath.death_suffix(is_lethal)])
+		if is_lethal:
+			player._finish_kill(e)
+
+	var d_player: Vector2i = player.grid_pos - center
+	if d_player.x * d_player.x + d_player.y * d_player.y <= r * r and (dungeon_floor == null or dungeon_floor.has_ranged_los(center, player.grid_pos)):
+		var pdc: int = caster.spell_save_dc(stats)
+		var check_total: int = Rng.roll(20) + stats.dex_modifier() + (stats.proficiency_bonus if stats.check_prof_dex else 0)
+		var pass_save: bool = check_total >= pdc
+		var pdmg: int = roll_total if not pass_save else roll_total / 2
+		var actual_p: int = GameState.take_damage_raw(pdmg, false, "Fire")
+		var pdmg_meta: String = "dmg:roll=%d,dmax=%d,wpn=0,bonus=%s,crit=0,final=%d" % [
+			roll_total, spell.dice_sides, CombatMath.encode_bonus_sources([]), actual_p]
+		GameState.game_log("[color=orange]You are caught in your own blast for [url=%s]%d[/url] Fire dmg.[/color]" % [pdmg_meta, actual_p])
+
+# ENEMY target, AUTO_HIT resolution (Magic Missile) — no attack roll.
+static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node) -> void:
+	TurnManager.begin_player_action()
+	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
+	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
+	sprite.play("hit")
+	await sprite.animation_finished
+	sprite.play("idle")
+	_consume_slot(player, cast_level)
+
+	match spell.effect_id:
+		"magic_missile":
+			var darts: int = 3 + maxi(0, cast_level - spell.level)
+			var total: int = 0
+			for _i: int in darts:
+				total += Rng.range_i(1, 4) + 1
+			var actual: int = target.stats.take_damage(total)
+			target.update_hp_bar()
+			if dungeon_floor != null:
+				dungeon_floor.show_damage(target.position, actual, false)
+			var dmg_meta: String = "dmg:roll=%d,dmax=4,wpn=0,bonus=%s,crit=0,final=%d" % [total, CombatMath.encode_bonus_sources([]), actual]
+			var is_lethal: bool = target.stats.is_dead()
+			GameState.game_log("%d darts of force streak toward %s for [url=%s][color=yellow]%d[/color][/url] Force dmg.%s" % [
+				darts, target.display_name, dmg_meta, actual, CombatMath.death_suffix(is_lethal)])
+			if is_lethal:
+				player._finish_kill(target)
+
+	if dungeon_floor != null:
+		dungeon_floor.update_fog(player.grid_pos)
+	player._handle_post_attack_turn()

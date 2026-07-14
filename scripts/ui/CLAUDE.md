@@ -229,6 +229,59 @@ Ray of Frost / Shocking Grasp, `SpellDb.CANTRIP_IDS`) commits immediately on cli
 irreversible pick. Confirm calls `GameState.choose_cantrip(spell_id)` and frees itself. See
 `scripts/entities/CLAUDE.md`'s "Wizard spellcasting" section for what the pick actually grants.
 
+## Spell-learn picker (`spell_learn_picker.gd`)
+CanvasLayer, layer = 25. Wizard-only, spawned by `hud.gd._on_player_leveled_up()` whenever
+`GameState.spell_learn_pending` is true (set by `GameState._roll_spell_learn_choices()` on every
+Wizard level-up, not just even ones — see `scripts/entities/CLAUDE.md`'s "Wizard leveled
+spells"). Modeled directly on `cantrip_select.gd`: dim overlay + centered bordered `Panel`,
+non-dismissible (`_unhandled_input` swallows all keys, no close button), up to 3 cards
+(`GameState.spell_learn_choices`) that commit immediately on click via `GameState.learn_spell(id)`
+— no skip option, matches the owner's framing of this as a mandatory level-up choice. Card count
+can be 1 or 2 instead of 3 when fewer eligible spells remain; the picker never spawns at all if
+zero are eligible (a gray "No new spells available to learn." chat line fires instead) — expected
+and common with only 4 example spells in `SpellDb.LEVELED_SPELL_IDS` (see
+`docs/architecture/leveled-spells-and-slots-plan.md` §7's content-count caveat).
+
+## Spellbook overlay (`spellbook_overlay.gd`)
+CanvasLayer, layer = 25. Wizard-only, opened by pressing **R** (`player.gd._unhandled_input()`,
+guarded the same way as every other blocking-overlay key — see the guard chains in
+`scripts/entities/CLAUDE.md`'s "Player-specific" section), closed by R or Esc. Sets
+`GameState.spellbook_open = true` → blocks all player input (same treatment as
+`mastery_picker_open` etc.) — but unlike the Mastery Picker, this overlay can be opened **any
+time**, not just post-level-up/post-long-rest (`docs/architecture/leveled-spells-and-slots-plan.md`
+§5.5 — deliberate deviation from the framework doc's rest-gated Prepare-Spells picker).
+
+Modeled on `mastery_picker.gd`'s structure (dim overlay + centered bordered `Panel`, hover-detail
+panel, bottom-right "X / Y" counter) with level tabs added across the top (one per spell level the
+character currently has slots for — `StandardSlotPool.max_slots()`'s keys; no cantrip tab,
+cantrips stay purely on the ability bar). Selecting a tab lists the Wizard's known spells of that
+level as rows (icon + name, gold border/tint when prepared). **Hover** a row → the detail panel
+below shows its full description (same "browse and pick" hover-detail pattern as the Mastery
+Picker, not a `[url=]` tooltip). **Click** a row → `GameState.set_spell_prepared(id, bool)`
+toggles prepared, hard-blocked at `SpellcasterState.prepared_max()` (clicking an unprepared spell
+at cap is a silent no-op, same feel as the Mastery Picker's cap block). **Bottom-right counter**:
+`"X / Y prepared"`, identical `RichTextLabel`/color convention to the Mastery Picker's
+`_counter_rtl` (gold under cap, gray at cap, red if ever over).
+
+**Drag-and-drop** (leveled-spells-and-slots-plan.md §5.4): press-and-hold a row past
+`DRAG_THRESHOLD` (8px) spawns a floating icon and arms a drag; release resolves via
+`_process()` polling `Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)` — **not** a mouse-button-up
+event — because a `Button`'s own `gui_input` can swallow the release before a sibling's
+`_unhandled_input` ever sees it (`inventory_overlay.gd`'s proven pattern, reused here rather than
+invented fresh). A drop is only accepted when `hud.gd.is_ability_bar_showing()` is true (the HUD's
+`_ability_bar_mode` flag — Tab toggles the *same physical* `ActionBar` buttons between the item
+quickbar and the ability bar, so this check is what makes "never onto the item quickbar" correct
+without needing a second, separate ability-bar surface) AND the mouse is over one of
+`hud.get_action_slot_global_rect(i)`'s rects (both new small `hud.gd` accessors added for this,
+plus `add_to_group("hud")` in its `_ready()` so a different CanvasLayer script can find the live
+instance) — otherwise the drop is silently rejected with a gray log line, icon snaps away. On a
+valid drop, `GameState.place_spell_in_slot(spell_id, index)` prepares (if not already) and places
+the spell's `Ability` directly into that slot index, bumping whatever was there back on via
+`add_ability()`'s normal first-empty-slot placement rather than discarding it. **Not implemented**:
+the framework doc's multi-page ability-bar auto-paging (still a single 9-slot
+`GameState.player_ability_bar`) — drag targets that one bar, not a specific "2nd–4th quickbar"
+page, since no such paging exists yet in this codebase.
+
 ## Mastery picker (`mastery_picker.gd`)
 CanvasLayer, layer = 25. Modeled directly on the talent picker (dim overlay + centered bordered
 `Panel`, `TextureButton` icon grid, `focus_mode = FOCUS_NONE` everywhere). Lets the player choose

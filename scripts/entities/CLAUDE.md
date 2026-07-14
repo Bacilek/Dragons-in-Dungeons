@@ -260,9 +260,11 @@ Tier 1 (levels 1–6): earns 5 talent points, spent across 3 talents — Psycho,
 ## Wizard spellcasting (cantrips)
 
 A deliberately-scoped slice of `docs/architecture/spellcasting-design.md`: at-will, free-to-cast
-attack-roll cantrips only — no spell slots, no leveled spells, no concentration, no AoE, no
-reactions. Data classes (`Spell`, `SpellDb`, `SpellcasterState`) live in `scripts/items/` — see
-`scripts/items/CLAUDE.md`.
+attack-roll cantrips only — no spell slots, no concentration, no reactions. Leveled spells (with
+real spell slots and a sphere-AoE example) are implemented on top of this per
+`docs/architecture/leveled-spells-and-slots-plan.md` — see the "Wizard leveled spells" section
+below. Data classes (`Spell`, `SpellDb`, `SpellcasterState`, `StandardSlotPool`) live in
+`scripts/items/` — see `scripts/items/CLAUDE.md`.
 
 - **Wizard class defaults** (`Stats.apply_class_defaults()`): `proficient_simple_weapons = true`
   (martial stays false — simple weapons only, no armor training enforced yet, same pre-existing
@@ -273,11 +275,14 @@ reactions. Data classes (`Spell`, `SpellDb`, `SpellcasterState`) live in `script
   exclusive), a Wizard spawns `scripts/ui/cantrip_select.gd` — a one-time, mandatory,
   non-dismissible pick of one of the three starting cantrips (Fire Bolt / Ray of Frost / Shocking
   Grasp, `SpellDb.CANTRIP_IDS`). Confirm calls `GameState.choose_cantrip(spell_id)`, which sets
-  `Stats.caster.known_spells` and wraps the spell in an `Ability` (`ability_id = "spell:" +
-  spell_id`, `uses_max = 0` — infinite/free) placed on the ability bar via the existing
-  `add_ability()`. Persisted as `Stats.to_dict()`'s `"known_cantrip"` field; save/load replays it
-  silently via `GameState.from_dict()` calling `choose_cantrip(id, true)` right after
-  `give_class_starting_items()` (mirrors talent replay's "derive abilities, don't serialize them"
+  `Stats.caster.known_spells` (appends — never overwrites, since a Wizard's leveled starting
+  spellbook is already populated by `_give_wizard_starting_items()` before this runs) and wraps
+  the spell in an `Ability` (`ability_id = "spell:" + spell_id`, `uses_max = 0` — infinite/free)
+  placed on the ability bar via `GameState._build_spell_ability()` + `add_ability()`. Persisted as
+  part of `Stats.to_dict()`'s `"caster_known_spells"`/`"caster_prepared_spells"` arrays (see
+  "Wizard leveled spells" below) — save/load rebuilds every spell's ability-bar entry via
+  `GameState._rebuild_spell_ability_bar()`, called once after `Stats.from_dict()` restores the
+  final known/prepared lists (mirrors talent replay's "derive abilities, don't serialize them"
   convention). The premade Jace (Halfling Wizard, `character_select.gd`'s `PREMADE` list) bypasses
   the picker like every other premade hero: a `"cantrip": "fire_bolt"` key in her entry makes
   `_on_premade_selected()` call `GameState.choose_cantrip("fire_bolt")` directly.
@@ -337,6 +342,72 @@ reactions. Data classes (`Spell`, `SpellDb`, `SpellcasterState`) live in `script
 - **Inspect** (`PlayerActions.do_inspect()`): the enemy info line gains a status suffix —
   `Frozen Feet` / `Shocked` — whenever either field is active (inspect previously showed no status
   effects at all; this is new, not a change to prior text).
+
+## Wizard leveled spells (spell slots)
+
+Implements `docs/architecture/leveled-spells-and-slots-plan.md` on top of the cantrip slice
+above. **Simplifications vs. that doc** (time-boxed for the first implementation pass, flagged
+here rather than silently diverging): no upcast slot-level picker UI — casting always spends the
+**lowest** available slot level (`StandardSlotPool.lowest_available_level()`); AoE is
+**sphere-only**, no cone (Burning Hands was cut from the doc's 5-spell example list, leaving 4:
+Magic Missile, Shield, Misty Step, Fireball); no AoE tile-preview overlay (target is chosen by a
+single click, same as a cantrip); Shield ships as a same-turn manual self-cast, not a reaction
+(the reaction broker is out of scope). Drag-and-drop from the Spellbook targets the single
+existing 9-slot ability bar (multi-page auto-paging from the framework doc isn't implemented
+either) — see `scripts/ui/CLAUDE.md`'s "Spellbook overlay" section.
+
+- **`StandardSlotPool`** (`scripts/items/spell_slot_pool.gd`) — the real D&D 2024 full-caster
+  1–20 slot table (long-rest-only recharge, `on_short_rest()` is a no-op). Built and owned by
+  `Stats.apply_class_defaults()`'s WIZARD branch (`caster.slot_pool = StandardSlotPool.new();
+  caster.slot_pool.owner_stats = self`). `GameState.gain_exp()` snapshots `slot_pool.max_slots()`
+  before applying a level-up and calls `slot_pool.grant_new_slots_on_levelup(old_max)` after —
+  newly unlocked/grown slots are immediately usable instead of sitting empty until the next long
+  rest (documented deviation from the framework doc's "new slots arrive empty" note — Wizard has
+  no short-rest recharge to fall back on).
+- **`SpellcasterState.prepared_spells`/`prepared_max(stats)`** — prepared count is
+  `character_level` (cantrips never count against it), superseding the framework doc's
+  `ability_mod + caster_level` formula. `known_spells` holds BOTH cantrips and leveled spells now
+  (the "is this a cantrip" question is answered by `Spell.level == 0`, not by which array it's
+  in) — `SpellcasterState.is_cantrip(id)`.
+- **Starting spellbook**: `GameState._give_wizard_starting_items()` (called from
+  `give_class_starting_items()`, same dispatch as `_give_barbarian_starting_items()`) seeds 2
+  fixed level-1 spells (Magic Missile, Shield — the doc's plan for "3 fixed spells" predates the
+  content list being trimmed to 4 total), Magic Missile prepared by default.
+- **Level-up spell-learn picker**: `GameState.gain_exp()`'s level-up block, WIZARD only, calls
+  `_roll_spell_learn_choices()` — rolls up to 3 random candidates from `SpellDb.CLASS_SPELL_LISTS`
+  filtered to spells the character can currently slot-cast and not already known, sets
+  `spell_learn_pending`/`spell_learn_choices`. `hud.gd._on_player_leveled_up()` spawns
+  `scripts/ui/spell_learn_picker.gd` (mandatory, one card commits via `GameState.learn_spell(id)`)
+  whenever `spell_learn_pending` is true. With only 4 example spells this often finds zero
+  eligible candidates a few levels in — expected, logs a gray "No new spells available to learn."
+  line instead of blocking (see the plan doc §7's content-count caveat).
+- **Scrolls**: `Item.taught_spell_id` (empty = not a spell scroll). `GameState.use_item()`'s
+  SCROLL branch calls `learn_spell()` and consumes the scroll if the spell isn't already known.
+  No scroll items exist in any loot pool yet — mechanism only, content is future work.
+- **Spellbook overlay (`R` key)**: `scripts/ui/spellbook_overlay.gd` — see `scripts/ui/CLAUDE.md`.
+  `GameState.set_spell_prepared(id, bool)` (click toggle) and `place_spell_in_slot(id, index)`
+  (drag-and-drop onto a specific ability-bar slot) both add/remove the "spell:"-prefixed `Ability`
+  via `GameState._build_spell_ability()`/`_remove_ability_by_id()`. No long-rest gating — the book
+  can be opened and prepared spells changed any time outside of other blocking overlays (doc §5.5).
+- **Casting a leveled spell**: `PlayerSpellcasting.begin_cast()` checks
+  `caster.slot_pool.can_cast(spell)` before arming targeting (SELF spells like Shield skip
+  targeting and cast immediately); `try_cast_at()` dispatches on `Spell.target_kind` to one of
+  three new `SpellEffects` functions — `cast_leveled_self()`, `cast_leveled_at_tile()`,
+  `cast_leveled_at_enemy()` — each consuming a slot via `_consume_slot()` (guarded by
+  `GameState.invincible`, same as every other consumption site) before resolving. Fireball's AoE
+  (`_resolve_sphere_aoe()`) hits every enemy AND the player within `shape_size` tiles (Euclidean)
+  with LOS from the impact tile — real friendly fire, one `take_damage()`/`show_damage()` call per
+  target per the damage-stacking RULE. Its DEX save is mechanically resolved via
+  `Enemy.resist_check_detailed(dc, false)` (STR-flavored — no enemy DEX stat data exists yet, same
+  accepted limitation Ray of Frost's cantrip already lives with).
+- **Shield**: `Stats.shield_ac_bonus` (+5, folded into `recalc_ac()`), cleared at the start of the
+  caster's next real turn in `player.gd._on_turn_started()`'s `if not came_from_revert:` block.
+- **Misty Step**: instant teleport via `Entity.set_grid_pos()` (no tween) to a clicked visible
+  tile within range.
+- **Persistence**: `Stats.to_dict()`/`from_dict()` gained `caster_known_spells`,
+  `caster_prepared_spells`, `caster_slot_remaining` (replaces the old single `known_cantrip`
+  field). `GameState.from_dict()` calls `_rebuild_spell_ability_bar()` right after
+  `player_stats.from_dict()` to reconcile the ability bar against the restored lists.
 
 ## Monk class
 Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: STR + DEX. Weapon proficiency: intended to be simple weapons + martial weapons with the light property, but `Stats.proficient_simple_weapons`/`proficient_martial_weapons` are not yet set in `apply_class_defaults()` for Monk (TODO — currently only wired up for Barbarian). No armor training (any armor → DISADV on STR/DEX checks/saves + DISADV on attacks; TODO: enforce). Starting abilities (slot 0–1 of ability bar):
