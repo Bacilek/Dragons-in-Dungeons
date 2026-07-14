@@ -95,7 +95,7 @@ func _build_ui() -> void:
 	_panel.add_child(_counter_rtl)
 
 	var done_btn := Button.new()
-	done_btn.text = "✓  Done  [R/Esc]"
+	done_btn.text = "Done"
 	done_btn.size = Vector2(150.0, 34.0)
 	done_btn.position = Vector2(PANEL_W - 166.0, 14.0)
 	done_btn.focus_mode = Control.FOCUS_NONE
@@ -218,6 +218,19 @@ func _build_ui() -> void:
 	special_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_special_slot_box.add_child(special_icon)
 
+	# No spell icon assets exist yet (res://icons/spells/*.png) — same text-fallback convention as
+	# hud.gd's ability bar (ability_name.left(4)) so an assignment is visible even without art.
+	var special_name := Label.new()
+	special_name.name = "NameLabel"
+	special_name.add_theme_font_size_override("font_size", 11)
+	special_name.add_theme_color_override("font_color", Color(0.85, 0.75, 1.0))
+	special_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	special_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	special_name.position = Vector2(0.0, 0.0)
+	special_name.size = Vector2(48.0, 48.0)
+	special_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_special_slot_box.add_child(special_name)
+
 	_refresh()
 
 func _ordinal(n: int) -> String:
@@ -284,10 +297,14 @@ func _refresh() -> void:
 	# Special-slot box mirrors GameState.special_slot_spell_id.
 	if _special_slot_box != null:
 		var sicon: TextureRect = _special_slot_box.get_node_or_null("Icon") as TextureRect
+		var sname_lbl: Label = _special_slot_box.get_node_or_null("NameLabel") as Label
+		var sid: String = GameState.special_slot_spell_id
+		var sspell: Spell = SpellDb.get_spell(sid) if sid != "" else null
+		var has_icon: bool = sspell != null and sspell.icon_path != "" and ResourceLoader.exists(sspell.icon_path)
 		if sicon != null:
-			var sid: String = GameState.special_slot_spell_id
-			var sspell: Spell = SpellDb.get_spell(sid) if sid != "" else null
-			sicon.texture = load(sspell.icon_path) if sspell != null and sspell.icon_path != "" and ResourceLoader.exists(sspell.icon_path) else null
+			sicon.texture = load(sspell.icon_path) if has_icon else null
+		if sname_lbl != null:
+			sname_lbl.text = "" if has_icon or sspell == null else sspell.spell_name.left(4)
 
 func _build_row(spell_id: String, y: float) -> void:
 	var caster: SpellcasterState = GameState.player_stats.caster

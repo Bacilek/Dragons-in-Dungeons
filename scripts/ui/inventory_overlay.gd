@@ -295,6 +295,19 @@ func _make_slot(eq_type: String = "") -> Control:
 	icon.size = Vector2(SLOT_SIZE - 12, SLOT_SIZE - (27 if eq_type != "" else 12))
 	slot.add_child(icon)
 
+	if eq_type == "special":
+		# No spell icon assets exist yet (res://icons/spells/*.png) — same text-fallback convention
+		# as hud.gd's ability bar (ability_name.left(4)) so an assignment is visible without art.
+		var name_lbl := Label.new()
+		name_lbl.name = "NameLabel"
+		name_lbl.add_theme_font_size_override("font_size", 12)
+		name_lbl.add_theme_color_override("font_color", Color(0.85, 0.75, 1.0))
+		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		name_lbl.position = Vector2(0, 0); name_lbl.size = Vector2(SLOT_SIZE, SLOT_SIZE - 21)
+		name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slot.add_child(name_lbl)
+
 	var cnt := Label.new()
 	cnt.name = "Count"
 	cnt.add_theme_font_size_override("font_size", 15)
@@ -600,15 +613,18 @@ func _refresh() -> void:
 			sbox.set_border_width_all(3 if two_handed_grip else 1)
 
 func _update_special_slot(slot: Control) -> void:
-	var icon:  TextureRect = slot.get_node_or_null("Icon") as TextureRect
-	var count: Label       = slot.get_node_or_null("Count") as Label
+	var icon:      TextureRect = slot.get_node_or_null("Icon") as TextureRect
+	var count:     Label       = slot.get_node_or_null("Count") as Label
+	var name_lbl:  Label       = slot.get_node_or_null("NameLabel") as Label
 	if count != null:
 		count.text = ""
-	if icon == null:
-		return
 	var sid: String = GameState.special_slot_spell_id
 	var spell: Spell = SpellDb.get_spell(sid) if sid != "" else null
-	icon.texture = load(spell.icon_path) if spell != null and spell.icon_path != "" and ResourceLoader.exists(spell.icon_path) else null
+	var has_icon: bool = spell != null and spell.icon_path != "" and ResourceLoader.exists(spell.icon_path)
+	if icon != null:
+		icon.texture = load(spell.icon_path) if has_icon else null
+	if name_lbl != null:
+		name_lbl.text = "" if has_icon or spell == null else spell.spell_name.left(4)
 
 func _update_slot(slot: Control, item: Item) -> void:
 	var icon:  TextureRect = slot.get_node_or_null("Icon") as TextureRect
