@@ -408,6 +408,25 @@ either) — see `scripts/ui/CLAUDE.md`'s "Spellbook overlay" section.
   `caster_prepared_spells`, `caster_slot_remaining` (replaces the old single `known_cantrip`
   field). `GameState.from_dict()` calls `_rebuild_spell_ability_bar()` right after
   `player_stats.from_dict()` to reconcile the ability bar against the restored lists.
+- **BUGFIX — starting slots were zero**: `StandardSlotPool.remaining` is otherwise only ever
+  populated by `on_long_rest()` or a level-up grant — a level-1 Wizard had **zero** spell slots
+  from character creation until their first long rest or level-up, contradicting the agreed "2×
+  1st-level slots at level 1". `_give_wizard_starting_items()` now seeds `remaining` from
+  `max_slots()` directly, same population `on_long_rest()` does.
+- **Magic Missile's range is the caster's LIVE field of view, not a fixed tile number**:
+  `Spell.range_is_fov: bool` (when true, `PlayerSpellcasting._effective_range()` returns
+  `DungeonFloor.FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus`
+  instead of `spell.range_tiles` — the exact same live formula `dungeon_floor.gd`'s own FOV
+  computation uses, so Wild Heart Eagle's +1 FOV radius or Orc/Dwarf darkvision genuinely extend
+  how far the spell reaches). Set on `magic_missile` only; every other spell still uses a fixed
+  `range_tiles`. `begin_cast()`'s targeting-prompt log line and the out-of-range rejection message
+  both read the live value too, not a hardcoded "7 tiles".
+- **Magic Missile's detailed damage tooltip**: a dedicated `mmdmg:` meta (`darts`, `rolls`
+  `|`-joined per-dart totals, `total`, `final`) replaces the generic `dmg:` meta for this spell —
+  `TooltipFormatters.fmt_mmdmg_tooltip()` (`scripts/ui/tooltip_formatters.gd`, dispatched in
+  `hud.gd._format_tooltip()`) states "Always hits — no attack roll", "Range: your full field of
+  view", then lists each dart's individual 1d4+1 roll before the summed total — addresses
+  playtesting feedback that hovering the damage number showed no useful breakdown.
 
 ## Monk class
 Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: STR + DEX. Weapon proficiency: intended to be simple weapons + martial weapons with the light property, but `Stats.proficient_simple_weapons`/`proficient_martial_weapons` are not yet set in `apply_class_defaults()` for Monk (TODO — currently only wired up for Barbarian). No armor training (any armor → DISADV on STR/DEX checks/saves + DISADV on attacks; TODO: enforce). Starting abilities (slot 0–1 of ability bar):

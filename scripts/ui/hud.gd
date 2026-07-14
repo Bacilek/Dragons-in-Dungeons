@@ -32,6 +32,18 @@ var _inventory_overlay_ref: Node = null
 var _debug_panel_ref: Node = null
 var _hit_dice_label: Label
 var _gold_label: Label        # gold counter (coin icon + amount), wired to GameState.gold_changed
+var _spell_slots_label: RichTextLabel  # always-visible per-level spell slot remaining/max (Wizard only)
+
+# ── In-bar reorder drag (item quickbar OR ability bar, no overlay needed) ─────────────────────
+# Press-and-drag an ActionBar slot onto another slot of the SAME bar to move it there — e.g. drag
+# slot 1 onto slot 5. Independent of spellbook_overlay.gd's own drag (which targets these same
+# Button rects from a different CanvasLayer); disabled while the Spellbook is open to avoid the
+# two systems fighting over the same press.
+const BAR_DRAG_THRESHOLD: float = 8.0
+var _bar_drag_from: int = -1
+var _bar_dragging: bool = false
+var _bar_drag_start_pos: Vector2 = Vector2.ZERO
+var _bar_drag_icon: TextureRect = null
 var _compass: Compass
 var _crit_banner: CritBanner
 
@@ -337,6 +349,22 @@ func _ready() -> void:
 	GameState.gold_changed.connect(_on_gold_changed)
 	_on_gold_changed(GameState.gold)
 
+	# Spell slots row (leveled-spells-and-slots-plan.md) — always-visible remaining/max per level,
+	# right under the status tray. Wizard-only; hidden text for every other class.
+	_spell_slots_label = RichTextLabel.new()
+	_spell_slots_label.bbcode_enabled = true
+	_spell_slots_label.fit_content = false
+	_spell_slots_label.scroll_active = false
+	_spell_slots_label.position = Vector2(4.0, 158.0)
+	_spell_slots_label.size = Vector2(388.0, 38.0)
+	_spell_slots_label.add_theme_font_size_override("normal_font_size", 13)
+	_spell_slots_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$StatsPanel.add_child(_spell_slots_label)
+	GameState.spell_slots_changed.connect(_update_spell_slots_label)
+	GameState.player_leveled_up.connect(func(_lv: int) -> void: _update_spell_slots_label())
+	GameState.class_chosen.connect(func(_c) -> void: _update_spell_slots_label())
+	_update_spell_slots_label()
+
 	# Inventory overlay — add as sibling CanvasLayer so it floats above HUD
 	var overlay_script = load("res://scripts/ui/inventory_overlay.gd")
 	_inventory_overlay_ref = overlay_script.new()
@@ -430,6 +458,35 @@ func _on_gold_changed(new_amount: int) -> void:
 	if _gold_label == null:
 		return
 	_gold_label.text = str(new_amount)
+
+## Always-visible "1st 2/2  2nd 1/1  ..." row — leveled-spells-and-slots-plan.md follow-up:
+## previously slot counts were only visible inside the R-key Spellbook overlay. Wired to
+## GameState.spell_slots_changed (slot consume/refill/level-up-grant/prepare-toggle),
+## player_leveled_up, and class_chosen. Empty for every non-caster class.
+func _update_spell_slots_label() -> void:
+	if _spell_slots_label == null:
+		return
+	var caster: SpellcasterState = GameState.player_stats.caster if GameState.class_selected else null
+	if caster == null or caster.slot_pool == null:
+		_spell_slots_label.text = ""
+		return
+	var mx: Dictionary = caster.slot_pool.max_slots()
+	var levels: Array = mx.keys()
+	levels.sort()
+	var parts: PackedStringArray = []
+	for lv: int in levels:
+		var remaining: int = caster.slot_pool.remaining.get(lv, 0)
+		var total: int = mx[lv]
+		var color: String = "#8fd3ff" if remaining > 0 else "#555560"
+		parts.append("[color=%s]%s %d/%d[/color]" % [color, _ordinal_level(lv), remaining, total])
+	_spell_slots_label.text = "[b]Slots:[/b]  " + "   ".join(parts) if not parts.is_empty() else "[color=#666]No spell slots yet.[/color]"
+
+func _ordinal_level(n: int) -> String:
+	match n:
+		1: return "1st"
+		2: return "2nd"
+		3: return "3rd"
+		_: return "%dth" % n
 
 func _update_hit_dice_label() -> void:
 	if _hit_dice_label == null:
@@ -530,6 +587,48 @@ func _on_slot_gui_input(event: InputEvent, slot_index: int) -> void:
 			return
 		var it := raw as Item
 		GameState.player_throw_primed.emit(it)
+		return
+	# LMB press: only *records* the drag-start candidate — does NOT consume the event, so the
+	# Button's own `pressed` signal (→ _on_slot_pressed, use/cast) still fires normally for a
+	# plain click. Motion/release are polled in _process() below (same reasoning as
+	# spellbook_overlay.gd's drag: a release outside the pressed Button's bounds never reaches it).
+	if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not GameState.spellbook_open:
+		if (_ability_bar_mode and GameState.player_ability_bar[slot_index] != null) \
+				or (not _ability_bar_mode and GameState.player_quickbar[slot_index] != null):
+			_bar_drag_from = slot_index
+			_bar_dragging = false
+			_bar_drag_start_pos = get_viewport().get_mouse_position()
+
+func _process_bar_drag(mp: Vector2) -> void:
+	if _bar_drag_from == -1:
+		return
+	if not _bar_dragging and mp.distance_to(_bar_drag_start_pos) > BAR_DRAG_THRESHOLD:
+		_bar_dragging = true
+		_bar_drag_icon = TextureRect.new()
+		_bar_drag_icon.size = Vector2(48.0, 48.0)
+		_bar_drag_icon.ignore_texture_size = true
+		_bar_drag_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		_bar_drag_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var src_btn: Button = _item_slots[_bar_drag_from]
+		if src_btn.icon != null:
+			_bar_drag_icon.texture = src_btn.icon
+		add_child(_bar_drag_icon)
+	if _bar_dragging and _bar_drag_icon != null:
+		_bar_drag_icon.position = mp - _bar_drag_icon.size * 0.5
+	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		if _bar_dragging:
+			for i: int in SLOT_COUNT:
+				if i != _bar_drag_from and Rect2(_item_slots[i].global_position, _item_slots[i].size).has_point(mp):
+					if _ability_bar_mode:
+						GameState.swap_ability_slots(_bar_drag_from, i)
+					else:
+						GameState.move_item("quickbar", _bar_drag_from, "", "quickbar", i, "")
+					break
+			if _bar_drag_icon != null:
+				_bar_drag_icon.queue_free()
+				_bar_drag_icon = null
+		_bar_drag_from = -1
+		_bar_dragging = false
 
 # ── Bar updates ───────────────────────────────────────────────────────────────
 
@@ -920,6 +1019,7 @@ const _TOOLTIP_W: float = 220.0
 func _process(_delta: float) -> void:
 	var mp: Vector2 = get_viewport().get_mouse_position()
 	var vp: Vector2 = get_viewport().get_visible_rect().size
+	_process_bar_drag(mp)
 	# Log tooltip positioning
 	if _log_tooltip != null and _log_tooltip_visible:
 		var content_h: float = _log_tooltip_rtl.get_content_height()
@@ -985,6 +1085,7 @@ func _format_tooltip(meta: String) -> String:
 		"sphit":         return TooltipFormatters.fmt_sphit_tooltip(params)
 		"thrhit":        return TooltipFormatters.fmt_hit_tooltip(params, false)
 		"dmg":           return TooltipFormatters.fmt_dmg_tooltip(params)
+		"mmdmg":         return TooltipFormatters.fmt_mmdmg_tooltip(params)
 		"heal":          return TooltipFormatters.fmt_heal_tooltip(params)
 		"hplvl":         return TooltipFormatters.fmt_hplvl_tooltip(params)
 		"save", "check": return TooltipFormatters.fmt_save_tooltip(params)

@@ -253,14 +253,18 @@ static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int,
 	match spell.effect_id:
 		"magic_missile":
 			var darts: int = 3 + maxi(0, cast_level - spell.level)
+			var dart_rolls: Array[int] = []
 			var total: int = 0
 			for _i: int in darts:
-				total += Rng.range_i(1, 4) + 1
+				var r: int = Rng.range_i(1, 4) + 1
+				dart_rolls.append(r)
+				total += r
 			var actual: int = target.stats.take_damage(total)
 			target.update_hp_bar()
 			if dungeon_floor != null:
 				dungeon_floor.show_damage(target.position, actual, false)
-			var dmg_meta: String = "dmg:roll=%d,dmax=4,wpn=0,bonus=%s,crit=0,final=%d" % [total, CombatMath.encode_bonus_sources([]), actual]
+			var rolls_str: String = "|".join(dart_rolls.map(func(x: int) -> String: return str(x)))
+			var dmg_meta: String = "mmdmg:darts=%d,rolls=%s,total=%d,final=%d" % [darts, rolls_str, total, actual]
 			var is_lethal: bool = target.stats.is_dead()
 			GameState.game_log("%d darts of force streak toward %s for [url=%s][color=yellow]%d[/color][/url] Force dmg.%s" % [
 				darts, target.display_name, dmg_meta, actual, CombatMath.death_suffix(is_lethal)])

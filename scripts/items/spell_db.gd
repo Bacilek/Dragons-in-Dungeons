@@ -75,11 +75,11 @@ static func _magic_missile() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "magic_missile"
 	s.spell_name = "Magic Missile"
-	s.description = "3 darts of magical force strike unerringly (no attack roll). 1d4+1 Force each. +1 dart per slot level above 1st."
+	s.description = "3 darts of magical force strike unerringly — always hits, no attack roll. 1d4+1 Force each. +1 dart per slot level above 1st. Range: your full field of view."
 	s.icon_path = "res://icons/spells/magic_missile.png"
 	s.school = "Evocation"
 	s.level = 1
-	s.range_tiles = 7
+	s.range_is_fov = true
 	s.target_kind = Spell.TargetKind.ENEMY
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.damage_type = "Force"

@@ -28,7 +28,8 @@ func begin_cast(spell_id: String) -> void:
 		_:
 			_armed_spell_id = spell_id
 			spell_targeting_active = true
-			GameState.game_log("[color=lime]%s — click a target within %d tiles. [Esc] to cancel.[/color]" % [spell.spell_name, spell.range_tiles])
+			var range_hint: String = "your full field of view" if spell.range_is_fov else "%d tiles" % spell.range_tiles
+			GameState.game_log("[color=lime]%s — click a target within %s. [Esc] to cancel.[/color]" % [spell.spell_name, range_hint])
 
 func cancel() -> void:
 	spell_targeting_active = false
@@ -55,6 +56,19 @@ func _cast_self(spell: Spell) -> void:
 # FOV — visibility (has_ranged_los / fog) already governs what's actually clickable, so a spell
 # whose range exceeds the player's FOV radius simply can't reach further than they can currently
 # see, without a second redundant cap.
+## Effective range in tiles for the range check below — spell.range_tiles normally, or the
+## caster's LIVE FOV radius when spell.range_is_fov is set (Magic Missile — some characters see
+## further than the base FOV_RADIUS, e.g. Wild Heart Eagle's +1, so this must be read live, never
+## a fixed constant).
+func _effective_range(spell: Spell) -> int:
+	if spell.range_is_fov:
+		# Matches dungeon_floor.gd's own live FOV radius formula exactly (update_fog()/
+		# _decide_action() visibility checks) — darkvision (Orc/Dwarf) and Wild Heart Eagle's
+		# fov_radius_bonus both genuinely extend how far a character can see, and therefore how
+		# far a full-FOV-range spell can reach.
+		return DungeonFloor.FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus
+	return spell.range_tiles
+
 func try_cast_at(clicked: Vector2i) -> void:
 	var spell_id: String = _armed_spell_id
 	spell_targeting_active = false
@@ -64,8 +78,9 @@ func try_cast_at(clicked: Vector2i) -> void:
 		return
 	var d: Vector2i = clicked - player.grid_pos
 	var dist_cheb: int = maxi(absi(d.x), absi(d.y))
-	if dist_cheb > spell.range_tiles:
-		GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % spell.range_tiles)
+	var eff_range: int = _effective_range(spell)
+	if dist_cheb > eff_range:
+		GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % eff_range)
 		return
 	if not player._dungeon_floor.has_ranged_los(player.grid_pos, clicked):
 		GameState.game_log("[color=gray]No clear line to target.[/color]")

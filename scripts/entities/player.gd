@@ -434,7 +434,13 @@ func _input(event: InputEvent) -> void:
 			var motion := event as InputEventMouseMotion
 			_camera.position = _pan_start_cam - (motion.position - _pan_start_mouse) / _camera.zoom.x
 			get_viewport().set_input_as_handled()
-		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _lmb_panning and not GameState.inventory_open:
+		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _lmb_panning and not GameState.inventory_open \
+				and not GameState.spellbook_open and not GameState.spell_learn_picker_open:
+			# BUGFIX: this camera-pan detector lives in _input(), which fires before any Control's
+			# gui_input — so without this guard, holding LMB and dragging a spell row in the
+			# Spellbook overlay also panned the game world/camera underneath it (reported as
+			# "drag drags the background/level"). inventory_open was already excluded here for the
+			# same reason; spellbook_open/spell_learn_picker_open were missing.
 			var motion := event as InputEventMouseMotion
 			if motion.position.distance_to(_pan_start_mouse) > 8.0:
 				_lmb_panning = true
@@ -450,6 +456,17 @@ func _input(event: InputEvent) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if GameState.is_game_over or not GameState.class_selected:
+		return
+	# BUGFIX: mouse events reaching here were never gated by ANY blocking overlay (only keyboard
+	# input was, further below) — a mouse-button release landing over the game world while a
+	# blocking picker was open (e.g. releasing a Spellbook drag past the overlay's dim) could still
+	# trigger a game-world move/attack underneath it. Every overlay's own doc comment already
+	# claims it "blocks ALL player input" — this closes the mouse-specific gap in that claim.
+	if (event is InputEventMouseButton or event is InputEventMouseMotion) and (
+			GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active \
+			or GameState.talent_picker_open or GameState.mastery_picker_open \
+			or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
+			or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open):
 		return
 	if event is InputEventKey:
 		var key := event as InputEventKey
