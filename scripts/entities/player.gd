@@ -31,7 +31,6 @@ var _interrupted: bool = false           # set when enemy seen mid-hold; cleared
 
 var _throw_item: Item = null
 var _tool_item: Item = null
-var _inspect_mode: bool = false
 var _rest_interrupt_shown: bool = false
 
 # FOV snapshots for advantage (surprise attack) detection
@@ -522,10 +521,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
-			if _inspect_mode:
-				_inspect_mode = false
-				GameState.game_log("[color=gray]Inspect cancelled.[/color]")
-				return
 			if _throw_item != null:
 				_throw_item = null
 				GameState.game_log("[color=gray]Throw cancelled.[/color]")
@@ -570,7 +565,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				if _tool_item != null and _tool_item.item_name != "Thief Tools": _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 				_try_move(Vector2i(1, 1))
 			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _actions.wait_action()
-			KEY_CTRL: _actions.handle_search_request()
 			KEY_ALT: _actions.open_short_rest()
 			KEY_1: _use_quickbar_slot(0)
 			KEY_2: _use_quickbar_slot(1)
@@ -667,10 +661,14 @@ func _unhandled_input(event: InputEvent) -> void:
 					var bottle: Item = _tool_item
 					_tool_item = null
 					_throw_tool.try_fill_bottle(bottle, clicked)
-				else:
-					var had_tool: bool = _tool_item != null
+				elif _tool_item != null:
+					# A tool (e.g. Thief Tools) is actively primed — RMB completes that tool's
+					# action exactly as before. Only the no-tool-primed fallback below changed
+					# (plain RMB is now instant Inspect / double-RMB Search, not interact_action()).
 					_tool_item = null
-					_actions.interact_action(had_tool, clicked)
+					_actions.interact_action(true, clicked)
+				else:
+					_actions.handle_rmb_click(clicked)
 			return
 
 		if mb.button_index != MOUSE_BUTTON_LEFT:
@@ -679,13 +677,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		_click_start_screen_pos = mb.position
 
 		if GameState.short_rest_active or GameState.short_rest_open:
-			return
-
-		# Inspect mode — show info about clicked tile (immediate intentional click)
-		if _inspect_mode:
-			_inspect_mode = false
-			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT:
-				_actions.do_inspect(clicked)
 			return
 
 		# Cantrip targeting mode
@@ -1802,7 +1793,7 @@ func _on_action_requested(action_name: String) -> void:
 		return
 	match action_name:
 		"wait":     _actions.wait_action()
-		"search":   _actions.handle_search_request()
+		"search":   _actions.search_action()
 		"interact": _actions.interact_action()
 
 func _use_quickbar_slot(idx: int) -> void:

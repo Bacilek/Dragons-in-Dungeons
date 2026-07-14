@@ -3,7 +3,7 @@ extends CanvasLayer
 const SLOT_SIZE: int = 90
 const SLOT_GAP: int  = 6
 const STEP:      int = SLOT_SIZE + SLOT_GAP   # 96
-const PANEL_W:   int = 1020
+const PANEL_W:   int = 1068
 const PANEL_H:   int = 690
 
 var _panel: Panel
@@ -212,7 +212,7 @@ func _build_ui() -> void:
 		Vector2(15, PANEL_H - 36), 16, Color(0.4, 0.4, 0.4))
 
 const EQUIPMENT_ORIGIN: Vector2 = Vector2(14, 102)
-const BAG_ORIGIN_X: float = 432.0
+const BAG_ORIGIN_X: float = 480.0
 
 func _build_equipment_section() -> void:
 	_add_label(_panel, "Equipment", Vector2(21, 63), 21, Color(0.7, 0.7, 0.8))
