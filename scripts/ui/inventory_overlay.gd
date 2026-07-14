@@ -219,7 +219,7 @@ func _build_equipment_section() -> void:
 	# Gloves-Armor-Hand1-Hand2 middle row; Headgear above Armor; Boots below Armor;
 	# Ranged centered above the gap between Hand 1 and Hand 2.
 	var layout: Array = [
-		["head",   1.0, 0],                                   ["ranged", 2.5, 0],
+		["head",   1.0, 0],                                   ["ranged", 2.5, 0], ["special", 3.5, 0],
 		["gloves", 0.0, 1], ["armor", 1.0, 1], ["melee", 2.0, 1], ["hand2", 3.0, 1],
 		["boots",  1.0, 2],
 	]
@@ -227,7 +227,11 @@ func _build_equipment_section() -> void:
 		var sn: String = entry[0]; var c: float = entry[1]; var r: int = entry[2]
 		var slot := _make_slot(sn)
 		slot.position = EQUIPMENT_ORIGIN + Vector2(c * STEP, r * STEP)
-		slot.set_meta("source", "equipment")
+		# "special" is a display-only quick-cast slot (holds a Spell reference, not an Item) —
+		# assigned from inside the Spellbook overlay (see scripts/ui/CLAUDE.md), never a normal
+		# drag-and-drop destination here. Kept out of the "equipment" source so _do_move()/
+		# _fits_slot() never treat it as an Item-shaped slot.
+		slot.set_meta("source", "special_display" if sn == "special" else "equipment")
 		slot.set_meta("slot_name", sn)
 		_panel.add_child(slot)
 		_eq_slots[sn] = slot
@@ -323,6 +327,7 @@ func _eq_display(name: String) -> String:
 		"melee":  return "Main Hand"
 		"hand2":  return "Off-hand"
 		"ranged": return "Ranged"
+		"special":    return "Special"
 		"armor":      return "Armor"
 		"gloves":     return "Gloves"
 		"boots":      return "Boots"
@@ -399,6 +404,10 @@ func _do_move(dest: Control) -> void:
 	var dest_src:   String = dest.get_meta("source", "")
 	var dest_idx:   int    = dest.get_meta("index", -1)
 	var dest_sname: String = dest.get_meta("slot_name", "")
+	# The Special slot holds a Spell reference, not an Item — never a normal drag-and-drop
+	# destination here (assigned only from inside the Spellbook overlay).
+	if dest_src == "special_display":
+		return
 	# Equipment slot compatibility check
 	if dest_src == "equipment" and not _fits_slot(_drag_item, dest_sname):
 		return
@@ -421,7 +430,9 @@ func _fits_slot(item: Item, slot_name: String) -> bool:
 
 func _right_click(slot: Control) -> void:
 	var source: String = slot.get_meta("source", "")
-	if source == "equipment":
+	if source == "special_display":
+		GameState.clear_special_slot()
+	elif source == "equipment":
 		GameState.unequip(slot.get_meta("slot_name", ""))  # always a free action
 	else:
 		var item: Item = _slot_item(slot)
@@ -439,6 +450,9 @@ func _on_slot_hover(slot: Control) -> void:
 	if _tooltip_frozen:
 		return
 	if _inv_tooltip == null:
+		return
+	if slot.get_meta("source", "") == "special_display":
+		_show_special_slot_tooltip()
 		return
 	var item: Item = _slot_item(slot)
 	if item == null:
@@ -492,6 +506,21 @@ func _on_slot_hover(slot: Control) -> void:
 	if item.item_type == Item.Type.WEAPON and item.is_thrown:
 		text += "\n[color=#999][font_size=11][right]Uses: %d/%d[/right][/font_size][/color]" % [item.uses_remaining, item.uses_max]
 	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
+	_inv_tooltip_rtl.text = text
+	_inv_tooltip_rtl.size = Vector2(172.0, 0)
+	_inv_tooltip.size = Vector2(180.0, 60)
+	_inv_tooltip.visible = true
+
+func _show_special_slot_tooltip() -> void:
+	var sid: String = GameState.special_slot_spell_id
+	if sid == "":
+		_inv_tooltip.visible = false
+		return
+	var spell: Spell = SpellDb.get_spell(sid)
+	if spell == null:
+		_inv_tooltip.visible = false
+		return
+	var text: String = "[b]%s[/b]\n[color=gray]%s[/color]\n[color=#888]Ctrl+click a target to cast. Right-click to clear.[/color]" % [spell.spell_name, spell.description]
 	_inv_tooltip_rtl.text = text
 	_inv_tooltip_rtl.size = Vector2(172.0, 0)
 	_inv_tooltip.size = Vector2(180.0, 60)
@@ -551,7 +580,10 @@ func _refresh() -> void:
 		var raw = GameState.player_quickbar[i] if i < GameState.player_quickbar.size() else null
 		_update_slot(_qb_slots[i], raw as Item)
 	for sn: String in _eq_slots:
-		_update_slot(_eq_slots[sn] as Control, GameState.equipment.get(sn) as Item)
+		if sn == "special":
+			_update_special_slot(_eq_slots[sn] as Control)
+		else:
+			_update_slot(_eq_slots[sn] as Control, GameState.equipment.get(sn) as Item)
 	var main_hand: Item = GameState.equipment.get("melee") as Item
 	var off_hand_blocked: bool = main_hand != null and main_hand.is_two_handed
 	var hand2_slot: Control = _eq_slots.get("hand2") as Control
@@ -566,6 +598,17 @@ func _refresh() -> void:
 			var two_handed_grip: bool = main_hand != null and main_hand.is_versatile and main_hand.is_two_handed
 			sbox.border_color = Color(0.95, 0.75, 0.25) if two_handed_grip else Color(0.35, 0.34, 0.38)
 			sbox.set_border_width_all(3 if two_handed_grip else 1)
+
+func _update_special_slot(slot: Control) -> void:
+	var icon:  TextureRect = slot.get_node_or_null("Icon") as TextureRect
+	var count: Label       = slot.get_node_or_null("Count") as Label
+	if count != null:
+		count.text = ""
+	if icon == null:
+		return
+	var sid: String = GameState.special_slot_spell_id
+	var spell: Spell = SpellDb.get_spell(sid) if sid != "" else null
+	icon.texture = load(spell.icon_path) if spell != null and spell.icon_path != "" and ResourceLoader.exists(spell.icon_path) else null
 
 func _update_slot(slot: Control, item: Item) -> void:
 	var icon:  TextureRect = slot.get_node_or_null("Icon") as TextureRect

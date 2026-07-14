@@ -12,6 +12,16 @@ const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp
 const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "misty_step", "fireball"]
 const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
+## Shared level-name formatter — "Cantrips" for level 0, "1st"/"2nd"/"3rd"/"Nth" otherwise.
+## Reused by spellbook_overlay.gd's tab labels and debug_panel.gd's Give Spell level badge.
+static func ordinal(lv: int) -> String:
+	match lv:
+		0: return "Cantrips"
+		1: return "1st"
+		2: return "2nd"
+		3: return "3rd"
+		_: return "%dth" % lv
+
 static func get_spell(id: String) -> Spell:
 	match id:
 		"fire_bolt": return _fire_bolt()

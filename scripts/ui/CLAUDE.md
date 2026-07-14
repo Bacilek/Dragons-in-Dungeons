@@ -142,7 +142,7 @@ CanvasLayer, layer = 26. Spawned by `player.gd` right after `GameState.long_rest
 
 ## Debug panel (`debug_panel.gd`)
 F3 toggle. CanvasLayer, layer = 25.
-Features: **God Mode** (checkbox — activates invincible + noclip + see_all + exposes enemy rolls/HP in chat log), Invincible, Noclip, Jump to Floor, Give Item, **Spawn Enemy** (sub-panel listing all `DungeonFloorData.ENEMY_POOL` + `BOSS_POOL`, spawns adjacent to player via `dungeon_floor.debug_spawn_enemy()`), **Level Up** (`GameState.debug_level_up()`), **Give 100 Gold** (`GameState.add_gold(100)`), See All, **Mute** (bottom of the main panel, below Give 100 Gold — calls `AudioManager.toggle_mute()`, label swaps 🔊/🔇 in sync with `AudioManager.mute_changed`, same signal the HUD's own top-right `MuteButton` listens to; added as a more-discoverable second entry point since that corner button is easy to miss).
+Features: **God Mode** (checkbox — activates invincible + noclip + see_all + exposes enemy rolls/HP in chat log), Invincible, Noclip, Jump to Floor, Give Item, **Spawn Enemy** (sub-panel listing all `DungeonFloorData.ENEMY_POOL` + `BOSS_POOL`, spawns adjacent to player via `dungeon_floor.debug_spawn_enemy()`), **Level Up** (`GameState.debug_level_up()`), **Give 100 Gold** (`GameState.add_gold(100)`), **Give Spell...** (sub-panel listing every `SpellDb.CANTRIP_IDS + LEVELED_SPELL_IDS` entry — icon, name, `SpellDb.ordinal(level)` badge, description, "Give" button; `_on_give_spell()` calls `GameState.choose_cantrip()` for a level-0 spell or `learn_spell()` + `set_spell_prepared(id, true)` for a leveled one, both idempotent/cap-safe — for testing any spell without playing through level-ups, no quantity control since spells are boolean known/prepared, not stackable), See All, **Mute** (bottom of the main panel, below Give Spell — calls `AudioManager.toggle_mute()`, label swaps 🔊/🔇 in sync with `AudioManager.mute_changed`, same signal the HUD's own top-right `MuteButton` listens to; added as a more-discoverable second entry point since that corner button is easy to miss).
 
 DungeonFloor registers itself in group `"dungeon_floor"` in `_ready()` so the debug panel can locate it via `get_tree().get_first_node_in_group("dungeon_floor")`. Pool data (`ENEMY_POOL`/`BOSS_POOL`/`ITEM_POOL`) is read directly off `DungeonFloorData` (`scripts/world/dungeon_floor_data.gd`, global via `class_name`) — no `load()` of `dungeon_floor.gd` needed.
 
@@ -154,7 +154,9 @@ If new `Item` fields are added, also update `_on_give_item()` in this file.
 ## Inventory overlay (`inventory_overlay.gd`)
 **Scale**: `SLOT_SIZE = 90`, `SLOT_GAP = 6` (`STEP = 96`), `PANEL_W = 1020`, `PANEL_H = 690` — 1.5× the original 60/4/820/460 values (bumped for legibility; keep the whole overlay's fonts/paddings/offsets scaling off these two constants if you touch them again).
 Equipment slot labels: **Main Hand** (key `"melee"`) / **Off-hand** (key `"hand2"`) / **Ranged** (key `"ranged"`) in `GameState.equipment`.
-**Equipment grid layout** (`_build_equipment_section()`, positions relative to `EQUIPMENT_ORIGIN`): Headgear top-center (above Armor), Ranged top-right (centered above the gap between Main Hand and Off-hand), middle row is Gloves / Armor / Main Hand / Off-hand left→right, Boots bottom-center (below Armor). `"trinket"` still exists as a dead key in `GameState.equipment` but is not rendered in this grid (unrequested/unused).
+**Equipment grid layout** (`_build_equipment_section()`, positions relative to `EQUIPMENT_ORIGIN`): Headgear top-center (above Armor), Ranged top-right (centered above the gap between Main Hand and Off-hand), **Special** immediately right of Ranged, middle row is Gloves / Armor / Main Hand / Off-hand left→right, Boots bottom-center (below Armor). `"trinket"` still exists as a dead key in `GameState.equipment` but is not rendered in this grid (unrequested/unused).
+
+**Special quick-cast slot** (display-only here — see "Spellbook overlay" below for where it's actually assigned): shows the spell icon for `GameState.special_slot_spell_id` (empty = blank). Built with `slot.set_meta("source", "special_display")` instead of `"equipment"` — deliberately NOT part of the Item-shaped equipment drag system (`_do_move()` rejects it outright, `_start_drag()` already no-ops since `_slot_item()` returns null for this source) since it holds a `Spell` reference, not an `Item`. `_update_special_slot()`/`_show_special_slot_tooltip()` are its dedicated render/hover paths (parallel to `_update_slot()`/the generic item tooltip). Right-click calls `GameState.clear_special_slot()`. Cast with **Ctrl+click** in `player.gd` (mirrors Shift+Ranged's one-motion resolve) — see `scripts/entities/CLAUDE.md`'s spellcasting section for `PlayerSpellcasting.cast_direct()`.
 Slot type enforced via `_fits_slot()`: Main Hand (`"melee"`) rejects ranged items and vice versa; `"hand2"` (Off-hand) accepts any non-weapon item, or a Light melee weapon (e.g. the Handaxe) — but only when Main Hand is *also* currently Light — rejecting non-Light weapons, ranged weapons, and a Light weapon whenever Main Hand isn't Light. `equip()` always routes non-ranged weapons to `"melee"` regardless of how they're equipped (pickup, starting gear, debug give-item, or explicit equip) — Off-hand is never auto-populated, only reachable via explicit drag. Dual-wielding two Light weapons now fires a real bonus Off-hand attack — see `scripts/items/CLAUDE.md`'s "Dual-wielding".
 **Two-handed cross indicator**: each `"hand2"` slot gets a hidden `BlockedMark` Label (red "✕", built in `_make_slot()`) toggled in `_refresh()` — visible whenever `GameState.equipment.get("melee")` is non-null and `Item.is_two_handed`, signalling the off-hand is unusable while a two-handed weapon is equipped. Purely visual; `is_two_handed` still doesn't block anything else (e.g. the ranged slot) — see root `CLAUDE.md`.
 
@@ -270,16 +272,36 @@ time**, not just post-level-up/post-long-rest (`docs/architecture/leveled-spells
 §5.5 — deliberate deviation from the framework doc's rest-gated Prepare-Spells picker).
 
 Modeled on `mastery_picker.gd`'s structure (dim overlay + centered bordered `Panel`, hover-detail
-panel, bottom-right "X / Y" counter) with level tabs added across the top (one per spell level the
-character currently has slots for — `StandardSlotPool.max_slots()`'s keys; no cantrip tab,
-cantrips stay purely on the ability bar). Selecting a tab lists the Wizard's known spells of that
-level as rows (icon + name, gold border/tint when prepared). **Hover** a row → the detail panel
-below shows its full description (same "browse and pick" hover-detail pattern as the Mastery
-Picker, not a `[url=]` tooltip). **Click** a row → `GameState.set_spell_prepared(id, bool)`
-toggles prepared, hard-blocked at `SpellcasterState.prepared_max()` (clicking an unprepared spell
-at cap is a silent no-op, same feel as the Mastery Picker's cap block). **Bottom-right counter**:
-`"X / Y prepared"`, identical `RichTextLabel`/color convention to the Mastery Picker's
-`_counter_rtl` (gold under cap, gray at cap, red if ever over).
+panel, bottom-right "X / Y" counter) with level tabs added across the top: an always-present
+**Cantrips** tab (level 0 — not gated on slot progress, since a Wizard always knows their 3
+cantrips) followed by one tab per leveled-spell level the character currently has slots for
+(`StandardSlotPool.max_slots()`'s keys). `_tab_buttons` is a `Dictionary[int, Button]` keyed by
+level (was a `-1`-indexed `Array`, switched when level 0 was added to avoid fragile index math).
+Selecting a tab lists the Wizard's known spells of that level as rows (icon + name, gold
+border/tint when prepared or a cantrip — `_build_row()`'s `is_cantrip` branch always renders a
+cantrip in the gold "always ready" style, suffixed `[ALWAYS READY]` instead of `[PREPARED]`).
+**Hover** a row → the detail panel below shows its full description (same "browse and pick"
+hover-detail pattern as the Mastery Picker, not a `[url=]` tooltip). **Click** a row → on a leveled
+spell, `GameState.set_spell_prepared(id, bool)` toggles prepared, hard-blocked at
+`SpellcasterState.prepared_max()` (clicking an unprepared spell at cap is a silent no-op, same feel
+as the Mastery Picker's cap block); on a cantrip the click is a no-op (`_process()`'s click-toggle
+branch checks `SpellDb.get_spell(id).level > 0` before calling `set_spell_prepared()`). **Bottom-
+right counter**: `"X / Y prepared"` on a leveled-spell tab (identical `RichTextLabel`/color
+convention to the Mastery Picker's `_counter_rtl` — gold under cap, gray at cap, red if ever over),
+or a static `"Always ready"` on the Cantrips tab. Both `GameState.set_spell_prepared()` and
+`place_spell_in_slot()` independently guard against ever adding a cantrip to `prepared_spells` —
+see `scripts/autoloads/CLAUDE.md`.
+
+**Special quick-cast slot** (assignment point — see `inventory_overlay.gd`'s "Special quick-cast
+slot" above for the read-only display): a small bordered box below the drag-and-drop hint text,
+built in `_build_ui()` (`_special_slot_box`). Any known spell (cantrip or leveled) dragged here —
+same press-and-hold-then-release drag mechanism as dragging onto the ability bar — calls
+`GameState.set_special_slot(spell_id)` instead of `place_spell_in_slot()`; checked in
+`_finish_drag()` as one more candidate rect alongside the existing 9 ability-bar slots, ahead of
+that loop. Exists here rather than in `inventory_overlay.gd` because the Inventory and Spellbook
+overlays are mutually exclusive (`player.gd`'s R/I key guards) — there is never a frame where both
+are open, so a drag spanning the two overlays is impossible; the Inventory-side box is
+consequently display-only (see above).
 
 **Drag-and-drop** (leveled-spells-and-slots-plan.md §5.4): press-and-hold a row past
 `DRAG_THRESHOLD` (8px) spawns a floating icon and arms a drag; release resolves via

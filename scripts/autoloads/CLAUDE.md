@@ -70,6 +70,7 @@ Rng.get_state() / Rng.set_state(s)  # exact stream position (int64) for save/loa
 | `known_masteries_changed` | — | `known_weapon_masteries` mutated via `toggle_mastery()` |
 | `gold_changed` | `new_amount: int` | `add_gold()`/`spend_gold()` (also re-emitted by `spend_gold()` while invincible, and by `from_dict()`) |
 | `spell_slots_changed` | — | Wizard spell-slot pool mutated (`consume()`, `on_long_rest()`, level-up grant) or a spell prepared/unprepared — see "Leveled spells / spellbook" below |
+| `special_slot_changed` | — | `set_special_slot()`/`clear_special_slot()` — the Special quick-cast slot's assigned spell changed |
 
 ---
 
@@ -127,6 +128,7 @@ spell_learn_pending: bool    # Wizard level-up spell-learn picker should be show
 spell_learn_choices: Array[String]  # up to 3 rolled candidate spell ids for that picker
 spell_learn_picker_open: bool       # blocks ALL player input while spell_learn_picker.gd is visible
 spellbook_open: bool                # blocks ALL player input while spellbook_overlay.gd (R key) is visible
+special_slot_spell_id: String        # "" = none; the Special quick-cast slot's assigned spell (cantrip or leveled), see below
 ```
 
 **Leveled spells / spellbook (`docs/architecture/leveled-spells-and-slots-plan.md`)**: Wizard-only,
@@ -145,6 +147,15 @@ refill hooks into the existing chokepoints: `long_rest()` gains one
 `player_stats.caster.slot_pool.on_long_rest()` line; `gain_exp()` snapshots the pool's
 `max_slots()` before applying a level-up and calls `grant_new_slots_on_levelup(old_max)` after, so
 newly-grown slots are immediately usable rather than empty until the next long rest.
+
+**Special quick-cast slot**: `set_special_slot(spell_id) -> bool` (validates caster exists and
+`known_spells.has(spell_id)`) / `clear_special_slot()` — a single spell reference independent of
+`player_ability_bar` and `prepared_spells`, assigned from inside the Spellbook overlay (see
+`scripts/ui/CLAUDE.md`), displayed read-only in the Inventory overlay next to Ranged, cast with
+Ctrl+click via `PlayerSpellcasting.cast_direct()` (see `scripts/entities/CLAUDE.md`'s "Wizard
+leveled spells"). Persisted as a top-level `"special_slot_spell_id"` string in `to_dict()`/
+`from_dict()` (same pattern as `gold`); restored last in `from_dict()`, after `Stats.from_dict()`
+repopulates `known_spells`, and silently clears if the saved id is no longer known.
 
 **Gold economy (session 7a)**: `add_gold(amount)` (ignores ≤ 0) and `spend_gold(amount) -> bool` are the only mutation points — both emit `gold_changed(gold)`. While `invincible`, `spend_gold()` succeeds WITHOUT decrementing (consumption-skip invariant; earning is unaffected). Reset to 0 in `start_new_run()`; persists across floors (`advance_floor()` never touches it). Serialized as a top-level `"gold"` key in `to_dict()`/`from_dict()` (`int(d.get("gold", 0))` — old saves load as 0). Gold piles on the floor are `Item.Type.GOLD` items whose `gold_value` is the pile size — picked up straight into the wallet by `PlayerActions.check_pickup()`, never into the inventory. Spending has no sink yet (the Shop is session 7e).
 

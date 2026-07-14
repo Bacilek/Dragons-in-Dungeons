@@ -412,6 +412,18 @@ either) — see `scripts/ui/CLAUDE.md`'s "Spellbook overlay" section.
   accepted limitation Ray of Frost's cantrip already lives with).
 - **Shield**: `Stats.shield_ac_bonus` (+5, folded into `recalc_ac()`), cleared at the start of the
   caster's next real turn in `player.gd._on_turn_started()`'s `if not came_from_revert:` block.
+- **Special quick-cast slot**: a single spell (cantrip or leveled), assigned from inside the
+  Spellbook overlay (`GameState.special_slot_spell_id`/`set_special_slot()`/`clear_special_slot()`,
+  see `scripts/autoloads/CLAUDE.md`), displayed read-only next to Ranged in the Inventory overlay
+  (`scripts/ui/CLAUDE.md`), cast with **Ctrl+click** — a direct, one-motion resolve mirroring
+  Shift+Ranged rather than the ability bar's two-step arm-then-click. `PlayerSpellcasting.
+  cast_direct(spell_id, clicked)` (`scripts/entities/player_spellcasting.gd`) is the dedicated
+  entry point: SELF-target spells (Shield) ignore `clicked` and self-cast immediately (same branch
+  `begin_cast()` uses); every other target kind sets `_armed_spell_id` directly and calls the
+  existing `try_cast_at()` — reuses 100% of the normal cast's range/LOS/slot-consumption logic,
+  no duplicated resolution code. Dispatched from `player.gd`'s mouse-release handler, as an `elif`
+  alongside the Shift+Ranged branch (`Input.is_key_pressed(KEY_CTRL) and GameState.
+  special_slot_spell_id != ""`).
 - **Misty Step**: instant teleport via `Entity.set_grid_pos()` (no tween) to a clicked visible
   tile within range.
 - **Persistence**: `Stats.to_dict()`/`from_dict()` gained `caster_known_spells`,

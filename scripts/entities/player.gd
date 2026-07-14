@@ -633,6 +633,11 @@ func _unhandled_input(event: InputEvent) -> void:
 					else:
 						_ranged.ranged_attack_tile(pending)
 					return
+				if Input.is_key_pressed(KEY_CTRL) and GameState.special_slot_spell_id != "":
+					if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
+						return
+					_spellcasting.cast_direct(GameState.special_slot_spell_id, pending)
+					return
 				var enemy_on_tile: Enemy = _dungeon_floor.get_enemy_at(pending)
 				if enemy_on_tile != null:
 					_target_enemy = enemy_on_tile

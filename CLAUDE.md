@@ -15,7 +15,7 @@ After every feature, fix, or refactor that changes architecture, adds a system, 
 
 Open `project.godot` in **Godot 4.6 (Mono build)**. Press **F5** to run. No CLI build commands.
 
-**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait (also forfeits Extra Attack). Ctrl = search. Alt = rest (short/long tabs). RMB on world = interact. 1–9 = use active quickbar slot 0–8. **Tab = toggle between item bar and ability bar**. I = open inventory. **R = open Wizard Spellbook** (choose prepared leveled spells; no-op for non-casters). Left-click enemy = chase+attack (melee). Shift+left-click enemy/tile = ranged attack (if ranged weapon equipped and in range). Left-click floor = pathfind. RMB on food in quickbar = throw mode, then LMB = throw. Esc = cancel throw/tool. **Thief Tools keyboard**: prime via quickbar hotkey → WASD into open/closed door = lock attempt; WASD into locked door = pick/unlock attempt. Note: F key no longer opens doors.
+**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait (also forfeits Extra Attack). Ctrl = search. Alt = rest (short/long tabs). RMB on world = interact. 1–9 = use active quickbar slot 0–8. **Tab = toggle between item bar and ability bar**. I = open inventory. **R = open Wizard Spellbook** (choose prepared leveled spells; no-op for non-casters). Left-click enemy = chase+attack (melee). Shift+left-click enemy/tile = ranged attack (if ranged weapon equipped and in range). Ctrl+left-click enemy/tile = cast whichever spell is in the Special quick-cast slot (if one is assigned — see Spellbook overlay). Left-click floor = pathfind. RMB on food in quickbar = throw mode, then LMB = throw. Esc = cancel throw/tool. **Thief Tools keyboard**: prime via quickbar hotkey → WASD into open/closed door = lock attempt; WASD into locked door = pick/unlock attempt. Note: F key no longer opens doors.
 
 ## Architecture
 
@@ -115,7 +115,12 @@ Design docs: `docs/architecture/spellcasting-design.md` (the original full-frame
 concentration/reactions/enemy-casters/half-casters/multiclass remain design-only per that doc)
 and `docs/architecture/leveled-spells-and-slots-plan.md` (the narrower plan actually implemented
 here, which supersedes the framework doc's prepared-count formula and casting-surface UI for
-Wizard).
+Wizard). The Spellbook overlay also has an always-present Cantrips tab and a **Special quick-cast
+slot** (assigned there, one spell — cantrip or leveled — cast from anywhere with **Ctrl+click**,
+displayed read-only in the Inventory overlay next to Ranged) — see `scripts/ui/CLAUDE.md`'s
+Spellbook/Inventory sections and `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for
+`PlayerSpellcasting.cast_direct()`. The debug panel's **Give Spell...** sub-panel (F3) lets God
+Mode grant any cantrip or leveled spell directly for testing.
 
 ### Talent system (`scripts/items/talent.gd`, `scripts/autoloads/game_state.gd`)
 `Talent` is a reusable Resource: `talent_id`, `talent_name`, `description`, `icon_path`, `tier`, `class_id`, `max_rank`, `ranks: Array[Dictionary]`. `rank_description(rank)` returns the description string for a given rank.
