@@ -55,7 +55,11 @@ decisions" the same way the framework doc has its §1.1):
 5. **UI**: **R** opens a Spellbook overlay (§5) — level tabs, hover-for-description, click to
    toggle prepared, bottom-right "X / Y prepared" counter (mastery-picker visual precedent).
    The level-up spell choice is a **separate** one-time blocking picker (§4.1), modeled on
-   `talent_picker.gd`'s post-level-up spawn — not the same overlay as the Spellbook.
+   `talent_picker.gd`'s post-level-up spawn — not the same overlay as the Spellbook. Additionally,
+   a known spell row can be **dragged directly from the Spellbook onto a specific ability-bar
+   slot** (§5.5) for convenient placement — but **only onto an ability-bar page (the player's
+   "2nd–4th quickbar"). The item quickbar (page 1) and the inventory bag are always invalid drop
+   targets**, rejected outright with no state change.
 6. **Casting surface unchanged**: prepared spells appear on the existing ability bar exactly
    like cantrips already do (`ability_id = "spell:" + spell_id`, framework doc §5.4's
    `PlayerSpellcasting.begin_cast()` flow, already implemented for cantrips — see
@@ -328,7 +332,7 @@ starting set) and `caster.prepared_spells` to 1 of those 3 (also fixed, since `p
 at level 1 is exactly 1 — pick whichever is most illustrative, e.g. Magic Missile). The player
 can immediately open the Spellbook (§5) and swap which of the 3 known spells is prepared even
 before their first long rest, since nothing in §5's UI gates "can I change prepared" on having
-completed a rest — see §5.4 for why that's fine.
+completed a rest — see §5.5 for why that's fine.
 
 ### 4.4 Persistence
 
@@ -383,7 +387,7 @@ where `mastery_picker_open` etc. already sit.
 - **Bottom-right counter**: `RichTextLabel`, "X / Y prepared" — identical control/positioning
   pattern to `mastery_picker.gd`'s `_counter_rtl` (`_counter_rtl.text = "[right][color=%s]%d /
   %d[/color][/right]" % [...]`, `scripts/ui/mastery_picker.gd:206`).
-- **No confirm/close button needed to "commit"** — see §5.4 for why every toggle applies
+- **No confirm/close button needed to "commit"** — see §5.5 for why every toggle applies
   immediately. A plain Esc-to-close (or a small ✕) suffices, matching `_unhandled_input()`
   patterns in the other pickers.
 
@@ -435,7 +439,88 @@ decision by the time this is implemented, this loop needs to walk pages — same
 `_find_ability_by_id()`/`add_ability()` themselves will need; not this doc's concern, just note
 the coupling.)
 
-### 5.4 Why no "commit" step / no long-rest gating on changes
+### 5.4 Drag & drop from the Spellbook into the ability quickbar
+
+Added per explicit follow-up from the project owner: clicking a Spellbook row to toggle prepared
+(§5.2) still works and still auto-places into the first empty ability-bar slot via `add_ability()`
+(§5.3) — but the player should also be able to **drag** a known spell row straight onto a chosen
+ability-bar slot for convenient, deliberate placement, restricted to ability-bar pages only.
+
+**Why this needs new plumbing, not just reuse**: `inventory_overlay.gd`'s existing drag system
+(`_finish_drag()`/`_do_move()`, `scripts/ui/inventory_overlay.gd:375-406`) is entirely
+`Item`-based — it drags `Item` resources between quickbar/bag/equipment slots via
+`GameState.move_item(src, src_idx, src_sname, dest_src, dest_idx, dest_sname)`. Abilities
+(`player_ability_bar`) have **no drag system at all today** — every existing ability-bar entry is
+placed exclusively by `add_ability()` auto-filling the first empty slot (§5.3), and nothing in the
+codebase currently supports manually repositioning or targeting a specific ability-bar slot. This
+is new capability, not a reuse of the item-drag path.
+
+**Mechanism** (mirrors the *shape* of `inventory_overlay.gd`'s press/release drag — floating icon
+under the cursor, rect hit-testing on release — but is its own implementation, since source rows
+live in `spellbook_overlay.gd`, a different CanvasLayer than the HUD's ability bar):
+
+1. Press-and-hold on a known-spell row in the Spellbook (§5.2's list) starts a drag: spawn a
+   floating `TextureRect` of the spell's icon following the mouse, same visual as
+   `inventory_overlay.gd._finish_drag()`'s `_drag_icon` (`custom_minimum_size`/`stretch_mode`/
+   `texture_filter` copied verbatim for consistency). Record the dragged `spell_id`.
+2. On release, hit-test against the **HUD's ability-bar slot Controls** (`hud.gd`'s existing
+   ability-bar slot array, whichever page is currently visible per the framework doc's
+   auto-paging — framework doc §5.4's Tab-toggle/page-flip UI). The Spellbook overlay sits above the HUD
+   (`spellbook_overlay.gd`'s CanvasLayer must render above the HUD's, or hit-testing needs to
+   read HUD slot screen-rects directly — same cross-CanvasLayer concern `hud.gd`'s existing drag
+   already has to solve for its own slots, no new pattern needed here).
+3. **Valid drop target**: any ability-bar slot on any ability-bar page. **Invalid drop targets**
+   (rejected — icon snaps back to the Spellbook row, no state change, no error dialog, just a
+   quiet miss): the item quickbar (page 1 — `hud.gd`'s `_bar_mode_label` "ITEMS" mode), any
+   inventory-overlay slot (bag/equipment), and dropping outside any slot entirely. This is a
+   **hard rule**, not a UX nicety — the item quickbar's slot semantics (`Item` resources, `Item`-
+   typed drag payload) are incompatible with placing an `Ability`/spell there; the check is a
+   simple `dest is HUD ability-bar slot` type/source gate, mirroring `_do_move()`'s existing
+   `dest_src == "equipment"` gate pattern.
+4. On a valid drop: `GameState.place_spell_in_slot(spell_id, page: int, index: int)` (new
+   function):
+   ```gdscript
+   func place_spell_in_slot(spell_id: String, page: int, index: int) -> bool:
+       var caster: SpellcasterState = player_stats.caster
+       if caster == null or not caster.known_spells.has(spell_id):
+           return false
+       if not caster.prepared_spells.has(spell_id):
+           if caster.prepared_spells.size() >= caster.prepared_max(player_stats):
+               return false   # not prepared and no room to prepare it — reject the drop
+           caster.prepared_spells.append(spell_id)
+       # Build (or find, if already placed elsewhere from a prior prepare) the Ability, then
+       # either move it or place it fresh directly into the target slot — swap with whatever
+       # already occupies that slot (mirrors GameState.move_item()'s bag-to-bag swap behavior)
+       # rather than rejecting an occupied target.
+       var existing: Ability = _find_ability_by_id("spell:" + spell_id)
+       var displaced: Ability = player_ability_bar[page][index]   # once Array[Array] per framework doc §5.4
+       if existing != null:
+           _remove_ability_by_id("spell:" + spell_id)   # §5.3
+       else:
+           existing = _build_spell_ability(spell_id)     # factored out of set_spell_prepared()'s inline Ability construction
+       player_ability_bar[page][index] = existing
+       if displaced != null and existing != displaced:
+           add_ability(displaced)   # bumped entry re-homes to the first empty slot, doesn't vanish
+       ability_bar_changed.emit()
+       return true
+   ```
+   Dropping an **already-prepared** spell onto a different slot is a pure reposition (no
+   `prepared_spells` change, `existing != null` branch). Dropping a **not-yet-prepared** spell
+   directly onto a chosen slot both prepares it and places it there in one motion — a genuine
+   shortcut over "click to prepare (auto-placed) then no way to move it," which is the whole
+   point of adding drag support.
+5. Dropping onto an **occupied** ability-bar slot swaps the displaced entry back into the bar via
+   the existing `add_ability()` auto-placement (first empty slot) rather than discarding it —
+   consistent with "abilities are never silently lost" (nothing in the current codebase ever
+   deletes an ability except explicit unprepare, §5.3).
+
+**Not in scope for this section**: reordering *non-spell* abilities (Rage, weapon passives, Tier
+2 base abilities) via drag — those still only ever land via their own grant call sites. This
+drag mechanism is Spellbook-row-sourced only; it doesn't retrofit general ability-bar
+drag-and-drop for everything else. If that's wanted later, `place_spell_in_slot()`'s swap logic
+is the template to generalize.
+
+### 5.5 Why no "commit" step / no long-rest gating on changes
 
 The framework doc's original Prepare-Spells picker (§4.2) only opens after a long rest,
 mirroring real D&D's "prepare spells during a long rest" flavor. **Decision for this
@@ -537,8 +622,11 @@ implementation pass:
   deliberately avoid needing concentration or reactions.
 - **Scroll item content** (which spells get scrolls, where/how often they spawn as floor loot).
   Only the mechanism (`Item.taught_spell_id`, §4.2) is specced.
-- **Rest-gated Spellbook access / reselection prompts.** Explicitly decided against in §5.4 —
+- **Rest-gated Spellbook access / reselection prompts.** Explicitly decided against in §5.5 —
   the book is always open-able.
+- **General ability-bar drag-and-drop** for non-spell abilities (Rage, weapon passives, Tier 2
+  base abilities). §5.4 only adds drag support for Spellbook rows; nothing else on the ability
+  bar becomes draggable in this pass.
 - **Spell components, ritual casting, metamagic-equivalents.** Framework doc §10.1/§10.2/§10.7
   already deferred these; unchanged here.
 - **Upcast display polish beyond the framework doc's `upcast_summary()` (§10.9).** Reused as-is
@@ -568,9 +656,11 @@ leaves the game in a playable state:
 4. **Level-up spell-choice picker**: `spell_learn_picker.gd`, `GameState.learn_spell()` +
    `spell_learn_pending` wiring in `gain_exp()` (§4.1). Commit.
 5. **Spellbook overlay**: `spellbook_overlay.gd`, `GameState.set_spell_prepared()` +
-   `_remove_ability_by_id()` (§5), `R` key wiring + input-gate additions in `player.gd`. Full
+   `_remove_ability_by_id()` (§5.3), `R` key wiring + input-gate additions in `player.gd`. Full
    loop now playable end-to-end: level up → learn a spell → open book → prepare it → cast it.
-   Commit.
+   Commit. Drag-and-drop placement (§5.4, `GameState.place_spell_in_slot()` + the Spellbook-row
+   drag source) can land as a follow-up commit within this same step or its own — click-to-
+   prepare (§5.2/§5.3) is the functional minimum, drag is the convenience layer on top.
 6. **Scrolls**: `Item.taught_spell_id` field + `to_dict()`/`from_dict()`/`debug_panel.ALL_ITEMS`
    updates, `use_item()` SCROLL branch (§4.2). Commit.
 7. **Persistence**: `Stats.to_dict()`/`from_dict()` `"caster"` sub-dict (§4.4), including
