@@ -326,6 +326,7 @@ func start_new_run() -> void:
 	short_rests_remaining = 2
 	max_short_rests = 2
 	gold = 0
+	special_slot_spell_id = ""
 	long_rest_pending = false
 	player_stats = Stats.new()
 	player_stats.apply_class_defaults()  # defaults until class select overrides
@@ -628,6 +629,9 @@ func set_spell_prepared(spell_id: String, prepared: bool) -> bool:
 	var caster: SpellcasterState = player_stats.caster
 	if caster == null or not caster.known_spells.has(spell_id):
 		return false
+	var spell_check: Spell = SpellDb.get_spell(spell_id)
+	if spell_check == null or spell_check.level == 0:
+		return false   # cantrips are always-ready; never enter prepared_spells
 	if prepared:
 		if caster.prepared_spells.has(spell_id):
 			return true
@@ -653,7 +657,12 @@ func place_spell_in_slot(spell_id: String, index: int) -> bool:
 	var caster: SpellcasterState = player_stats.caster
 	if caster == null or not caster.known_spells.has(spell_id) or index < 0 or index >= ABILITY_BAR_SIZE:
 		return false
-	if not caster.prepared_spells.has(spell_id):
+	var spell_check: Spell = SpellDb.get_spell(spell_id)
+	if spell_check == null:
+		return false
+	# Cantrips never enter prepared_spells (always-ready, no prep cap to enforce) — only a leveled
+	# spell needs the prepare-on-drop step.
+	if spell_check.level > 0 and not caster.prepared_spells.has(spell_id):
 		if caster.prepared_spells.size() >= caster.prepared_max(player_stats):
 			return false
 		caster.prepared_spells.append(spell_id)
@@ -687,6 +696,25 @@ func swap_ability_slots(a: int, b: int) -> bool:
 	player_ability_bar[b] = tmp
 	ability_bar_changed.emit()
 	return true
+
+## Special quick-cast slot: a single spell (cantrip or leveled) assigned from inside the Spellbook
+## overlay's own drop target, displayed read-only in the Inventory overlay next to Ranged, and cast
+## with Ctrl+click in player.gd — independent of the ability bar and of prepared_spells (a third,
+## lightweight home for a spell reference, not an Item-shaped equipment slot).
+signal special_slot_changed()
+var special_slot_spell_id: String = ""
+
+func set_special_slot(spell_id: String) -> bool:
+	var caster: SpellcasterState = player_stats.caster
+	if caster == null or not caster.known_spells.has(spell_id):
+		return false
+	special_slot_spell_id = spell_id
+	special_slot_changed.emit()
+	return true
+
+func clear_special_slot() -> void:
+	special_slot_spell_id = ""
+	special_slot_changed.emit()
 
 ## Grants a subclass's free, rank-independent Tier 2 activation ability (Frenzy, Limit Break,
 ## Animal Form, Zealot Strike) directly at subclass selection — NOT gated by any talent rank.
@@ -2170,6 +2198,7 @@ func to_dict() -> Dictionary:
 		"rng_state": str(Rng.get_state()),
 		"current_floor": current_floor,
 		"gold": gold,
+		"special_slot_spell_id": special_slot_spell_id,
 		"player_stats": player_stats.to_dict(),
 		"talents": {
 			"talent_investments": talent_investments.duplicate(),
@@ -2273,6 +2302,12 @@ func from_dict(d: Dictionary) -> void:
 	# 5. Stats LAST (restore-stats-last rule, doc §4.3), then derive AC/damage from equipment.
 	player_stats.from_dict(stats_d)
 	_rebuild_spell_ability_bar()
+	# Restore the special quick-cast slot last — set_special_slot() validates against the just-
+	# restored known_spells and silently clears (returns false, leaves "" default) if the saved
+	# spell is no longer known (e.g. a respec edge case), never crashes on a stale id.
+	var saved_special: String = String(d.get("special_slot_spell_id", ""))
+	if saved_special != "":
+		set_special_slot(saved_special)
 	recalculate_stats()
 	# Re-derive level-scaled ability maxima (e.g. Rage uses_max) from the restored stats;
 	# the saved ability_uses patches below then overwrite uses_remaining where applicable.

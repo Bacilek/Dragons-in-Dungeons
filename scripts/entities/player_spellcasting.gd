@@ -69,6 +69,25 @@ func _effective_range(spell: Spell) -> int:
 		return DungeonFloor.FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus
 	return spell.range_tiles
 
+## Direct one-motion cast for the Special quick-cast slot (Ctrl+click in player.gd, mirroring
+## Shift+ranged's single-motion resolve — no separate arm-then-click step like the ability-bar's
+## begin_cast()/try_cast_at() pair). SELF-target spells (Shield) ignore `clicked` entirely and
+## self-cast immediately, same as begin_cast()'s own SELF branch.
+func cast_direct(spell_id: String, clicked: Vector2i) -> void:
+	var spell: Spell = SpellDb.get_spell(spell_id)
+	if spell == null:
+		return
+	if spell.level > 0:
+		var caster: SpellcasterState = player.stats.caster
+		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
+			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
+			return
+	if spell.target_kind == Spell.TargetKind.SELF:
+		_cast_self(spell)
+		return
+	_armed_spell_id = spell_id
+	try_cast_at(clicked)
+
 func try_cast_at(clicked: Vector2i) -> void:
 	var spell_id: String = _armed_spell_id
 	spell_targeting_active = false

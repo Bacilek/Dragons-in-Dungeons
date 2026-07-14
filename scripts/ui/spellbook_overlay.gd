@@ -11,7 +11,7 @@ const ROW_H: float = 56.0
 const DRAG_THRESHOLD: float = 8.0
 
 var _panel: Panel
-var _tab_buttons: Array[Button] = []
+var _tab_buttons: Dictionary = {}   # level (int, 0 = Cantrips) -> Button
 var _row_container: Control
 var _detail_name: Label
 var _detail_desc: RichTextLabel
@@ -20,6 +20,11 @@ var _selected_level: int = 1
 var _max_level: int = 0
 var _prev_bar_mode_was_ability: bool = false
 const ACTION_BAR_HEIGHT: float = 140.0   # matches hud.tscn's ActionBar (offset_top = -135.0) + a small margin
+
+# Special quick-cast slot (assigned here, displayed read-only in inventory_overlay.gd next to
+# Ranged, cast with Ctrl+click in player.gd) — a fourth valid drop target alongside the 9
+# ability-bar slots, see _finish_drag().
+var _special_slot_box: Control
 
 # Drag state (press-and-hold on a row, release over an ability-bar slot — see §5.4)
 var _dragging: bool = false
@@ -34,9 +39,9 @@ func _ready() -> void:
 	if caster != null and caster.slot_pool != null:
 		for lv: int in caster.slot_pool.max_slots():
 			_max_level = maxi(_max_level, lv)
-	_selected_level = 1 if _max_level == 0 else mini(_selected_level, _max_level)
-	if _max_level == 0:
-		_selected_level = 0
+	# Cantrips (level 0) are always available regardless of slot progress — default to that tab
+	# only when there's nothing else to show yet; otherwise keep the existing 1st-level default.
+	_selected_level = 0 if _max_level == 0 else mini(_selected_level, _max_level)
 	# The ActionBar is the only valid drag-and-drop target (§5.4) — force it visible/active for
 	# the overlay's whole lifetime, restoring whichever mode was showing before on close. Also
 	# fixes the drag being impossible to aim at all when the item quickbar happened to be showing.
@@ -105,26 +110,25 @@ func _build_ui() -> void:
 	_panel.add_child(sep1)
 
 	# ── Level tabs ──────────────────────────────────────────────────────────────
+	# Cantrips (level 0) always gets a tab — Wizards always know their 3 cantrips regardless of
+	# leveled-spell-slot progress — followed by one tab per leveled-slot level the character
+	# currently has (may be zero this early).
 	var tab_y: float = 72.0
 	var tab_w: float = 64.0
-	if _max_level == 0:
-		var no_lv := Label.new()
-		no_lv.text = "No leveled-spell slots yet."
-		no_lv.add_theme_font_size_override("font_size", 14)
-		no_lv.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-		no_lv.position = Vector2(20.0, tab_y)
-		_panel.add_child(no_lv)
-	else:
-		for lv: int in range(1, _max_level + 1):
-			var tab := Button.new()
-			tab.text = _ordinal(lv)
-			tab.size = Vector2(tab_w, 32.0)
-			tab.position = Vector2(20.0 + (lv - 1) * (tab_w + 6.0), tab_y)
-			tab.focus_mode = Control.FOCUS_NONE
-			tab.toggle_mode = true
-			tab.pressed.connect(func() -> void: _select_level(lv))
-			_panel.add_child(tab)
-			_tab_buttons.append(tab)
+	var levels: Array[int] = [0]
+	for lv: int in range(1, _max_level + 1):
+		levels.append(lv)
+	for i: int in levels.size():
+		var lv: int = levels[i]
+		var tab := Button.new()
+		tab.text = _ordinal(lv)
+		tab.size = Vector2(tab_w, 32.0)
+		tab.position = Vector2(20.0 + i * (tab_w + 6.0), tab_y)
+		tab.focus_mode = Control.FOCUS_NONE
+		tab.toggle_mode = true
+		tab.pressed.connect(func() -> void: _select_level(lv))
+		_panel.add_child(tab)
+		_tab_buttons[lv] = tab
 
 	var sep2 := HSeparator.new()
 	sep2.position = Vector2(12.0, tab_y + 40.0)
@@ -180,14 +184,44 @@ func _build_ui() -> void:
 	hint.size = Vector2(PANEL_W - 40.0, 32.0)
 	_panel.add_child(hint)
 
+	# ── Special quick-cast slot ─────────────────────────────────────────────────
+	# Assigned here (not in inventory_overlay.gd — that overlay and this one are mutually
+	# exclusive, see root CLAUDE.md's onboarding notes / player.gd's R-key guard), displayed
+	# read-only next to Ranged in the Inventory overlay, cast with Ctrl+click in player.gd.
+	var special_y: float = detail_y + 30.0 + 70.0 + 6.0 + 32.0 + 6.0
+	var special_label := Label.new()
+	special_label.text = "Special Slot — drag a spell here, Ctrl+click a target to cast it:"
+	special_label.add_theme_font_size_override("font_size", 12)
+	special_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
+	special_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	special_label.position = Vector2(20.0, special_y + 10.0)
+	special_label.size = Vector2(PANEL_W - 40.0 - 64.0, 32.0)
+	_panel.add_child(special_label)
+
+	_special_slot_box = Panel.new()
+	_special_slot_box.position = Vector2(PANEL_W - 20.0 - 48.0, special_y)
+	_special_slot_box.size = Vector2(48.0, 48.0)
+	var ssb := StyleBoxFlat.new()
+	ssb.bg_color = Color(0.14, 0.10, 0.20, 0.9)
+	ssb.set_border_width_all(2)
+	ssb.border_color = Color(0.75, 0.55, 1.0)
+	ssb.set_corner_radius_all(4)
+	_special_slot_box.add_theme_stylebox_override("panel", ssb)
+	_panel.add_child(_special_slot_box)
+
+	var special_icon := TextureRect.new()
+	special_icon.name = "Icon"
+	special_icon.size = Vector2(40.0, 40.0)
+	special_icon.position = Vector2(4.0, 4.0)
+	special_icon.ignore_texture_size = true
+	special_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	special_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_special_slot_box.add_child(special_icon)
+
 	_refresh()
 
 func _ordinal(n: int) -> String:
-	match n:
-		1: return "1st"
-		2: return "2nd"
-		3: return "3rd"
-		_: return "%dth" % n
+	return SpellDb.ordinal(n)
 
 func _select_level(lv: int) -> void:
 	_selected_level = lv
@@ -209,10 +243,10 @@ func _refresh() -> void:
 	var caster: SpellcasterState = GameState.player_stats.caster
 	if caster == null:
 		return
-	for tab: Button in _tab_buttons:
-		tab.button_pressed = false
-	if _selected_level > 0 and _selected_level - 1 < _tab_buttons.size():
-		_tab_buttons[_selected_level - 1].button_pressed = true
+	for lv: int in _tab_buttons:
+		(_tab_buttons[lv] as Button).button_pressed = false
+	if _tab_buttons.has(_selected_level):
+		(_tab_buttons[_selected_level] as Button).button_pressed = true
 
 	for c in _row_container.get_children():
 		c.queue_free()
@@ -235,21 +269,35 @@ func _refresh() -> void:
 		empty_lbl.position = Vector2(0.0, 4.0)
 		_row_container.add_child(empty_lbl)
 
-	var cap: int = caster.prepared_max(GameState.player_stats)
-	var count: int = caster.prepared_spells.size()
-	var count_color: String = "#FFD700"
-	if count > cap:
-		count_color = "#e05050"
-	elif count >= cap:
-		count_color = "#888888"
-	_counter_rtl.text = "[right][color=%s]%d / %d prepared[/color][/right]" % [count_color, count, cap]
+	if _selected_level == 0:
+		_counter_rtl.text = "[right][color=#88ccff]Always ready[/color][/right]"
+	else:
+		var cap: int = caster.prepared_max(GameState.player_stats)
+		var count: int = caster.prepared_spells.size()
+		var count_color: String = "#FFD700"
+		if count > cap:
+			count_color = "#e05050"
+		elif count >= cap:
+			count_color = "#888888"
+		_counter_rtl.text = "[right][color=%s]%d / %d prepared[/color][/right]" % [count_color, count, cap]
+
+	# Special-slot box mirrors GameState.special_slot_spell_id.
+	if _special_slot_box != null:
+		var sicon: TextureRect = _special_slot_box.get_node_or_null("Icon") as TextureRect
+		if sicon != null:
+			var sid: String = GameState.special_slot_spell_id
+			var sspell: Spell = SpellDb.get_spell(sid) if sid != "" else null
+			sicon.texture = load(sspell.icon_path) if sspell != null and sspell.icon_path != "" and ResourceLoader.exists(sspell.icon_path) else null
 
 func _build_row(spell_id: String, y: float) -> void:
 	var caster: SpellcasterState = GameState.player_stats.caster
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return
-	var prepared: bool = caster.prepared_spells.has(spell_id)
+	# Cantrips (level 0) are always-ready — never enter prepared_spells, but read as "prepared"
+	# for styling purposes since there's no meaningful unprepared state for them.
+	var is_cantrip: bool = spell.level == 0
+	var prepared: bool = is_cantrip or caster.prepared_spells.has(spell_id)
 
 	var row := Button.new()
 	row.position = Vector2(0.0, y)
@@ -276,7 +324,8 @@ func _build_row(spell_id: String, y: float) -> void:
 	row.add_child(icon)
 
 	var name_lbl := Label.new()
-	name_lbl.text = spell.spell_name + ("  [PREPARED]" if prepared else "")
+	var suffix: String = "  [ALWAYS READY]" if is_cantrip else ("  [PREPARED]" if prepared else "")
+	name_lbl.text = spell.spell_name + suffix
 	name_lbl.add_theme_font_size_override("font_size", 15)
 	name_lbl.position = Vector2(54.0, (ROW_H - 6.0 - 20.0) * 0.5)
 	name_lbl.size = Vector2(PANEL_W - 100.0, 22.0)
@@ -329,6 +378,12 @@ func _finish_drag() -> void:
 		GameState.game_log("[color=gray]Spells can only be placed on the ability bar.[/color]")
 		return
 	var mouse_pos: Vector2 = get_viewport().get_mouse_position()
+	if _special_slot_box != null:
+		var special_rect := Rect2(_special_slot_box.global_position, _special_slot_box.size)
+		if special_rect.has_point(mouse_pos):
+			GameState.set_special_slot(_drag_spell_id)
+			_refresh()
+			return
 	for i: int in GameState.ABILITY_BAR_SIZE:
 		if hud.get_action_slot_global_rect(i).has_point(mouse_pos):
 			GameState.place_spell_in_slot(_drag_spell_id, i)
@@ -358,8 +413,10 @@ func _process(_delta: float) -> void:
 		if _dragging:
 			_finish_drag()
 		else:
-			GameState.set_spell_prepared(_drag_spell_id, not GameState.player_stats.caster.prepared_spells.has(_drag_spell_id))
-			_refresh()
+			var clicked_spell: Spell = SpellDb.get_spell(_drag_spell_id)
+			if clicked_spell != null and clicked_spell.level > 0:
+				GameState.set_spell_prepared(_drag_spell_id, not GameState.player_stats.caster.prepared_spells.has(_drag_spell_id))
+				_refresh()
 		_drag_spell_id = ""
 
 func _unhandled_input(event: InputEvent) -> void:

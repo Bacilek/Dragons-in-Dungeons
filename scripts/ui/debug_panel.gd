@@ -1,7 +1,7 @@
 extends CanvasLayer
 
 const PANEL_W:    int = 280
-const PANEL_H:    int = 322
+const PANEL_H:    int = 358
 const FLOOR_SW:   int = 234
 const FLOOR_SH:   int = 96
 const ITEMS_SW:   int = 390
@@ -10,6 +10,8 @@ const SPAWN_SW:   int = 320
 const SPAWN_SH:   int = 380
 const TALENT_SW:  int = 310
 const TALENT_SH:  int = 380
+const SPELLS_SW:  int = 340
+const SPELLS_SH:  int = 340
 
 const WEAPONS_PATH := "res://sprites/weapons/"
 const ITEMS_PATH   := "res://sprites/items/"
@@ -46,6 +48,7 @@ var _floor_sub:     Panel
 var _items_sub:     Panel
 var _spawn_sub:     Panel
 var _talent_sub:    Panel
+var _spells_sub:    Panel
 var _talent_vbox:   VBoxContainer
 var _talent_rank_labels: Dictionary = {}   # talent_id -> Label
 var _god_check:     CheckBox
@@ -58,6 +61,7 @@ func _ready() -> void:
 	_build_items_sub()
 	_build_spawn_sub()
 	_build_talent_sub()
+	_build_spells_sub()
 	call_deferred("_reposition")
 
 # ── Positioning ───────────────────────────────────────────────────────────────
@@ -69,6 +73,7 @@ func _reposition() -> void:
 	_items_sub.position   = Vector2(vp_w - PANEL_W - ITEMS_SW - 8.0, 4.0)
 	_spawn_sub.position   = Vector2(vp_w - PANEL_W - SPAWN_SW - 8.0, 4.0)
 	_talent_sub.position  = Vector2(vp_w - PANEL_W - TALENT_SW - 8.0, 4.0)
+	_spells_sub.position  = Vector2(vp_w - PANEL_W - SPELLS_SW - 8.0, 4.0)
 
 # ── Panel builders ────────────────────────────────────────────────────────────
 
@@ -139,9 +144,15 @@ func _build_main_panel() -> void:
 	gold_btn.pressed.connect(_on_give_gold_pressed)
 	_main_panel.add_child(gold_btn)
 
+	var spells_btn := _make_btn("Give Spell...", Color(0.65, 0.45, 0.95))
+	spells_btn.position = Vector2(6.0, 286.0)
+	spells_btn.size = Vector2(PANEL_W - 12.0, 30.0)
+	spells_btn.pressed.connect(_on_spells_pressed)
+	_main_panel.add_child(spells_btn)
+
 	# Mute — mirrors the HUD's top-right MuteButton (scenes/ui/hud.tscn), just easier to find.
 	_mute_btn = _make_btn("", Color(0.55, 0.75, 1.0))
-	_mute_btn.position = Vector2(6.0, 286.0)
+	_mute_btn.position = Vector2(6.0, 322.0)
 	_mute_btn.size = Vector2(PANEL_W - 12.0, 30.0)
 	_mute_btn.pressed.connect(_on_mute_pressed)
 	_main_panel.add_child(_mute_btn)
@@ -265,6 +276,35 @@ func _build_talent_sub() -> void:
 	_talent_vbox.add_theme_constant_override("separation", 2)
 	scroll.add_child(_talent_vbox)
 
+func _build_spells_sub() -> void:
+	_spells_sub = Panel.new()
+	_spells_sub.visible = false
+	_spells_sub.size = Vector2(SPELLS_SW, SPELLS_SH)
+	_spells_sub.mouse_filter = Control.MOUSE_FILTER_STOP
+	_style_panel(_spells_sub, Color(0.09, 0.06, 0.12, 0.97), Color(0.65, 0.45, 0.95))
+	add_child(_spells_sub)
+
+	_add_label(_spells_sub, "Spellbook — click Give to learn/prepare", 8, 5, 10, Color(0.80, 0.65, 1.0))
+
+	var sep := HSeparator.new()
+	sep.position = Vector2(6.0, 22.0)
+	sep.size = Vector2(SPELLS_SW - 12.0, 4.0)
+	_spells_sub.add_child(sep)
+
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(6.0, 30.0)
+	scroll.size = Vector2(SPELLS_SW - 12.0, SPELLS_SH - 38.0)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_spells_sub.add_child(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 3)
+	scroll.add_child(vbox)
+
+	for spell_id: String in (SpellDb.CANTRIP_IDS + SpellDb.LEVELED_SPELL_IDS):
+		vbox.add_child(_make_spell_row(spell_id))
+
 func _rebuild_talent_rows() -> void:
 	for child: Node in _talent_vbox.get_children():
 		child.queue_free()
@@ -378,6 +418,48 @@ func _make_item_row(d: Dictionary) -> Control:
 
 	return row
 
+func _make_spell_row(spell_id: String) -> Control:
+	var spell: Spell = SpellDb.get_spell(spell_id)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.custom_minimum_size = Vector2(0.0, 38.0)
+
+	var icon := TextureRect.new()
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.custom_minimum_size = Vector2(34.0, 34.0)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if spell != null and spell.icon_path != "" and ResourceLoader.exists(spell.icon_path):
+		icon.texture = load(spell.icon_path)
+	row.add_child(icon)
+
+	var info := VBoxContainer.new()
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.size_flags_vertical   = Control.SIZE_SHRINK_CENTER
+	row.add_child(info)
+
+	var name_lbl := Label.new()
+	name_lbl.text = "%s  [%s]" % [spell.spell_name if spell != null else spell_id, SpellDb.ordinal(spell.level if spell != null else 0)]
+	name_lbl.add_theme_font_size_override("font_size", 10)
+	name_lbl.add_theme_color_override("font_color", Color(0.90, 0.80, 1.0))
+	info.add_child(name_lbl)
+
+	var desc_lbl := Label.new()
+	desc_lbl.text = spell.description if spell != null else ""
+	desc_lbl.add_theme_font_size_override("font_size", 8)
+	desc_lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.60))
+	desc_lbl.clip_text = true
+	desc_lbl.custom_minimum_size = Vector2(SPELLS_SW - 130.0, 0.0)
+	info.add_child(desc_lbl)
+
+	var give_btn := _make_btn("Give", Color(0.65, 0.45, 0.95))
+	give_btn.custom_minimum_size = Vector2(54.0, 0.0)
+	give_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	give_btn.pressed.connect(_on_give_spell.bind(spell_id))
+	row.add_child(give_btn)
+
+	return row
+
 func _make_spawn_row(d: Dictionary, is_boss: bool) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
@@ -465,6 +547,7 @@ func _input(event: InputEvent) -> void:
 			_items_sub.visible = false
 			_spawn_sub.visible = false
 			_talent_sub.visible = false
+			_spells_sub.visible = false
 
 # ── Callbacks ─────────────────────────────────────────────────────────────────
 
@@ -481,18 +564,28 @@ func _on_jump_pressed() -> void:
 	if _floor_sub.visible:
 		_items_sub.visible = false
 		_spawn_sub.visible = false
+		_spells_sub.visible = false
 
 func _on_items_pressed() -> void:
 	_items_sub.visible = not _items_sub.visible
 	if _items_sub.visible:
 		_floor_sub.visible = false
 		_spawn_sub.visible = false
+		_spells_sub.visible = false
 
 func _on_spawn_pressed() -> void:
 	_spawn_sub.visible = not _spawn_sub.visible
 	if _spawn_sub.visible:
 		_floor_sub.visible = false
 		_items_sub.visible = false
+		_spells_sub.visible = false
+
+func _on_spells_pressed() -> void:
+	_spells_sub.visible = not _spells_sub.visible
+	if _spells_sub.visible:
+		_floor_sub.visible = false
+		_items_sub.visible = false
+		_spawn_sub.visible = false
 
 func _on_level_up_pressed() -> void:
 	GameState.debug_level_up()
@@ -510,6 +603,7 @@ func _on_talents_pressed() -> void:
 		_floor_sub.visible = false
 		_items_sub.visible = false
 		_spawn_sub.visible = false
+		_spells_sub.visible = false
 
 func _on_give_99_points() -> void:
 	GameState.talent_points[1] = 99
@@ -561,6 +655,21 @@ func _on_mute_pressed() -> void:
 
 func _on_mute_changed(muted: bool) -> void:
 	_mute_btn.text = "🔇 Unmute" if muted else "🔊 Mute"
+
+func _on_give_spell(spell_id: String) -> void:
+	if GameState.player_stats.caster == null:
+		GameState.game_log("[color=red][DEBUG] Current class has no spellcasting.[/color]")
+		return
+	var spell: Spell = SpellDb.get_spell(spell_id)
+	if spell == null:
+		return
+	if spell.level == 0:
+		GameState.choose_cantrip(spell_id)   # idempotent — already has()-guarded
+	else:
+		if not GameState.player_stats.caster.known_spells.has(spell_id):
+			GameState.learn_spell(spell_id)
+		GameState.set_spell_prepared(spell_id, true)   # silently no-ops past prepared_max() cap
+	GameState.game_log("[color=lime][DEBUG] Given: %s[/color]" % spell.spell_name)
 
 func _on_give_item(d: Dictionary) -> void:
 	var item := Item.new()
