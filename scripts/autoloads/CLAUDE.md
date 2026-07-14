@@ -135,7 +135,9 @@ section for the full walkthrough (slot table, casting, AoE, persistence). Key `G
 functions: `learn_spell(id)` (spellbook growth — level-up picker or scroll), `set_spell_prepared(id,
 bool)` (Spellbook overlay click-toggle, hard-capped at `SpellcasterState.prepared_max()`),
 `place_spell_in_slot(id, index)` (Spellbook drag-and-drop onto a specific ability-bar slot),
-`_build_spell_ability(id)`/`_remove_ability_by_id(id)` (the add/remove primitives every spell-
+`swap_ability_slots(a, b)` (in-game ActionBar reorder without opening the Spellbook — works for
+any ability, not spell-specific; `hud.gd`'s own press-and-drag, see `scripts/ui/CLAUDE.md`'s
+"In-bar reorder drag"), `_build_spell_ability(id)`/`_remove_ability_by_id(id)` (the add/remove primitives every spell-
 ability-bar mutation funnels through), `_rebuild_spell_ability_bar()` (save-load replay —
 reconciles the ability bar against the just-restored known/prepared lists),
 `_roll_spell_learn_choices()` (called from `gain_exp()`'s level-up block, WIZARD only). Slot-pool

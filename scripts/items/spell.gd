@@ -20,6 +20,11 @@ enum TargetKind { ENEMY, SELF, TILE }
 
 @export var resolution: Resolution = Resolution.ATTACK_ROLL
 @export var target_kind: TargetKind = TargetKind.ENEMY
+# When true, `range_tiles` is ignored and the spell's real range is the caster's LIVE FOV radius
+# (DungeonFloor.FOV_RADIUS + GameState.fov_radius_bonus) instead of a fixed "book" number — some
+# characters see further than others (e.g. Wild Heart Eagle's +1 FOV radius), so a fixed range
+# would be wrong for them. See PlayerSpellcasting.try_cast_at().
+@export var range_is_fov: bool = false
 @export var dice_count: int = 1
 @export var dice_sides: int = 6
 @export var damage_type: String = ""

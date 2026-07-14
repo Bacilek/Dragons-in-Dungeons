@@ -41,6 +41,21 @@ Connects to `GameState` signals only — never poll `GameState` in `_process()`.
 
 **Ability bar greying**: `_refresh_ability_bar()`'s slot `modulate` is gray whenever `not GameState.is_ability_usable(ab)` (see `scripts/autoloads/CLAUDE.md`) — covers plain exhausted charges (Rage) AND infinite-use abilities that are situationally blocked (Frenzy without Rage active, Limit Break already used this long rest, Zealot Strike with 0 Hit Dice, Grip of the Forest without Rage). Orange still means "active toggle" (`ab.is_active`), takes priority over the usability check. **Frenzy cooldown countdown** (Frenzied Killer R3): while `GameState.berserker_frenzy_used` and `get_talent_rank("frenzied_killer") >= 3`, the use-count badge shows `"%dt"` counting down from `3 - GameState.berserker_turns_since_frenzy` (same red tint/format as Rage's own "%dt" remaining-duration display) instead of the normal `uses/max` text — makes the automatic refresh timing visible instead of just guessing.
 
+**In-bar reorder drag** (no overlay needed — leveled-spells-and-slots-plan.md follow-up):
+press-and-drag any `ItemSlotN` button past `HUD.BAR_DRAG_THRESHOLD` (8px) and drop it on another
+slot of the **same** bar (item quickbar or ability bar, whichever is currently showing) to move it
+there — e.g. drag slot 1 onto slot 5. `_on_slot_gui_input()` only *records* the LMB press
+(`_bar_drag_from`); it does NOT consume the event, so `Button.pressed` (→ `_on_slot_pressed()`,
+normal use/cast) still fires unchanged for a plain click. Motion/release are polled every frame in
+`_process_bar_drag()` (`Input.is_mouse_button_pressed()`, same reasoning as
+`spellbook_overlay.gd`'s drag — a release outside the pressed Button's own bounds never reaches
+its `gui_input`). Ability bar: `GameState.swap_ability_slots(a, b)` (plain swap, works for any
+ability including spells — doesn't touch known/prepared state). Item quickbar:
+`GameState.move_item("quickbar", a, "", "quickbar", b, "")`, the same function
+`inventory_overlay.gd` uses for its own quickbar↔quickbar drags. Disabled while
+`GameState.spellbook_open` (that overlay runs its own drag targeting these same Button rects from
+a different CanvasLayer — the two systems would otherwise fight over the same press).
+
 **Split-out modules** (pure refactor, same behavior — GDScript has no partial classes, so these use composition/static-helper patterns instead):
 - `tooltip_formatters.gd` (`TooltipFormatters`, static-func-only helper) — the 8 combat tooltip formatters (`fmt_hit_tooltip`, `fmt_dmg_tooltip`, `fmt_heal_tooltip`, `fmt_save_tooltip`, `fmt_ehit_tooltip`, `fmt_edmg_tooltip`, `fmt_catk_tooltip`, `fmt_ret_tooltip`). Each takes only a `Dictionary` and returns a `String`. `hud.gd._format_tooltip()` still owns the `kind` dispatch match and calls into these.
 - `crit_banner.gd` (`CritBanner`, composition child-node, `extends Node`) — `show_banner(text, color)` (was `hud.gd._show_crit_banner`). Instantiated once in `hud.gd._ready()` (`_crit_banner`), added as a child, and `GameState.crit_banner` connects directly to `_crit_banner.show_banner`.
@@ -281,6 +296,28 @@ the spell's `Ability` directly into that slot index, bumping whatever was there 
 the framework doc's multi-page ability-bar auto-paging (still a single 9-slot
 `GameState.player_ability_bar`) — drag targets that one bar, not a specific "2nd–4th quickbar"
 page, since no such paging exists yet in this codebase.
+
+**Bugfixes from initial playtesting**: (1) the overlay's dim `ColorRect` used to cover the ENTIRE
+screen (`mouse_filter = STOP`) — since it's a higher CanvasLayer `layer` than the HUD, this
+visually hid AND input-blocked the ActionBar the whole time the book was open, making its own drag
+target impossible to see or hit. The dim now stops `ACTION_BAR_HEIGHT` (140px) above the bottom
+edge, leaving the strip fully visible/clickable. (2) if the item quickbar happened to be showing
+(not ability mode) when `R` was pressed, every drop was silently rejected with nothing visible to
+aim at anyway. `_ready()`/`_close()` now call the new `hud.gd` `set_ability_bar_mode(bool)` to
+force ability-bar mode for the overlay's whole lifetime, restoring whichever mode was showing
+before on close. (3) `player.gd`'s `_input()` camera-pan detector (fires before any Control's
+`gui_input`, so it's independent of this overlay's own drag logic) only excluded
+`GameState.inventory_open`, not `spellbook_open`/`spell_learn_picker_open` — holding LMB and
+dragging a spell row also panned the game world/camera underneath the whole time. Fixed at the
+source in `player.gd` (see `scripts/entities/CLAUDE.md`'s "Player-specific" section), not here.
+
+**Always-visible spell-slots row**: a small `RichTextLabel` (`hud.gd`'s `_spell_slots_label`, in
+`$StatsPanel` right under the status tray — `StatsPanel.offset_bottom` grown 158→200 in
+`hud.tscn`) shows `"1st X/Y   2nd X/Y   ..."` per slot level at all times, not just while the
+Spellbook is open — addresses the original playtesting feedback that slot counts were otherwise
+invisible outside `R`. Blue when slots remain, dimmed gray at 0. Wired to
+`GameState.spell_slots_changed` (consume/refill/level-up-grant/prepare-toggle),
+`player_leveled_up`, and `class_chosen`; empty string for every non-caster class.
 
 ## Mastery picker (`mastery_picker.gd`)
 CanvasLayer, layer = 25. Modeled directly on the talent picker (dim overlay + centered bordered

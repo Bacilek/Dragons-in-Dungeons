@@ -675,6 +675,19 @@ func place_spell_in_slot(spell_id: String, index: int) -> bool:
 	spell_slots_changed.emit()
 	return true
 
+## In-game ability-bar reorder (no Spellbook needed) — hud.gd's own press-and-drag on an ActionBar
+## slot while showing the ability bar. Plain swap, works for ANY ability (spells included, via the
+## same "spell:"-prefixed id — no special-casing needed here since this never changes
+## known/prepared state, only bar position).
+func swap_ability_slots(a: int, b: int) -> bool:
+	if a < 0 or a >= ABILITY_BAR_SIZE or b < 0 or b >= ABILITY_BAR_SIZE or a == b:
+		return false
+	var tmp: Ability = player_ability_bar[a] as Ability
+	player_ability_bar[a] = player_ability_bar[b]
+	player_ability_bar[b] = tmp
+	ability_bar_changed.emit()
+	return true
+
 ## Grants a subclass's free, rank-independent Tier 2 activation ability (Frenzy, Limit Break,
 ## Animal Form, Zealot Strike) directly at subclass selection — NOT gated by any talent rank.
 ## No-op if already present (idempotent — safe to call from every _setup_X_tier2_talents()).

@@ -194,6 +194,28 @@ static func fmt_masochist_tooltip(p: Dictionary) -> String:
 	lines.append("= [color=yellow]%d[/color] temp HP" % final_dmg)
 	return "\n".join(lines)
 
+## Magic Missile's detailed breakdown — leveled-spells-and-slots-plan.md follow-up: always hits
+## (no attack roll, no miss chance), range is the caster's full live FOV (not a fixed tile
+## number), each dart independently rolls 1d4+1 Force.
+static func fmt_mmdmg_tooltip(p: Dictionary) -> String:
+	var darts: int = int(p.get("darts", "0"))
+	var rolls_str: String = String(p.get("rolls", ""))
+	var total: int = int(p.get("total", "0"))
+	var final_dmg: int = int(p.get("final", "0"))
+	var lines: PackedStringArray = []
+	lines.append("[color=lime]Always hits[/color] — no attack roll.")
+	lines.append("[color=lightblue]Range: your full field of view.[/color]")
+	lines.append("%d darts × (1d4+1) Force:" % darts)
+	if not rolls_str.is_empty():
+		var rolls: PackedStringArray = rolls_str.split("|")
+		for i: int in rolls.size():
+			lines.append("  Dart %d: [color=yellow]%s[/color]" % [i + 1, rolls[i]])
+	lines.append("─────────────────")
+	lines.append("= [color=yellow]%d[/color] Force" % total)
+	if final_dmg != total:
+		lines.append("(%d actually dealt)" % final_dmg)
+	return "\n".join(lines)
+
 static func fmt_heal_tooltip(p: Dictionary) -> String:
 	var dice: int  = int(p.get("dice", "0"))
 	var sides: int = int(p.get("sides", "0"))
