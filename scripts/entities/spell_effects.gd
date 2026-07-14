@@ -103,9 +103,14 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 		match spell.effect_id:
 			"ray_of_frost":
 				var dc: int = caster.spell_save_dc(stats)
-				if not target.resist_check(dc, false):
+				var save: Dictionary = target.resist_check_detailed(dc, false)
+				var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d" % [
+					save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"])]
+				if not save["pass"]:
 					target.frozen_feet_turns = maxi(target.frozen_feet_turns, 1)
-					GameState.game_log("[color=cyan]%s's feet freeze to the ground![/color]" % target.display_name)
+					GameState.game_log("[color=cyan]%s's feet [url=%s]freeze[/url] to the ground![/color]" % [target.display_name, save_meta])
+				else:
+					GameState.game_log("[color=gray]%s [url=%s]resists[/url] the freeze.[/color]" % [target.display_name, save_meta])
 			"shocking_grasp":
 				target.shocked_no_oa = true
 				GameState.game_log("[color=cyan]%s is Shocked![/color]" % target.display_name)
@@ -113,6 +118,25 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 				if dungeon_floor != null and dungeon_floor.get_tile_type(target.grid_pos) == DungeonData.TileType.GRASS:
 					dungeon_floor.destroy_grass(target.grid_pos)
 					GameState.game_log("[color=orange]The grass catches fire![/color]")
+
+	if dungeon_floor != null:
+		dungeon_floor.update_fog(player.grid_pos)
+	player._handle_post_attack_turn()
+
+# Casting at an empty tile (no enemy there) — still costs the turn (same convention as
+# PlayerRanged.ranged_attack_tile()), but there's no attack roll/target: nothing happens unless
+# the tile itself is flammable (Fire Bolt's grass-ignite side effect, generic-path spells only).
+static func cast_spell_at_tile(player: Player, spell: Spell, tile_pos: Vector2i, dungeon_floor: Node) -> void:
+	TurnManager.begin_player_action()
+	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
+	sprite.flip_h = tile_pos.x < player.grid_pos.x
+	sprite.play("hit")
+	await sprite.animation_finished
+	sprite.play("idle")
+
+	if spell.effect_id == "" and dungeon_floor != null and dungeon_floor.get_tile_type(tile_pos) == DungeonData.TileType.GRASS:
+		dungeon_floor.destroy_grass(tile_pos)
+		GameState.game_log("[color=orange]The grass catches fire![/color]")
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)

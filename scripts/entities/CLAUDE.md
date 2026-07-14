@@ -289,10 +289,17 @@ reactions. Data classes (`Spell`, `SpellDb`, `SpellcasterState`) live in `script
   routes to `PlayerSpellcasting.begin_cast()` (`scripts/entities/player_spellcasting.gd`, a
   composition child-node registered in `player.gd._ready()` alongside `_ranged`/`_zealot`/etc.).
   Arms `spell_targeting_active` exactly like Grip of the Forest's `_hook_mode_active` hook-mode
-  (single-target, no picker, no AoE preview needed): next LMB click on an enemy within
-  `min(spell.range_tiles, DungeonFloor.FOV_RADIUS)` (Euclidean, `has_ranged_los()`-gated, no
-  long-range-disadvantage tier unlike weapons) resolves the cast; Esc cancels (branch beside
-  `_hook_mode_active`'s in `_unhandled_input()`).
+  (single-target, no picker, no AoE preview needed): next LMB click resolves the cast if within
+  `spell.range_tiles` — **Chebyshev distance** (diagonal counts as 1, matching melee-reach
+  convention elsewhere — NOT the ranged-weapon-style squared-Euclidean check), `has_ranged_los()`-
+  gated, no long-range-disadvantage tier unlike weapons. Range is deliberately **not** additionally
+  clamped to the player's live FOV radius — visibility (`has_ranged_los`/fog) already governs what's
+  actually clickable, so a spell whose range exceeds the FOV radius just can't reach further than
+  currently visible, without a second redundant cap (Fire Bolt's nominal 12-tile range is real, not
+  silently capped to the FOV radius of 7). Esc cancels (branch beside `_hook_mode_active`'s in
+  `_unhandled_input()`). **Clicking an empty tile** (no enemy there) still costs the turn but skips
+  the attack roll entirely — `SpellEffects.cast_spell_at_tile()` — nothing happens unless the tile
+  itself is flammable (Fire Bolt's grass-ignite side effect below).
 - **Cast resolution** (`scripts/entities/spell_effects.gd`, `SpellEffects.cast_spell()`, static —
   self-contained like `PlayerRanged.ranged_attack()`, owns its own `TurnManager.begin_player_action()`
   … `_handle_post_attack_turn()` turn envelope): attack roll = `d20 + SpellcasterState.
@@ -310,16 +317,23 @@ reactions. Data classes (`Spell`, `SpellDb`, `SpellcasterState`) live in `script
     stand-in for "flammable objects ignite" (no burning-terrain system exists to build more than
     that yet).
   - **Ray of Frost** — 6 tiles, 1d8 Cold. `effect_id = "ray_of_frost"`: on a hit, the target rolls
-    a STR save (`resist_check()`, `dc = SpellcasterState.spell_save_dc()`); on a fail,
-    `Enemy.frozen_feet_turns` is set — checked in `Enemy._decide_action()` right after the existing
-    `rooted_turns` block, same shape (skip movement, still attack if already adjacent). Kept as its
-    own field rather than reusing `rooted_turns` so the inspect line can name it "Frozen Feet"
-    distinctly from Grip of the Forest's root.
+    a STR save (`resist_check_detailed()`, `dc = SpellcasterState.spell_save_dc()`) — logged to
+    chat with a hoverable `save:` tooltip **either way** (pass or fail, Topple's
+    `prof_label=Floor` convention — this is the enemy's floor-scaling bonus, not a proficiency
+    bonus), not just on a fail; on a fail, `Enemy.frozen_feet_turns` is set — checked in
+    `Enemy._decide_action()` right after the existing `rooted_turns` block, same shape (skip
+    movement, still attack if already adjacent). Kept as its own field rather than reusing
+    `rooted_turns` so the inspect line can name it "Frozen Feet" distinctly from Grip of the
+    Forest's root.
   - **Shocking Grasp** — 1 tile (touch), 1d8 Lightning. `effect_id = "shocking_grasp"`: on a hit,
     sets `Enemy.shocked_no_oa = true` — checked at the very top of
     `Enemy._check_opportunity_attacks_on_move()` (before either the player or companion OA check):
     if true, consumes it and returns, blocking this enemy's next Opportunity-Attack exposure
     whenever it next happens (per spec, "doesn't matter when").
+- **Casting at an empty tile** (`SpellEffects.cast_spell_at_tile()`): still costs the turn (same
+  convention as `PlayerRanged.ranged_attack_tile()`), but skips the attack roll entirely — only
+  Fire Bolt's grass-ignite side effect can still fire (`spell.effect_id == ""` check), everything
+  else is a silent no-op.
 - **Inspect** (`PlayerActions.do_inspect()`): the enemy info line gains a status suffix —
   `Frozen Feet` / `Shocked` — whenever either field is active (inspect previously showed no status
   effects at all; this is new, not a change to prior text).
