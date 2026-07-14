@@ -449,6 +449,12 @@ func _give_wizard_starting_items() -> void:
 		if not player_stats.caster.known_spells.has(sid):
 			player_stats.caster.known_spells.append(sid)
 	set_spell_prepared("magic_missile", true)
+	# BUGFIX: slot_pool.remaining otherwise stays {} (no slots at all) until the first long rest
+	# or level-up — a level-1 Wizard needs their 2× 1st-level slots available from character
+	# creation, not zero. Same population StandardSlotPool.on_long_rest() does.
+	if player_stats.caster.slot_pool != null:
+		player_stats.caster.slot_pool.remaining = player_stats.caster.slot_pool.max_slots().duplicate()
+		spell_slots_changed.emit()
 
 func _give_barbarian_starting_items() -> void:
 	var axe := Item.new()

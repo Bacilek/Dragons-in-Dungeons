@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ldv3q4ipkbgs"
-path="res://.godot/imported/ironwood_bark_1.png-7c3cddbbc0d444a9c880e7b765efb691.ctex"
+uid="uid://bj80ict5vlhia"
+path="res://.godot/imported/masochist.png-722ba37298c597b574d74e8615372887.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/classes/barbarian/t2/world_tree/ironwood_bark_1.png"
-dest_files=["res://.godot/imported/ironwood_bark_1.png-7c3cddbbc0d444a9c880e7b765efb691.ctex"]
+source_file="res://icons/classes/barbarian/t2/berserker/masochist.png"
+dest_files=["res://.godot/imported/masochist.png-722ba37298c597b574d74e8615372887.ctex"]
 
 [params]
 

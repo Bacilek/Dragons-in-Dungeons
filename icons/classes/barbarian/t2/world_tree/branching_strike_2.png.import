@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://o4n54aackdpv"
-path="res://.godot/imported/branching_strike_2.png-cf9e172b4c9c959a9c3b92cef90b9ceb.ctex"
+path="res://.godot/imported/branching_strike_2.png-57ba70d4c660369bbe45df87084675fd.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/classes/barbarian/t2/world-tree/branching_strike_2.png"
-dest_files=["res://.godot/imported/branching_strike_2.png-cf9e172b4c9c959a9c3b92cef90b9ceb.ctex"]
+source_file="res://icons/classes/barbarian/t2/world_tree/branching_strike_2.png"
+dest_files=["res://.godot/imported/branching_strike_2.png-57ba70d4c660369bbe45df87084675fd.ctex"]
 
 [params]
 

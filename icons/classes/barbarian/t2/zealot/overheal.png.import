@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ldv3q4ipkbgs"
-path="res://.godot/imported/ironwood_bark_1.png-7c3cddbbc0d444a9c880e7b765efb691.ctex"
+uid="uid://btip4yjmwiksb"
+path="res://.godot/imported/overheal.png-63d6450b62bea7c8937a9d7f68dcaa75.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/classes/barbarian/t2/world_tree/ironwood_bark_1.png"
-dest_files=["res://.godot/imported/ironwood_bark_1.png-7c3cddbbc0d444a9c880e7b765efb691.ctex"]
+source_file="res://icons/classes/barbarian/t2/zealot/overheal.png"
+dest_files=["res://.godot/imported/overheal.png-63d6450b62bea7c8937a9d7f68dcaa75.ctex"]
 
 [params]
 

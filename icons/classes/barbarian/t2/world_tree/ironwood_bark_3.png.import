@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://lk8gx6dnm5ef"
-path="res://.godot/imported/ironwood_bark_3.png-e054902665fcaaed2686550629ecb44d.ctex"
+path="res://.godot/imported/ironwood_bark_3.png-f1cd9142b572dc548b21d16ee854b17c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/classes/barbarian/t2/world-tree/ironwood_bark_3.png"
-dest_files=["res://.godot/imported/ironwood_bark_3.png-e054902665fcaaed2686550629ecb44d.ctex"]
+source_file="res://icons/classes/barbarian/t2/world_tree/ironwood_bark_3.png"
+dest_files=["res://.godot/imported/ironwood_bark_3.png-f1cd9142b572dc548b21d16ee854b17c.ctex"]
 
 [params]
 

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ldv3q4ipkbgs"
-path="res://.godot/imported/ironwood_bark_1.png-7c3cddbbc0d444a9c880e7b765efb691.ctex"
+uid="uid://dcsxyile2jr7o"
+path="res://.godot/imported/psycho_killer.png-12d884accdfce2bff565eb564469dc22.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/classes/barbarian/t2/world_tree/ironwood_bark_1.png"
-dest_files=["res://.godot/imported/ironwood_bark_1.png-7c3cddbbc0d444a9c880e7b765efb691.ctex"]
+source_file="res://icons/classes/barbarian/t1/psycho_killer.png"
+dest_files=["res://.godot/imported/psycho_killer.png-12d884accdfce2bff565eb564469dc22.ctex"]
 
 [params]
 

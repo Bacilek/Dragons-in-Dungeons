@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ldv3q4ipkbgs"
-path="res://.godot/imported/ironwood_bark_1.png-7c3cddbbc0d444a9c880e7b765efb691.ctex"
+uid="uid://bv34d15dgn2ij"
+path="res://.godot/imported/wild_form_eagle.png-abd35e285e67b9ec02c34548dad16647.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/classes/barbarian/t2/world_tree/ironwood_bark_1.png"
-dest_files=["res://.godot/imported/ironwood_bark_1.png-7c3cddbbc0d444a9c880e7b765efb691.ctex"]
+source_file="res://icons/classes/barbarian/t2/wild_heart/wild_form_eagle.png"
+dest_files=["res://.godot/imported/wild_form_eagle.png-abd35e285e67b9ec02c34548dad16647.ctex"]
 
 [params]
 

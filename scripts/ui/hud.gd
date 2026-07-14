@@ -121,6 +121,18 @@ func _update_bar_mode_label() -> void:
 func is_ability_bar_showing() -> bool:
 	return _ability_bar_mode
 
+## Forces a specific bar mode (used by spellbook_overlay.gd so the ability bar — its only valid
+## drag-and-drop target — is guaranteed visible/correct for the overlay's whole lifetime,
+## regardless of whichever mode the player happened to have showing when they pressed R). No-op
+## if already in that mode (so it never fights a mid-session Tab press).
+func set_ability_bar_mode(active: bool) -> void:
+	if _ability_bar_mode == active:
+		return
+	_ability_bar_mode = active
+	_update_bar_mode_label()
+	_refresh_inventory()
+	GameState.player_action_requested.emit("toggle_ability_bar")
+
 ## Global-space rect of ActionBar slot `i` (0..SLOT_COUNT-1) — for the Spellbook overlay's drag
 ## hit-testing (a different CanvasLayer, so it can't just read local `.position`).
 func get_action_slot_global_rect(i: int) -> Rect2:

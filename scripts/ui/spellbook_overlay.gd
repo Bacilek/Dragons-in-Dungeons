@@ -6,7 +6,7 @@ extends CanvasLayer
 # ability bar exactly as cantrips already do — this overlay only manages what's prepared.
 
 const PANEL_W: float = 760.0
-const PANEL_H: float = 560.0
+const PANEL_H: float = 620.0
 const ROW_H: float = 56.0
 const DRAG_THRESHOLD: float = 8.0
 
@@ -18,6 +18,8 @@ var _detail_desc: RichTextLabel
 var _counter_rtl: RichTextLabel
 var _selected_level: int = 1
 var _max_level: int = 0
+var _prev_bar_mode_was_ability: bool = false
+const ACTION_BAR_HEIGHT: float = 140.0   # matches hud.tscn's ActionBar (offset_top = -135.0) + a small margin
 
 # Drag state (press-and-hold on a row, release over an ability-bar slot — see §5.4)
 var _dragging: bool = false
@@ -35,15 +37,27 @@ func _ready() -> void:
 	_selected_level = 1 if _max_level == 0 else mini(_selected_level, _max_level)
 	if _max_level == 0:
 		_selected_level = 0
+	# The ActionBar is the only valid drag-and-drop target (§5.4) — force it visible/active for
+	# the overlay's whole lifetime, restoring whichever mode was showing before on close. Also
+	# fixes the drag being impossible to aim at all when the item quickbar happened to be showing.
+	var hud = get_tree().get_first_node_in_group("hud")
+	if hud != null:
+		_prev_bar_mode_was_ability = hud.is_ability_bar_showing()
+		hud.set_ability_bar_mode(true)
 	_build_ui()
 
 func _build_ui() -> void:
 	var vp := get_viewport().get_visible_rect().size
 
+	# Deliberately does NOT cover the bottom ActionBar strip — it's the only valid drag-and-drop
+	# target (§5.4), so it must stay fully visible AND clickable while the book is open, instead
+	# of being hidden/blocked under the dim overlay like every other blocking picker's full-screen
+	# dim would do.
 	var dim := ColorRect.new()
 	dim.color = Color(0.0, 0.0, 0.0, 0.55)
 	dim.anchor_right = 1.0
 	dim.anchor_bottom = 1.0
+	dim.offset_bottom = -ACTION_BAR_HEIGHT
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(dim)
 
@@ -128,10 +142,20 @@ func _build_ui() -> void:
 	sep3.position = Vector2(12.0, detail_y)
 	sep3.size = Vector2(PANEL_W - 24.0, 2.0)
 	_panel.add_child(sep3)
-	detail_y += 12.0
+	detail_y += 8.0
+
+	# Caption so the panel's purpose is obvious at a glance, not just inferred from behavior.
+	var caption := Label.new()
+	caption.text = "SPELL DETAILS"
+	caption.add_theme_font_size_override("font_size", 11)
+	caption.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
+	caption.position = Vector2(20.0, detail_y)
+	caption.size = Vector2(PANEL_W - 40.0, 16.0)
+	_panel.add_child(caption)
+	detail_y += 18.0
 
 	_detail_name = Label.new()
-	_detail_name.text = "— hover a spell —"
+	_detail_name.text = "Hover a spell above to read its description here."
 	_detail_name.add_theme_font_size_override("font_size", 17)
 	_detail_name.add_theme_color_override("font_color", Color(0.75, 0.55, 1.0))
 	_detail_name.position = Vector2(20.0, detail_y)
@@ -143,9 +167,18 @@ func _build_ui() -> void:
 	_detail_desc.fit_content = false
 	_detail_desc.scroll_active = false
 	_detail_desc.position = Vector2(20.0, detail_y + 30.0)
-	_detail_desc.size = Vector2(PANEL_W - 40.0, 90.0)
+	_detail_desc.size = Vector2(PANEL_W - 40.0, 70.0)
 	_detail_desc.add_theme_font_size_override("normal_font_size", 14)
 	_panel.add_child(_detail_desc)
+
+	var hint := Label.new()
+	hint.text = "Click a spell to prepare/unprepare it. Drag it onto the ability bar below to place it in a specific slot."
+	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.position = Vector2(20.0, detail_y + 30.0 + 70.0 + 6.0)
+	hint.size = Vector2(PANEL_W - 40.0, 32.0)
+	_panel.add_child(hint)
 
 	_refresh()
 
@@ -304,6 +337,9 @@ func _finish_drag() -> void:
 
 func _close() -> void:
 	GameState.spellbook_open = false
+	var hud = get_tree().get_first_node_in_group("hud")
+	if hud != null and not _prev_bar_mode_was_ability:
+		hud.set_ability_bar_mode(false)
 	queue_free()
 
 # Drag/click resolution is polled here (not via _unhandled_input's mouse-button-up event) —

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ldv3q4ipkbgs"
-path="res://.godot/imported/ironwood_bark_1.png-7c3cddbbc0d444a9c880e7b765efb691.ctex"
+uid="uid://csoe8ptuf7eb1"
+path="res://.godot/imported/companion_squirrel.png-bb43044db98b3fc9d2a2ca07dfb9ddd1.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/classes/barbarian/t2/world_tree/ironwood_bark_1.png"
-dest_files=["res://.godot/imported/ironwood_bark_1.png-7c3cddbbc0d444a9c880e7b765efb691.ctex"]
+source_file="res://icons/classes/barbarian/t2/wild_heart/companion_squirrel.png"
+dest_files=["res://.godot/imported/companion_squirrel.png-bb43044db98b3fc9d2a2ca07dfb9ddd1.ctex"]
 
 [params]
 

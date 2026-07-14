@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ldv3q4ipkbgs"
-path="res://.godot/imported/ironwood_bark_1.png-7c3cddbbc0d444a9c880e7b765efb691.ctex"
+uid="uid://bfrlbejw361pw"
+path="res://.godot/imported/enough_is_enough.png-693b5ae53bf5d032019b6b44aae95617.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/classes/barbarian/t2/world_tree/ironwood_bark_1.png"
-dest_files=["res://.godot/imported/ironwood_bark_1.png-7c3cddbbc0d444a9c880e7b765efb691.ctex"]
+source_file="res://icons/classes/barbarian/t2/scarred_warrior/enough_is_enough.png"
+dest_files=["res://.godot/imported/enough_is_enough.png-693b5ae53bf5d032019b6b44aae95617.ctex"]
 
 [params]
 
