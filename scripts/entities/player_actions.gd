@@ -58,18 +58,18 @@ func do_rest_wait_turn() -> void:
 	TurnManager.begin_player_action()
 	TurnManager.on_player_action_complete()
 
-func handle_search_request() -> void:
+## Plain right-click (no tool primed) dispatch: instant Inspect on the clicked tile, or a full
+## area Search if this is a quick second RMB press within 0.5s of the first (same double-press
+## timer this used to run off Ctrl — now re-keyed to RMB, and the first press is immediate instead
+## of arming a wait-for-next-click mode, since RMB already carries its own target position).
+func handle_rmb_click(pos: Vector2i) -> void:
 	var now: float = Time.get_ticks_msec() / 1000.0
 	if now - _last_search_request < 0.5:
-		# Double press — trigger actual search
-		player._inspect_mode = false
 		_last_search_request = -999.0
 		search_action()
 	else:
-		# First press — enter inspect mode
 		_last_search_request = now
-		player._inspect_mode = true
-		GameState.game_log("[color=cyan]Inspect — left-click any visible tile for info. [Esc] to cancel. Press Ctrl/Search again to search area.[/color]")
+		do_inspect(pos)
 
 func search_action() -> void:
 	if player._dungeon_floor == null:
