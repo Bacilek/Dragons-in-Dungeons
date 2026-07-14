@@ -69,6 +69,7 @@ Rng.get_state() / Rng.set_state(s)  # exact stream position (int64) for save/loa
 | `screen_shake` | `strength: float` | camera shake (handled by `PlayerVfx.screen_shake`, `scripts/entities/player_vfx.gd`) |
 | `known_masteries_changed` | — | `known_weapon_masteries` mutated via `toggle_mastery()` |
 | `gold_changed` | `new_amount: int` | `add_gold()`/`spend_gold()` (also re-emitted by `spend_gold()` while invincible, and by `from_dict()`) |
+| `spell_slots_changed` | — | Wizard spell-slot pool mutated (`consume()`, `on_long_rest()`, level-up grant) or a spell prepared/unprepared — see "Leveled spells / spellbook" below |
 
 ---
 
@@ -122,7 +123,26 @@ noclip: bool                 # debug flag
 player_grid_pos: Vector2i    # synced every move
 pending_chasm_items: Array[Item]  # ammo (or any future item) that fell into a chasm mid-shot; drained onto the NEXT floor's random walkable tiles by DungeonFloor._spawn_pending_chasm_items()
 gold: int                    # the wallet (special-rooms-economy-design.md §2, session 7a) — plain int counter like hit_dice
+spell_learn_pending: bool    # Wizard level-up spell-learn picker should be shown (leveled-spells-and-slots-plan.md §4.1)
+spell_learn_choices: Array[String]  # up to 3 rolled candidate spell ids for that picker
+spell_learn_picker_open: bool       # blocks ALL player input while spell_learn_picker.gd is visible
+spellbook_open: bool                # blocks ALL player input while spellbook_overlay.gd (R key) is visible
 ```
+
+**Leveled spells / spellbook (`docs/architecture/leveled-spells-and-slots-plan.md`)**: Wizard-only,
+built on top of the cantrip slice — see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells"
+section for the full walkthrough (slot table, casting, AoE, persistence). Key `GameState`
+functions: `learn_spell(id)` (spellbook growth — level-up picker or scroll), `set_spell_prepared(id,
+bool)` (Spellbook overlay click-toggle, hard-capped at `SpellcasterState.prepared_max()`),
+`place_spell_in_slot(id, index)` (Spellbook drag-and-drop onto a specific ability-bar slot),
+`_build_spell_ability(id)`/`_remove_ability_by_id(id)` (the add/remove primitives every spell-
+ability-bar mutation funnels through), `_rebuild_spell_ability_bar()` (save-load replay —
+reconciles the ability bar against the just-restored known/prepared lists),
+`_roll_spell_learn_choices()` (called from `gain_exp()`'s level-up block, WIZARD only). Slot-pool
+refill hooks into the existing chokepoints: `long_rest()` gains one
+`player_stats.caster.slot_pool.on_long_rest()` line; `gain_exp()` snapshots the pool's
+`max_slots()` before applying a level-up and calls `grant_new_slots_on_levelup(old_max)` after, so
+newly-grown slots are immediately usable rather than empty until the next long rest.
 
 **Gold economy (session 7a)**: `add_gold(amount)` (ignores ≤ 0) and `spend_gold(amount) -> bool` are the only mutation points — both emit `gold_changed(gold)`. While `invincible`, `spend_gold()` succeeds WITHOUT decrementing (consumption-skip invariant; earning is unaffected). Reset to 0 in `start_new_run()`; persists across floors (`advance_floor()` never touches it). Serialized as a top-level `"gold"` key in `to_dict()`/`from_dict()` (`int(d.get("gold", 0))` — old saves load as 0). Gold piles on the floor are `Item.Type.GOLD` items whose `gold_value` is the pile size — picked up straight into the wallet by `PlayerActions.check_pickup()`, never into the inventory. Spending has no sink yet (the Shop is session 7e).
 

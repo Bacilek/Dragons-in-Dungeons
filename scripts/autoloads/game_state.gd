@@ -162,6 +162,12 @@ var subclass_picker_open: bool = false  # blocks ALL player input while the subc
 var race_picker_open: bool = false  # blocks ALL player input while the race-select overlay is visible (scripts/ui/race_select.gd)
 var point_buy_open: bool = false  # blocks ALL player input while the point-buy overlay is visible (scripts/ui/point_buy_select.gd, Custom path only)
 var cantrip_picker_open: bool = false  # blocks ALL player input while the cantrip-select overlay is visible (scripts/ui/cantrip_select.gd, Wizard only)
+# Leveled spells / spellbook (docs/architecture/leveled-spells-and-slots-plan.md):
+var spell_learn_pending: bool = false        # set on a Wizard level-up with eligible spells to learn
+var spell_learn_choices: Array[String] = []  # up to 3 rolled candidate spell ids
+var spell_learn_picker_open: bool = false    # blocks ALL player input while spell_learn_picker.gd is visible
+var spellbook_open: bool = false             # blocks ALL player input while spellbook_overlay.gd (R key) is visible
+signal spell_slots_changed
 
 # Talent system — points earned per level, invested per talent.
 # Points are tier-locked pools: talent_points[tier] holds that tier's unspent points
@@ -301,6 +307,10 @@ func start_new_run() -> void:
 	race_picker_open = false
 	point_buy_open = false
 	cantrip_picker_open = false
+	spell_learn_pending = false
+	spell_learn_choices = []
+	spell_learn_picker_open = false
+	spellbook_open = false
 	talent_points = {1: 0, 2: 0, 3: 0, 4: 0}
 	tier3_selected_class = -1
 	talent_investments = {}
@@ -368,6 +378,8 @@ func give_class_starting_items() -> void:
 			_setup_barbarian_talents()
 		Stats.CharacterClass.MONK:
 			_give_monk_starting_items()
+		Stats.CharacterClass.WIZARD:
+			_give_wizard_starting_items()
 
 # One-time, permanent race choice — called by race_select.gd's confirm button, fired between
 # class selection and the Mastery Picker. Mirrors choose_subclass()'s shape: sets the choice on
@@ -402,17 +414,41 @@ func choose_cantrip(spell_id: String, silent: bool = false) -> void:
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return
-	player_stats.caster.known_spells = [spell_id]
-	var ab := Ability.new()
-	ab.ability_id = "spell:" + spell_id
-	ab.ability_name = spell.spell_name
-	ab.description = spell.description
-	ab.icon_path = spell.icon_path
-	ab.uses_remaining = 0
-	ab.uses_max = 0   # cantrips are free/infinite
-	add_ability(ab)
+	# Append, don't overwrite — leveled-spells-and-slots-plan.md's Wizard starting spellbook
+	# (_give_wizard_starting_items()) already populates known_spells before the cantrip picker
+	# runs; overwriting here would silently wipe it.
+	if not player_stats.caster.known_spells.has(spell_id):
+		player_stats.caster.known_spells.append(spell_id)
+	add_ability(_build_spell_ability(spell_id))
 	if not silent:
 		game_log("[color=lime]You learn %s![/color]" % spell.spell_name)
+
+## Builds the ability-bar Ability wrapper for a known/prepared spell — shared by choose_cantrip(),
+## _give_wizard_starting_items(), set_spell_prepared(), place_spell_in_slot(), and save replay.
+## uses_max stays 0 for every spell (cantrips are free/infinite; leveled-spell slot state lives on
+## SpellcasterState.slot_pool, never in Ability.uses_remaining — see leveled-spells-and-slots-plan.md §5.3).
+func _build_spell_ability(spell_id: String) -> Ability:
+	var spell: Spell = SpellDb.get_spell(spell_id)
+	var ab := Ability.new()
+	ab.ability_id = "spell:" + spell_id
+	ab.ability_name = spell.spell_name if spell != null else spell_id
+	ab.description = spell.description if spell != null else ""
+	ab.icon_path = spell.icon_path if spell != null else ""
+	ab.uses_remaining = 0
+	ab.uses_max = 0
+	return ab
+
+## Wizard's fixed level-1 starting spellbook (leveled-spells-and-slots-plan.md §4.3) — 2 fixed
+## level-1 spells (Magic Missile, Shield; the doc's "3 fixed spells" was written before the
+## example spell list was trimmed to 4 total — see docs/architecture/leveled-spells-and-slots-plan.md
+## §7's content-count caveat), Magic Missile prepared by default (prepared cap is 1 at level 1).
+func _give_wizard_starting_items() -> void:
+	if player_stats.caster == null:
+		return
+	for sid: String in ["magic_missile", "shield"]:
+		if not player_stats.caster.known_spells.has(sid):
+			player_stats.caster.known_spells.append(sid)
+	set_spell_prepared("magic_missile", true)
 
 func _give_barbarian_starting_items() -> void:
 	var axe := Item.new()
@@ -499,6 +535,139 @@ func add_ability(ability: Ability) -> bool:
 			return true
 	game_log("[color=red]Ability bar is full![/color]")
 	return false
+
+## Removes an ability-bar entry by id, if present (leveled-spells-and-slots-plan.md §5.3) — the
+## unprepare-a-spell counterpart to add_ability(). No generalized "remove ability" existed before
+## this; every other ability-bar entry is permanent for the run.
+func _remove_ability_by_id(id: String) -> void:
+	for i: int in ABILITY_BAR_SIZE:
+		var slot: Ability = player_ability_bar[i] as Ability
+		if slot != null and slot.ability_id == id:
+			player_ability_bar[i] = null
+			ability_bar_changed.emit()
+			return
+
+# ── Leveled spells / spellbook (docs/architecture/leveled-spells-and-slots-plan.md) ──────
+
+## Adds `spell_id` to the Wizard's known spellbook (level-up picker choice or scroll-taught) —
+## does NOT prepare it. spell_learn_picker.gd calls this on a card click.
+func learn_spell(spell_id: String) -> void:
+	if player_stats.caster == null:
+		return
+	if not player_stats.caster.known_spells.has(spell_id):
+		player_stats.caster.known_spells.append(spell_id)
+	spell_learn_pending = false
+	spell_learn_choices.clear()
+	var s: Spell = SpellDb.get_spell(spell_id)
+	if s != null:
+		game_log("[color=lime]You add %s to your spellbook.[/color]" % s.spell_name)
+
+## Reconciles the ability bar's "spell:" entries against the (just-restored) known/prepared lists
+## after Stats.from_dict() — abilities are derived state, never serialized as objects (same
+## "derive, don't serialize" convention talent replay uses). give_class_starting_items() ran
+## earlier in from_dict() and may have added a placeholder starting-spellbook entry that the save
+## didn't actually have prepared; this removes anything now-invalid and adds anything missing.
+func _rebuild_spell_ability_bar() -> void:
+	if player_stats.caster == null:
+		return
+	var caster: SpellcasterState = player_stats.caster
+	for i: int in ABILITY_BAR_SIZE:
+		var ab: Ability = player_ability_bar[i] as Ability
+		if ab == null or not ab.ability_id.begins_with("spell:"):
+			continue
+		var sid: String = ab.ability_id.trim_prefix("spell:")
+		var valid: bool = caster.prepared_spells.has(sid) or (caster.known_spells.has(sid) and caster.is_cantrip(sid))
+		if not valid:
+			player_ability_bar[i] = null
+	for sid: String in caster.known_spells:
+		if caster.is_cantrip(sid) and _find_ability_by_id("spell:" + sid) == null:
+			add_ability(_build_spell_ability(sid))
+	for sid: String in caster.prepared_spells:
+		if _find_ability_by_id("spell:" + sid) == null:
+			add_ability(_build_spell_ability(sid))
+	ability_bar_changed.emit()
+
+## Rolls up to 3 candidate spells for the level-up learn picker (§4.1) — every level-up, not just
+## even ones (owner decision). Candidates: WIZARD class list, spell.level > 0 (cantrips excluded),
+## spell.level <= the highest slot level the character can currently cast (no offering a 4th-level
+## spell at character level 5), not already known. Sets spell_learn_pending only if >= 1 candidate
+## exists; otherwise logs a gray "nothing new" line — the content-count caveat in
+## leveled-spells-and-slots-plan.md §7 means this happens often with only 4 example spells.
+func _roll_spell_learn_choices() -> void:
+	var caster: SpellcasterState = player_stats.caster
+	if caster == null or caster.slot_pool == null:
+		return
+	var max_level: int = 0
+	for lv: int in caster.slot_pool.max_slots():
+		max_level = maxi(max_level, lv)
+	var pool_variant: Variant = SpellDb.CLASS_SPELL_LISTS.get("WIZARD")
+	var candidates: Array[String] = []
+	if pool_variant == null:
+		return
+	for sid: String in (pool_variant as Array[String]):
+		var s: Spell = SpellDb.get_spell(sid)
+		if s != null and s.level > 0 and s.level <= max_level and not caster.known_spells.has(sid):
+			candidates.append(sid)
+	Rng.shuffle(candidates)
+	if candidates.is_empty():
+		game_log("[color=gray]No new spells available to learn.[/color]")
+		return
+	spell_learn_choices = candidates.slice(0, mini(3, candidates.size()))
+	spell_learn_pending = true
+
+## Toggles whether a known leveled spell is prepared (§5.3) — the Spellbook overlay's click
+## handler. Adds/removes the matching ability-bar entry. Returns false (no-op) if the spell isn't
+## known, or if preparing would exceed SpellcasterState.prepared_max().
+func set_spell_prepared(spell_id: String, prepared: bool) -> bool:
+	var caster: SpellcasterState = player_stats.caster
+	if caster == null or not caster.known_spells.has(spell_id):
+		return false
+	if prepared:
+		if caster.prepared_spells.has(spell_id):
+			return true
+		if caster.prepared_spells.size() >= caster.prepared_max(player_stats):
+			return false
+		caster.prepared_spells.append(spell_id)
+		add_ability(_build_spell_ability(spell_id))
+	else:
+		if not caster.prepared_spells.has(spell_id):
+			return true
+		caster.prepared_spells.erase(spell_id)
+		_remove_ability_by_id("spell:" + spell_id)
+	spell_slots_changed.emit()
+	return true
+
+## Drag-and-drop placement from the Spellbook onto a specific ability-bar slot index
+## (leveled-spells-and-slots-plan.md §5.4). Dropping a not-yet-prepared spell both prepares it and
+## places it in one motion; dropping an already-prepared spell just repositions it. Whatever
+## previously occupied `index` is bumped back on via add_ability() (first empty slot), never lost.
+## Caller (spellbook_overlay.gd) is responsible for rejecting drops onto the item quickbar/inventory
+## before calling this — see scripts/ui/CLAUDE.md's "Spellbook overlay" section.
+func place_spell_in_slot(spell_id: String, index: int) -> bool:
+	var caster: SpellcasterState = player_stats.caster
+	if caster == null or not caster.known_spells.has(spell_id) or index < 0 or index >= ABILITY_BAR_SIZE:
+		return false
+	if not caster.prepared_spells.has(spell_id):
+		if caster.prepared_spells.size() >= caster.prepared_max(player_stats):
+			return false
+		caster.prepared_spells.append(spell_id)
+	var existing: Ability = _find_ability_by_id("spell:" + spell_id)
+	var displaced: Ability = player_ability_bar[index] as Ability
+	if existing != null:
+		var old_idx: int = player_ability_bar.find(existing)
+		if old_idx == index:
+			spell_slots_changed.emit()
+			return true   # already sitting exactly there
+		if old_idx != -1:
+			player_ability_bar[old_idx] = null   # vacate its previous slot before re-homing
+	else:
+		existing = _build_spell_ability(spell_id)
+	player_ability_bar[index] = existing
+	if displaced != null and displaced != existing:
+		add_ability(displaced)   # bumped entry re-homes to the first empty slot, doesn't vanish
+	ability_bar_changed.emit()
+	spell_slots_changed.emit()
+	return true
 
 ## Grants a subclass's free, rank-independent Tier 2 activation ability (Frenzy, Limit Break,
 ## Animal Form, Zealot Strike) directly at subclass selection — NOT gated by any talent rank.
@@ -626,6 +795,9 @@ func long_rest() -> void:
 		player_companion.heal_to_max()
 		game_log("[color=lime]%s rests and recovers fully.[/color]" % player_companion.animal_name)
 	_sync_ability_uses()
+	if player_stats.caster != null and player_stats.caster.slot_pool != null:
+		player_stats.caster.slot_pool.on_long_rest()
+		spell_slots_changed.emit()
 	_consume_food_value(LONG_REST_FOOD_COST)
 	short_rest_changed.emit()
 	AudioManager.play("rest")
@@ -733,6 +905,7 @@ func gain_exp(amount: int) -> void:
 	var old_max_hp: int = player_stats.max_hp
 	var old_rage_max: int = player_stats.rage_uses_max
 	var old_max_hit_dice: int = max_hit_dice()
+	var old_slot_max: Dictionary = player_stats.caster.slot_pool.max_slots() if player_stats.caster != null and player_stats.caster.slot_pool != null else {}
 	var leveled_up := player_stats.gain_exp(amount)
 	player_exp_changed.emit(player_stats.experience, player_stats.exp_to_next(), player_stats.character_level)
 	if leveled_up:
@@ -775,6 +948,10 @@ func gain_exp(amount: int) -> void:
 		combat_message.emit(level_msg)
 		short_rest_changed.emit()
 		_apply_monk_level_features(player_stats.character_level)
+		if player_stats.character_class == Stats.CharacterClass.WIZARD and player_stats.caster != null and player_stats.caster.slot_pool != null:
+			player_stats.caster.slot_pool.grant_new_slots_on_levelup(old_slot_max)
+			spell_slots_changed.emit()
+			_roll_spell_learn_choices()
 		AudioManager.play("level_up")
 		player_leveled_up.emit(player_stats.character_level)
 
@@ -1142,6 +1319,16 @@ func use_item(item: Item) -> void:
 			equip(item)  # equipping from bag/quickbar is always a free action
 		Item.Type.TOOL:
 			player_tool_primed.emit(item)
+		Item.Type.SCROLL:
+			# leveled-spells-and-slots-plan.md §4.2: scroll-taught spells. Item.taught_spell_id
+			# empty = not a spell scroll (every pre-existing SCROLL item stays a no-op).
+			if item.taught_spell_id != "" and player_stats.caster != null:
+				if player_stats.caster.known_spells.has(item.taught_spell_id):
+					game_log("[color=gray]You already know this spell.[/color]")
+				else:
+					learn_spell(item.taught_spell_id)
+					if not invincible:
+						consume_one(item)
 
 func consume_one(item: Item) -> void:
 	if item.quantity > 1:
@@ -2019,10 +2206,10 @@ func from_dict(d: Dictionary) -> void:
 	player_stats.apply_class_defaults()
 	class_selected = true
 	give_class_starting_items()
-	if player_stats.character_class == Stats.CharacterClass.WIZARD:
-		var saved_cantrip: String = String(stats_d.get("known_cantrip", ""))
-		if not saved_cantrip.is_empty():
-			choose_cantrip(saved_cantrip, true)
+	# Wizard's known/prepared spells + slot pool are fully restored by Stats.from_dict() below
+	# (called last, per the restore-stats-last rule) — _give_wizard_starting_items() above only
+	# seeds a placeholder starting spellbook that from_dict() then overwrites; _rebuild_spell_ability_bar()
+	# reconciles the ability bar against the FINAL restored known/prepared lists afterward.
 	# 2. Talent replay. Investments are set in full BEFORE replaying so the _build_*
 	# description helpers (which read get_talent_rank()) see final ranks. Tier 2 setup
 	# runs silently (no unlock_tier2() log line) via _setup_tier2_for_active_subclass().
@@ -2066,6 +2253,7 @@ func from_dict(d: Dictionary) -> void:
 	short_rests_remaining = int(rest_d.get("short_rests_remaining", max_short_rests))
 	# 5. Stats LAST (restore-stats-last rule, doc §4.3), then derive AC/damage from equipment.
 	player_stats.from_dict(stats_d)
+	_rebuild_spell_ability_bar()
 	recalculate_stats()
 	# Re-derive level-scaled ability maxima (e.g. Rage uses_max) from the restored stats;
 	# the saved ability_uses patches below then overwrite uses_remaining where applicable.

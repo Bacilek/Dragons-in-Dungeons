@@ -169,6 +169,11 @@ func _on_turn_started() -> void:
 		# Tactician (Battlefield Expert R1) buff expiry — only ticks on a real turn, never on a
 		# reverted/free-action turn (R3's own free side-step).
 		_base_talents.tick_battlefield_adv_expiry()
+		# Shield spell (leveled-spells-and-slots-plan.md §7): +5 AC lasts until the start of the
+		# caster's next real turn.
+		if stats.shield_ac_bonus > 0:
+			stats.shield_ac_bonus = 0
+			GameState.recalculate_stats()
 	GameState.ability_bar_changed.emit()
 	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
 	# Only fires on real turns, not on reverted turns.
@@ -454,7 +459,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if key.physical_keycode == KEY_I:
 			if not GameState.short_rest_open and not GameState.mastery_picker_open \
 					and not GameState.subclass_picker_open and not GameState.race_picker_open \
-					and not GameState.point_buy_open and not GameState.cantrip_picker_open:
+					and not GameState.point_buy_open and not GameState.cantrip_picker_open \
+					and not GameState.spell_learn_picker_open and not GameState.spellbook_open:
 				GameState.inventory_toggle.emit()
 			return
 		# T key opens talent screen regardless of turn phase; bypasses phase gate
@@ -463,14 +469,28 @@ func _unhandled_input(event: InputEvent) -> void:
 					and not GameState.short_rest_active and not GameState.talent_picker_open \
 					and not GameState.mastery_picker_open and not GameState.subclass_picker_open \
 					and not GameState.race_picker_open and not GameState.point_buy_open \
-					and not GameState.cantrip_picker_open:
+					and not GameState.cantrip_picker_open and not GameState.spell_learn_picker_open \
+					and not GameState.spellbook_open:
 				_actions.open_talent_picker()
+				get_viewport().set_input_as_handled()
+			return
+		# R key opens the Wizard Spellbook (docs/architecture/leveled-spells-and-slots-plan.md §5)
+		if key.physical_keycode == KEY_R:
+			if GameState.player_stats.caster != null \
+					and not GameState.inventory_open and not GameState.short_rest_open \
+					and not GameState.short_rest_active and not GameState.talent_picker_open \
+					and not GameState.mastery_picker_open and not GameState.subclass_picker_open \
+					and not GameState.race_picker_open and not GameState.point_buy_open \
+					and not GameState.cantrip_picker_open and not GameState.spell_learn_picker_open \
+					and not GameState.spellbook_open:
+				var picker = load("res://scripts/ui/spellbook_overlay.gd").new()
+				get_tree().root.add_child(picker)
 				get_viewport().set_input_as_handled()
 			return
 		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active \
 				or GameState.talent_picker_open or GameState.mastery_picker_open \
 				or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
-				or GameState.cantrip_picker_open:
+				or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
 			if _inspect_mode:

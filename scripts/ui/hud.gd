@@ -114,7 +114,23 @@ func _update_bar_mode_label() -> void:
 		_bar_mode_label.text = "[TAB] ITEMS"
 		_bar_mode_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.60))
 
+## Whether the ActionBar is currently showing the ability bar (vs. the item quickbar). Read by
+## spellbook_overlay.gd's drag-and-drop so a drop is only ever accepted onto an actual ability-bar
+## slot, never the item quickbar sharing the same physical buttons — see
+## docs/architecture/leveled-spells-and-slots-plan.md §5.4.
+func is_ability_bar_showing() -> bool:
+	return _ability_bar_mode
+
+## Global-space rect of ActionBar slot `i` (0..SLOT_COUNT-1) — for the Spellbook overlay's drag
+## hit-testing (a different CanvasLayer, so it can't just read local `.position`).
+func get_action_slot_global_rect(i: int) -> Rect2:
+	if i < 0 or i >= _item_slots.size():
+		return Rect2()
+	var slot: Button = _item_slots[i]
+	return Rect2(slot.global_position, slot.size)
+
 func _ready() -> void:
+	add_to_group("hud")
 	GameState.floor_changed.connect(_on_floor_changed)
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_exp_changed.connect(_on_player_exp_changed)
@@ -427,6 +443,10 @@ func _on_player_exp_changed(exp: int, exp_needed: int, level: int) -> void:
 
 func _on_player_leveled_up(level: int) -> void:
 	level_label.text = "Lv.%d" % level
+	# leveled-spells-and-slots-plan.md §4.1: Wizard level-up spell-learn picker.
+	if GameState.spell_learn_pending and not GameState.spell_learn_picker_open:
+		var picker = load("res://scripts/ui/spell_learn_picker.gd").new()
+		get_tree().root.add_child(picker)
 
 func _on_subclass_choice_required() -> void:
 	# One-time Tier 2 subclass choice (gating boss defeated) — spawn the blocking overlay.

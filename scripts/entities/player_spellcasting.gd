@@ -1,9 +1,12 @@
 class_name PlayerSpellcasting
 extends Node
 
-# Player-side cantrip casting UX — composition child-node split out of player.gd, mirroring the
-# Grip-of-the-Forest hook-mode pattern (single-target, no picker, no preview: arm on ability
-# activation, LMB on a valid target resolves the cast). See scripts/entities/CLAUDE.md.
+# Player-side casting UX — composition child-node split out of player.gd. Cantrips (level 0)
+# mirror the Grip-of-the-Forest hook-mode pattern (single-target, no picker, no preview: arm on
+# ability activation, LMB on a valid target resolves the cast). Leveled spells
+# (docs/architecture/leveled-spells-and-slots-plan.md) extend this to SELF/TILE targets and slot
+# consumption, but deliberately skip the framework doc's upcast slot-level picker — always casts
+# at the lowest available slot level (plan §2/§9).
 
 var player: Player
 var spell_targeting_active: bool = false
@@ -13,13 +16,36 @@ func begin_cast(spell_id: String) -> void:
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return
-	_armed_spell_id = spell_id
-	spell_targeting_active = true
-	GameState.game_log("[color=lime]%s — click a target within %d tiles. [Esc] to cancel.[/color]" % [spell.spell_name, spell.range_tiles])
+	if spell.level > 0:
+		var caster: SpellcasterState = player.stats.caster
+		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
+			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
+			return
+	match spell.target_kind:
+		Spell.TargetKind.SELF:
+			_cast_self(spell)
+			return
+		_:
+			_armed_spell_id = spell_id
+			spell_targeting_active = true
+			GameState.game_log("[color=lime]%s — click a target within %d tiles. [Esc] to cancel.[/color]" % [spell.spell_name, spell.range_tiles])
 
 func cancel() -> void:
 	spell_targeting_active = false
 	_armed_spell_id = ""
+
+func _cast_level_for(spell: Spell) -> int:
+	if spell.level == 0:
+		return 0
+	var caster: SpellcasterState = player.stats.caster
+	return caster.slot_pool.lowest_available_level(spell)
+
+func _cast_self(spell: Spell) -> void:
+	var lvl: int = _cast_level_for(spell)
+	if spell.level > 0 and lvl == -1:
+		GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
+		return
+	await SpellEffects.cast_leveled_self(player, spell, lvl, player._dungeon_floor)
 
 # Called from player.gd's LMB dispatch when spell_targeting_active is true. Consumes the armed
 # state regardless of outcome (same one-shot pattern as Grip of the Forest's hook mode).
@@ -44,8 +70,28 @@ func try_cast_at(clicked: Vector2i) -> void:
 	if not player._dungeon_floor.has_ranged_los(player.grid_pos, clicked):
 		GameState.game_log("[color=gray]No clear line to target.[/color]")
 		return
-	var target: Enemy = player._dungeon_floor.get_enemy_at(clicked)
-	if target == null:
-		await SpellEffects.cast_spell_at_tile(player, spell, clicked, player._dungeon_floor)
-	else:
-		await SpellEffects.cast_spell(player, spell, target, player._dungeon_floor)
+
+	if spell.level == 0:
+		var target0: Enemy = player._dungeon_floor.get_enemy_at(clicked)
+		if target0 == null:
+			await SpellEffects.cast_spell_at_tile(player, spell, clicked, player._dungeon_floor)
+		else:
+			await SpellEffects.cast_spell(player, spell, target0, player._dungeon_floor)
+		return
+
+	var lvl: int = _cast_level_for(spell)
+	if lvl == -1:
+		GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
+		return
+
+	match spell.target_kind:
+		Spell.TargetKind.TILE:
+			await SpellEffects.cast_leveled_at_tile(player, spell, lvl, clicked, player._dungeon_floor)
+		Spell.TargetKind.ENEMY:
+			var target: Enemy = player._dungeon_floor.get_enemy_at(clicked)
+			if target == null:
+				GameState.game_log("[color=gray]%s needs a target.[/color]" % spell.spell_name)
+			else:
+				await SpellEffects.cast_leveled_at_enemy(player, spell, lvl, target, player._dungeon_floor)
+		_:
+			pass

@@ -119,10 +119,16 @@ var slowed_turns: int = 0
 var temp_hp: int = 0  # Natural Sleeper R2 — consumed before regular HP damage
 var zealous_presence_turns: int = 0  # Zealot Zealous Presence — Advantage on attacks/checks while > 0
 
-# Wizard cantrip spellcasting (scoped slice of docs/architecture/spellcasting-design.md — cantrips
-# only, no spell slots/leveled spells). Built in apply_class_defaults()'s WIZARD branch; null for
-# every other class. See scripts/items/spellcaster_state.gd.
+# Wizard spellcasting (cantrips per docs/architecture/spellcasting-design.md, leveled spells +
+# slots per docs/architecture/leveled-spells-and-slots-plan.md). Built in
+# apply_class_defaults()'s WIZARD branch; null for every other class. See
+# scripts/items/spellcaster_state.gd.
 var caster: SpellcasterState = null
+
+# Shield spell's +5 AC — leveled-spells-and-slots-plan.md §7: shipped as a same-turn buff, not
+# the framework doc's general ActiveSpellEffect registry (out of scope for this pass). Decremented
+# to 0 at the start of the caster's next turn (player.gd _on_turn_started()).
+var shield_ac_bonus: int = 0
 
 
 # Monk: Martial Arts die scales with level. Global default 1d4 is used by all other classes.
@@ -237,6 +243,7 @@ func recalc_ac(has_armor_equipped: bool) -> void:
 		armor_class = 10 + dex_modifier() + wis_modifier()
 	else:
 		armor_class = 10 + dex_modifier()
+	armor_class += shield_ac_bonus
 
 # ── Save/load (Phase A — docs/architecture/SAVE_LOAD_ARCHITECTURE.md §4.1) ──────
 # Persist mutable state only. Computed properties (proficiency_bonus, rage_uses_max,
@@ -271,7 +278,9 @@ func to_dict() -> Dictionary:
 		"slowed_turns": slowed_turns,
 		"zealous_presence_turns": zealous_presence_turns,
 		"known_weapon_masteries": known_weapon_masteries.duplicate(),
-		"known_cantrip": caster.known_spells[0] if caster != null and not caster.known_spells.is_empty() else "",
+		"caster_known_spells": caster.known_spells.duplicate() if caster != null else [],
+		"caster_prepared_spells": caster.prepared_spells.duplicate() if caster != null else [],
+		"caster_slot_remaining": caster.slot_pool.remaining.duplicate() if caster != null and caster.slot_pool != null else {},
 	}
 
 # Order matters (doc §4.1): apply_class_defaults() first (resets scores/HP/flags),
@@ -308,6 +317,18 @@ func from_dict(d: Dictionary) -> void:
 	known_weapon_masteries.clear()
 	for m: Variant in (d.get("known_weapon_masteries", []) as Array):
 		known_weapon_masteries.append(String(m))
+	if caster != null:
+		caster.known_spells.clear()
+		for sid: Variant in (d.get("caster_known_spells", []) as Array):
+			caster.known_spells.append(String(sid))
+		caster.prepared_spells.clear()
+		for sid2: Variant in (d.get("caster_prepared_spells", []) as Array):
+			caster.prepared_spells.append(String(sid2))
+		if caster.slot_pool != null:
+			caster.slot_pool.remaining.clear()
+			var saved_slots: Dictionary = d.get("caster_slot_remaining", {})
+			for lv: Variant in saved_slots:
+				caster.slot_pool.remaining[int(lv)] = int(saved_slots[lv])
 
 # ── Point buy (custom character creation, scripts/ui/point_buy_select.gd) ──────
 # D&D 2024 point-buy costs: 8-13 cost 1 point per step, 14 and 15 cost 2 points per step.
@@ -365,6 +386,8 @@ func apply_class_defaults() -> void:
 			proficient_simple_weapons = true        # simple weapons only — no martial, no armor training
 			caster = SpellcasterState.new()
 			caster.spellcasting_ability = "INT"
+			caster.slot_pool = StandardSlotPool.new()
+			caster.slot_pool.owner_stats = self
 		CharacterClass.MONK:
 			dexterity = 16; wisdom = 14; constitution = 12
 			strength = 10; intelligence = 10; charisma = 8

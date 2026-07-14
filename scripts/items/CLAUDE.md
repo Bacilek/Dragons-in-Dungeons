@@ -56,6 +56,7 @@ TOOL   = 7
 | `is_thrown` | bool | Thrown weapon (currently only Spear): can be primed via RMB (same UX as quickbar food throw) then thrown at a tile with LMB — see "Thrown weapons" below |
 | `uses_max`/`uses_remaining` | int | Thrown weapons only: durability. `uses_remaining` starts at `uses_max` and ticks down per throw (see "Thrown weapons"); reaching 0 breaks the weapon |
 | `stack_uses` | Array[int] | Thrown weapons only: per-unit durability when stacked (`quantity > 1`) — see "Mixed-durability stacking" below |
+| `taught_spell_id` | String | SCROLL items only: spell id taught into the reader's spellbook on use. `""` = not a spell scroll. See "Scroll-taught spells" below |
 
 ## Rations / long rest
 FOOD items (`Ration`, `Mystery Meat`, `Rotten Meat`, `Cooked Meat`) are no longer directly edible — `GameState.use_item()`'s `FOOD` branch just logs a hint and consumes nothing. Their only purpose is `Item.food_value`, sacrificed toward `GameState.LONG_REST_FOOD_COST` (100) when the player completes a long rest (`scripts/ui/short_rest_panel.gd`'s Long Rest tab, see `scripts/autoloads/CLAUDE.md`'s "Rest system"). Current values: Ration 50, Cooked Meat 75, Mystery Meat 25, Rotten Meat 10 (tune here if rebalancing). `GameState.total_food_value()` sums `food_value × quantity` across quickbar+bag; `GameState._consume_food_value(amount)` spends the cheapest-value items first and is skipped entirely while `invincible` (God Mode long rests cost nothing). Rotten Meat can still be thrown into a revealed Fire Trap to cook into Cooked Meat (`DungeonFloor.cook_rotten_meat()`) — unrelated to the eating mechanic, which no longer exists for any food item.
@@ -152,27 +153,57 @@ DungeonFloorData.OBJECTS_PATH = "res://sprites/objects/"
 
 ---
 
-## Spellcasting data (`spell.gd`, `spell_db.gd`, `spellcaster_state.gd`)
+## Spellcasting data (`spell.gd`, `spell_db.gd`, `spellcaster_state.gd`, `spell_slot_pool.gd`)
 
-The cantrip-only slice of `docs/architecture/spellcasting-design.md` (Wizard cantrips — see
-`scripts/entities/CLAUDE.md`'s "Wizard spellcasting" section for the full cast-resolution
-walkthrough). No `SpellSlotPool`/`ActiveSpellEffect`/AoE-shape classes exist yet — add them per
-the design doc when leveled spells are implemented.
+Cantrips (`docs/architecture/spellcasting-design.md`) plus leveled spells + spell slots
+(`docs/architecture/leveled-spells-and-slots-plan.md`) — see `scripts/entities/CLAUDE.md`'s
+"Wizard spellcasting (cantrips)" and "Wizard leveled spells (spell slots)" sections for the full
+cast-resolution walkthroughs.
 
-- **`Spell`** (`Resource`) — `spell_id`, `spell_name`, `description`, `icon_path`, `level` (always
-  0 here), `school`, `range_tiles`, `resolution` (enum, only `ATTACK_ROLL` used), `dice_count`,
-  `dice_sides`, `damage_type`, `cantrip_tier_scaling: bool` (dice_count × tier at character levels
-  1/5/11/17), `effect_id` (`""` = pure generic damage path; else dispatched in
-  `SpellEffects.cast_spell()`), `class_list`. Deliberately missing every AoE/concentration/
-  upcast/component field the full design doc's `Spell` has — not needed until leveled spells
-  exist.
-- **`SpellDb`** (static factory, `RefCounted`) — `get_spell(id) -> Spell` builds the three
-  cantrips in code (`CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost",
-  "shocking_grasp"]`), same "no `.tres` files" convention as `Talent`/`SpriteFrames`.
+- **`Spell`** (`Resource`) — `spell_id`, `spell_name`, `description`, `icon_path`, `level` (0 =
+  cantrip, 1-9 = leveled), `school`, `range_tiles`, `resolution` (enum: `ATTACK_ROLL`/`SAVE`/
+  `AUTO_HIT`), `target_kind` (enum: `ENEMY`/`SELF`/`TILE`), `dice_count`, `dice_sides`,
+  `damage_type`, `cantrip_tier_scaling: bool` (dice_count × tier at character levels 1/5/11/17),
+  `upcast_dice_per_level: int` (leveled spells only), `save_stat`/`save_for_half` (SAVE
+  resolution only), `shape`/`shape_size` (`""` = single target, `"sphere"` = AoE radius —
+  deliberately no cone/line/cube, see the plan doc §7's content-scope cut), `effect_id` (`""` =
+  pure generic damage path; else dispatched in `SpellEffects`), `class_list`. Still missing
+  concentration/reaction/component fields from the full design doc's `Spell` shape — add if a
+  future spell needs them.
+- **`SpellDb`** (static factory, `RefCounted`) — `get_spell(id) -> Spell` builds all spells in
+  code, same "no `.tres` files" convention as `Talent`/`SpriteFrames`. `CANTRIP_IDS` (3 cantrips)
+  + `LEVELED_SPELL_IDS` (4: `magic_missile`/`shield`/`misty_step`/`fireball`) +
+  `CLASS_SPELL_LISTS: Dictionary` (`"WIZARD"` → `LEVELED_SPELL_IDS`, the level-up learn picker's
+  candidate pool — cantrips are deliberately excluded from this list since they're a separate,
+  always-known system).
 - **`SpellcasterState`** (`Resource`) — lives on `Stats.caster` (null for every class but Wizard),
   not `GameState`, so a future enemy/companion caster can carry its own instance.
-  `spellcasting_ability: String` ("INT"/"WIS"/"CHA"), `known_spells: Array[String]` (just the one
-  chosen cantrip in this slice). `spell_attack_bonus(stats)` / `spell_save_dc(stats)` are computed
-  **live, never cached** (`proficiency_bonus + ability_mod`, `8 + proficiency_bonus + ability_mod`)
-  — mirrors `Stats.mastery_cap()`'s "recompute every time" convention, and deliberately does NOT
-  derive from `character_class` (keeps a future multiclass caster sane — see the design doc §10.3).
+  `spellcasting_ability: String` ("INT"/"WIS"/"CHA"), `known_spells: Array[String]` (cantrips AND
+  leveled spells — `is_cantrip(id)` distinguishes via `SpellDb.get_spell(id).level == 0`, not by
+  a separate array), `prepared_spells: Array[String]` (today's prepared leveled spells, never
+  cantrips), `slot_pool: StandardSlotPool`. `spell_attack_bonus(stats)` / `spell_save_dc(stats)`
+  are computed **live, never cached** (`proficiency_bonus + ability_mod`,
+  `8 + proficiency_bonus + ability_mod`) — mirrors `Stats.mastery_cap()`'s "recompute every time"
+  convention, and deliberately does NOT derive from `character_class` (keeps a future multiclass
+  caster sane — see the design doc §10.3). `prepared_max(stats) -> int` returns
+  `stats.character_level` (leveled-spells-and-slots-plan.md §1 — supersedes the framework doc's
+  `ability_mod + caster_level` formula for Wizard).
+- **`StandardSlotPool`** (`Resource`, `scripts/items/spell_slot_pool.gd`) — the real D&D 2024
+  full-caster 1–20 slot table (`SLOT_TABLE` const), long-rest-only recharge
+  (`on_short_rest()` is a no-op). `lowest_available_level(spell) -> int` (-1 if none) — casting
+  always spends the cheapest available slot; the framework doc's upcast slot-level picker UI is
+  deliberately not implemented (plan doc §2/§9). `grant_new_slots_on_levelup(old_max)` tops up
+  newly-grown slot levels immediately after a level-up instead of leaving them empty until the
+  next long rest (see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why). Deliberately
+  **not** a `SpellSlotPool` base class + subclass hierarchy — only one caster type exists, so a
+  pluggable-pool abstraction for Pact/Cooldown pools that don't exist yet would be speculative;
+  add the base class back when a second caster archetype needs different pool behavior.
+
+## Scroll-taught spells
+
+`Item.taught_spell_id: String` (`""` = not a spell scroll — every pre-existing SCROLL item stays
+a no-op). `GameState.use_item()`'s `SCROLL` branch calls `learn_spell(taught_spell_id)` and
+consumes the scroll, unless the reader already knows that spell (logs "You already know this
+spell." instead). No scroll items exist in any loot pool yet (`ITEM_POOL`/`debug_panel.ALL_ITEMS`)
+— this is the mechanism only; scroll content is future work per
+`docs/architecture/leveled-spells-and-slots-plan.md` §4.2/§8.
