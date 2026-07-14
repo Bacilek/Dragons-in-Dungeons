@@ -52,9 +52,12 @@ normal use/cast) still fires unchanged for a plain click. Motion/release are pol
 its `gui_input`). Ability bar: `GameState.swap_ability_slots(a, b)` (plain swap, works for any
 ability including spells — doesn't touch known/prepared state). Item quickbar:
 `GameState.move_item("quickbar", a, "", "quickbar", b, "")`, the same function
-`inventory_overlay.gd` uses for its own quickbar↔quickbar drags. Disabled while
-`GameState.spellbook_open` (that overlay runs its own drag targeting these same Button rects from
-a different CanvasLayer — the two systems would otherwise fight over the same press).
+`inventory_overlay.gd` uses for its own quickbar↔quickbar drags. **Works even while the Spellbook
+is open** — `spellbook_overlay.gd`'s own drag always starts from a Spellbook row, never from an
+ActionBar slot, so the two never actually contend for the same press despite both being able to
+drop onto the ability bar. Camera-pan suppression (see `scripts/entities/CLAUDE.md`'s
+"Player-specific" section, `_lmb_press_over_ui`) is what stops this drag from also panning the
+game world underneath — a real bug during initial playtesting, not a hypothetical.
 
 **Split-out modules** (pure refactor, same behavior — GDScript has no partial classes, so these use composition/static-helper patterns instead):
 - `tooltip_formatters.gd` (`TooltipFormatters`, static-func-only helper) — the 8 combat tooltip formatters (`fmt_hit_tooltip`, `fmt_dmg_tooltip`, `fmt_heal_tooltip`, `fmt_save_tooltip`, `fmt_ehit_tooltip`, `fmt_edmg_tooltip`, `fmt_catk_tooltip`, `fmt_ret_tooltip`). Each takes only a `Dictionary` and returns a `String`. `hud.gd._format_tooltip()` still owns the `kind` dispatch match and calls into these.

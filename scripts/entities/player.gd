@@ -45,6 +45,12 @@ const ZOOM_STEP: float = 0.25
 
 var _is_panning: bool = false
 var _lmb_panning: bool = false
+# True when the LMB press that's currently held down started over a UI Control (any overlay,
+# the ActionBar, etc.) rather than the game world — gates camera panning in _input()'s motion
+# handler below. General fix for "dragging a UI element also pans the background/level": the
+# previous fix only excluded specific known overlay-open flags one at a time (spellbook_open,
+# inventory_open, ...) and still missed plain ActionBar-slot drags with no overlay open at all.
+var _lmb_press_over_ui: bool = false
 var _pan_start_mouse: Vector2 = Vector2.ZERO
 var _pan_start_cam: Vector2 = Vector2.ZERO
 var _click_start_screen_pos: Vector2 = Vector2(-1.0, -1.0)
@@ -421,10 +427,15 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
-				# Capture pan origin; actual panning activates after 8px threshold in motion handler
+				# Capture pan origin; actual panning activates after 8px threshold in motion handler.
+				# gui_get_hovered_control() reflects whatever Control (if any) is currently under the
+				# mouse — checked here, at press time, so a drag that STARTS on a UI element (Spellbook
+				# row, ActionBar slot, any overlay) never pans the camera, no matter where the drag
+				# later travels. A drag starting on bare game world still pans normally.
 				_pan_start_mouse = mb.position
 				_pan_start_cam = _camera.position
 				_lmb_panning = false
+				_lmb_press_over_ui = get_viewport().gui_get_hovered_control() != null
 			elif _lmb_panning:
 				_lmb_panning = false
 				_is_panning = false
@@ -434,13 +445,14 @@ func _input(event: InputEvent) -> void:
 			var motion := event as InputEventMouseMotion
 			_camera.position = _pan_start_cam - (motion.position - _pan_start_mouse) / _camera.zoom.x
 			get_viewport().set_input_as_handled()
-		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _lmb_panning and not GameState.inventory_open \
-				and not GameState.spellbook_open and not GameState.spell_learn_picker_open:
+		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _lmb_panning and not _lmb_press_over_ui \
+				and not GameState.inventory_open and not GameState.spellbook_open and not GameState.spell_learn_picker_open:
 			# BUGFIX: this camera-pan detector lives in _input(), which fires before any Control's
-			# gui_input — so without this guard, holding LMB and dragging a spell row in the
-			# Spellbook overlay also panned the game world/camera underneath it (reported as
-			# "drag drags the background/level"). inventory_open was already excluded here for the
-			# same reason; spellbook_open/spell_learn_picker_open were missing.
+			# gui_input — so without a guard here, holding LMB and dragging ANY UI element (a
+			# Spellbook row, an ActionBar slot for the in-bar reorder drag, any future overlay) also
+			# panned the game world/camera underneath it (reported as "drag drags the
+			# background/level"). _lmb_press_over_ui is the general fix (set at press time above);
+			# the explicit overlay-flag checks are kept as defense-in-depth.
 			var motion := event as InputEventMouseMotion
 			if motion.position.distance_to(_pan_start_mouse) > 8.0:
 				_lmb_panning = true
