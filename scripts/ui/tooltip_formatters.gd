@@ -194,17 +194,16 @@ static func fmt_masochist_tooltip(p: Dictionary) -> String:
 	lines.append("= [color=yellow]%d[/color] temp HP" % final_dmg)
 	return "\n".join(lines)
 
-## Magic Missile's detailed breakdown — leveled-spells-and-slots-plan.md follow-up: always hits
-## (no attack roll, no miss chance), range is the caster's full live FOV (not a fixed tile
-## number), each dart independently rolls 1d4+1 Force.
+## Magic Missile's detailed damage breakdown ONLY — leveled-spells-and-slots-plan.md follow-up.
+## "Always hits" / "range = full FOV" deliberately do NOT belong here (they're not part of the
+## damage number) — that context lives on the spell's own ability-bar hover tooltip (its
+## description, see SpellDb._magic_missile()) instead, per direct owner feedback.
 static func fmt_mmdmg_tooltip(p: Dictionary) -> String:
 	var darts: int = int(p.get("darts", "0"))
 	var rolls_str: String = String(p.get("rolls", ""))
 	var total: int = int(p.get("total", "0"))
 	var final_dmg: int = int(p.get("final", "0"))
 	var lines: PackedStringArray = []
-	lines.append("[color=lime]Always hits[/color] — no attack roll.")
-	lines.append("[color=lightblue]Range: your full field of view.[/color]")
 	lines.append("%d darts × (1d4+1) Force:" % darts)
 	if not rolls_str.is_empty():
 		var rolls: PackedStringArray = rolls_str.split("|")

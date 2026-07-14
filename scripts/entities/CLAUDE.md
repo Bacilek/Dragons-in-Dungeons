@@ -183,6 +183,16 @@ Pool entries may set `"attack_profile": {"kind": "ranged", "range": N, "projecti
 
 ## Player-specific (`player.gd`)
 - `_click_start_screen_pos`: recorded on LMB press; drag > 8 px cancels `_queued_path`
+- `_lmb_press_over_ui: bool` — set in `_input()`'s LMB-press branch via
+  `get_viewport().gui_get_hovered_control() != null` (any Control under the cursor at the moment
+  of the press — a Spellbook row, an ActionBar slot, any overlay). Gates the camera-pan-on-drag
+  detector in `_input()`'s mouse-motion branch: a drag that STARTS over UI never pans the camera,
+  regardless of where it later travels; a drag starting on bare game world still pans normally.
+  General fix for "dragging a UI element also drags the background/level" — `_input()` fires
+  before any Control's `gui_input`, so per-overlay-flag checks (`spellbook_open` etc., still kept
+  as defense-in-depth) can never fully cover every UI drag source one at a time; this covers all
+  of them uniformly, including the in-bar reorder drag (`hud.gd`'s `_process_bar_drag()`, see
+  `scripts/ui/CLAUDE.md`'s "In-bar reorder drag") which has no overlay open at all.
 - `_fov_prev_turn` / `_fov_this_turn`: maintained per turn (no longer grant ADV on their own)
 - Throw mode entered via `GameState.player_throw_primed` signal; Esc cancels
 - All input gated on `TurnManager.phase == WAITING_FOR_INPUT` AND `GameState.short_rest_open == false` AND `GameState.talent_picker_open == false` AND `GameState.mastery_picker_open == false` AND `GameState.subclass_picker_open == false`
@@ -424,9 +434,11 @@ either) — see `scripts/ui/CLAUDE.md`'s "Spellbook overlay" section.
 - **Magic Missile's detailed damage tooltip**: a dedicated `mmdmg:` meta (`darts`, `rolls`
   `|`-joined per-dart totals, `total`, `final`) replaces the generic `dmg:` meta for this spell —
   `TooltipFormatters.fmt_mmdmg_tooltip()` (`scripts/ui/tooltip_formatters.gd`, dispatched in
-  `hud.gd._format_tooltip()`) states "Always hits — no attack roll", "Range: your full field of
-  view", then lists each dart's individual 1d4+1 roll before the summed total — addresses
-  playtesting feedback that hovering the damage number showed no useful breakdown.
+  `hud.gd._format_tooltip()`) lists each dart's individual 1d4+1 roll before the summed total.
+  **Damage-only, deliberately** — "always hits"/"range = full FOV" do NOT belong on a damage-
+  number tooltip (per direct owner correction); that context lives on the spell's own ability-bar
+  hover tooltip instead (`Spell.description`, `SpellDb._magic_missile()`), which already states
+  both.
 
 ## Monk class
 Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: STR + DEX. Weapon proficiency: intended to be simple weapons + martial weapons with the light property, but `Stats.proficient_simple_weapons`/`proficient_martial_weapons` are not yet set in `apply_class_defaults()` for Monk (TODO — currently only wired up for Barbarian). No armor training (any armor → DISADV on STR/DEX checks/saves + DISADV on attacks; TODO: enforce). Starting abilities (slot 0–1 of ability bar):

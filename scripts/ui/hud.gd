@@ -592,7 +592,10 @@ func _on_slot_gui_input(event: InputEvent, slot_index: int) -> void:
 	# Button's own `pressed` signal (→ _on_slot_pressed, use/cast) still fires normally for a
 	# plain click. Motion/release are polled in _process() below (same reasoning as
 	# spellbook_overlay.gd's drag: a release outside the pressed Button's bounds never reaches it).
-	if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not GameState.spellbook_open:
+	# Allowed even while the Spellbook is open — its own drag starts from a Spellbook row (a
+	# different source), never from an ActionBar slot, so the two never actually contend for the
+	# same press despite both being able to drop onto the ability bar.
+	if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed:
 		if (_ability_bar_mode and GameState.player_ability_bar[slot_index] != null) \
 				or (not _ability_bar_mode and GameState.player_quickbar[slot_index] != null):
 			_bar_drag_from = slot_index
