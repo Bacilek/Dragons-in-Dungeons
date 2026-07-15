@@ -21,9 +21,9 @@ static func fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 	var stat_name: String = "DEX" if use_dex else "STR"
 	var lines: PackedStringArray = []
 	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if n20 else ("  [color=red]✕ FAIL[/color]" if n1 else "")
-	if adv and d1 != d2:
+	if adv:
 		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
-	elif disadv and d1 != d2:
+	elif disadv:
 		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
 	else:
 		lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
@@ -70,9 +70,9 @@ static func fmt_sphit_tooltip(p: Dictionary) -> String:
 	var lucky2: bool = p.get("lucky2", "0") == "1"
 	var lines: PackedStringArray = []
 	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if n20 else ("  [color=red]✕ FAIL[/color]" if n1 else "")
-	if adv and d1 != d2:
+	if adv:
 		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
-	elif disadv and d1 != d2:
+	elif disadv:
 		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
 	else:
 		lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
@@ -279,9 +279,9 @@ static func fmt_save_tooltip(p: Dictionary) -> String:
 	var lucky1: bool = p.get("lucky1", "0") == "1"
 	var lucky2: bool = p.get("lucky2", "0") == "1"
 	var lines: PackedStringArray = []
-	if adv and d1 != d2:
+	if adv:
 		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
-	elif disadv and d1 != d2:
+	elif disadv:
 		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
 	else:
 		lines.append("d20 = [color=yellow]%d[/color]" % die)
@@ -311,9 +311,9 @@ static func fmt_ehit_tooltip(p: Dictionary) -> String:
 	var disadv: bool = p.get("disadv", "0") == "1"
 	var lines: PackedStringArray = []
 	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if crit else ""
-	if adv and d1 != d2:
+	if adv:
 		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
-	elif disadv and d1 != d2:
+	elif disadv:
 		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]%s" % [d1, d2, die, die_suffix])
 	else:
 		lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
