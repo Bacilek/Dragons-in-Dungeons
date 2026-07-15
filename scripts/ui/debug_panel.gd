@@ -418,11 +418,10 @@ func _make_item_row(d: Dictionary) -> Control:
 	name_lbl.add_theme_color_override("font_color", Color(0.95, 0.90, 0.70))
 	info.add_child(name_lbl)
 
-	var desc_lbl := Label.new()
-	desc_lbl.text = d["desc"]
-	desc_lbl.add_theme_font_size_override("font_size", 8)
-	desc_lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.60))
-	info.add_child(desc_lbl)
+	# Description is intentionally NOT shown here — it's the inventory hover tooltip's job
+	# (Item.description). A long one (e.g. Shield's) as a plain unwrapped Label would stretch
+	# this row past the panel width and push the Give button off-screen.
+	row.tooltip_text = d["desc"]
 
 	var give_btn := _make_btn("Give", Color(0.40, 0.80, 0.40))
 	give_btn.custom_minimum_size = Vector2(54.0, 0.0)
