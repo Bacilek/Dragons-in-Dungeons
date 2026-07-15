@@ -1101,7 +1101,26 @@ func debug_level_up() -> void:
 
 # ── Equipment ─────────────────────────────────────────────────────────────────
 
-# Equip/unequip/re-equip is always a free action — never costs a turn.
+# Shield gate: Item.is_shield requires Stats.proficient_shields, and can't coexist with a
+# two-handed Main Hand weapon. Returns true for any non-shield item (no-op gate).
+func can_equip_shield(item: Item) -> bool:
+	if not item.is_shield:
+		return true
+	if not player_stats.proficient_shields:
+		return false
+	var main_hand: Item = equipment.get("melee") as Item
+	if main_hand != null and main_hand.is_two_handed:
+		return false
+	return true
+
+func log_shield_equip_blocked(item: Item) -> void:
+	if not player_stats.proficient_shields:
+		combat_message.emit("[color=red]You lack proficiency with shields.[/color]")
+	else:
+		combat_message.emit("[color=red]Cannot equip a Shield while wielding a two-handed weapon.[/color]")
+
+# Equip/unequip/re-equip is always a free action — EXCEPT a Shield (Item.is_shield), which takes
+# 1 turn to equip or unequip (see can_equip_shield() and the "costs_turn" blocks below).
 func equip(item: Item, slot_name: String = "") -> void:
 	if slot_name == "":
 		match item.item_type:
@@ -1110,10 +1129,17 @@ func equip(item: Item, slot_name: String = "") -> void:
 					slot_name = "ranged"
 				else:
 					slot_name = "melee"
-			Item.Type.ARMOR:  slot_name = "armor"
+			Item.Type.ARMOR:  slot_name = "hand2" if item.is_shield else "armor"
 			_: return
 	if not equipment.has(slot_name):
 		return
+	if item.is_shield and not can_equip_shield(item):
+		log_shield_equip_blocked(item)
+		return
+
+	var costs_turn: bool = item.is_shield and TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT
+	if costs_turn:
+		TurnManager.begin_player_action()
 
 	var to_equip: Item = item
 	if _should_split_for_equip(item):
@@ -1137,6 +1163,8 @@ func equip(item: Item, slot_name: String = "") -> void:
 	combat_message.emit("[color=cyan]Equipped [b]%s[/b].[/color]" % to_equip.item_name)
 	equipment_changed.emit()
 	inventory_changed.emit()
+	if costs_turn:
+		TurnManager.on_player_action_complete()
 
 # Silently returns whatever's in the off-hand slot to the bag (no log line of its own —
 # called as a side effect of equipping a two-handed main-hand weapon, see equip()/move_item()).
@@ -1185,13 +1213,18 @@ func unequip(slot_name: String) -> void:
 	var item: Item = equipment[slot_name] as Item
 	if item == null:
 		return
-	if add_item(item):
-		equipment[slot_name] = null
-		recalculate_stats()
-		combat_message.emit("[color=cyan]Unequipped [b]%s[/b].[/color]" % item.item_name)
-		equipment_changed.emit()
-	else:
+	if not add_item(item):
 		combat_message.emit("[color=red]No bag space to unequip %s![/color]" % item.item_name)
+		return
+	var costs_turn: bool = item.is_shield and TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT
+	if costs_turn:
+		TurnManager.begin_player_action()
+	equipment[slot_name] = null
+	recalculate_stats()
+	combat_message.emit("[color=cyan]Unequipped [b]%s[/b].[/color]" % item.item_name)
+	equipment_changed.emit()
+	if costs_turn:
+		TurnManager.on_player_action_complete()
 
 func toggle_versatile_grip() -> void:
 	var item: Item = equipment.get("melee") as Item
@@ -1204,6 +1237,10 @@ func toggle_versatile_grip() -> void:
 	item.versatile_die_min = tmp_min
 	item.versatile_die_max = tmp_max
 	item.is_two_handed = not item.is_two_handed
+	# Gripping two-handed can't coexist with an Off-hand item (Shield included) — mirrors
+	# equip()'s auto-unequip-offhand rule for a two-handed weapon.
+	if item.is_two_handed:
+		_auto_unequip_offhand()
 	recalculate_stats()
 	combat_message.emit("[color=cyan]%s gripped %s-handed.[/color]" % [item.item_name, "two" if item.is_two_handed else "one"])
 	equipment_changed.emit()
@@ -1240,6 +1277,23 @@ func move_item(src: String, src_idx: int, src_slot: String,
 		return
 	var src_item: Item  = _get_slot_item(src, src_idx, src_slot)
 	var dest_item: Item = _get_slot_item(dest, dest_idx, dest_slot)
+	# Shield (Item.is_shield) equip/unequip via drag costs 1 turn and is gated by
+	# can_equip_shield() — covers dragging a Shield into "hand2" (entering), dragging it back out
+	# to the bag/quickbar (leaving), and dragging a different item onto an occupied "hand2" Shield
+	# (displacing it). Mirrors equip()/unequip()'s own gating.
+	var entering_shield: bool = dest == "equipment" and dest_slot == "hand2" \
+		and src_item != null and src_item.is_shield
+	var leaving_shield: bool = src == "equipment" and src_slot == "hand2" \
+		and src_item != null and src_item.is_shield
+	var displaced_shield: bool = dest == "equipment" and dest_slot == "hand2" \
+		and not entering_shield and dest_item != null and dest_item.is_shield
+	if entering_shield and not can_equip_shield(src_item):
+		log_shield_equip_blocked(src_item)
+		return
+	var shield_involved: bool = entering_shield or leaving_shield or displaced_shield
+	var costs_turn: bool = shield_involved and TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT
+	if costs_turn:
+		TurnManager.begin_player_action()
 	# Dragging a stacked weapon (e.g. Handaxe/Dagger, quantity > 1) into an equipment slot only
 	# equips a single unit — the rest of the stack stays put instead of the whole pile moving
 	# into the slot. Mirrors equip()'s splitting rule (see _should_split_for_equip()).
@@ -1257,6 +1311,8 @@ func move_item(src: String, src_idx: int, src_slot: String,
 	recalculate_stats()
 	equipment_changed.emit()
 	inventory_changed.emit()
+	if costs_turn:
+		TurnManager.on_player_action_complete()
 
 func _get_slot_item(source: String, idx: int, slot_name: String) -> Item:
 	match source:

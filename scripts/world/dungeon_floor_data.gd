@@ -34,6 +34,7 @@ const ITEM_POOL: Array = [
 	{"name": "Arrow",          "type": 7, "icon": "Weapons/weapon_arrow.png",             "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Short Bow and Longbow.", "qty": 6, "gold": 1},
 	{"name": "Bolt",           "type": 7, "icon": "Weapons/weapon_arrow.png",             "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Heavy Crossbow.", "qty": 6},
 	{"name": "Thief Tools",    "type": 7, "icon": "Misc/KeyIron.png",                    "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Disarm traps, lock doors. Consumed on failure.", "qty": 2, "gold": 25},
+	{"name": "Shield",         "type": 1, "icon": "Shields/Shield1.png",                "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Off-hand. +2 AC. Requires shield proficiency; can't be worn with a two-handed Main Hand weapon, and blocks spellcasting while equipped. Equip/unequip takes 1 turn.", "bonus_ac": 2, "is_shield": true, "gold": 40},
 	# Scroll of <Spell> — a single one-shot cast of the named spell, castable by ANY class
 	# (see Item.scroll_spell_id / SpellEffects' caster-optional attack-bonus/save-DC helpers:
 	# non-casters use their INT modifier + proficiency bonus). Reusing the spell's own icon since

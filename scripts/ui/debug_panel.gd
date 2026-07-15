@@ -24,6 +24,7 @@ const ALL_ITEMS: Array = [
 	{"name": "Mystery Meat",    "type": 4, "src": "items",   "icon": "Food/Meat.png",                         "bonus_dmg": 0, "heal": 0, "food_value": 25, "str_bonus": 0, "desc": "Required for a long rest.", "gold": 8},
 	{"name": "Rotten Meat",     "type": 4, "src": "items",   "icon": "Food/Meat.png",                         "bonus_dmg": 0, "heal": 0, "food_value": 10, "str_bonus": 0, "desc": "Throw into fire to cook into Cooked Meat."},
 	{"name": "Thief Tools",      "type": 7, "src": "items",   "icon": "Misc/KeyIron.png",                         "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Disarm traps",               "qty": 3, "gold": 25},
+	{"name": "Shield",           "type": 1, "src": "items",   "icon": "Shields/Shield1.png",                      "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "Off-hand. +2 AC. Requires shield proficiency; can't be worn with a two-handed Main Hand weapon, and blocks spellcasting while equipped. Equip/unequip takes 1 turn.", "bonus_ac": 2, "is_shield": true, "gold": 40},
 	{"name": "Short Bow",        "type": 0, "src": "items",   "icon": "Weapons/BowArrow.png",                     "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "is_ranged": true, "range": 4, "category": "Simple", "die_min": 1, "die_max": 6, "dmg_type": "Piercing", "mastery": "Vex", "ammo": "Arrow", "gold": 50},
 	{"name": "Heavy Crossbow",   "type": 0, "src": "items",   "icon": "Weapons/BowArrowGold.png",                 "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "is_ranged": true, "range": 4, "category": "Martial", "dmg_type": "Piercing", "die_min": 1, "die_max": 10, "mastery": "Push", "ammo": "Bolt", "heavy": true, "two_handed": true, "gold": 120},
 	{"name": "Longbow",          "type": 0, "src": "items",   "icon": "Weapons/Bow.png",                          "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "is_ranged": true, "range": 5, "category": "Martial", "dmg_type": "Piercing", "die_min": 1, "die_max": 8, "mastery": "Slow", "ammo": "Arrow", "heavy": true, "two_handed": true},
@@ -695,6 +696,8 @@ func _on_give_item(d: Dictionary) -> void:
 	item.consumes_on_ranged = d.get("consumes", false)
 	item.is_two_handed      = d.get("two_handed", false)
 	item.is_heavy_armor     = d.get("heavy_armor", false)
+	item.bonus_ac           = d.get("bonus_ac", 0)
+	item.is_shield          = d.get("is_shield", false)
 	item.is_heavy           = d.get("heavy", false)
 	item.is_finesse         = d.get("finesse", false)
 	item.is_light           = d.get("light", false)

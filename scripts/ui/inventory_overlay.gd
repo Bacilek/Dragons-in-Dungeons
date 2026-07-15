@@ -423,6 +423,8 @@ func _do_move(dest: Control) -> void:
 		return
 	# Equipment slot compatibility check
 	if dest_src == "equipment" and not _fits_slot(_drag_item, dest_sname):
+		if dest_sname == "hand2" and _drag_item != null and _drag_item.is_shield:
+			GameState.log_shield_equip_blocked(_drag_item)
 		return
 	GameState.move_item(_drag_src, _drag_src_idx, _drag_src_sname,
 						dest_src,  dest_idx,       dest_sname)
@@ -436,6 +438,8 @@ func _fits_slot(item: Item, slot_name: String) -> bool:
 		# a Light weapon (5e Two-Weapon Fighting rule); non-weapon items are always accepted.
 		"hand2":
 			if item.item_type != Item.Type.WEAPON:
+				if item.is_shield:
+					return GameState.can_equip_shield(item)
 				return true
 			var main_hand: Item = GameState.equipped_weapon
 			return not item.is_ranged and item.is_light and main_hand != null and main_hand.is_light
@@ -446,7 +450,7 @@ func _right_click(slot: Control) -> void:
 	if source == "special_display":
 		GameState.clear_special_slot()
 	elif source == "equipment":
-		GameState.unequip(slot.get_meta("slot_name", ""))  # always a free action
+		GameState.unequip(slot.get_meta("slot_name", ""))  # free action, except a Shield (1 turn)
 	else:
 		var item: Item = _slot_item(slot)
 		if item != null:

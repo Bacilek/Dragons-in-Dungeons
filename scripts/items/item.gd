@@ -24,6 +24,12 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 @export var consumes_on_ranged: bool = false
 @export var is_two_handed: bool = false
 @export var is_heavy_armor: bool = false  # ends Barbarian Rage immediately on equip
+# Shield: an ARMOR-type item that routes to the "hand2" (Off-hand) slot instead of "armor" —
+# see GameState.equip()/can_equip_shield(). Requires Stats.proficient_shields, can't be equipped
+# alongside a two-handed Main Hand weapon, blocks spellcasting while equipped, and costs 1 turn
+# to equip/unequip. bonus_ac (usually 2) applies the same way any other equipment slot's AC bonus
+# does — via the generic per-slot loop in GameState.recalculate_stats().
+@export var is_shield: bool = false
 @export var is_heavy: bool = false        # Heavy: attacking with STR < 13 imposes Disadvantage
 @export var is_versatile: bool = false    # Versatile: World Tree's Branching Strike keys off it alongside is_heavy; also toggles two-handed grip (see versatile_die_min/max)
 # Versatile weapons only: damage die used while gripped two-handed (toggled via Main Hand slot
@@ -127,6 +133,7 @@ func to_dict() -> Dictionary:
 		"consumes_on_ranged": consumes_on_ranged,
 		"is_two_handed": is_two_handed,
 		"is_heavy_armor": is_heavy_armor,
+		"is_shield": is_shield,
 		"is_heavy": is_heavy,
 		"is_versatile": is_versatile,
 		"versatile_die_min": versatile_die_min,
@@ -170,6 +177,7 @@ static func from_dict(d: Dictionary) -> Item:
 	it.consumes_on_ranged = bool(d.get("consumes_on_ranged", false))
 	it.is_two_handed = bool(d.get("is_two_handed", false))
 	it.is_heavy_armor = bool(d.get("is_heavy_armor", false))
+	it.is_shield = bool(d.get("is_shield", false))
 	it.is_heavy = bool(d.get("is_heavy", false))
 	it.is_versatile = bool(d.get("is_versatile", false))
 	it.versatile_die_min = int(d.get("versatile_die_min", 0))

@@ -18,7 +18,16 @@ var _armed_spell_id: String = ""
 var _casting_from_scroll: bool = false
 var _armed_scroll_item: Item = null
 
+# A Shield (Item.is_shield) in the Off-hand blocks all spellcasting while equipped — 5e's
+# "shield blocks somatic components" rule, applied uniformly regardless of caster hand.
+func _shield_blocks_casting() -> bool:
+	var hand2: Item = GameState.equipment.get("hand2") as Item
+	return hand2 != null and hand2.is_shield
+
 func begin_cast(spell_id: String) -> void:
+	if _shield_blocks_casting():
+		GameState.game_log("[color=gray]You can't cast with a Shield equipped.[/color]")
+		return
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return
@@ -40,6 +49,9 @@ func begin_cast(spell_id: String) -> void:
 ## Entry point for reading a Scroll of <Spell> (game_state.gd's player_scroll_primed signal).
 ## No spell-slot check (a scroll is self-contained) — always casts at the spell's own base level.
 func on_scroll_primed(item: Item) -> void:
+	if _shield_blocks_casting():
+		GameState.game_log("[color=gray]You can't cast with a Shield equipped.[/color]")
+		return
 	var spell: Spell = SpellDb.get_spell(item.scroll_spell_id)
 	if spell == null:
 		return
@@ -111,6 +123,9 @@ func _effective_range(spell: Spell) -> int:
 ## begin_cast()/try_cast_at() pair). SELF-target spells (Shield) ignore `clicked` entirely and
 ## self-cast immediately, same as begin_cast()'s own SELF branch.
 func cast_direct(spell_id: String, clicked: Vector2i) -> void:
+	if _shield_blocks_casting():
+		GameState.game_log("[color=gray]You can't cast with a Shield equipped.[/color]")
+		return
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return

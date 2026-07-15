@@ -26,6 +26,12 @@ var check_prof_cha: bool = false
 var proficient_simple_weapons: bool = false
 var proficient_martial_weapons: bool = false
 
+# Shield proficiency — whether the class may equip a Shield (Item.is_shield) at all. Lacking it
+# blocks equipping outright (unlike weapon proficiency, which just drops a bonus) — see
+# GameState.can_equip_shield(). Barbarian/Ranger only; Wizard/Monk never train with shields
+# (Monk also loses Unarmored Defense in any armor — see the class's "No armor training" note).
+var proficient_shields: bool = false
+
 # Weapon mastery ownership — a weapon's Item.weapon_mastery (e.g. "Cleave", "Vex") only
 # triggers its effect if the character actually knows that mastery. Populated by the Mastery
 # Picker (scripts/ui/mastery_picker.gd, via GameState.toggle_mastery()) — see mastery_cap()
@@ -380,12 +386,14 @@ func apply_class_defaults() -> void:
 			check_prof_con = true
 			proficient_simple_weapons = true
 			proficient_martial_weapons = true
+			proficient_shields = true
 		CharacterClass.RANGER:
 			dexterity = 16; wisdom = 14; constitution = 12
 			strength = 10; intelligence = 10; charisma = 8
 			max_hp = 10 + modifier(constitution)   # Ranger HD d10
 			check_prof_str = true
 			check_prof_dex = true
+			proficient_shields = true
 		CharacterClass.WIZARD:
 			intelligence = 16; dexterity = 14; wisdom = 12
 			constitution = 10; strength = 8; charisma = 10
