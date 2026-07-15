@@ -313,6 +313,7 @@ func start_new_run() -> void:
 	spell_learn_picker_open = false
 	spellbook_open = false
 	light_source_pos = Vector2i(-1, -1)
+	light_source_item = null
 	talent_points = {1: 0, 2: 0, 3: 0, 4: 0}
 	tier3_selected_class = -1
 	talent_investments = {}
@@ -723,22 +724,28 @@ func clear_special_slot() -> void:
 ## visible-tiles set every time fog recomputes, so it genuinely pushes back fog of war around the
 ## lit object — see scripts/world/CLAUDE.md. Only one instance can be active at a time (5e's Light
 ## spell is also singular per caster); casting again replaces it outright. `(-1,-1)` = none active.
-## Ends on a completed rest (short or long) or on descending to the next floor — see
-## clear_light_source()'s call sites in _on_short_rest_completed()/long_rest()/advance_floor().
+## Ends on a completed rest (short or long), on descending to the next floor, or the instant the
+## lit object is no longer on the floor tile (picked up, or otherwise removed) — checked every
+## fog recompute in DungeonFloor.update_fog() via light_source_item's presence in
+## get_items_at(light_source_pos). See clear_light_source()'s explicit call sites in
+## _on_short_rest_completed()/long_rest()/advance_floor() for the other three end conditions.
 signal light_source_changed()
 const LIGHT_SOURCE_RADIUS: int = 4
 var light_source_pos: Vector2i = Vector2i(-1, -1)
 var light_source_color: Color = Color.WHITE
+var light_source_item: Item = null
 
-func set_light_source(pos: Vector2i, color: Color) -> void:
+func set_light_source(pos: Vector2i, color: Color, item: Item) -> void:
 	light_source_pos = pos
 	light_source_color = color
+	light_source_item = item
 	light_source_changed.emit()
 
 func clear_light_source() -> void:
 	if light_source_pos == Vector2i(-1, -1):
 		return
 	light_source_pos = Vector2i(-1, -1)
+	light_source_item = null
 	light_source_changed.emit()
 
 ## Grants a subclass's free, rank-independent Tier 2 activation ability (Frenzy, Limit Break,

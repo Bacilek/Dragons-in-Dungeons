@@ -411,16 +411,21 @@ extra was needed there).
 - **Light** (Evocation, `effect_id: "light"`, AUTO_HIT, TILE, touch range 1): touch an object
   resting on the ground (a floor item — `dungeon_floor.get_item_at(tile_pos) != null`, never a
   worn/carried one) and it becomes a **real light source**, not cosmetic: `GameState.
-  set_light_source(pos, color)` (random color from a fixed palette) is read every `DungeonFloor.
-  update_fog()` call, which unions its own `_compute_shadowcast(pos, LIGHT_SOURCE_RADIUS=4)` into
-  the player's visible-tiles set (walls still block it — same shadowcast algorithm as the player's
-  own FOV) — see `scripts/world/CLAUDE.md`'s "FOV" section. Only one Light source active at a time
-  (recasting replaces it outright); ends on a completed rest (short or long —
-  `_on_short_rest_completed()`/`long_rest()` both call `GameState.clear_light_source()`) or on
-  floor descent (`advance_floor()` — the lit object is left behind on the previous floor; this
-  codebase's own reinterpretation of the spell's RAW "1 hour" duration, since there's no real-time
-  clock to hang that off of). `DungeonFloor._update_light_source_glow()` also draws a small
-  colored square over the lit tile so the player can see WHERE it is from across the room.
+  set_light_source(pos, color, item)` (random color from a fixed palette; `item` is the specific
+  `Item` reference touched — kept so the light can tell when it's gone, see below) is read every
+  `DungeonFloor.update_fog()` call, which unions its own `_compute_shadowcast(pos,
+  LIGHT_SOURCE_RADIUS=4)` into the player's visible-tiles set (walls still block it — same
+  shadowcast algorithm as the player's own FOV) — see `scripts/world/CLAUDE.md`'s "FOV" section.
+  Only one Light source active at a time (recasting replaces it outright); ends on a completed rest
+  (short or long — `_on_short_rest_completed()`/`long_rest()` both call
+  `GameState.clear_light_source()`), on floor descent (`advance_floor()` — the lit object is left
+  behind on the previous floor; this codebase's own reinterpretation of the spell's RAW "1 hour"
+  duration, since there's no real-time clock to hang that off of), **or the instant the lit object
+  leaves its floor tile** — picked up by the player, or otherwise removed — checked every
+  `update_fog()` call via `GameState.light_source_item`'s presence in
+  `get_items_at(light_source_pos)`. `DungeonFloor._update_light_source_glow()` tints every tile the
+  light's own shadowcast actually reaches with `GameState.light_source_color` (not just a single
+  square over the source tile) so the player can see both where it is and how far it reaches.
 
 ## Concentration (generic mechanism)
 `Stats.concentration_spell_id: String` (`""` = not concentrating) + a per-spell duration field

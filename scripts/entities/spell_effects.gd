@@ -258,7 +258,7 @@ static func cast_light_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 			Color(1.0, 0.6, 0.8), Color(0.8, 0.65, 1.0), Color(1.0, 1.0, 0.6),
 		]
 		var c: Color = Rng.pick(LIGHT_COLORS)
-		GameState.set_light_source(tile_pos, c)
+		GameState.set_light_source(tile_pos, c, target_item)
 		GameState.game_log("[color=cyan]The %s begins to glow with a soft light.[/color]" % target_item.item_name)
 
 	if dungeon_floor != null:

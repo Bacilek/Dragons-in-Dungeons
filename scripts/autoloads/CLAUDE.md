@@ -132,6 +132,7 @@ spellbook_open: bool                # blocks ALL player input while spellbook_ov
 special_slot_spell_id: String        # "" = none; the Special quick-cast slot's assigned spell (cantrip or leveled), see below
 light_source_pos: Vector2i           # (-1,-1) = none active; Light cantrip's lit-object position — see scripts/world/CLAUDE.md's "FOV" section
 light_source_color: Color            # Light cantrip's randomized glow color
+light_source_item: Item              # the specific floor Item touched at cast time; auto-clears the light when it's no longer at light_source_pos (picked up/removed)
 ```
 
 **Leveled spells / spellbook (`docs/architecture/leveled-spells-and-slots-plan.md`)**: Wizard-only,

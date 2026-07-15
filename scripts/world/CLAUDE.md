@@ -36,14 +36,26 @@ dungeon_floor.is_walkable_for_companion(pos: Vector2i) -> bool  # walkable + not
 call (same algorithm, walls still block it) centered on `GameState.light_source_pos` (radius
 `GameState.LIGHT_SOURCE_RADIUS = 4`) into `_visible_tiles` whenever a Light source is active
 (`light_source_pos != Vector2i(-1,-1)`) — a real light source, not a cosmetic effect, so tiles near
-the lit object become visible/explored even far from the player. `_update_light_source_glow()`
-(called from `update_fog()` too) draws a small colored `Sprite2D` square over the lit tile
-(`GameState.light_source_color`, randomized per cast) so the player can see WHERE it is from
-across the room — purely visual, doesn't drive the FOV union itself. `GameState.
-light_source_changed` (emitted by `set_light_source()`/`clear_light_source()`) is connected in
-`_ready()` to force an immediate `update_fog()` call, so the light ending early (rest completion)
-hides the glow/pulls back the extra visibility right away instead of waiting for the player's next
-move. See `scripts/entities/CLAUDE.md`'s "Wizard spellcasting" section for the spell itself.
+the lit object become visible/explored even far from the player. The exact same shadowcast result
+(`lit_tiles`, computed once and passed straight into `_update_light_source_glow(lit_tiles)`) also
+drives the visual glow: every tile the light actually reaches gets tinted with
+`GameState.light_source_color` (pooled `Sprite2D`s + a shared 1×1 white texture, same
+grow-only-pool convention as `show_aoe_preview()` — not a single decorative square over the source
+tile). **Ends automatically the instant the lit object leaves its floor tile** (picked up, or
+otherwise removed) — checked at the top of every `update_fog()` call via
+`get_items_at(light_source_pos).has(GameState.light_source_item)` (the specific `Item` reference
+touched at cast time, stored on `GameState.light_source_item` — not just "is *any* item still
+there", so a stack sharing that tile doesn't falsely keep the light alive once the lit item itself
+is gone). This auto-expiry mutates `GameState.light_source_pos`/`light_source_item` directly
+(**not** via `GameState.clear_light_source()`) specifically to avoid re-entering `update_fog()`:
+`light_source_changed`'s only listener is this same file's `_ready()` connection back to
+`update_fog()` (see below), and this call is already mid-update, so re-emitting here would recurse
+one level deep and risk double-firing `stairs_discovered`. `GameState.
+light_source_changed` (emitted by `set_light_source()`/`clear_light_source()`, i.e. every OTHER
+end condition — recast, rest, floor descent) is connected in `_ready()` to force an immediate
+`update_fog()` call, so the light ending early hides the glow/pulls back the extra visibility right
+away instead of waiting for the player's next move. See `scripts/entities/CLAUDE.md`'s "Wizard
+spellcasting" section for the spell itself.
 
 ## AoE targeting preview
 `show_aoe_preview(center: Vector2i, radius: int)` / `hide_aoe_preview()` — a small pooled-`Sprite2D` purple tint (1×1 white texture tinted via `modulate`, `z_index = 2`, same layer as the fog sprite — Node2D-world convention, not a Control) over every tile within `radius` (Euclidean, no LOS filtering — see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why) of `center`. Driven every frame by `player.gd._update_spell_aoe_preview()` while a sphere-shaped spell (Fireball) is armed for targeting. Rebuild is cached on `"%d,%d,%d" % [center, radius]` so repeated calls with the same hovered tile are near-free.

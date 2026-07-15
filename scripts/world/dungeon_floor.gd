@@ -48,7 +48,8 @@ const POPULATION_SEED_MIX: int = 0x1234ABCD
 var _fog_image: Image
 var _fog_texture: ImageTexture
 var _fog_sprite: Sprite2D
-var _light_source_sprite: Sprite2D  # Light cantrip glow — see _update_light_source_glow()
+var _light_glow_sprites: Array[Sprite2D] = []  # Light cantrip glow — see _update_light_source_glow()
+var _light_glow_tex: ImageTexture
 var _explored: Dictionary = {}
 var _visible_tiles: Dictionary = {}  # Vector2i → true; current FOV set, reset each update_fog
 var _fov_player_pos: Vector2i = Vector2i(-1, -1)
@@ -353,14 +354,29 @@ func update_fog(player_pos: Vector2i) -> void:
 
 	_visible_tiles = _compute_shadowcast(player_pos, FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus)
 
-	# Light cantrip: a real light source, not cosmetic — union its own shadowcast (walls still
-	# block it, same algorithm as the player's own FOV) into the visible-tiles set every time fog
-	# recomputes, so tiles near the lit object become visible/explored even far from the player.
-	_update_light_source_glow()
+	# Light cantrip: ends the instant the lit object is no longer on its floor tile (picked up, or
+	# otherwise removed) — checked every fog recompute, same cadence the light itself refreshes.
+	# Cleared directly (not via GameState.clear_light_source()) to avoid re-entering update_fog():
+	# that function's own emit is wired straight back to update_fog() (see _ready() below), and
+	# we're already mid-update here — this same call handles the resulting visual refresh below.
 	if GameState.light_source_pos != Vector2i(-1, -1):
-		var lit: Dictionary = _compute_shadowcast(GameState.light_source_pos, GameState.LIGHT_SOURCE_RADIUS)
-		for pos: Vector2i in lit:
+		var still_there: bool = GameState.light_source_item != null \
+			and get_items_at(GameState.light_source_pos).has(GameState.light_source_item)
+		if not still_there:
+			GameState.light_source_pos = Vector2i(-1, -1)
+			GameState.light_source_item = null
+
+	# A real light source, not cosmetic — union its own shadowcast (walls still block it, same
+	# algorithm as the player's own FOV) into the visible-tiles set every time fog recomputes, so
+	# tiles near the lit object become visible/explored even far from the player. The exact same
+	# tile set also drives the colored glow tint below, so the visuals always match what's actually
+	# lit rather than being a single decorative square.
+	var lit_tiles: Dictionary = {}
+	if GameState.light_source_pos != Vector2i(-1, -1):
+		lit_tiles = _compute_shadowcast(GameState.light_source_pos, GameState.LIGHT_SOURCE_RADIUS)
+		for pos: Vector2i in lit_tiles:
 			_visible_tiles[pos] = true
+	_update_light_source_glow(lit_tiles)
 
 	for y: int in _data.height:
 		for x: int in _data.width:
@@ -423,26 +439,38 @@ func show_aoe_preview(center: Vector2i, radius: int) -> void:
 		else:
 			spr.visible = false
 
-# Light cantrip's visual glow — a small colored square over the lit tile (its own shadowcast is
-# what actually pushes back fog, computed in update_fog() above; this is purely so the player can
-# see WHERE the light source is even from across the room, same z-index layer as the fog sprite).
-func _update_light_source_glow() -> void:
-	if GameState.light_source_pos == Vector2i(-1, -1):
-		if _light_source_sprite != null:
-			_light_source_sprite.visible = false
+# Light cantrip's visual glow — tints every tile actually reached by the light's own shadowcast
+# (lit_tiles, computed once in update_fog() and passed in here — same set that pushes back fog),
+# not just a single square over the source tile. Pooled Sprite2D + shared 1×1 white texture, same
+# convention as show_aoe_preview() above.
+func _update_light_source_glow(lit_tiles: Dictionary) -> void:
+	if GameState.light_source_pos == Vector2i(-1, -1) or lit_tiles.is_empty():
+		for spr: Sprite2D in _light_glow_sprites:
+			spr.visible = false
 		return
-	if _light_source_sprite == null:
+	if _light_glow_tex == null:
 		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 		img.fill(Color(1, 1, 1, 1))
-		_light_source_sprite = Sprite2D.new()
-		_light_source_sprite.texture = ImageTexture.create_from_image(img)
-		_light_source_sprite.centered = false
-		_light_source_sprite.scale = Vector2(TILE_SIZE, TILE_SIZE)
-		_light_source_sprite.z_index = 2
-		add_child(_light_source_sprite)
-	_light_source_sprite.position = Vector2(GameState.light_source_pos.x * TILE_SIZE, GameState.light_source_pos.y * TILE_SIZE)
-	_light_source_sprite.modulate = Color(GameState.light_source_color.r, GameState.light_source_color.g, GameState.light_source_color.b, 0.45)
-	_light_source_sprite.visible = true
+		_light_glow_tex = ImageTexture.create_from_image(img)
+	var tiles: Array = lit_tiles.keys()
+	while _light_glow_sprites.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _light_glow_tex
+		spr.centered = false
+		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
+		spr.z_index = 2
+		add_child(spr)
+		_light_glow_sprites.append(spr)
+	var tint := Color(GameState.light_source_color.r, GameState.light_source_color.g, GameState.light_source_color.b, 0.28)
+	for i: int in _light_glow_sprites.size():
+		var spr: Sprite2D = _light_glow_sprites[i]
+		if i < tiles.size():
+			var pos: Vector2i = tiles[i]
+			spr.position = Vector2(pos.x * TILE_SIZE, pos.y * TILE_SIZE)
+			spr.modulate = tint
+			spr.visible = true
+		else:
+			spr.visible = false
 
 func hide_aoe_preview() -> void:
 	if _aoe_preview_last_key == "":
