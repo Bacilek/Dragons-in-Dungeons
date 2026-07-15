@@ -139,6 +139,132 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 		dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()
 
+# Single-target SAVE-resolution cantrips (Toll the Dead, Mind Sliver) — no attack roll, the target
+# just makes a save. Mirrors cast_spell()'s turn envelope/animation but skips the hit-roll block
+# entirely (there's nothing to roll against an AC).
+static func cast_cantrip_save_at_enemy(player: Player, spell: Spell, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	TurnManager.begin_player_action()
+	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
+	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
+	sprite.play("hit")
+	await sprite.animation_finished
+	sprite.play("idle")
+
+	var stats: Stats = player.stats
+	var dc: int = _save_dc(stats)
+	var use_wis: bool = spell.effect_id == "toll_the_dead"
+	var use_int: bool = spell.effect_id == "mind_sliver"
+	var save: Dictionary = target.resist_check_detailed(dc, false, false, use_wis, use_int)
+	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d" % [
+		save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"])]
+
+	if save["pass"]:
+		GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s resists[/url].[/color]" % [
+			spell.spell_name, target.display_name, save_meta, target.display_name])
+	else:
+		var tier: int = _cantrip_tier(stats.character_level) if spell.cantrip_tier_scaling else 1
+		# Toll the Dead: bigger die (d12 instead of d8) whenever the target is already missing HP.
+		var dice_sides: int = spell.dice_sides
+		if spell.effect_id == "toll_the_dead" and target.stats.current_hp < target.stats.max_hp:
+			dice_sides = 12
+		var dice_count: int = spell.dice_count * tier
+		var rolls: Array[int] = Rng.roll_dice(dice_count, dice_sides)
+		var inst: Dictionary = CombatMath.build_damage_instance(rolls, dice_sides, [], false, spell.damage_type)
+		var result: Dictionary = target.take_typed_damage(inst["subtotal"], spell.damage_type)
+		inst["final"] = result["actual"]
+		inst["resist_mul"] = result["mul"]
+		var actual: int = result["actual"]
+		target.update_hp_bar()
+		if dungeon_floor != null:
+			dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color(spell.damage_type))
+		var dmg_meta: String = CombatMath.encode_damage_instance(inst)
+		var is_lethal: bool = target.stats.is_dead()
+		GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s fails[/url] and takes [url=%s][color=yellow]%d[/color][/url] %s dmg.%s" % [
+			spell.spell_name, target.display_name, save_meta, target.display_name, dmg_meta, actual, spell.damage_type, CombatMath.death_suffix(is_lethal)])
+		if spell.effect_id == "mind_sliver" and not is_lethal:
+			target.mind_sliver_penalty_die = true
+			GameState.game_log("[color=cyan]%s's mind reels — their next check falters.[/color]" % target.display_name)
+		if is_lethal:
+			player._finish_kill(target)
+
+	if dungeon_floor != null:
+		dungeon_floor.update_fog(player.grid_pos)
+	player._handle_post_attack_turn()
+
+# Self-centered instant burst (Thunderclap) — every creature within spell.shape_size tiles of the
+# CASTER (not an impact point elsewhere) rolls a CON save or takes damage. No friendly fire (the
+# caster is the origin, not a target) — unlike Fireball's sphere, which can catch the caster too.
+static func _resolve_thunderclap(player: Player, spell: Spell, dungeon_floor: Node) -> void:
+	var stats: Stats = player.stats
+	var tier: int = _cantrip_tier(stats.character_level) if spell.cantrip_tier_scaling else 1
+	var dice_count: int = spell.dice_count * tier
+	var rolls: Array[int] = Rng.roll_dice(dice_count, spell.dice_sides)
+	var base_inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], false, "Thunder")
+	var roll_total: int = int(base_inst["subtotal"])
+	var r: int = spell.shape_size
+
+	GameState.game_log("[color=cyan]A thunderous clap bursts outward from you![/color]")
+	if dungeon_floor == null:
+		return
+	for e: Enemy in dungeon_floor.get_all_enemies():
+		if not is_instance_valid(e) or e.stats.is_dead():
+			continue
+		if maxi(absi(e.grid_pos.x - player.grid_pos.x), absi(e.grid_pos.y - player.grid_pos.y)) > r:
+			continue
+		if not dungeon_floor.has_ranged_los(player.grid_pos, e.grid_pos):
+			continue
+		var dc: int = _save_dc(stats)
+		var save: Dictionary = e.resist_check_detailed(dc, true)
+		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d" % [
+			save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"])]
+		if save["pass"]:
+			GameState.game_log("%s [url=%s]resists[/url] the thunderclap." % [e.display_name, save_meta])
+			continue
+		var result: Dictionary = e.take_typed_damage(roll_total, "Thunder")
+		var actual: int = result["actual"]
+		var inst: Dictionary = base_inst.duplicate()
+		inst["final"] = actual
+		inst["resist_mul"] = result["mul"]
+		var dmg_meta: String = CombatMath.encode_damage_instance(inst)
+		e.update_hp_bar()
+		if dungeon_floor != null:
+			dungeon_floor.show_damage(e.position, actual, false, CombatMath.damage_type_color("Thunder"))
+		var is_lethal: bool = e.stats.is_dead()
+		GameState.game_log("%s is [url=%s]rocked[/url] by the thunderclap for [url=%s][color=yellow]%d[/color][/url] Thunder dmg.%s" % [
+			e.display_name, save_meta, dmg_meta, actual, CombatMath.death_suffix(is_lethal)])
+		if is_lethal:
+			player._finish_kill(e)
+
+# Light cantrip — touch an object resting on the ground (a floor item, never a worn/carried one)
+# and it becomes a real light source: DungeonFloor.update_fog() unions its own shadowcast into the
+# player's FOV every turn (scripts/world/CLAUDE.md), so it genuinely pushes back the fog, not just
+# a cosmetic glow. Only one Light source active at a time (GameState.set_light_source() replaces
+# whatever was lit before); ends on rest or floor descent — see GameState.clear_light_source()'s
+# call sites.
+static func cast_light_at_tile(player: Player, spell: Spell, tile_pos: Vector2i, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	TurnManager.begin_player_action()
+	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
+	sprite.flip_h = tile_pos.x < player.grid_pos.x
+	sprite.play("hit")
+	await sprite.animation_finished
+	sprite.play("idle")
+
+	var target_item: Item = dungeon_floor.get_item_at(tile_pos) if dungeon_floor != null else null
+	if target_item == null:
+		GameState.game_log("[color=gray]You must touch an object resting on the ground.[/color]")
+	else:
+		const LIGHT_COLORS: Array[Color] = [
+			Color(1.0, 0.85, 0.55), Color(0.55, 0.85, 1.0), Color(0.6, 1.0, 0.65),
+			Color(1.0, 0.6, 0.8), Color(0.8, 0.65, 1.0), Color(1.0, 1.0, 0.6),
+		]
+		var c: Color = Rng.pick(LIGHT_COLORS)
+		GameState.set_light_source(tile_pos, c)
+		GameState.game_log("[color=cyan]The %s begins to glow with a soft light.[/color]" % target_item.item_name)
+
+	if dungeon_floor != null:
+		dungeon_floor.update_fog(player.grid_pos)
+	player._handle_post_attack_turn()
+
 # Casting at an empty tile (no enemy there) — still costs the turn (same convention as
 # PlayerRanged.ranged_attack_tile()), but there's no attack roll/target: nothing happens unless
 # the tile itself is flammable (Fire Bolt's grass-ignite side effect, generic-path spells only).
@@ -189,6 +315,18 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 				player.stats.mage_armor_active = true
 				GameState.recalculate_stats()
 				GameState.game_log("[color=cyan]You cast [b]%s[/b] — a shimmering force settles over you.[/color]" % spell.spell_name)
+		"blade_ward":
+			# Concentration: only one concentration effect at a time (5e rule) — recasting Blade
+			# Ward just refreshes its own duration, but casting a DIFFERENT concentration spell
+			# would break this one first (no second concentration spell exists yet to test that
+			# branch against, but the chokepoint is here for when one does).
+			if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "blade_ward":
+				GameState.game_log("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+			player.stats.concentration_spell_id = "blade_ward"
+			player.stats.blade_ward_turns = 10
+			GameState.game_log("[color=cyan]You cast [b]%s[/b] — attacks against you falter for up to 10 turns.[/color]" % spell.spell_name)
+		"thunderclap":
+			_resolve_thunderclap(player, spell, dungeon_floor)
 		_:
 			GameState.game_log("[color=cyan]You cast [b]%s[/b].[/color]" % spell.spell_name)
 	if dungeon_floor != null:

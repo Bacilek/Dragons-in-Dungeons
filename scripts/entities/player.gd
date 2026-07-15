@@ -180,6 +180,14 @@ func _on_turn_started() -> void:
 		if stats.shield_ac_bonus > 0:
 			stats.shield_ac_bonus = 0
 			GameState.recalculate_stats()
+		# Blade Ward cantrip: 10-turn duration, ticked once per real turn. Reaching 0 ends the
+		# effect and clears concentration (a CON-check failure on taking damage — see
+		# GameState.take_damage_raw() — can also end it earlier).
+		if stats.blade_ward_turns > 0:
+			stats.blade_ward_turns -= 1
+			if stats.blade_ward_turns <= 0:
+				stats.concentration_spell_id = ""
+				GameState.game_log("[color=gray]Blade Ward fades.[/color]")
 	GameState.ability_bar_changed.emit()
 	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
 	# Only fires on real turns, not on reverted turns.

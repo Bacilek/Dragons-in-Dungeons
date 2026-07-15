@@ -241,16 +241,26 @@ four; ability scores and race are both restored via `Stats.to_dict()`/`from_dict
 stat.
 
 ## Cantrip picker (`cantrip_select.gd`)
-CanvasLayer, layer = 25. Wizard-only, one-time mandatory pick spawned by
-`race_select.gd._on_confirm()` in the same slot the Mastery Picker would occupy (Wizard's
-`mastery_cap()` is already 0, so the two branches are mutually exclusive — `elif` off of it).
-Dim overlay + centered bordered `Panel`, `focus_mode = FOCUS_NONE`, non-dismissible (no close
-button, `_unhandled_input` swallows all keys — mirrors `race_select.gd`'s conventions). Unlike
-the Mastery Picker's toggle-and-Done multi-select, each of the three cantrip cards (Fire Bolt /
-Ray of Frost / Shocking Grasp, `SpellDb.CANTRIP_IDS`) commits immediately on click
-(`subclass_select.gd`'s card-click-commits style) since there's no multi-select here — a single
-irreversible pick. Confirm calls `GameState.choose_cantrip(spell_id)` and frees itself. See
-`scripts/entities/CLAUDE.md`'s "Wizard spellcasting" section for what the pick actually grants.
+CanvasLayer, layer = 25. Wizard-only, mandatory pick spawned by `race_select.gd._on_confirm()` in
+the same slot the Mastery Picker would occupy (Wizard's `mastery_cap()` is already 0, so the two
+branches are mutually exclusive — `elif` off of it). Dim overlay + centered bordered `Panel`,
+`focus_mode = FOCUS_NONE`, non-dismissible (no close button, `_unhandled_input` swallows all keys
+— mirrors `race_select.gd`'s conventions). Unlike the Mastery Picker's toggle-and-Done
+multi-select, each cantrip card commits immediately on click (`subclass_select.gd`'s
+card-click-commits style) since there's no multi-select within a round — but there ARE **two
+rounds**, each an independent "pick 1 of 3" (owner-requested — a full caster starts with 2
+cantrips): round 1 (`_round = 1`) always shows the fixed `SpellDb.STARTER_CANTRIP_IDS` trio (Fire
+Bolt / Ray of Frost / Shocking Grasp — unchanged pool, so the premade Jace's
+`"cantrip": "fire_bolt"` shortcut and old saves stay valid); its `_on_chosen()` calls
+`GameState.choose_cantrip()`, then re-seeds `_round = 2` and `_candidates` (3 random ids —
+`Rng.shuffle()`, gameplay stream — drawn from every `SpellDb.CANTRIP_IDS` entry except the round-1
+pick, so it can surface an unchosen starter or any of the 5 newer cantrips), tears down the old
+panel (`queue_free()` — deferred, since this runs inside the pressed card's own signal handler;
+hidden via `visible = false` first so the new round-2 panel doesn't render on top of a
+still-visible stale one for a frame) and calls `_build_ui()` again on the SAME script instance
+(title swaps to "Choose a Second Cantrip"). Round 2's pick sets `GameState.cantrip_picker_open =
+false` and frees the overlay for good. See `scripts/entities/CLAUDE.md`'s "Wizard spellcasting"
+section for what each pick actually grants, and for the 5 newer cantrips.
 
 ## Spell-learn picker (`spell_learn_picker.gd`)
 CanvasLayer, layer = 25. Wizard-only, spawned by `hud.gd._on_player_leveled_up()` whenever

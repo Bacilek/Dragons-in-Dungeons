@@ -341,6 +341,7 @@ static func fmt_ehit_tooltip(p: Dictionary) -> String:
 	var crit: bool  = p.get("crit", "0") == "1"
 	var adv: bool   = p.get("adv", "0") == "1"
 	var disadv: bool = p.get("disadv", "0") == "1"
+	var bw: int = int(p.get("bw", "0"))
 	var lines: PackedStringArray = []
 	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if crit else ""
 	if adv:
@@ -351,6 +352,8 @@ static func fmt_ehit_tooltip(p: Dictionary) -> String:
 		lines.append("d20 = [color=yellow]%d[/color]%s" % [die, die_suffix])
 	if bonus != 0:
 		lines.append("[color=lightblue]%+d[/color]  (attack bonus)" % bonus)
+	if bw != 0 and not crit:
+		lines.append("[color=cyan]-%d[/color]  (Blade Ward)" % bw)
 	lines.append("─────────────────")
 	var vs: String
 	if crit:
