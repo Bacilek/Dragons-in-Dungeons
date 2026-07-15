@@ -27,5 +27,12 @@ func max_connections() -> int:
 	return 4
 
 
+# Invariant for every room type: min_connections() <= max_connections()
+# (multi-entrance-level-design.md §3). Builders read this generically —
+# never special-case on type_id.
+func min_connections() -> int:
+	return 1
+
+
 func paint(_data: DungeonData, _rng: RandomNumberGenerator) -> void:
 	pass  # StandardRoom behavior: no-op, rect is already plain floor from Build

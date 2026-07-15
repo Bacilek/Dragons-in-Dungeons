@@ -21,7 +21,35 @@ Flow: seeded rng → **feeling roll** (`FloorFeeling.roll(rng)`, FIRST rng-consu
 `RngUtil.shuffle(arr, rng)` — seeded Fisher-Yates. Godot's `Array.shuffle()` uses the global RNG; **never call `.shuffle()` inside generation code** — always `RngUtil.shuffle`.
 
 ### Room types (`room_type.gd`, `standard_room.gd`, `entrance_room.gd`, `exit_room.gd`, `shop_room.gd`, `treasure_room.gd`, `garden_room.gd`, `secret_room.gd`)
-`Room` extends `RefCounted` (deliberately NOT `Resource` — pure generation-time data). Fields: `type_id: String`, `rect: Rect2i` (empty until Build), `connections: Array[Room]`, `required: bool`. Virtuals: `min_size()`, `max_size()`, `max_connections()`, `paint(data, rng)` (no-op base). Concrete: `StandardRoom` (plain floor), `EntranceRoom`/`ExitRoom` (`required = true`), plus the four session-7b special-room **stubs** (`shop_room.gd`/`treasure_room.gd`/`garden_room.gd`/`secret_room.gd` — each `extends StandardRoom`, `_init()` sets only `type_id` (`"shop"`/`"treasure"`/`"garden"`/`"secret"`), everything else inherited; their real sizing/`max_connections()`/`paint()` overrides land in sessions 7c–7f per `docs/architecture/special-rooms-economy-design.md` §4). One `class_name` per file — placeholder types simply don't override anything (structural fallback; never write a `has_content()` runtime check).
+`Room` extends `RefCounted` (deliberately NOT `Resource` — pure generation-time data). Fields: `type_id: String`, `rect: Rect2i` (empty until Build), `connections: Array[Room]`, `required: bool`. Virtuals: `min_size()`, `max_size()`, `max_connections()`, `min_connections()` (default 1), `paint(data, rng)` (no-op base). Concrete: `StandardRoom` (plain floor), `EntranceRoom`/`ExitRoom` (`required = true`, `min_connections() = 2` — see "Multi-entrance connectivity" below), plus the four session-7b special-room **stubs** (`shop_room.gd`/`treasure_room.gd`/`garden_room.gd`/`secret_room.gd` — each `extends StandardRoom`, `_init()` sets only `type_id` (`"shop"`/`"treasure"`/`"garden"`/`"secret"`), everything else inherited; their real sizing/`max_connections()`/`paint()` overrides land in sessions 7c–7f per `docs/architecture/special-rooms-economy-design.md` §4). One `class_name` per file — placeholder types simply don't override anything (structural fallback; never write a `has_content()` runtime check).
+
+### Multi-entrance connectivity (`docs/architecture/multi-entrance-level-design.md`, implemented)
+Entrance/Exit rooms are guaranteed ≥2 distinct corridor connections to *different* rooms, so the
+player always has ≥2 routes from spawn to stairs — `Room.min_connections() -> int` (default 1,
+overridden to 2 on `EntranceRoom`/`ExitRoom`) is the floor counterpart to `max_connections()`.
+**`LoopBuilder`** enforces this as a hard guarantee: a forced-edge pass runs between MST
+construction and the general loop-edge pass (`_try_layout`), topping Entrance/Exit up to their
+`min_connections()` floor using the exact same 5 disqualification rules and candidate list as the
+general pass (a direction-divergence tiebreak prefers corridors leaving in different directions
+from the room), with a relaxation ladder (`MIN_LOOP_HOPS` 3→2, then `MAX_LOOP_DIST` 26→34) if no
+candidate qualifies; still-unmet → `_try_layout` returns `null`, which the existing
+`INTERNAL_RESTARTS`/`BUILDER_RETRIES`/BspBuilder cascade already absorbs (no new failure
+plumbing). Forced edges do **not** consume the `num_loops` budget — they're a correctness floor,
+not flavor — and are a documented RNG-footprint change (one extra elbow draw per forced edge).
+`last_stats` gained `forced_edges`, `entrance_degree`, `exit_degree`, and
+`edge_disjoint_start_exit` (Tier C telemetry — a cheap single-bridge check, *measured, not
+enforced*; see the design doc §2 for the Tier A/B/C distinction). **`BspBuilder`** — the
+guaranteed-success fallback, which never fails and has no room-identity concept during Build —
+gets a separate best-effort `reinforce_min_degree(data, room_rect, rng)`: it counts the room's
+corridor-mouth openings directly on the tile grid (perimeter wall-ring scan, merging adjacent open
+tiles into one mouth, same idea as `_spawn_doors()`'s narrow-junction scan in
+`scripts/world/dungeon_floor.gd`) and, if below 2, carves one extra corridor to a distant
+unconnected room (reusing `_add_extra_corridors()`'s reject rules). The orchestrator
+(`dungeon_generator.gd`) calls this twice — for `start_room` and the farthest/exit room — only
+inside the BSP-fallback branch, after `player_start`/`stairs_pos` are resolved and **before**
+`LevelPainter.paint()` (carving after painting would cut through already-placed overlays). Door
+sprite count is explicitly out of scope (`_spawn_doors()` stays a decoupled cosmetic layer per the
+design doc §7) — the guarantee lives at the corridor/connection-graph level, not on door objects.
 
 ### FloorPlanner (`floor_planner.gd`) — Initialize
 `FloorPlanner.plan(floor_num, feeling, rng) -> Array` (of `Room`). Rng call #1 is the room-budget roll (`randi_range(7,9) + mini(floor/3, 2)`, × `room_budget_mult` — **live**, clamped 4–13). **Session 7b (special-rooms-economy-design.md §3)**: `ROOM_POOL: Array[Dictionary]` (`{"script", "chance", "min_depth", "max_per_floor"}` — Treasure 0.30/d2, Shop 0.40/d3, Garden 0.35/d2, Secret 0.30/d4) is selected via **independent Bernoulli draws** (one `rng.randf()` per eligible slot, pool declaration order fixed/load-bearing), deliberately NOT weighted draws: the rng call count depends only on `floor_num` (eligibility depth-gated via `min_depth`, `continue` before any draw), so the stream layout is seed-independent at a given depth. Boss floors (`floor % 5 == 0`) and floor 1 (below every `min_depth`) consume **zero** extra calls → byte-identical pre-7b output; floors 2+ intentionally shifted the stream (documented RNG FOOTPRINT change, same precedent as Phase 3). Output: `[Entrance, Exit] + specials + maxi(budget - 2 - specials.size(), 2) × StandardRoom`. `plan()` never special-cases a `type_id` — new room type = one class file + one pool entry.

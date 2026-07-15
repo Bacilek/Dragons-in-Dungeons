@@ -218,3 +218,103 @@ static func _add_extra_corridors(data: DungeonData, rng: RandomNumberGenerator, 
 			_carve_corridor(ca, corner, data)
 			_carve_corridor(corner, cb, data)
 			break
+
+
+# ── Multi-entrance reinforcement (multi-entrance-level-design.md §5) ─────────
+# Best-effort post-selection pass, called by the orchestrator on BSP-FALLBACK
+# floors only (LoopBuilder guarantees min-degree itself via its forced-edge
+# pass), after player_start/stairs_pos are resolved and BEFORE
+# LevelPainter.paint() — carving after painting would slice fresh corridors
+# through already-placed water/grass/pillar overlays.
+# Measures room_rect's corridor-mouth count on the grid (perimeter wall-ring
+# scan, merging adjacent open tiles into one mouth — same narrow-junction idea
+# as DungeonFloor._spawn_doors()); if < 2, tries to carve one extra L-corridor
+# to another room >= 12 tiles away (Manhattan, same threshold as
+# _add_extra_corridors) that is not already directly connected, reusing
+# _add_extra_corridors()'s reject rules and 8-attempt retry loop. NEVER fails:
+# if no valid target is found, returns without carving — BspBuilder keeps its
+# guaranteed-success contract.
+# RNG FOOTPRINT: consumes rng draws only when the mouth count is below 2 — a
+# documented footprint change for BSP-fallback floors (see dungeon_generator.gd).
+static func reinforce_min_degree(data: DungeonData, room_rect: Rect2i, rng: RandomNumberGenerator) -> void:
+	if data.rooms.size() < 2:
+		return
+	if _corridor_mouth_count(data, room_rect) >= 2:
+		return
+	var ca := Vector2i(
+		room_rect.position.x + room_rect.size.x / 2,
+		room_rect.position.y + room_rect.size.y / 2
+	)
+	# build()'s bsp_pairs dict is local to build() and gone by the time the
+	# orchestrator calls us, so the pair dedup here covers pairs tried within
+	# THIS pass (duplicate rng picks), and "already directly connected" is
+	# approximated by rejecting targets whose L-path is already fully open —
+	# carving such a path would add zero new tiles (and zero new mouths).
+	var tried_pairs: Dictionary = {}
+	for _attempt: int in 8:
+		var bi: int = rng.randi_range(0, data.rooms.size() - 1)
+		var rb: Rect2i = data.rooms[bi]
+		if rb == room_rect:
+			continue
+		var cb := Vector2i(rb.position.x + rb.size.x / 2, rb.position.y + rb.size.y / 2)
+		var key: String = _pair_key(ca, cb)
+		if tried_pairs.has(key):
+			continue
+		tried_pairs[key] = true
+		if abs(ca.x - cb.x) + abs(ca.y - cb.y) < 12:
+			continue
+		# Carve via the corner point (vertical-first L-shape, same as
+		# _add_extra_corridors)
+		var corner := Vector2i(ca.x, cb.y)
+		if _l_path_already_open(ca, cb, data):
+			continue
+		_carve_corridor(ca, corner, data)
+		_carve_corridor(corner, cb, data)
+		break
+
+
+# True when every tile of the vertical-first L between a and b is already
+# non-WALL — i.e. carving it would be a no-op (the rooms are effectively
+# directly connected along this route already).
+static func _l_path_already_open(a: Vector2i, b: Vector2i, data: DungeonData) -> bool:
+	for y: int in range(mini(a.y, b.y), maxi(a.y, b.y) + 1):
+		if data.get_tile(a.x, y) == DungeonData.TileType.WALL:
+			return false
+	for x: int in range(mini(a.x, b.x), maxi(a.x, b.x) + 1):
+		if data.get_tile(x, b.y) == DungeonData.TileType.WALL:
+			return false
+	return true
+
+
+# Corridor-mouth count for a room rect: walk the 1-tile wall ring surrounding
+# the rect as a closed clockwise loop and count contiguous runs of open
+# (FLOOR) tiles — each run is one "mouth" (adjacent open perimeter tiles merge
+# into a single mouth, the same merging idea as DungeonFloor._spawn_doors()'s
+# narrow-junction scan, adapted to the DungeonData grid). Runs pre-Paint, so
+# the grid holds only FLOOR/WALL (+the stairs tile, which sits in the room
+# interior, never on the ring).
+static func _corridor_mouth_count(data: DungeonData, r: Rect2i) -> int:
+	var x0: int = r.position.x - 1
+	var y0: int = r.position.y - 1
+	var x1: int = r.position.x + r.size.x
+	var y1: int = r.position.y + r.size.y
+	var ring: Array = []  # Vector2i, closed clockwise loop
+	for x: int in range(x0, x1 + 1):
+		ring.append(Vector2i(x, y0))
+	for y: int in range(y0 + 1, y1 + 1):
+		ring.append(Vector2i(x1, y))
+	for x: int in range(x1 - 1, x0 - 1, -1):
+		ring.append(Vector2i(x, y1))
+	for y: int in range(y1 - 1, y0, -1):
+		ring.append(Vector2i(x0, y))
+	var m: int = ring.size()
+	var open: Array = []  # bool per ring tile (out-of-bounds -> VOID -> closed)
+	for p: Vector2i in ring:
+		open.append(data.get_tile(p.x, p.y) == DungeonData.TileType.FLOOR)
+	var mouths: int = 0
+	for k: int in m:
+		if bool(open[k]) and not bool(open[(k - 1 + m) % m]):
+			mouths += 1  # run start (wrap-aware, so a run spanning index 0 counts once)
+	if mouths == 0 and m > 0 and bool(open[0]):
+		return 1  # degenerate: the entire ring is open
+	return mouths

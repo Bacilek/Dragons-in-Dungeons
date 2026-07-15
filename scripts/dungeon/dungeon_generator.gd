@@ -90,6 +90,18 @@ static func generate(seed_val: int, floor_num: int) -> DungeonData:
 			elif room_obj is ExitRoom:
 				(room_obj as Room).rect = farthest_room
 
+		# Multi-entrance reinforcement (multi-entrance-level-design.md §5):
+		# best-effort extra corridor so start/exit rooms have >= 2 corridor
+		# mouths on BSP-fallback floors too (LoopBuilder guarantees this itself
+		# via its forced-edge pass, so this runs ONLY in this fallback branch).
+		# Must run BEFORE LevelPainter.paint() below — carving after painting
+		# would slice through already-placed overlays. RNG FOOTPRINT change for
+		# BSP-fallback floors specifically: consumes main-rng draws only when a
+		# room's mouth count is below 2 (documented, same precedent class as
+		# the Phase 2/3 stream notes above).
+		BspBuilder.reinforce_min_degree(data, start_room, rng)
+		BspBuilder.reinforce_min_degree(data, farthest_room, rng)
+
 	# Boss room — builder-agnostic (LOOP_BUILDER_ARCHITECTURE.md §5): the room
 	# containing the stairs. For BspBuilder output this is exactly the old
 	# "farthest room" (stairs_pos is that room's clamped center, rooms never

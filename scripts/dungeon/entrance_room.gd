@@ -6,3 +6,9 @@ extends Room
 func _init() -> void:
 	type_id = "entrance"
 	required = true
+
+
+# Multi-entrance guarantee (multi-entrance-level-design.md §3): the player must
+# always have >=2 distinct routes out of the spawn room.
+func min_connections() -> int:
+	return 2

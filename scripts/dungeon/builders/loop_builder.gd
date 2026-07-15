@@ -8,6 +8,10 @@ extends RefCounted
 #   §4 farthest-pair Entrance/Exit rect swap (before graph construction)
 #   §2 Prim's MST spanning skeleton + up to `num_loops` extra loop edges
 #      (5 disqualification rules; fewer surviving loops is NOT a failure)
+#      + forced-edge pass between MST and loop selection: Entrance/Exit are
+#      topped up to Room.min_connections() = 2 under the same 5 rules, with a
+#      hops 3->2 then dist 26->34 relaxation ladder; unmeetable -> layout fails
+#      (multi-entrance-level-design.md §4; forced edges skip the loop budget)
 #   §3 L-shaped corridor carving (reuses BspBuilder._carve_corridor;
 #      elbow direction rng-chosen per edge, or mandated by rule 5)
 #   §6 self-check: BFS from player_start must reach every room center + stairs
@@ -156,8 +160,7 @@ static func _try_layout(rooms: Array, rng: RandomNumberGenerator) -> DungeonData
 		mst_edges.append(Vector2i(best_i, best_j))
 		_record_edge(best_i, best_j, placed, centers, adjacency, edge_keys)
 
-	# ---- §2.2/§2.3 loop edge selection ----
-	var num_loops: int = clampi(n / LOOP_DIVISOR, 1, 3)
+	# ---- shared candidate list (used by the forced pass AND the loop pass) ----
 	var candidates: Array = []  # [dist, i, j]
 	for i: int in n:
 		for j: int in range(i + 1, n):
@@ -171,6 +174,38 @@ static func _try_layout(rooms: Array, rng: RandomNumberGenerator) -> DungeonData
 			return int(a[1]) < int(b[1])
 		return int(a[2]) < int(b[2])
 	)
+
+	# ---- forced-edge pass (multi-entrance-level-design.md §4) ----
+	# Top Entrance/Exit up to their min_connections() floor (2) BEFORE the
+	# general loop pass, walking the same sorted candidate list under the same
+	# 5 disqualification rules. Forced edges do NOT consume the num_loops
+	# budget — they are a correctness floor, not flavor. The relaxation ladder
+	# uses LOCAL relaxed limits only (hops 3→2, then dist 26→34); the general
+	# pass below still runs on the unchanged class constants.
+	# RNG FOOTPRINT change (documented, same precedent class as Phase 3 /
+	# session 7b): each accepted forced edge adds one elbow draw at carve time,
+	# shifting every subsequent draw on this substream.
+	var forced_edges: Array = []  # [i, j, elbow] — carved after MST, before loops
+	var ent_idx: int = placed.find(entrance)
+	var exit_idx: int = placed.find(exit_room)
+	for r: int in [ent_idx, exit_idx]:
+		while (adjacency[r] as Array).size() < (placed[r] as Room).min_connections():
+			var pick: Array = []
+			for tier: Array in [[MIN_LOOP_HOPS, MAX_LOOP_DIST], [2, MAX_LOOP_DIST], [2, 34]]:
+				pick = _find_forced_candidate(r, int(tier[0]), int(tier[1]),
+						candidates, centers, placed, adjacency, edge_keys)
+				if not pick.is_empty():
+					break
+			if pick.is_empty():
+				# Floor unmeetable even after relaxation → fail this layout
+				# attempt; the existing INTERNAL_RESTARTS / BUILDER_RETRIES /
+				# BspBuilder cascade absorbs it (no new failure plumbing).
+				return null
+			_record_edge(int(pick[0]), int(pick[1]), placed, centers, adjacency, edge_keys)
+			forced_edges.append(pick)
+
+	# ---- §2.2/§2.3 loop edge selection ----
+	var num_loops: int = clampi(n / LOOP_DIVISOR, 1, 3)
 	var loop_edges: Array = []  # [i, j, elbow]  elbow: -1 free, 0 h-first, 1 v-first
 	for cand: Array in candidates:
 		if loop_edges.size() >= num_loops:
@@ -204,9 +239,13 @@ static func _try_layout(rooms: Array, rng: RandomNumberGenerator) -> DungeonData
 		loop_edges.append([i, j, elbow])
 	# Fewer than num_loops surviving is fine — MST-only floors are still valid.
 
-	# ---- §3 carving: MST edges first, then loop edges ----
+	# ---- §3 carving: MST edges first, then forced edges, then loop edges ----
 	for e: Vector2i in mst_edges:
 		_carve_l(centers[e.x], centers[e.y], rng.randi() % 2 == 0, data)
+	for fe: Array in forced_edges:
+		var f_elbow: int = int(fe[2])
+		var f_h_first: bool = (rng.randi() % 2 == 0) if f_elbow == -1 else f_elbow == 0
+		_carve_l(centers[int(fe[0])], centers[int(fe[1])], f_h_first, data)
 	for le: Array in loop_edges:
 		var elbow: int = le[2]
 		var h_first: bool = (rng.randi() % 2 == 0) if elbow == -1 else elbow == 0
@@ -232,7 +271,11 @@ static func _try_layout(rooms: Array, rng: RandomNumberGenerator) -> DungeonData
 		"room_count": n,
 		"mst_edges": mst_edges.size(),
 		"loop_edges": loop_edges.size(),
+		"forced_edges": forced_edges.size(),
 		"edge_keys": edge_keys.size(),
+		"entrance_degree": (adjacency[ent_idx] as Array).size(),
+		"exit_degree": (adjacency[exit_idx] as Array).size(),
+		"edge_disjoint_start_exit": _edge_disjoint_start_exit(adjacency, ent_idx, exit_idx),
 	}
 	return data
 
@@ -323,6 +366,127 @@ static func _bfs_hops(adjacency: Dictionary, from: int, to: int) -> int:
 				dist[nb] = int(dist[cur]) + 1
 				queue.append(nb)
 	return 1 << 30  # disconnected (cannot happen post-MST, but be safe)
+
+
+# Forced-edge candidate search (multi-entrance-level-design.md §4): best edge
+# incident to room r that passes rules 1-5 with the given (possibly relaxed)
+# hop/dist limits. Among tied-distance survivors, prefer the direction that
+# diverges most (lowest worst-case dot product) from r's existing edge
+# directions (§2 mitigation), so the two corridors tend to leave opposite-ish
+# sides. Deterministic — no rng. Returns [i, j, elbow] or [] when none qualify.
+static func _find_forced_candidate(r: int, min_hops: int, max_dist: int,
+		candidates: Array, centers: Array, placed: Array,
+		adjacency: Dictionary, edge_keys: Dictionary) -> Array:
+	var tied: Array = []  # [i, j, elbow] entries sharing the lowest valid dist
+	var tied_dist: int = -1
+	for cand: Array in candidates:
+		var dist: int = cand[0]
+		var i: int = cand[1]
+		var j: int = cand[2]
+		if tied_dist >= 0 and dist > tied_dist:
+			break  # sorted asc — past the closest-valid tie group
+		# rule 3 — too long (list is dist-sorted, so this ends the scan)
+		if dist > max_dist:
+			break
+		if i != r and j != r:
+			continue
+		# rule 1 — edge already exists (accepted edges mutate the graph)
+		if edge_keys.has(BspBuilder._pair_key(centers[i], centers[j])):
+			continue
+		# rule 2 — degree cap on both ends
+		if (adjacency[i] as Array).size() >= (placed[i] as Room).max_connections():
+			continue
+		if (adjacency[j] as Array).size() >= (placed[j] as Room).max_connections():
+			continue
+		# rule 4 — trivial cycle (BFS hop distance in current graph)
+		if _bfs_hops(adjacency, i, j) < min_hops:
+			continue
+		# rule 5 — L-path must not cross a third room (either elbow variant)
+		var h_ok: bool = _l_path_clear(centers[i], centers[j], true, placed, i, j)
+		var v_ok: bool = _l_path_clear(centers[i], centers[j], false, placed, i, j)
+		if not h_ok and not v_ok:
+			continue
+		var elbow: int = -1
+		if h_ok != v_ok:
+			elbow = 0 if h_ok else 1  # mandated variant
+		tied_dist = dist
+		tied.append([i, j, elbow])
+	if tied.is_empty():
+		return []
+	var existing: Array = adjacency[r]
+	# Zero existing edges (cannot happen post-MST, but be defensive): skip the
+	# tiebreak and take the closest valid candidate.
+	if tied.size() == 1 or existing.is_empty():
+		return tied[0]
+	var best: Array = tied[0]
+	var best_score: float = 2.0  # dot products are <= 1.0
+	var rc: Vector2i = centers[r]
+	for entry: Array in tied:
+		var other: int = int(entry[1]) if int(entry[0]) == r else int(entry[0])
+		var dir: Vector2 = Vector2((centers[other] as Vector2i) - rc).normalized()
+		var score: float = -2.0  # worst-case (highest) alignment vs existing edges
+		for nb in existing:
+			var nb_dir: Vector2 = Vector2((centers[int(nb)] as Vector2i) - rc).normalized()
+			score = maxf(score, dir.dot(nb_dir))
+		if score < best_score:
+			best_score = score
+			best = entry
+	return best
+
+
+# Tier C telemetry (multi-entrance-level-design.md §6): do two edge-disjoint
+# room-graph paths exist between `from` and `to`? Cheap on <=13 nodes: take one
+# BFS path, remove each of its edges in turn, re-BFS — if every single-edge
+# removal leaves the pair connected, no bridge separates them (any separating
+# bridge must lie on EVERY path, hence on this one). Measurement only, never
+# enforced — gameplay code must not read this.
+static func _edge_disjoint_start_exit(adjacency: Dictionary, from: int, to: int) -> bool:
+	if from == to:
+		return true
+	var path: Array = _bfs_path(adjacency, from, to)
+	if path.is_empty():
+		return false  # disconnected (cannot happen post-MST)
+	for k: int in path.size() - 1:
+		if not _connected_without(adjacency, from, to, int(path[k]), int(path[k + 1])):
+			return false
+	return true
+
+
+static func _bfs_path(adjacency: Dictionary, from: int, to: int) -> Array:
+	var parent: Dictionary = {from: -1}
+	var queue: Array = [from]
+	while not queue.is_empty():
+		var cur: int = queue.pop_front()
+		if cur == to:
+			var path: Array = []
+			var node: int = to
+			while node != -1:
+				path.push_front(node)
+				node = int(parent[node])
+			return path
+		for nb in (adjacency[cur] as Array):
+			if not parent.has(nb):
+				parent[nb] = cur
+				queue.append(nb)
+	return []
+
+
+static func _connected_without(adjacency: Dictionary, from: int, to: int,
+		skip_u: int, skip_v: int) -> bool:
+	var visited: Dictionary = {from: true}
+	var queue: Array = [from]
+	while not queue.is_empty():
+		var cur: int = queue.pop_front()
+		if cur == to:
+			return true
+		for nb in (adjacency[cur] as Array):
+			var nbi: int = nb
+			if (cur == skip_u and nbi == skip_v) or (cur == skip_v and nbi == skip_u):
+				continue
+			if not visited.has(nbi):
+				visited[nbi] = true
+				queue.append(nbi)
+	return false
 
 
 # §2.3 rule 5: does the L-path (given elbow) avoid every room except i and j?

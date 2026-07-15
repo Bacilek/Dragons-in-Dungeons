@@ -1,7 +1,10 @@
 # TEMPORARY verification harness for Phase 3 (LOOP_BUILDER_ARCHITECTURE.md §8).
 # Run:  Godot_..._console.exe --headless --path <project> --script res://scripts/dungeon/_verify/loop_check.gd
 # Generates 200 floors (seeds 1-20 × floors 1-10) via LoopBuilder.build() directly
-# (replicating the orchestrator's substream seeding) and asserts §8's 8 checks.
+# (replicating the orchestrator's substream seeding) and asserts §8's 8 checks,
+# plus the multi-entrance guarantee (multi-entrance-level-design.md §4/§6):
+# entrance/exit degree >= 2 on every LoopBuilder floor, fallback-rate tracking
+# for before/after comparison, and Tier C edge-disjointness telemetry.
 # DELETE THIS FOLDER once the migration no longer needs it.
 extends SceneTree
 
@@ -16,6 +19,8 @@ func _init() -> void:
 	var big_floors: int = 0
 	var total_loops: int = 0
 	var floors_built: int = 0
+	var total_forced: int = 0
+	var edge_disjoint_true: int = 0
 
 	for s: int in range(1, 21):
 		for f: int in range(1, 11):
@@ -80,7 +85,8 @@ func _init() -> void:
 						_fail(s, f, "connections not symmetric")
 					if room.connections.count(other) != 1:
 						_fail(s, f, "duplicate connection entry")
-			var expected_edges: int = int(stats["mst_edges"]) + int(stats["loop_edges"])
+			var expected_edges: int = int(stats["mst_edges"]) + int(stats["loop_edges"]) \
+					+ int(stats["forced_edges"])
 			if int(stats["mst_edges"]) != n - 1:
 				_fail(s, f, "MST edge count %d != N-1 (%d)" % [int(stats["mst_edges"]), n - 1])
 			if int(stats["edge_keys"]) != expected_edges:
@@ -115,6 +121,20 @@ func _init() -> void:
 			if not exit_room.rect.has_point(data2.stairs_pos):
 				_fail(s, f, "stairs not inside exit room")
 
+			# --- 9. Multi-entrance guarantee (multi-entrance-level-design.md §4):
+			# entrance/exit degree >= 2 on every floor LoopBuilder builds ---
+			var ent_deg: int = int(stats.get("entrance_degree", -1))
+			var exit_deg: int = int(stats.get("exit_degree", -1))
+			if ent_deg < 2:
+				_fail(s, f, "entrance degree %d < 2" % ent_deg)
+			if exit_deg < 2:
+				_fail(s, f, "exit degree %d < 2" % exit_deg)
+			total_forced += int(stats.get("forced_edges", 0))
+			# Tier C telemetry — informational only, deliberately NOT asserted
+			# (measured-not-enforced per the design doc §2/§6).
+			if bool(stats.get("edge_disjoint_start_exit", false)):
+				edge_disjoint_true += 1
+
 	# --- 7. Boss floors via FULL orchestration (floors 5, 10 per seed) ---
 	for s: int in range(1, 21):
 		for f: int in [5, 10]:
@@ -138,6 +158,9 @@ func _init() -> void:
 	print("floors built by LoopBuilder: %d / 200" % floors_built)
 	print("assertion 8 - fallback count: %d (expected 0-1; >4 means lower the room budget)" % fallback_count)
 	print("assertion 5 - big floors (>=8 rooms): %d, of which 0-loop: %d; total loop edges: %d" % [big_floors, no_loop_big_floors, total_loops])
+	print("multi-entrance - LoopBuilder fallback rate (for before/after comparison): %d / 200 floors fell back to BSP" % fallback_count)
+	print("multi-entrance - forced edges added across all successful floors: %d" % total_forced)
+	print("multi-entrance - Tier C edge-disjoint start<->exit (informational, not asserted): %d / %d successful floors" % [edge_disjoint_true, floors_built])
 	print("e2e generate() runs with >=1 loop edge: %d / 7" % e2e_loops)
 	if fails.is_empty():
 		print("ALL HARD ASSERTIONS PASSED")
