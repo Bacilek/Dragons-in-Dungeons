@@ -100,8 +100,11 @@ roll used by all 6 player attack sites) so every attack gets it for free; `playe
 `Ability` (`scripts/items/ability.gd`) — resource with `ability_id`, `ability_name`, `description`, `icon_path`, `uses_remaining`, `uses_max`, `is_active`. `uses_max == 0` means infinite/passive. `GameState.player_ability_bar: Array` holds 9 slots (parallel to `player_quickbar`). `Tab` toggles HUD between item bar and ability bar. `GameState.add_ability(ability)` places in first empty slot. Ability activation dispatched in `player.gd._use_ability_slot(idx)` by `ability_id`. New abilities are granted by `GameState._apply_talent_rank()` and `GameState._apply_monk_level_features(level)`.
 
 ### Spellcasting
-**Wizard cantrips** (free, at-will, attack-roll — Fire Bolt / Ray of Frost / Shocking Grasp,
-picked one-time right after race select via `scripts/ui/cantrip_select.gd`) **and leveled spells
+**Wizard cantrips** (free, at-will — 8 total: the original attack-roll trio Fire Bolt / Ray of
+Frost / Shocking Grasp, plus 5 more adding SAVE-resolution and SELF-target/AoE cantrips —
+Toll the Dead, Blade Ward (the one cantrip with a real, minimal Concentration mechanic), Thunderclap,
+Mind Sliver, Light (a real FOV light source, not cosmetic) — picked via **two** "pick 1 of 3"
+rounds right after race select via `scripts/ui/cantrip_select.gd`) **and leveled spells
 with real D&D 2024 spell slots are both implemented.** Leveled spells: `StandardSlotPool`'s
 1–20 full-caster slot table (long-rest-only recharge), prepared count = character level, a
 level-up "pick 1 of 3" spellbook-growth picker (`scripts/ui/spell_learn_picker.gd`), scroll-taught
@@ -123,7 +126,7 @@ Spellbook/Inventory sections and `scripts/entities/CLAUDE.md`'s "Wizard leveled 
 `PlayerSpellcasting.cast_direct()`. The debug panel's **Give Spell...** sub-panel (F3) lets God
 Mode grant any cantrip or leveled spell directly for testing.
 
-**Scroll of &lt;Spell&gt;** (one-shot cast scrolls, 8 in `ITEM_POOL`/`debug_panel.ALL_ITEMS`, one
+**Scroll of &lt;Spell&gt;** (one-shot cast scrolls, 13 in `ITEM_POOL`/`debug_panel.ALL_ITEMS`, one
 per `SpellDb` spell): unlike scroll-taught spells above, these are **castable by any class**, not
 just Wizard — a non-caster reading one uses `proficiency_bonus + INT modifier` in place of a
 `SpellcasterState`'s own ability. Full mechanism: `scripts/items/CLAUDE.md`'s "Scroll of

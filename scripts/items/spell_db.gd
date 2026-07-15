@@ -8,7 +8,10 @@ extends RefCounted
 # doc's original 5-spell list to keep SpellShapes to sphere-only for this pass — see that doc's
 # §7 caveat and CLAUDE.md). Full class spell lists remain future content work.
 
-const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
+const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp", "toll_the_dead", "blade_ward", "thunderclap", "mind_sliver", "light"]
+# The Wizard's fixed round-1 starting choice (cantrip_select.gd) — unchanged by the 5 additions
+# above so the premade Jace's "cantrip": "fire_bolt" shortcut and existing save data stay valid.
+const STARTER_CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
 const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball"]
 const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
@@ -27,6 +30,11 @@ static func get_spell(id: String) -> Spell:
 		"fire_bolt": return _fire_bolt()
 		"ray_of_frost": return _ray_of_frost()
 		"shocking_grasp": return _shocking_grasp()
+		"toll_the_dead": return _toll_the_dead()
+		"blade_ward": return _blade_ward()
+		"thunderclap": return _thunderclap()
+		"mind_sliver": return _mind_sliver()
+		"light": return _light()
 		"magic_missile": return _magic_missile()
 		"shield": return _shield()
 		"mage_armor": return _mage_armor()
@@ -79,6 +87,94 @@ static func _shocking_grasp() -> Spell:
 	s.damage_type = "Lightning"
 	s.cantrip_tier_scaling = true
 	s.effect_id = "shocking_grasp"
+	s.class_list = ["WIZARD"]
+	return s
+
+static func _toll_the_dead() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "toll_the_dead"
+	s.spell_name = "Toll the Dead"
+	s.description = "Ring a dolorous bell at a target within 6 tiles. WIS save or take 1d8 Necrotic — 1d12 instead if the target is already missing HP."
+	s.icon_path = "res://icons/spells/toll_the_dead.png"
+	s.school = "Necromancy"
+	s.range_tiles = 6
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.SAVE
+	s.save_stat = "WIS"
+	s.save_for_half = false
+	s.dice_count = 1
+	s.dice_sides = 8
+	s.damage_type = "Necrotic"
+	s.cantrip_tier_scaling = true
+	s.effect_id = "toll_the_dead"
+	s.class_list = ["WIZARD"]
+	return s
+
+static func _blade_ward() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "blade_ward"
+	s.spell_name = "Blade Ward"
+	s.description = "Ward yourself for up to 10 turns (Concentration) — every attack roll against you rolls with -1d4. Breaks if you fail a CON check (DC = damage taken, min 10) when hit."
+	s.icon_path = "res://icons/spells/blade_ward.png"
+	s.school = "Abjuration"
+	s.range_tiles = 0
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.effect_id = "blade_ward"
+	s.class_list = ["WIZARD"]
+	return s
+
+static func _thunderclap() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "thunderclap"
+	s.spell_name = "Thunderclap"
+	s.description = "A burst of thunder rocks everyone within 1 tile of you. Each throws a CON save or takes 1d6 Thunder."
+	s.icon_path = "res://icons/spells/thunderclap.png"
+	s.school = "Evocation"
+	s.range_tiles = 0
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.SAVE
+	s.save_stat = "CON"
+	s.shape = "sphere"
+	s.shape_size = 1
+	s.dice_count = 1
+	s.dice_sides = 6
+	s.damage_type = "Thunder"
+	s.cantrip_tier_scaling = true
+	s.effect_id = "thunderclap"
+	s.class_list = ["WIZARD"]
+	return s
+
+static func _mind_sliver() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "mind_sliver"
+	s.spell_name = "Mind Sliver"
+	s.description = "Needle a target's mind within 6 tiles. INT save or take 1d6 Psychic and roll their next check with -1d4 until the end of your next turn."
+	s.icon_path = "res://icons/spells/mind_sliver.png"
+	s.school = "Enchantment"
+	s.range_tiles = 6
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.SAVE
+	s.save_stat = "INT"
+	s.dice_count = 1
+	s.dice_sides = 6
+	s.damage_type = "Psychic"
+	s.cantrip_tier_scaling = true
+	s.effect_id = "mind_sliver"
+	s.class_list = ["WIZARD"]
+	return s
+
+static func _light() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "light"
+	s.spell_name = "Light"
+	s.description = "Touch an object on the ground (not worn or carried) — it sheds bright light in a 4-tile radius, in a random color, until your next rest, floor descent, or you cast Light again. Only one Light at a time."
+	s.icon_path = "res://icons/spells/light.png"
+	s.school = "Evocation"
+	s.range_tiles = 1
+	s.target_kind = Spell.TargetKind.TILE
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.effect_id = "light"
 	s.class_list = ["WIZARD"]
 	return s
 

@@ -129,7 +129,7 @@ GameState.player_status_changed.emit()
 
 ## Enemy resist checks (World Tree)
 `Enemy.resist_check(dc: int, use_con: bool = false) -> bool` — rolls `d20 + floor/3 + (con_modifier or str_modifier)` vs `dc`; true = enemy resists. Backing stats: `DungeonFloorData.ENEMY_POOL`/`BOSS_POOL` entries may set optional `"str_mod"`/`"con_mod"` int keys (default 0); `_apply_stats()` converts them to `Stats.strength/constitution` (`10 + mod * 2`). Used by Grip of the Forest's pull (STR) and Branching Strike R3's push (CON), both vs DC `8 + player STR mod + proficiency`; by the Heavy Crossbow's **Push** weapon mastery (CON) vs DC `8 + player DEX mod + proficiency`, resolved via `DungeonFloor.resolve_push()`; and by the Maul's **Topple** weapon mastery (CON) vs DC `8 + player STR mod + proficiency`, resolved by setting `Enemy.prone_turns = 1` directly — see `scripts/world/CLAUDE.md`'s "Forced movement" section and `scripts/items/CLAUDE.md`'s "Weapon masteries".
-`Enemy.resist_check_detailed(dc, use_con) -> Dictionary` — same roll as `resist_check()`, but returns `{die, mod, floor_bonus, dc, total, pass, stat}` so a caller can log a hover-tooltip roll breakdown instead of just the bool. `resist_check()` is now a one-line wrapper (`return resist_check_detailed(dc, use_con)["pass"]`). Only Topple's `player.gd._try_topple()` currently consumes the detailed form (see below) — Grip of the Forest / Branching Strike R3 / Heavy Crossbow Push still call the plain bool form since their logs don't show a roll breakdown.
+`Enemy.resist_check_detailed(dc, use_con = false, use_dex = false, use_wis = false, use_int = false) -> Dictionary` — same roll as `resist_check()`, but returns `{die, mod, floor_bonus, dc, total, pass, stat, sliver_penalty}` so a caller can log a hover-tooltip roll breakdown instead of just the bool. `resist_check()` is now a one-line wrapper (`return resist_check_detailed(dc, use_con)["pass"]`). Only Topple's `player.gd._try_topple()` currently consumes the detailed form (see below) — Grip of the Forest / Branching Strike R3 / Heavy Crossbow Push still call the plain bool form since their logs don't show a roll breakdown. Priority when multiple `use_*` are somehow true: DEX > WIS > INT > CON > STR (every real call site only sets one). `wis_mod`/`int_mod` optional pool keys (default 0) mirror `str_mod`/`con_mod`/`dex_mod` — see "Enemy stat scaling" above. **Mind Sliver's penalty**: `Enemy.mind_sliver_penalty_die: bool` — if set, the very next `resist_check_detailed()` call (any stat) rolls `-1d4` (consumed regardless of which stat that particular check happens to use) and reports it via the `sliver_penalty` key.
 **Topple's contest-roll tooltip**: `_try_topple()` builds a `"save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d"` meta (reusing the existing `TooltipFormatters.fmt_save_tooltip()`/`hud.gd`'s `"save"`/`"check"` dispatch, previously wired up but unused by any caller) and wraps "is knocked"/"resists" in `[url=%s]` so hovering the Topple log line shows the enemy's CON-save roll, same as hovering a player attack shows the hit roll. `prof_label=Floor` relabels the tooltip's second modifier line from "Proficiency" to "Floor" since this is the enemy's floor-scaling bonus, not a proficiency bonus — `fmt_save_tooltip()` reads an optional `prof_label` param (defaults to `"Proficiency"`) for exactly this.
 `Enemy.rooted_turns: int` — Grip of the Forest R2. Checked at the top of `take_turn()`: decrements, skips movement, still attacks if already adjacent.
 `Enemy.disadv_next_attack: bool` — Grip of the Forest R3. Consumed in `_attack_player()`'s roll (adds a Disadvantage source, resolved via the same net-ADV/DISADV house rule as the player's own attacks).
@@ -182,7 +182,7 @@ Per `docs/architecture/enemy_system_architecture.md` §1: `take_turn()` handles 
 Pool entries may set `"attack_profile": {"kind": "ranged", "range": N, "projectile": "..."}` (absent = implicit melee, zero change for existing entries). `Enemy._in_attack_range(target)` reads `_type.get("attack_profile", {})`: melee requires Chebyshev == 1; ranged requires Chebyshev ≤ `range` AND `_dungeon_floor.has_ranged_los()`. `_act_toward()` calls `_attack_target()` once in range, otherwise steps toward the target exactly like melee (reuses the same BFS/greedy stepping — approaching until in range, not until adjacent). No caster archetype/enemy-ability machinery exists yet (deliberately not built speculatively — see architecture doc §3/§7 step 6); add it only when a concrete caster enemy needs it. Reference pool entry: `"Goblin Archer"` (`enemy_id: "goblin_archer"`, `DungeonFloorData.ENEMY_POOL`).
 
 ### Shared attack resolver
-`Enemy._resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1) -> Dictionary` is the one d20-vs-AC roll (Reckless Attack ADV/flat bonus, Grip of the Forest R3 disadvantage, crit-on-nat-20) shared by every enemy attack — melee or ranged, vs player or vs companion. `_attack_player()` and `_attack_companion()` both call it, then handle their own damage application/logging (player routes through `take_damage_raw` for rage DR/poison/Retaliation; companion calls `Companion.take_damage_from_enemy()`, which has no such hooks — those are player-only systems).
+`Enemy._resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1, roll_penalty: int = 0) -> Dictionary` is the one d20-vs-AC roll (Reckless Attack ADV/flat bonus, Grip of the Forest R3 disadvantage, crit-on-nat-20, Blade Ward's `roll_penalty`) shared by every enemy attack — melee or ranged, vs player or vs companion. `_attack_player()` and `_attack_companion()` both call it, then handle their own damage application/logging (player routes through `take_damage_raw` for rage DR/poison/Retaliation; companion calls `Companion.take_damage_from_enemy()`, which has no such hooks — those are player-only systems). `_attack_player()` is the only caller that ever passes a nonzero `roll_penalty` (Blade Ward, player-only buff) — subtracted from the roll AFTER ADV/DISADV resolves, before the AC comparison; never reduces a natural-20 crit.
 
 ### Enemy/boss pool ids
 `DungeonFloorData.ENEMY_POOL` entries carry an `"enemy_id"` key, `BOSS_POOL` entries an `"boss_id"` key (e.g. `"orc_warrior"`, `"big_demon"`) — stable machine ids, unlike `display_name` which is UI text and shouldn't be load-bearing. `Enemy.enemy_id: String` is populated from either key in `configure()`. No behavior depends on these yet; they exist so future systems (boss-phase gating, per-enemy talent interactions) can key off a stable id instead of string-matching `display_name`.
@@ -278,7 +278,9 @@ Tier 1 (levels 1–6): earns 5 talent points, spent across 3 talents — Psycho,
 ## Wizard spellcasting (cantrips)
 
 A deliberately-scoped slice of `docs/architecture/spellcasting-design.md`: at-will, free-to-cast
-attack-roll cantrips only — no spell slots, no concentration, no reactions. Leveled spells (with
+cantrips (attack-roll, single-target SAVE, and self-cast/self-AoE resolutions) — no spell slots,
+and only one lightweight concentration mechanism (Blade Ward, below) rather than the full design
+doc's reaction/concentration framework. Leveled spells (with
 real spell slots and a sphere-AoE example) are implemented on top of this per
 `docs/architecture/leveled-spells-and-slots-plan.md` — see the "Wizard leveled spells" section
 below. Data classes (`Spell`, `SpellDb`, `SpellcasterState`, `StandardSlotPool`) live in
@@ -290,9 +292,14 @@ below. Data classes (`Spell`, `SpellDb`, `SpellcasterState`, `StandardSlotPool`)
   `spellcasting_ability = "INT"`.
 - **Onboarding**: right after race select confirms (`scripts/ui/race_select.gd`, in the same slot
   the Mastery Picker would occupy — Wizard's `mastery_cap()` is already 0, so the two are mutually
-  exclusive), a Wizard spawns `scripts/ui/cantrip_select.gd` — a one-time, mandatory,
-  non-dismissible pick of one of the three starting cantrips (Fire Bolt / Ray of Frost / Shocking
-  Grasp, `SpellDb.CANTRIP_IDS`). Confirm calls `GameState.choose_cantrip(spell_id)`, which sets
+  exclusive), a Wizard spawns `scripts/ui/cantrip_select.gd` for **two** "pick 1 of 3" rounds
+  (owner-requested — a full caster starts with 2 cantrips, not 1). Round 1 always offers the
+  original fixed trio (`SpellDb.STARTER_CANTRIP_IDS` — Fire Bolt / Ray of Frost / Shocking Grasp,
+  unchanged so the premade Jace's `"cantrip": "fire_bolt"` shortcut and old saves stay valid);
+  picking one immediately re-builds the same overlay for round 2, offering 3 candidates picked at
+  random (`Rng`, gameplay stream) from every cantrip in `SpellDb.CANTRIP_IDS` except the one just
+  chosen (could include the two unchosen starters or any of the 5 newer cantrips below). Each
+  round's card-click commits immediately. Confirm calls `GameState.choose_cantrip(spell_id)`, which sets
   `Stats.caster.known_spells` (appends — never overwrites, since a Wizard's leveled starting
   spellbook is already populated by `_give_wizard_starting_items()` before this runs) and wraps
   the spell in an `Ability` (`ability_id = "spell:" + spell_id`, `uses_max = 0` — infinite/free)
@@ -333,8 +340,8 @@ below. Data classes (`Spell`, `SpellDb`, `SpellcasterState`, `StandardSlotPool`)
   the same D&D cantrip-scaling table as weapon dice would use). New `sphit:` tooltip meta
   (`TooltipFormatters.fmt_sphit_tooltip()`, dispatched in `hud.gd._format_tooltip()`) — same shape
   as `fmt_hit_tooltip()` but always labels the ability mod "INT".
-- **The three cantrips** (`SpellDb`, `scripts/items/spell_db.gd`), all Evocation, 1 action, tier-
-  scaling dice:
+- **The original three cantrips** (`SpellDb`, `scripts/items/spell_db.gd`), all Evocation, 1
+  action, tier-scaling dice:
   - **Fire Bolt** — 12 tiles, 1d10 Fire. No `effect_id` (pure generic damage path) — if the target
     stands on a `GRASS` tile, the hit also calls `DungeonFloor.destroy_grass()` as the scoped-down
     stand-in for "flammable objects ignite" (no burning-terrain system exists to build more than
@@ -360,6 +367,67 @@ below. Data classes (`Spell`, `SpellDb`, `SpellcasterState`, `StandardSlotPool`)
 - **Inspect** (`PlayerActions.do_inspect()`): the enemy info line gains a status suffix —
   `Frozen Feet` / `Shocked` — whenever either field is active (inspect previously showed no status
   effects at all; this is new, not a change to prior text).
+
+**Five more cantrips** (all Wizard-castable, `CANTRIP_IDS` in `scripts/items/spell_db.gd`; also
+each has a Scroll of &lt;Spell&gt; — see `scripts/items/CLAUDE.md`). These introduce two new
+resolution shapes beyond the original three's attack-roll: single-target **SAVE** (no attack
+roll, the target just makes a save) and **SELF** cantrips (instant self-buff or self-centered
+AoE, dispatched through the same `SpellEffects.cast_leveled_self()` leveled spells already use —
+level 0 spells skip `_consume_slot()`'s actual consumption since `cast_level` is 0, so nothing
+extra was needed there).
+- **Toll the Dead** (Necromancy, `effect_id: "toll_the_dead"`, SAVE/WIS, ENEMY, 6 tiles): target
+  WIS-saves or takes `1d8` Necrotic — `1d12` instead if the target is already missing HP (checked
+  at resolve time via `target.stats.current_hp < target.stats.max_hp`), same cantrip-tier dice-
+  count scaling as the original three. `SpellEffects.cast_cantrip_save_at_enemy()` is the shared
+  resolver for this and Mind Sliver below — no attack roll, just `Enemy.resist_check_detailed()`
+  with the matching `use_wis`/`use_int` flag (see below) and a hoverable `save:` tooltip either way.
+- **Mind Sliver** (Enchantment, `effect_id: "mind_sliver"`, SAVE/INT, ENEMY, 6 tiles): target
+  INT-saves or takes `1d6` Psychic and sets `Enemy.mind_sliver_penalty_die = true` — consumed by
+  that enemy's very next `resist_check_detailed()` call (any stat), rolling with `-1d4`.
+  **Simplification**: RAW this lasts "until the end of your next turn"; this codebase instead
+  consumes it on the enemy's next check regardless of timing, since enemy checks are rare enough
+  (Push/Topple/Grip of the Forest saves) that a real turn-expiry timer wasn't worth a second
+  mechanism — documented on the field itself in `enemy.gd`.
+- **Thunderclap** (Evocation, `effect_id: "thunderclap"`, SAVE/CON, SELF, instant, radius 1):
+  every enemy within 1 tile of the CASTER (not an impact point — `SpellEffects._resolve_thunderclap()`,
+  a self-centered sibling of Fireball's `_resolve_sphere_aoe()`) CON-saves or takes `1d6` Thunder,
+  tier-scaling. No friendly fire (the caster is the origin, never a target, unlike Fireball).
+- **Blade Ward** (Abjuration, `effect_id: "blade_ward"`, AUTO_HIT, SELF, instant, **Concentration**):
+  a real, if minimal, concentration mechanic — `Stats.concentration_spell_id`/`blade_ward_turns`
+  (10-turn duration, ticked in `player.gd._on_turn_started()`'s `if not came_from_revert:` block
+  alongside `shield_ac_bonus`). While active, every enemy attack roll against the player rolls a
+  bonus `1d4` and subtracts it from the roll before the AC comparison — `Enemy._resolve_attack_roll()`
+  gained a `roll_penalty` param, `_attack_player()` rolls it whenever `blade_ward_turns > 0` (never
+  reduces a natural-20 crit). Breaks on taking damage via `GameState._check_concentration_break()`
+  (called from `take_damage_raw()`'s tail): a CON check vs `DC = max(10, damage taken)` — **not**
+  5e's usual half-damage DC, per the spell's own text — failure clears `concentration_spell_id`
+  and `blade_ward_turns` immediately, logged. **Scope**: only `take_damage_raw()` callers
+  (melee/ranged/enemy attacks, Fireball's own blast) trigger a concentration check — status-tick
+  damage (poison/burning/bleeding) and trap damage bypass this chokepoint and don't break it, a
+  documented simplification rather than an oversight. `concentration_spell_id` is a generic
+  single-slot field (only Blade Ward uses it today, but casting a second, different concentration
+  spell would break this one first — the chokepoint already exists in `cast_leveled_self()`'s
+  `"blade_ward"` branch for whenever a second one is added).
+- **Light** (Evocation, `effect_id: "light"`, AUTO_HIT, TILE, touch range 1): touch an object
+  resting on the ground (a floor item — `dungeon_floor.get_item_at(tile_pos) != null`, never a
+  worn/carried one) and it becomes a **real light source**, not cosmetic: `GameState.
+  set_light_source(pos, color)` (random color from a fixed palette) is read every `DungeonFloor.
+  update_fog()` call, which unions its own `_compute_shadowcast(pos, LIGHT_SOURCE_RADIUS=4)` into
+  the player's visible-tiles set (walls still block it — same shadowcast algorithm as the player's
+  own FOV) — see `scripts/world/CLAUDE.md`'s "FOV" section. Only one Light source active at a time
+  (recasting replaces it outright); ends on a completed rest (short or long —
+  `_on_short_rest_completed()`/`long_rest()` both call `GameState.clear_light_source()`) or on
+  floor descent (`advance_floor()` — the lit object is left behind on the previous floor; this
+  codebase's own reinterpretation of the spell's RAW "1 hour" duration, since there's no real-time
+  clock to hang that off of). `DungeonFloor._update_light_source_glow()` also draws a small
+  colored square over the lit tile so the player can see WHERE it is from across the room.
+
+## Concentration (generic mechanism)
+`Stats.concentration_spell_id: String` (`""` = not concentrating) + a per-spell duration field
+(currently only `blade_ward_turns`). Not a full framework (no reaction-spell integration, no
+multiple-effects-per-concentration) — just enough plumbing for Blade Ward's own duration + break-
+on-damage rule to be real rather than hand-waved, reusable by a future concentration spell without
+inventing a second field. See "Blade Ward" above for the full mechanism.
 
 ## Wizard leveled spells (spell slots)
 

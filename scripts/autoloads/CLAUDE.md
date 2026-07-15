@@ -71,6 +71,7 @@ Rng.get_state() / Rng.set_state(s)  # exact stream position (int64) for save/loa
 | `gold_changed` | `new_amount: int` | `add_gold()`/`spend_gold()` (also re-emitted by `spend_gold()` while invincible, and by `from_dict()`) |
 | `spell_slots_changed` | — | Wizard spell-slot pool mutated (`consume()`, `on_long_rest()`, level-up grant) or a spell prepared/unprepared — see "Leveled spells / spellbook" below |
 | `special_slot_changed` | — | `set_special_slot()`/`clear_special_slot()` — the Special quick-cast slot's assigned spell changed |
+| `light_source_changed` | — | `set_light_source()`/`clear_light_source()` (Light cantrip) — `dungeon_floor.gd` connects this to force an immediate `update_fog()` call |
 
 ---
 
@@ -129,6 +130,8 @@ spell_learn_choices: Array[String]  # up to 3 rolled candidate spell ids for tha
 spell_learn_picker_open: bool       # blocks ALL player input while spell_learn_picker.gd is visible
 spellbook_open: bool                # blocks ALL player input while spellbook_overlay.gd (R key) is visible
 special_slot_spell_id: String        # "" = none; the Special quick-cast slot's assigned spell (cantrip or leveled), see below
+light_source_pos: Vector2i           # (-1,-1) = none active; Light cantrip's lit-object position — see scripts/world/CLAUDE.md's "FOV" section
+light_source_color: Color            # Light cantrip's randomized glow color
 ```
 
 **Leveled spells / spellbook (`docs/architecture/leveled-spells-and-slots-plan.md`)**: Wizard-only,
@@ -176,6 +179,8 @@ repopulates `known_spells`, and silently clears if the saved id is no longer kno
 **Rest system**: `advance_floor()` is floor bookkeeping ONLY (floor number, terrain AC reset) — it does not restore anything. `GameState.long_rest()` is the single chokepoint for every long-rest-gated resource: full HP heal, cleared status effects, `rage_uses_remaining`, `hit_dice = character_level`, `short_rests_remaining = max_short_rests`, Natural Sleeper form lock-in, Zealot `zealot_blessed_charges`/`zealot_zp_charges`, companion heal, `_sync_ability_uses()` (One with Nature charge). Triggered explicitly by the player via the Alt-menu's Long Rest tab (`scripts/ui/short_rest_panel.gd`), never automatically. **Any new "per long rest" resource must be refilled in `long_rest()` and nowhere else** — `advance_floor()` must never regain restore logic. `GameState.total_food_value() -> int` sums `Item.food_value × quantity` across quickbar+bag; `can_long_rest() -> bool` (always true when `invincible`) gates the button; `_consume_food_value(amount)` spends cheapest-value FOOD items first, skipped entirely while `invincible` (so God Mode long rests cost nothing). `long_rest_pending: bool` tells the shared short-rest turn-countdown in `player.gd._on_turn_started()` to call `long_rest()` instead of the short-rest heal when the countdown reaches 0; `rest_interrupt_panel.gd`'s abort path also clears it. Level-up via `gain_exp()` only grants `+1 talent_points_available` and emits `player_leveled_up` — it does NOT reset resources or heal the player.
 
 **Level-up max HP tooltip**: `GameState.gain_exp()`'s "Level up!" chat line wraps the `+N max HP` text in an `[url=hplvl:...]` tag (`Stats.hp_per_level_breakdown()` supplies `die_sides`/`avg`/`con`/`dwarf`/`total`; the meta also carries `n`, how many level thresholds this one `gain_exp()` call crossed, since a single large XP grant can level up more than once) — hover shows the same additive breakdown (hit-die average + CON mod + Dwarven Toughness) that `dmg:`/`heal:` tooltips use for combat numbers. `TooltipFormatters.fmt_hplvl_tooltip()`, dispatched in `hud.gd._format_tooltip()`.
+
+**Concentration break check**: `take_damage_raw()`'s tail calls `_check_concentration_break(actual_damage)` — if `player_stats.concentration_spell_id != ""`, rolls a CON check vs `DC = max(10, actual_damage)` (Blade Ward's own rule, not 5e's usual half-damage DC) and clears concentration + the spell's own duration field on a fail. Scoped to `take_damage_raw()` callers only (status-tick/trap damage bypass it) — see `scripts/entities/CLAUDE.md`'s "Blade Ward" section.
 
 **Rage DR**: `take_damage_raw(amount, ignore_rage, damage_type: String) -> int` — returns actual damage after DR. Physical types ("Slashing"/"Piercing"/"Bludgeoning") are always reduced 50% while raging (baked-in baseline, no longer talent-gated — see `scripts/entities/CLAUDE.md`'s Barbarian class section). Scarred Warrior's Born in Blood talent applies an additional Bloodied-based modifier afterward. All callers must pass `damage_type`; missing/empty type bypasses DR. **`invincible` still sets `player_was_hit_this_turn`**: the function's `invincible` branch returns 0 without touching HP, but (if the hit was physical) still flips `player_was_hit_this_turn` — every caller (currently only `enemy.gd._attack_player()`, which now always calls this function rather than short-circuiting to 0 itself) is only ever invoked on a connecting hit, so this is safe and keeps turn-based triggers keyed off that flag (e.g. Battlefield Expert R3's free Side Step — `scripts/entities/CLAUDE.md`) working in God Mode instead of silently never firing.
 

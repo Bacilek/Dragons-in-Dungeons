@@ -26,6 +26,7 @@ var disadv_next_attack: bool = false  # World Tree Grip of the Forest R3 — con
 var prone_turns: int = 0         # Maul's Topple mastery — skips the ENTIRE turn (no movement, no attack)
 var frozen_feet_turns: int = 0   # Ray of Frost's STR-save-fail — skips movement, still attacks if adjacent (same shape as rooted_turns, kept separate so inspect can name it "Frozen Feet")
 var shocked_no_oa: bool = false  # Shocking Grasp — blocks this enemy's next Opportunity Attack exposure, whenever it next happens
+var mind_sliver_penalty_die: bool = false  # Mind Sliver cantrip — the next check this enemy makes (any resist_check_detailed() call) rolls with -1d4. Consumed on that next check; deliberately not turn-expiry-timed against "until the end of your next turn" per the spell text — enemy checks are rare enough that this one-shot-consumed simplification is documented here rather than adding a second timing system for it.
 var embedded_items: Array[Item] = []  # thrown weapons stuck in a non-lethal hit (PlayerThrowTool._throw_weapon) — dropped at 100% chance wherever/whenever this enemy eventually dies, see die() override below
 var resist_types: Array[String] = []  # damage types this enemy takes half damage from (pool "resist" key)
 var vuln_types: Array[String] = []    # damage types this enemy takes double damage from (pool "vuln" key)
@@ -69,6 +70,8 @@ func _apply_stats() -> void:
 	stats.strength    = 10 + _type.get("str_mod", 0) * 2
 	stats.constitution = 10 + _type.get("con_mod", 0) * 2
 	stats.dexterity   = 10 + _type.get("dex_mod", 0) * 2
+	stats.wisdom      = 10 + _type.get("wis_mod", 0) * 2
+	stats.intelligence = 10 + _type.get("int_mod", 0) * 2
 	var resist: Array = _type.get("resist", [])
 	resist_types = Array(resist, TYPE_STRING, "", null)
 	var vuln: Array = _type.get("vuln", [])
@@ -99,16 +102,33 @@ func resist_check(dc: int, use_con: bool = false) -> bool:
 # Same roll as resist_check(), but returns the full breakdown so callers can log a chat-log
 # tooltip (see Topple's "save" meta in player.gd._try_topple()) instead of just the pass/fail
 # bool. "pass" here means the enemy RESISTS (roll >= dc), matching resist_check().
-# use_dex takes priority over use_con when both would somehow be true (Fireball's DEX check).
-func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false) -> Dictionary:
-	var mod: int = stats.dex_modifier() if use_dex else (stats.con_modifier() if use_con else stats.str_modifier())
-	var stat_name: String = "DEX" if use_dex else ("CON" if use_con else "STR")
+# Priority when multiple use_* flags are somehow true: DEX > WIS > INT > CON > STR (arbitrary —
+# every real call site only ever sets one).
+func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false, use_wis: bool = false, use_int: bool = false) -> Dictionary:
+	var mod: int
+	var stat_name: String
+	if use_dex:
+		mod = stats.dex_modifier(); stat_name = "DEX"
+	elif use_wis:
+		mod = stats.wis_modifier(); stat_name = "WIS"
+	elif use_int:
+		mod = stats.int_modifier(); stat_name = "INT"
+	elif use_con:
+		mod = stats.con_modifier(); stat_name = "CON"
+	else:
+		mod = stats.str_modifier(); stat_name = "STR"
 	var floor_bonus: int = GameState.current_floor / 3
 	var die: int = Rng.roll(20)
-	var total: int = die + floor_bonus + mod
+	# Mind Sliver cantrip: the target's next check (any resist_check_detailed() call) rolls with
+	# -1d4 — consumed here regardless of which stat this particular check happens to use.
+	var sliver_penalty: int = 0
+	if mind_sliver_penalty_die:
+		mind_sliver_penalty_die = false
+		sliver_penalty = Rng.roll(4)
+	var total: int = die + floor_bonus + mod - sliver_penalty
 	return {
 		"die": die, "mod": mod, "floor_bonus": floor_bonus, "dc": dc,
-		"total": total, "pass": total >= dc, "stat": stat_name,
+		"total": total, "pass": total >= dc, "stat": stat_name, "sliver_penalty": sliver_penalty,
 	}
 
 # Overrides Entity.die(): drop any thrown weapons embedded in this enemy (see embedded_items
@@ -553,7 +573,10 @@ func _bfs_to(target: Vector2i) -> Array[Vector2i]:
 
 # Shared d20-vs-AC roll used by every enemy attack (melee, ranged, vs-player, vs-companion) — see
 # docs/architecture/enemy_system_architecture.md §2. Only computes the roll; callers apply damage/log.
-func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1) -> Dictionary:
+# roll_penalty: flat subtracted from the roll AFTER advantage/disadvantage resolves, before the
+# AC comparison — Blade Ward's -1d4 (player-only, passed by _attack_player()). Never affects the
+# crit check (a nat 20 still auto-hits regardless of penalty).
+func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1, roll_penalty: int = 0) -> Dictionary:
 	# D&D attack roll: d20 + floor-scaled bonus vs target AC.
 	var attack_bonus: int = attack_bonus_override if attack_bonus_override >= 0 else GameState.current_floor / 3
 	var die1: int = Rng.roll(20)
@@ -565,13 +588,14 @@ func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1) -> Di
 	if enemy_adv != enemy_disadv:
 		die2 = Rng.roll(20)
 		die = maxi(die1, die2) if enemy_adv else mini(die1, die2)
-	var roll: int = die + attack_bonus
+	var roll: int = die + attack_bonus - roll_penalty
 	var bonus: int = attack_bonus
 	var is_crit: bool = die == 20
 	return {
 		"die": die, "die1": die1, "die2": die2, "bonus": bonus, "roll": roll, "target_ac": target_ac,
 		"is_crit": is_crit, "is_hit": is_crit or roll >= target_ac,
 		"adv": enemy_adv and not enemy_disadv, "disadv": enemy_disadv and not enemy_adv,
+		"roll_penalty": roll_penalty,
 	}
 
 func _attack_player(_player: Player) -> void:
@@ -581,10 +605,12 @@ func _attack_player(_player: Player) -> void:
 	var invincible: bool = GameState.invincible
 	var bracket_l: String = "[" if invincible else ""
 	var bracket_r: String = "]" if invincible else ""
-	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class)
-	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d" % [
+	# Blade Ward cantrip: while active, subtract 1d4 from this attack roll before comparing to AC.
+	var bw_penalty: int = Rng.roll(4) if GameState.player_stats.blade_ward_turns > 0 else 0
+	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, -1, bw_penalty)
+	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
-		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0]
+		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]
 	if not r["is_hit"]:
 		var miss_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [r["bonus"], r["roll"], r["target_ac"]] if GameState.god_mode else ""
 		GameState.game_log("%s[color=tomato]%s[/color] [url=%s]misses[/url]!%s%s" % [bracket_l, display_name, hit_meta, miss_suffix, bracket_r])

@@ -176,11 +176,15 @@ cast-resolution walkthroughs.
   concentration/reaction/component fields from the full design doc's `Spell` shape — add if a
   future spell needs them.
 - **`SpellDb`** (static factory, `RefCounted`) — `get_spell(id) -> Spell` builds all spells in
-  code, same "no `.tres` files" convention as `Talent`/`SpriteFrames`. `CANTRIP_IDS` (3 cantrips)
-  + `LEVELED_SPELL_IDS` (5: `magic_missile`/`shield`/`mage_armor`/`misty_step`/`fireball`) +
-  `CLASS_SPELL_LISTS: Dictionary` (`"WIZARD"` → `LEVELED_SPELL_IDS`, the level-up learn picker's
-  candidate pool — cantrips are deliberately excluded from this list since they're a separate,
-  always-known system).
+  code, same "no `.tres` files" convention as `Talent`/`SpriteFrames`. `CANTRIP_IDS` (8 cantrips:
+  the original `fire_bolt`/`ray_of_frost`/`shocking_grasp` plus `toll_the_dead`/`blade_ward`/
+  `thunderclap`/`mind_sliver`/`light` — see `scripts/entities/CLAUDE.md`'s "Wizard spellcasting"
+  section for all 8) + `STARTER_CANTRIP_IDS` (the fixed 3-cantrip round-1 pool `cantrip_select.gd`
+  always offers — kept separate from `CANTRIP_IDS` so old saves/the premade Jace's
+  `"cantrip": "fire_bolt"` shortcut stay valid) + `LEVELED_SPELL_IDS` (5:
+  `magic_missile`/`shield`/`mage_armor`/`misty_step`/`fireball`) + `CLASS_SPELL_LISTS: Dictionary`
+  (`"WIZARD"` → `LEVELED_SPELL_IDS`, the level-up learn picker's candidate pool — cantrips are
+  deliberately excluded from this list since they're a separate, always-known system).
 - **`SpellcasterState`** (`Resource`) — lives on `Stats.caster` (null for every class but Wizard),
   not `GameState`, so a future enemy/companion caster can carry its own instance.
   `spellcasting_ability: String` ("INT"/"WIS"/"CHA"), `known_spells: Array[String]` (cantrips AND
@@ -217,12 +221,13 @@ spell." instead). No scroll items use this mechanism in any loot pool yet — se
 `Item.scroll_spell_id: String` (`""` = not this kind of scroll) — a SCROLL item with one spell
 cast baked in, distinct from (and independent of) `taught_spell_id` above: reading it does NOT
 teach the spell, it just casts it once at the spell's base level (no upcasting, no slot spent)
-then crumbles. **Castable by any class**, not just Wizard — the point of this item type. 8 exist
+then crumbles. **Castable by any class**, not just Wizard — the point of this item type. 13 exist
 in `ITEM_POOL`/`debug_panel.ALL_ITEMS` today, one per `SpellDb` spell (`Scroll of Fire Bolt`,
-`Ray of Frost`, `Shocking Grasp`, `Magic Missile`, `Shield`, `Mage Armor`, `Misty Step`,
-`Fireball`); icon reuses the spell's own `res://icons/spells/*.png` (new `"src": "spells"` pool
-key, resolved in both `DungeonFloor._build_floor_item()` and `debug_panel._on_give_item()` — no
-dedicated scroll sprite exists yet).
+`Ray of Frost`, `Shocking Grasp`, `Toll the Dead`, `Blade Ward`, `Thunderclap`, `Mind Sliver`,
+`Light`, `Magic Missile`, `Shield`, `Mage Armor`, `Misty Step`, `Fireball`); icon reuses the
+spell's own `res://icons/spells/*.png` (new `"src": "spells"` pool key, resolved in both
+`DungeonFloor._build_floor_item()` and `debug_panel._on_give_item()` — no dedicated scroll sprite
+exists yet).
 
 **Casting math without a caster**: `SpellEffects._attack_bonus()`/`_save_dc()`/`_cast_ability_mod()`
 (`scripts/entities/spell_effects.gd`) are caster-optional — if `Stats.caster` exists (Wizard) they

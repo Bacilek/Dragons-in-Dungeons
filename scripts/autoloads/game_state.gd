@@ -312,6 +312,7 @@ func start_new_run() -> void:
 	spell_learn_choices = []
 	spell_learn_picker_open = false
 	spellbook_open = false
+	light_source_pos = Vector2i(-1, -1)
 	talent_points = {1: 0, 2: 0, 3: 0, 4: 0}
 	tier3_selected_class = -1
 	talent_investments = {}
@@ -717,6 +718,29 @@ func clear_special_slot() -> void:
 	special_slot_spell_id = ""
 	special_slot_changed.emit()
 
+## Light cantrip — a real light source, not a cosmetic effect: DungeonFloor.update_fog() unions
+## its own shadowcast (radius LIGHT_SOURCE_RADIUS, centered on light_source_pos) into the player's
+## visible-tiles set every time fog recomputes, so it genuinely pushes back fog of war around the
+## lit object — see scripts/world/CLAUDE.md. Only one instance can be active at a time (5e's Light
+## spell is also singular per caster); casting again replaces it outright. `(-1,-1)` = none active.
+## Ends on a completed rest (short or long) or on descending to the next floor — see
+## clear_light_source()'s call sites in _on_short_rest_completed()/long_rest()/advance_floor().
+signal light_source_changed()
+const LIGHT_SOURCE_RADIUS: int = 4
+var light_source_pos: Vector2i = Vector2i(-1, -1)
+var light_source_color: Color = Color.WHITE
+
+func set_light_source(pos: Vector2i, color: Color) -> void:
+	light_source_pos = pos
+	light_source_color = color
+	light_source_changed.emit()
+
+func clear_light_source() -> void:
+	if light_source_pos == Vector2i(-1, -1):
+		return
+	light_source_pos = Vector2i(-1, -1)
+	light_source_changed.emit()
+
 ## Grants a subclass's free, rank-independent Tier 2 activation ability (Frenzy, Limit Break,
 ## Animal Form, Zealot Strike) directly at subclass selection — NOT gated by any talent rank.
 ## No-op if already present (idempotent — safe to call from every _setup_X_tier2_talents()).
@@ -758,6 +782,8 @@ func advance_floor() -> void:
 	# Only floor bookkeeping and terrain reset happen here.
 	terrain_ac_bonus = 0  # reset terrain AC; player.gd will reapply on next move
 	bruiser_revive_used_this_floor = false
+	# Light cantrip: the lit object is left behind on the previous floor — ends on descent.
+	clear_light_source()
 	short_rest_changed.emit()
 	floor_changed.emit(current_floor)
 	if current_floor > 10:
@@ -818,6 +844,7 @@ func long_rest_turns_needed() -> int:
 func long_rest() -> void:
 	player_stats.current_hp = player_stats.max_hp
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
+	clear_light_source()  # Light cantrip — ends on a completed rest, short or long
 	player_stats.poison_turns = 0
 	player_stats.burning_turns = 0
 	player_stats.bleeding_turns = 0
@@ -891,6 +918,7 @@ func is_ability_usable(ab: Ability) -> bool:
 # Triggered on short rest completion. Heals companion (if alive) AND restores One with Nature charge.
 # Natural Sleeper's form lock does NOT happen here — long rest only (see long_rest()).
 func _on_short_rest_completed() -> void:
+	clear_light_source()  # Light cantrip — ends on a completed rest, short or long
 	if berserker_frenzy_used and _find_ability_by_id("frenzy") != null:
 		game_log("[color=lime]Frenzy: use refreshed.[/color]")
 	berserker_frenzy_used = false
@@ -1568,8 +1596,27 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 	# threshold (only bothers if the talent is actually invested).
 	if get_talent_rank("bruiser") >= 2:
 		recalculate_stats()
+	_check_concentration_break(actual)
 	check_player_death()
 	return actual
+
+# Blade Ward cantrip (and any future concentration spell): taking damage forces a CON check —
+# DC = max(10, damage taken), 5e's concentration-save shape but without the usual "half rounded
+# down" reduction (per the spell's own text). Failure ends the concentration effect immediately —
+# scoped to take_damage_raw()'s callers only (melee/ranged/enemy attacks, Fireball's own blast);
+# status-tick damage (poison/burning/bleeding) and trap damage bypass this chokepoint entirely and
+# don't trigger a concentration check — a documented simplification, not an oversight.
+func _check_concentration_break(actual_damage: int) -> void:
+	if player_stats.concentration_spell_id == "" or actual_damage <= 0:
+		return
+	var dc: int = maxi(10, actual_damage)
+	var roll: int = Rng.roll(20) + player_stats.con_modifier()
+	if roll < dc:
+		var broken_spell: String = player_stats.concentration_spell_id
+		player_stats.concentration_spell_id = ""
+		if broken_spell == "blade_ward":
+			player_stats.blade_ward_turns = 0
+		game_log("[color=gray]Your concentration breaks! (CON %d vs DC %d)[/color]" % [roll, dc])
 
 
 func apply_player_status(type: String, turns: int) -> bool:

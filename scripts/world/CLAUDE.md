@@ -32,6 +32,19 @@ dungeon_floor.is_walkable_for_companion(pos: Vector2i) -> bool  # walkable + not
 
 **Rule**: after every player action, call `_dungeon_floor.update_fog(grid_pos)` **before** `TurnManager.on_player_action_complete()`.
 
+**Light cantrip — a second light emitter**: `update_fog()` unions a SECOND `_compute_shadowcast()`
+call (same algorithm, walls still block it) centered on `GameState.light_source_pos` (radius
+`GameState.LIGHT_SOURCE_RADIUS = 4`) into `_visible_tiles` whenever a Light source is active
+(`light_source_pos != Vector2i(-1,-1)`) — a real light source, not a cosmetic effect, so tiles near
+the lit object become visible/explored even far from the player. `_update_light_source_glow()`
+(called from `update_fog()` too) draws a small colored `Sprite2D` square over the lit tile
+(`GameState.light_source_color`, randomized per cast) so the player can see WHERE it is from
+across the room — purely visual, doesn't drive the FOV union itself. `GameState.
+light_source_changed` (emitted by `set_light_source()`/`clear_light_source()`) is connected in
+`_ready()` to force an immediate `update_fog()` call, so the light ending early (rest completion)
+hides the glow/pulls back the extra visibility right away instead of waiting for the player's next
+move. See `scripts/entities/CLAUDE.md`'s "Wizard spellcasting" section for the spell itself.
+
 ## AoE targeting preview
 `show_aoe_preview(center: Vector2i, radius: int)` / `hide_aoe_preview()` — a small pooled-`Sprite2D` purple tint (1×1 white texture tinted via `modulate`, `z_index = 2`, same layer as the fog sprite — Node2D-world convention, not a Control) over every tile within `radius` (Euclidean, no LOS filtering — see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why) of `center`. Driven every frame by `player.gd._update_spell_aoe_preview()` while a sphere-shaped spell (Fireball) is armed for targeting. Rebuild is cached on `"%d,%d,%d" % [center, radius]` so repeated calls with the same hovered tile are near-free.
 

@@ -197,11 +197,21 @@ func try_cast_at(clicked: Vector2i) -> void:
 		_consume_scroll(scroll_item)
 
 	if spell.level == 0:
-		var target0: Enemy = player._dungeon_floor.get_enemy_at(clicked)
-		if target0 == null:
-			await SpellEffects.cast_spell_at_tile(player, spell, clicked, player._dungeon_floor)
-		else:
-			await SpellEffects.cast_spell(player, spell, target0, player._dungeon_floor, from_scroll)
+		match spell.effect_id:
+			"toll_the_dead", "mind_sliver":
+				var save_target: Enemy = player._dungeon_floor.get_enemy_at(clicked)
+				if save_target == null:
+					GameState.game_log("[color=gray]%s needs a target.[/color]" % spell.spell_name)
+				else:
+					await SpellEffects.cast_cantrip_save_at_enemy(player, spell, save_target, player._dungeon_floor, from_scroll)
+			"light":
+				await SpellEffects.cast_light_at_tile(player, spell, clicked, player._dungeon_floor, from_scroll)
+			_:
+				var target0: Enemy = player._dungeon_floor.get_enemy_at(clicked)
+				if target0 == null:
+					await SpellEffects.cast_spell_at_tile(player, spell, clicked, player._dungeon_floor)
+				else:
+					await SpellEffects.cast_spell(player, spell, target0, player._dungeon_floor, from_scroll)
 		return
 
 	match spell.target_kind:

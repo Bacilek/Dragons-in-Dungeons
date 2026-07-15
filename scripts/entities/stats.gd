@@ -125,6 +125,18 @@ var slowed_turns: int = 0
 var temp_hp: int = 0  # Natural Sleeper R2 — consumed before regular HP damage
 var zealous_presence_turns: int = 0  # Zealot Zealous Presence — Advantage on attacks/checks while > 0
 
+# Blade Ward cantrip — see scripts/entities/CLAUDE.md's "Wizard spellcasting (cantrips)" section.
+# `concentration_spell_id`: generic single-slot concentration tracker ("" = not concentrating).
+# Only Blade Ward uses it today, but the field/mechanism is spell-agnostic — a future concentration
+# spell reuses it, breaking whatever the caster was already concentrating on (5e: only one
+# concentration effect at a time).
+var concentration_spell_id: String = ""
+# Blade Ward's own duration — ticks down once per real player turn (player.gd _on_turn_started(),
+# same "if not came_from_revert" block as shield_ac_bonus); reaching 0 ends the effect and clears
+# concentration_spell_id. Also cleared early if a CON concentration-check fails on taking damage
+# (GameState.take_damage_raw()) or another concentration spell is cast.
+var blade_ward_turns: int = 0
+
 # Wizard spellcasting (cantrips per docs/architecture/spellcasting-design.md, leveled spells +
 # slots per docs/architecture/leveled-spells-and-slots-plan.md). Built in
 # apply_class_defaults()'s WIZARD branch; null for every other class. See
@@ -291,6 +303,8 @@ func to_dict() -> Dictionary:
 		"slowed_turns": slowed_turns,
 		"zealous_presence_turns": zealous_presence_turns,
 		"mage_armor_active": mage_armor_active,
+		"concentration_spell_id": concentration_spell_id,
+		"blade_ward_turns": blade_ward_turns,
 		"known_weapon_masteries": known_weapon_masteries.duplicate(),
 		"caster_known_spells": caster.known_spells.duplicate() if caster != null else [],
 		"caster_prepared_spells": caster.prepared_spells.duplicate() if caster != null else [],
@@ -329,6 +343,8 @@ func from_dict(d: Dictionary) -> void:
 	slowed_turns = int(d.get("slowed_turns", 0))
 	zealous_presence_turns = int(d.get("zealous_presence_turns", 0))
 	mage_armor_active = bool(d.get("mage_armor_active", false))
+	concentration_spell_id = String(d.get("concentration_spell_id", ""))
+	blade_ward_turns = int(d.get("blade_ward_turns", 0))
 	known_weapon_masteries.clear()
 	for m: Variant in (d.get("known_weapon_masteries", []) as Array):
 		known_weapon_masteries.append(String(m))
