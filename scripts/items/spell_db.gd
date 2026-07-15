@@ -9,7 +9,7 @@ extends RefCounted
 # §7 caveat and CLAUDE.md). Full class spell lists remain future content work.
 
 const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
-const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "misty_step", "fireball"]
+const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball"]
 const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
 ## Shared level-name formatter — "Cantrips" for level 0, "1st"/"2nd"/"3rd"/"Nth" otherwise.
@@ -29,6 +29,7 @@ static func get_spell(id: String) -> Spell:
 		"shocking_grasp": return _shocking_grasp()
 		"magic_missile": return _magic_missile()
 		"shield": return _shield()
+		"mage_armor": return _mage_armor()
 		"misty_step": return _misty_step()
 		"fireball": return _fireball()
 	return null
@@ -109,6 +110,21 @@ static func _shield() -> Spell:
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "shield"
+	s.class_list = ["WIZARD"]
+	return s
+
+static func _mage_armor() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "mage_armor"
+	s.spell_name = "Mage Armor"
+	s.description = "Touch a creature with no armor — its AC becomes 13 + DEX until it dons armor or you finish a long rest."
+	s.icon_path = "res://icons/spells/mage_armor.png"
+	s.school = "Abjuration"
+	s.level = 1
+	s.range_tiles = 1
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.effect_id = "mage_armor"
 	s.class_list = ["WIZARD"]
 	return s
 

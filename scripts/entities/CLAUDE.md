@@ -81,16 +81,22 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 - Enemy attack log lines (`enemy.gd._attack_player()`) never name the specific talent/ability that granted ADV/DISADV — that context lives only in the `ehit` tooltip roll breakdown, not the log line.
 - **Halfling Lucky**: `CombatMath.roll_with_adv_disadv()` runs every individually-rolled d20 through `CombatMath.halfling_reroll(die)` — a natural 1 (Halfling only) is automatically rerolled and the new value MUST be used (single reroll, even if the reroll is also a 1). Baked into the one shared roll function, so it covers all 6 player attack-roll sites (melee/cleave/off-hand/OA/ranged/thrown) for free; `player_thief_tools.gd`'s `attempt_disarm()` calls `halfling_reroll()` directly for the trap-disarm check. `CombatMath.wrap_halfling_luck(text, lucky)` wraps the finished chat-log line in dark green + a ☘ marker; the `lucky1`/`lucky2` fields on `hit_meta`/`check_meta` drive a struck-through "☘ Halfling Luck: ~~1~~ → N" tooltip line in `fmt_hit_tooltip()`/`fmt_save_tooltip()` (`scripts/ui/tooltip_formatters.gd`). Never applies to enemy rolls.
 
-### Bonus damage stacking (Ironwood Bark / Judgement Day, etc.)
-When more than one bonus damage source can trigger on the same attack, compute all of them **before** the single `Stats.take_damage()` / `DungeonFloor.show_damage()` call and add them into the base damage total — one number, one floater, one chat log line. Never call `take_damage()`/`show_damage()` once per source — besides producing a confusing multi-part log line, a source gated on `not enemy.stats.is_dead()` can silently fail to trigger if an earlier source already killed the enemy. See `player.gd._bump_attack()` for the reference implementation (dice + weapon enh + rage bonus + ability mod + every bonus source — Ironwood Bark/Judgement Day — all summed into one `pre_crit` total; Psycho no longer contributes a damage bonus here — see "Barbarian Tier 1 talents" below). Berserker's Frenzy and Scarred Warrior's Limit Break are their own standalone actions (`player_berserker.gd`/`player_scarred_warrior.gd`) rather than per-attack bonuses, so they don't participate in this stack.
+### Damage types / resistances / per-die breakdown (typed damage instances)
+Every main attack path (`player.gd._bump_attack()`/`_resolve_cleave_attack()`/`_resolve_offhand_attack()`/`resolve_opportunity_attack()`, `PlayerRanged.ranged_attack()`, cantrips/Fireball/Magic Missile in `spell_effects.gd`) builds a **typed damage instance** via `CombatMath.build_damage_instance(rolls: Array[int], sides: int, flat_mods: Array, crit: bool, damage_type: String) -> Dictionary` instead of a bare int. `rolls` is every individual die result (from `Rng.roll_dice(count, sides)` — weapon dice are stored as a flat range on `Item`, `CombatMath.dice_notation(dmin, dmax) -> Vector2i` recovers `(count, sides)` since every weapon pool entry constructs that range as an exact `NdM`), `flat_mods` is the same `{name, amount, color}` shape `encode_bonus_sources()` always took (weapon enhancement, ability mod, Rage bonus, Frenzy, Ironwood Bark — same-type sources that fold into ONE instance). The instance sums dice + flat mods, then doubles on crit (**multiplication always happens last** — never double a partial subtotal and tack bonuses on after).
 
-**Multiplication always happens last**: a critical hit doubles the FULL summed total (dice, weapon enhancement, rage bonus, ability modifier, and every bonus-damage source), never a partial subtotal computed before some sources are added in — `pre_crit *= 2` in `_bump_attack()` runs only after `bonus_dmg` (Ironwood Bark/Judgement Day) has already been folded into `pre_crit`. A source computed and added in AFTER the `*= 2` check would silently skip doubling on a crit — this was an actual bug (the removed Psycho R2 damage bonus wasn't being doubled) fixed by moving all bonus-source computation before the crit multiply. The chat tooltip (`fmt_dmg_tooltip()`) mirrors this: every additive line (dice, mods, bonus sources) is listed first, then the `× 2 (Critical Hit!)` line, then the final total — multiplication is always the visually last step, matching the actual calculation order.
+**One instance per damage type, not one instance per attack**: a bonus source with its OWN distinct damage type (Zealot's Judgement Day — Radiant, on top of the weapon's own type) becomes a SECOND, independent `build_damage_instance()` call rather than folding into the first. Each instance is applied via `Enemy.take_typed_damage(amount, damage_type) -> Dictionary` (below) and gets its own `DungeonFloor.show_damage()` floater (`stack_index` param offsets the second floater's spawn x so they don't overlap) and its own `[url=dmg:...]` segment in the SAME chat-log line/`game_log()` call (`"... for [url=]N[/url] Slashing and [url=]M[/url] Radiant dmg."` — never a second `game_log()` call). The original damage-stacking rule still holds **per instance**: never call `take_typed_damage()`/`show_damage()` twice for what should be one instance, and always resolve every bonus-trigger flag (Judgement Day pending, etc.) to a plain number BEFORE either instance's `take_typed_damage()` call, so a source gated on `not enemy.stats.is_dead()` can't silently skip because an earlier instance already killed the enemy.
 
-**Lethal-hit log lines fold the kill in**: `Player._finish_kill(enemy)` no longer logs its own "X dies." message — every player attack call site (all 6 attack-roll sites plus Frenzy/Limit Break/thrown/ranged) captures `is_dead()`/`is_lethal` right after damage is applied, appends `CombatMath.death_suffix(is_lethal)` (`scripts/entities/combat_math.gd`, renders `" and died."`) to its own hit/damage log string, and only then checks that same lethality bool before calling `_finish_kill()`. Adding a new attack path that can kill an enemy must follow this pattern — never log a bare "dies" line from inside a kill-handling function.
+**Enemy resist/vuln**: `Enemy.resist_types`/`vuln_types: Array[String]` (populated from optional `"resist"`/`"vuln"` pool keys in `DungeonFloorData.ENEMY_POOL`, e.g. Skeleton resists Piercing/is vulnerable to Bludgeoning, Imp/Chort resist Fire). `Enemy.take_typed_damage(amount, damage_type) -> {actual, mul}` applies ×0.5 (resist) / ×2.0 (vuln, both can stack) BEFORE `Stats.take_damage()`'s flat floor-at-1 clamp — this is the single chokepoint every attack site calls instead of `enemy.stats.take_damage()` directly. This is separate from the player's own per-type DR in `GameState.take_damage_raw()` (Rage/Bear-form) — that system is unchanged.
+
+**Per-die tooltip breakdown**: `CombatMath.encode_damage_instance(inst)` packs the instance into a `dmg:` meta string with a `rolls=` field (pipe-joined individual die results) and `sides=`/`dtype=`/`rmul=` (the resist/vuln multiplier actually applied) alongside the existing `bonus=`/`crit=`/`final=` fields. `TooltipFormatters.fmt_dmg_tooltip()` renders a `"NdS: r1 + r2 + ... = total"` line when `rolls=` is present (falls back to the old single `"1d%d"` line for the handful of call sites not migrated — Frenzy, thrown weapons, enemy-attacks-player — so nothing broke), a `"÷ 2 (Resistance)"`/`"× 2 (Vulnerability)"` line when `rmul != 1.0`, and appends the damage type to the final line.
+
+**Multiplication always happens last**: a critical hit doubles the FULL summed total (dice + flat mods) of EACH instance independently, never a partial subtotal computed before some sources are added in.
+
+**Lethal-hit log lines fold the kill in**: `Player._finish_kill(enemy)` no longer logs its own "X dies." message — every player attack call site (all 6 attack-roll sites plus Frenzy/Limit Break/thrown/ranged) captures `is_dead()`/`is_lethal` right after damage is applied (after BOTH instances if there are two), appends `CombatMath.death_suffix(is_lethal)` (`scripts/entities/combat_math.gd`, renders `" and died."`) to its own hit/damage log string, and only then checks that same lethality bool before calling `_finish_kill()`. Adding a new attack path that can kill an enemy must follow this pattern — never log a bare "dies" line from inside a kill-handling function.
 
 **Rage's damage tooltip tag**: `enemy.gd._attack_player()`'s `edmg:` meta carries a `rage=%d` field (set whenever `GameState.is_raging` was true for that hit — enemies always deal `"Bludgeoning"`, which is physical, so Rage's 50% DR in `take_damage_raw()` was live). `TooltipFormatters.fmt_edmg_tooltip()` renders a `"÷ 2  (Rage)"` line (alongside the existing crit `"× 2"` line) whenever that flag is set, so the player can see Rage's DR reflected in the hover breakdown, not just as a smaller final number.
 
-**Generic bonus-source tooltip encoding**: each source is still named in the hover tooltip, but not via a dedicated per-source `dmg_meta` field. `CombatMath.encode_bonus_sources(sources: Array)` (`scripts/entities/combat_math.gd`) takes an `Array[Dictionary]` of `{name, amount, color}` (zero-`amount` entries are dropped automatically) and packs it into one `bonus=` field on the `dmg_meta` string (`"|"`-joined within an entry, `";"`-joined between entries — `dmg_meta` itself splits on `,`/`=`, so neither character can appear in a name). `TooltipFormatters.fmt_dmg_tooltip()` calls `CombatMath.decode_bonus_sources()` and renders one tooltip line per entry generically. **Adding a new bonus damage source never requires touching `tooltip_formatters.gd`** — just append `{"name": ..., "amount": ..., "color": ...}` to the `sources` array at the call site (see `_bump_attack()`, `_resolve_cleave_attack()`, `_resolve_offhand_attack()`, `resolve_opportunity_attack()` in `player.gd`, and `PlayerRanged.ranged_attack()`). The visible chat log line itself still carries no per-source text or amounts (no `(+N Frenzy)`, no God-Mode `[HP/HP]` suffix) — only the combined number + damage type.
+**Generic bonus-source tooltip encoding**: `CombatMath.encode_bonus_sources(sources: Array)` (`scripts/entities/combat_math.gd`) takes an `Array[Dictionary]` of `{name, amount, color}` (zero-`amount` entries are dropped automatically) and packs it into one `bonus=` field (`"|"`-joined within an entry, `";"`-joined between entries — `dmg_meta` itself splits on `,`/`=`, so neither character can appear in a name); this is exactly the `flat_mods` array passed into `build_damage_instance()`. `TooltipFormatters.fmt_dmg_tooltip()` calls `CombatMath.decode_bonus_sources()` and renders one tooltip line per entry generically. **Adding a new same-type bonus damage source never requires touching `tooltip_formatters.gd`** — just append `{"name": ..., "amount": ..., "color": ...}` to the `flat_mods` array at the call site. The visible chat log line itself still carries no per-source text or amounts (no `(+N Frenzy)`, no God-Mode `[HP/HP]` suffix) — only the combined number(s) + damage type(s). **Berserker's Frenzy and Scarred Warrior's Limit Break are their own standalone actions** (`player_berserker.gd`/`player_scarred_warrior.gd`, still on the legacy single-total `dmg:` format) rather than per-attack bonuses, so they don't participate in this stack — same for thrown weapons and enemy-attacks-player, all documented follow-ups for a future pass.
 
 ---
 
@@ -359,12 +365,28 @@ Implements `docs/architecture/leveled-spells-and-slots-plan.md` on top of the ca
 above. **Simplifications vs. that doc** (time-boxed for the first implementation pass, flagged
 here rather than silently diverging): no upcast slot-level picker UI — casting always spends the
 **lowest** available slot level (`StandardSlotPool.lowest_available_level()`); AoE is
-**sphere-only**, no cone (Burning Hands was cut from the doc's 5-spell example list, leaving 4:
-Magic Missile, Shield, Misty Step, Fireball); no AoE tile-preview overlay (target is chosen by a
-single click, same as a cantrip); Shield ships as a same-turn manual self-cast, not a reaction
-(the reaction broker is out of scope). Drag-and-drop from the Spellbook targets the single
+**sphere-only**, no cone (Burning Hands was cut from the doc's 5-spell example list, leaving 5:
+Magic Missile, Shield, Mage Armor, Misty Step, Fireball); Shield ships as a same-turn manual self-cast, not a
+reaction (the reaction broker is out of scope). Drag-and-drop from the Spellbook targets the single
 existing 9-slot ability bar (multi-page auto-paging from the framework doc isn't implemented
 either) — see `scripts/ui/CLAUDE.md`'s "Spellbook overlay" section.
+
+**AoE tile-preview overlay**: while a `TILE`-target, `shape == "sphere"` spell (currently only
+Fireball) is armed via `PlayerSpellcasting.begin_cast()` (the ability-bar arm-then-click flow
+only — the Ctrl+click Special-slot one-motion `cast_direct()` never arms long enough to preview),
+`player.gd._update_spell_aoe_preview()` runs every `_process()` frame (sibling call to
+`_update_hover_indicator()`, same input-enabled gate, same mouse→tile conversion) and calls
+`DungeonFloor.show_aoe_preview(hovered_tile, spell.shape_size)` /
+`hide_aoe_preview()`. `PlayerSpellcasting.get_armed_spell()` is the read-only accessor that lets
+`player.gd` see the armed spell's shape without touching the private `_armed_spell_id` field.
+`dungeon_floor.gd`'s implementation is a small pooled-`Sprite2D` overlay (1×1 white texture tinted
+`Color(0.65, 0.25, 0.85, 0.35)` via `modulate`, `z_index = 2` — same layer as the fog sprite,
+Node2D-world convention rather than a Control), rebuilt only when
+the hovered tile/radius actually changes (`_aoe_preview_last_key` cache). **Deliberately not
+LOS-filtered** — it shows the full raw Euclidean circle around the hovered tile (matching
+`_resolve_sphere_aoe()`'s own distance check exactly, just without that function's *additional*
+per-target LOS gate), since a Fireball's blast is meant to fill its radius around a corner from the
+impact point rather than stop at the first wall it can't directly see through.
 
 - **`StandardSlotPool`** (`scripts/items/spell_slot_pool.gd`) — the real D&D 2024 full-caster
   1–20 slot table (long-rest-only recharge, `on_short_rest()` is a no-op). Built and owned by
@@ -393,7 +415,17 @@ either) — see `scripts/ui/CLAUDE.md`'s "Spellbook overlay" section.
   line instead of blocking (see the plan doc §7's content-count caveat).
 - **Scrolls**: `Item.taught_spell_id` (empty = not a spell scroll). `GameState.use_item()`'s
   SCROLL branch calls `learn_spell()` and consumes the scroll if the spell isn't already known.
-  No scroll items exist in any loot pool yet — mechanism only, content is future work.
+  No scroll items use this teaching mechanism in any loot pool yet.
+- **Scroll of &lt;Spell&gt; (single-use cast scrolls, any class)**: `Item.scroll_spell_id` — a
+  separate SCROLL mechanism from the teaching one above; reading it casts the baked-in spell once
+  (base level, no slot spent) instead of teaching it. Castable by every class, not just Wizard —
+  non-casters (no `Stats.caster`) use `proficiency_bonus + INT modifier` for the attack
+  bonus/save DC via `SpellEffects._attack_bonus()`/`_save_dc()`/`_cast_ability_mod()`, which every
+  spell-resolution function in `spell_effects.gd` now calls instead of reaching into
+  `stats.caster` directly. Activation: `GameState.use_item()` emits `player_scroll_primed(item)` →
+  `PlayerSpellcasting.on_scroll_primed()` (reuses the normal arm-then-LMB-click targeting flow,
+  skips the spell-slot check/consumption, consumes the scroll itself on cast). Full walkthrough:
+  `scripts/items/CLAUDE.md`'s "Scroll of &lt;Spell&gt;" section.
 - **Spellbook overlay (`R` key)**: `scripts/ui/spellbook_overlay.gd` — see `scripts/ui/CLAUDE.md`.
   `GameState.set_spell_prepared(id, bool)` (click toggle) and `place_spell_in_slot(id, index)`
   (drag-and-drop onto a specific ability-bar slot) both add/remove the "spell:"-prefixed `Ability`
@@ -412,6 +444,16 @@ either) — see `scripts/ui/CLAUDE.md`'s "Spellbook overlay" section.
   accepted limitation Ray of Frost's cantrip already lives with).
 - **Shield**: `Stats.shield_ac_bonus` (+5, folded into `recalc_ac()`), cleared at the start of the
   caster's next real turn in `player.gd._on_turn_started()`'s `if not came_from_revert:` block.
+- **Mage Armor**: SELF-target, touch range, AUTO_HIT — `SpellEffects.cast_leveled_self()`'s
+  `"mage_armor"` branch. Sets `Stats.mage_armor_active`, which `recalc_ac()` reads: while true and
+  no armor is equipped, AC becomes `13 + DEX` — but only as a fallback below Barbarian/Monk's own
+  unarmored-defense formulas (those always win if the character has one). If the caster is
+  currently wearing Armor, casting fizzles (slot is still spent, RAW) with a gray log line instead
+  of setting the flag. Ends two ways: `GameState.equip()` clears the flag the instant something is
+  equipped into the `"armor"` slot (robes/clothes aren't a distinct item type in this codebase, so
+  any Armor-type item ends it — no shield item type exists either); `GameState.long_rest()` also
+  clears it unconditionally. Both call `recalculate_stats()` afterward. Persisted in
+  `Stats.to_dict()`/`from_dict()`'s `"mage_armor_active"` key.
 - **Special quick-cast slot**: a single spell (cantrip or leveled), assigned from inside the
   Spellbook overlay (`GameState.special_slot_spell_id`/`set_special_slot()`/`clear_special_slot()`,
   see `scripts/autoloads/CLAUDE.md`), displayed read-only next to Ranged in the Inventory overlay

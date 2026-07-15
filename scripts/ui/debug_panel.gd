@@ -41,6 +41,14 @@ const ALL_ITEMS: Array = [
 	{"name": "Spear",           "type": 0, "src": "weapons", "icon": "weapon_spear.png",                       "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "versatile": true, "die_min": 1, "die_max": 6, "vmin": 1, "vmax": 8, "dmg_type": "Piercing", "mastery": "Sap", "category": "Simple", "thrown": true, "range": 3, "uses_max": 5},
 	{"name": "Handaxe",         "type": 0, "src": "weapons", "icon": "weapon_throwing_axe.png",               "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "light": true, "die_min": 1, "die_max": 6, "dmg_type": "Slashing", "mastery": "Vex", "category": "Simple", "thrown": true, "range": 3, "uses_max": 5},
 	{"name": "Dagger",          "type": 0, "src": "weapons", "icon": "weapon_knife.png",                      "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "finesse": true, "light": true, "die_min": 1, "die_max": 4, "dmg_type": "Piercing", "mastery": "Nick", "category": "Simple", "thrown": true, "range": 3, "uses_max": 5},
+	{"name": "Scroll of Fire Bolt",     "type": 3, "src": "spells", "icon": "fire_bolt.png",      "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Fire Bolt once, then it crumbles to dust.", "scroll_spell": "fire_bolt", "gold": 25},
+	{"name": "Scroll of Ray of Frost",  "type": 3, "src": "spells", "icon": "ray_of_frost.png",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Ray of Frost once, then it crumbles to dust.", "scroll_spell": "ray_of_frost", "gold": 25},
+	{"name": "Scroll of Shocking Grasp","type": 3, "src": "spells", "icon": "shocking_grasp.png", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Shocking Grasp once, then it crumbles to dust.", "scroll_spell": "shocking_grasp", "gold": 25},
+	{"name": "Scroll of Magic Missile", "type": 3, "src": "spells", "icon": "magic_missile.png",  "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Magic Missile once, then it crumbles to dust.", "scroll_spell": "magic_missile", "gold": 60},
+	{"name": "Scroll of Shield",        "type": 3, "src": "spells", "icon": "shield.png",         "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Shield once, then it crumbles to dust.", "scroll_spell": "shield", "gold": 60},
+	{"name": "Scroll of Mage Armor",    "type": 3, "src": "spells", "icon": "mage_armor.png",     "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Mage Armor once, then it crumbles to dust.", "scroll_spell": "mage_armor", "gold": 60},
+	{"name": "Scroll of Misty Step",    "type": 3, "src": "spells", "icon": "misty_step.png",     "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Misty Step once, then it crumbles to dust.", "scroll_spell": "misty_step", "gold": 100},
+	{"name": "Scroll of Fireball",      "type": 3, "src": "spells", "icon": "fireball.png",       "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Fireball once, then it crumbles to dust.", "scroll_spell": "fireball", "gold": 180},
 ]
 
 var _main_panel:    Panel
@@ -703,10 +711,13 @@ func _on_give_item(d: Dictionary) -> void:
 	item.weapon_mastery     = d.get("mastery", "")
 	item.weapon_category    = d.get("category", "")
 	item.ammo_item_name     = d.get("ammo", "")
+	item.taught_spell_id    = d.get("taught_spell", "")
+	item.scroll_spell_id    = d.get("scroll_spell", "")
 	item.description = d["desc"]
 	match d["src"]:
 		"weapons": item.icon_path = WEAPONS_PATH + d["icon"]
 		"items":   item.icon_path = ITEMS_PATH   + d["icon"]
+		"spells":  item.icon_path = "res://icons/spells/" + d["icon"]
 	item.quantity = d.get("qty", 1)
 	if not GameState.add_item(item):
 		GameState.game_log("[color=red][DEBUG] Inventory full — cannot give %s[/color]" % d["name"])

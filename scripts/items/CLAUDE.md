@@ -57,6 +57,7 @@ TOOL   = 7
 | `uses_max`/`uses_remaining` | int | Thrown weapons only: durability. `uses_remaining` starts at `uses_max` and ticks down per throw (see "Thrown weapons"); reaching 0 breaks the weapon |
 | `stack_uses` | Array[int] | Thrown weapons only: per-unit durability when stacked (`quantity > 1`) — see "Mixed-durability stacking" below |
 | `taught_spell_id` | String | SCROLL items only: spell id taught into the reader's spellbook on use. `""` = not a spell scroll. See "Scroll-taught spells" below |
+| `scroll_spell_id` | String | SCROLL items only: spell id for a single one-shot cast baked into this scroll (distinct from `taught_spell_id` — doesn't teach anything). `""` = not a cast-scroll. Castable by any class. See "Scroll of &lt;Spell&gt;" below |
 
 ## Rations / long rest
 FOOD items (`Ration`, `Mystery Meat`, `Rotten Meat`, `Cooked Meat`) are no longer directly edible — `GameState.use_item()`'s `FOOD` branch just logs a hint and consumes nothing. Their only purpose is `Item.food_value`, sacrificed toward `GameState.LONG_REST_FOOD_COST` (100) when the player completes a long rest (`scripts/ui/short_rest_panel.gd`'s Long Rest tab, see `scripts/autoloads/CLAUDE.md`'s "Rest system"). Current values: Ration 50, Cooked Meat 75, Mystery Meat 25, Rotten Meat 10 (tune here if rebalancing). `GameState.total_food_value()` sums `food_value × quantity` across quickbar+bag; `GameState._consume_food_value(amount)` spends the cheapest-value items first and is skipped entirely while `invincible` (God Mode long rests cost nothing). Rotten Meat can still be thrown into a revealed Fire Trap to cook into Cooked Meat (`DungeonFloor.cook_rotten_meat()`) — unrelated to the eating mechanic, which no longer exists for any food item.
@@ -172,7 +173,7 @@ cast-resolution walkthroughs.
   future spell needs them.
 - **`SpellDb`** (static factory, `RefCounted`) — `get_spell(id) -> Spell` builds all spells in
   code, same "no `.tres` files" convention as `Talent`/`SpriteFrames`. `CANTRIP_IDS` (3 cantrips)
-  + `LEVELED_SPELL_IDS` (4: `magic_missile`/`shield`/`misty_step`/`fireball`) +
+  + `LEVELED_SPELL_IDS` (5: `magic_missile`/`shield`/`mage_armor`/`misty_step`/`fireball`) +
   `CLASS_SPELL_LISTS: Dictionary` (`"WIZARD"` → `LEVELED_SPELL_IDS`, the level-up learn picker's
   candidate pool — cantrips are deliberately excluded from this list since they're a separate,
   always-known system).
@@ -204,6 +205,40 @@ cast-resolution walkthroughs.
 `Item.taught_spell_id: String` (`""` = not a spell scroll — every pre-existing SCROLL item stays
 a no-op). `GameState.use_item()`'s `SCROLL` branch calls `learn_spell(taught_spell_id)` and
 consumes the scroll, unless the reader already knows that spell (logs "You already know this
-spell." instead). No scroll items exist in any loot pool yet (`ITEM_POOL`/`debug_panel.ALL_ITEMS`)
-— this is the mechanism only; scroll content is future work per
-`docs/architecture/leveled-spells-and-slots-plan.md` §4.2/§8.
+spell." instead). No scroll items use this mechanism in any loot pool yet — see "Scroll of
+&lt;Spell&gt; (single-use cast scrolls)" below for the SCROLL items that DO exist today.
+
+## Scroll of &lt;Spell&gt; (single-use cast scrolls)
+
+`Item.scroll_spell_id: String` (`""` = not this kind of scroll) — a SCROLL item with one spell
+cast baked in, distinct from (and independent of) `taught_spell_id` above: reading it does NOT
+teach the spell, it just casts it once at the spell's base level (no upcasting, no slot spent)
+then crumbles. **Castable by any class**, not just Wizard — the point of this item type. 8 exist
+in `ITEM_POOL`/`debug_panel.ALL_ITEMS` today, one per `SpellDb` spell (`Scroll of Fire Bolt`,
+`Ray of Frost`, `Shocking Grasp`, `Magic Missile`, `Shield`, `Mage Armor`, `Misty Step`,
+`Fireball`); icon reuses the spell's own `res://icons/spells/*.png` (new `"src": "spells"` pool
+key, resolved in both `DungeonFloor._build_floor_item()` and `debug_panel._on_give_item()` — no
+dedicated scroll sprite exists yet).
+
+**Casting math without a caster**: `SpellEffects._attack_bonus()`/`_save_dc()`/`_cast_ability_mod()`
+(`scripts/entities/spell_effects.gd`) are caster-optional — if `Stats.caster` exists (Wizard) they
+defer to `SpellcasterState`'s own ability as before; otherwise they fall back to
+`proficiency_bonus + INT modifier` (root `CLAUDE.md`'s "every non-caster uses INT" rule). Every
+formerly-`caster.spell_attack_bonus(stats)`/`caster.spell_save_dc(stats)` call site in
+`spell_effects.gd` now goes through these three helpers instead, so casting math Just Works for
+any class reading a scroll — no per-call from_scroll branching needed for the math itself.
+
+**Activation flow**: `GameState.use_item()`'s `SCROLL` branch emits `player_scroll_primed(item)`
+when `scroll_spell_id != ""` (checked before the `taught_spell_id` branch — the two are mutually
+exclusive per item). `player.gd` connects it to `PlayerSpellcasting.on_scroll_primed(item)`, which
+reuses the exact same `spell_targeting_active`/`_armed_spell_id` arm-then-LMB-resolve flow as a
+normal ability-bar spell (`begin_cast()`/`try_cast_at()`) — Esc-cancel, AoE preview (Fireball), and
+range/LOS checks all come along for free. Two internal-only fields (`_casting_from_scroll`,
+`_armed_scroll_item`) tell `try_cast_at()`/`_cast_self()` to skip the spell-slot-availability
+check/consumption (a scroll never touches `SpellcasterState.slot_pool`, even for a Wizard reading
+their own known spell) and to consume the scroll item itself instead, via `_consume_scroll()`
+(skipped while `GameState.invincible`) — fired the instant the cast actually resolves (after the
+range/LOS check passes), so a scroll is spent even on a miss, same as a real D&D scroll.
+`SpellEffects.cast_spell()`/`cast_leveled_self()`/`cast_leveled_at_tile()`/`cast_leveled_at_enemy()`
+all take an added `from_scroll: bool = false` param threaded down to `_consume_slot()`, which
+early-returns when true instead of touching `player.stats.caster.slot_pool`.

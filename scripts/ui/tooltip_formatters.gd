@@ -98,34 +98,66 @@ static func fmt_sphit_tooltip(p: Dictionary) -> String:
 	return "\n".join(lines)
 
 static func fmt_dmg_tooltip(p: Dictionary) -> String:
-	var roll: int  = int(p.get("roll", "0"))
-	var dmax: int  = int(p.get("dmax", "0"))
-	var wpn: int   = int(p.get("wpn", "0"))
-	var str_mod: int = int(p.get("str", "0"))
-	var dex_mod: int = int(p.get("dex", "0"))
 	var crit: bool = p.get("crit", "0") == "1"
 	var final_dmg: int = int(p.get("final", "0"))
 	var lines: PackedStringArray = []
-	if dmax > 0:
-		lines.append("1d%d = [color=yellow]%d[/color]" % [dmax, roll])
+	# New per-die instance format (CombatMath.encode_damage_instance()) always carries a "sides"
+	# key (even when 0, e.g. a flat bonus-only instance like Judgement Day); legacy single-roll
+	# call sites never do, since they use "dmax" instead.
+	if p.has("sides"):
+		var rolls_str: String = str(p.get("rolls", ""))
+		if not rolls_str.is_empty():
+			# "rolls" is a "|"-joined list of every individual die result, so a multi-die source
+			# (Greatsword 2d6, Fireball 8d6) shows each roll instead of one opaque total.
+			var rolls: PackedStringArray = rolls_str.split("|")
+			var sides: int = int(p.get("sides", "0"))
+			var dice_sum: int = 0
+			for r: String in rolls:
+				dice_sum += int(r)
+			var dice_label: String = "%dd%d" % [rolls.size(), sides] if sides > 0 else "damage"
+			lines.append("%s: %s = [color=yellow]%d[/color]" % [dice_label, " + ".join(rolls), dice_sum])
+		# else: no dice component at all (e.g. Judgement Day's flat-only instance) — the bonus
+		# lines below already carry the full breakdown, skip a misleading "damage = 0" line.
 	else:
-		lines.append("damage = [color=yellow]%d[/color]" % roll)
-	if wpn != 0:
-		lines.append("[color=lightblue]%+d[/color]  (weapon bonus)" % wpn)
-	if str_mod != 0:
-		lines.append("[color=lightblue]%+d[/color]  (STR mod)" % str_mod)
-	if dex_mod != 0:
-		lines.append("[color=lightblue]%+d[/color]  (DEX mod)" % dex_mod)
-	# Generic bonus-damage sources (Rage, Frenzy, Ironwood Bark, Divine Fury, ...) — see
-	# CombatMath.encode_bonus_sources()/decode_bonus_sources() in scripts/entities/combat_math.gd.
-	# A future damage source only needs to be added to the encode call site, never here.
+		# Legacy single-roll format (call sites not yet migrated to per-die instances).
+		var roll: int  = int(p.get("roll", "0"))
+		var dmax: int  = int(p.get("dmax", "0"))
+		if dmax > 0:
+			lines.append("1d%d = [color=yellow]%d[/color]" % [dmax, roll])
+		else:
+			lines.append("damage = [color=yellow]%d[/color]" % roll)
+		var wpn: int   = int(p.get("wpn", "0"))
+		var str_mod: int = int(p.get("str", "0"))
+		var dex_mod: int = int(p.get("dex", "0"))
+		if wpn != 0:
+			lines.append("[color=lightblue]%+d[/color]  (weapon bonus)" % wpn)
+		if str_mod != 0:
+			lines.append("[color=lightblue]%+d[/color]  (STR mod)" % str_mod)
+		if dex_mod != 0:
+			lines.append("[color=lightblue]%+d[/color]  (DEX mod)" % dex_mod)
+	# Generic bonus-damage sources (Rage, Frenzy, Ironwood Bark, Divine Fury, weapon enh, ability
+	# mod, ...) — see CombatMath.encode_bonus_sources()/decode_bonus_sources() in
+	# scripts/entities/combat_math.gd. A future damage source only needs to be added to the
+	# encode call site, never here.
 	for src: Dictionary in CombatMath.decode_bonus_sources(p.get("bonus", "")):
 		lines.append("[color=%s]+%d[/color]  (%s)" % [src["color"], src["amount"], src["name"]])
 	lines.append("─────────────────")
 	# Multiplication always happens LAST — every source above is summed first, then doubled.
 	if crit:
 		lines.append("[color=gold]× 2[/color]  (Critical Hit!)")
-	lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
+	var rmul: float = float(p.get("rmul", "1.0"))
+	if rmul != 1.0:
+		if rmul == 0.5:
+			lines.append("[color=cyan]÷ 2[/color]  (Resistance)")
+		elif rmul == 2.0:
+			lines.append("[color=orange]× 2[/color]  (Vulnerability)")
+		else:
+			lines.append("[color=orange]× %.2f[/color]  (Modifier)" % rmul)
+	var dtype: String = str(p.get("dtype", ""))
+	if dtype.is_empty():
+		lines.append("= [color=yellow]%d[/color] dmg" % final_dmg)
+	else:
+		lines.append("= [color=yellow]%d[/color] dmg  [color=gray]%s[/color]" % [final_dmg, dtype])
 	return "\n".join(lines)
 
 static func fmt_grz_tooltip(p: Dictionary) -> String:

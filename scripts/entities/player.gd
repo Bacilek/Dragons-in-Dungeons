@@ -118,6 +118,7 @@ func _ready() -> void:
 	GameState.player_action_requested.connect(_on_action_requested)
 	GameState.player_throw_primed.connect(_throw_tool.on_throw_primed)
 	GameState.player_tool_primed.connect(_throw_tool.on_tool_primed)
+	GameState.player_scroll_primed.connect(_spellcasting.on_scroll_primed)
 	GameState.player_died.connect(_on_player_died)
 	GameState.class_chosen.connect(_on_class_chosen)
 	GameState.camera_recenter_requested.connect(_reset_camera_offset)
@@ -321,6 +322,7 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 # Cardinal + diagonal movement via per-frame key sampling so two held cardinals = diagonal
 func _process(_delta: float) -> void:
 	_update_hover_indicator()
+	_update_spell_aoe_preview()
 	if GameState.is_game_over or GameState.inventory_open or GameState.short_rest_open \
 			or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
 			or not GameState.class_selected:
@@ -405,6 +407,25 @@ func _update_hover_indicator() -> void:
 		_hover_indicator.texture = _hover_last_texture
 	_hover_indicator.global_position = enemy.global_position + Vector2(6, -14)
 	_hover_indicator.visible = true
+
+# Dynamic purple tile-tint preview for sphere-shaped AoE spells (Fireball) while armed for
+# targeting — see dungeon_floor.gd's "AoE targeting preview" section. Only ever active during the
+# ability-bar arm-then-click flow (PlayerSpellcasting.begin_cast()); the Ctrl+click Special-slot
+# one-motion cast never arms spell_targeting_active long enough to show a preview.
+func _update_spell_aoe_preview() -> void:
+	if _dungeon_floor == null:
+		return
+	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing \
+			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over:
+		_dungeon_floor.hide_aoe_preview()
+		return
+	var spell: Spell = _spellcasting.get_armed_spell()
+	if spell == null or spell.target_kind != Spell.TargetKind.TILE or spell.shape != "sphere":
+		_dungeon_floor.hide_aoe_preview()
+		return
+	var world_mouse: Vector2 = get_global_mouse_position()
+	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
+	_dungeon_floor.show_aoe_preview(tile, spell.shape_size)
 
 func _reset_camera_offset() -> void:
 	if _camera != null:
@@ -1368,17 +1389,17 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if weapon_item_ref != null and weapon_item_ref.weapon_mastery == "Vex" and stats.knows_mastery("Vex"):
 		_vex_adv_target = enemy
 
-	var die_roll: int = Rng.range_i(w_dmin, w_dmax)
+	var dice_ct: Vector2i = CombatMath.dice_notation(w_dmin, w_dmax)
+	var rolls: Array[int] = Rng.roll_dice(dice_ct.x, dice_ct.y)
 	var rage_bonus: int = stats.rage_bonus_damage if (_is_raging and is_str_weapon) else 0
 	# Monk unarmed uses DEX for damage; Finesse weapons use max(STR, DEX); all others use STR.
 	var dmg_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
 
 	# All bonus damage sources (Ironwood Bark, Judgement Day) are computed BEFORE
-	# take_damage/show_damage and folded into one number — see "damage stacking" rule in
-	# scripts/entities/CLAUDE.md. Never call take_damage/show_damage separately per source.
-	# Each source keeps its own named amount in dmg_meta (not just a combined "bonus" total)
-	# so the hover tooltip can name exactly which source(s) fired — the visible log line only
-	# ever shows the single combined damage number, never a per-source text breakdown.
+	# take_damage/show_damage — see "Damage types / resistances" rule in
+	# scripts/entities/CLAUDE.md. Same-type sources (Rage, Frenzy, Ironwood Bark) fold into the
+	# main instance as flat modifiers; Judgement Day carries its OWN damage type (Radiant), so it
+	# becomes a second, independent damage instance with its own floater/tooltip/resist check.
 	# Frenzy (Berserker) is its own action (player_berserker.gd) — it no longer piggybacks a
 	# bonus onto ordinary attacks.
 	var frenzy_bonus: int = 0
@@ -1396,41 +1417,58 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		var jd_rank: int = GameState.get_talent_rank("judgement_day")
 		judgement_bonus = jd_rank * stats.rage_bonus_damage * Rng.roll(6)
 
-	var bonus_dmg: int = frenzy_bonus + ironwood_bonus + judgement_bonus
-	# Multiplication always happens LAST: sum every source (dice, weapon enh, rage, ability mod,
-	# and every bonus source above) into one total, THEN double it on a crit — never double a
-	# partial subtotal and tack bonuses on afterward, or a crit silently skips doubling whichever
-	# source was computed after the multiply.
-	var pre_crit: int = die_roll + w_enh + rage_bonus + dmg_mod + bonus_dmg
-	if is_crit:
-		pre_crit *= 2
-		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
-		GameState.screen_shake.emit(5.0)
-	var actual: int = enemy.stats.take_damage(pre_crit)
-	enemy.update_hp_bar()
-	if _dungeon_floor != null:
-		_dungeon_floor.show_damage(enemy.position, actual, false)
-	var is_lethal: bool = enemy.stats.is_dead()
-
-	var bonus_sources: String = CombatMath.encode_bonus_sources([
+	var dmg_type: String = weapon_item_ref.damage_type if weapon_item_ref != null and not weapon_item_ref.damage_type.is_empty() else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
+	var raw_mods: Array = [
+		{"name": "Weapon enhancement", "amount": w_enh, "color": "lightblue"},
+		{"name": "%s mod" % ("DEX" if mod_key == "dex" else "STR"), "amount": dmg_mod, "color": "lightblue"},
 		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
 		{"name": "Frenzy", "amount": frenzy_bonus, "color": "red"},
 		{"name": "Ironwood Bark", "amount": ironwood_bonus, "color": "cyan"},
-		{"name": "%s — Judgement Day" % _zealot.judgement_day_damage_type(), "amount": judgement_bonus,
-			"color": "gold"},
-	])
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,bonus=%s,crit=%d,final=%d" % [
-		die_roll, w_dmin, w_dmax, w_enh, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
-	var verb: String = "strike" if is_monk_unarmed else ("punch" if is_unarmed else "strike")
-	var weapon_item: Item = GameState.equipped_weapon
-	var dmg_type: String = weapon_item.damage_type if weapon_item != null and not weapon_item.damage_type.is_empty() else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
+	]
+	var main_flat_mods: Array = raw_mods.filter(func(m: Dictionary) -> bool: return int(m.get("amount", 0)) != 0)
+	# Multiplication always happens LAST: build_damage_instance() sums dice + flat mods THEN
+	# doubles on a crit — never double a partial subtotal and tack bonuses on afterward.
+	var main_inst: Dictionary = CombatMath.build_damage_instance(rolls, dice_ct.y, main_flat_mods, is_crit, dmg_type)
+	if is_crit:
+		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
+		GameState.screen_shake.emit(5.0)
+	var main_result: Dictionary = enemy.take_typed_damage(main_inst["subtotal"], dmg_type)
+	main_inst["final"] = main_result["actual"]
+	main_inst["resist_mul"] = main_result["mul"]
+	var actual: int = main_result["actual"]
+	enemy.update_hp_bar()
+	if _dungeon_floor != null:
+		_dungeon_floor.show_damage(enemy.position, actual, false, CombatMath.damage_type_color(dmg_type), 0)
+
+	var jd_actual: int = 0
+	var jd_type: String = ""
+	var jd_inst: Dictionary = {}
+	if judgement_bonus > 0:
+		jd_type = _zealot.judgement_day_damage_type()
+		jd_inst = CombatMath.build_damage_instance([], 0, [{"name": "Judgement Day", "amount": judgement_bonus, "color": "gold"}], is_crit, jd_type)
+		var jd_result: Dictionary = enemy.take_typed_damage(jd_inst["subtotal"], jd_type)
+		jd_inst["final"] = jd_result["actual"]
+		jd_inst["resist_mul"] = jd_result["mul"]
+		jd_actual = jd_result["actual"]
+		enemy.update_hp_bar()
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(enemy.position, jd_actual, false, CombatMath.damage_type_color(jd_type), 1)
+
+	var is_lethal: bool = enemy.stats.is_dead()
+
+	var dmg_meta: String = CombatMath.encode_damage_instance(main_inst)
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	var death_tag: String = CombatMath.death_suffix(is_lethal)
+	var dmg_segment: String = "[url=%s][color=yellow]%d[/color][/url]%s" % [dmg_meta, actual, type_tag]
+	if jd_actual > 0:
+		var jd_meta: String = CombatMath.encode_damage_instance(jd_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [jd_meta, jd_actual, jd_type]
+	var verb: String = "strike" if is_monk_unarmed else ("punch" if is_unarmed else "strike")
 
 	if is_crit:
-		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, death_tag], r["lucky"]))
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for %s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_segment, death_tag], r["lucky"]))
 	else:
-		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]%s[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_meta, actual, type_tag, death_tag], r["lucky"]))
+		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]%s[/url] [color=orange]%s[/color] for %s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_segment, death_tag], r["lucky"]))
 
 	# Branching Strike R3: push the target 1 tile away on a hit with a Heavy/Versatile melee weapon.
 	if GameState.get_talent_rank("branching_strike") >= 3 and is_str_weapon and not enemy.stats.is_dead() \
@@ -1461,7 +1499,7 @@ func _try_graze(enemy: Enemy, is_str_weapon: bool, attack_mod: int) -> void:
 	var weapon: Item = GameState.equipped_weapon
 	if weapon == null or weapon.weapon_mastery != "Graze" or not stats.knows_mastery("Graze") or not is_str_weapon:
 		return
-	var graze_dmg: int = enemy.stats.take_damage(maxi(attack_mod, 0))
+	var graze_dmg: int = enemy.take_typed_damage(maxi(attack_mod, 0), weapon.damage_type)["actual"]
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, graze_dmg, false)
@@ -1550,23 +1588,28 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	_vfx.flash_hit(enemy)
 	var w_dmin: int = weapon.damage_die_min if weapon.damage_die_min > 0 else stats.base_min_damage
 	var w_dmax: int = weapon.damage_die_max if weapon.damage_die_max > 0 else stats.base_max_damage
-	var die_roll: int = Rng.range_i(w_dmin, w_dmax)
+	var dice_ct: Vector2i = CombatMath.dice_notation(w_dmin, w_dmax)
+	var rolls: Array[int] = Rng.roll_dice(dice_ct.x, dice_ct.y)
 	var rage_bonus: int = stats.rage_bonus_damage if _is_raging else 0
-	var pre_crit: int = die_roll + weapon_bonus + rage_bonus + str_mod
+	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
+	var raw_mods: Array = [
+		{"name": "Weapon enhancement", "amount": weapon_bonus, "color": "lightblue"},
+		{"name": "STR mod", "amount": str_mod, "color": "lightblue"},
+		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
+	]
+	var flat_mods: Array = raw_mods.filter(func(m: Dictionary) -> bool: return int(m.get("amount", 0)) != 0)
+	var inst: Dictionary = CombatMath.build_damage_instance(rolls, dice_ct.y, flat_mods, is_crit, dmg_type)
 	if is_crit:
-		pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
-	var actual: int = enemy.stats.take_damage(pre_crit)
+	var result: Dictionary = enemy.take_typed_damage(inst["subtotal"], dmg_type)
+	inst["final"] = result["actual"]
+	inst["resist_mul"] = result["mul"]
+	var actual: int = result["actual"]
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
-		_dungeon_floor.show_damage(enemy.position, actual, false)
-	var bonus_sources: String = CombatMath.encode_bonus_sources([
-		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
-	])
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,bonus=%s,crit=%d,final=%d" % [
-		die_roll, w_dmin, w_dmax, weapon_bonus, str_mod, bonus_sources, 1 if is_crit else 0, actual]
-	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
+		_dungeon_floor.show_damage(enemy.position, actual, false, CombatMath.damage_type_color(dmg_type))
+	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	var is_lethal: bool = enemy.stats.is_dead()
 	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]Cleave:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
@@ -1636,25 +1679,30 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 		_vex_adv_target = enemy
 	var w_dmin: int = weapon.damage_die_min if weapon.damage_die_min > 0 else stats.base_min_damage
 	var w_dmax: int = weapon.damage_die_max if weapon.damage_die_max > 0 else stats.base_max_damage
-	var die_roll: int = Rng.range_i(w_dmin, w_dmax)
+	var dice_ct: Vector2i = CombatMath.dice_notation(w_dmin, w_dmax)
+	var rolls: Array[int] = Rng.roll_dice(dice_ct.x, dice_ct.y)
 	var rage_bonus: int = stats.rage_bonus_damage if _is_raging else 0
 	# Off-hand damage drops the positive ability modifier; a negative modifier still always applies.
 	var dmg_mod: int = mini(attack_mod, 0)
-	var pre_crit: int = die_roll + weapon_bonus + rage_bonus + dmg_mod
+	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
+	var raw_mods: Array = [
+		{"name": "Weapon enhancement", "amount": weapon_bonus, "color": "lightblue"},
+		{"name": "%s mod" % ("DEX" if mod_key == "dex" else "STR"), "amount": dmg_mod, "color": "lightblue"},
+		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
+	]
+	var flat_mods: Array = raw_mods.filter(func(m: Dictionary) -> bool: return int(m.get("amount", 0)) != 0)
+	var inst: Dictionary = CombatMath.build_damage_instance(rolls, dice_ct.y, flat_mods, is_crit, dmg_type)
 	if is_crit:
-		pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
-	var actual: int = enemy.stats.take_damage(pre_crit)
+	var result: Dictionary = enemy.take_typed_damage(inst["subtotal"], dmg_type)
+	inst["final"] = result["actual"]
+	inst["resist_mul"] = result["mul"]
+	var actual: int = result["actual"]
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
-		_dungeon_floor.show_damage(enemy.position, actual, false)
-	var bonus_sources: String = CombatMath.encode_bonus_sources([
-		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
-	])
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,bonus=%s,crit=%d,final=%d" % [
-		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
-	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
+		_dungeon_floor.show_damage(enemy.position, actual, false, CombatMath.damage_type_color(dmg_type))
+	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	var is_lethal: bool = enemy.stats.is_dead()
 	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]%s:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [label, hit_meta, enemy.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
@@ -1720,24 +1768,29 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	else:
 		w_dmin = stats.base_min_damage
 		w_dmax = stats.base_max_damage
-	var die_roll: int = Rng.range_i(w_dmin, w_dmax)
+	var dice_ct: Vector2i = CombatMath.dice_notation(w_dmin, w_dmax)
+	var rolls: Array[int] = Rng.roll_dice(dice_ct.x, dice_ct.y)
 	var rage_bonus: int = stats.rage_bonus_damage if (_is_raging and is_str_weapon) else 0
 	var dmg_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
-	var pre_crit: int = die_roll + weapon_bonus + rage_bonus + dmg_mod
+	var dmg_type: String = weapon.damage_type if (not is_unarmed and not weapon.damage_type.is_empty()) else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
+	var raw_mods: Array = [
+		{"name": "Weapon enhancement", "amount": weapon_bonus, "color": "lightblue"},
+		{"name": "%s mod" % ("DEX" if mod_key == "dex" else "STR"), "amount": dmg_mod, "color": "lightblue"},
+		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
+	]
+	var flat_mods: Array = raw_mods.filter(func(m: Dictionary) -> bool: return int(m.get("amount", 0)) != 0)
+	var inst: Dictionary = CombatMath.build_damage_instance(rolls, dice_ct.y, flat_mods, is_crit, dmg_type)
 	if is_crit:
-		pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
-	var actual: int = enemy.stats.take_damage(pre_crit)
+	var result: Dictionary = enemy.take_typed_damage(inst["subtotal"], dmg_type)
+	inst["final"] = result["actual"]
+	inst["resist_mul"] = result["mul"]
+	var actual: int = result["actual"]
 	enemy.update_hp_bar()
 	if _dungeon_floor != null:
-		_dungeon_floor.show_damage(enemy.position, actual, false)
-	var bonus_sources: String = CombatMath.encode_bonus_sources([
-		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
-	])
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,%s=%d,bonus=%s,crit=%d,final=%d" % [
-		die_roll, w_dmin, w_dmax, weapon_bonus, mod_key, dmg_mod, bonus_sources, 1 if is_crit else 0, actual]
-	var dmg_type: String = weapon.damage_type if (not is_unarmed and not weapon.damage_type.is_empty()) else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
+		_dungeon_floor.show_damage(enemy.position, actual, false, CombatMath.damage_type_color(dmg_type))
+	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	var is_lethal: bool = enemy.stats.is_dead()
 	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]Opportunity attack:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, enemy.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))

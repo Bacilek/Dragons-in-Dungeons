@@ -38,6 +38,16 @@ func range_i(from: int, to: int) -> int:
 	return _rng.randi_range(from, to)
 
 
+## Rolls `count` independent dice of `sides` each, returning every individual result
+## (unlike range_i()/a summed loop, which discard the per-die breakdown) — used wherever
+## a per-die tooltip/log breakdown is needed (weapon NdM dice, spell dice).
+func roll_dice(count: int, sides: int) -> Array[int]:
+	var results: Array[int] = []
+	for _i: int in count:
+		results.append(roll(sides))
+	return results
+
+
 ## True with the given probability in [0, 1] (replaces randf() < p).
 func chance(probability: float) -> bool:
 	return _rng.randf() < probability

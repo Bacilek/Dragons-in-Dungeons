@@ -127,6 +127,59 @@ static func decode_bonus_sources(encoded: String) -> Array:
 			result.append({"name": fields[0], "amount": int(fields[1]), "color": fields[2]})
 	return result
 
+# Weapon dice are stored as a flat range (Item.damage_die_min/max) rather than explicit
+# count/sides, but every pool entry constructs that range as an exact "NdM" (min = N, max = N*M),
+# so count/sides can always be recovered: count = dmin, sides = dmax / dmin. Guards dmin <= 0
+# (unarmed/degenerate ranges) by treating it as a single die of dmax sides.
+static func dice_notation(dmin: int, dmax: int) -> Vector2i:
+	if dmin <= 0:
+		return Vector2i(1, dmax)
+	return Vector2i(dmin, dmax / dmin)
+
+# Builds one typed damage instance: sums rolls[] + flat_mods[].amount into a pre-crit total,
+# doubles on crit (same "multiply last" rule as the old single-total stacking), and carries
+# enough shape info (rolls/flat_mods/damage_type) for both the tooltip formatter and
+# encode_damage_instance() below. `sides` is display-only (0 = no meaningful "NdX" label,
+# e.g. a flat bonus-only instance like Judgement Day).
+static func build_damage_instance(rolls: Array[int], sides: int, flat_mods: Array, crit: bool, damage_type: String) -> Dictionary:
+	var dice_total: int = 0
+	for r: int in rolls:
+		dice_total += r
+	var flat_total: int = 0
+	for m: Dictionary in flat_mods:
+		flat_total += int(m.get("amount", 0))
+	var pre_crit: int = dice_total + flat_total
+	var subtotal: int = pre_crit * 2 if crit else pre_crit
+	return {"rolls": rolls, "sides": sides, "flat_mods": flat_mods, "crit": crit,
+		"damage_type": damage_type, "subtotal": subtotal}
+
+# Packs a damage instance (post build_damage_instance(), with "final"/"resist_mul" added by the
+# caller after applying Enemy.take_typed_damage()) into a dmg_meta string. Strict superset of the
+# legacy dmg: fields — TooltipFormatters.fmt_dmg_tooltip() renders the per-die "rolls" breakdown
+# when present, falling back to the old single "1d%d" line for call sites not yet migrated.
+static func encode_damage_instance(inst: Dictionary) -> String:
+	var rolls_str: String = "|".join((inst.get("rolls", []) as Array).map(func(x: int) -> String: return str(x)))
+	var bonus_str: String = encode_bonus_sources(inst.get("flat_mods", []))
+	return "dmg:rolls=%s,sides=%d,bonus=%s,dtype=%s,crit=%d,rmul=%s,final=%d" % [
+		rolls_str, int(inst.get("sides", 0)), bonus_str, str(inst.get("damage_type", "")),
+		1 if inst.get("crit", false) else 0, str(inst.get("resist_mul", 1.0)), int(inst.get("final", 0))]
+
+# Floating-damage-number tint by damage type — physical types keep the original white/red scheme
+# (return value unused there, callers keep their existing color logic), elemental/magical types
+# get a distinguishing color so two simultaneous typed instances read apart at a glance.
+static func damage_type_color(dtype: String) -> Color:
+	match dtype:
+		"Fire": return Color(1.0, 0.55, 0.2)
+		"Cold": return Color(0.6, 0.9, 1.0)
+		"Lightning": return Color(1.0, 1.0, 0.4)
+		"Thunder": return Color(0.75, 0.75, 1.0)
+		"Acid": return Color(0.6, 1.0, 0.3)
+		"Poison": return Color(0.6, 0.3, 0.9)
+		"Radiant": return Color(1.0, 0.9, 0.5)
+		"Necrotic": return Color(0.55, 0.2, 0.6)
+		"Force": return Color(0.85, 0.6, 1.0)
+		_: return Color(1.0, 0.9, 0.3)
+
 # Appends an "and died" suffix to an attack's own hit/damage log line when that hit was lethal —
 # folds the kill into one chat message instead of a separate "X dies." line (Player._finish_kill()
 # no longer logs its own death line; every attack call site appends this to its damage string

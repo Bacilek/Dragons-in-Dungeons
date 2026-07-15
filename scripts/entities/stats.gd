@@ -130,6 +130,11 @@ var caster: SpellcasterState = null
 # to 0 at the start of the caster's next turn (player.gd _on_turn_started()).
 var shield_ac_bonus: int = 0
 
+# Mage Armor — sets AC to 13 + DEX while unarmored, overriding the flat 10 + DEX baseline
+# (never overrides a class's own unarmored-defense formula — Barbarian/Monk). Ends when Armor is
+# equipped (GameState.equip()) or at the next long rest (GameState.long_rest()) — see recalc_ac().
+var mage_armor_active: bool = false
+
 
 # Monk: Martial Arts die scales with level. Global default 1d4 is used by all other classes.
 var martial_arts_die_sides: int:
@@ -241,6 +246,8 @@ func recalc_ac(has_armor_equipped: bool) -> void:
 		armor_class = 10 + dex_modifier() + con_modifier()
 	elif character_class == CharacterClass.MONK and not has_armor_equipped:
 		armor_class = 10 + dex_modifier() + wis_modifier()
+	elif mage_armor_active and not has_armor_equipped:
+		armor_class = 13 + dex_modifier()
 	else:
 		armor_class = 10 + dex_modifier()
 	armor_class += shield_ac_bonus
@@ -277,6 +284,7 @@ func to_dict() -> Dictionary:
 		"bleeding_turns": bleeding_turns,
 		"slowed_turns": slowed_turns,
 		"zealous_presence_turns": zealous_presence_turns,
+		"mage_armor_active": mage_armor_active,
 		"known_weapon_masteries": known_weapon_masteries.duplicate(),
 		"caster_known_spells": caster.known_spells.duplicate() if caster != null else [],
 		"caster_prepared_spells": caster.prepared_spells.duplicate() if caster != null else [],
@@ -314,6 +322,7 @@ func from_dict(d: Dictionary) -> void:
 	bleeding_turns = int(d.get("bleeding_turns", 0))
 	slowed_turns = int(d.get("slowed_turns", 0))
 	zealous_presence_turns = int(d.get("zealous_presence_turns", 0))
+	mage_armor_active = bool(d.get("mage_armor_active", false))
 	known_weapon_masteries.clear()
 	for m: Variant in (d.get("known_weapon_masteries", []) as Array):
 		known_weapon_masteries.append(String(m))

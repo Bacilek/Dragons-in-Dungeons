@@ -11,6 +11,12 @@ extends Node
 var player: Player
 var spell_targeting_active: bool = false
 var _armed_spell_id: String = ""
+# Scroll-cast state (Item.scroll_spell_id — see game_state.gd's SCROLL branch/CLAUDE.md).
+# Reuses spell_targeting_active/_armed_spell_id for the actual targeting/AoE-preview plumbing;
+# these two just remember it's a scroll so try_cast_at()/_cast_self() skip the slot-pool check/
+# consume and instead consume the scroll item itself once the cast actually resolves.
+var _casting_from_scroll: bool = false
+var _armed_scroll_item: Item = null
 
 func begin_cast(spell_id: String) -> void:
 	var spell: Spell = SpellDb.get_spell(spell_id)
@@ -31,9 +37,40 @@ func begin_cast(spell_id: String) -> void:
 			var range_hint: String = "your full field of view" if spell.range_is_fov else "%d tiles" % spell.range_tiles
 			GameState.game_log("[color=lime]%s — click a target within %s. [Esc] to cancel.[/color]" % [spell.spell_name, range_hint])
 
+## Entry point for reading a Scroll of <Spell> (game_state.gd's player_scroll_primed signal).
+## No spell-slot check (a scroll is self-contained) — always casts at the spell's own base level.
+func on_scroll_primed(item: Item) -> void:
+	var spell: Spell = SpellDb.get_spell(item.scroll_spell_id)
+	if spell == null:
+		return
+	if spell.target_kind == Spell.TargetKind.SELF:
+		_consume_scroll(item)
+		await _cast_self(spell, true)
+		return
+	_armed_spell_id = item.scroll_spell_id
+	_armed_scroll_item = item
+	_casting_from_scroll = true
+	spell_targeting_active = true
+	var range_hint: String = "your full field of view" if spell.range_is_fov else "%d tiles" % spell.range_tiles
+	GameState.game_log("[color=lime]%s (Scroll) — click a target within %s. [Esc] to cancel.[/color]" % [spell.spell_name, range_hint])
+
+func _consume_scroll(item: Item) -> void:
+	if not GameState.invincible:
+		GameState.consume_one(item)
+
 func cancel() -> void:
 	spell_targeting_active = false
 	_armed_spell_id = ""
+	_casting_from_scroll = false
+	_armed_scroll_item = null
+
+## Currently armed spell while targeting is active, or null — lets player.gd's per-frame AoE
+## preview (dungeon_floor.gd's show_aoe_preview()/hide_aoe_preview()) read the spell's shape
+## without reaching into the private _armed_spell_id field directly.
+func get_armed_spell() -> Spell:
+	if not spell_targeting_active:
+		return null
+	return SpellDb.get_spell(_armed_spell_id)
 
 func _cast_level_for(spell: Spell) -> int:
 	if spell.level == 0:
@@ -41,12 +78,12 @@ func _cast_level_for(spell: Spell) -> int:
 	var caster: SpellcasterState = player.stats.caster
 	return caster.slot_pool.lowest_available_level(spell)
 
-func _cast_self(spell: Spell) -> void:
-	var lvl: int = _cast_level_for(spell)
-	if spell.level > 0 and lvl == -1:
+func _cast_self(spell: Spell, from_scroll: bool = false) -> void:
+	var lvl: int = spell.level if from_scroll else _cast_level_for(spell)
+	if not from_scroll and spell.level > 0 and lvl == -1:
 		GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
 		return
-	await SpellEffects.cast_leveled_self(player, spell, lvl, player._dungeon_floor)
+	await SpellEffects.cast_leveled_self(player, spell, lvl, player._dungeon_floor, from_scroll)
 
 # Called from player.gd's LMB dispatch when spell_targeting_active is true. Consumes the armed
 # state regardless of outcome (same one-shot pattern as Grip of the Forest's hook mode).
@@ -90,8 +127,12 @@ func cast_direct(spell_id: String, clicked: Vector2i) -> void:
 
 func try_cast_at(clicked: Vector2i) -> void:
 	var spell_id: String = _armed_spell_id
+	var from_scroll: bool = _casting_from_scroll
+	var scroll_item: Item = _armed_scroll_item
 	spell_targeting_active = false
 	_armed_spell_id = ""
+	_casting_from_scroll = false
+	_armed_scroll_item = null
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null or player._dungeon_floor == null:
 		return
@@ -105,27 +146,34 @@ func try_cast_at(clicked: Vector2i) -> void:
 		GameState.game_log("[color=gray]No clear line to target.[/color]")
 		return
 
+	var lvl: int = spell.level
+	if not from_scroll and spell.level > 0:
+		lvl = _cast_level_for(spell)
+		if lvl == -1:
+			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
+			return
+
+	# A scroll is spent the instant its cast actually resolves (range/LOS already checked above) —
+	# same "consumed even on a miss" convention as a real D&D scroll.
+	if from_scroll:
+		_consume_scroll(scroll_item)
+
 	if spell.level == 0:
 		var target0: Enemy = player._dungeon_floor.get_enemy_at(clicked)
 		if target0 == null:
 			await SpellEffects.cast_spell_at_tile(player, spell, clicked, player._dungeon_floor)
 		else:
-			await SpellEffects.cast_spell(player, spell, target0, player._dungeon_floor)
-		return
-
-	var lvl: int = _cast_level_for(spell)
-	if lvl == -1:
-		GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
+			await SpellEffects.cast_spell(player, spell, target0, player._dungeon_floor, from_scroll)
 		return
 
 	match spell.target_kind:
 		Spell.TargetKind.TILE:
-			await SpellEffects.cast_leveled_at_tile(player, spell, lvl, clicked, player._dungeon_floor)
+			await SpellEffects.cast_leveled_at_tile(player, spell, lvl, clicked, player._dungeon_floor, from_scroll)
 		Spell.TargetKind.ENEMY:
 			var target: Enemy = player._dungeon_floor.get_enemy_at(clicked)
 			if target == null:
 				GameState.game_log("[color=gray]%s needs a target.[/color]" % spell.spell_name)
 			else:
-				await SpellEffects.cast_leveled_at_enemy(player, spell, lvl, target, player._dungeon_floor)
+				await SpellEffects.cast_leveled_at_enemy(player, spell, lvl, target, player._dungeon_floor, from_scroll)
 		_:
 			pass

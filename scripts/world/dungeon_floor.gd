@@ -53,6 +53,10 @@ var _visible_tiles: Dictionary = {}  # Vector2i → true; current FOV set, reset
 var _fov_player_pos: Vector2i = Vector2i(-1, -1)
 var _see_all_active: bool = false
 
+# Sphere-AoE spell-targeting preview (e.g. Fireball) — see "AoE targeting preview" below.
+var _aoe_preview_rects: Array[Sprite2D] = []
+var _aoe_preview_last_key: String = ""
+
 # Octant multiplier tables for recursive shadowcasting (8 octants, Roguebasin standard)
 # X = center.x + dx * _SC_XX[i] + j * _SC_XY[i]
 # Y = center.y + dx * _SC_YX[i] + j * _SC_YY[i]
@@ -362,6 +366,56 @@ func update_fog(player_pos: Vector2i) -> void:
 	if not stairs_was_known and _explored.get(_data.stairs_pos, false):
 		GameState.stairs_discovered.emit()
 
+# ── AoE targeting preview (e.g. Fireball) ──────────────────────────────────────
+# Purple tile tint following the mouse while a sphere-shaped spell is armed for targeting
+# (player.gd's _update_spell_aoe_preview(), driven by PlayerSpellcasting.get_armed_spell()).
+# Deliberately NOT LOS-filtered: a Fireball's blast fills its whole radius around a corner from
+# the impact point (it's an explosion, not a line-of-sight laser), so the preview always shows the
+# full raw circle — matches _resolve_sphere_aoe()'s own distance check exactly, just without its
+# additional per-target LOS gate.
+# Uses pooled Sprite2D + a shared 1×1 white texture (tinted via modulate), same Node2D-world
+# convention as the fog overlay above, rather than a Control — this node lives under DungeonFloor
+# (a Node2D), not a CanvasLayer.
+var _aoe_preview_tex: ImageTexture
+
+func show_aoe_preview(center: Vector2i, radius: int) -> void:
+	var key: String = "%d,%d,%d" % [center.x, center.y, radius]
+	if key == _aoe_preview_last_key:
+		return
+	_aoe_preview_last_key = key
+	if _aoe_preview_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color(1, 1, 1, 1))
+		_aoe_preview_tex = ImageTexture.create_from_image(img)
+	var tiles: Array[Vector2i] = []
+	for dy: int in range(-radius, radius + 1):
+		for dx: int in range(-radius, radius + 1):
+			if dx * dx + dy * dy <= radius * radius:
+				tiles.append(center + Vector2i(dx, dy))
+	while _aoe_preview_rects.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _aoe_preview_tex
+		spr.centered = false
+		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
+		spr.modulate = Color(0.65, 0.25, 0.85, 0.35)
+		spr.z_index = 2
+		add_child(spr)
+		_aoe_preview_rects.append(spr)
+	for i: int in _aoe_preview_rects.size():
+		var spr: Sprite2D = _aoe_preview_rects[i]
+		if i < tiles.size():
+			spr.position = Vector2(tiles[i].x * TILE_SIZE, tiles[i].y * TILE_SIZE)
+			spr.visible = true
+		else:
+			spr.visible = false
+
+func hide_aoe_preview() -> void:
+	if _aoe_preview_last_key == "":
+		return
+	_aoe_preview_last_key = ""
+	for spr: Sprite2D in _aoe_preview_rects:
+		spr.visible = false
+
 func _compute_shadowcast(center: Vector2i, radius: int = FOV_RADIUS) -> Dictionary:
 	var visible: Dictionary = {}
 	visible[center] = true
@@ -630,13 +684,17 @@ func is_walkable_for_companion(pos: Vector2i) -> bool:
 			return false
 	return true
 
-func show_damage(world_pos: Vector2, amount: int, is_player_hit: bool) -> void:
+## `color_override`: unset (alpha 0) keeps the existing red/yellow default. `stack_index`: offsets
+## spawn x by 10px per index so two simultaneous typed-damage floaters (e.g. Slashing + Radiant
+## from one attack) don't fully overlap.
+func show_damage(world_pos: Vector2, amount: int, is_player_hit: bool, color_override: Color = Color(0, 0, 0, 0), stack_index: int = 0) -> void:
 	var lbl := Label.new()
 	lbl.text = "-%d" % amount
 	lbl.add_theme_font_size_override("font_size", 8)
-	lbl.add_theme_color_override("font_color", Color(1.0, 0.25, 0.25) if is_player_hit else Color(1.0, 0.9, 0.3))
+	var color: Color = color_override if color_override.a > 0.0 else (Color(1.0, 0.25, 0.25) if is_player_hit else Color(1.0, 0.9, 0.3))
+	lbl.add_theme_color_override("font_color", color)
 	lbl.z_index = 10
-	lbl.position = world_pos - Vector2(4.0, 14.0)
+	lbl.position = world_pos - Vector2(4.0 - stack_index * 10.0, 14.0)
 	$Entities.add_child(lbl)
 	var tw := lbl.create_tween()
 	tw.tween_property(lbl, "position", lbl.position + Vector2(0.0, -20.0), 0.9)
@@ -1379,6 +1437,8 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.range = d.get("range", 0)
 	item.consumes_on_ranged = d.get("consumes", false)
 	item.quantity = d.get("qty", 1)
+	item.taught_spell_id = d.get("taught_spell", "")
+	item.scroll_spell_id = d.get("scroll_spell", "")
 	item.floor_min = d["fmin"]
 	item.floor_max = d["fmax"]
 	item.description = d["desc"]
@@ -1386,6 +1446,7 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	match d["src"]:
 		"weapons": base_path = DungeonFloorData.WEAPONS_PATH
 		"items":   base_path = DungeonFloorData.ITEMS_PATH
+		"spells":  base_path = "res://icons/spells/"
 		_:         base_path = DungeonFloorData.OBJECTS_PATH
 	item.icon_path = base_path + d["icon"]
 	place_item_on_floor(pos, item)

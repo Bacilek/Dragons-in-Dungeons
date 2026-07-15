@@ -9,6 +9,9 @@ When adding a new trap type, subsystem, or floor event, **immediately update thi
 
 ---
 
+## Damage floaters
+`show_damage(world_pos, amount, is_player_hit, color_override: Color = Color(0,0,0,0), stack_index: int = 0)` — `color_override` (alpha 0 = unset, keeps the old red/yellow default) lets a typed damage source (see `scripts/entities/CLAUDE.md`'s "Damage types / resistances") tint the floater by damage type (`CombatMath.damage_type_color()`); `stack_index` offsets spawn x by 10px per index so two simultaneous instances from one attack (e.g. Slashing + Radiant) don't fully overlap.
+
 ## Key query methods
 ```gdscript
 dungeon_floor.is_tile_visible(pos: Vector2i) -> bool        # O(1) dict, use for visibility
@@ -28,6 +31,9 @@ dungeon_floor.is_walkable_for_companion(pos: Vector2i) -> bool  # walkable + not
 `FOV_RADIUS = 7`. Algorithm: recursive shadowcasting (`_compute_shadowcast`, 8 octants, Roguebasin multiplier tables). Result stored in `_visible_tiles: Dictionary`.
 
 **Rule**: after every player action, call `_dungeon_floor.update_fog(grid_pos)` **before** `TurnManager.on_player_action_complete()`.
+
+## AoE targeting preview
+`show_aoe_preview(center: Vector2i, radius: int)` / `hide_aoe_preview()` — a small pooled-`Sprite2D` purple tint (1×1 white texture tinted via `modulate`, `z_index = 2`, same layer as the fog sprite — Node2D-world convention, not a Control) over every tile within `radius` (Euclidean, no LOS filtering — see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why) of `center`. Driven every frame by `player.gd._update_spell_aoe_preview()` while a sphere-shaped spell (Fireball) is armed for targeting. Rebuild is cached on `"%d,%d,%d" % [center, radius]` so repeated calls with the same hovered tile are near-free.
 
 ---
 

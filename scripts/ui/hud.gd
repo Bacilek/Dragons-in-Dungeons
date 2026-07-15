@@ -620,13 +620,23 @@ func _process_bar_drag(mp: Vector2) -> void:
 		_bar_drag_icon.position = mp - _bar_drag_icon.size * 0.5
 	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		if _bar_dragging:
-			for i: int in SLOT_COUNT:
-				if i != _bar_drag_from and Rect2(_item_slots[i].global_position, _item_slots[i].size).has_point(mp):
-					if _ability_bar_mode:
-						GameState.swap_ability_slots(_bar_drag_from, i)
-					else:
-						GameState.move_item("quickbar", _bar_drag_from, "", "quickbar", i, "")
-					break
+			var dropped_on_special: bool = false
+			if _ability_bar_mode and GameState.spellbook_open:
+				var overlay = get_tree().get_first_node_in_group("spellbook_overlay")
+				if overlay != null and overlay.get_special_slot_global_rect().has_point(mp):
+					dropped_on_special = true
+					var ab: Ability = GameState.player_ability_bar[_bar_drag_from] as Ability
+					if ab != null and ab.ability_id.begins_with("spell:"):
+						GameState.set_special_slot(ab.ability_id.trim_prefix("spell:"))
+						overlay.refresh_after_external_change()
+			if not dropped_on_special:
+				for i: int in SLOT_COUNT:
+					if i != _bar_drag_from and Rect2(_item_slots[i].global_position, _item_slots[i].size).has_point(mp):
+						if _ability_bar_mode:
+							GameState.swap_ability_slots(_bar_drag_from, i)
+						else:
+							GameState.move_item("quickbar", _bar_drag_from, "", "quickbar", i, "")
+						break
 			if _bar_drag_icon != null:
 				_bar_drag_icon.queue_free()
 				_bar_drag_icon = null

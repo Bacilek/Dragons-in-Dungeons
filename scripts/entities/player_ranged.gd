@@ -143,22 +143,28 @@ func ranged_attack(enemy: Enemy) -> void:
 		player._vex_adv_target = enemy
 	var r_dmin: int = weapon.damage_die_min if weapon != null and weapon.damage_die_min > 0 else player.stats.base_min_damage
 	var r_dmax: int = weapon.damage_die_max if weapon != null and weapon.damage_die_max > 0 else player.stats.base_max_damage
-	var r_die_roll: int = Rng.range_i(r_dmin, r_dmax)
-	var r_pre_crit: int = r_die_roll + r_wpn_enh + dex_mod
+	var r_dice_ct: Vector2i = CombatMath.dice_notation(r_dmin, r_dmax)
+	var r_rolls: Array[int] = Rng.roll_dice(r_dice_ct.x, r_dice_ct.y)
+	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
+	var r_raw_mods: Array = [
+		{"name": "Weapon enhancement", "amount": r_wpn_enh, "color": "lightblue"},
+		{"name": "DEX mod", "amount": dex_mod, "color": "lightblue"},
+	]
+	var r_flat_mods: Array = r_raw_mods.filter(func(m: Dictionary) -> bool: return int(m.get("amount", 0)) != 0)
+	var r_inst: Dictionary = CombatMath.build_damage_instance(r_rolls, r_dice_ct.y, r_flat_mods, is_crit, r_dmg_type)
 	if is_crit:
-		r_pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
 
-	var actual: int = enemy.stats.take_damage(r_pre_crit)
+	var r_result: Dictionary = enemy.take_typed_damage(r_inst["subtotal"], r_dmg_type)
+	r_inst["final"] = r_result["actual"]
+	r_inst["resist_mul"] = r_result["mul"]
+	var actual: int = r_result["actual"]
 	enemy.update_hp_bar()
 	if player._dungeon_floor != null:
-		player._dungeon_floor.show_damage(enemy.position, actual, false)
+		player._dungeon_floor.show_damage(enemy.position, actual, false, CombatMath.damage_type_color(r_dmg_type))
 
-	var bonus_sources: String = CombatMath.encode_bonus_sources([])
-	var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,dex=%d,bonus=%s,crit=%d,final=%d" % [
-		r_die_roll, r_dmin, r_dmax, r_wpn_enh, dex_mod, bonus_sources, 1 if is_crit else 0, actual]
-	var r_dmg_type: String = weapon.damage_type if weapon != null and not weapon.damage_type.is_empty() else "<unknown_damage_type>"
+	var dmg_meta: String = CombatMath.encode_damage_instance(r_inst)
 	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
 	var is_lethal: bool = enemy.stats.is_dead()
 

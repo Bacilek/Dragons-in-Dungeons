@@ -27,6 +27,8 @@ var prone_turns: int = 0         # Maul's Topple mastery — skips the ENTIRE tu
 var frozen_feet_turns: int = 0   # Ray of Frost's STR-save-fail — skips movement, still attacks if adjacent (same shape as rooted_turns, kept separate so inspect can name it "Frozen Feet")
 var shocked_no_oa: bool = false  # Shocking Grasp — blocks this enemy's next Opportunity Attack exposure, whenever it next happens
 var embedded_items: Array[Item] = []  # thrown weapons stuck in a non-lethal hit (PlayerThrowTool._throw_weapon) — dropped at 100% chance wherever/whenever this enemy eventually dies, see die() override below
+var resist_types: Array[String] = []  # damage types this enemy takes half damage from (pool "resist" key)
+var vuln_types: Array[String] = []    # damage types this enemy takes double damage from (pool "vuln" key)
 var _roam_target: Vector2i = Vector2i(-1, -1)
 var _roam_path: Array[Vector2i] = []
 # Search state — used when enemy loses sight of player after chasing
@@ -66,6 +68,26 @@ func _apply_stats() -> void:
 	# Optional per-pool-entry resist modifiers (default 0) — used by resist_check() below.
 	stats.strength    = 10 + _type.get("str_mod", 0) * 2
 	stats.constitution = 10 + _type.get("con_mod", 0) * 2
+	var resist: Array = _type.get("resist", [])
+	resist_types = Array(resist, TYPE_STRING, "", null)
+	var vuln: Array = _type.get("vuln", [])
+	vuln_types = Array(vuln, TYPE_STRING, "", null)
+
+# Single chokepoint for typed damage against this enemy — applies resist (×0.5) / vuln (×2, both
+# can stack per 5e convention) before Stats.take_damage()'s flat floor-at-1 clamp. Returns
+# {actual, mul} so callers can show the multiplier in a damage tooltip. Every player attack/spell
+# call site that deals damage to an enemy should route through this instead of calling
+# stats.take_damage() directly, so resistances apply uniformly — see scripts/entities/CLAUDE.md's
+# "Damage types / resistances" section.
+func take_typed_damage(amount: int, damage_type: String) -> Dictionary:
+	var mul: float = 1.0
+	if damage_type in resist_types:
+		mul *= 0.5
+	if damage_type in vuln_types:
+		mul *= 2.0
+	var adjusted: int = int(floor(amount * mul)) if mul != 1.0 else amount
+	var actual: int = stats.take_damage(adjusted)
+	return {"actual": actual, "mul": mul}
 
 # Rolls d20 + (con_modifier if use_con else str_modifier) vs dc.
 # Used by World Tree's Grip of the Forest (STR) and Branching Strike R3 push (CON).

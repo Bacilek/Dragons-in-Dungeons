@@ -8,6 +8,25 @@ extends RefCounted
 
 const TIER_LEVELS: Array[int] = [1, 5, 11, 17]
 
+# Caster-optional spellcasting math — every player character can end up casting a spell (Scroll
+# of <Spell>, Item.scroll_spell_id, castable by any class), but only Stats.caster (Wizard) has a
+# SpellcasterState with its own spellcasting_ability. Anyone without one uses proficiency_bonus +
+# INT modifier, per the design call in CLAUDE.md ("non-casters use INT as their casting stat").
+static func _attack_bonus(stats: Stats) -> int:
+	if stats.caster != null:
+		return stats.caster.spell_attack_bonus(stats)
+	return stats.proficiency_bonus + stats.int_modifier()
+
+static func _save_dc(stats: Stats) -> int:
+	if stats.caster != null:
+		return stats.caster.spell_save_dc(stats)
+	return 8 + stats.proficiency_bonus + stats.int_modifier()
+
+static func _cast_ability_mod(stats: Stats) -> int:
+	if stats.caster != null:
+		return stats.caster._ability_mod(stats)
+	return stats.int_modifier()
+
 static func _cantrip_tier(character_level: int) -> int:
 	var tier: int = 1
 	for i: int in TIER_LEVELS.size():
@@ -15,7 +34,7 @@ static func _cantrip_tier(character_level: int) -> int:
 			tier = i + 1
 	return tier
 
-static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floor: Node) -> void:
+static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
@@ -24,8 +43,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	sprite.play("idle")
 
 	var stats: Stats = player.stats
-	var caster: SpellcasterState = stats.caster
-	var attack_bonus: int = caster.spell_attack_bonus(stats)
+	var attack_bonus: int = _attack_bonus(stats)
 
 	var adv_count: int = 0
 	adv_count += player._base_talents.consume_psycho_or_battlefield_adv()
@@ -49,7 +67,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	var is_nat_one: bool = die == 1
 
 	var hit_meta: String = "sphit:die=%d,d1=%d,d2=%d,int=%d,prof=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
-		die, die1, die2, caster._ability_mod(stats), stats.proficiency_bonus, roll, target.stats.armor_class,
+		die, die1, die2, _cast_ability_mod(stats), stats.proficiency_bonus, roll, target.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
 		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
 
@@ -73,23 +91,21 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 
 	var tier: int = _cantrip_tier(stats.character_level) if spell.cantrip_tier_scaling else 1
 	var dice_count: int = spell.dice_count * tier
-	var roll_total: int = 0
-	for _i: int in dice_count:
-		roll_total += Rng.range_i(1, spell.dice_sides)
-	var pre_crit: int = roll_total
+	var rolls: Array[int] = Rng.roll_dice(dice_count, spell.dice_sides)
+	var inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], is_crit, spell.damage_type)
 	if is_crit:
-		pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
 
-	var actual: int = target.stats.take_damage(pre_crit)
+	var result: Dictionary = target.take_typed_damage(inst["subtotal"], spell.damage_type)
+	inst["final"] = result["actual"]
+	inst["resist_mul"] = result["mul"]
+	var actual: int = result["actual"]
 	target.update_hp_bar()
 	if dungeon_floor != null:
-		dungeon_floor.show_damage(target.position, actual, false)
+		dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color(spell.damage_type))
 
-	var bonus_sources: String = CombatMath.encode_bonus_sources([])
-	var dmg_meta: String = "dmg:roll=%d,dmax=%d,wpn=0,bonus=%s,crit=%d,final=%d" % [
-		roll_total, spell.dice_sides, bonus_sources, 1 if is_crit else 0, actual]
+	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
 	var type_tag: String = " [color=gray]%s[/color]" % spell.damage_type
 	var is_lethal: bool = target.stats.is_dead()
 
@@ -102,7 +118,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	else:
 		match spell.effect_id:
 			"ray_of_frost":
-				var dc: int = caster.spell_save_dc(stats)
+				var dc: int = _save_dc(stats)
 				var save: Dictionary = target.resist_check_detailed(dc, false)
 				var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d" % [
 					save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"])]
@@ -146,20 +162,33 @@ static func cast_spell_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 # Deliberately simplified vs. the framework doc: always casts at the LOWEST available slot level
 # (no upcast slot-level picker UI for v1 — plan §2/§9), and AoE is sphere-only (no cone/line/cube).
 
-static func _consume_slot(player: Player, cast_level: int) -> void:
+# from_scroll: a Scroll of <Spell> is self-contained (its magic doesn't draw on the reader's
+# spellbook), so it never touches Stats.caster.slot_pool — that's true even for a Wizard reading
+# a scroll of their own known spell, not just for a non-caster.
+static func _consume_slot(player: Player, cast_level: int, from_scroll: bool = false) -> void:
+	if from_scroll:
+		return
 	if cast_level > 0 and not GameState.invincible:
 		player.stats.caster.slot_pool.consume(cast_level)
 	GameState.spell_slots_changed.emit()
 
 # SELF target (Shield) — no targeting, no attack roll, resolves on activation.
-static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dungeon_floor: Node) -> void:
+static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	TurnManager.begin_player_action()
-	_consume_slot(player, cast_level)
+	_consume_slot(player, cast_level, from_scroll)
 	match spell.effect_id:
 		"shield":
 			player.stats.shield_ac_bonus = 5
 			GameState.recalculate_stats()
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — AC +5 until your next turn.[/color]" % spell.spell_name)
+		"mage_armor":
+			var has_armor: bool = (GameState.equipment.get("armor") as Item) != null
+			if has_armor:
+				GameState.game_log("[color=gray]You cast [b]%s[/b], but your armor blocks it from taking hold.[/color]" % spell.spell_name)
+			else:
+				player.stats.mage_armor_active = true
+				GameState.recalculate_stats()
+				GameState.game_log("[color=cyan]You cast [b]%s[/b] — a shimmering force settles over you.[/color]" % spell.spell_name)
 		_:
 			GameState.game_log("[color=cyan]You cast [b]%s[/b].[/color]" % spell.spell_name)
 	if dungeon_floor != null:
@@ -167,9 +196,9 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 	player._handle_post_attack_turn()
 
 # TILE target (Misty Step teleport, Fireball AoE) — no attack roll against the tile itself.
-static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, tile_pos: Vector2i, dungeon_floor: Node) -> void:
+static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, tile_pos: Vector2i, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	TurnManager.begin_player_action()
-	_consume_slot(player, cast_level)
+	_consume_slot(player, cast_level, from_scroll)
 	match spell.effect_id:
 		"misty_step":
 			player.set_grid_pos(tile_pos)
@@ -187,15 +216,12 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 # from the impact tile. Damage-stacking RULE: one take_damage()/show_damage() call per target.
 static func _resolve_sphere_aoe(player: Player, spell: Spell, cast_level: int, center: Vector2i, dungeon_floor: Node) -> void:
 	var stats: Stats = player.stats
-	var caster: SpellcasterState = stats.caster
 	var r: int = spell.shape_size
 	var extra_dice: int = spell.upcast_dice_per_level * maxi(0, cast_level - spell.level)
 	var dice_count: int = spell.dice_count + extra_dice
-	var roll_total: int = 0
-	for _i: int in dice_count:
-		roll_total += Rng.range_i(1, spell.dice_sides)
-	var dmg_meta: String = "dmg:roll=%d,dmax=%d,wpn=0,bonus=%s,crit=0,final=%d" % [
-		roll_total, spell.dice_sides, CombatMath.encode_bonus_sources([]), roll_total]
+	var rolls: Array[int] = Rng.roll_dice(dice_count, spell.dice_sides)
+	var base_inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], false, "Fire")
+	var roll_total: int = int(base_inst["subtotal"])
 
 	var targets: Array[Enemy] = []
 	if dungeon_floor != null:
@@ -214,15 +240,20 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, cast_level: int, c
 	# STR/CON (no enemy DEX data exists yet — same limitation Ray of Frost's cantrip already
 	# accepts). Reusing the STR-flavored check here rather than inventing enemy DEX stats.
 	for e: Enemy in targets:
-		var dc: int = caster.spell_save_dc(stats)
+		var dc: int = _save_dc(stats)
 		var save: Dictionary = e.resist_check_detailed(dc, false)
 		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=STR,pass=%d" % [
 			save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], int(save["pass"])]
 		var dmg: int = roll_total if not save["pass"] else roll_total / 2
-		var actual: int = e.stats.take_damage(dmg)
+		var result: Dictionary = e.take_typed_damage(dmg, "Fire")
+		var actual: int = result["actual"]
+		var inst: Dictionary = base_inst.duplicate()
+		inst["final"] = actual
+		inst["resist_mul"] = result["mul"]
+		var dmg_meta: String = CombatMath.encode_damage_instance(inst)
 		e.update_hp_bar()
 		if dungeon_floor != null:
-			dungeon_floor.show_damage(e.position, actual, false)
+			dungeon_floor.show_damage(e.position, actual, false, CombatMath.damage_type_color("Fire"))
 		var is_lethal: bool = e.stats.is_dead()
 		GameState.game_log("%s is [url=%s]%s[/url] by the flames for [url=%s][color=yellow]%d[/color][/url] Fire dmg.%s" % [
 			e.display_name, save_meta, "caught" if not save["pass"] else "singed", dmg_meta, actual, CombatMath.death_suffix(is_lethal)])
@@ -231,24 +262,25 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, cast_level: int, c
 
 	var d_player: Vector2i = player.grid_pos - center
 	if d_player.x * d_player.x + d_player.y * d_player.y <= r * r and (dungeon_floor == null or dungeon_floor.has_ranged_los(center, player.grid_pos)):
-		var pdc: int = caster.spell_save_dc(stats)
+		var pdc: int = _save_dc(stats)
 		var check_total: int = Rng.roll(20) + stats.dex_modifier() + (stats.proficiency_bonus if stats.check_prof_dex else 0)
 		var pass_save: bool = check_total >= pdc
 		var pdmg: int = roll_total if not pass_save else roll_total / 2
 		var actual_p: int = GameState.take_damage_raw(pdmg, false, "Fire")
-		var pdmg_meta: String = "dmg:roll=%d,dmax=%d,wpn=0,bonus=%s,crit=0,final=%d" % [
-			roll_total, spell.dice_sides, CombatMath.encode_bonus_sources([]), actual_p]
+		var p_inst: Dictionary = base_inst.duplicate()
+		p_inst["final"] = actual_p
+		var pdmg_meta: String = CombatMath.encode_damage_instance(p_inst)
 		GameState.game_log("[color=orange]You are caught in your own blast for [url=%s]%d[/url] Fire dmg.[/color]" % [pdmg_meta, actual_p])
 
 # ENEMY target, AUTO_HIT resolution (Magic Missile) — no attack roll.
-static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node) -> void:
+static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
 	sprite.play("hit")
 	await sprite.animation_finished
 	sprite.play("idle")
-	_consume_slot(player, cast_level)
+	_consume_slot(player, cast_level, from_scroll)
 
 	match spell.effect_id:
 		"magic_missile":
@@ -259,10 +291,10 @@ static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int,
 				var r: int = Rng.range_i(1, 4) + 1
 				dart_rolls.append(r)
 				total += r
-			var actual: int = target.stats.take_damage(total)
+			var actual: int = target.take_typed_damage(total, "Force")["actual"]
 			target.update_hp_bar()
 			if dungeon_floor != null:
-				dungeon_floor.show_damage(target.position, actual, false)
+				dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color("Force"))
 			var rolls_str: String = "|".join(dart_rolls.map(func(x: int) -> String: return str(x)))
 			var dmg_meta: String = "mmdmg:darts=%d,rolls=%s,total=%d,final=%d" % [darts, rolls_str, total, actual]
 			var is_lethal: bool = target.stats.is_dead()

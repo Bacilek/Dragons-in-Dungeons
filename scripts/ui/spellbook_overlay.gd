@@ -34,6 +34,7 @@ var _drag_icon: TextureRect = null
 
 func _ready() -> void:
 	layer = 25
+	add_to_group("spellbook_overlay")
 	GameState.spellbook_open = true
 	var caster: SpellcasterState = GameState.player_stats.caster
 	if caster != null and caster.slot_pool != null:
@@ -96,8 +97,8 @@ func _build_ui() -> void:
 
 	var done_btn := Button.new()
 	done_btn.text = "Done"
-	done_btn.size = Vector2(150.0, 34.0)
-	done_btn.position = Vector2(PANEL_W - 166.0, 14.0)
+	done_btn.size = Vector2(90.0, 34.0)
+	done_btn.position = Vector2(PANEL_W - 106.0, 14.0)
 	done_btn.focus_mode = Control.FOCUS_NONE
 	done_btn.add_theme_font_size_override("font_size", 14)
 	_style_btn(done_btn, Color(0.10, 0.22, 0.10), Color(0.28, 0.65, 0.28))
@@ -236,6 +237,17 @@ func _build_ui() -> void:
 func _ordinal(n: int) -> String:
 	return SpellDb.ordinal(n)
 
+# Lets hud.gd's own ActionBar drag (_process_bar_drag()) treat the Special slot box as a valid
+# drop target for a spell dragged straight off an ability-bar slot, without reaching into private
+# state (§5.4 extension — see scripts/ui/CLAUDE.md's "In-bar reorder drag" section).
+func get_special_slot_global_rect() -> Rect2:
+	if _special_slot_box == null:
+		return Rect2()
+	return Rect2(_special_slot_box.global_position, _special_slot_box.size)
+
+func refresh_after_external_change() -> void:
+	_refresh()
+
 func _select_level(lv: int) -> void:
 	_selected_level = lv
 	_refresh()
@@ -341,8 +353,7 @@ func _build_row(spell_id: String, y: float) -> void:
 	row.add_child(icon)
 
 	var name_lbl := Label.new()
-	var suffix: String = "  [ALWAYS READY]" if is_cantrip else ("  [PREPARED]" if prepared else "")
-	name_lbl.text = spell.spell_name + suffix
+	name_lbl.text = spell.spell_name
 	name_lbl.add_theme_font_size_override("font_size", 15)
 	name_lbl.position = Vector2(54.0, (ROW_H - 6.0 - 20.0) * 0.5)
 	name_lbl.size = Vector2(PANEL_W - 100.0, 22.0)

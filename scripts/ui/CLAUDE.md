@@ -58,6 +58,9 @@ ActionBar slot, so the two never actually contend for the same press despite bot
 drop onto the ability bar. Camera-pan suppression (see `scripts/entities/CLAUDE.md`'s
 "Player-specific" section, `_lmb_press_over_ui`) is what stops this drag from also panning the
 game world underneath — a real bug during initial playtesting, not a hypothetical.
+While the Spellbook is open, `_process_bar_drag()` also treats the Spellbook's Special quick-cast
+slot box as a valid drop target (checked before the same-bar slot loop) — see the Spellbook
+overlay's "Reverse direction — ActionBar slot → Special slot" note below.
 
 **Split-out modules** (pure refactor, same behavior — GDScript has no partial classes, so these use composition/static-helper patterns instead):
 - `tooltip_formatters.gd` (`TooltipFormatters`, static-func-only helper) — the 8 combat tooltip formatters (`fmt_hit_tooltip`, `fmt_dmg_tooltip`, `fmt_heal_tooltip`, `fmt_save_tooltip`, `fmt_ehit_tooltip`, `fmt_edmg_tooltip`, `fmt_catk_tooltip`, `fmt_ret_tooltip`). Each takes only a `Dictionary` and returns a `String`. `hud.gd._format_tooltip()` still owns the `kind` dispatch match and calls into these.
@@ -279,7 +282,8 @@ cantrips) followed by one tab per leveled-spell level the character currently ha
 level (was a `-1`-indexed `Array`, switched when level 0 was added to avoid fragile index math).
 Selecting a tab lists the Wizard's known spells of that level as rows (icon + name, gold
 border/tint when prepared or a cantrip — `_build_row()`'s `is_cantrip` branch always renders a
-cantrip in the gold "always ready" style, suffixed `[ALWAYS READY]` instead of `[PREPARED]`).
+cantrip in the same gold "always ready" style as a prepared leveled spell; no text suffix, the
+gold border/name color alone communicates prepared state).
 **Hover** a row → the detail panel below shows its full description (same "browse and pick"
 hover-detail pattern as the Mastery Picker, not a `[url=]` tooltip). **Click** a row → on a leveled
 spell, `GameState.set_spell_prepared(id, bool)` toggles prepared, hard-blocked at
@@ -302,6 +306,19 @@ that loop. Exists here rather than in `inventory_overlay.gd` because the Invento
 overlays are mutually exclusive (`player.gd`'s R/I key guards) — there is never a frame where both
 are open, so a drag spanning the two overlays is impossible; the Inventory-side box is
 consequently display-only (see above).
+
+**Reverse direction — ActionBar slot → Special slot**: while the Spellbook is open, a spell can
+also be dragged the other way, straight off an already-placed ability-bar slot onto the Special
+box, reusing `hud.gd`'s own in-bar reorder drag (see "In-bar reorder drag" above) rather than this
+overlay's row-drag. `spellbook_overlay.gd` exposes `get_special_slot_global_rect()` (empty `Rect2`
+if the box isn't built yet) and `refresh_after_external_change()` (thin public wrapper around
+`_refresh()`) via `add_to_group("spellbook_overlay")`; `hud.gd._process_bar_drag()`'s release
+branch checks that rect first (when `_ability_bar_mode and GameState.spellbook_open`), and on a hit
+reads `GameState.player_ability_bar[_bar_drag_from]`, accepting only if its `ability_id` starts
+with `"spell:"` (rejects non-spell abilities like Rage/Frenzy), then calls
+`GameState.set_special_slot(spell_id)` and the overlay's refresh — skipping the normal same-bar
+slot-swap for that release. No camera-pan risk: `player.gd`'s `_input()` motion handler already
+unconditionally suppresses panning whenever `GameState.spellbook_open` is true.
 
 **Drag-and-drop** (leveled-spells-and-slots-plan.md §5.4): press-and-hold a row past
 `DRAG_THRESHOLD` (8px) spawns a floating icon and arms a drag; release resolves via

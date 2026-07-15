@@ -80,6 +80,13 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 # scroll-copying — see docs/architecture/leveled-spells-and-slots-plan.md §4.2). "" = not a spell
 # scroll — every pre-existing SCROLL item stays a no-op.
 @export var taught_spell_id: String = ""
+# SCROLL items only: spell_id baked into this scroll for a SINGLE one-shot cast (distinct from
+# taught_spell_id above — reading this scroll does NOT teach the spell permanently, it just casts
+# it once then crumbles, always at the spell's base level — no upcasting, no slot spent). "" = not
+# a cast-scroll. Castable by ANY class regardless of Stats.caster — see SpellEffects' caster-
+# optional attack-bonus/save-DC helpers, which use the reader's own spellcasting ability if they
+# have one (a caster class), or fall back to proficiency_bonus + INT modifier otherwise.
+@export var scroll_spell_id: String = ""
 
 # Returns one durability value per unit in the stack (size == quantity). Falls back to repeating
 # `uses_remaining` when stack_uses hasn't been materialized (fresh item, or every unit identical).
@@ -140,6 +147,7 @@ func to_dict() -> Dictionary:
 		"uses_remaining": uses_remaining,
 		"stack_uses": stack_uses,
 		"taught_spell_id": taught_spell_id,
+		"scroll_spell_id": scroll_spell_id,
 	}
 
 static func from_dict(d: Dictionary) -> Item:
@@ -186,4 +194,5 @@ static func from_dict(d: Dictionary) -> Item:
 		su_typed.append(int(v))
 	it.stack_uses = su_typed
 	it.taught_spell_id = String(d.get("taught_spell_id", ""))
+	it.scroll_spell_id = String(d.get("scroll_spell_id", ""))
 	return it

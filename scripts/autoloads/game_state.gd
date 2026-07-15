@@ -12,6 +12,7 @@ signal equipment_changed()
 signal inventory_toggle()
 signal player_action_requested(action_name: String)
 signal player_throw_primed(item: Item)
+signal player_scroll_primed(item: Item)
 signal player_tool_primed(item: Item)
 signal class_chosen(chosen_class: Stats.CharacterClass)
 signal race_chosen(race: Stats.CharacterRace)
@@ -846,6 +847,9 @@ func long_rest() -> void:
 		player_stats.caster.slot_pool.on_long_rest()
 		spell_slots_changed.emit()
 	_consume_food_value(LONG_REST_FOOD_COST)
+	if player_stats.mage_armor_active:
+		player_stats.mage_armor_active = false
+		recalculate_stats()
 	short_rest_changed.emit()
 	AudioManager.play("rest")
 	game_log("[color=cyan]You finish your long rest, fully healed and refreshed.[/color]")
@@ -1125,6 +1129,10 @@ func equip(item: Item, slot_name: String = "") -> void:
 	# weapon — kick whatever's in "hand2" back to the bag automatically.
 	if slot_name == "melee" and to_equip.is_two_handed:
 		_auto_unequip_offhand()
+	# Mage Armor ends the moment Armor is equipped (not on other slots — robes/clothes-as-
+	# accessories aren't modeled as a distinct item type, so only the "armor" slot counts).
+	if slot_name == "armor" and player_stats.mage_armor_active:
+		player_stats.mage_armor_active = false
 	recalculate_stats()
 	combat_message.emit("[color=cyan]Equipped [b]%s[/b].[/color]" % to_equip.item_name)
 	equipment_changed.emit()
@@ -1367,9 +1375,14 @@ func use_item(item: Item) -> void:
 		Item.Type.TOOL:
 			player_tool_primed.emit(item)
 		Item.Type.SCROLL:
+			# scroll_spell_id: single one-shot cast baked into this scroll, castable by any class
+			# (see Item.scroll_spell_id / SpellEffects) — arms targeting via PlayerSpellcasting,
+			# same LMB-resolve flow as an ability-bar spell. Consumed on cast, not on read.
+			if item.scroll_spell_id != "":
+				player_scroll_primed.emit(item)
 			# leveled-spells-and-slots-plan.md §4.2: scroll-taught spells. Item.taught_spell_id
 			# empty = not a spell scroll (every pre-existing SCROLL item stays a no-op).
-			if item.taught_spell_id != "" and player_stats.caster != null:
+			elif item.taught_spell_id != "" and player_stats.caster != null:
 				if player_stats.caster.known_spells.has(item.taught_spell_id):
 					game_log("[color=gray]You already know this spell.[/color]")
 				else:

@@ -107,7 +107,7 @@ with real D&D 2024 spell slots are both implemented.** Leveled spells: `Standard
 level-up "pick 1 of 3" spellbook-growth picker (`scripts/ui/spell_learn_picker.gd`), scroll-taught
 spells, and an **R-key Spellbook overlay** (`scripts/ui/spellbook_overlay.gd`) — level tabs,
 hover description, click-to-prepare, drag-and-drop onto a specific ability-bar slot, bottom-right
-"X / Y prepared" counter. 4 example spells (Magic Missile, Shield, Misty Step, Fireball). No
+"X / Y prepared" counter. 5 example spells (Magic Missile, Shield, Mage Armor, Misty Step, Fireball). No
 concentration, no reactions, no cone/line/cube AoE (sphere only), no upcast slot-level picker
 (always casts at the cheapest available slot) — see `scripts/entities/CLAUDE.md`'s "Wizard
 leveled spells (spell slots)" section, `scripts/items/CLAUDE.md`'s spellcasting-data section, and
@@ -122,6 +122,12 @@ displayed read-only in the Inventory overlay next to Ranged) — see `scripts/ui
 Spellbook/Inventory sections and `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for
 `PlayerSpellcasting.cast_direct()`. The debug panel's **Give Spell...** sub-panel (F3) lets God
 Mode grant any cantrip or leveled spell directly for testing.
+
+**Scroll of &lt;Spell&gt;** (one-shot cast scrolls, 8 in `ITEM_POOL`/`debug_panel.ALL_ITEMS`, one
+per `SpellDb` spell): unlike scroll-taught spells above, these are **castable by any class**, not
+just Wizard — a non-caster reading one uses `proficiency_bonus + INT modifier` in place of a
+`SpellcasterState`'s own ability. Full mechanism: `scripts/items/CLAUDE.md`'s "Scroll of
+&lt;Spell&gt;" section and `scripts/entities/CLAUDE.md`'s scrolls entry.
 
 ### Talent system (`scripts/items/talent.gd`, `scripts/autoloads/game_state.gd`)
 `Talent` is a reusable Resource: `talent_id`, `talent_name`, `description`, `icon_path`, `tier`, `class_id`, `max_rank`, `ranks: Array[Dictionary]`. `rank_description(rank)` returns the description string for a given rank.
@@ -172,6 +178,6 @@ After every feature/fix: `git add`, `git commit`, `git push origin HEAD:main`. N
 - **New ability**: add to `player_ability_bar` via `GameState.add_ability()`. Dispatch activation in `player.gd._use_ability_slot()` by matching `ability_id`. Sync uses on `advance_floor()` via `_sync_ability_uses()`.
 - **Debug panel** (`scripts/ui/debug_panel.gd`, layer=25, F3): God Mode, Jump to Floor, Give Item, Spawn Enemy, Level Up. Full detail: `scripts/ui/CLAUDE.md`.
 - **Chat log tooltips**: hover `[url=meta]...[/url]` tags → `hud.gd._format_tooltip(meta)`, formatter bodies in `scripts/ui/tooltip_formatters.gd`. **RULE: every new damage source must get a `[url=kind:key=val,...]` tag on the number AND a matching `fmt_kind_tooltip()` static handler — never log bare damage numbers.**
-- **RULE — damage stacking**: when multiple bonus damage sources apply to the same attack, sum them into the base damage **before** calling `Stats.take_damage()`/`DungeonFloor.show_damage()` — one call, one floater, one chat log line. Each source keeps a **named** field in the `dmg` meta string for the tooltip; the visible log line itself never lists per-source names or amounts. See `scripts/entities/CLAUDE.md` for the full rule and `player.gd._bump_attack()`/`PlayerRanged.ranged_attack()` for the reference implementation.
+- **RULE — damage stacking**: when multiple bonus damage sources apply to the same attack, sum same-type ones into the base damage **before** calling `Enemy.take_typed_damage()`/`DungeonFloor.show_damage()` — one call, one floater, one chat log segment per damage TYPE (a source with its own distinct type, e.g. Zealot's Judgement Day, becomes a second independent instance/floater/segment in the same log line, not a third `game_log()` call). Each source keeps a **named** field in the `dmg` meta string for the tooltip; the visible log line itself never lists per-source names or amounts. Multi-die sources (weapon `NdM`, spell dice) show every individual die roll in the tooltip via `CombatMath.build_damage_instance()`/`encode_damage_instance()`, and `Enemy.take_typed_damage()` applies per-type resist/vuln (`Enemy.resist_types`/`vuln_types`, from `ENEMY_POOL`'s `"resist"`/`"vuln"` keys) before the floor-at-1 clamp. See `scripts/entities/CLAUDE.md`'s "Damage types / resistances" section for the full rule and `player.gd._bump_attack()`/`PlayerRanged.ranged_attack()` for the reference implementation.
 - **RULE — no mechanic names in enemy attack log lines**: `enemy.gd._attack_player()` never names a specific player talent/ability in the log text — that context lives only in the `ehit` tooltip.
 - **UI conventions** (mouse filters, focus mode, slot sizing, drag-hit detection, TextureRect icon sizing, click-vs-drag, quickbar/inventory tooltips, keyword glossary, compass): all in **`scripts/ui/CLAUDE.md`** — read it before touching any HUD/overlay script, several of its rules are non-obvious footguns.
