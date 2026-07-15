@@ -140,7 +140,7 @@ static func fmt_dmg_tooltip(p: Dictionary) -> String:
 	# scripts/entities/combat_math.gd. A future damage source only needs to be added to the
 	# encode call site, never here.
 	for src: Dictionary in CombatMath.decode_bonus_sources(p.get("bonus", "")):
-		lines.append("[color=%s]+%d[/color]  (%s)" % [src["color"], src["amount"], src["name"]])
+		lines.append("[color=%s]%+d[/color]  (%s)" % [src["color"], src["amount"], src["name"]])
 	lines.append("─────────────────")
 	# Multiplication always happens LAST — every source above is summed first, then doubled.
 	if crit:
@@ -264,7 +264,7 @@ static func fmt_heal_tooltip(p: Dictionary) -> String:
 	# Generic bonus-heal sources (Bruiser R1, ...) — see CombatMath.encode_bonus_sources()/
 	# decode_bonus_sources(). A future bonus-heal source only needs to be added at the call site.
 	for src: Dictionary in CombatMath.decode_bonus_sources(p.get("bonus", "")):
-		lines.append("[color=%s]+%d[/color]  (%s)" % [src["color"], src["amount"], src["name"]])
+		lines.append("[color=%s]%+d[/color]  (%s)" % [src["color"], src["amount"], src["name"]])
 		uncapped += src["amount"]
 	lines.append("─────────────────")
 	uncapped = maxi(1, uncapped)

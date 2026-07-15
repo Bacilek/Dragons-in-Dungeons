@@ -235,15 +235,17 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, cast_level: int, c
 				continue
 			targets.append(e)
 
-	GameState.game_log("[color=orange]A sphere of fire erupts![/color]")
-	# Book-accurate Fireball is a DEX save, but Enemy.resist_check_detailed() only supports
-	# STR/CON (no enemy DEX data exists yet — same limitation Ray of Frost's cantrip already
-	# accepts). Reusing the STR-flavored check here rather than inventing enemy DEX stats.
+	# Casting always spends the cheapest AVAILABLE slot (StandardSlotPool.lowest_available_level())
+	# — if the base slot level is exhausted, that can silently auto-upcast to a higher slot and add
+	# upcast dice. Surface it in the log line instead of leaving a mysteriously bigger dice pool
+	# unexplained.
+	var upcast_note: String = "" if cast_level <= spell.level else " [color=gray](cast at %s level — your %s slots were empty)[/color]" % [SpellDb.ordinal(cast_level), SpellDb.ordinal(spell.level)]
+	GameState.game_log("[color=orange]A sphere of fire erupts![/color]%s" % upcast_note)
 	for e: Enemy in targets:
 		var dc: int = _save_dc(stats)
-		var save: Dictionary = e.resist_check_detailed(dc, false)
-		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=STR,pass=%d" % [
-			save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], int(save["pass"])]
+		var save: Dictionary = e.resist_check_detailed(dc, false, true)
+		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d" % [
+			save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"])]
 		var dmg: int = roll_total if not save["pass"] else roll_total / 2
 		var result: Dictionary = e.take_typed_damage(dmg, "Fire")
 		var actual: int = result["actual"]
@@ -263,14 +265,28 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, cast_level: int, c
 	var d_player: Vector2i = player.grid_pos - center
 	if d_player.x * d_player.x + d_player.y * d_player.y <= r * r and (dungeon_floor == null or dungeon_floor.has_ranged_los(center, player.grid_pos)):
 		var pdc: int = _save_dc(stats)
-		var check_total: int = Rng.roll(20) + stats.dex_modifier() + (stats.proficiency_bonus if stats.check_prof_dex else 0)
-		var pass_save: bool = check_total >= pdc
+		var pdex_mod: int = stats.dex_modifier()
+		var pprof: int = stats.proficiency_bonus if stats.check_prof_dex else 0
+		var pdie: int = Rng.roll(20)
+		var pcheck_total: int = pdie + pdex_mod + pprof
+		var pass_save: bool = pcheck_total >= pdc
+		# Same hoverable save breakdown as the enemy targets above — previously the player's own
+		# catch-in-blast line had no save tooltip at all, so there was no way to see whether the
+		# DEX check passed (half dmg) or failed (full dmg) for yourself specifically.
+		var psave_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=DEX,pass=%d" % [
+			pdie, pdex_mod, pprof, pcheck_total, pdc, int(pass_save)]
 		var pdmg: int = roll_total if not pass_save else roll_total / 2
 		var actual_p: int = GameState.take_damage_raw(pdmg, false, "Fire")
 		var p_inst: Dictionary = base_inst.duplicate()
 		p_inst["final"] = actual_p
 		var pdmg_meta: String = CombatMath.encode_damage_instance(p_inst)
-		GameState.game_log("[color=orange]You are caught in your own blast for [url=%s]%d[/url] Fire dmg.[/color]" % [pdmg_meta, actual_p])
+		# Rage/Bear-form DR and temp HP absorption can all silently shave actual_p below pdmg with
+		# no indication in the tooltip (unlike enemies, GameState.take_damage_raw() doesn't return a
+		# clean multiplier to plug into "rmul") — call out the pre-mitigation number in plain text
+		# instead of leaving a "31 rolled but only 25 landed" gap unexplained.
+		var reduced_note: String = "" if actual_p == pdmg else " [color=gray](%d before your own reductions)[/color]" % pdmg
+		GameState.game_log("[color=orange]You are [url=%s]%s[/url] in your own blast for [url=%s]%d[/url] Fire dmg%s.[/color]" % [
+			psave_meta, "caught" if not pass_save else "singed", pdmg_meta, actual_p, reduced_note])
 
 # ENEMY target, AUTO_HIT resolution (Magic Missile) — no attack roll.
 static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:

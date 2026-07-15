@@ -38,7 +38,19 @@ func begin_cast(spell_id: String) -> void:
 			return
 	match spell.target_kind:
 		Spell.TargetKind.SELF:
-			_cast_self(spell)
+			if spell.range_tiles <= 0:
+				# Instant self-buff (Shield) — no targeting step, resolves on activation.
+				_cast_self(spell)
+				return
+			# Touch-range self buff (Mage Armor) — activation only ARMS it; a follow-up click
+			# ANYWHERE resolves the cast on yourself (the only valid target — see try_cast_at()),
+			# same "arm then confirm" flow every other spell uses. Prevents an accidental
+			# hotkey/ability-bar press from instantly burning a slot on a buff the player didn't
+			# mean to cast yet. Also resolvable via a quick double-press of the same hotkey/slot
+			# (see player.gd._use_ability_slot()) or Ctrl+click from the Special slot.
+			_armed_spell_id = spell_id
+			spell_targeting_active = true
+			GameState.game_log("[color=lime]%s (touch) — click anywhere to cast on yourself, or press the slot again. [Esc] to cancel.[/color]" % spell.spell_name)
 			return
 		_:
 			_armed_spell_id = spell_id
@@ -55,7 +67,7 @@ func on_scroll_primed(item: Item) -> void:
 	var spell: Spell = SpellDb.get_spell(item.scroll_spell_id)
 	if spell == null:
 		return
-	if spell.target_kind == Spell.TargetKind.SELF:
+	if spell.target_kind == Spell.TargetKind.SELF and spell.range_tiles <= 0:
 		_consume_scroll(item)
 		await _cast_self(spell, true)
 		return
@@ -120,8 +132,10 @@ func _effective_range(spell: Spell) -> int:
 
 ## Direct one-motion cast for the Special quick-cast slot (Ctrl+click in player.gd, mirroring
 ## Shift+ranged's single-motion resolve — no separate arm-then-click step like the ability-bar's
-## begin_cast()/try_cast_at() pair). SELF-target spells (Shield) ignore `clicked` entirely and
-## self-cast immediately, same as begin_cast()'s own SELF branch.
+## begin_cast()/try_cast_at() pair). SELF-target spells (Shield, and touch buffs like Mage Armor)
+## ignore `clicked` entirely and self-cast immediately — Ctrl+click is always "target myself",
+## regardless of range_tiles, unlike begin_cast()'s own SELF branch which arms touch spells for a
+## follow-up click instead.
 func cast_direct(spell_id: String, clicked: Vector2i) -> void:
 	if _shield_blocks_casting():
 		GameState.game_log("[color=gray]You can't cast with a Shield equipped.[/color]")
@@ -150,6 +164,15 @@ func try_cast_at(clicked: Vector2i) -> void:
 	_armed_scroll_item = null
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null or player._dungeon_floor == null:
+		return
+	# SELF-target touch spells (Mage Armor) only ever have one valid target — the caster. Any
+	# click at all (regardless of where it landed) confirms the cast; there's no "range"/"LOS to
+	# yourself" concept worth enforcing, and requiring the click to land pixel-perfectly on your
+	# own tile was needless friction for a spell that literally cannot target anything else yet.
+	if spell.target_kind == Spell.TargetKind.SELF:
+		if from_scroll:
+			_consume_scroll(scroll_item)
+		await _cast_self(spell, from_scroll)
 		return
 	var d: Vector2i = clicked - player.grid_pos
 	var dist_cheb: int = maxi(absi(d.x), absi(d.y))

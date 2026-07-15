@@ -1536,7 +1536,11 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 		final_amount = int(floor(float(amount) * 0.5))
 	# Animal Form Bear: always-active elemental DR (no Rage or talent rank required — see
 	# markdowns/wild_heart.md). Enhanced Forms R1 also covers magical damage; R2/R3 raise the %.
-	if natural_rager_form == "Bear" and not ignore_rage:
+	# BUGFIX: natural_rager_form defaults to "Bear" for every character (it's only ever changed by
+	# Wild Heart's own cycle_animal_form()), so without the subclass/unlock gate below this DR
+	# applied to ANY class's own Fire/Cold/etc. damage — including a Wizard's own Fireball catching
+	# themselves in the blast — even though they never touched Wild Heart at all.
+	if natural_rager_form == "Bear" and active_tier2_subclass == "Wild Heart" and tier2_unlocked and not ignore_rage:
 		var enh_rank: int = get_talent_rank("enhanced_forms")
 		var resisted: bool = damage_type in ELEMENTAL_TYPES or (enh_rank >= 1 and damage_type in MAGICAL_TYPES)
 		if resisted:

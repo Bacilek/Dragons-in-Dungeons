@@ -409,9 +409,11 @@ func _update_hover_indicator() -> void:
 	_hover_indicator.visible = true
 
 # Dynamic purple tile-tint preview for sphere-shaped AoE spells (Fireball) while armed for
-# targeting — see dungeon_floor.gd's "AoE targeting preview" section. Only ever active during the
-# ability-bar arm-then-click flow (PlayerSpellcasting.begin_cast()); the Ctrl+click Special-slot
-# one-motion cast never arms spell_targeting_active long enough to show a preview.
+# targeting — see dungeon_floor.gd's "AoE targeting preview" section. The ability-bar arm-then-
+# click flow (PlayerSpellcasting.begin_cast()) arms spell_targeting_active for this directly; the
+# Ctrl+click Special-slot one-motion cast never arms it (cast_direct() resolves the same frame it's
+# clicked), so while Ctrl is held with a sphere spell in the Special slot, preview that spell
+# instead — same tile-tint, just keyed off the held modifier instead of armed-targeting state.
 func _update_spell_aoe_preview() -> void:
 	if _dungeon_floor == null:
 		return
@@ -420,6 +422,8 @@ func _update_spell_aoe_preview() -> void:
 		_dungeon_floor.hide_aoe_preview()
 		return
 	var spell: Spell = _spellcasting.get_armed_spell()
+	if spell == null and Input.is_key_pressed(KEY_CTRL) and GameState.special_slot_spell_id != "":
+		spell = SpellDb.get_spell(GameState.special_slot_spell_id)
 	if spell == null or spell.target_kind != Spell.TargetKind.TILE or spell.shape != "sphere":
 		_dungeon_floor.hide_aoe_preview()
 		return
@@ -627,6 +631,15 @@ func _unhandled_input(event: InputEvent) -> void:
 					return
 				if GameState.short_rest_active or GameState.short_rest_open:
 					return
+				# BUGFIX: this Ctrl+special-slot check must run BEFORE the "pending == grid_pos"
+				# no-op-move guard below — a SELF-target spell (Mage Armor) in the Special slot is
+				# naturally Ctrl+clicked ON your own tile (the only valid target), which used to
+				# hit that guard's early return first and silently do nothing.
+				if Input.is_key_pressed(KEY_CTRL) and GameState.special_slot_spell_id != "":
+					if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
+						return
+					_spellcasting.cast_direct(GameState.special_slot_spell_id, pending)
+					return
 				if pending == grid_pos:
 					return
 				if Input.is_key_pressed(KEY_SHIFT):
@@ -647,11 +660,6 @@ func _unhandled_input(event: InputEvent) -> void:
 						_ranged.ranged_attack(enemy_shift)
 					else:
 						_ranged.ranged_attack_tile(pending)
-					return
-				if Input.is_key_pressed(KEY_CTRL) and GameState.special_slot_spell_id != "":
-					if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
-						return
-					_spellcasting.cast_direct(GameState.special_slot_spell_id, pending)
 					return
 				var enemy_on_tile: Enemy = _dungeon_floor.get_enemy_at(pending)
 				if enemy_on_tile != null:
@@ -703,7 +711,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Cantrip targeting mode
 		if _spellcasting.spell_targeting_active:
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
-				_spellcasting.try_cast_at(clicked)
+				# Ctrl+click always resolves centered on the caster's own tile, regardless of the
+				# exact pixel clicked — a guaranteed way to self-target a sphere AoE (Fireball) or
+				# a touch SELF spell (Mage Armor) without needing to click precisely on your own
+				# sprite, which sits under the camera-follow crosshair and can be fiddly to hit.
+				var cast_target: Vector2i = grid_pos if Input.is_key_pressed(KEY_CTRL) else clicked
+				_spellcasting.try_cast_at(cast_target)
 			else:
 				_spellcasting.cancel()
 			return
@@ -1865,6 +1878,12 @@ func _use_quickbar_slot(idx: int) -> void:
 # Set by HUD when Tab toggles bar mode
 var _ability_bar_active: bool = false
 
+# Double-press-same-slot detection for instant self-cast of touch SELF spells (Mage Armor) — lets
+# a player quickcast onto themselves via the hotkey/slot alone, no mouse click needed at all.
+const DOUBLE_TAP_WINDOW_SEC: float = 0.4
+var _last_ability_slot_idx: int = -1
+var _last_ability_slot_press_msec: int = 0
+
 func _use_ability_slot(idx: int) -> void:
 	if idx < 0 or idx >= GameState.ABILITY_BAR_SIZE:
 		return
@@ -1873,7 +1892,20 @@ func _use_ability_slot(idx: int) -> void:
 		return
 	var ab := raw as Ability
 	if ab.ability_id.begins_with("spell:"):
-		_spellcasting.begin_cast(ab.ability_id.trim_prefix("spell:"))
+		var spell_id: String = ab.ability_id.trim_prefix("spell:")
+		var now_msec: int = Time.get_ticks_msec()
+		var is_double_tap: bool = idx == _last_ability_slot_idx \
+				and (now_msec - _last_ability_slot_press_msec) <= int(DOUBLE_TAP_WINDOW_SEC * 1000.0)
+		_last_ability_slot_idx = idx
+		_last_ability_slot_press_msec = now_msec
+		var spell: Spell = SpellDb.get_spell(spell_id)
+		if is_double_tap and spell != null and spell.target_kind == Spell.TargetKind.SELF:
+			# Second press within the window while armed (or already resolved) from the first —
+			# resolve straight onto yourself, same as Ctrl+click, no world click required at all.
+			_spellcasting.cancel()
+			_spellcasting.cast_direct(spell_id, grid_pos)
+			return
+		_spellcasting.begin_cast(spell_id)
 		return
 	match ab.ability_id:
 		"rage":                    _activate_rage()

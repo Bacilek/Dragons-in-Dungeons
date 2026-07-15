@@ -68,6 +68,7 @@ func _apply_stats() -> void:
 	# Optional per-pool-entry resist modifiers (default 0) — used by resist_check() below.
 	stats.strength    = 10 + _type.get("str_mod", 0) * 2
 	stats.constitution = 10 + _type.get("con_mod", 0) * 2
+	stats.dexterity   = 10 + _type.get("dex_mod", 0) * 2
 	var resist: Array = _type.get("resist", [])
 	resist_types = Array(resist, TYPE_STRING, "", null)
 	var vuln: Array = _type.get("vuln", [])
@@ -98,14 +99,16 @@ func resist_check(dc: int, use_con: bool = false) -> bool:
 # Same roll as resist_check(), but returns the full breakdown so callers can log a chat-log
 # tooltip (see Topple's "save" meta in player.gd._try_topple()) instead of just the pass/fail
 # bool. "pass" here means the enemy RESISTS (roll >= dc), matching resist_check().
-func resist_check_detailed(dc: int, use_con: bool = false) -> Dictionary:
-	var mod: int = stats.con_modifier() if use_con else stats.str_modifier()
+# use_dex takes priority over use_con when both would somehow be true (Fireball's DEX check).
+func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false) -> Dictionary:
+	var mod: int = stats.dex_modifier() if use_dex else (stats.con_modifier() if use_con else stats.str_modifier())
+	var stat_name: String = "DEX" if use_dex else ("CON" if use_con else "STR")
 	var floor_bonus: int = GameState.current_floor / 3
 	var die: int = Rng.roll(20)
 	var total: int = die + floor_bonus + mod
 	return {
 		"die": die, "mod": mod, "floor_bonus": floor_bonus, "dc": dc,
-		"total": total, "pass": total >= dc, "stat": "CON" if use_con else "STR",
+		"total": total, "pass": total >= dc, "stat": stat_name,
 	}
 
 # Overrides Entity.die(): drop any thrown weapons embedded in this enemy (see embedded_items

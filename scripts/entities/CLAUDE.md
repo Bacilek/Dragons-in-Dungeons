@@ -374,13 +374,17 @@ existing 9-slot ability bar (multi-page auto-paging from the framework doc isn't
 either) — see `scripts/ui/CLAUDE.md`'s "Spellbook overlay" section.
 
 **AoE tile-preview overlay**: while a `TILE`-target, `shape == "sphere"` spell (currently only
-Fireball) is armed via `PlayerSpellcasting.begin_cast()` (the ability-bar arm-then-click flow
-only — the Ctrl+click Special-slot one-motion `cast_direct()` never arms long enough to preview),
+Fireball) is armed via `PlayerSpellcasting.begin_cast()` (the ability-bar arm-then-click flow),
 `player.gd._update_spell_aoe_preview()` runs every `_process()` frame (sibling call to
 `_update_hover_indicator()`, same input-enabled gate, same mouse→tile conversion) and calls
 `DungeonFloor.show_aoe_preview(hovered_tile, spell.shape_size)` /
 `hide_aoe_preview()`. `PlayerSpellcasting.get_armed_spell()` is the read-only accessor that lets
 `player.gd` see the armed spell's shape without touching the private `_armed_spell_id` field.
+**Ctrl+click Special-slot cast**: `cast_direct()` resolves in the same frame it's clicked, so it
+never arms `spell_targeting_active` long enough for `get_armed_spell()` to see it — instead,
+`_update_spell_aoe_preview()` falls back to `GameState.special_slot_spell_id` (via
+`SpellDb.get_spell()`) whenever Ctrl is held and no spell is otherwise armed, so holding Ctrl and
+hovering with a sphere spell in the Special slot previews it exactly like the ability-bar flow.
 `dungeon_floor.gd`'s implementation is a small pooled-`Sprite2D` overlay (1×1 white texture tinted
 `Color(0.65, 0.25, 0.85, 0.35)` via `modulate`, `z_index = 2` — same layer as the fog sprite,
 Node2D-world convention rather than a Control), rebuilt only when
@@ -441,13 +445,62 @@ impact point rather than stop at the first wall it can't directly see through.
   `GameState.invincible`, same as every other consumption site) before resolving. Fireball's AoE
   (`_resolve_sphere_aoe()`) hits every enemy AND the player within `shape_size` tiles (Euclidean)
   with LOS from the impact tile — real friendly fire, one `take_damage()`/`show_damage()` call per
-  target per the damage-stacking RULE. Its DEX save is mechanically resolved via
-  `Enemy.resist_check_detailed(dc, false)` (STR-flavored — no enemy DEX stat data exists yet, same
-  accepted limitation Ray of Frost's cantrip already lives with).
+  target per the damage-stacking RULE. Its DEX save (a "check" against `spell_save_dc` per this
+  codebase's no-saving-throws house rule) is mechanically resolved via
+  `Enemy.resist_check_detailed(dc, false, true)` — the third `use_dex` param rolls
+  `d20 + floor_bonus + DEX mod` (enemy `dexterity` populated from an optional `"dex_mod"` pool
+  key, same convention as `"str_mod"`/`"con_mod"`, default 0) and takes priority over `use_con`.
+  **The player's own catch-in-blast hit now gets the same hoverable save breakdown the enemy
+  targets do** — previously "You are caught in your own blast for N Fire dmg" had no `[url=]`
+  tooltip at all, so there was no way to see your own DEX-check roll or whether you passed (half)
+  or failed (full); it's now wrapped exactly like the enemy lines (`"caught"`/`"singed"` links to
+  a `save:` meta). **Reductions the player's own hit takes are now called out in plain text**:
+  `GameState.take_damage_raw()` can shave the landed amount below the post-save roll via Rage/Bear
+  DR or temp-HP absorption, none of which is representable as the `dmg:` tooltip's `rmul` field
+  (that's enemy-only, from `Enemy.take_typed_damage()`'s clean multiplier) — rather than leave a
+  silent "31 rolled, only 25 landed" gap, the log line appends a gray `"(N before your own
+  reductions)"` note whenever the landed amount differs from the post-save roll. **Auto-upcast is
+  now surfaced too**: casting always spends the cheapest *available* slot
+  (`StandardSlotPool.lowest_available_level()`), so if the base slot level happens to be empty,
+  a Fireball can silently cast from a higher slot and add upcast dice — the "A sphere of fire
+  erupts!" line now appends `"(cast at Nth level — your Mth slots were empty)"` whenever
+  `cast_level > spell.level`, so a bigger-than-expected dice pool (e.g. 9d6 instead of the base
+  8d6) is explained instead of looking like a bug. **Guaranteed self-targeting**: `player.gd`'s
+  spell-targeting click handler now resolves at `player.grid_pos` instead of the raw clicked tile
+  whenever **Ctrl** is held on the click — a deliberate, precision-proof way to center a sphere
+  AoE (or resolve a touch SELF spell, see Mage Armor above) on yourself without needing to click
+  exactly on your own sprite (which sits under the camera-follow crosshair and can be fiddly to
+  hit with a plain click, though a plain click on your own tile has always worked too).
 - **Shield**: `Stats.shield_ac_bonus` (+5, folded into `recalc_ac()`), cleared at the start of the
   caster's next real turn in `player.gd._on_turn_started()`'s `if not came_from_revert:` block.
-- **Mage Armor**: SELF-target, touch range, AUTO_HIT — `SpellEffects.cast_leveled_self()`'s
-  `"mage_armor"` branch. Sets `Stats.mage_armor_active`, which `recalc_ac()` reads: while true and
+- **Mage Armor**: SELF-target, touch range (`range_tiles = 1`), AUTO_HIT — `SpellEffects.
+  cast_leveled_self()`'s `"mage_armor"` branch. **Touch buffs don't self-cast on activation** the
+  way Shield (range 0) does: `PlayerSpellcasting.begin_cast()`'s SELF branch only instant-casts
+  when `spell.range_tiles <= 0`; any SELF spell with `range_tiles > 0` instead arms
+  `spell_targeting_active` exactly like an ENEMY/TILE spell — a bare hotkey/ability-bar press
+  can't silently burn a slot on a buff the player didn't mean to cast yet. **No ally-buff
+  targeting exists** (only the caster's own tile is ever a valid touch target — a future
+  ally-targetable touch spell would need `cast_leveled_self()`, or a new resolver, to accept a
+  target other than `player`), so `try_cast_at()`'s `SELF` branch doesn't bother validating the
+  click position at all: ANY click (or Ctrl+click, or a same-slot double-press — see below)
+  confirms the cast on yourself, short-circuiting before the range/LOS check block entirely.
+  Requiring the click to land pixel-perfectly on your own tile (an earlier iteration of this
+  logic) was needless friction for a spell that can't target anything else anyway. Three ways to
+  confirm the arm-then-cast:
+  - **Any LMB click**, anywhere in the game world, while armed.
+  - **Ctrl+click from the Special quick-cast slot** — `cast_direct()` self-casts any SELF-target
+    spell immediately regardless of `range_tiles`, bypassing the arm step entirely. **Fixed
+    footgun**: `player.gd`'s mouse-release handler used to check `pending == grid_pos` (the
+    "clicking where you already stand is a no-op move" guard) *before* the Ctrl+Special-slot
+    dispatch — since Ctrl+clicking a touch self-buff naturally means clicking your own tile, that
+    guard silently ate the cast every time. The Ctrl+Special-slot check now runs first.
+  - **Double-press the same ability-bar/quickbar slot** within `Player.DOUBLE_TAP_WINDOW_SEC`
+    (0.4s) — `_use_ability_slot()` tracks `_last_ability_slot_idx`/`_last_ability_slot_press_msec`;
+    a second press of the same slot on a SELF-target spell cancels any pending arm state and calls
+    `cast_direct()` directly, resolving on yourself with no mouse click needed at all. Only
+    SELF-target spells trigger this — a double-press on any other spell just re-arms normally
+    (`begin_cast()` is idempotent to call twice).
+  Sets `Stats.mage_armor_active`, which `recalc_ac()` reads: while true and
   no armor is equipped, AC becomes `13 + DEX` — but only as a fallback below Barbarian/Monk's own
   unarmored-defense formulas (those always win if the character has one). If the caster is
   currently wearing Armor, casting fizzles (slot is still spent, RAW) with a gray log line instead
