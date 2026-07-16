@@ -160,6 +160,15 @@ DungeonFloorData.OBJECTS_PATH = "res://sprites/objects/"
 
 ## Spellcasting data (`spell.gd`, `spell_db.gd`, `spellcaster_state.gd`, `spell_slot_pool.gd`)
 
+**Scale convention: 10 ft (DnD) = 1 tile, rounded UP.** Applies to `range_tiles` and to
+`shape_size` (AoE radius) by default — e.g. Fire Bolt 120 ft → 12 tiles, Ray of Frost/Toll the
+Dead 60 ft → 6 tiles. Round up rather than down (Misty Step 30 ft → 4 tiles, not 3) since movement
+is already only 1 tile/turn and rounding down makes short-range mobility/AoE spells feel weaker
+than intended relative to room sizes. Not a hard rule for every case — a spell whose feel matters
+more than its literal DnD number (e.g. an AoE that should visibly fill a room) can deviate; use
+judgement, but 10 ft/tile rounded up is the default when adding a new spell's `range_tiles`/
+`shape_size`.
+
 Cantrips (`docs/architecture/spellcasting-design.md`) plus leveled spells + spell slots
 (`docs/architecture/leveled-spells-and-slots-plan.md`) — see `scripts/entities/CLAUDE.md`'s
 "Wizard spellcasting (cantrips)" and "Wizard leveled spells (spell slots)" sections for the full
