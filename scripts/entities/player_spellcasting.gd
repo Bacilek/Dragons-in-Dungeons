@@ -174,15 +174,19 @@ func try_cast_at(clicked: Vector2i) -> void:
 			_consume_scroll(scroll_item)
 		await _cast_self(spell, from_scroll)
 		return
-	var d: Vector2i = clicked - player.grid_pos
-	var dist_cheb: int = maxi(absi(d.x), absi(d.y))
-	var eff_range: int = _effective_range(spell)
-	if dist_cheb > eff_range:
-		GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % eff_range)
-		return
-	if not player._dungeon_floor.has_ranged_los(player.grid_pos, clicked):
-		GameState.game_log("[color=gray]No clear line to target.[/color]")
-		return
+	# Cone-shaped spells (Burning Hands) are self-centered — the clicked tile only supplies an aim
+	# DIRECTION from the caster, not an impact point, so it's exempt from the normal range/LOS
+	# gate (the click need not itself be reachable or even visible).
+	if spell.shape != "cone":
+		var d: Vector2i = clicked - player.grid_pos
+		var dist_cheb: int = maxi(absi(d.x), absi(d.y))
+		var eff_range: int = _effective_range(spell)
+		if dist_cheb > eff_range:
+			GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % eff_range)
+			return
+		if not player._dungeon_floor.has_ranged_los(player.grid_pos, clicked):
+			GameState.game_log("[color=gray]No clear line to target.[/color]")
+			return
 
 	var lvl: int = spell.level
 	if not from_scroll and spell.level > 0:
@@ -221,6 +225,8 @@ func try_cast_at(clicked: Vector2i) -> void:
 			var target: Enemy = player._dungeon_floor.get_enemy_at(clicked)
 			if target == null:
 				GameState.game_log("[color=gray]%s needs a target.[/color]" % spell.spell_name)
+			elif spell.resolution == Spell.Resolution.ATTACK_ROLL:
+				await SpellEffects.cast_leveled_attack_at_enemy(player, spell, lvl, target, player._dungeon_floor, from_scroll)
 			else:
 				await SpellEffects.cast_leveled_at_enemy(player, spell, lvl, target, player._dungeon_floor, from_scroll)
 		_:

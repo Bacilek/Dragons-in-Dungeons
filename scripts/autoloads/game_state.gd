@@ -1630,6 +1630,9 @@ func _check_concentration_break(actual_damage: int) -> void:
 		player_stats.concentration_spell_id = ""
 		if broken_spell == "blade_ward":
 			player_stats.blade_ward_turns = 0
+		elif broken_spell == "witch_bolt":
+			player_stats.witch_bolt_turns = 0
+			player_stats.witch_bolt_target = null
 		game_log("[color=gray]Your concentration breaks! (CON %d vs DC %d)[/color]" % [roll, dc])
 
 

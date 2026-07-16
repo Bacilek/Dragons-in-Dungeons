@@ -181,8 +181,10 @@ cast-resolution walkthroughs.
   `thunderclap`/`mind_sliver`/`light` — see `scripts/entities/CLAUDE.md`'s "Wizard spellcasting"
   section for all 8) + `STARTER_CANTRIP_IDS` (the fixed 3-cantrip round-1 pool `cantrip_select.gd`
   always offers — kept separate from `CANTRIP_IDS` so old saves/the premade Jace's
-  `"cantrip": "fire_bolt"` shortcut stay valid) + `LEVELED_SPELL_IDS` (5:
-  `magic_missile`/`shield`/`mage_armor`/`misty_step`/`fireball`) + `CLASS_SPELL_LISTS: Dictionary`
+  `"cantrip": "fire_bolt"` shortcut stay valid) + `LEVELED_SPELL_IDS` (8:
+  `magic_missile`/`shield`/`mage_armor`/`misty_step`/`fireball`/`chromatic_orb`/`burning_hands`/
+  `witch_bolt` — the last 3 added after the initial pass, see `scripts/entities/CLAUDE.md`'s "More
+  1st-level spells") + `CLASS_SPELL_LISTS: Dictionary`
   (`"WIZARD"` → `LEVELED_SPELL_IDS`, the level-up learn picker's candidate pool — cantrips are
   deliberately excluded from this list since they're a separate, always-known system).
 - **`SpellcasterState`** (`Resource`) — lives on `Stats.caster` (null for every class but Wizard),
@@ -221,10 +223,11 @@ spell." instead). No scroll items use this mechanism in any loot pool yet — se
 `Item.scroll_spell_id: String` (`""` = not this kind of scroll) — a SCROLL item with one spell
 cast baked in, distinct from (and independent of) `taught_spell_id` above: reading it does NOT
 teach the spell, it just casts it once at the spell's base level (no upcasting, no slot spent)
-then crumbles. **Castable by any class**, not just Wizard — the point of this item type. 13 exist
+then crumbles. **Castable by any class**, not just Wizard — the point of this item type. 16 exist
 in `ITEM_POOL`/`debug_panel.ALL_ITEMS` today, one per `SpellDb` spell (`Scroll of Fire Bolt`,
 `Ray of Frost`, `Shocking Grasp`, `Toll the Dead`, `Blade Ward`, `Thunderclap`, `Mind Sliver`,
-`Light`, `Magic Missile`, `Shield`, `Mage Armor`, `Misty Step`, `Fireball`); icon reuses the
+`Light`, `Magic Missile`, `Shield`, `Mage Armor`, `Misty Step`, `Fireball`, `Chromatic Orb`,
+`Burning Hands`, `Witch Bolt`); icon reuses the
 spell's own `res://icons/spells/*.png` (new `"src": "spells"` pool key, resolved in both
 `DungeonFloor._build_floor_item()` and `debug_panel._on_give_item()` — no dedicated scroll sprite
 exists yet).

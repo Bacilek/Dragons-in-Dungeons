@@ -188,6 +188,23 @@ func _on_turn_started() -> void:
 			if stats.blade_ward_turns <= 0:
 				stats.concentration_spell_id = ""
 				GameState.game_log("[color=gray]Blade Ward fades.[/color]")
+		# Witch Bolt: 1d12 Lightning to the Jolted target once per real turn (the initial cast's
+		# own 2d12 already landed at cast time), up to 10 turns or until concentration breaks
+		# (target dies, the CON check on taking damage fails, or a different concentration spell
+		# is cast). Approximates 5e's "end of your turn" timing within this codebase's once-per-
+		# round tick granularity — same convention as Blade Ward's own duration above.
+		if stats.witch_bolt_turns > 0:
+			var wb_target: Enemy = stats.witch_bolt_target
+			if is_instance_valid(wb_target) and not wb_target.stats.is_dead():
+				SpellEffects.tick_witch_bolt(self, wb_target, _dungeon_floor)
+			stats.witch_bolt_turns -= 1
+			var wb_still_alive: bool = is_instance_valid(wb_target) and not wb_target.stats.is_dead()
+			if stats.witch_bolt_turns <= 0 or not wb_still_alive:
+				stats.witch_bolt_turns = 0
+				stats.witch_bolt_target = null
+				if stats.concentration_spell_id == "witch_bolt":
+					stats.concentration_spell_id = ""
+				GameState.game_log("[color=gray]Witch Bolt fades.[/color]")
 	GameState.ability_bar_changed.emit()
 	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
 	# Only fires on real turns, not on reverted turns.
@@ -432,12 +449,15 @@ func _update_spell_aoe_preview() -> void:
 	var spell: Spell = _spellcasting.get_armed_spell()
 	if spell == null and Input.is_key_pressed(KEY_CTRL) and GameState.special_slot_spell_id != "":
 		spell = SpellDb.get_spell(GameState.special_slot_spell_id)
-	if spell == null or spell.target_kind != Spell.TargetKind.TILE or spell.shape != "sphere":
+	if spell == null or spell.target_kind != Spell.TargetKind.TILE or (spell.shape != "sphere" and spell.shape != "cone"):
 		_dungeon_floor.hide_aoe_preview()
 		return
 	var world_mouse: Vector2 = get_global_mouse_position()
 	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
-	_dungeon_floor.show_aoe_preview(tile, spell.shape_size)
+	if spell.shape == "cone":
+		_dungeon_floor.show_cone_preview(grid_pos, tile, spell.shape_size)
+	else:
+		_dungeon_floor.show_aoe_preview(tile, spell.shape_size)
 
 func _reset_camera_offset() -> void:
 	if _camera != null:

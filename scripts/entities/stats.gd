@@ -137,6 +137,15 @@ var concentration_spell_id: String = ""
 # (GameState.take_damage_raw()) or another concentration spell is cast.
 var blade_ward_turns: int = 0
 
+# Witch Bolt — same generic concentration_spell_id mechanism as Blade Ward ("witch_bolt"), but
+# also needs a live target reference since its ongoing effect is a per-turn damage tick against a
+# specific enemy, not a self-buff. `witch_bolt_target` is deliberately NOT serialized in
+# to_dict()/from_dict() — a live Enemy node reference can't survive a save/load anyway (mid-floor
+# entities aren't Phase-A save-safe — see scripts/autoloads/CLAUDE.md), so the bolt simply ends
+# silently on load like other mid-floor state.
+var witch_bolt_target: Enemy = null
+var witch_bolt_turns: int = 0
+
 # Wizard spellcasting (cantrips per docs/architecture/spellcasting-design.md, leveled spells +
 # slots per docs/architecture/leveled-spells-and-slots-plan.md). Built in
 # apply_class_defaults()'s WIZARD branch; null for every other class. See

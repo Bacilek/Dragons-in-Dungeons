@@ -7,6 +7,7 @@ extends RefCounted
 # _handle_post_attack_turn), not just the roll/damage math.
 
 const TIER_LEVELS: Array[int] = [1, 5, 11, 17]
+const CHROMATIC_ORB_TYPES: Array[String] = ["Acid", "Cold", "Fire", "Lightning", "Poison", "Thunder"]
 
 # Caster-optional spellcasting math — every player character can end up casting a spell (Scroll
 # of <Spell>, Item.scroll_spell_id, castable by any class), but only Stats.caster (Wizard) has a
@@ -342,12 +343,90 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 			player.set_grid_pos(tile_pos)
 			GameState.player_grid_pos = tile_pos
 			GameState.game_log("[color=cyan]You blink in a puff of silver mist.[/color]")
+		"burning_hands":
+			_resolve_cone_aoe(player, spell, cast_level, tile_pos, dungeon_floor)
 		_:
 			if spell.shape == "sphere":
 				_resolve_sphere_aoe(player, spell, cast_level, tile_pos, dungeon_floor)
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()
+
+# Shared cone tile-gather (framework doc §6.2's algorithm), also reused by DungeonFloor's AoE
+# preview so the preview and the actual blast use identical math. Every tile within `length` tiles
+# of `origin` (Euclidean), within ±45° of the direction toward `aim_tile` (a 90° cone — the clicked
+# tile need not itself be in range, only its direction from origin matters), LOS-gated from origin
+# (a wall casts a "shadow" through the cone). Origin tile itself is never included.
+static func cone_tiles(origin: Vector2i, aim_tile: Vector2i, length: int, dungeon_floor: Node) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var dir_v: Vector2 = Vector2(aim_tile - origin)
+	if dir_v.length() < 0.001:
+		return out
+	dir_v = dir_v.normalized()
+	var cos45: float = cos(deg_to_rad(45.0))
+	for dy: int in range(-length, length + 1):
+		for dx: int in range(-length, length + 1):
+			if dx == 0 and dy == 0:
+				continue
+			var v: Vector2 = Vector2(dx, dy)
+			if v.length() > length:
+				continue
+			if dir_v.dot(v.normalized()) < cos45:
+				continue
+			var p: Vector2i = origin + Vector2i(dx, dy)
+			if dungeon_floor != null and not dungeon_floor.has_ranged_los(origin, p):
+				continue
+			out.append(p)
+	return out
+
+# Cone AoE damage-SAVE resolution (Burning Hands) — a self-centered directional burst from the
+# CASTER outward toward the clicked/hovered tile. Unlike Fireball's sphere, this NEVER damages the
+# caster (per the spell's own text) and doesn't hit a companion either (matching _resolve_sphere_
+# aoe()'s existing scope — enemies + the player only, no companion targeting). Every GRASS tile the
+# cone passes through ignites, mirroring Fire Bolt/Thunderclap's flammable-terrain side effect.
+static func _resolve_cone_aoe(player: Player, spell: Spell, cast_level: int, aim_tile: Vector2i, dungeon_floor: Node) -> void:
+	if dungeon_floor == null:
+		return
+	var stats: Stats = player.stats
+	var origin: Vector2i = player.grid_pos
+	var extra_dice: int = spell.upcast_dice_per_level * maxi(0, cast_level - spell.level)
+	var dice_count: int = spell.dice_count + extra_dice
+	var rolls: Array[int] = Rng.roll_dice(dice_count, spell.dice_sides)
+	var base_inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], false, spell.damage_type)
+	var roll_total: int = int(base_inst["subtotal"])
+
+	var cone: Array[Vector2i] = cone_tiles(origin, aim_tile, spell.shape_size, dungeon_floor)
+	GameState.game_log("[color=orange]Flames roar from your hands![/color]")
+
+	var tile_set: Dictionary = {}
+	for p: Vector2i in cone:
+		tile_set[p] = true
+		if dungeon_floor.get_tile_type(p) == DungeonData.TileType.GRASS:
+			dungeon_floor.destroy_grass(p)
+
+	for e: Enemy in dungeon_floor.get_all_enemies():
+		if not is_instance_valid(e) or e.stats.is_dead():
+			continue
+		if not tile_set.has(e.grid_pos):
+			continue
+		var dc: int = _save_dc(stats)
+		var save: Dictionary = e.resist_check_detailed(dc, false, true)
+		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+			save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
+		var dmg: int = roll_total if not save["pass"] else roll_total / 2
+		var result: Dictionary = e.take_typed_damage(dmg, spell.damage_type)
+		var actual: int = result["actual"]
+		var inst: Dictionary = base_inst.duplicate()
+		inst["final"] = actual
+		inst["resist_mul"] = result["mul"]
+		var dmg_meta: String = CombatMath.encode_damage_instance(inst)
+		e.update_hp_bar()
+		dungeon_floor.show_damage(e.position, actual, false, CombatMath.damage_type_color(spell.damage_type))
+		var is_lethal: bool = e.stats.is_dead()
+		GameState.game_log("%s is [url=%s]%s[/url] by the flames for [url=%s][color=yellow]%d[/color][/url] %s dmg.%s" % [
+			e.display_name, save_meta, "caught" if not save["pass"] else "singed", dmg_meta, actual, spell.damage_type, CombatMath.death_suffix(is_lethal)])
+		if is_lethal:
+			player._finish_kill(e)
 
 # Sphere AoE damage-SAVE resolution (Fireball). Friendly fire is real — hits the player and any
 # enemy within shape_size tiles (Euclidean, matching the framework doc §6.1 convention) with LOS
@@ -460,3 +539,168 @@ static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int,
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()
+
+# ENEMY target, ATTACK_ROLL resolution, LEVELED spells (Chromatic Orb, Witch Bolt) — rolls an
+# attack vs the target's AC exactly like a cantrip (cast_spell()), but also consumes a spell slot
+# and supports upcast dice. `is_leap` is Chromatic Orb's single extra bolt (see effect_id dispatch
+# below) — a fresh attack + damage roll against a second target, reusing the same log-line shape
+# with the "leaps to" phrasing instead of "cast ... at".
+static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Enemy, dtype: String, cast_level: int, dungeon_floor: Node, is_leap: bool) -> Dictionary:
+	var stats: Stats = player.stats
+	var attack_bonus: int = _attack_bonus(stats)
+
+	var adv_count: int = 0
+	if not is_leap:
+		adv_count += player._base_talents.consume_psycho_or_battlefield_adv()
+	var disadv_count: int = 0
+	if player._vfx.has_advantage(target): adv_count += 1
+	if stats.zealous_presence_turns > 0: adv_count += 1
+	var d_vec: Vector2i = target.grid_pos - player.grid_pos
+	if spell.range_tiles > 1 and maxi(abs(d_vec.x), abs(d_vec.y)) <= 1: disadv_count += 1
+
+	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
+	var die1: int = r["die1"]
+	var die2: int = r["die2"]
+	var die: int = r["die"]
+	var adv: bool = r["adv"]
+	var disadv: bool = r["disadv"]
+	var roll: int = die + attack_bonus
+	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
+	if is_crit:
+		player._base_talents.on_crit()
+		player._berserker.refresh_on_any_crit()
+	var is_nat_one: bool = die == 1
+
+	var hit_meta: String = "sphit:die=%d,d1=%d,d2=%d,int=%d,prof=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
+		die, die1, die2, _cast_ability_mod(stats), stats.proficiency_bonus, roll, target.stats.armor_class,
+		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
+		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
+
+	if not is_crit and (is_nat_one or roll < target.stats.armor_class):
+		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
+		var miss_line: String
+		if is_leap:
+			miss_line = "[color=cyan]%s[/color] leaps to %s — [url=%s]%s[/url]." % [spell.spell_name, target.display_name, hit_meta, miss_color]
+		else:
+			miss_line = "You cast [color=cyan]%s[/color] at [color=orange]%s[/color] — [url=%s]%s[/url]." % [spell.spell_name, target.display_name, hit_meta, miss_color]
+		GameState.game_log(CombatMath.wrap_halfling_luck(miss_line, r["lucky"]))
+		AudioManager.play("crit_fail" if is_nat_one else "miss_enemy")
+		if is_nat_one:
+			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
+			GameState.screen_shake.emit(2.5)
+		return {"hit": false, "lethal": false, "rolls": []}
+
+	if is_crit: AudioManager.play_crit(null)
+	else: AudioManager.play("ranged_hit")
+	player._vfx.flash_hit(target)
+	if adv and not disadv:
+		player._vfx.show_surprise_mark(target)
+	if is_crit:
+		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
+		GameState.screen_shake.emit(5.0)
+
+	var extra_dice: int = spell.upcast_dice_per_level * maxi(0, cast_level - spell.level)
+	var dice_count: int = spell.dice_count + extra_dice
+	var rolls: Array[int] = Rng.roll_dice(dice_count, spell.dice_sides)
+	var inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], is_crit, dtype)
+	var result: Dictionary = target.take_typed_damage(inst["subtotal"], dtype)
+	inst["final"] = result["actual"]
+	inst["resist_mul"] = result["mul"]
+	var actual: int = result["actual"]
+	target.update_hp_bar()
+	if dungeon_floor != null:
+		dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color(dtype))
+	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
+	var type_tag: String = " [color=gray]%s[/color]" % dtype
+	var is_lethal: bool = target.stats.is_dead()
+	var verb: String = "CRIT! " if is_crit else ""
+	var hit_line: String
+	if is_leap:
+		hit_line = "%sThe orb [url=%s]leaps[/url] to [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [
+			verb, hit_meta, target.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)]
+	else:
+		hit_line = "%sYou [url=%s]cast[/url] [color=cyan]%s[/color] at [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [
+			verb, hit_meta, spell.spell_name, target.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)]
+	GameState.game_log(CombatMath.wrap_halfling_luck(hit_line, r["lucky"]))
+
+	if is_lethal:
+		player._finish_kill(target)
+	return {"hit": true, "lethal": is_lethal, "rolls": rolls}
+
+# Picks a random OTHER alive enemy visible to the player (Chromatic Orb's leap target) — never the
+# player, a companion, or the original target. Returns null if no other visible enemy exists.
+static func _pick_chromatic_orb_leap_target(dungeon_floor: Node, exclude: Enemy) -> Enemy:
+	if dungeon_floor == null:
+		return null
+	var candidates: Array[Enemy] = []
+	for e: Enemy in dungeon_floor.get_visible_enemies():
+		if e == exclude or not is_instance_valid(e) or e.stats.is_dead():
+			continue
+		candidates.append(e)
+	if candidates.is_empty():
+		return null
+	return Rng.pick(candidates)
+
+# ENEMY target, ATTACK_ROLL resolution, LEVELED spells (Chromatic Orb, Witch Bolt).
+static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	TurnManager.begin_player_action()
+	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
+	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
+	sprite.play("hit")
+	await sprite.animation_finished
+	sprite.play("idle")
+	_consume_slot(player, cast_level, from_scroll)
+
+	match spell.effect_id:
+		"chromatic_orb":
+			# Damage type is rolled once per cast, before the attack roll — a leap (if triggered)
+			# reuses the same type rather than re-rolling, like the orb's energy carrying over.
+			var dtype: String = Rng.pick(CHROMATIC_ORB_TYPES)
+			var res: Dictionary = _resolve_spell_attack_bolt(player, spell, target, dtype, cast_level, dungeon_floor, false)
+			if res["hit"] and not res["lethal"]:
+				var rolls: Array = res["rolls"]
+				var seen: Dictionary = {}
+				var has_pair: bool = false
+				for v: int in rolls:
+					seen[v] = seen.get(v, 0) + 1
+					if seen[v] >= 2:
+						has_pair = true
+				if has_pair:
+					var leap_target: Enemy = _pick_chromatic_orb_leap_target(dungeon_floor, target)
+					if leap_target != null:
+						GameState.game_log("[color=cyan]The orb crackles and leaps toward a new target![/color]")
+						_resolve_spell_attack_bolt(player, spell, leap_target, dtype, cast_level, dungeon_floor, true)
+		"witch_bolt":
+			var res2: Dictionary = _resolve_spell_attack_bolt(player, spell, target, spell.damage_type, cast_level, dungeon_floor, false)
+			if res2["hit"] and not res2["lethal"]:
+				var stats: Stats = player.stats
+				if stats.concentration_spell_id != "" and stats.concentration_spell_id != "witch_bolt":
+					GameState.game_log("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+				stats.concentration_spell_id = "witch_bolt"
+				stats.witch_bolt_target = target
+				stats.witch_bolt_turns = 10
+				GameState.game_log("[color=cyan]%s is Jolted — crackling energy will keep striking it.[/color]" % target.display_name)
+
+	if dungeon_floor != null:
+		dungeon_floor.update_fog(player.grid_pos)
+	player._handle_post_attack_turn()
+
+# Witch Bolt's per-turn damage tick (called from player.gd's _on_turn_started(), NOT a player
+# action — no TurnManager envelope, no slot consumption, no fresh attack roll; only the initial
+# cast above rolls to hit). Automatic 1d12 Lightning to the Jolted target.
+static func tick_witch_bolt(player: Player, target: Enemy, dungeon_floor: Node) -> void:
+	var rolls: Array[int] = Rng.roll_dice(1, 12)
+	var inst: Dictionary = CombatMath.build_damage_instance(rolls, 12, [], false, "Lightning")
+	var result: Dictionary = target.take_typed_damage(inst["subtotal"], "Lightning")
+	inst["final"] = result["actual"]
+	inst["resist_mul"] = result["mul"]
+	var actual: int = result["actual"]
+	target.update_hp_bar()
+	if dungeon_floor != null:
+		dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color("Lightning"))
+	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
+	var is_lethal: bool = target.stats.is_dead()
+	GameState.game_log("[color=cyan]Witch Bolt[/color] jolts %s for [url=%s][color=yellow]%d[/color][/url] Lightning dmg.%s" % [
+		target.display_name, dmg_meta, actual, CombatMath.death_suffix(is_lethal)])
+	if is_lethal:
+		player._finish_kill(target)

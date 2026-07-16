@@ -52,6 +52,9 @@ const ITEM_POOL: Array = [
 	{"name": "Scroll of Mage Armor",    "type": 3, "icon": "mage_armor.png",    "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts Mage Armor once, then it crumbles to dust.", "scroll_spell": "mage_armor", "gold": 60},
 	{"name": "Scroll of Misty Step",    "type": 3, "icon": "misty_step.png",    "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 4, "fmax": 10, "desc": "Reading this casts Misty Step once, then it crumbles to dust.", "scroll_spell": "misty_step", "gold": 100},
 	{"name": "Scroll of Fireball",      "type": 3, "icon": "fireball.png",      "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "Reading this casts Fireball once, then it crumbles to dust.", "scroll_spell": "fireball", "gold": 180},
+	{"name": "Scroll of Chromatic Orb", "type": 3, "icon": "chromatic_orb.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts Chromatic Orb once, then it crumbles to dust.", "scroll_spell": "chromatic_orb", "gold": 60},
+	{"name": "Scroll of Burning Hands", "type": 3, "icon": "burning_hands.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts Burning Hands once, then it crumbles to dust.", "scroll_spell": "burning_hands", "gold": 60},
+	{"name": "Scroll of Witch Bolt",    "type": 3, "icon": "witch_bolt.png",    "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts Witch Bolt once, then it crumbles to dust.", "scroll_spell": "witch_bolt", "gold": 60},
 ]
 
 const BOSS_POOL: Array = [
