@@ -310,6 +310,7 @@ static func fmt_save_tooltip(p: Dictionary) -> String:
 	var disadv: bool = p.get("disadv", "0") == "1"
 	var lucky1: bool = p.get("lucky1", "0") == "1"
 	var lucky2: bool = p.get("lucky2", "0") == "1"
+	var sliver: int = int(p.get("sliver", "0"))
 	var lines: PackedStringArray = []
 	if adv:
 		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
@@ -326,6 +327,8 @@ static func fmt_save_tooltip(p: Dictionary) -> String:
 	if prof != 0:
 		var prof_label: String = p.get("prof_label", "Proficiency")
 		lines.append("[color=lightblue]+%d[/color]  (%s, %s check)" % [prof, prof_label, stat])
+	if sliver > 0:
+		lines.append("[color=#c060ff]-%d[/color]  (Mind Sliver)" % sliver)
 	lines.append("─────────────────")
 	var result: String = "[color=green]SUCCESS[/color]" if passed else "[color=red]FAIL[/color]"
 	lines.append("= [color=yellow]%d[/color] vs DC %d  →  %s" % [total, dc, result])

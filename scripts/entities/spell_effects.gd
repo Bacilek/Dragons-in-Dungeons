@@ -120,8 +120,8 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 			"ray_of_frost":
 				var dc: int = _save_dc(stats)
 				var save: Dictionary = target.resist_check_detailed(dc, false)
-				var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d" % [
-					save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"])]
+				var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+					save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 				if not save["pass"]:
 					target.frozen_feet_turns = maxi(target.frozen_feet_turns, 1)
 					GameState.game_log("[color=cyan]%s's feet [url=%s]freeze[/url] to the ground![/color]" % [target.display_name, save_meta])
@@ -155,8 +155,8 @@ static func cast_cantrip_save_at_enemy(player: Player, spell: Spell, target: Ene
 	var use_wis: bool = spell.effect_id == "toll_the_dead"
 	var use_int: bool = spell.effect_id == "mind_sliver"
 	var save: Dictionary = target.resist_check_detailed(dc, false, false, use_wis, use_int)
-	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d" % [
-		save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"])]
+	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+		save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 
 	if save["pass"]:
 		GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s resists[/url].[/color]" % [
@@ -215,8 +215,8 @@ static func _resolve_thunderclap(player: Player, spell: Spell, dungeon_floor: No
 			continue
 		var dc: int = _save_dc(stats)
 		var save: Dictionary = e.resist_check_detailed(dc, true)
-		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d" % [
-			save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"])]
+		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+			save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 		if save["pass"]:
 			GameState.game_log("%s [url=%s]resists[/url] the thunderclap." % [e.display_name, save_meta])
 			continue
@@ -382,8 +382,8 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, cast_level: int, c
 	for e: Enemy in targets:
 		var dc: int = _save_dc(stats)
 		var save: Dictionary = e.resist_check_detailed(dc, false, true)
-		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d" % [
-			save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"])]
+		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+			save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 		var dmg: int = roll_total if not save["pass"] else roll_total / 2
 		var result: Dictionary = e.take_typed_damage(dmg, "Fire")
 		var actual: int = result["actual"]

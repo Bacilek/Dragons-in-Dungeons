@@ -1190,9 +1190,10 @@ func equip(item: Item, slot_name: String = "") -> void:
 	# weapon — kick whatever's in "hand2" back to the bag automatically.
 	if slot_name == "melee" and to_equip.is_two_handed:
 		_auto_unequip_offhand()
-	# Mage Armor ends the moment Armor is equipped (not on other slots — robes/clothes-as-
-	# accessories aren't modeled as a distinct item type, so only the "armor" slot counts).
-	if slot_name == "armor" and player_stats.mage_armor_active:
+	# Mage Armor ends the moment Armor OR a Shield is equipped (not other slots — robes/clothes-as-
+	# accessories aren't modeled as a distinct item type; a Shield counts too since 5e RAW treats
+	# it as worn armor even though it lives in "hand2", not "armor" — see Item.is_shield).
+	if (slot_name == "armor" or to_equip.is_shield) and player_stats.mage_armor_active:
 		player_stats.mage_armor_active = false
 	recalculate_stats()
 	combat_message.emit("[color=cyan]Equipped [b]%s[/b].[/color]" % to_equip.item_name)
@@ -1343,6 +1344,12 @@ func move_item(src: String, src_idx: int, src_slot: String,
 	# weapon — kick whatever's in "hand2" back to the bag automatically (mirrors equip()).
 	if dest == "equipment" and dest_slot == "melee" and src_item != null and src_item.is_two_handed:
 		_auto_unequip_offhand()
+	# Mage Armor ends the moment Armor or a Shield lands in an equipment slot — mirrors equip()'s
+	# own gate. Armor/Shield are only ever equipped via this drag path (never auto-equipped on
+	# pickup, unlike weapons), so this is the actual chokepoint that matters in normal play.
+	if dest == "equipment" and src_item != null and player_stats.mage_armor_active \
+			and (dest_slot == "armor" or src_item.is_shield):
+		player_stats.mage_armor_active = false
 	recalculate_stats()
 	equipment_changed.emit()
 	inventory_changed.emit()

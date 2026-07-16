@@ -129,8 +129,8 @@ GameState.player_status_changed.emit()
 
 ## Enemy resist checks (World Tree)
 `Enemy.resist_check(dc: int, use_con: bool = false) -> bool` — rolls `d20 + floor/3 + (con_modifier or str_modifier)` vs `dc`; true = enemy resists. Backing stats: `DungeonFloorData.ENEMY_POOL`/`BOSS_POOL` entries may set optional `"str_mod"`/`"con_mod"` int keys (default 0); `_apply_stats()` converts them to `Stats.strength/constitution` (`10 + mod * 2`). Used by Grip of the Forest's pull (STR) and Branching Strike R3's push (CON), both vs DC `8 + player STR mod + proficiency`; by the Heavy Crossbow's **Push** weapon mastery (CON) vs DC `8 + player DEX mod + proficiency`, resolved via `DungeonFloor.resolve_push()`; and by the Maul's **Topple** weapon mastery (CON) vs DC `8 + player STR mod + proficiency`, resolved by setting `Enemy.prone_turns = 1` directly — see `scripts/world/CLAUDE.md`'s "Forced movement" section and `scripts/items/CLAUDE.md`'s "Weapon masteries".
-`Enemy.resist_check_detailed(dc, use_con = false, use_dex = false, use_wis = false, use_int = false) -> Dictionary` — same roll as `resist_check()`, but returns `{die, mod, floor_bonus, dc, total, pass, stat, sliver_penalty}` so a caller can log a hover-tooltip roll breakdown instead of just the bool. `resist_check()` is now a one-line wrapper (`return resist_check_detailed(dc, use_con)["pass"]`). Only Topple's `player.gd._try_topple()` currently consumes the detailed form (see below) — Grip of the Forest / Branching Strike R3 / Heavy Crossbow Push still call the plain bool form since their logs don't show a roll breakdown. Priority when multiple `use_*` are somehow true: DEX > WIS > INT > CON > STR (every real call site only sets one). `wis_mod`/`int_mod` optional pool keys (default 0) mirror `str_mod`/`con_mod`/`dex_mod` — see "Enemy stat scaling" above. **Mind Sliver's penalty**: `Enemy.mind_sliver_penalty_die: bool` — if set, the very next `resist_check_detailed()` call (any stat) rolls `-1d4` (consumed regardless of which stat that particular check happens to use) and reports it via the `sliver_penalty` key.
-**Topple's contest-roll tooltip**: `_try_topple()` builds a `"save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d"` meta (reusing the existing `TooltipFormatters.fmt_save_tooltip()`/`hud.gd`'s `"save"`/`"check"` dispatch, previously wired up but unused by any caller) and wraps "is knocked"/"resists" in `[url=%s]` so hovering the Topple log line shows the enemy's CON-save roll, same as hovering a player attack shows the hit roll. `prof_label=Floor` relabels the tooltip's second modifier line from "Proficiency" to "Floor" since this is the enemy's floor-scaling bonus, not a proficiency bonus — `fmt_save_tooltip()` reads an optional `prof_label` param (defaults to `"Proficiency"`) for exactly this.
+`Enemy.resist_check_detailed(dc, use_con = false, use_dex = false, use_wis = false, use_int = false) -> Dictionary` — same roll as `resist_check()`, but returns `{die, mod, floor_bonus, dc, total, pass, stat, sliver_penalty}` so a caller can log a hover-tooltip roll breakdown instead of just the bool. `resist_check()` is now a one-line wrapper (`return resist_check_detailed(dc, use_con)["pass"]`). Consumed by Topple's `player.gd._try_topple()` (below) and by every enemy-side SAVE cantrip in `spell_effects.gd` (Ray of Frost, Toll the Dead, Mind Sliver, Thunderclap, Fireball) — Grip of the Forest / Branching Strike R3 / Heavy Crossbow Push still call the plain bool form since their logs don't show a roll breakdown. Priority when multiple `use_*` are somehow true: DEX > WIS > INT > CON > STR (every real call site only sets one). `wis_mod`/`int_mod` optional pool keys (default 0) mirror `str_mod`/`con_mod`/`dex_mod` — see "Enemy stat scaling" above. **Mind Sliver's penalty**: `Enemy.mind_sliver_penalty_die: bool` — if set, the very next `resist_check_detailed()` call (any stat, on any of the sites above) rolls `-1d4` (consumed regardless of which stat that particular check happens to use) and reports it via the `sliver_penalty` key — every one of those sites folds it into its `save:` meta's `sliver=%d` field, so the hover tooltip shows it as its own `"-N (Mind Sliver)"` line rather than silently vanishing into the total.
+**Topple's contest-roll tooltip**: `_try_topple()` builds a `"save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d"` meta (reusing the existing `TooltipFormatters.fmt_save_tooltip()`/`hud.gd`'s `"save"`/`"check"` dispatch) and wraps "is knocked"/"resists" in `[url=%s]` so hovering the Topple log line shows the enemy's CON-save roll, same as hovering a player attack shows the hit roll. `prof_label=Floor` relabels the tooltip's second modifier line from "Proficiency" to "Floor" since this is the enemy's floor-scaling bonus, not a proficiency bonus — `fmt_save_tooltip()` reads an optional `prof_label` param (defaults to `"Proficiency"`) for exactly this.
 `Enemy.rooted_turns: int` — Grip of the Forest R2. Checked at the top of `take_turn()`: decrements, skips movement, still attacks if already adjacent.
 `Enemy.disadv_next_attack: bool` — Grip of the Forest R3. Consumed in `_attack_player()`'s roll (adds a Disadvantage source, resolved via the same net-ADV/DISADV house rule as the player's own attacks).
 `Enemy.prone_turns: int` — Maul's **Topple** weapon mastery. Checked at the very top of `take_turn()` (before `slowed_turns`): decrements and returns immediately, skipping the enemy's entire turn (no movement, no attack) — unlike `rooted_turns`, which still allows an attack if already adjacent.
@@ -387,7 +387,12 @@ extra was needed there).
   **Simplification**: RAW this lasts "until the end of your next turn"; this codebase instead
   consumes it on the enemy's next check regardless of timing, since enemy checks are rare enough
   (Push/Topple/Grip of the Forest saves) that a real turn-expiry timer wasn't worth a second
-  mechanism — documented on the field itself in `enemy.gd`.
+  mechanism — documented on the field itself in `enemy.gd`. The penalty is visible in the hover
+  tooltip of whichever check consumes it: every `save:` meta built from a `resist_check_detailed()`
+  result (Ray of Frost, Toll the Dead/Mind Sliver's own save, Thunderclap, Fireball, Topple) carries
+  a `sliver=%d` field (`save["sliver_penalty"]`, 0 when not consumed), rendered by
+  `TooltipFormatters.fmt_save_tooltip()` as a `"-N (Mind Sliver)"` line — not just silently folded
+  into the roll total.
 - **Thunderclap** (Evocation, `effect_id: "thunderclap"`, SAVE/CON, SELF, instant, radius 1):
   every enemy within 1 tile of the CASTER (not an impact point — `SpellEffects._resolve_thunderclap()`,
   a self-centered sibling of Fireball's `_resolve_sphere_aoe()`) CON-saves or takes `1d6` Thunder,
@@ -577,11 +582,16 @@ impact point rather than stop at the first wall it can't directly see through.
   no armor is equipped, AC becomes `13 + DEX` — but only as a fallback below Barbarian/Monk's own
   unarmored-defense formulas (those always win if the character has one). If the caster is
   currently wearing Armor, casting fizzles (slot is still spent, RAW) with a gray log line instead
-  of setting the flag. Ends two ways: `GameState.equip()` clears the flag the instant something is
-  equipped into the `"armor"` slot (robes/clothes aren't a distinct item type in this codebase, so
-  any Armor-type item ends it — no shield item type exists either); `GameState.long_rest()` also
-  clears it unconditionally. Both call `recalculate_stats()` afterward. Persisted in
-  `Stats.to_dict()`/`from_dict()`'s `"mage_armor_active"` key.
+  of setting the flag. Ends three ways: equipping something into the `"armor"` slot (robes/clothes
+  aren't a distinct item type in this codebase, so any Armor-type item ends it) OR equipping a
+  Shield (`Item.is_shield` — a Shield lives in `"hand2"`, not `"armor"`, but 5e RAW still counts it
+  as worn armor for this purpose — see `scripts/items/CLAUDE.md`'s "Shields"); `GameState.
+  long_rest()` also clears it unconditionally. **Both `GameState.equip()` and `move_item()`
+  (the drag-and-drop path) carry this check independently** — Armor/Shield items are never
+  auto-equipped on pickup (only weapons are), so `move_item()` is the path that actually matters in
+  normal play; `equip()`'s own copy exists for the rarer explicit-call cases. All three call
+  `recalculate_stats()` afterward. Persisted in `Stats.to_dict()`/`from_dict()`'s
+  `"mage_armor_active"` key.
 - **Special quick-cast slot**: a single spell (cantrip or leveled), assigned from inside the
   Spellbook overlay (`GameState.special_slot_spell_id`/`set_special_slot()`/`clear_special_slot()`,
   see `scripts/autoloads/CLAUDE.md`), displayed read-only next to Ranged in the Inventory overlay
