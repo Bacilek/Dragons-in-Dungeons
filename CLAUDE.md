@@ -110,10 +110,13 @@ with real D&D 2024 spell slots are both implemented.** Leveled spells: `Standard
 level-up "pick 1 of 3" spellbook-growth picker (`scripts/ui/spell_learn_picker.gd`), scroll-taught
 spells, and an **R-key Spellbook overlay** (`scripts/ui/spellbook_overlay.gd`) — level tabs,
 hover description, click-to-prepare, drag-and-drop onto a specific ability-bar slot, bottom-right
-"X / Y prepared" counter. 5 example spells (Magic Missile, Shield, Mage Armor, Misty Step, Fireball). No
-concentration, no reactions, no cone/line/cube AoE (sphere only), no upcast slot-level picker
-(always casts at the cheapest available slot) — see `scripts/entities/CLAUDE.md`'s "Wizard
-leveled spells (spell slots)" section, `scripts/items/CLAUDE.md`'s spellcasting-data section, and
+"X / Y prepared" counter. 8 leveled spells (Magic Missile, Shield, Mage Armor, Misty Step, Fireball,
+Chromatic Orb, Burning Hands, Witch Bolt — the last 3 add a leveled ATTACK_ROLL path with a
+one-shot leap-on-doubles mechanic, a directional cone AoE shape, and a second Concentration DoT
+effect alongside Blade Ward, respectively). Full Concentration support only for Blade Ward/Witch
+Bolt (one slot, `Stats.concentration_spell_id`), no reactions, no line/cube AoE (sphere + cone
+only), no upcast slot-level picker (always casts at the cheapest available slot) — see
+`scripts/entities/CLAUDE.md`'s "Wizard leveled spells (spell slots)" section, `scripts/items/CLAUDE.md`'s spellcasting-data section, and
 `scripts/ui/CLAUDE.md`'s Spellbook/spell-learn-picker sections for the full implementation.
 Design docs: `docs/architecture/spellcasting-design.md` (the original full-framework design —
 concentration/reactions/enemy-casters/half-casters/multiclass remain design-only per that doc)

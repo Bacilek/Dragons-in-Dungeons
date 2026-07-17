@@ -12,7 +12,7 @@ const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp
 # The Wizard's fixed round-1 starting choice (cantrip_select.gd) — unchanged by the 5 additions
 # above so the premade Jace's "cantrip": "fire_bolt" shortcut and existing save data stay valid.
 const STARTER_CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
-const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball"]
+const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt"]
 const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
 ## Shared level-name formatter — "Cantrips" for level 0, "1st"/"2nd"/"3rd"/"Nth" otherwise.
@@ -40,6 +40,9 @@ static func get_spell(id: String) -> Spell:
 		"mage_armor": return _mage_armor()
 		"misty_step": return _misty_step()
 		"fireball": return _fireball()
+		"chromatic_orb": return _chromatic_orb()
+		"burning_hands": return _burning_hands()
+		"witch_bolt": return _witch_bolt()
 	return null
 
 static func _fire_bolt() -> Spell:
@@ -258,5 +261,65 @@ static func _fireball() -> Spell:
 	s.dice_sides = 6
 	s.damage_type = "Fire"
 	s.upcast_dice_per_level = 1
+	s.class_list = ["WIZARD"]
+	return s
+
+static func _chromatic_orb() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "chromatic_orb"
+	s.spell_name = "Chromatic Orb"
+	s.description = "Hurl a sphere of crackling energy at a target within 9 tiles. 3d8 damage of a random type (Acid/Cold/Fire/Lightning/Poison/Thunder), rolled fresh each cast. If at least two of the 3 damage dice come up the same number, the orb leaps once more to a random other target you can see, rolling a fresh attack and damage of the same type."
+	s.icon_path = "res://icons/spells/chromatic_orb.png"
+	s.school = "Evocation"
+	s.level = 1
+	s.range_tiles = 9
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.ATTACK_ROLL
+	s.dice_count = 3
+	s.dice_sides = 8
+	s.damage_type = ""   # rolled per-cast from SpellEffects.CHROMATIC_ORB_TYPES — see effect_id
+	s.upcast_dice_per_level = 1
+	s.effect_id = "chromatic_orb"
+	s.class_list = ["WIZARD"]
+	return s
+
+static func _burning_hands() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "burning_hands"
+	s.spell_name = "Burning Hands"
+	s.description = "A cone of fire roars from your outstretched hands. Everyone in a 3-tile cone makes a DEX save or takes 3d6 Fire (half on a save). Flammable terrain in the cone ignites. Never harms you."
+	s.icon_path = "res://icons/spells/burning_hands.png"
+	s.school = "Evocation"
+	s.level = 1
+	s.range_tiles = 3   # display-only hint text; the actual click only supplies an aim direction
+	s.target_kind = Spell.TargetKind.TILE
+	s.shape = "cone"
+	s.shape_size = 3
+	s.resolution = Spell.Resolution.SAVE
+	s.save_stat = "DEX"
+	s.save_for_half = true
+	s.dice_count = 3
+	s.dice_sides = 6
+	s.damage_type = "Fire"
+	s.upcast_dice_per_level = 1
+	s.effect_id = "burning_hands"
+	s.class_list = ["WIZARD"]
+	return s
+
+static func _witch_bolt() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "witch_bolt"
+	s.spell_name = "Witch Bolt"
+	s.description = "A beam of lightning forms a sustained arc between you and a target within 6 tiles — 2d12 Lightning on the initial hit and begins Concentration. While you concentrate (up to 10 turns), the target is Jolted: at the end of each of your later turns it takes 1d12 Lightning again."
+	s.icon_path = "res://icons/spells/witch_bolt.png"
+	s.school = "Evocation"
+	s.level = 1
+	s.range_tiles = 6
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.ATTACK_ROLL
+	s.dice_count = 2
+	s.dice_sides = 12
+	s.damage_type = "Lightning"
+	s.effect_id = "witch_bolt"
 	s.class_list = ["WIZARD"]
 	return s

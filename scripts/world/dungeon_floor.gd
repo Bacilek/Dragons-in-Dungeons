@@ -396,20 +396,35 @@ func update_fog(player_pos: Vector2i) -> void:
 	if not stairs_was_known and _explored.get(_data.stairs_pos, false):
 		GameState.stairs_discovered.emit()
 
-# ── AoE targeting preview (e.g. Fireball) ──────────────────────────────────────
-# Purple tile tint following the mouse while a sphere-shaped spell is armed for targeting
+# ── AoE targeting preview (e.g. Fireball, Burning Hands) ────────────────────────
+# Purple tile tint following the mouse while a sphere- or cone-shaped spell is armed for targeting
 # (player.gd's _update_spell_aoe_preview(), driven by PlayerSpellcasting.get_armed_spell()).
-# Deliberately NOT LOS-filtered: a Fireball's blast fills its whole radius around a corner from
-# the impact point (it's an explosion, not a line-of-sight laser), so the preview always shows the
-# full raw circle — matches _resolve_sphere_aoe()'s own distance check exactly, just without its
-# additional per-target LOS gate.
+# Sphere: deliberately NOT LOS-filtered — a Fireball's blast fills its whole radius around a corner
+# from the impact point (it's an explosion, not a line-of-sight laser), so the preview always shows
+# the full raw circle — matches _resolve_sphere_aoe()'s own distance check exactly, just without
+# its additional per-target LOS gate. Cone: IS LOS-filtered (SpellEffects.cone_tiles(), shared with
+# the resolver) — a wall casts a "shadow" through the cone, same shape in the preview as the blast.
 # Uses pooled Sprite2D + a shared 1×1 white texture (tinted via modulate), same Node2D-world
 # convention as the fog overlay above, rather than a Control — this node lives under DungeonFloor
 # (a Node2D), not a CanvasLayer.
 var _aoe_preview_tex: ImageTexture
 
 func show_aoe_preview(center: Vector2i, radius: int) -> void:
-	var key: String = "%d,%d,%d" % [center.x, center.y, radius]
+	var tiles: Array[Vector2i] = []
+	for dy: int in range(-radius, radius + 1):
+		for dx: int in range(-radius, radius + 1):
+			if dx * dx + dy * dy <= radius * radius:
+				tiles.append(center + Vector2i(dx, dy))
+	_paint_aoe_preview_tiles("sphere,%d,%d,%d" % [center.x, center.y, radius], tiles)
+
+# Cone-shaped spell preview (Burning Hands) — same pooled-Sprite2D tint as show_aoe_preview()
+# above, just fed the cone's tile set (SpellEffects.cone_tiles(), shared with the actual blast
+# resolver so the preview and the real footprint always agree) instead of a Euclidean disc.
+func show_cone_preview(origin: Vector2i, aim: Vector2i, length: int) -> void:
+	var key: String = "cone,%d,%d,%d,%d,%d" % [origin.x, origin.y, aim.x, aim.y, length]
+	_paint_aoe_preview_tiles(key, SpellEffects.cone_tiles(origin, aim, length, self))
+
+func _paint_aoe_preview_tiles(key: String, tiles: Array[Vector2i]) -> void:
 	if key == _aoe_preview_last_key:
 		return
 	_aoe_preview_last_key = key
@@ -417,11 +432,6 @@ func show_aoe_preview(center: Vector2i, radius: int) -> void:
 		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 		img.fill(Color(1, 1, 1, 1))
 		_aoe_preview_tex = ImageTexture.create_from_image(img)
-	var tiles: Array[Vector2i] = []
-	for dy: int in range(-radius, radius + 1):
-		for dx: int in range(-radius, radius + 1):
-			if dx * dx + dy * dy <= radius * radius:
-				tiles.append(center + Vector2i(dx, dy))
 	while _aoe_preview_rects.size() < tiles.size():
 		var spr := Sprite2D.new()
 		spr.texture = _aoe_preview_tex

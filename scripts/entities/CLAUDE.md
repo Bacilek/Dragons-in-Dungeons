@@ -445,8 +445,10 @@ Implements `docs/architecture/leveled-spells-and-slots-plan.md` on top of the ca
 above. **Simplifications vs. that doc** (time-boxed for the first implementation pass, flagged
 here rather than silently diverging): no upcast slot-level picker UI — casting always spends the
 **lowest** available slot level (`StandardSlotPool.lowest_available_level()`); AoE is
-**sphere-only**, no cone (Burning Hands was cut from the doc's 5-spell example list, leaving 5:
-Magic Missile, Shield, Mage Armor, Misty Step, Fireball); Shield ships as a same-turn manual self-cast, not a
+**sphere or cone only**, no line/cube. `LEVELED_SPELL_IDS` (8): Magic Missile, Shield, Mage Armor,
+Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch Bolt (the last 3 added after the initial
+pass — see "More 1st-level spells" below, including Burning Hands' cone AoE, originally cut from
+the doc's example list). Shield ships as a same-turn manual self-cast, not a
 reaction (the reaction broker is out of scope). Drag-and-drop from the Spellbook targets the single
 existing 9-slot ability bar (multi-page auto-paging from the framework doc isn't implemented
 either) — see `scripts/ui/CLAUDE.md`'s "Spellbook overlay" section.
@@ -631,6 +633,67 @@ impact point rather than stop at the first wall it can't directly see through.
   number tooltip (per direct owner correction); that context lives on the spell's own ability-bar
   hover tooltip instead (`Spell.description`, `SpellDb._magic_missile()`), which already states
   both.
+
+### More 1st-level spells (Chromatic Orb, Burning Hands, Witch Bolt)
+
+Three more `LEVELED_SPELL_IDS` entries added on top of the original 5-spell pass above — each
+introduces one new mechanic not needed by any earlier spell.
+
+- **Chromatic Orb** (Evocation, `effect_id: "chromatic_orb"`, ATTACK_ROLL, ENEMY, 9 tiles): the
+  first **leveled** ATTACK_ROLL spell (every earlier leveled spell was AUTO_HIT or SAVE) — routed
+  through a new `SpellEffects.cast_leveled_attack_at_enemy()` / `_resolve_spell_attack_bolt()` pair
+  that mirrors `cast_spell()`'s cantrip attack-roll math but also consumes a spell slot and
+  supports `upcast_dice_per_level`. `PlayerSpellcasting.try_cast_at()`'s `ENEMY` branch now checks
+  `spell.resolution == ATTACK_ROLL` to pick this path over the existing AUTO_HIT
+  `cast_leveled_at_enemy()`. Damage type is rolled once per cast from `SpellEffects.
+  CHROMATIC_ORB_TYPES` (Acid/Cold/Fire/Lightning/Poison/Thunder) — **not** a fixed `Spell.
+  damage_type` (left `""`). **Leap**: if the 3d8 damage roll contains any repeated die value (a
+  "doubles" check over the raw `rolls` array `_resolve_spell_attack_bolt()` returns), the orb
+  leaps once to a random OTHER alive enemy in the player's current FOV
+  (`_pick_chromatic_orb_leap_target()`, `dungeon_floor.get_visible_enemies()` — never the player,
+  a companion, or the original target), rolling a completely fresh attack + damage roll of the
+  *same* damage type via a second `_resolve_spell_attack_bolt(..., is_leap=true)` call. Leaps only
+  once, even if the leap's own damage also rolls doubles — the caller only checks the primary
+  bolt's `rolls`, never the leap's. A killing primary hit skips the leap check entirely (no leap
+  off a dead target).
+- **Burning Hands** (Evocation, `effect_id: "burning_hands"`, SAVE/DEX, TILE, `shape: "cone"`,
+  `shape_size: 3`): the first (and so far only) **cone** AoE shape — `Spell.shape` gained a third
+  value alongside `""`/`"sphere"`. The cone is self-centered on the caster and only ever
+  *aimed* by the clicked/hovered tile — `SpellEffects.cone_tiles(origin, aim_tile, length,
+  dungeon_floor)` (a 90°-arc dot-product sweep per `docs/architecture/spellcasting-design.md`
+  §6.2's original algorithm, LOS-gated per-tile from the caster) is the single shared tile-gather,
+  called by both the resolver (`_resolve_cone_aoe()`, dispatched from `cast_leveled_at_tile()`) and
+  the live preview (`DungeonFloor.show_cone_preview()`, mirroring `show_aoe_preview()`'s pooled-
+  Sprite2D convention — see `scripts/world/CLAUDE.md`). Because only the *direction* to the clicked
+  tile matters, `PlayerSpellcasting.try_cast_at()` special-cases `spell.shape == "cone"` to skip
+  the normal range/LOS gate on the clicked tile entirely (the click can land anywhere, even out of
+  range or behind a wall — only its direction from the caster is used). **Never damages the
+  caster** (unlike Fireball's sphere) and, matching `_resolve_sphere_aoe()`'s own existing scope,
+  doesn't hit a companion either — enemies only. Ignites every `GRASS` tile the cone passes
+  through (`DungeonFloor.destroy_grass()`), mirroring Fire Bolt/Thunderclap's flammable-terrain
+  side effect.
+- **Witch Bolt** (Evocation, `effect_id: "witch_bolt"`, ATTACK_ROLL, ENEMY, 6 tiles, 2d12
+  Lightning initial hit): a second concentration spell alongside Blade Ward, reusing `Stats.
+  concentration_spell_id` — casting it while Blade Ward (or itself) is already active logs the
+  generic "breaks your concentration" line first, same as Blade Ward's own recast branch. Two new
+  `Stats` fields carry the ongoing effect: `witch_bolt_target: Enemy` and `witch_bolt_turns: int`
+  (both deliberately **not** serialized in `to_dict()`/`from_dict()` — a live `Enemy` node
+  reference can't survive save/load anyway, so the bolt just silently ends on load like other
+  mid-floor state). On a non-lethal initial hit, `cast_leveled_attack_at_enemy()`'s effect
+  dispatch sets `concentration_spell_id = "witch_bolt"`, `witch_bolt_target = target`,
+  `witch_bolt_turns = 10`. **Tick**: `player.gd _on_turn_started()`'s "not came_from_revert" block
+  (same block as Blade Ward's own duration tick) calls `SpellEffects.tick_witch_bolt()` — an
+  automatic 1d12 Lightning hit against `witch_bolt_target` with **no** attack roll and **no** slot
+  consumption (only the initial cast rolls to hit) — once per real player turn, approximating 5e's
+  "at the end of your turn" within this codebase's once-per-round tick granularity. Ends (clearing
+  both fields + `concentration_spell_id`) when `witch_bolt_turns` reaches 0, the target dies (from
+  the tick itself or otherwise), or `GameState._check_concentration_break()`'s CON check fails on
+  the player taking damage (extended with a `"witch_bolt"` branch alongside the existing
+  `"blade_ward"` one). `PlayerActions.do_inspect()`'s enemy status suffix gained a `Jolted` entry
+  (`GameState.player_stats.witch_bolt_turns > 0 and witch_bolt_target == enemy`), alongside the
+  existing `Frozen Feet`/`Shocked` checks.
+- **Scrolls**: all 3 get a `Scroll of <Spell>` cast-scroll (`Item.scroll_spell_id`) per the
+  existing "one scroll per spell" convention — see `scripts/items/CLAUDE.md`.
 
 ## Monk class
 Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: STR + DEX. Weapon proficiency: intended to be simple weapons + martial weapons with the light property, but `Stats.proficient_simple_weapons`/`proficient_martial_weapons` are not yet set in `apply_class_defaults()` for Monk (TODO — currently only wired up for Barbarian). No armor training (any armor → DISADV on STR/DEX checks/saves + DISADV on attacks; TODO: enforce). Starting abilities (slot 0–1 of ability bar):
