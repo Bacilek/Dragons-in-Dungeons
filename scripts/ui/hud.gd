@@ -1110,4 +1110,5 @@ func _format_tooltip(meta: String) -> String:
 		"frzhit":        return TooltipFormatters.fmt_frenzy_hit_tooltip(params)
 		"frzdmg":        return TooltipFormatters.fmt_frenzy_dmg_tooltip(params)
 		"msn":           return TooltipFormatters.fmt_masochist_tooltip(params)
+		"conc":          return TooltipFormatters.fmt_conc_tooltip(params)
 	return ""

@@ -287,15 +287,23 @@ time**, not just post-level-up/post-long-rest (`docs/architecture/leveled-spells
 Modeled on `mastery_picker.gd`'s structure (dim overlay + centered bordered `Panel`, hover-detail
 panel, bottom-right "X / Y" counter) with level tabs added across the top: an always-present
 **Cantrips** tab (level 0 — not gated on slot progress, since a Wizard always knows their 3
-cantrips) followed by one tab per leveled-spell level the character currently has slots for
-(`StandardSlotPool.max_slots()`'s keys). `_tab_buttons` is a `Dictionary[int, Button]` keyed by
-level (was a `-1`-indexed `Array`, switched when level 0 was added to avoid fragile index math).
-Selecting a tab lists the Wizard's known spells of that level as rows (icon + name, gold
-border/tint when prepared or a cantrip — `_build_row()`'s `is_cantrip` branch always renders a
-cantrip in the same gold "always ready" style as a prepared leveled spell; no text suffix, the
-gold border/name color alone communicates prepared state).
-**Hover** a row → the detail panel below shows its full description (same "browse and pick"
-hover-detail pattern as the Mastery Picker, not a `[url=]` tooltip). **Click** a row → on a leveled
+cantrips) followed by one tab per level in `_known_levels` — every leveled-slot level the character
+currently has (`StandardSlotPool.max_slots()`'s keys) **plus** the level of any spell already in
+`known_spells` even if slot progress hasn't reached it yet (covers the debug panel's "Give
+Spell..." granting a spell above the character's current level — see "Debug panel" below — it must
+still get a tab to appear in, non-contiguous levels included, not just `range(1, max_level+1)`).
+`_tab_buttons` is a `Dictionary[int, Button]` keyed by level (was a `-1`-indexed `Array`, switched
+when level 0 was added to avoid fragile index math).
+Selecting a tab lists the Wizard's known spells of that level as square tiles (icon on top, name
+label below, gold border/tint when prepared or a cantrip — `_build_row()`'s `is_cantrip` branch
+always renders a cantrip in the same gold "always ready" style as a prepared leveled spell; no text
+suffix, the gold border/name color alone communicates prepared state), **sorted alphabetically by
+spell name**. Tiles are laid out in a `GridContainer` (`TILE_W`/`TILE_H`/`TILE_GAP` constants,
+columns computed from the available width) inside a `ScrollContainer` (vertical-only) so a level
+holding more spells than fit in the visible area (e.g. many cantrips) scrolls instead of
+overflowing the panel.
+**Hover** a tile → the detail panel below shows its full description (same "browse and pick"
+hover-detail pattern as the Mastery Picker, not a `[url=]` tooltip). **Click** a tile → on a leveled
 spell, `GameState.set_spell_prepared(id, bool)` toggles prepared, hard-blocked at
 `SpellcasterState.prepared_max()` (clicking an unprepared spell at cap is a silent no-op, same feel
 as the Mastery Picker's cap block); on a cantrip the click is a no-op (`_process()`'s click-toggle

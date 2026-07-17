@@ -7,17 +7,21 @@ extends CanvasLayer
 
 const PANEL_W: float = 760.0
 const PANEL_H: float = 620.0
-const ROW_H: float = 56.0
+const TILE_W: float = 84.0
+const TILE_H: float = 96.0
+const TILE_GAP: float = 10.0
 const DRAG_THRESHOLD: float = 8.0
 
 var _panel: Panel
 var _tab_buttons: Dictionary = {}   # level (int, 0 = Cantrips) -> Button
-var _row_container: Control
+var _scroll: ScrollContainer
+var _row_container: GridContainer   # tile grid — fills each row left-to-right before wrapping
 var _detail_name: Label
 var _detail_desc: RichTextLabel
 var _counter_rtl: RichTextLabel
 var _selected_level: int = 1
 var _max_level: int = 0
+var _known_levels: Array[int] = []   # every tab to show, 0 (Cantrips) + slot levels + any known-spell level beyond current slot progress (debug Give Spell can grant those)
 var _prev_bar_mode_was_ability: bool = false
 const ACTION_BAR_HEIGHT: float = 140.0   # matches hud.tscn's ActionBar (offset_top = -135.0) + a small margin
 
@@ -37,9 +41,22 @@ func _ready() -> void:
 	add_to_group("spellbook_overlay")
 	GameState.spellbook_open = true
 	var caster: SpellcasterState = GameState.player_stats.caster
+	# Tabs = every slot level the character has progressed to, PLUS the level of any spell already
+	# known (debug "Give Spell" can grant a spell above current slot progress — it must still get a
+	# tab to appear in, regardless of character level).
+	var levels_set: Dictionary = {0: true}
 	if caster != null and caster.slot_pool != null:
 		for lv: int in caster.slot_pool.max_slots():
-			_max_level = maxi(_max_level, lv)
+			levels_set[lv] = true
+	if caster != null:
+		for sid: String in caster.known_spells:
+			var s: Spell = SpellDb.get_spell(sid)
+			if s != null:
+				levels_set[s.level] = true
+	for lv: int in levels_set:
+		_known_levels.append(lv)
+	_known_levels.sort()
+	_max_level = _known_levels[_known_levels.size() - 1] if not _known_levels.is_empty() else 0
 	# Cantrips (level 0) are always available regardless of slot progress — default to that tab
 	# only when there's nothing else to show yet; otherwise keep the existing 1st-level default.
 	_selected_level = 0 if _max_level == 0 else mini(_selected_level, _max_level)
@@ -116,11 +133,8 @@ func _build_ui() -> void:
 	# currently has (may be zero this early).
 	var tab_y: float = 72.0
 	var tab_w: float = 64.0
-	var levels: Array[int] = [0]
-	for lv: int in range(1, _max_level + 1):
-		levels.append(lv)
-	for i: int in levels.size():
-		var lv: int = levels[i]
+	for i: int in _known_levels.size():
+		var lv: int = _known_levels[i]
 		var tab := Button.new()
 		tab.text = _ordinal(lv)
 		tab.size = Vector2(tab_w, 32.0)
@@ -136,11 +150,22 @@ func _build_ui() -> void:
 	sep2.size = Vector2(PANEL_W - 24.0, 2.0)
 	_panel.add_child(sep2)
 
-	# ── Spell rows ──────────────────────────────────────────────────────────────
-	_row_container = Control.new()
-	_row_container.position = Vector2(20.0, tab_y + 52.0)
-	_row_container.size = Vector2(PANEL_W - 40.0, 240.0)
-	_panel.add_child(_row_container)
+	# ── Spell tiles ─────────────────────────────────────────────────────────────
+	# Square tiles that fill each row left-to-right before wrapping, scrollable when a level holds
+	# more spells than fit on screen (e.g. many cantrips).
+	var grid_area_size := Vector2(PANEL_W - 40.0, 240.0)
+	_scroll = ScrollContainer.new()
+	_scroll.position = Vector2(20.0, tab_y + 52.0)
+	_scroll.size = grid_area_size
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_panel.add_child(_scroll)
+
+	_row_container = GridContainer.new()
+	_row_container.columns = maxi(1, int(grid_area_size.x / (TILE_W + TILE_GAP)))
+	_row_container.add_theme_constant_override("h_separation", int(TILE_GAP))
+	_row_container.add_theme_constant_override("v_separation", int(TILE_GAP))
+	_scroll.add_child(_row_container)
 
 	var detail_y: float = tab_y + 52.0 + 240.0 + 12.0
 	var sep3 := HSeparator.new()
@@ -281,17 +306,17 @@ func _refresh() -> void:
 		var s: Spell = SpellDb.get_spell(sid)
 		if s != null and s.level == _selected_level:
 			known_at_level.append(sid)
+	# Default sort: alphabetical by spell name within a level/cantrip tab.
+	known_at_level.sort_custom(func(a: String, b: String) -> bool:
+		return SpellDb.get_spell(a).spell_name < SpellDb.get_spell(b).spell_name)
 
-	var y: float = 0.0
 	for sid: String in known_at_level:
-		_build_row(sid, y)
-		y += ROW_H
+		_build_row(sid)
 	if known_at_level.is_empty():
 		var empty_lbl := Label.new()
 		empty_lbl.text = "No known spells at this level yet."
 		empty_lbl.add_theme_font_size_override("font_size", 14)
 		empty_lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
-		empty_lbl.position = Vector2(0.0, 4.0)
 		_row_container.add_child(empty_lbl)
 
 	if _selected_level == 0:
@@ -318,7 +343,7 @@ func _refresh() -> void:
 		if sname_lbl != null:
 			sname_lbl.text = "" if has_icon or sspell == null else sspell.spell_name.left(4)
 
-func _build_row(spell_id: String, y: float) -> void:
+func _build_row(spell_id: String) -> void:
 	var caster: SpellcasterState = GameState.player_stats.caster
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
@@ -329,22 +354,23 @@ func _build_row(spell_id: String, y: float) -> void:
 	var prepared: bool = is_cantrip or caster.prepared_spells.has(spell_id)
 
 	var row := Button.new()
-	row.position = Vector2(0.0, y)
-	row.size = Vector2(PANEL_W - 40.0, ROW_H - 6.0)
+	row.custom_minimum_size = Vector2(TILE_W, TILE_H)
+	row.size = Vector2(TILE_W, TILE_H)
 	row.focus_mode = Control.FOCUS_NONE
 	row.text = ""
+	row.clip_text = true
 	var nbox := StyleBoxFlat.new()
 	nbox.bg_color = Color(0.16, 0.14, 0.05, 0.85) if prepared else Color(0.12, 0.12, 0.16, 0.9)
 	nbox.set_border_width_all(2 if not prepared else 3)
 	nbox.border_color = Color(0.95, 0.72, 0.28) if prepared else Color(0.35, 0.35, 0.35)
-	nbox.set_corner_radius_all(4)
+	nbox.set_corner_radius_all(6)
 	row.add_theme_stylebox_override("normal", nbox)
 	row.add_theme_stylebox_override("hover", nbox)
 	_row_container.add_child(row)
 
 	var icon := TextureRect.new()
-	icon.size = Vector2(40.0, 40.0)
-	icon.position = Vector2(6.0, (ROW_H - 6.0 - 40.0) * 0.5)
+	icon.size = Vector2(48.0, 48.0)
+	icon.position = Vector2((TILE_W - 48.0) * 0.5, 8.0)
 	icon.ignore_texture_size = true
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -354,9 +380,12 @@ func _build_row(spell_id: String, y: float) -> void:
 
 	var name_lbl := Label.new()
 	name_lbl.text = spell.spell_name
-	name_lbl.add_theme_font_size_override("font_size", 15)
-	name_lbl.position = Vector2(54.0, (ROW_H - 6.0 - 20.0) * 0.5)
-	name_lbl.size = Vector2(PANEL_W - 100.0, 22.0)
+	name_lbl.add_theme_font_size_override("font_size", 11)
+	name_lbl.position = Vector2(4.0, 60.0)
+	name_lbl.size = Vector2(TILE_W - 8.0, 30.0)
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name_lbl.clip_text = true
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if prepared:
 		name_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))

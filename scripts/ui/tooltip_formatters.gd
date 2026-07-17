@@ -411,6 +411,23 @@ static func fmt_catk_tooltip(p: Dictionary) -> String:
 		lines.append("damage = [color=yellow]%d[/color]%s" % [dmg, "  ×2 (crit)" if crit else ""])
 	return "\n".join(lines)
 
+## Concentration-break check (Blade Ward, and any future concentration spell) — CON check vs
+## DC = max(10, damage taken), see GameState._check_concentration_break().
+static func fmt_conc_tooltip(p: Dictionary) -> String:
+	var die: int   = int(p.get("die", "0"))
+	var mod: int   = int(p.get("mod", "0"))
+	var total: int = int(p.get("total", "0"))
+	var dc: int    = int(p.get("dc", "0"))
+	var passed: bool = p.get("pass", "0") == "1"
+	var lines: PackedStringArray = []
+	lines.append("d20 = [color=yellow]%d[/color]" % die)
+	if mod != 0:
+		lines.append("[color=lightblue]%+d[/color]  (CON mod)" % mod)
+	lines.append("─────────────────")
+	var result: String = "[color=green]SUCCESS[/color]" if passed else "[color=red]FAIL[/color]"
+	lines.append("= [color=yellow]%d[/color] vs DC %d  →  %s" % [total, dc, result])
+	return "\n".join(lines)
+
 static func fmt_ret_tooltip(p: Dictionary) -> String:
 	var rank: int      = int(p.get("rank", "0"))
 	var wpn_roll: int  = int(p.get("wpn_roll", "0"))

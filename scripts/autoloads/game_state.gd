@@ -1624,8 +1624,16 @@ func _check_concentration_break(actual_damage: int) -> void:
 	if player_stats.concentration_spell_id == "" or actual_damage <= 0:
 		return
 	var dc: int = maxi(10, actual_damage)
-	var roll: int = Rng.roll(20) + player_stats.con_modifier()
-	if roll < dc:
+	var mod: int = player_stats.con_modifier()
+	var die: int = Rng.roll(20)
+	var total: int = die + mod
+	var passed: bool = total >= dc
+	# Hoverable roll breakdown (die + CON mod vs DC), same convention as every other check/save
+	# tooltip — see TooltipFormatters.fmt_conc_tooltip(), dispatched via hud.gd's "conc" kind.
+	var conc_meta: String = "conc:die=%d,mod=%d,total=%d,dc=%d,pass=%d" % [die, mod, total, dc, int(passed)]
+	if passed:
+		game_log("[color=gray]Concentration holds [url=%s](CON %d vs DC %d)[/url].[/color]" % [conc_meta, total, dc])
+	else:
 		var broken_spell: String = player_stats.concentration_spell_id
 		player_stats.concentration_spell_id = ""
 		if broken_spell == "blade_ward":
@@ -1633,7 +1641,7 @@ func _check_concentration_break(actual_damage: int) -> void:
 		elif broken_spell == "witch_bolt":
 			player_stats.witch_bolt_turns = 0
 			player_stats.witch_bolt_target = null
-		game_log("[color=gray]Your concentration breaks! (CON %d vs DC %d)[/color]" % [roll, dc])
+		game_log("[color=gray]Your concentration breaks! [url=%s](CON %d vs DC %d)[/url][/color]" % [conc_meta, total, dc])
 
 
 func apply_player_status(type: String, turns: int) -> bool:
