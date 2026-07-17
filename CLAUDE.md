@@ -166,6 +166,8 @@ Hunger has been removed. `Alt` opens a tabbed rest panel (`scripts/ui/short_rest
 
 After every feature/fix: `git add`, `git commit`, `git push origin HEAD:main`. No need to ask — always commit and push. Use `HEAD:main` (not `main`) — sessions may run in a worktree branch.
 
+**Multiple sessions (local + remote) can be working on this repo at once.** Before starting work AND immediately before that final push, run `git pull origin main` (or `git fetch origin main && git rebase origin/main` if local commits already exist) — a push that's behind `origin/main` is rejected outright (git refuses to silently overwrite unseen work), so catching this early avoids a late, confusing failure. If the pull/rebase produces a real conflict (both sessions touched the same lines), resolve it before pushing — don't force-push over it.
+
 **Background/worktree sessions that open a PR**: don't stop at draft. Mark it ready (`gh pr ready <n>`) and squash-merge it into `main` (`gh pr merge <n> --squash --delete-branch`) without waiting to be asked. After merging, pull the user's main working copy so Godot picks up the change: `git -C "C:/Users/Doupo/Desktop/Dragons-in-Dungeons" pull`.
 
 ## Key Conventions
