@@ -93,6 +93,12 @@ var _vex_adv_target: Enemy = null
 # revert_to_waiting() free-action chains and only reset after enemies actually take a round.
 var _oa_used_this_round: bool = false
 
+# Expeditious Retreat: once-per-round free-move cap, same reset point as the caps above. Scoped
+# to _try_move() (single-step WASD movement) only — the queued-path/chase-to-target movement
+# functions don't check it, same documented scope limitation as Battlefield Expert R3's own
+# free side-step.
+var _expeditious_retreat_move_used_this_turn: bool = false
+
 
 func _ready() -> void:
 	stats = GameState.player_stats
@@ -164,6 +170,7 @@ func _on_turn_started() -> void:
 		_grip_used_this_turn = false
 		_vex_adv_target = null
 		_oa_used_this_round = false
+		_expeditious_retreat_move_used_this_turn = false
 		_berserker.clear_turn_start_ac_bonus()
 		_berserker.tick_frenzied_killer()
 		# Zealot Strike deactivates with no effect if the turn ends without a melee attack.
@@ -205,6 +212,24 @@ func _on_turn_started() -> void:
 				if stats.concentration_spell_id == "witch_bolt":
 					stats.concentration_spell_id = ""
 				GameState.game_log("[color=gray]Witch Bolt fades.[/color]")
+		# Expeditious Retreat: 100-turn duration, ticked once per real turn (same pattern as
+		# Blade Ward above).
+		if stats.expeditious_retreat_turns > 0:
+			stats.expeditious_retreat_turns -= 1
+			if stats.expeditious_retreat_turns <= 0:
+				if stats.concentration_spell_id == "expeditious_retreat":
+					stats.concentration_spell_id = ""
+				GameState.game_log("[color=gray]Expeditious Retreat fades.[/color]")
+		# Fog Cloud: 100-turn duration, ticked once per real turn — also clears the actual cloud
+		# position/radius on GameState (unlike Blade Ward/Witch Bolt, which have nothing to clear
+		# beyond their own Stats fields).
+		if stats.fog_cloud_turns > 0:
+			stats.fog_cloud_turns -= 1
+			if stats.fog_cloud_turns <= 0:
+				if stats.concentration_spell_id == "fog_cloud":
+					stats.concentration_spell_id = ""
+				GameState.clear_fog_cloud()
+				GameState.game_log("[color=gray]The fog cloud dissipates.[/color]")
 	GameState.ability_bar_changed.emit()
 	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
 	# Only fires on real turns, not on reverted turns.
@@ -1218,6 +1243,12 @@ func _try_move(dir: Vector2i) -> void:
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return
+	if stats.expeditious_retreat_turns > 0 and not _expeditious_retreat_move_used_this_turn:
+		_expeditious_retreat_move_used_this_turn = true
+		GameState.game_log("[color=cyan]Expeditious Retreat: that move didn't cost you your turn.[/color]")
+		_reverted_this_round = true
+		TurnManager.revert_to_waiting()
+		return
 	TurnManager.on_player_action_complete()
 	# Slowed extra turn cost (skip if Panther/Salmon bypassed the terrain penalty)
 	if GameState.player_stats.slowed_turns > 0 and not _panther_bypass and not _salmon_bypass:
@@ -1355,6 +1386,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Heavy weapon penalty: STR < 13 imposes Disadvantage
 	var weapon_item_ref: Item = GameState.equipped_weapon
 	if weapon_item_ref != null and weapon_item_ref.is_heavy and stats.strength < 13: disadv_count += 1
+	# Fog Cloud (Blinded): your own attack rolls have Disadvantage while standing inside the cloud.
+	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
 	# Animal Form Wolf: ADV when enough enemies are in FOV — always active in Wolf form (no
 	# Rage required). Enhanced Forms lowers the threshold; R3 also counts 1 enemy + 1 friendly.
 	if GameState.natural_rager_form == "Wolf" and is_str_weapon and _dungeon_floor != null:
@@ -1598,6 +1631,7 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	var disadv_count: int = 0
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
+	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
 	# Vex (Short Bow): future-proofing — a weapon could carry both Cleave and Vex.
 	var vex_triggered: bool = _vex_adv_target == enemy
 	if vex_triggered: adv_count += 1
@@ -1687,6 +1721,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	var disadv_count: int = 0
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
+	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
 	var vex_triggered: bool = _vex_adv_target == enemy
 	if vex_triggered: adv_count += 1
 	if vex_triggered:
@@ -1772,6 +1807,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	var disadv_count: int = 0
 	if weapon != null and weapon.is_heavy and stats.strength < 13: disadv_count += 1
+	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]

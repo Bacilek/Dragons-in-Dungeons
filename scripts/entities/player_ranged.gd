@@ -97,6 +97,7 @@ func ranged_attack(enemy: Enemy) -> void:
 	if maxi(abs(d_vec.x), abs(d_vec.y)) <= 1: disadv_count += 1
 	if weapon != null and weapon.is_heavy and player.stats.dexterity < 13: disadv_count += 1
 	if ranged_shot_disadvantage(weapon, enemy.grid_pos): disadv_count += 1
+	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]
 	var die2: int = r["die2"]

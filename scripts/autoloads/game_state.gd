@@ -748,6 +748,31 @@ func clear_light_source() -> void:
 	light_source_item = null
 	light_source_changed.emit()
 
+## Fog Cloud (leveled spell, Conjuration) — a persistent circular zone, tracked purely as
+## position + radius rather than a live Item/Enemy reference (unlike Light/Witch Bolt), since it
+## Blinds anyone standing inside it — player OR enemy, not a single caster/target pair. Every
+## attack-roll ADV/DISADV chokepoint queries `is_in_fog_cloud()` directly (player_vfx.gd's
+## has_advantage(), the disadv_count block at all 8 player attack-roll sites, and
+## enemy.gd._resolve_attack_roll()'s extra_adv/extra_disadv params) — see
+## scripts/entities/CLAUDE.md's "Fog Cloud" section. Duration uses the generic
+## concentration_spell_id mechanism ("fog_cloud") — see Stats.fog_cloud_turns. `(-1,-1)` = none
+## active. Explicitly cleared on floor descent (advance_floor()): unlike Light (whose lit Item) or
+## Witch Bolt (whose target Enemy) naturally invalidate themselves when the floor reloads, a bare
+## position would otherwise silently keep blinding whoever stands at those same coordinates on the
+## next floor.
+var fog_cloud_pos: Vector2i = Vector2i(-1, -1)
+var fog_cloud_radius: int = 0
+
+func is_in_fog_cloud(pos: Vector2i) -> bool:
+	if fog_cloud_pos == Vector2i(-1, -1):
+		return false
+	var d: Vector2i = pos - fog_cloud_pos
+	return d.x * d.x + d.y * d.y <= fog_cloud_radius * fog_cloud_radius
+
+func clear_fog_cloud() -> void:
+	fog_cloud_pos = Vector2i(-1, -1)
+	fog_cloud_radius = 0
+
 ## Grants a subclass's free, rank-independent Tier 2 activation ability (Frenzy, Limit Break,
 ## Animal Form, Zealot Strike) directly at subclass selection — NOT gated by any talent rank.
 ## No-op if already present (idempotent — safe to call from every _setup_X_tier2_talents()).
@@ -791,6 +816,8 @@ func advance_floor() -> void:
 	bruiser_revive_used_this_floor = false
 	# Light cantrip: the lit object is left behind on the previous floor — ends on descent.
 	clear_light_source()
+	# Fog Cloud: same reasoning as Light above — the cloud is left behind on the previous floor.
+	clear_fog_cloud()
 	short_rest_changed.emit()
 	floor_changed.emit(current_floor)
 	if current_floor > 10:
@@ -1641,6 +1668,11 @@ func _check_concentration_break(actual_damage: int) -> void:
 		elif broken_spell == "witch_bolt":
 			player_stats.witch_bolt_turns = 0
 			player_stats.witch_bolt_target = null
+		elif broken_spell == "expeditious_retreat":
+			player_stats.expeditious_retreat_turns = 0
+		elif broken_spell == "fog_cloud":
+			player_stats.fog_cloud_turns = 0
+			clear_fog_cloud()
 		game_log("[color=gray]Your concentration breaks! [url=%s](CON %d vs DC %d)[/url][/color]" % [conc_meta, total, dc])
 
 

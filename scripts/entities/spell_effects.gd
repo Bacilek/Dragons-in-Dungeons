@@ -53,6 +53,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	var d_vec: Vector2i = target.grid_pos - player.grid_pos
 	if spell.range_tiles > 1 and maxi(abs(d_vec.x), abs(d_vec.y)) <= 1: disadv_count += 1
+	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
 
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]
@@ -328,6 +329,20 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — attacks against you falter for up to 10 turns.[/color]" % spell.spell_name)
 		"thunderclap":
 			_resolve_thunderclap(player, spell, dungeon_floor)
+		"expeditious_retreat":
+			if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "expeditious_retreat":
+				GameState.game_log("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+			player.stats.concentration_spell_id = "expeditious_retreat"
+			player.stats.expeditious_retreat_turns = 100
+			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your reflexes quicken for up to 100 turns.[/color]" % spell.spell_name)
+		"false_life":
+			var rolls: Array[int] = Rng.roll_dice(spell.dice_count, spell.dice_sides)
+			var total: int = 4
+			for v: int in rolls:
+				total += v
+			player.stats.temp_hp = maxi(player.stats.temp_hp, total)
+			GameState.player_hp_changed.emit(player.stats.current_hp, player.stats.max_hp)
+			GameState.game_log("[color=cyan]You cast [b]%s[/b] — a sickly resilience grants [color=lightblue]%d[/color] Temp HP.[/color]" % [spell.spell_name, total])
 		_:
 			GameState.game_log("[color=cyan]You cast [b]%s[/b].[/color]" % spell.spell_name)
 	if dungeon_floor != null:
@@ -345,6 +360,8 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 			GameState.game_log("[color=cyan]You blink in a puff of silver mist.[/color]")
 		"burning_hands":
 			_resolve_cone_aoe(player, spell, cast_level, tile_pos, dungeon_floor)
+		"fog_cloud":
+			_resolve_fog_cloud(player, spell, tile_pos)
 		_:
 			if spell.shape == "sphere":
 				_resolve_sphere_aoe(player, spell, cast_level, tile_pos, dungeon_floor)
@@ -557,6 +574,7 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	var d_vec: Vector2i = target.grid_pos - player.grid_pos
 	if spell.range_tiles > 1 and maxi(abs(d_vec.x), abs(d_vec.y)) <= 1: disadv_count += 1
+	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
 
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]
@@ -704,3 +722,20 @@ static func tick_witch_bolt(player: Player, target: Enemy, dungeon_floor: Node) 
 		target.display_name, dmg_meta, actual, CombatMath.death_suffix(is_lethal)])
 	if is_lethal:
 		player._finish_kill(target)
+
+# Fog Cloud — places a persistent circular Blinded zone (GameState.fog_cloud_pos/radius) rather
+# than dealing damage. Duration uses the generic concentration_spell_id mechanism ("fog_cloud"),
+# same recast/break-another-concentration-spell rule as Blade Ward/Witch Bolt/Expeditious Retreat.
+# The actual ADV/DISADV consequences of standing in the cloud are read live, at point of attack, by
+# player_vfx.gd's has_advantage(), the disadv_count block at every player attack-roll site, and
+# enemy.gd._resolve_attack_roll()'s extra_adv/extra_disadv params — nothing here applies a status
+# effect directly. See scripts/entities/CLAUDE.md's "Fog Cloud" section.
+static func _resolve_fog_cloud(player: Player, spell: Spell, center: Vector2i) -> void:
+	var stats: Stats = player.stats
+	if stats.concentration_spell_id != "" and stats.concentration_spell_id != "fog_cloud":
+		GameState.game_log("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+	stats.concentration_spell_id = "fog_cloud"
+	stats.fog_cloud_turns = 100
+	GameState.fog_cloud_pos = center
+	GameState.fog_cloud_radius = spell.shape_size
+	GameState.game_log("[color=cyan]A thick fog billows outward, obscuring the area![/color]")

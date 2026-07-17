@@ -192,6 +192,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	# Same convention as ranged weapons: throwing at an adjacent target (Chebyshev 1) is
 	# awkward at that range, so it rolls with Disadvantage too (PlayerRanged.ranged_attack()).
 	if maxi(absi(d.x), absi(d.y)) <= 1: disadv_count += 1
+	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]
 	var die2: int = r["die2"]

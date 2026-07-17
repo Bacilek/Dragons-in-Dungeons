@@ -16,6 +16,9 @@ func has_advantage(enemy: Enemy) -> bool:
 	if enemy.just_crossed_door:
 		enemy.just_crossed_door = false
 		return true
+	# Fog Cloud (Blinded): attack rolls against a Blinded creature have Advantage.
+	if GameState.is_in_fog_cloud(enemy.grid_pos):
+		return true
 	return enemy.behavior == Enemy.Behavior.SLEEPING
 
 func show_surprise_mark(enemy: Enemy) -> void:

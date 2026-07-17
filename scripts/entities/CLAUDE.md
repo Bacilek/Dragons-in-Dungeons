@@ -695,6 +695,82 @@ introduces one new mechanic not needed by any earlier spell.
 - **Scrolls**: all 3 get a `Scroll of <Spell>` cast-scroll (`Item.scroll_spell_id`) per the
   existing "one scroll per spell" convention — see `scripts/items/CLAUDE.md`.
 
+### More 1st-level non-damage spells (Expeditious Retreat, False Life, Fog Cloud)
+
+Three more `LEVELED_SPELL_IDS` entries, all non-damage. 5e's real class list for these is
+Sorcerer/Warlock/Wizard, Sorcerer/Wizard, and Druid/Ranger/Sorcerer/Wizard respectively — this
+codebase only has a Wizard caster, so `class_list` stays `["WIZARD"]` like every other spell.
+
+- **Expeditious Retreat** (Transmutation, `effect_id: "expeditious_retreat"`, AUTO_HIT, SELF,
+  free action, **Concentration**, up to 100 turns): a third concentration spell alongside Blade
+  Ward/Witch Bolt, reusing `Stats.concentration_spell_id` (`"expeditious_retreat"`) — casting it
+  while a different concentration spell is active breaks that one first, same recast-refreshes-
+  its-own-duration rule as the other two. **Effect**: once per real turn, the player's first move
+  doesn't cost the turn — `Player._try_move()`'s free-action revert pattern (same mechanism
+  Battlefield Expert R3's free side-step uses: `_reverted_this_round = true;
+  TurnManager.revert_to_waiting()` instead of `on_player_action_complete()`), gated on
+  `stats.expeditious_retreat_turns > 0 and not _expeditious_retreat_move_used_this_turn`.
+  `_expeditious_retreat_move_used_this_turn: bool` resets in `_on_turn_started()`'s
+  `if not came_from_revert:` block alongside every other per-round cap. **Scope limitation**: only
+  wired into `_try_move()` (single-step WASD movement), same documented gap as Battlefield
+  Expert R3 — the queued-path/chase-to-target movement functions don't check it. Duration ticks
+  in `_on_turn_started()` exactly like Blade Ward's `blade_ward_turns` (100-turn counter, clears
+  `concentration_spell_id` at 0).
+- **False Life** (Necromancy, `effect_id: "false_life"`, AUTO_HIT, SELF, action, instantaneous):
+  `SpellEffects.cast_leveled_self()`'s `"false_life"` branch rolls `spell.dice_count`d`spell.
+  dice_sides` (2d4) `+ 4` and sets `Stats.temp_hp = maxi(temp_hp, total)` — **replace, not
+  stack**, matching 5e RAW (a False Life recast only helps if the new roll is bigger) and this
+  codebase's existing temp-HP convention (Natural Sleeper R2, Overheal Shield). Emits
+  `GameState.player_hp_changed` directly (needed for the HUD's temp-HP strip to refresh — no
+  other signal covers a temp_hp-only change).
+- **Fog Cloud** (Conjuration, `effect_id: "fog_cloud"`, AUTO_HIT, TILE, `shape: "sphere"`,
+  `shape_size: 2`, range 12 tiles, **Concentration**, up to 100 turns): the fourth concentration
+  spell, `"fog_cloud"`. Unlike Blade Ward/Witch Bolt (a self-buff / a live Enemy reference), the
+  cloud is a bare **position + radius** — `GameState.fog_cloud_pos: Vector2i`/
+  `fog_cloud_radius: int` (`(-1,-1)` = none active), since it needs to Blind whoever is standing
+  in it, player or enemy, not a single caster/target pair. `SpellEffects._resolve_fog_cloud()`
+  (dispatched from `cast_leveled_at_tile()`, intercepting before the generic `shape == "sphere"`
+  damage path so it never routes into `_resolve_sphere_aoe()`) sets `stats.concentration_spell_id
+  = "fog_cloud"`, `stats.fog_cloud_turns = 100`, `GameState.fog_cloud_pos = center`,
+  `fog_cloud_radius = spell.shape_size` — no damage, no save roll. `GameState.
+  is_in_fog_cloud(pos) -> bool` (Euclidean disc, same distance check `_resolve_sphere_aoe()`/
+  `show_aoe_preview()` use) is the single query every ADV/DISADV chokepoint reads:
+  - **Attacks against a Blinded creature have Advantage**: `PlayerVfx.has_advantage(enemy)`
+    (`scripts/entities/player_vfx.gd`) gained an `is_in_fog_cloud(enemy.grid_pos)` branch — since
+    this one function already backs ADV at all 6 player attack-roll sites (melee/cleave/
+    offhand/OA/ranged/spell cantrip — see "Combat rolls" above), this single edit covers "player
+    attacks a blinded enemy" everywhere for free. Symmetrically, `Enemy._resolve_attack_roll()`
+    gained `extra_adv`/`extra_disadv` params (defaults `false`, so every pre-existing call site is
+    unaffected); `_attack_player()`/`_attack_companion()` pass `is_in_fog_cloud(target.grid_pos)`
+    as `extra_adv` — an enemy attacking a Blinded player/companion also gets Advantage.
+  - **A Blinded creature's own attacks have Disadvantage**: the player's own
+    `is_in_fog_cloud(grid_pos)` check was added inline to the `disadv_count` block at all 8 player
+    attack-roll sites that build one (`player.gd`'s `_bump_attack()`/`_resolve_cleave_attack()`/
+    `_resolve_offhand_attack()`/`resolve_opportunity_attack()`, `PlayerRanged.ranged_attack()`,
+    both `spell_effects.gd` attack-roll resolvers — cantrip `cast_spell()` and leveled
+    `_resolve_spell_attack_bolt()`, and `PlayerThrowTool._throw_weapon()`) — no shared
+    disadvantage chokepoint exists the way `has_advantage()` covers ADV, so each site got its own
+    one-line addition. Symmetrically, `Enemy._resolve_attack_roll()`'s `extra_disadv` param is fed
+    `is_in_fog_cloud(grid_pos)` (the ATTACKING enemy's own position) from both `_attack_player()`
+    and `_attack_companion()` — a Blinded enemy's own attacks also suffer Disadvantage.
+  - **NOT implemented** (documented simplification, matching Mind Sliver's "no separate turn-
+    expiry timer" precedent): "automatically fails checks that require sight" — there's no single
+    concrete mechanic in this codebase that maps onto "a sight check" the way ADV/DISADV on attack
+    rolls does, so this clause of the Blinded condition is a no-op. "Ends early if a strong wind
+    disperses it" — no such spell/ability exists yet to trigger it.
+  Duration ticks in `_on_turn_started()` like Blade Ward, but ALSO calls `GameState.
+  clear_fog_cloud()` at 0 (unlike Blade Ward/Witch Bolt, which have nothing beyond their own Stats
+  field to clear). **Explicitly cleared on floor descent** (`GameState.advance_floor()`) — unlike
+  Light (whose lit `Item` reference) or Witch Bolt (whose target `Enemy` reference) naturally
+  invalidate themselves when the floor reloads, a bare position has nothing that would otherwise
+  stop it from silently blinding whoever stands at those same coordinates on the next floor.
+  **Visual**: `DungeonFloor._update_fog_cloud_visual()` (`scripts/world/dungeon_floor.gd`, called
+  every `update_fog()`) tints the cloud's tiles with a persistent gray overlay — pooled `Sprite2D`s
+  + shared 1×1 white texture, same convention as the Light glow (see `scripts/world/CLAUDE.md`).
+  Not LOS-filtered (a raw disc, matching `is_in_fog_cloud()`'s own check exactly) and does NOT
+  affect FOV/visibility (no shadowcast union into `_visible_tiles`, unlike Light) — it's a status
+  zone, not a light source.
+
 ## Monk class
 Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: STR + DEX. Weapon proficiency: intended to be simple weapons + martial weapons with the light property, but `Stats.proficient_simple_weapons`/`proficient_martial_weapons` are not yet set in `apply_class_defaults()` for Monk (TODO — currently only wired up for Barbarian). No armor training (any armor → DISADV on STR/DEX checks/saves + DISADV on attacks; TODO: enforce). Starting abilities (slot 0–1 of ability bar):
 - **Unarmored Defense** (passive, ability_id `"unarmored_defense_monk"`): AC = 10 + DEX + WIS while wearing no armor. Handled in `Stats.recalc_ac(has_armor_equipped)`.

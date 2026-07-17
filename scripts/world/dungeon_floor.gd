@@ -50,6 +50,8 @@ var _fog_texture: ImageTexture
 var _fog_sprite: Sprite2D
 var _light_glow_sprites: Array[Sprite2D] = []  # Light cantrip glow — see _update_light_source_glow()
 var _light_glow_tex: ImageTexture
+var _fog_cloud_sprites: Array[Sprite2D] = []  # Fog Cloud spell zone — see _update_fog_cloud_visual()
+var _fog_cloud_tex: ImageTexture
 var _explored: Dictionary = {}
 var _visible_tiles: Dictionary = {}  # Vector2i → true; current FOV set, reset each update_fog
 var _fov_player_pos: Vector2i = Vector2i(-1, -1)
@@ -377,6 +379,7 @@ func update_fog(player_pos: Vector2i) -> void:
 		for pos: Vector2i in lit_tiles:
 			_visible_tiles[pos] = true
 	_update_light_source_glow(lit_tiles)
+	_update_fog_cloud_visual()
 
 	for y: int in _data.height:
 		for x: int in _data.width:
@@ -478,6 +481,44 @@ func _update_light_source_glow(lit_tiles: Dictionary) -> void:
 			var pos: Vector2i = tiles[i]
 			spr.position = Vector2(pos.x * TILE_SIZE, pos.y * TILE_SIZE)
 			spr.modulate = tint
+			spr.visible = true
+		else:
+			spr.visible = false
+
+# Fog Cloud spell — a persistent gray tint over GameState.fog_cloud_pos/radius (a raw Euclidean
+# disc, same distance check as GameState.is_in_fog_cloud() and show_aoe_preview()'s own preview
+# circle — no LOS filtering, matching a real cloud of fog rather than a line-of-sight effect).
+# Rebuilt every update_fog() call (cheap — pooled Sprite2Ds, same convention as the light glow
+# above) so it tracks the cloud fading/moving without needing its own dedicated signal.
+func _update_fog_cloud_visual() -> void:
+	if GameState.fog_cloud_pos == Vector2i(-1, -1):
+		for spr: Sprite2D in _fog_cloud_sprites:
+			spr.visible = false
+		return
+	if _fog_cloud_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color(1, 1, 1, 1))
+		_fog_cloud_tex = ImageTexture.create_from_image(img)
+	var center: Vector2i = GameState.fog_cloud_pos
+	var radius: int = GameState.fog_cloud_radius
+	var tiles: Array[Vector2i] = []
+	for dy: int in range(-radius, radius + 1):
+		for dx: int in range(-radius, radius + 1):
+			if dx * dx + dy * dy <= radius * radius:
+				tiles.append(center + Vector2i(dx, dy))
+	while _fog_cloud_sprites.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _fog_cloud_tex
+		spr.centered = false
+		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
+		spr.modulate = Color(0.75, 0.75, 0.8, 0.45)
+		spr.z_index = 2
+		add_child(spr)
+		_fog_cloud_sprites.append(spr)
+	for i: int in _fog_cloud_sprites.size():
+		var spr: Sprite2D = _fog_cloud_sprites[i]
+		if i < tiles.size():
+			spr.position = Vector2(tiles[i].x * TILE_SIZE, tiles[i].y * TILE_SIZE)
 			spr.visible = true
 		else:
 			spr.visible = false

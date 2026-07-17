@@ -576,14 +576,17 @@ func _bfs_to(target: Vector2i) -> Array[Vector2i]:
 # roll_penalty: flat subtracted from the roll AFTER advantage/disadvantage resolves, before the
 # AC comparison — Blade Ward's -1d4 (player-only, passed by _attack_player()). Never affects the
 # crit check (a nat 20 still auto-hits regardless of penalty).
-func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1, roll_penalty: int = 0) -> Dictionary:
+func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1, roll_penalty: int = 0, extra_adv: bool = false, extra_disadv: bool = false) -> Dictionary:
 	# D&D attack roll: d20 + floor-scaled bonus vs target AC.
+	# extra_adv/extra_disadv: Fog Cloud (Blinded) — extra_adv when the TARGET is standing in the
+	# cloud (attacks against a Blinded creature have Advantage), extra_disadv when THIS enemy (the
+	# attacker) is standing in it instead (its own attacks have Disadvantage).
 	var attack_bonus: int = attack_bonus_override if attack_bonus_override >= 0 else GameState.current_floor / 3
 	var die1: int = Rng.roll(20)
 	var die2: int = die1
 	var die: int = die1
-	var enemy_adv: bool = false
-	var enemy_disadv: bool = disadv_next_attack
+	var enemy_adv: bool = extra_adv
+	var enemy_disadv: bool = disadv_next_attack or extra_disadv
 	disadv_next_attack = false  # World Tree Grip of the Forest R3 — consumed after one attack
 	if enemy_adv != enemy_disadv:
 		die2 = Rng.roll(20)
@@ -607,7 +610,8 @@ func _attack_player(_player: Player) -> void:
 	var bracket_r: String = "]" if invincible else ""
 	# Blade Ward cantrip: while active, subtract 1d4 from this attack roll before comparing to AC.
 	var bw_penalty: int = Rng.roll(4) if GameState.player_stats.blade_ward_turns > 0 else 0
-	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, -1, bw_penalty)
+	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, -1, bw_penalty,
+		GameState.is_in_fog_cloud(_player.grid_pos), GameState.is_in_fog_cloud(grid_pos))
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]
@@ -647,7 +651,8 @@ func _attack_player(_player: Player) -> void:
 # No invincible/poison/Retaliation hooks: those are player-only systems. Companion.take_damage_from_enemy()
 # already logs the hit/HP line and handles death, so only the miss line needs logging here.
 func _attack_companion(companion: Companion) -> void:
-	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class)
+	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, -1, 0,
+		GameState.is_in_fog_cloud(companion.grid_pos), GameState.is_in_fog_cloud(grid_pos))
 	if not r["is_hit"]:
 		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [display_name, companion.animal_name])
 		return

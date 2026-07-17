@@ -58,6 +58,9 @@ const ALL_ITEMS: Array = [
 	{"name": "Scroll of Chromatic Orb", "type": 3, "src": "spells", "icon": "chromatic_orb.png",  "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Chromatic Orb once, then it crumbles to dust.", "scroll_spell": "chromatic_orb", "gold": 60},
 	{"name": "Scroll of Burning Hands", "type": 3, "src": "spells", "icon": "burning_hands.png",  "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Burning Hands once, then it crumbles to dust.", "scroll_spell": "burning_hands", "gold": 60},
 	{"name": "Scroll of Witch Bolt",    "type": 3, "src": "spells", "icon": "witch_bolt.png",     "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Witch Bolt once, then it crumbles to dust.", "scroll_spell": "witch_bolt", "gold": 60},
+	{"name": "Scroll of Expeditious Retreat", "type": 3, "src": "spells", "icon": "expeditious_retreat.png", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Expeditious Retreat once, then it crumbles to dust.", "scroll_spell": "expeditious_retreat", "gold": 60},
+	{"name": "Scroll of False Life",   "type": 3, "src": "spells", "icon": "false_life.png",    "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts False Life once, then it crumbles to dust.", "scroll_spell": "false_life", "gold": 60},
+	{"name": "Scroll of Fog Cloud",    "type": 3, "src": "spells", "icon": "fog_cloud.png",     "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Fog Cloud once, then it crumbles to dust.", "scroll_spell": "fog_cloud", "gold": 60},
 ]
 
 var _main_panel:    Panel

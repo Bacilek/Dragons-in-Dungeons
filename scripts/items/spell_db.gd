@@ -12,7 +12,7 @@ const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp
 # The Wizard's fixed round-1 starting choice (cantrip_select.gd) — unchanged by the 5 additions
 # above so the premade Jace's "cantrip": "fire_bolt" shortcut and existing save data stay valid.
 const STARTER_CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
-const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt"]
+const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud"]
 const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
 ## Shared level-name formatter — "Cantrips" for level 0, "1st"/"2nd"/"3rd"/"Nth" otherwise.
@@ -43,6 +43,9 @@ static func get_spell(id: String) -> Spell:
 		"chromatic_orb": return _chromatic_orb()
 		"burning_hands": return _burning_hands()
 		"witch_bolt": return _witch_bolt()
+		"expeditious_retreat": return _expeditious_retreat()
+		"false_life": return _false_life()
+		"fog_cloud": return _fog_cloud()
 	return null
 
 static func _fire_bolt() -> Spell:
@@ -321,5 +324,59 @@ static func _witch_bolt() -> Spell:
 	s.dice_sides = 12
 	s.damage_type = "Lightning"
 	s.effect_id = "witch_bolt"
+	s.class_list = ["WIZARD"]
+	return s
+
+# ── More 1st-level non-damage spells (Expeditious Retreat, False Life, Fog Cloud) ────────────
+# 5e class list for these three is Sorcerer/Warlock/Wizard, Sorcerer/Wizard, and Druid/Ranger/
+# Sorcerer/Wizard respectively — this codebase only has a Wizard caster, so class_list stays
+# ["WIZARD"] like every other spell (see the note on LEVELED_SPELL_IDS/CLASS_SPELL_LISTS above).
+
+static func _expeditious_retreat() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "expeditious_retreat"
+	s.spell_name = "Expeditious Retreat"
+	s.description = "Free action, self, up to 100 turns (Concentration). Once per turn, your first move doesn't cost you your turn — you can still act (or move again) afterward."
+	s.icon_path = "res://icons/spells/expeditious_retreat.png"
+	s.school = "Transmutation"
+	s.level = 1
+	s.range_tiles = 0
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.effect_id = "expeditious_retreat"
+	s.class_list = ["WIZARD"]
+	return s
+
+static func _false_life() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "false_life"
+	s.spell_name = "False Life"
+	s.description = "Action, self, instantaneous. Gain 2d4 + 4 Temporary HP."
+	s.icon_path = "res://icons/spells/false_life.png"
+	s.school = "Necromancy"
+	s.level = 1
+	s.range_tiles = 0
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.dice_count = 2
+	s.dice_sides = 4
+	s.effect_id = "false_life"
+	s.class_list = ["WIZARD"]
+	return s
+
+static func _fog_cloud() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "fog_cloud"
+	s.spell_name = "Fog Cloud"
+	s.description = "A 2-tile-radius sphere of fog fills the air at a point within 12 tiles, heavily obscuring it. Anyone standing inside — you or an enemy — is Blinded: attacks against them have Advantage, and their own attacks have Disadvantage. Lasts up to 100 turns (Concentration)."
+	s.icon_path = "res://icons/spells/fog_cloud.png"
+	s.school = "Conjuration"
+	s.level = 1
+	s.range_tiles = 12
+	s.target_kind = Spell.TargetKind.TILE
+	s.shape = "sphere"
+	s.shape_size = 2
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.effect_id = "fog_cloud"
 	s.class_list = ["WIZARD"]
 	return s

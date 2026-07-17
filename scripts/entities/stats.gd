@@ -146,6 +146,19 @@ var blade_ward_turns: int = 0
 var witch_bolt_target: Enemy = null
 var witch_bolt_turns: int = 0
 
+# Expeditious Retreat — same generic concentration_spell_id mechanism as Blade Ward
+# ("expeditious_retreat"). No live reference of its own (the effect is read directly off this
+# counter at the top of Player._try_move() — see scripts/entities/CLAUDE.md); deliberately NOT
+# serialized, same simplification as witch_bolt_turns above (mid-floor concentration state, ends
+# silently on save/load).
+var expeditious_retreat_turns: int = 0
+
+# Fog Cloud — same generic concentration_spell_id mechanism ("fog_cloud"). The cloud's actual
+# position/radius live on GameState (fog_cloud_pos/fog_cloud_radius), not here, since both the
+# player's AND every enemy's attack rolls need to query it, not just this caster's own turn tick.
+# Deliberately NOT serialized, same as witch_bolt_turns above.
+var fog_cloud_turns: int = 0
+
 # Wizard spellcasting (cantrips per docs/architecture/spellcasting-design.md, leveled spells +
 # slots per docs/architecture/leveled-spells-and-slots-plan.md). Built in
 # apply_class_defaults()'s WIZARD branch; null for every other class. See

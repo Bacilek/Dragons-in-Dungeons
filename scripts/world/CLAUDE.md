@@ -57,6 +57,15 @@ end condition — recast, rest, floor descent) is connected in `_ready()` to for
 away instead of waiting for the player's next move. See `scripts/entities/CLAUDE.md`'s "Wizard
 spellcasting" section for the spell itself.
 
+## Fog Cloud spell zone
+`_update_fog_cloud_visual()` (called every `update_fog()`, alongside the Light glow) tints
+`GameState.fog_cloud_pos`/`fog_cloud_radius`'s tiles with a persistent gray overlay — pooled
+`Sprite2D`s + shared 1×1 white texture, same convention as `_update_light_source_glow()`. A raw
+Euclidean disc, not LOS-filtered, and does NOT union into `_visible_tiles`/FOV (it's a status
+zone, not a light source — unlike Light, standing near it doesn't reveal more map). See
+`scripts/entities/CLAUDE.md`'s "More 1st-level non-damage spells" section for the Blinded
+ADV/DISADV mechanics `GameState.is_in_fog_cloud()` actually drives.
+
 ## AoE targeting preview
 `show_aoe_preview(center: Vector2i, radius: int)` / `show_cone_preview(origin: Vector2i, aim: Vector2i, length: int)` / `hide_aoe_preview()` — a small pooled-`Sprite2D` purple tint (1×1 white texture tinted via `modulate`, `z_index = 2`, same layer as the fog sprite — Node2D-world convention, not a Control), both funneling into a shared `_paint_aoe_preview_tiles(key, tiles)` helper. Sphere: every tile within `radius` (Euclidean, no LOS filtering — see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why) of `center`. Cone (Burning Hands): `SpellEffects.cone_tiles(origin, aim, length, self)` — the same LOS-gated 90°-arc tile-gather the actual cast resolver uses, so the preview always matches the real blast exactly (see `scripts/entities/CLAUDE.md`'s "More 1st-level spells"). Driven every frame by `player.gd._update_spell_aoe_preview()` while a sphere- or cone-shaped spell is armed for targeting. Each rebuild is cache-keyed on its own params so repeated calls with the same hovered tile are near-free.
 
