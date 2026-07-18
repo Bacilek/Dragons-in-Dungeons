@@ -181,7 +181,9 @@ repopulates `known_spells`, and silently clears if the saved id is no longer kno
 
 **Level-up max HP tooltip**: `GameState.gain_exp()`'s "Level up!" chat line wraps the `+N max HP` text in an `[url=hplvl:...]` tag (`Stats.hp_per_level_breakdown()` supplies `die_sides`/`avg`/`con`/`dwarf`/`total`; the meta also carries `n`, how many level thresholds this one `gain_exp()` call crossed, since a single large XP grant can level up more than once) — hover shows the same additive breakdown (hit-die average + CON mod + Dwarven Toughness) that `dmg:`/`heal:` tooltips use for combat numbers. `TooltipFormatters.fmt_hplvl_tooltip()`, dispatched in `hud.gd._format_tooltip()`.
 
-**Concentration break check**: `take_damage_raw()`'s tail calls `_check_concentration_break(actual_damage)` — if `player_stats.concentration_spell_id != ""`, rolls a CON check vs `DC = max(10, actual_damage)` (Blade Ward's own rule, not 5e's usual half-damage DC) and clears concentration + the spell's own duration field on a fail. Scoped to `take_damage_raw()` callers only (status-tick/trap damage bypass it) — see `scripts/entities/CLAUDE.md`'s "Blade Ward" section. Logs a hoverable roll breakdown on both outcomes (`"Concentration holds"` / `"Your concentration breaks!"`) via a `conc:die=,mod=,total=,dc=,pass=` meta tag — `TooltipFormatters.fmt_conc_tooltip()` (`scripts/ui/tooltip_formatters.gd`), dispatched in `hud.gd._format_tooltip()`'s `"conc"` case — same d20+CON-mod-vs-DC shape as `fmt_save_tooltip()`.
+**Concentration break check**: `take_damage_raw()`'s tail calls `_check_concentration_break(actual_damage)` — if `player_stats.concentration_spell_id != ""`, rolls a CON check vs `DC = max(10, actual_damage)` (Blade Ward's own rule, not 5e's usual half-damage DC) and calls `end_concentration(log_msg)` on a fail. Scoped to `take_damage_raw()` callers only (status-tick/trap damage bypass it) — see `scripts/entities/CLAUDE.md`'s "Blade Ward" section. Logs a hoverable roll breakdown on both outcomes (`"Concentration holds"` / `"Your concentration breaks!"`) via a `conc:die=,mod=,total=,dc=,pass=` meta tag — `TooltipFormatters.fmt_conc_tooltip()` (`scripts/ui/tooltip_formatters.gd`), dispatched in `hud.gd._format_tooltip()`'s `"conc"` case — same d20+CON-mod-vs-DC shape as `fmt_save_tooltip()`.
+
+**`GameState.end_concentration(reason_log: String = "")`**: the single chokepoint for ending whatever the player is currently concentrating on — clears `concentration_spell_id` AND that spell's own duration/target fields (not just the id), so switching to a different concentration spell can never leave a stale spell still ticking. Called by `_check_concentration_break()` on a failed CON check, and by every concentration-granting cast site (Blade Ward/Witch Bolt/Expeditious Retreat/Fog Cloud in `spell_effects.gd`) whenever `concentration_spell_id` is already set to a DIFFERENT spell. See `scripts/entities/CLAUDE.md`'s "Concentration (generic mechanism)" section.
 
 **Rage DR**: `take_damage_raw(amount, ignore_rage, damage_type: String) -> int` — returns actual damage after DR. Physical types ("Slashing"/"Piercing"/"Bludgeoning") are always reduced 50% while raging (baked-in baseline, no longer talent-gated — see `scripts/entities/CLAUDE.md`'s Barbarian class section). Scarred Warrior's Born in Blood talent applies an additional Bloodied-based modifier afterward. All callers must pass `damage_type`; missing/empty type bypasses DR. **`invincible` still sets `player_was_hit_this_turn`**: the function's `invincible` branch returns 0 without touching HP, but (if the hit was physical) still flips `player_was_hit_this_turn` — every caller (currently only `enemy.gd._attack_player()`, which now always calls this function rather than short-circuiting to 0 itself) is only ever invoked on a connecting hit, so this is safe and keeps turn-based triggers keyed off that flag (e.g. Battlefield Expert R3's free Side Step — `scripts/entities/CLAUDE.md`) working in God Mode instead of silently never firing.
 
@@ -255,9 +257,19 @@ TurnManager.revert_to_waiting()         # Rager talent only — skips enemy phas
                                         # DO NOT generalize: this is not a general action-economy system
 ```
 
+### Signals
+`player_turn_started` — phase reaches WAITING_FOR_INPUT (start of a new round, or a reverted free action).
+`player_turn_ending` — emitted from `on_player_action_complete()`, right before phase flips to
+RESOLVING_ENEMIES — fires once per REAL player action (never for a `revert_to_waiting()` free
+action, since that path never calls `on_player_action_complete()` at all). The "end of the
+player's turn, before enemies act" hook — used by `player.gd._on_turn_ending()` for Witch Bolt's
+per-turn jolt (`scripts/entities/CLAUDE.md`'s "Wizard leveled spells" → Witch Bolt), which needs to
+fire at the end of a turn rather than the start of the next one.
+`turn_resolved` — after all enemies finish acting, before `_start_player_turn()`.
+
 ### Turn sequence
 1. Player key → `begin_player_action()` → phase = RESOLVING_PLAYER
-2. Action + tween → `on_player_action_complete()`
+2. Action + tween → `on_player_action_complete()` → `player_turn_ending` fires
 3. `_process_enemies()` awaits each enemy's `take_turn()` sequentially
 4. Phase = WAITING_FOR_INPUT → `player_turn_started` signal fires
 

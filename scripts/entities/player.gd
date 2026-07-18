@@ -135,6 +135,7 @@ func _ready() -> void:
 			GameState.game_log("[color=gray]Empty bottle added to your bag.[/color]")
 	)
 	TurnManager.player_turn_started.connect(_on_turn_started)
+	TurnManager.player_turn_ending.connect(_on_turn_ending)
 
 func _on_equipment_changed() -> void:
 	if _throw_item != null:
@@ -195,23 +196,6 @@ func _on_turn_started() -> void:
 			if stats.blade_ward_turns <= 0:
 				stats.concentration_spell_id = ""
 				GameState.game_log("[color=gray]Blade Ward fades.[/color]")
-		# Witch Bolt: 1d12 Lightning to the Jolted target once per real turn (the initial cast's
-		# own 2d12 already landed at cast time), up to 10 turns or until concentration breaks
-		# (target dies, the CON check on taking damage fails, or a different concentration spell
-		# is cast). Approximates 5e's "end of your turn" timing within this codebase's once-per-
-		# round tick granularity — same convention as Blade Ward's own duration above.
-		if stats.witch_bolt_turns > 0:
-			var wb_target: Enemy = stats.witch_bolt_target
-			if is_instance_valid(wb_target) and not wb_target.stats.is_dead():
-				SpellEffects.tick_witch_bolt(self, wb_target, _dungeon_floor)
-			stats.witch_bolt_turns -= 1
-			var wb_still_alive: bool = is_instance_valid(wb_target) and not wb_target.stats.is_dead()
-			if stats.witch_bolt_turns <= 0 or not wb_still_alive:
-				stats.witch_bolt_turns = 0
-				stats.witch_bolt_target = null
-				if stats.concentration_spell_id == "witch_bolt":
-					stats.concentration_spell_id = ""
-				GameState.game_log("[color=gray]Witch Bolt fades.[/color]")
 		# Expeditious Retreat: 100-turn duration, ticked once per real turn (same pattern as
 		# Blade Ward above).
 		if stats.expeditious_retreat_turns > 0:
@@ -344,6 +328,30 @@ func _on_turn_started() -> void:
 		if _dungeon_floor != null:
 			_dungeon_floor.show_damage(position, status_dmg, true)
 		GameState.player_status_changed.emit()
+
+# Witch Bolt's per-turn jolt fires at the END of the player's turn (TurnManager.player_turn_ending,
+# right before enemies act), not the start of the next one — matches the user-facing framing "the
+# bolt strikes at the end of your turn". `witch_bolt_just_cast` skips the very first firing (the
+# cast's own action-complete), so the first automatic 1d12 lands at the end of the turn AFTER the
+# casting turn, not the casting turn itself.
+func _on_turn_ending() -> void:
+	var stats: Stats = GameState.player_stats
+	if stats.witch_bolt_turns <= 0:
+		return
+	if stats.witch_bolt_just_cast:
+		stats.witch_bolt_just_cast = false
+		return
+	var wb_target: Enemy = stats.witch_bolt_target
+	if is_instance_valid(wb_target) and not wb_target.stats.is_dead():
+		SpellEffects.tick_witch_bolt(self, wb_target, _dungeon_floor)
+	stats.witch_bolt_turns -= 1
+	var wb_still_alive: bool = is_instance_valid(wb_target) and not wb_target.stats.is_dead()
+	if stats.witch_bolt_turns <= 0 or not wb_still_alive:
+		stats.witch_bolt_turns = 0
+		stats.witch_bolt_target = null
+		if stats.concentration_spell_id == "witch_bolt":
+			stats.concentration_spell_id = ""
+		GameState.game_log("[color=gray]Witch Bolt fades.[/color]")
 
 func _setup_animations() -> void:
 	var char_name: String

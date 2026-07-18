@@ -39,10 +39,17 @@ static func get_text(id: String) -> String:
 			return "Battlefield Expert: your next attack this turn is made with Advantage."
 		"psycho_adv":
 			return "Psycho: your next attack this turn is made with Advantage."
+		"concentration":
+			return "You can only concentrate on one spell at a time — casting another concentration spell ends this one immediately, and taking damage forces a CON check to keep it up."
 		_:
 			return ""
 
 static func build_bbcode(id: String) -> String:
+	if id == "concentration":
+		var spell_id: String = GameState.player_stats.concentration_spell_id
+		var sp: Spell = SpellDb.get_spell(spell_id) if spell_id != "" else null
+		var spell_name: String = sp.spell_name if sp != null else "a spell"
+		return "[b]Concentrating: %s[/b]\n%s" % [spell_name, get_text(id)]
 	var title: String = TITLES.get(id, id)
 	var text: String = get_text(id)
 	return "[b]%s[/b]\n%s" % [title, text]

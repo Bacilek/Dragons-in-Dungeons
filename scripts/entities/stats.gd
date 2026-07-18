@@ -145,6 +145,10 @@ var blade_ward_turns: int = 0
 # silently on load like other mid-floor state.
 var witch_bolt_target: Enemy = null
 var witch_bolt_turns: int = 0
+# Set on cast, consumed (cleared) the first time TurnManager.player_turn_ending fires afterward —
+# skips the jolt tick for the casting turn itself, so the first automatic 1d12 lands at the end of
+# the turn AFTER the one Witch Bolt was cast on, not the same turn.
+var witch_bolt_just_cast: bool = false
 
 # Expeditious Retreat — same generic concentration_spell_id mechanism as Blade Ward
 # ("expeditious_retreat"). No live reference of its own (the effect is read directly off this

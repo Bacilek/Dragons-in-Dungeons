@@ -29,7 +29,6 @@ enum TargetKind { ENEMY, SELF, TILE }
 @export var dice_sides: int = 6
 @export var damage_type: String = ""
 @export var cantrip_tier_scaling: bool = false   # dice_count × tier at character levels 1/5/11/17
-@export var upcast_dice_per_level: int = 0       # extra dice per slot level above `level` (leveled spells only)
 
 # SAVE resolution only
 @export var save_stat: String = ""     # "STR"/"DEX"/"CON"/"INT"/"WIS"/"CHA"

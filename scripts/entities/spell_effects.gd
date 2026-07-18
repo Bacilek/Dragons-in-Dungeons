@@ -287,8 +287,11 @@ static func cast_spell_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 	player._handle_post_attack_turn()
 
 # ── Leveled spells (docs/architecture/leveled-spells-and-slots-plan.md) ──────────────────────
-# Deliberately simplified vs. the framework doc: always casts at the LOWEST available slot level
-# (no upcast slot-level picker UI for v1 — plan §2/§9), and AoE is sphere-only (no cone/line/cube).
+# Deliberately simplified vs. the framework doc: no upcasting at all — a spell is locked to its own
+# slot level (StandardSlotPool.available_level()), never auto-promoted to a higher still-available
+# slot, and AoE is sphere-only (no cone/line/cube). God Mode (GameState.invincible) skips the
+# slot-availability check entirely (PlayerSpellcasting._cast_level_for()) as well as consumption
+# (_consume_slot() below) — casting never needs or spends a slot while active.
 
 # from_scroll: a Scroll of <Spell> is self-contained (its magic doesn't draw on the reader's
 # spellbook), so it never touches Stats.caster.slot_pool — that's true even for a Wizard reading
@@ -319,11 +322,11 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 				GameState.game_log("[color=cyan]You cast [b]%s[/b] — a shimmering force settles over you.[/color]" % spell.spell_name)
 		"blade_ward":
 			# Concentration: only one concentration effect at a time (5e rule) — recasting Blade
-			# Ward just refreshes its own duration, but casting a DIFFERENT concentration spell
-			# would break this one first (no second concentration spell exists yet to test that
-			# branch against, but the chokepoint is here for when one does).
+			# Ward just refreshes its own duration; casting a DIFFERENT concentration spell breaks
+			# this one first via GameState.end_concentration(), which also zeroes Blade Ward's own
+			# turn counter (not just the id) so it can't linger after the switch.
 			if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "blade_ward":
-				GameState.game_log("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+				GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 			player.stats.concentration_spell_id = "blade_ward"
 			player.stats.blade_ward_turns = 10
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — attacks against you falter for up to 10 turns.[/color]" % spell.spell_name)
@@ -331,7 +334,7 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			_resolve_thunderclap(player, spell, dungeon_floor)
 		"expeditious_retreat":
 			if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "expeditious_retreat":
-				GameState.game_log("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+				GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 			player.stats.concentration_spell_id = "expeditious_retreat"
 			player.stats.expeditious_retreat_turns = 100
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your reflexes quicken for up to 100 turns.[/color]" % spell.spell_name)
@@ -359,36 +362,43 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 			GameState.player_grid_pos = tile_pos
 			GameState.game_log("[color=cyan]You blink in a puff of silver mist.[/color]")
 		"burning_hands":
-			_resolve_cone_aoe(player, spell, cast_level, tile_pos, dungeon_floor)
+			_resolve_cone_aoe(player, spell, tile_pos, dungeon_floor)
 		"fog_cloud":
 			_resolve_fog_cloud(player, spell, tile_pos)
 		_:
 			if spell.shape == "sphere":
-				_resolve_sphere_aoe(player, spell, cast_level, tile_pos, dungeon_floor)
+				_resolve_sphere_aoe(player, spell, tile_pos, dungeon_floor)
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()
 
-# Shared cone tile-gather (framework doc §6.2's algorithm), also reused by DungeonFloor's AoE
-# preview so the preview and the actual blast use identical math. Every tile within `length` tiles
-# of `origin` (Euclidean), within ±45° of the direction toward `aim_tile` (a 90° cone — the clicked
-# tile need not itself be in range, only its direction from origin matters), LOS-gated from origin
-# (a wall casts a "shadow" through the cone). Origin tile itself is never included.
+# Shared cone tile-gather, also reused by DungeonFloor's AoE preview so the preview and the actual
+# blast use identical math. Matches 5e PHB's own cone definition ("the cone's width at a given
+# point along its length is equal to that point's distance from you") rather than a fixed-angle
+# pie slice: for a tile at forward distance `f` along the aim direction (its projection onto
+# `dir_v`) and lateral (perpendicular) distance `l` from that centerline, the tile is in the cone
+# iff `f` is between 0 and `length` AND `l <= f / 2` (half of the full width-equals-distance rule,
+# since `l` is only one side of the centerline) — a true narrowing triangle from a point at the
+# origin, not the much wider 90°-pie-slice shape this used to produce. The clicked/hovered
+# `aim_tile` only supplies a direction, not an impact point — it need not itself be in range.
+# LOS-gated from origin (a wall casts a "shadow" through the cone). Origin tile itself never
+# included (forward must be > 0).
 static func cone_tiles(origin: Vector2i, aim_tile: Vector2i, length: int, dungeon_floor: Node) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
 	var dir_v: Vector2 = Vector2(aim_tile - origin)
 	if dir_v.length() < 0.001:
 		return out
 	dir_v = dir_v.normalized()
-	var cos45: float = cos(deg_to_rad(45.0))
 	for dy: int in range(-length, length + 1):
 		for dx: int in range(-length, length + 1):
 			if dx == 0 and dy == 0:
 				continue
 			var v: Vector2 = Vector2(dx, dy)
-			if v.length() > length:
+			var forward: float = v.dot(dir_v)
+			if forward <= 0.0 or forward > float(length):
 				continue
-			if dir_v.dot(v.normalized()) < cos45:
+			var lateral: float = absf(v.x * dir_v.y - v.y * dir_v.x)
+			if lateral > forward * 0.5:
 				continue
 			var p: Vector2i = origin + Vector2i(dx, dy)
 			if dungeon_floor != null and not dungeon_floor.has_ranged_los(origin, p):
@@ -401,14 +411,12 @@ static func cone_tiles(origin: Vector2i, aim_tile: Vector2i, length: int, dungeo
 # caster (per the spell's own text) and doesn't hit a companion either (matching _resolve_sphere_
 # aoe()'s existing scope — enemies + the player only, no companion targeting). Every GRASS tile the
 # cone passes through ignites, mirroring Fire Bolt/Thunderclap's flammable-terrain side effect.
-static func _resolve_cone_aoe(player: Player, spell: Spell, cast_level: int, aim_tile: Vector2i, dungeon_floor: Node) -> void:
+static func _resolve_cone_aoe(player: Player, spell: Spell, aim_tile: Vector2i, dungeon_floor: Node) -> void:
 	if dungeon_floor == null:
 		return
 	var stats: Stats = player.stats
 	var origin: Vector2i = player.grid_pos
-	var extra_dice: int = spell.upcast_dice_per_level * maxi(0, cast_level - spell.level)
-	var dice_count: int = spell.dice_count + extra_dice
-	var rolls: Array[int] = Rng.roll_dice(dice_count, spell.dice_sides)
+	var rolls: Array[int] = Rng.roll_dice(spell.dice_count, spell.dice_sides)
 	var base_inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], false, spell.damage_type)
 	var roll_total: int = int(base_inst["subtotal"])
 
@@ -448,12 +456,10 @@ static func _resolve_cone_aoe(player: Player, spell: Spell, cast_level: int, aim
 # Sphere AoE damage-SAVE resolution (Fireball). Friendly fire is real — hits the player and any
 # enemy within shape_size tiles (Euclidean, matching the framework doc §6.1 convention) with LOS
 # from the impact tile. Damage-stacking RULE: one take_damage()/show_damage() call per target.
-static func _resolve_sphere_aoe(player: Player, spell: Spell, cast_level: int, center: Vector2i, dungeon_floor: Node) -> void:
+static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, dungeon_floor: Node) -> void:
 	var stats: Stats = player.stats
 	var r: int = spell.shape_size
-	var extra_dice: int = spell.upcast_dice_per_level * maxi(0, cast_level - spell.level)
-	var dice_count: int = spell.dice_count + extra_dice
-	var rolls: Array[int] = Rng.roll_dice(dice_count, spell.dice_sides)
+	var rolls: Array[int] = Rng.roll_dice(spell.dice_count, spell.dice_sides)
 	var base_inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], false, "Fire")
 	var roll_total: int = int(base_inst["subtotal"])
 
@@ -469,12 +475,7 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, cast_level: int, c
 				continue
 			targets.append(e)
 
-	# Casting always spends the cheapest AVAILABLE slot (StandardSlotPool.lowest_available_level())
-	# — if the base slot level is exhausted, that can silently auto-upcast to a higher slot and add
-	# upcast dice. Surface it in the log line instead of leaving a mysteriously bigger dice pool
-	# unexplained.
-	var upcast_note: String = "" if cast_level <= spell.level else " [color=gray](cast at %s level — your %s slots were empty)[/color]" % [SpellDb.ordinal(cast_level), SpellDb.ordinal(spell.level)]
-	GameState.game_log("[color=orange]A sphere of fire erupts![/color]%s" % upcast_note)
+	GameState.game_log("[color=orange]A sphere of fire erupts![/color]")
 	for e: Enemy in targets:
 		var dc: int = _save_dc(stats)
 		var save: Dictionary = e.resist_check_detailed(dc, false, true)
@@ -534,7 +535,7 @@ static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int,
 
 	match spell.effect_id:
 		"magic_missile":
-			var darts: int = 3 + maxi(0, cast_level - spell.level)
+			var darts: int = 3
 			var dart_rolls: Array[int] = []
 			var total: int = 0
 			for _i: int in darts:
@@ -558,11 +559,11 @@ static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int,
 	player._handle_post_attack_turn()
 
 # ENEMY target, ATTACK_ROLL resolution, LEVELED spells (Chromatic Orb, Witch Bolt) — rolls an
-# attack vs the target's AC exactly like a cantrip (cast_spell()), but also consumes a spell slot
-# and supports upcast dice. `is_leap` is Chromatic Orb's single extra bolt (see effect_id dispatch
-# below) — a fresh attack + damage roll against a second target, reusing the same log-line shape
-# with the "leaps to" phrasing instead of "cast ... at".
-static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Enemy, dtype: String, cast_level: int, dungeon_floor: Node, is_leap: bool) -> Dictionary:
+# attack vs the target's AC exactly like a cantrip (cast_spell()), but also consumes a spell slot.
+# `is_leap` is Chromatic Orb's single extra bolt (see effect_id dispatch below) — a fresh attack +
+# damage roll against a second target, reusing the same log-line shape with the "leaps to" phrasing
+# instead of "cast ... at".
+static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Enemy, dtype: String, dungeon_floor: Node, is_leap: bool) -> Dictionary:
 	var stats: Stats = player.stats
 	var attack_bonus: int = _attack_bonus(stats)
 
@@ -617,9 +618,7 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
 
-	var extra_dice: int = spell.upcast_dice_per_level * maxi(0, cast_level - spell.level)
-	var dice_count: int = spell.dice_count + extra_dice
-	var rolls: Array[int] = Rng.roll_dice(dice_count, spell.dice_sides)
+	var rolls: Array[int] = Rng.roll_dice(spell.dice_count, spell.dice_sides)
 	var inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], is_crit, dtype)
 	var result: Dictionary = target.take_typed_damage(inst["subtotal"], dtype)
 	inst["final"] = result["actual"]
@@ -674,7 +673,7 @@ static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_leve
 			# Damage type is rolled once per cast, before the attack roll — a leap (if triggered)
 			# reuses the same type rather than re-rolling, like the orb's energy carrying over.
 			var dtype: String = Rng.pick(CHROMATIC_ORB_TYPES)
-			var res: Dictionary = _resolve_spell_attack_bolt(player, spell, target, dtype, cast_level, dungeon_floor, false)
+			var res: Dictionary = _resolve_spell_attack_bolt(player, spell, target, dtype, dungeon_floor, false)
 			if res["hit"] and not res["lethal"]:
 				var rolls: Array = res["rolls"]
 				var seen: Dictionary = {}
@@ -687,16 +686,17 @@ static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_leve
 					var leap_target: Enemy = _pick_chromatic_orb_leap_target(dungeon_floor, target)
 					if leap_target != null:
 						GameState.game_log("[color=cyan]The orb crackles and leaps toward a new target![/color]")
-						_resolve_spell_attack_bolt(player, spell, leap_target, dtype, cast_level, dungeon_floor, true)
+						_resolve_spell_attack_bolt(player, spell, leap_target, dtype, dungeon_floor, true)
 		"witch_bolt":
-			var res2: Dictionary = _resolve_spell_attack_bolt(player, spell, target, spell.damage_type, cast_level, dungeon_floor, false)
+			var res2: Dictionary = _resolve_spell_attack_bolt(player, spell, target, spell.damage_type, dungeon_floor, false)
 			if res2["hit"] and not res2["lethal"]:
 				var stats: Stats = player.stats
 				if stats.concentration_spell_id != "" and stats.concentration_spell_id != "witch_bolt":
-					GameState.game_log("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+					GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 				stats.concentration_spell_id = "witch_bolt"
 				stats.witch_bolt_target = target
 				stats.witch_bolt_turns = 10
+				stats.witch_bolt_just_cast = true
 				GameState.game_log("[color=cyan]%s is Jolted — crackling energy will keep striking it.[/color]" % target.display_name)
 
 	if dungeon_floor != null:
@@ -733,7 +733,7 @@ static func tick_witch_bolt(player: Player, target: Enemy, dungeon_floor: Node) 
 static func _resolve_fog_cloud(player: Player, spell: Spell, center: Vector2i) -> void:
 	var stats: Stats = player.stats
 	if stats.concentration_spell_id != "" and stats.concentration_spell_id != "fog_cloud":
-		GameState.game_log("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+		GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 	stats.concentration_spell_id = "fog_cloud"
 	stats.fog_cloud_turns = 100
 	GameState.fog_cloud_pos = center

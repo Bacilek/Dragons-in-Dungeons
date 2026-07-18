@@ -90,13 +90,18 @@ reuse the existing qbar-tooltip pair (`_qbar_tooltip`/`_qbar_tooltip_rtl`) via
 `unarmored_defense` (Barbarian/Monk with no armor equipped — reads the live AC formula),
 `tactician` (`GameState.battlefield_adv_pending`, Battlefield Expert R1's pending-Advantage
 window — see `scripts/entities/CLAUDE.md`'s Barbarian Tier 1 talents), `psycho_adv`
-(`GameState.psycho_adv_pending`, Psycho's identical pending-Advantage window). Both pending-ADV
-flags live on `GameState` (not on `PlayerBaseTalents`, where they used to live) specifically so
-this tray can read them without a live `Player` node reference — matches "HUD only reads
-GameState" above. No `icons/status/` art exists yet — every entry currently renders as a tinted
-placeholder square until real icons are supplied (`unarmored_defense`/`tactician`/`psycho_adv`
-already reuse existing talent icons, so those three render properly today). Open questions
-resolved: hover-only tooltip, shared tooltip panel, grow-panel layout.
+(`GameState.psycho_adv_pending`, Psycho's identical pending-Advantage window), `concentration`
+(`Stats.concentration_spell_id != ""` — icon is that spell's OWN `SpellDb.get_spell(id).icon_path`,
+not a fixed art asset, since it must reflect whichever of Blade Ward/Witch Bolt/Expeditious
+Retreat/Fog Cloud is actually active; `StatusTooltips.build_bbcode("concentration")`
+special-cases the title to "Concentrating: &lt;Spell Name&gt;" by reading the id live instead of a
+static `TITLES` entry — see `scripts/entities/CLAUDE.md`'s "Concentration (generic mechanism)").
+Both pending-ADV flags live on `GameState` (not on `PlayerBaseTalents`, where they used to live)
+specifically so this tray can read them without a live `Player` node reference — matches "HUD only
+reads GameState" above. No `icons/status/` art exists yet — every entry currently renders as a
+tinted placeholder square until real icons are supplied (`unarmored_defense`/`tactician`/
+`psycho_adv`/`concentration` already reuse existing talent/spell icons, so those render properly
+today). Open questions resolved: hover-only tooltip, shared tooltip panel, grow-panel layout.
 
 ### Z-index reference
 | Element | Z |

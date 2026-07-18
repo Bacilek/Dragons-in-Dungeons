@@ -3,6 +3,7 @@ extends Node
 enum Phase { WAITING_FOR_INPUT, RESOLVING_PLAYER, RESOLVING_ENEMIES }
 
 signal player_turn_started()
+signal player_turn_ending()  # fired once per real (non-reverted) player action, right before enemies act
 signal turn_resolved()
 
 var phase: Phase = Phase.WAITING_FOR_INPUT
@@ -35,6 +36,7 @@ func begin_player_action() -> void:
 func on_player_action_complete() -> void:
 	if phase != Phase.RESOLVING_PLAYER:
 		return
+	player_turn_ending.emit()
 	phase = Phase.RESOLVING_ENEMIES
 	_process_enemies()
 

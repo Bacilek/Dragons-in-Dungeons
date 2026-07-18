@@ -1661,19 +1661,32 @@ func _check_concentration_break(actual_damage: int) -> void:
 	if passed:
 		game_log("[color=gray]Concentration holds [url=%s](CON %d vs DC %d)[/url].[/color]" % [conc_meta, total, dc])
 	else:
-		var broken_spell: String = player_stats.concentration_spell_id
-		player_stats.concentration_spell_id = ""
-		if broken_spell == "blade_ward":
-			player_stats.blade_ward_turns = 0
-		elif broken_spell == "witch_bolt":
-			player_stats.witch_bolt_turns = 0
-			player_stats.witch_bolt_target = null
-		elif broken_spell == "expeditious_retreat":
-			player_stats.expeditious_retreat_turns = 0
-		elif broken_spell == "fog_cloud":
-			player_stats.fog_cloud_turns = 0
-			clear_fog_cloud()
-		game_log("[color=gray]Your concentration breaks! [url=%s](CON %d vs DC %d)[/url][/color]" % [conc_meta, total, dc])
+		end_concentration("[color=gray]Your concentration breaks! [url=%s](CON %d vs DC %d)[/url][/color]" % [conc_meta, total, dc])
+
+# Single chokepoint for ending whatever the player is currently concentrating on — clears
+# concentration_spell_id AND that spell's own duration/target fields (5e: only one concentration
+# effect at a time, so switching to a NEW concentration spell must fully clear the old one's state,
+# not just repoint the id — otherwise e.g. Witch Bolt kept ticking damage after concentration moved
+# to Blade Ward, since its tick only ever checked witch_bolt_turns, never concentration_spell_id).
+# No-op if not currently concentrating. `reason_log`, if non-empty, is logged after clearing.
+func end_concentration(reason_log: String = "") -> void:
+	var broken_spell: String = player_stats.concentration_spell_id
+	if broken_spell == "":
+		return
+	player_stats.concentration_spell_id = ""
+	if broken_spell == "blade_ward":
+		player_stats.blade_ward_turns = 0
+	elif broken_spell == "witch_bolt":
+		player_stats.witch_bolt_turns = 0
+		player_stats.witch_bolt_target = null
+		player_stats.witch_bolt_just_cast = false
+	elif broken_spell == "expeditious_retreat":
+		player_stats.expeditious_retreat_turns = 0
+	elif broken_spell == "fog_cloud":
+		player_stats.fog_cloud_turns = 0
+		clear_fog_cloud()
+	if reason_log != "":
+		game_log(reason_log)
 
 
 func apply_player_status(type: String, turns: int) -> bool:

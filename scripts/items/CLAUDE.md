@@ -169,7 +169,7 @@ cast-resolution walkthroughs.
   cantrip, 1-9 = leveled), `school`, `range_tiles`, `resolution` (enum: `ATTACK_ROLL`/`SAVE`/
   `AUTO_HIT`), `target_kind` (enum: `ENEMY`/`SELF`/`TILE`), `dice_count`, `dice_sides`,
   `damage_type`, `cantrip_tier_scaling: bool` (dice_count × tier at character levels 1/5/11/17),
-  `upcast_dice_per_level: int` (leveled spells only), `save_stat`/`save_for_half` (SAVE
+  `save_stat`/`save_for_half` (SAVE
   resolution only), `shape`/`shape_size` (`""` = single target, `"sphere"` = AoE radius —
   deliberately no cone/line/cube, see the plan doc §7's content-scope cut), `effect_id` (`""` =
   pure generic damage path; else dispatched in `SpellEffects`), `class_list`. Still missing
@@ -202,9 +202,12 @@ cast-resolution walkthroughs.
   `ability_mod + caster_level` formula for Wizard).
 - **`StandardSlotPool`** (`Resource`, `scripts/items/spell_slot_pool.gd`) — the real D&D 2024
   full-caster 1–20 slot table (`SLOT_TABLE` const), long-rest-only recharge
-  (`on_short_rest()` is a no-op). `lowest_available_level(spell) -> int` (-1 if none) — casting
-  always spends the cheapest available slot; the framework doc's upcast slot-level picker UI is
-  deliberately not implemented (plan doc §2/§9). `grant_new_slots_on_levelup(old_max)` tops up
+  (`on_short_rest()` is a no-op). `available_level(spell) -> int` returns `spell.level` if that
+  EXACT slot level currently has an unspent slot, else `-1` — **no upcasting**: a spell locked out
+  of its own slot level never falls back to a higher still-available one (was
+  `lowest_available_level()`, which searched upward and could silently auto-upcast — removed per
+  direct owner correction; upcasting was never requested and produced surprising results, e.g.
+  Chromatic Orb auto-casting at a 5th-level slot). `grant_new_slots_on_levelup(old_max)` tops up
   newly-grown slot levels immediately after a level-up instead of leaving them empty until the
   next long rest (see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why). Deliberately
   **not** a `SpellSlotPool` base class + subclass hierarchy — only one caster type exists, so a

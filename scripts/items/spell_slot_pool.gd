@@ -39,21 +39,18 @@ func max_slots() -> Dictionary:
 	var lv: int = mini(owner_stats.character_level, 20)
 	return SLOT_TABLE.get(lv, {})
 
-# Lowest slot level that can currently pay for `spell`, or -1 if none available.
-# Leveled-spells-and-slots-plan.md deliberately simplifies away the framework doc's upcast
-# slot-level picker UI for v1 — casting always spends the cheapest available slot.
-func lowest_available_level(spell: Spell) -> int:
+# A spell is locked to its OWN slot level — no upcasting into a higher, still-available slot.
+# Returns spell.level if that level currently has an unspent slot, else -1. Cantrips (level 0)
+# never touch this pool at all.
+func available_level(spell: Spell) -> int:
 	if spell.level == 0:
-		return 0   # cantrips never touch this pool
-	var best: int = -1
-	for lv: int in max_slots():
-		if lv >= spell.level and remaining.get(lv, 0) > 0:
-			if best == -1 or lv < best:
-				best = lv
-	return best
+		return 0
+	if remaining.get(spell.level, 0) > 0:
+		return spell.level
+	return -1
 
 func can_cast(spell: Spell) -> bool:
-	return spell.level == 0 or lowest_available_level(spell) != -1
+	return spell.level == 0 or available_level(spell) != -1
 
 func consume(cast_level: int) -> void:
 	if cast_level <= 0:

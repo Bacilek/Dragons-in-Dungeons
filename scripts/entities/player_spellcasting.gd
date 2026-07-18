@@ -31,7 +31,7 @@ func begin_cast(spell_id: String) -> void:
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return
-	if spell.level > 0:
+	if spell.level > 0 and not GameState.invincible:
 		var caster: SpellcasterState = player.stats.caster
 		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
 			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
@@ -99,8 +99,10 @@ func get_armed_spell() -> Spell:
 func _cast_level_for(spell: Spell) -> int:
 	if spell.level == 0:
 		return 0
+	if GameState.invincible:
+		return spell.level  # God Mode: never needs (or spends) a slot — see _consume_slot()
 	var caster: SpellcasterState = player.stats.caster
-	return caster.slot_pool.lowest_available_level(spell)
+	return caster.slot_pool.available_level(spell)
 
 func _cast_self(spell: Spell, from_scroll: bool = false) -> void:
 	var lvl: int = spell.level if from_scroll else _cast_level_for(spell)
@@ -143,7 +145,7 @@ func cast_direct(spell_id: String, clicked: Vector2i) -> void:
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return
-	if spell.level > 0:
+	if spell.level > 0 and not GameState.invincible:
 		var caster: SpellcasterState = player.stats.caster
 		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
 			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)

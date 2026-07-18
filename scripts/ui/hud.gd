@@ -429,6 +429,9 @@ func _update_status_icons() -> void:
 		entries.append({"id": "raging", "icon_path": GameState.talent_icon_path("rage", 3), "fallback_color": Color(0.85, 0.15, 0.05)})
 	if s.temp_hp > 0:
 		entries.append({"id": "temp_hp", "icon_path": "res://icons/status/temp_hp.png", "fallback_color": Color(0.4, 0.8, 1.0)})
+	if s.concentration_spell_id != "":
+		var _conc_spell: Spell = SpellDb.get_spell(s.concentration_spell_id)
+		entries.append({"id": "concentration", "icon_path": _conc_spell.icon_path if _conc_spell != null else "", "fallback_color": Color(0.65, 0.45, 1.0)})
 	if (s.character_class == Stats.CharacterClass.BARBARIAN or s.character_class == Stats.CharacterClass.MONK) \
 			and (GameState.equipment.get("armor") as Item) == null:
 		entries.append({"id": "unarmored_defense", "icon_path": GameState.talent_icon_path("unarmored_defense", 1), "fallback_color": Color(0.70, 0.90, 1.0)})

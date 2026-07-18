@@ -188,7 +188,7 @@ static func _magic_missile() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "magic_missile"
 	s.spell_name = "Magic Missile"
-	s.description = "3 darts of magical force strike unerringly — always hits, no attack roll. 1d4+1 Force each. +1 dart per slot level above 1st. Range: your full field of view."
+	s.description = "3 darts of magical force strike unerringly — always hits, no attack roll. 1d4+1 Force each. Range: your full field of view."
 	s.icon_path = "res://icons/spells/magic_missile.png"
 	s.school = "Evocation"
 	s.level = 1
@@ -249,7 +249,7 @@ static func _fireball() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "fireball"
 	s.spell_name = "Fireball"
-	s.description = "A roaring sphere of fire (radius 2 tiles) erupts at a point you choose. 8d6 Fire damage; DEX save for half. +1d6 per slot level above 3rd. Damages everything in the blast, friend or foe."
+	s.description = "A roaring sphere of fire (radius 2 tiles) erupts at a point you choose. 8d6 Fire damage; DEX save for half. Damages everything in the blast, friend or foe."
 	s.icon_path = "res://icons/spells/fireball.png"
 	s.school = "Evocation"
 	s.level = 3
@@ -263,7 +263,6 @@ static func _fireball() -> Spell:
 	s.dice_count = 8
 	s.dice_sides = 6
 	s.damage_type = "Fire"
-	s.upcast_dice_per_level = 1
 	s.class_list = ["WIZARD"]
 	return s
 
@@ -281,7 +280,6 @@ static func _chromatic_orb() -> Spell:
 	s.dice_count = 3
 	s.dice_sides = 8
 	s.damage_type = ""   # rolled per-cast from SpellEffects.CHROMATIC_ORB_TYPES — see effect_id
-	s.upcast_dice_per_level = 1
 	s.effect_id = "chromatic_orb"
 	s.class_list = ["WIZARD"]
 	return s
@@ -304,7 +302,6 @@ static func _burning_hands() -> Spell:
 	s.dice_count = 3
 	s.dice_sides = 6
 	s.damage_type = "Fire"
-	s.upcast_dice_per_level = 1
 	s.effect_id = "burning_hands"
 	s.class_list = ["WIZARD"]
 	return s

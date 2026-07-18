@@ -433,18 +433,46 @@ extra was needed there).
   square over the source tile) so the player can see both where it is and how far it reaches.
 
 ## Concentration (generic mechanism)
-`Stats.concentration_spell_id: String` (`""` = not concentrating) + a per-spell duration field
-(currently only `blade_ward_turns`). Not a full framework (no reaction-spell integration, no
-multiple-effects-per-concentration) — just enough plumbing for Blade Ward's own duration + break-
-on-damage rule to be real rather than hand-waved, reusable by a future concentration spell without
-inventing a second field. See "Blade Ward" above for the full mechanism.
+`Stats.concentration_spell_id: String` (`""` = not concentrating) + one duration field per
+concentration spell (`blade_ward_turns`, `witch_bolt_turns`, `expeditious_retreat_turns`,
+`fog_cloud_turns`). Not a full framework (no reaction-spell integration, no
+multiple-effects-per-concentration) — just enough plumbing for each spell's own duration + break-
+on-damage rule to be real rather than hand-waved.
+
+**Only one concentration effect at a time**: `GameState.end_concentration(reason_log: String = "")`
+is the single chokepoint for ending whatever the player currently concentrates on — clears
+`concentration_spell_id` **and** that spell's own duration/target/just-cast fields (not just the
+id). Every cast site that grants concentration (`SpellEffects.cast_leveled_self()`'s
+`"blade_ward"`/`"expeditious_retreat"` branches, `cast_leveled_attack_at_enemy()`'s `"witch_bolt"`
+branch, `_resolve_fog_cloud()`) calls it first whenever `concentration_spell_id != "" and
+concentration_spell_id != <this spell>`, logging "Casting X breaks your concentration." Fixed bug:
+previously each site only overwrote `concentration_spell_id` and left the OLD spell's own turn
+counter untouched, so e.g. casting Blade Ward while Witch Bolt was active silently kept ticking
+Witch Bolt's jolt damage forever (its tick only ever checked `witch_bolt_turns`, never
+`concentration_spell_id`) even though the status/HUD said "concentrating on Blade Ward."
+`GameState._check_concentration_break()`'s CON-check-failure path (below) also routes through
+`end_concentration()` now instead of duplicating the per-spell clear logic.
+
+**Status icon**: `hud.gd._update_status_icons()` appends a `"concentration"` entry to the
+status tray (`scripts/ui/CLAUDE.md`) whenever `concentration_spell_id != ""`, using that spell's
+own `SpellDb.get_spell(id).icon_path` (purple fallback tint) — so the icon and its hover tooltip
+always reflect whichever spell is actually being concentrated on, not a generic fixed icon.
+`StatusTooltips.build_bbcode("concentration")` special-cases the title to read "Concentrating:
+&lt;Spell Name&gt;" by looking up `concentration_spell_id` live, rather than a static `TITLES` entry.
+
+See "Blade Ward" above and "Witch Bolt" below for each spell's own mechanism.
 
 ## Wizard leveled spells (spell slots)
 
 Implements `docs/architecture/leveled-spells-and-slots-plan.md` on top of the cantrip slice
 above. **Simplifications vs. that doc** (time-boxed for the first implementation pass, flagged
-here rather than silently diverging): no upcast slot-level picker UI — casting always spends the
-**lowest** available slot level (`StandardSlotPool.lowest_available_level()`); AoE is
+here rather than silently diverging): **no upcasting at all** — a spell only ever casts using a
+slot that matches its own `level` exactly (`StandardSlotPool.available_level()`); if that specific
+slot level has none remaining, the cast fails outright (`"No spell slot available for X."`), even
+if a higher slot level is free. (An earlier version auto-promoted to the lowest available slot
+ABOVE the spell's own level, which produced unrequested/surprising upcasts — e.g. Chromatic Orb
+silently casting at a 5th-level slot with bonus dice — and was removed along with every
+`Spell.upcast_dice_per_level`/extra-dice code path per direct owner correction.) AoE is
 **sphere or cone only**, no line/cube. `LEVELED_SPELL_IDS` (8): Magic Missile, Shield, Mage Armor,
 Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch Bolt (the last 3 added after the initial
 pass — see "More 1st-level spells" below, including Burning Hands' cone AoE, originally cut from
@@ -519,10 +547,15 @@ impact point rather than stop at the first wall it can't directly see through.
   can be opened and prepared spells changed any time outside of other blocking overlays (doc §5.5).
 - **Casting a leveled spell**: `PlayerSpellcasting.begin_cast()` checks
   `caster.slot_pool.can_cast(spell)` before arming targeting (SELF spells like Shield skip
-  targeting and cast immediately); `try_cast_at()` dispatches on `Spell.target_kind` to one of
-  three new `SpellEffects` functions — `cast_leveled_self()`, `cast_leveled_at_tile()`,
-  `cast_leveled_at_enemy()` — each consuming a slot via `_consume_slot()` (guarded by
-  `GameState.invincible`, same as every other consumption site) before resolving. Fireball's AoE
+  targeting and cast immediately) — **skipped entirely while `GameState.invincible`** (God Mode),
+  so a slot never needs to exist to cast, not just never gets spent; `try_cast_at()` dispatches on
+  `Spell.target_kind` to one of three new `SpellEffects` functions — `cast_leveled_self()`,
+  `cast_leveled_at_tile()`, `cast_leveled_at_enemy()` — each consuming a slot via `_consume_slot()`
+  (guarded by `GameState.invincible`, same as every other consumption site) before resolving.
+  `PlayerSpellcasting._cast_level_for(spell)` is the one chokepoint every arm/cast/direct-cast path
+  reads: returns `spell.level` immediately when `invincible` (no slot lookup at all), else
+  `caster.slot_pool.available_level(spell)` — the EXACT slot for that spell's own level, or `-1` if
+  none remain (**no upcasting** — see "Wizard leveled spells" above). Fireball's AoE
   (`_resolve_sphere_aoe()`) hits every enemy AND the player within `shape_size` tiles (Euclidean)
   with LOS from the impact tile — real friendly fire, one `take_damage()`/`show_damage()` call per
   target per the damage-stacking RULE. Its DEX save (a "check" against `spell_save_dc` per this
@@ -539,13 +572,7 @@ impact point rather than stop at the first wall it can't directly see through.
   DR or temp-HP absorption, none of which is representable as the `dmg:` tooltip's `rmul` field
   (that's enemy-only, from `Enemy.take_typed_damage()`'s clean multiplier) — rather than leave a
   silent "31 rolled, only 25 landed" gap, the log line appends a gray `"(N before your own
-  reductions)"` note whenever the landed amount differs from the post-save roll. **Auto-upcast is
-  now surfaced too**: casting always spends the cheapest *available* slot
-  (`StandardSlotPool.lowest_available_level()`), so if the base slot level happens to be empty,
-  a Fireball can silently cast from a higher slot and add upcast dice — the "A sphere of fire
-  erupts!" line now appends `"(cast at Nth level — your Mth slots were empty)"` whenever
-  `cast_level > spell.level`, so a bigger-than-expected dice pool (e.g. 9d6 instead of the base
-  8d6) is explained instead of looking like a bug. **Guaranteed self-targeting**: `player.gd`'s
+  reductions)"` note whenever the landed amount differs from the post-save roll. **Guaranteed self-targeting**: `player.gd`'s
   spell-targeting click handler now resolves at `player.grid_pos` instead of the raw clicked tile
   whenever **Ctrl** is held on the click — a deliberate, precision-proof way to center a sphere
   AoE (or resolve a touch SELF spell, see Mage Armor above) on yourself without needing to click
@@ -642,8 +669,8 @@ introduces one new mechanic not needed by any earlier spell.
 - **Chromatic Orb** (Evocation, `effect_id: "chromatic_orb"`, ATTACK_ROLL, ENEMY, 9 tiles): the
   first **leveled** ATTACK_ROLL spell (every earlier leveled spell was AUTO_HIT or SAVE) — routed
   through a new `SpellEffects.cast_leveled_attack_at_enemy()` / `_resolve_spell_attack_bolt()` pair
-  that mirrors `cast_spell()`'s cantrip attack-roll math but also consumes a spell slot and
-  supports `upcast_dice_per_level`. `PlayerSpellcasting.try_cast_at()`'s `ENEMY` branch now checks
+  that mirrors `cast_spell()`'s cantrip attack-roll math but also consumes a spell slot.
+  `PlayerSpellcasting.try_cast_at()`'s `ENEMY` branch now checks
   `spell.resolution == ATTACK_ROLL` to pick this path over the existing AUTO_HIT
   `cast_leveled_at_enemy()`. Damage type is rolled once per cast from `SpellEffects.
   CHROMATIC_ORB_TYPES` (Acid/Cold/Fire/Lightning/Poison/Thunder) — **not** a fixed `Spell.
@@ -660,8 +687,13 @@ introduces one new mechanic not needed by any earlier spell.
   `shape_size: 3`): the first (and so far only) **cone** AoE shape — `Spell.shape` gained a third
   value alongside `""`/`"sphere"`. The cone is self-centered on the caster and only ever
   *aimed* by the clicked/hovered tile — `SpellEffects.cone_tiles(origin, aim_tile, length,
-  dungeon_floor)` (a 90°-arc dot-product sweep per `docs/architecture/spellcasting-design.md`
-  §6.2's original algorithm, LOS-gated per-tile from the caster) is the single shared tile-gather,
+  dungeon_floor)` is the single shared tile-gather. Matches 5e PHB's own cone definition ("the
+  cone's width at a given point along its length is equal to that point's distance from you") — a
+  true narrowing triangle from the origin, computed via forward/lateral projection onto the aim
+  direction (`lateral <= forward * 0.5`), LOS-gated per-tile from the caster — **not** the original
+  90°-pie-slice dot-product-angle test (`angle <= 45°`, equivalent to `lateral <= forward`, i.e.
+  full width = 2× the point's distance) that this used at first, which read as too wide/blob-shaped
+  to look like a cone rather than a genuine wedge.
   called by both the resolver (`_resolve_cone_aoe()`, dispatched from `cast_leveled_at_tile()`) and
   the live preview (`DungeonFloor.show_cone_preview()`, mirroring `show_aoe_preview()`'s pooled-
   Sprite2D convention — see `scripts/world/CLAUDE.md`). Because only the *direction* to the clicked
@@ -673,25 +705,30 @@ introduces one new mechanic not needed by any earlier spell.
   through (`DungeonFloor.destroy_grass()`), mirroring Fire Bolt/Thunderclap's flammable-terrain
   side effect.
 - **Witch Bolt** (Evocation, `effect_id: "witch_bolt"`, ATTACK_ROLL, ENEMY, 6 tiles, 2d12
-  Lightning initial hit): a second concentration spell alongside Blade Ward, reusing `Stats.
-  concentration_spell_id` — casting it while Blade Ward (or itself) is already active logs the
-  generic "breaks your concentration" line first, same as Blade Ward's own recast branch. Two new
-  `Stats` fields carry the ongoing effect: `witch_bolt_target: Enemy` and `witch_bolt_turns: int`
-  (both deliberately **not** serialized in `to_dict()`/`from_dict()` — a live `Enemy` node
-  reference can't survive save/load anyway, so the bolt just silently ends on load like other
-  mid-floor state). On a non-lethal initial hit, `cast_leveled_attack_at_enemy()`'s effect
-  dispatch sets `concentration_spell_id = "witch_bolt"`, `witch_bolt_target = target`,
-  `witch_bolt_turns = 10`. **Tick**: `player.gd _on_turn_started()`'s "not came_from_revert" block
-  (same block as Blade Ward's own duration tick) calls `SpellEffects.tick_witch_bolt()` — an
-  automatic 1d12 Lightning hit against `witch_bolt_target` with **no** attack roll and **no** slot
-  consumption (only the initial cast rolls to hit) — once per real player turn, approximating 5e's
-  "at the end of your turn" within this codebase's once-per-round tick granularity. Ends (clearing
-  both fields + `concentration_spell_id`) when `witch_bolt_turns` reaches 0, the target dies (from
-  the tick itself or otherwise), or `GameState._check_concentration_break()`'s CON check fails on
-  the player taking damage (extended with a `"witch_bolt"` branch alongside the existing
-  `"blade_ward"` one). `PlayerActions.do_inspect()`'s enemy status suffix gained a `Jolted` entry
-  (`GameState.player_stats.witch_bolt_turns > 0 and witch_bolt_target == enemy`), alongside the
-  existing `Frozen Feet`/`Shocked` checks.
+  Lightning initial hit): a second concentration spell alongside Blade Ward — casting it while a
+  DIFFERENT concentration spell is active calls `GameState.end_concentration()` first (see
+  "Concentration (generic mechanism)" above), same recast-refreshes-its-own-duration rule as the
+  others. Three `Stats` fields carry the ongoing effect: `witch_bolt_target: Enemy`,
+  `witch_bolt_turns: int`, and `witch_bolt_just_cast: bool` (all deliberately **not** serialized in
+  `to_dict()`/`from_dict()` — a live `Enemy` node reference can't survive save/load anyway, so the
+  bolt just silently ends on load like other mid-floor state). On a non-lethal initial hit,
+  `cast_leveled_attack_at_enemy()`'s effect dispatch sets `concentration_spell_id = "witch_bolt"`,
+  `witch_bolt_target = target`, `witch_bolt_turns = 10`, `witch_bolt_just_cast = true`. **Tick
+  timing (end of turn, not start)**: `player.gd._on_turn_ending()`, connected to
+  `TurnManager.player_turn_ending` (emitted from `on_player_action_complete()`, right before the
+  enemy phase runs) — fires once per real player action, i.e. at the END of the player's turn, not
+  the start of the next one. `witch_bolt_just_cast` makes the very first firing (the casting
+  action's own turn-ending event) a no-op instead of ticking, so the first automatic 1d12 lands at
+  the end of the turn AFTER the casting turn, matching the intended "the bolt strikes again at the
+  end of your later turns" framing rather than immediately at the start of the next round. Each
+  real tick calls `SpellEffects.tick_witch_bolt()` — an automatic 1d12 Lightning hit against
+  `witch_bolt_target` with **no** attack roll and **no** slot consumption (only the initial cast
+  rolls to hit). Ends (clearing all three fields + `concentration_spell_id`) when `witch_bolt_turns`
+  reaches 0, the target dies (from the tick itself or otherwise), or `GameState.
+  _check_concentration_break()`'s CON check fails on the player taking damage (routes through
+  `end_concentration()`, see above). `PlayerActions.do_inspect()`'s enemy status suffix gained a
+  `Jolted` entry (`GameState.player_stats.witch_bolt_turns > 0 and witch_bolt_target == enemy`),
+  alongside the existing `Frozen Feet`/`Shocked` checks.
 - **Scrolls**: all 3 get a `Scroll of <Spell>` cast-scroll (`Item.scroll_spell_id`) per the
   existing "one scroll per spell" convention — see `scripts/items/CLAUDE.md`.
 
