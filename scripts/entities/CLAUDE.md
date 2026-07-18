@@ -311,10 +311,21 @@ below. Data classes (`Spell`, `SpellDb`, `SpellcasterState`, `StandardSlotPool`)
   convention). The premade Jace (Halfling Wizard, `character_select.gd`'s `PREMADE` list) bypasses
   the picker like every other premade hero: a `"cantrip": "fire_bolt"` key in her entry makes
   `_on_premade_selected()` call `GameState.choose_cantrip("fire_bolt")` directly.
-- **No icon assets exist yet** (`res://icons/spells/*.png`) — `hud.gd._refresh_ability_bar()`
-  guards the ability-bar icon load with `ResourceLoader.exists()` (same guard the design doc
-  calls for) and falls back to the ability name's first 4 letters as slot text, so a spell
-  ability is never silently invisible in the bar.
+- **Icon assets**: real art exists under `res://icons/spells/<level>/<spell_id>.png` for most
+  spells (8 cantrips in `0/`, most level-1/2/3 leveled spells in `1/`/`2/`/`3/` — `Spell.icon_path`
+  in `spell_db.gd` points each spell at its own file; `magic_missile` maps to the pack's
+  `1/arcane_missiles.png` since that's how the art is named; `expeditious_retreat`/`false_life`/
+  `fog_cloud` have no art yet and render blank until added). `hud.gd._refresh_ability_bar()` still
+  guards the ability-bar icon load with `ResourceLoader.exists()` (same guard the design doc calls
+  for) and falls back to the ability name's first 4 letters as slot text whenever a spell's icon is
+  missing, so a spell ability is never silently invisible in the bar. The same `icon_path` value
+  is what every other spell-facing UI surface renders too — Spellbook tiles/drag icon, the
+  Special-slot display in both the Spellbook and Inventory overlays, `Scroll of &lt;Spell&gt;`
+  floor/debug-given items (`dungeon_floor.gd._build_floor_item()`/`debug_panel._on_give_item()`
+  both resolve a scroll's icon via `SpellDb.get_spell(scroll_spell_id).icon_path` rather than
+  reconstructing a flat path from the `ITEM_POOL` entry's own `"icon"` key), and the Concentration
+  status-tray entry (`scripts/ui/CLAUDE.md`) — one source of truth, no separate icon wiring
+  per surface.
 - **Casting UX**: `player.gd._use_ability_slot()` has one guard — `ability_id.begins_with("spell:")`
   routes to `PlayerSpellcasting.begin_cast()` (`scripts/entities/player_spellcasting.gd`, a
   composition child-node registered in `player.gd._ready()` alongside `_ranged`/`_zealot`/etc.).

@@ -244,8 +244,8 @@ func _build_ui() -> void:
 	special_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_special_slot_box.add_child(special_icon)
 
-	# No spell icon assets exist yet (res://icons/spells/*.png) — same text-fallback convention as
-	# hud.gd's ability bar (ability_name.left(4)) so an assignment is visible even without art.
+	# Text fallback for when the assigned spell has no icon asset — mirrors hud.gd's ability bar
+	# (ability_name.left(4)) convention.
 	var special_name := Label.new()
 	special_name.name = "NameLabel"
 	special_name.add_theme_font_size_override("font_size", 11)

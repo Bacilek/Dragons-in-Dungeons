@@ -232,9 +232,13 @@ in `ITEM_POOL`/`debug_panel.ALL_ITEMS` today, one per `SpellDb` spell (`Scroll o
 `Ray of Frost`, `Shocking Grasp`, `Toll the Dead`, `Blade Ward`, `Thunderclap`, `Mind Sliver`,
 `Light`, `Magic Missile`, `Shield`, `Mage Armor`, `Misty Step`, `Fireball`, `Chromatic Orb`,
 `Burning Hands`, `Witch Bolt`, `Expeditious Retreat`, `False Life`, `Fog Cloud`); icon reuses the
-spell's own `res://icons/spells/*.png` (new `"src": "spells"` pool key, resolved in both
-`DungeonFloor._build_floor_item()` and `debug_panel._on_give_item()` — no dedicated scroll sprite
-exists yet).
+spell's own `Spell.icon_path` (`"src": "spells"` pool key) — `DungeonFloor._build_floor_item()`
+and `debug_panel._on_give_item()` both resolve it via `SpellDb.get_spell(item.scroll_spell_id).
+icon_path` rather than reconstructing a flat path from the `ITEM_POOL` entry's own `"icon"` key,
+since real spell art lives nested by level (`res://icons/spells/<level>/<id>.png` — see
+`scripts/entities/CLAUDE.md`'s "Wizard spellcasting" section) and reusing the spell's own path
+keeps the two from drifting out of sync. No dedicated scroll-item sprite exists — every scroll
+just shows its spell's icon.
 
 **Casting math without a caster**: `SpellEffects._attack_bonus()`/`_save_dc()`/`_cast_ability_mod()`
 (`scripts/entities/spell_effects.gd`) are caster-optional — if `Stats.caster` exists (Wizard) they

@@ -446,6 +446,7 @@ func _make_spell_row(spell_id: String) -> Control:
 	var icon := TextureRect.new()
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.ignore_texture_size = true  # REQUIRED — spell icon PNGs are huge, see scripts/ui/CLAUDE.md
 	icon.custom_minimum_size = Vector2(34.0, 34.0)
 	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	if spell != null and spell.icon_path != "" and ResourceLoader.exists(spell.icon_path):
@@ -730,7 +731,11 @@ func _on_give_item(d: Dictionary) -> void:
 	match d["src"]:
 		"weapons": item.icon_path = WEAPONS_PATH + d["icon"]
 		"items":   item.icon_path = ITEMS_PATH   + d["icon"]
-		"spells":  item.icon_path = "res://icons/spells/" + d["icon"]
+		"spells":
+			# Reuse the spell's OWN icon_path (SpellDb) — see dungeon_floor.gd's _build_floor_item()
+			# for why: spell icons live nested by level, not flat under res://icons/spells/.
+			var _scroll_spell: Spell = SpellDb.get_spell(item.scroll_spell_id)
+			item.icon_path = _scroll_spell.icon_path if _scroll_spell != null else ""
 	item.quantity = d.get("qty", 1)
 	if not GameState.add_item(item):
 		GameState.game_log("[color=red][DEBUG] Inventory full — cannot give %s[/color]" % d["name"])

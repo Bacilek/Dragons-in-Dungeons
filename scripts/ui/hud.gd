@@ -693,9 +693,11 @@ func _refresh_item_bar() -> void:
 		else:
 			var it := raw as Item
 			slot.text = ""
-			if it.icon_path != "":
+			if it.icon_path != "" and ResourceLoader.exists(it.icon_path):
 				slot.icon = load(it.icon_path)
 				slot.expand_icon = true
+			else:
+				slot.icon = null
 			qty_lbl.text = "×%d" % it.quantity if it.quantity > 1 else ""
 
 func _refresh_ability_bar() -> void:

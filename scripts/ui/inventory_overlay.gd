@@ -290,14 +290,15 @@ func _make_slot(eq_type: String = "") -> Control:
 	icon.name = "Icon"
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.ignore_texture_size = true  # REQUIRED — spell icon PNGs are huge, see scripts/ui/CLAUDE.md
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	icon.position = Vector2(6, 6)
 	icon.size = Vector2(SLOT_SIZE - 12, SLOT_SIZE - (27 if eq_type != "" else 12))
 	slot.add_child(icon)
 
 	if eq_type == "special":
-		# No spell icon assets exist yet (res://icons/spells/*.png) — same text-fallback convention
-		# as hud.gd's ability bar (ability_name.left(4)) so an assignment is visible without art.
+		# Text fallback for when the assigned spell has no icon asset (or one that failed to
+		# resolve) — mirrors hud.gd's ability bar (ability_name.left(4)) convention.
 		var name_lbl := Label.new()
 		name_lbl.name = "NameLabel"
 		name_lbl.add_theme_font_size_override("font_size", 12)

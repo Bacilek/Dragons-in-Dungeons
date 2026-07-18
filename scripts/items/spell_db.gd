@@ -53,7 +53,7 @@ static func _fire_bolt() -> Spell:
 	s.spell_id = "fire_bolt"
 	s.spell_name = "Fire Bolt"
 	s.description = "Hurl a mote of fire at a target within 12 tiles. 1d10 Fire damage; flammable terrain ignites."
-	s.icon_path = "res://icons/spells/fire_bolt.png"
+	s.icon_path = "res://icons/spells/0/fire_bolt.png"
 	s.school = "Evocation"
 	s.range_tiles = 12
 	s.dice_count = 1
@@ -69,7 +69,7 @@ static func _ray_of_frost() -> Spell:
 	s.spell_id = "ray_of_frost"
 	s.spell_name = "Ray of Frost"
 	s.description = "A ray of freezing air at a target within 6 tiles. 1d8 Cold damage; on a hit the target makes a STR save or its feet freeze, unable to move for a turn."
-	s.icon_path = "res://icons/spells/ray_of_frost.png"
+	s.icon_path = "res://icons/spells/0/ray_of_frost.png"
 	s.school = "Evocation"
 	s.range_tiles = 6
 	s.dice_count = 1
@@ -85,7 +85,7 @@ static func _shocking_grasp() -> Spell:
 	s.spell_id = "shocking_grasp"
 	s.spell_name = "Shocking Grasp"
 	s.description = "Touch a target with a jolt of lightning. 1d8 Lightning damage; on a hit the target is Shocked, blocking its next Opportunity Attack exposure."
-	s.icon_path = "res://icons/spells/shocking_grasp.png"
+	s.icon_path = "res://icons/spells/0/shocking_grasp.png"
 	s.school = "Evocation"
 	s.range_tiles = 1
 	s.dice_count = 1
@@ -101,7 +101,7 @@ static func _toll_the_dead() -> Spell:
 	s.spell_id = "toll_the_dead"
 	s.spell_name = "Toll the Dead"
 	s.description = "Ring a dolorous bell at a target within 6 tiles. WIS save or take 1d8 Necrotic — 1d12 instead if the target is already missing HP."
-	s.icon_path = "res://icons/spells/toll_the_dead.png"
+	s.icon_path = "res://icons/spells/0/toll_the_dead.png"
 	s.school = "Necromancy"
 	s.range_tiles = 6
 	s.target_kind = Spell.TargetKind.ENEMY
@@ -121,7 +121,7 @@ static func _blade_ward() -> Spell:
 	s.spell_id = "blade_ward"
 	s.spell_name = "Blade Ward"
 	s.description = "Ward yourself for up to 10 turns (Concentration) — every attack roll against you rolls with -1d4. Breaks if you fail a CON check (DC = damage taken, min 10) when hit."
-	s.icon_path = "res://icons/spells/blade_ward.png"
+	s.icon_path = "res://icons/spells/0/blade_ward.png"
 	s.school = "Abjuration"
 	s.range_tiles = 0
 	s.target_kind = Spell.TargetKind.SELF
@@ -135,7 +135,7 @@ static func _thunderclap() -> Spell:
 	s.spell_id = "thunderclap"
 	s.spell_name = "Thunderclap"
 	s.description = "A burst of thunder rocks everyone within 1 tile of you. Each throws a CON save or takes 1d6 Thunder."
-	s.icon_path = "res://icons/spells/thunderclap.png"
+	s.icon_path = "res://icons/spells/0/thunderclap.png"
 	s.school = "Evocation"
 	s.range_tiles = 0
 	s.target_kind = Spell.TargetKind.SELF
@@ -156,7 +156,7 @@ static func _mind_sliver() -> Spell:
 	s.spell_id = "mind_sliver"
 	s.spell_name = "Mind Sliver"
 	s.description = "Needle a target's mind within 6 tiles. INT save or take 1d6 Psychic and roll their next check with -1d4 until the end of your next turn."
-	s.icon_path = "res://icons/spells/mind_sliver.png"
+	s.icon_path = "res://icons/spells/0/mind_sliver.png"
 	s.school = "Enchantment"
 	s.range_tiles = 6
 	s.target_kind = Spell.TargetKind.ENEMY
@@ -175,7 +175,7 @@ static func _light() -> Spell:
 	s.spell_id = "light"
 	s.spell_name = "Light"
 	s.description = "Touch an object on the ground (not worn or carried) — it sheds bright light in a 4-tile radius, in a random color, until your next rest, floor descent, or you cast Light again. Only one Light at a time."
-	s.icon_path = "res://icons/spells/light.png"
+	s.icon_path = "res://icons/spells/0/light.png"
 	s.school = "Evocation"
 	s.range_tiles = 1
 	s.target_kind = Spell.TargetKind.TILE
@@ -189,7 +189,7 @@ static func _magic_missile() -> Spell:
 	s.spell_id = "magic_missile"
 	s.spell_name = "Magic Missile"
 	s.description = "3 darts of magical force strike unerringly — always hits, no attack roll. 1d4+1 Force each. Range: your full field of view."
-	s.icon_path = "res://icons/spells/magic_missile.png"
+	s.icon_path = "res://icons/spells/1/arcane_missiles.png"  # icon pack names this spell's art "arcane_missiles"
 	s.school = "Evocation"
 	s.level = 1
 	s.range_is_fov = true
@@ -205,7 +205,7 @@ static func _shield() -> Spell:
 	s.spell_id = "shield"
 	s.spell_name = "Shield"
 	s.description = "+5 AC until the start of your next turn. leveled-spells-and-slots-plan.md §7: shipped as a same-turn manual cast, not a reaction (the reaction broker is out of scope for this pass)."
-	s.icon_path = "res://icons/spells/shield.png"
+	s.icon_path = "res://icons/spells/1/shield.png"
 	s.school = "Abjuration"
 	s.level = 1
 	s.range_tiles = 0
@@ -220,7 +220,7 @@ static func _mage_armor() -> Spell:
 	s.spell_id = "mage_armor"
 	s.spell_name = "Mage Armor"
 	s.description = "Touch a creature with no armor — its AC becomes 13 + DEX until it dons armor or you finish a long rest."
-	s.icon_path = "res://icons/spells/mage_armor.png"
+	s.icon_path = "res://icons/spells/1/mage_armor.png"
 	s.school = "Abjuration"
 	s.level = 1
 	s.range_tiles = 1
@@ -235,7 +235,7 @@ static func _misty_step() -> Spell:
 	s.spell_id = "misty_step"
 	s.spell_name = "Misty Step"
 	s.description = "Teleport to a visible tile within 6 tiles in a puff of silver mist."
-	s.icon_path = "res://icons/spells/misty_step.png"
+	s.icon_path = "res://icons/spells/2/misty_step.png"
 	s.school = "Conjuration"
 	s.level = 2
 	s.range_tiles = 6
@@ -250,7 +250,7 @@ static func _fireball() -> Spell:
 	s.spell_id = "fireball"
 	s.spell_name = "Fireball"
 	s.description = "A roaring sphere of fire (radius 2 tiles) erupts at a point you choose. 8d6 Fire damage; DEX save for half. Damages everything in the blast, friend or foe."
-	s.icon_path = "res://icons/spells/fireball.png"
+	s.icon_path = "res://icons/spells/3/fireball.png"
 	s.school = "Evocation"
 	s.level = 3
 	s.range_tiles = 6
@@ -271,7 +271,7 @@ static func _chromatic_orb() -> Spell:
 	s.spell_id = "chromatic_orb"
 	s.spell_name = "Chromatic Orb"
 	s.description = "Hurl a sphere of crackling energy at a target within 9 tiles. 3d8 damage of a random type (Acid/Cold/Fire/Lightning/Poison/Thunder), rolled fresh each cast. If at least two of the 3 damage dice come up the same number, the orb leaps once more to a random other target you can see, rolling a fresh attack and damage of the same type."
-	s.icon_path = "res://icons/spells/chromatic_orb.png"
+	s.icon_path = "res://icons/spells/1/chromatic_orb.png"
 	s.school = "Evocation"
 	s.level = 1
 	s.range_tiles = 9
@@ -289,7 +289,7 @@ static func _burning_hands() -> Spell:
 	s.spell_id = "burning_hands"
 	s.spell_name = "Burning Hands"
 	s.description = "A cone of fire roars from your outstretched hands. Everyone in a 3-tile cone makes a DEX save or takes 3d6 Fire (half on a save). Flammable terrain in the cone ignites. Never harms you."
-	s.icon_path = "res://icons/spells/burning_hands.png"
+	s.icon_path = "res://icons/spells/1/burning_hands.png"
 	s.school = "Evocation"
 	s.level = 1
 	s.range_tiles = 3   # display-only hint text; the actual click only supplies an aim direction
@@ -311,7 +311,7 @@ static func _witch_bolt() -> Spell:
 	s.spell_id = "witch_bolt"
 	s.spell_name = "Witch Bolt"
 	s.description = "A beam of lightning forms a sustained arc between you and a target within 6 tiles — 2d12 Lightning on the initial hit and begins Concentration. While you concentrate (up to 10 turns), the target is Jolted: at the end of each of your later turns it takes 1d12 Lightning again."
-	s.icon_path = "res://icons/spells/witch_bolt.png"
+	s.icon_path = "res://icons/spells/1/witch_bolt.png"
 	s.school = "Evocation"
 	s.level = 1
 	s.range_tiles = 6
@@ -334,7 +334,7 @@ static func _expeditious_retreat() -> Spell:
 	s.spell_id = "expeditious_retreat"
 	s.spell_name = "Expeditious Retreat"
 	s.description = "Free action, self, up to 100 turns (Concentration). Once per turn, your first move doesn't cost you your turn — you can still act (or move again) afterward."
-	s.icon_path = "res://icons/spells/expeditious_retreat.png"
+	s.icon_path = "res://icons/spells/1/expeditious_retreat.png"  # no art yet — renders blank until added
 	s.school = "Transmutation"
 	s.level = 1
 	s.range_tiles = 0
@@ -349,7 +349,7 @@ static func _false_life() -> Spell:
 	s.spell_id = "false_life"
 	s.spell_name = "False Life"
 	s.description = "Action, self, instantaneous. Gain 2d4 + 4 Temporary HP."
-	s.icon_path = "res://icons/spells/false_life.png"
+	s.icon_path = "res://icons/spells/1/false_life.png"  # no art yet — renders blank until added
 	s.school = "Necromancy"
 	s.level = 1
 	s.range_tiles = 0
@@ -366,7 +366,7 @@ static func _fog_cloud() -> Spell:
 	s.spell_id = "fog_cloud"
 	s.spell_name = "Fog Cloud"
 	s.description = "A 2-tile-radius sphere of fog fills the air at a point within 12 tiles, heavily obscuring it. Anyone standing inside — you or an enemy — is Blinded: attacks against them have Advantage, and their own attacks have Disadvantage. Lasts up to 100 turns (Concentration)."
-	s.icon_path = "res://icons/spells/fog_cloud.png"
+	s.icon_path = "res://icons/spells/1/fog_cloud.png"  # no art yet — renders blank until added
 	s.school = "Conjuration"
 	s.level = 1
 	s.range_tiles = 12

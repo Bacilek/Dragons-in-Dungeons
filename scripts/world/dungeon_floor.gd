@@ -1558,13 +1558,20 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.floor_min = d["fmin"]
 	item.floor_max = d["fmax"]
 	item.description = d["desc"]
-	var base_path: String
-	match d["src"]:
-		"weapons": base_path = DungeonFloorData.WEAPONS_PATH
-		"items":   base_path = DungeonFloorData.ITEMS_PATH
-		"spells":  base_path = "res://icons/spells/"
-		_:         base_path = DungeonFloorData.OBJECTS_PATH
-	item.icon_path = base_path + d["icon"]
+	if d["src"] == "spells":
+		# Scroll of <Spell> reuses the spell's OWN icon_path (SpellDb) rather than reconstructing a
+		# flat "res://icons/spells/<name>.png" path from the pool's "icon" key — spell icons live
+		# nested by level (res://icons/spells/<level>/<id>.png), so a single source of truth here
+		# avoids the two ever drifting out of sync.
+		var _scroll_spell: Spell = SpellDb.get_spell(item.scroll_spell_id)
+		item.icon_path = _scroll_spell.icon_path if _scroll_spell != null else ""
+	else:
+		var base_path: String
+		match d["src"]:
+			"weapons": base_path = DungeonFloorData.WEAPONS_PATH
+			"items":   base_path = DungeonFloorData.ITEMS_PATH
+			_:         base_path = DungeonFloorData.OBJECTS_PATH
+		item.icon_path = base_path + d["icon"]
 	place_item_on_floor(pos, item)
 
 func _spawn_items() -> void:
