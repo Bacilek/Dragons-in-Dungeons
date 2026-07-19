@@ -1170,13 +1170,19 @@ func place_item_on_floor(pos: Vector2i, item: Item) -> void:
 		var fallback_img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
 		fallback_img.fill(Color(0.80, 0.55, 0.15))
 		tex = ImageTexture.create_from_image(fallback_img)
+	# Source art isn't uniformly tile-sized (e.g. res://icons/spells/ PNGs are thousands of px
+	# across, unlike the ~16px sprites/items/ art), so scale to fit one tile instead of trusting
+	# native resolution — otherwise a Scroll of <Spell> renders as a screen-covering giant icon.
+	var tile_scale: Vector2 = Vector2(TILE_SIZE, TILE_SIZE) / Vector2(tex.get_size())
 	if _floor_item_sprites.has(pos):
 		var existing: Sprite2D = _floor_item_sprites[pos]
 		if is_instance_valid(existing):
 			existing.texture = tex
+			existing.scale = tile_scale
 	else:
 		var sprite := Sprite2D.new()
 		sprite.texture = tex
+		sprite.scale = tile_scale
 		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
 		sprite.z_index = 1
