@@ -123,6 +123,8 @@ dungeon_floor.unlock_door(pos)             # restores white tint, removes lock i
 
 ## Floor items (`_floor_items`, `_floor_item_sprites`)
 `_floor_items: Dictionary[Vector2i, Array[Item]]` — **tiles stack**: multiple items can occupy the same position (oldest first in the array). `_floor_item_sprites` holds exactly one `Sprite2D` per occupied tile, always showing the newest (last-appended) item's icon — `place_item_on_floor()` swaps the existing sprite's texture in place rather than spawning a second sprite or bumping the drop to an adjacent tile. This is what lets a volley of arrows shot at the same spot all pile up on one tile instead of scattering.
+
+**Sprite2D scale rule**: `place_item_on_floor()` sets `sprite.scale = Vector2(TILE_SIZE, TILE_SIZE) / Vector2(tex.get_size())` on every (re)placement — a `Sprite2D` has no `ignore_texture_size`-style flag like `TextureRect` (see `scripts/ui/CLAUDE.md`'s TextureRect rule), so without an explicit scale it renders at the source PNG's native resolution. Old `sprites/items/`/`sprites/weapons/` art is already ~16px so this was invisible before, but `res://icons/spells/` PNGs (Scroll of &lt;Spell&gt; floor drops) are thousands of px across — one shipped without this and rendered as a screen-covering giant icon over the map. Any other code path that puts a `Sprite2D` on the floor/world from a variable-resolution source texture needs the same scale-to-`TILE_SIZE` treatment.
 ```gdscript
 dungeon_floor.place_item_on_floor(pos: Vector2i, item: Item)   # appends to the stack at pos
 dungeon_floor.get_item_at(pos: Vector2i) -> Item                # topmost/newest item only (for tooltips/inspect)
