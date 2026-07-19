@@ -135,7 +135,7 @@ light_source_color: Color            # Light cantrip's randomized glow color
 light_source_item: Item              # the specific floor Item touched at cast time; auto-clears the light when it's no longer at light_source_pos (picked up/removed)
 ```
 
-**Leveled spells / spellbook (`docs/architecture/leveled-spells-and-slots-plan.md`)**: Wizard-only,
+**Leveled spells / spellbook** (implemented; design doc shipped and was deleted from `docs/architecture/`): Wizard-only,
 built on top of the cantrip slice — see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells"
 section for the full walkthrough (slot table, casting, AoE, persistence). Key `GameState`
 functions: `learn_spell(id)` (spellbook growth — level-up picker or scroll), `set_spell_prepared(id,

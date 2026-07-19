@@ -161,7 +161,7 @@ DungeonFloorData.OBJECTS_PATH = "res://sprites/objects/"
 ## Spellcasting data (`spell.gd`, `spell_db.gd`, `spellcaster_state.gd`, `spell_slot_pool.gd`)
 
 Cantrips (`docs/architecture/spellcasting-design.md`) plus leveled spells + spell slots
-(`docs/architecture/leveled-spells-and-slots-plan.md`) — see `scripts/entities/CLAUDE.md`'s
+(design doc shipped and was deleted from `docs/architecture/`) — see `scripts/entities/CLAUDE.md`'s
 "Wizard spellcasting (cantrips)" and "Wizard leveled spells (spell slots)" sections for the full
 cast-resolution walkthroughs.
 

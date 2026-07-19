@@ -28,8 +28,31 @@ var frozen_feet_turns: int = 0   # Ray of Frost's STR-save-fail — skips moveme
 var shocked_no_oa: bool = false  # Shocking Grasp — blocks this enemy's next Opportunity Attack exposure, whenever it next happens
 var mind_sliver_penalty_die: bool = false  # Mind Sliver cantrip — the next check this enemy makes (any resist_check_detailed() call) rolls with -1d4. Consumed on that next check; deliberately not turn-expiry-timed against "until the end of your next turn" per the spell text — enemy checks are rare enough that this one-shot-consumed simplification is documented here rather than adding a second timing system for it.
 var embedded_items: Array[Item] = []  # thrown weapons stuck in a non-lethal hit (PlayerThrowTool._throw_weapon) — dropped at 100% chance wherever/whenever this enemy eventually dies, see die() override below
-var resist_types: Array[String] = []  # damage types this enemy takes half damage from (pool "resist" key)
-var vuln_types: Array[String] = []    # damage types this enemy takes double damage from (pool "vuln" key)
+
+# ── D&D stat-block schema (docs/architecture/enemy-stat-block-design.md) ──────────────────────
+var cr: float = 0.25                             # authored challenge rating, pool key "cr"
+var creature_type: String = "Humanoid"           # pool key "creature_type", flavor/tag only (§7)
+var damage_resistances: Array[String] = []       # ×0.5 — pool "damage_resistances" (fallback: legacy "resist")
+var damage_immunities: Array[String] = []        # ×0   — pool "damage_immunities"
+var damage_vulnerabilities: Array[String] = []   # ×2.0 — pool "damage_vulnerabilities" (fallback: legacy "vuln")
+var condition_immunities: Array[String] = []     # blocks the STATUS COUNTER from ever being set (§6) —
+                                                  # separate axis from damage immunity above. Vocabulary:
+                                                  # "slowed"/"rooted"/"prone"/"forced_move" (enemy-side
+                                                  # control fields) and "poisoned"/"burning"/"bleeding"
+                                                  # (Stats counters, reserved — nothing ticks them on
+                                                  # enemies yet, see apply_status() below).
+var legendary_resistances_remaining: int = 0     # pool "legendary_resistances" (BOSS_POOL only) — consumed
+                                                  # on a would-be-failed resist_check_detailed() (§15)
+var _mods: Dictionary = {}                       # ability score modifiers, pool "mods" (§4). Empty = every
+                                                  # attack/check roll falls back to the legacy floor/3 bonus.
+var _check_profs: Array = []                     # pool "check_profs" — which _mods stats add _prof_bonus to checks
+var _prof_bonus: int = 0                         # pool "prof_bonus", default derived from cr when "mods" is set
+var _attack_prof: bool = true                    # pool "attack_prof" — whether _prof_bonus applies to attacks
+var _undead_fortitude_used: bool = false         # traits: "undead_fortitude" — once per life
+var _regen_blocked_this_round: bool = false      # traits: "regeneration" — set by a shutoff-type hit
+var _ability_cooldowns: Dictionary = {}          # ability_id -> turns_remaining (pool "abilities" "cooldown")
+var _ability_uses: Dictionary = {}                # ability_id -> uses_remaining (pool "abilities" "uses_max")
+var _ability_recharge_ready: Dictionary = {}      # ability_id -> bool (pool "abilities" "recharge")
 var _roam_target: Vector2i = Vector2i(-1, -1)
 var _roam_path: Array[Vector2i] = []
 # Search state — used when enemy loses sight of player after chasing
@@ -66,32 +89,155 @@ func _apply_stats() -> void:
 	stats.armor_class = _type.get("ac", 10) + _type.get("armor", 0) + f / 5
 	stats.current_hp  = stats.max_hp
 	exp_reward        = _type.get("exp", 5)
-	# Optional per-pool-entry resist modifiers (default 0) — used by resist_check() below.
-	stats.strength    = 10 + _type.get("str_mod", 0) * 2
-	stats.constitution = 10 + _type.get("con_mod", 0) * 2
-	stats.dexterity   = 10 + _type.get("dex_mod", 0) * 2
-	stats.wisdom      = 10 + _type.get("wis_mod", 0) * 2
-	stats.intelligence = 10 + _type.get("int_mod", 0) * 2
-	var resist: Array = _type.get("resist", [])
-	resist_types = Array(resist, TYPE_STRING, "", null)
-	var vuln: Array = _type.get("vuln", [])
-	vuln_types = Array(vuln, TYPE_STRING, "", null)
+	cr                = float(_type.get("cr", 0.25))
+	creature_type     = String(_type.get("creature_type", "Humanoid"))
+	legendary_resistances_remaining = int(_type.get("legendary_resistances", 0))
 
-# Single chokepoint for typed damage against this enemy — applies resist (×0.5) / vuln (×2, both
-# can stack per 5e convention) before Stats.take_damage()'s flat floor-at-1 clamp. Returns
-# {actual, mul} so callers can show the multiplier in a damage tooltip. Every player attack/spell
-# call site that deals damage to an enemy should route through this instead of calling
-# stats.take_damage() directly, so resistances apply uniformly — see scripts/entities/CLAUDE.md's
-# "Damage types / resistances" section.
+	# Ability score modifiers (docs/architecture/enemy-stat-block-design.md §4). "mods" is the
+	# real stat block (six ability modifiers); an entry that supplies it switches to the real
+	# mod+proficiency formula EVERYWHERE (checks, attacks) INSTEAD OF the legacy floor-scaling
+	# bonus — never both (see resist_check_detailed()/_attack_bonus()). str_mod/con_mod/dex_mod/
+	# wis_mod/int_mod stay as the fallback for unmigrated entries.
+	_mods = _type.get("mods", {})
+	_check_profs = Array(_type.get("check_profs", []), TYPE_STRING, "", null)
+	_attack_prof = bool(_type.get("attack_prof", true))
+	if not _mods.is_empty():
+		# Default proficiency bonus derived from CR, D&D-style: +2 at CR 1-4, +3 at 5-8, ...
+		_prof_bonus = int(_type.get("prof_bonus", 2 + maxi(0, ceili(cr) - 1) / 4))
+		stats.strength      = 10 + int(_mods.get("str", 0)) * 2
+		stats.dexterity     = 10 + int(_mods.get("dex", 0)) * 2
+		stats.constitution  = 10 + int(_mods.get("con", 0)) * 2
+		stats.intelligence  = 10 + int(_mods.get("int", 0)) * 2
+		stats.wisdom        = 10 + int(_mods.get("wis", 0)) * 2
+		stats.charisma      = 10 + int(_mods.get("cha", 0)) * 2
+	else:
+		_prof_bonus = 0
+		stats.strength      = 10 + _type.get("str_mod", 0) * 2
+		stats.constitution  = 10 + _type.get("con_mod", 0) * 2
+		stats.dexterity     = 10 + _type.get("dex_mod", 0) * 2
+		stats.wisdom        = 10 + _type.get("wis_mod", 0) * 2
+		stats.intelligence  = 10 + _type.get("int_mod", 0) * 2
+
+	# Damage resist/immune/vuln (§5) — three explicit multiplier lists, priority immunity >
+	# vulnerability > resistance (an entry listing a type in more than one is an authoring error).
+	# Legacy "resist"/"vuln" keys are read as a fallback so unmigrated entries keep working.
+	damage_resistances     = Array(_type.get("damage_resistances", _type.get("resist", [])), TYPE_STRING, "", null)
+	damage_vulnerabilities = Array(_type.get("damage_vulnerabilities", _type.get("vuln", [])), TYPE_STRING, "", null)
+	damage_immunities      = Array(_type.get("damage_immunities", []), TYPE_STRING, "", null)
+	condition_immunities   = Array(_type.get("condition_immunities", []), TYPE_STRING, "", null)
+
+# Single chokepoint for typed damage against this enemy — applies immunity (×0) / vulnerability
+# (×2) / resistance (×0.5), priority in that order (§5), before Stats.take_damage()'s flat
+# floor-at-1 clamp. Also the two trait hooks that fire off a hit (§11): a "regeneration" trait's
+# shutoff_types block next turn's heal, and an "undead_fortitude" trait may intercept a lethal hit.
+# Returns {actual, mul} so callers can show the multiplier in a damage tooltip. Every player
+# attack/spell call site that deals damage to an enemy should route through this instead of
+# calling stats.take_damage() directly — see scripts/entities/CLAUDE.md's "Damage types /
+# resistances" section.
 func take_typed_damage(amount: int, damage_type: String) -> Dictionary:
+	for tr: Dictionary in _type.get("traits", []):
+		if tr.get("id", "") == "regeneration" and damage_type in Array(tr.get("shutoff_types", []), TYPE_STRING, "", null):
+			_regen_blocked_this_round = true
 	var mul: float = 1.0
-	if damage_type in resist_types:
-		mul *= 0.5
-	if damage_type in vuln_types:
-		mul *= 2.0
-	var adjusted: int = int(floor(amount * mul)) if mul != 1.0 else amount
-	var actual: int = stats.take_damage(adjusted)
+	if damage_type in damage_immunities:
+		mul = 0.0
+	elif damage_type in damage_vulnerabilities:
+		mul = 2.0
+	elif damage_type in damage_resistances:
+		mul = 0.5
+	if mul == 0.0:
+		return {"actual": 0, "mul": 0.0}
+	var effective: int = maxi(1, int(floor(amount * mul))) if mul != 1.0 else amount
+	if effective >= stats.current_hp and not _undead_fortitude_used:
+		for tr: Dictionary in _type.get("traits", []):
+			if tr.get("id", "") != "undead_fortitude":
+				continue
+			var dc: int = int(tr.get("dc_base", 5)) + effective
+			if resist_check_detailed(dc, true)["pass"]:
+				_undead_fortitude_used = true
+				effective = stats.current_hp - 1
+				GameState.game_log("[color=gray]%s's Undead Fortitude keeps it standing![/color]" % display_name)
+			break
+	var actual: int = stats.take_damage(effective)
 	return {"actual": actual, "mul": mul}
+
+# Single chokepoint for applying a condition to this enemy (§6) — a separate axis from typed
+# damage immunity above: this blocks the STATUS COUNTER from ever being set, no matter what
+# applied it. Returns whether it stuck (false + a gray "unaffected" log line on immunity).
+func apply_status(condition: String, turns: int) -> bool:
+	if condition in condition_immunities:
+		GameState.game_log("[color=gray]%s is unaffected.[/color]" % display_name)
+		return false
+	match condition:
+		"slowed":   slowed_turns = maxi(slowed_turns, turns)
+		"rooted":   rooted_turns = maxi(rooted_turns, turns)
+		"prone":    prone_turns  = maxi(prone_turns, turns)
+		"poisoned": stats.poison_turns  = maxi(stats.poison_turns, turns)
+		"burning":  stats.burning_turns = maxi(stats.burning_turns, turns)
+		"bleeding": stats.bleeding_turns = maxi(stats.bleeding_turns, turns)
+	return true
+
+# Traits (§11): "regeneration" heals at the top of a real turn unless a shutoff-type hit landed
+# last round (take_typed_damage() sets _regen_blocked_this_round). Called from take_turn().
+func _tick_regeneration() -> void:
+	for tr: Dictionary in _type.get("traits", []):
+		if tr.get("id", "") != "regeneration":
+			continue
+		if _regen_blocked_this_round:
+			_regen_blocked_this_round = false
+			return
+		if stats.current_hp < stats.max_hp:
+			var healed: int = mini(int(tr.get("amount", 0)), stats.max_hp - stats.current_hp)
+			if healed > 0:
+				stats.current_hp += healed
+				GameState.game_log("[color=gray]%s regenerates %d HP.[/color]" % [display_name, healed])
+		return
+
+# Ability cooldowns/uses/recharge (§12) — decremented/rolled once per real turn regardless of
+# what action was actually taken this turn. Called from take_turn().
+func _tick_abilities() -> void:
+	for id: String in _ability_cooldowns.keys():
+		if _ability_cooldowns[id] > 0:
+			_ability_cooldowns[id] -= 1
+	for ab: Dictionary in _type.get("abilities", []):
+		var id: String = ab.get("id", "")
+		if ab.has("recharge") and not bool(_ability_recharge_ready.get(id, false)):
+			if Rng.roll(6) >= int(ab["recharge"]):
+				_ability_recharge_ready[id] = true
+
+func _ability_ready(id: String, ab: Dictionary) -> bool:
+	if ab.has("cooldown"):
+		return int(_ability_cooldowns.get(id, 0)) <= 0
+	if ab.has("uses_max"):
+		return int(_ability_uses.get(id, int(ab["uses_max"]))) > 0
+	if ab.has("recharge"):
+		return bool(_ability_recharge_ready.get(id, false))
+	return true
+
+func _consume_ability(id: String, ab: Dictionary) -> void:
+	if ab.has("cooldown"):
+		_ability_cooldowns[id] = int(ab["cooldown"])
+	if ab.has("uses_max"):
+		_ability_uses[id] = int(_ability_uses.get(id, int(ab["uses_max"]))) - 1
+	if ab.has("recharge"):
+		_ability_recharge_ready[id] = false
+
+# Picks a ready ability whose range covers `target`, preferring it over melee approach ONLY while
+# not already melee-adjacent (matches the stat-block doc's Skeleton example: snipe at range,
+# switch to melee once close). Returns {} if no ability qualifies.
+func _pick_ready_ability(target: Node) -> Dictionary:
+	var abilities: Array = _type.get("abilities", [])
+	if abilities.is_empty() or _chebyshev_to(target) <= 1:
+		return {}
+	if _dungeon_floor == null or not _dungeon_floor.has_ranged_los(grid_pos, target.grid_pos):
+		return {}
+	for ab: Dictionary in abilities:
+		var id: String = ab.get("id", "")
+		if id == "" or _chebyshev_to(target) > int(ab.get("range", 5)):
+			continue
+		if _ability_ready(id, ab):
+			return ab
+	return {}
 
 # Rolls d20 + (con_modifier if use_con else str_modifier) vs dc.
 # Used by World Tree's Grip of the Forest (STR) and Branching Strike R3 push (CON).
@@ -107,17 +253,28 @@ func resist_check(dc: int, use_con: bool = false) -> bool:
 func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false, use_wis: bool = false, use_int: bool = false) -> Dictionary:
 	var mod: int
 	var stat_name: String
+	var stat_key: String
 	if use_dex:
-		mod = stats.dex_modifier(); stat_name = "DEX"
+		mod = stats.dex_modifier(); stat_name = "DEX"; stat_key = "dex"
 	elif use_wis:
-		mod = stats.wis_modifier(); stat_name = "WIS"
+		mod = stats.wis_modifier(); stat_name = "WIS"; stat_key = "wis"
 	elif use_int:
-		mod = stats.int_modifier(); stat_name = "INT"
+		mod = stats.int_modifier(); stat_name = "INT"; stat_key = "int"
 	elif use_con:
-		mod = stats.con_modifier(); stat_name = "CON"
+		mod = stats.con_modifier(); stat_name = "CON"; stat_key = "con"
 	else:
-		mod = stats.str_modifier(); stat_name = "STR"
-	var floor_bonus: int = GameState.current_floor / 3
+		mod = stats.str_modifier(); stat_name = "STR"; stat_key = "str"
+	# §4: an entry with "mods" rolls d20 + mod + (prof_bonus if that stat is in "check_profs")
+	# INSTEAD OF the legacy floor-scaling bonus — never both. prof_label distinguishes the two
+	# in the hover tooltip (TooltipFormatters.fmt_save_tooltip()).
+	var bonus: int
+	var prof_label: String
+	if _mods.is_empty():
+		bonus = GameState.current_floor / 3
+		prof_label = "Floor"
+	else:
+		bonus = _prof_bonus if stat_key in _check_profs else 0
+		prof_label = "Proficiency"
 	var die: int = Rng.roll(20)
 	# Mind Sliver cantrip: the target's next check (any resist_check_detailed() call) rolls with
 	# -1d4 — consumed here regardless of which stat this particular check happens to use.
@@ -125,10 +282,20 @@ func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false
 	if mind_sliver_penalty_die:
 		mind_sliver_penalty_die = false
 		sliver_penalty = Rng.roll(4)
-	var total: int = die + floor_bonus + mod - sliver_penalty
+	var total: int = die + bonus + mod - sliver_penalty
+	var passed: bool = total >= dc
+	# Legendary Resistance (§15, BOSS_POOL only): consumes a charge to force a pass on what would
+	# otherwise be a failed check. Per-life counter — enemies don't rest, so "N/day" = N/life.
+	var legendary_used: bool = false
+	if not passed and legendary_resistances_remaining > 0:
+		legendary_resistances_remaining -= 1
+		passed = true
+		legendary_used = true
+		GameState.game_log("[color=gray]%s shrugs off the effect. (Legendary Resistance, %d remaining)[/color]" % [display_name, legendary_resistances_remaining])
 	return {
-		"die": die, "mod": mod, "floor_bonus": floor_bonus, "dc": dc,
-		"total": total, "pass": total >= dc, "stat": stat_name, "sliver_penalty": sliver_penalty,
+		"die": die, "mod": mod, "floor_bonus": bonus, "prof_label": prof_label, "dc": dc,
+		"total": total, "pass": passed, "stat": stat_name, "sliver_penalty": sliver_penalty,
+		"legendary_used": legendary_used,
 	}
 
 # Overrides Entity.die(): drop any thrown weapons embedded in this enemy (see embedded_items
@@ -227,8 +394,14 @@ func _dist_sq_to(e: Node) -> int:
 func _chebyshev_to(e: Node) -> int:
 	return maxi(absi(e.grid_pos.x - grid_pos.x), absi(e.grid_pos.y - grid_pos.y))
 
+# §10: pool "senses" -> "sight" overrides the default notice radius (max Chebyshev-ish distance,
+# compared via squared distance below same as before). Absent = FOV_RADIUS, unchanged behavior.
+func _sight_range() -> int:
+	return int(_type.get("senses", {}).get("sight", FOV_RADIUS))
+
 func _can_see_entity(e: Node) -> bool:
-	return _dist_sq_to(e) <= FOV_RADIUS * FOV_RADIUS and _dungeon_floor.has_line_of_sight(grid_pos, e.grid_pos)
+	var r: int = _sight_range()
+	return _dist_sq_to(e) <= r * r and _dungeon_floor.has_line_of_sight(grid_pos, e.grid_pos)
 
 # Adjacency wins first (first to reach range gets attacked); ties broken by lower current HP.
 # Otherwise, whichever candidate is nearer is the one stepped toward / seen.
@@ -258,6 +431,8 @@ func take_turn() -> void:
 	oa_used_this_round = false
 	if _dungeon_floor == null:
 		return
+	_tick_abilities()
+	_tick_regeneration()
 	if prone_turns > 0:
 		prone_turns -= 1
 		await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
@@ -303,14 +478,14 @@ func _decide_action() -> Dictionary:
 			if can_see or dist_sq <= WAKE_RADIUS_SQ:
 				_wake_up()
 				last_known_target_pos = target.grid_pos
-				return {"type": "act_toward", "target": target, "can_see": can_see}
+				return _act_toward_or_ability(target, can_see)
 			return {"type": "wait"}
 
 		Behavior.STATIONARY:
 			if can_see:
 				last_known_target_pos = target.grid_pos
 				behavior = Behavior.CHASING
-				return {"type": "act_toward", "target": target, "can_see": can_see}
+				return _act_toward_or_ability(target, can_see)
 			return {"type": "wait"}
 
 		Behavior.ROAMING:
@@ -319,24 +494,36 @@ func _decide_action() -> Dictionary:
 				behavior = Behavior.CHASING
 				_roam_path.clear()
 				_roam_target = Vector2i(-1, -1)
-				return {"type": "act_toward", "target": target, "can_see": can_see}
+				return _act_toward_or_ability(target, can_see)
 			return {"type": "roam"}
 
 		Behavior.CHASING:
 			if can_see:
 				last_known_target_pos = target.grid_pos
 				_search_heading = Vector2i(sign(dx), sign(dy))
-			return {"type": "act_toward", "target": target, "can_see": can_see, "chasing": true}
+			return _act_toward_or_ability(target, can_see, {"chasing": true})
 
 		Behavior.SEARCHING:
 			if can_see:
 				behavior = Behavior.CHASING
 				last_known_target_pos = target.grid_pos
 				_search_heading = Vector2i(sign(dx), sign(dy))
-				return {"type": "act_toward", "target": target, "can_see": can_see}
+				return _act_toward_or_ability(target, can_see)
 			return {"type": "search"}
 
 	return {"type": "wait"}
+
+# Shared by every _decide_action() branch above that would otherwise return a bare "act_toward"
+# intent: prefers a ready ability (§3/§12) over the melee-approach path whenever one is in range
+# and the target isn't already adjacent (see _pick_ready_ability()'s doc comment).
+func _act_toward_or_ability(target: Node, can_see: bool, extra: Dictionary = {}) -> Dictionary:
+	if can_see:
+		var ab: Dictionary = _pick_ready_ability(target)
+		if not ab.is_empty():
+			return {"type": "ability", "ability_id": ab.get("id", ""), "target": target, "ability": ab}
+	var intent: Dictionary = {"type": "act_toward", "target": target, "can_see": can_see}
+	intent.merge(extra)
+	return intent
 
 # All the tween/animation/await/log side effects, dispatched on intent.type. See docs/
 # architecture/enemy_system_architecture.md §1.
@@ -356,6 +543,9 @@ func _execute_action(intent: Dictionary) -> void:
 				_search_target = last_known_target_pos + _search_heading * 5
 				_search_path.clear()
 				last_known_target_pos = Vector2i(-1, -1)
+		"ability":
+			_execute_ability(intent)
+			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		"roam":
 			await _do_roam_walk()
 		"search":
@@ -391,11 +581,45 @@ func _in_attack_range(target: Node) -> bool:
 		_:
 			return _chebyshev_to(target) == 1
 
+# Multiattack (§12): pool "multiattack" is a list of sub-attacks ({name, count, dmg_min, dmg_max,
+# damage_type}), each swing resolved as its own independent roll/floater/log line via the SAME
+# _attack_player()/_attack_companion() functions (they accept an optional `sub` dict — see below).
+# Absent = today's single top-level-stats attack, unchanged.
 func _attack_target(target: Node) -> void:
+	var multi: Array = _type.get("multiattack", [])
+	if multi.is_empty():
+		if target is Player:
+			_attack_player(target)
+		elif target is Companion:
+			_attack_companion(target)
+		return
+	for sub: Dictionary in multi:
+		for _i: int in int(sub.get("count", 1)):
+			if not is_instance_valid(target) or target.stats.is_dead():
+				return
+			if not is_instance_valid(self) or stats.is_dead():
+				return
+			if target is Player:
+				_attack_player(target, sub)
+			elif target is Companion:
+				_attack_companion(target, sub)
+
+# Generic ability execution (§3/§12): abilities share the exact same ranged-damage(+status) shape
+# as a multiattack sub-attack ({dmg_min, dmg_max, damage_type, name} plus optional {status, turns}),
+# so it reuses _attack_player()/_attack_companion() wholesale instead of a second damage path.
+func _execute_ability(intent: Dictionary) -> void:
+	var ab: Dictionary = intent.get("ability", {})
+	var target: Node = intent.get("target")
+	if not is_instance_valid(target) or target.stats.is_dead():
+		return
+	_consume_ability(ab.get("id", ""), ab)
 	if target is Player:
-		_attack_player(target)
+		_attack_player(target, ab)
 	elif target is Companion:
-		_attack_companion(target)
+		_attack_companion(target, ab)
+	if ab.has("status") and target is Player and is_instance_valid(target) and not target.stats.is_dead():
+		if GameState.apply_player_status(String(ab["status"]), int(ab.get("turns", 1))):
+			GameState.game_log("[color=lime]You are %s! (%d turns)[/color]" % [String(ab["status"]), int(ab.get("turns", 1))])
 
 # Attack if in range of target; otherwise step toward last known / target position.
 func _act_toward(target: Node) -> void:
@@ -496,7 +720,7 @@ func _move_step(step: Vector2i, next_pos: Vector2i) -> void:
 		_dungeon_floor.close_door(prev_pos)
 	var tile_type: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
 	if tile_type == DungeonData.TileType.WATER or tile_type == DungeonData.TileType.MUD:
-		slowed_turns = maxi(slowed_turns, 1)
+		apply_status("slowed", 1)
 	if tile_type == DungeonData.TileType.GRASS:
 		_dungeon_floor.destroy_grass(grid_pos)
 	var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
@@ -576,12 +800,22 @@ func _bfs_to(target: Vector2i) -> Array[Vector2i]:
 # roll_penalty: flat subtracted from the roll AFTER advantage/disadvantage resolves, before the
 # AC comparison — Blade Ward's -1d4 (player-only, passed by _attack_player()). Never affects the
 # crit check (a nat 20 still auto-hits regardless of penalty).
-func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1, roll_penalty: int = 0, extra_adv: bool = false, extra_disadv: bool = false) -> Dictionary:
-	# D&D attack roll: d20 + floor-scaled bonus vs target AC.
+# §4: with "mods" present, the attack roll uses ability modifier + proficiency (stat from
+# attack_profile's "attack_stat", default STR melee / DEX ranged) INSTEAD OF the legacy
+# floor-scaling bonus — never both, same opt-in-per-entry rule as resist_check_detailed().
+func _attack_bonus() -> int:
+	if _mods.is_empty():
+		return GameState.current_floor / 3
+	var profile: Dictionary = _type.get("attack_profile", {})
+	var stat_key: String = profile.get("attack_stat", "dex" if profile.get("kind", "melee") == "ranged" else "str")
+	return int(_mods.get(stat_key, 0)) + (_prof_bonus if _attack_prof else 0)
+
+func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -9999, roll_penalty: int = 0, extra_adv: bool = false, extra_disadv: bool = false) -> Dictionary:
+	# D&D attack roll: d20 + floor-scaled (or mods+prof, see _attack_bonus()) bonus vs target AC.
 	# extra_adv/extra_disadv: Fog Cloud (Blinded) — extra_adv when the TARGET is standing in the
 	# cloud (attacks against a Blinded creature have Advantage), extra_disadv when THIS enemy (the
 	# attacker) is standing in it instead (its own attacks have Disadvantage).
-	var attack_bonus: int = attack_bonus_override if attack_bonus_override >= 0 else GameState.current_floor / 3
+	var attack_bonus: int = attack_bonus_override if attack_bonus_override > -9999 else _attack_bonus()
 	var die1: int = Rng.roll(20)
 	var die2: int = die1
 	var die: int = die1
@@ -601,62 +835,71 @@ func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1, roll_
 		"roll_penalty": roll_penalty,
 	}
 
-func _attack_player(_player: Player) -> void:
+# `sub`: optional multiattack/ability sub-attack dict ({name, dmg_min, dmg_max, damage_type}) —
+# empty (default) = the top-level pool stats, today's unchanged single-attack behavior.
+func _attack_player(_player: Player, sub: Dictionary = {}) -> void:
 	# Rage's duration refresh cares about being attacked at all, not just being hit — set
 	# regardless of the roll's outcome (see player.gd._on_turn_started()'s rage tick).
 	GameState.player_attacked_this_turn = true
 	var invincible: bool = GameState.invincible
 	var bracket_l: String = "[" if invincible else ""
 	var bracket_r: String = "]" if invincible else ""
+	var atk_label: String = display_name if sub.get("name", "") == "" else "%s's %s" % [display_name, sub["name"]]
+	var dmg_type: String = sub.get("damage_type", "Bludgeoning")
 	# Blade Ward cantrip: while active, subtract 1d4 from this attack roll before comparing to AC.
 	var bw_penalty: int = Rng.roll(4) if GameState.player_stats.blade_ward_turns > 0 else 0
-	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, -1, bw_penalty,
+	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, -9999, bw_penalty,
 		GameState.is_in_fog_cloud(_player.grid_pos), GameState.is_in_fog_cloud(grid_pos))
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]
 	if not r["is_hit"]:
 		var miss_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [r["bonus"], r["roll"], r["target_ac"]] if GameState.god_mode else ""
-		GameState.game_log("%s[color=tomato]%s[/color] [url=%s]misses[/url]!%s%s" % [bracket_l, display_name, hit_meta, miss_suffix, bracket_r])
+		GameState.game_log("%s[color=tomato]%s[/color] [url=%s]misses[/url]!%s%s" % [bracket_l, atk_label, hit_meta, miss_suffix, bracket_r])
 		return
 	var is_crit: bool = r["is_crit"]
-	var dmg_roll: int = stats.roll_damage()
+	var min_d: int = int(sub.get("dmg_min", stats.min_damage))
+	var max_d: int = int(sub.get("dmg_max", stats.max_damage))
+	var dmg_roll: int = Rng.range_i(min_d, maxi(min_d, max_d))
 	var dmg: int = dmg_roll * (2 if is_crit else 1)
 	if is_crit:
 		AudioManager.play("crit")
 	else:
 		AudioManager.play("player_hurt")
-	# Route through take_damage_raw for rage DR; enemies deal Bludgeoning by default.
-	# take_damage_raw handles player_hp_changed and check_player_death internally, and (while
-	# invincible) still registers "player was hit this turn" without changing HP — see its own
-	# invincible branch — so god-mode play doesn't break turn-based triggers keyed off that flag.
-	var actual: int = GameState.take_damage_raw(dmg, false, "Bludgeoning")
+	# Route through take_damage_raw for rage DR. take_damage_raw handles player_hp_changed and
+	# check_player_death internally, and (while invincible) still registers "player was hit this
+	# turn" without changing HP — see its own invincible branch — so god-mode play doesn't break
+	# turn-based triggers keyed off that flag.
+	var actual: int = GameState.take_damage_raw(dmg, false, dmg_type)
 	if _dungeon_floor != null and not invincible:
 		_dungeon_floor.show_damage(_player.position, actual, true)
-	# "Bludgeoning" (this attack's damage_type, hardcoded above) is always physical, so Rage's
-	# 50% DR (take_damage_raw()) was live for this hit whenever the player was raging.
+	# Rage's 50% DR (take_damage_raw()) was live for this hit whenever the player was raging AND
+	# dmg_type is one of the three physical types.
 	var rage_applied: int = 1 if GameState.is_raging else 0
-	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,rage=%d,final=%d" % [dmg_roll, stats.min_damage, stats.max_damage, 1 if is_crit else 0, rage_applied, actual]
+	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,rage=%d,final=%d" % [dmg_roll, min_d, max_d, 1 if is_crit else 0, rage_applied, actual]
 	var god_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [r["bonus"], r["roll"], r["target_ac"]] if GameState.god_mode else ""
 	if is_crit:
-		GameState.game_log("%s[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [bracket_l, display_name, hit_meta, dmg_meta, actual, god_suffix, bracket_r])
+		GameState.game_log("%s[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [bracket_l, atk_label, hit_meta, dmg_meta, actual, god_suffix, bracket_r])
 	else:
-		GameState.game_log("%s[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [bracket_l, display_name, hit_meta, dmg_meta, actual, god_suffix, bracket_r])
-	# Orc Shaman applies poison on hit
-	if not invincible and display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
+		GameState.game_log("%s[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [bracket_l, atk_label, hit_meta, dmg_meta, actual, god_suffix, bracket_r])
+	# Orc Shaman applies poison on hit (top-level attack only — never a multiattack/ability sub-swing).
+	if sub.is_empty() and not invincible and display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
 		if GameState.apply_player_status("poison", 3):
 			GameState.game_log("[color=lime]You are poisoned! (3 turns)[/color]")
 
 # Companion (Wild Heart summon) as attack target — see docs/architecture/enemy_system_architecture.md §5.
 # No invincible/poison/Retaliation hooks: those are player-only systems. Companion.take_damage_from_enemy()
 # already logs the hit/HP line and handles death, so only the miss line needs logging here.
-func _attack_companion(companion: Companion) -> void:
-	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, -1, 0,
+func _attack_companion(companion: Companion, sub: Dictionary = {}) -> void:
+	var atk_label: String = display_name if sub.get("name", "") == "" else "%s's %s" % [display_name, sub["name"]]
+	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, -9999, 0,
 		GameState.is_in_fog_cloud(companion.grid_pos), GameState.is_in_fog_cloud(grid_pos))
 	if not r["is_hit"]:
-		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [display_name, companion.animal_name])
+		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [atk_label, companion.animal_name])
 		return
-	var dmg_roll: int = stats.roll_damage()
+	var min_d: int = int(sub.get("dmg_min", stats.min_damage))
+	var max_d: int = int(sub.get("dmg_max", stats.max_damage))
+	var dmg_roll: int = Rng.range_i(min_d, maxi(min_d, max_d))
 	var dmg: int = dmg_roll * (2 if r["is_crit"] else 1)
 	if r["is_crit"]:
 		AudioManager.play("crit")

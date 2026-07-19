@@ -73,11 +73,11 @@ func _apply_weapon_mastery_effect(target: Enemy) -> void:
 		return
 	match weapon.weapon_mastery:
 		"Topple":
-			target.prone_turns = 1
-			GameState.game_log("[color=gray]%s is knocked prone![/color]" % target.display_name)
+			if target.apply_status("prone", 1):
+				GameState.game_log("[color=gray]%s is knocked prone![/color]" % target.display_name)
 		"Slow":
-			target.slowed_turns = maxi(target.slowed_turns, 2)
-			GameState.game_log("[color=gray]%s is slowed![/color]" % target.display_name)
+			if target.apply_status("slowed", 2):
+				GameState.game_log("[color=gray]%s is slowed![/color]" % target.display_name)
 		"Push":
 			if player._dungeon_floor != null:
 				var dir: Vector2i = Vector2i(sign(target.grid_pos.x - player.grid_pos.x), sign(target.grid_pos.y - player.grid_pos.y))

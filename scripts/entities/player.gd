@@ -1330,8 +1330,8 @@ func _execute_hook(enemy: Enemy) -> void:
 				if moved == 0:
 					break
 		if rank >= 2:
-			enemy.rooted_turns = 1
-			GameState.game_log("[color=gray]%s is rooted![/color]" % enemy.display_name)
+			if enemy.apply_status("rooted", 1):
+				GameState.game_log("[color=gray]%s is rooted![/color]" % enemy.display_name)
 		if rank >= 3:
 			enemy.disadv_next_attack = true
 			GameState.game_log("[color=gray]%s has Disadvantage on their next attack.[/color]" % enemy.display_name)
@@ -1599,11 +1599,11 @@ func _try_topple(enemy: Enemy, is_str_weapon: bool, prof: int, str_mod: int) -> 
 		return
 	var topple_dc: int = 8 + prof + str_mod
 	var save: Dictionary = enemy.resist_check_detailed(topple_dc, true)
-	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Floor,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
-		save["die"], save["mod"], save["floor_bonus"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
+	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+		save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 	if not save["pass"]:
-		enemy.prone_turns = 1
-		GameState.game_log("[color=cyan]Topple:[/color] %s [url=%s]is knocked[/url] [color=orange]Prone[/color]!" % [enemy.display_name, save_meta])
+		if enemy.apply_status("prone", 1):
+			GameState.game_log("[color=cyan]Topple:[/color] %s [url=%s]is knocked[/url] [color=orange]Prone[/color]!" % [enemy.display_name, save_meta])
 	else:
 		GameState.game_log("[color=gray]Topple: %s [url=%s]resists[/url] being knocked prone.[/color]" % [enemy.display_name, save_meta])
 

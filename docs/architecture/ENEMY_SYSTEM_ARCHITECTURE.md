@@ -1,5 +1,14 @@
 # Enemy System Architecture
 
+**Implementation status: §7 steps 1-5 are DONE** (decide/execute split, `_resolve_attack_roll()`
+extraction, player+companion targeting, `attack_profile` ranged archetype, `enemy_id`/`boss_id`
+pool keys) — see `scripts/entities/CLAUDE.md`'s "Enemy behavior states"/"Attack profiles"/"Shared
+attack resolver" sections, which are now authoritative for that part. §3's enemy-abilities
+cooldown/uses_max/recharge dict also shipped, generalized further than this doc originally specced
+(reused by `docs/architecture/enemy-stat-block-design.md`'s schema) — see that file's "Enemy D&D
+stat-block schema" section. **Still design-only**: §4 (boss multi-phase behavior) and §6's
+Phase-2 determinism prep notes — this doc stays for those two sections.
+
 Current enemies (`scripts/entities/enemy.gd`, 413 lines) are a single `Enemy` class extending `Entity`, driven by a `Behavior` FSM (`SLEEPING → STATIONARY/ROAMING → CHASING → SEARCHING`) and configured entirely from `DungeonFloorData.ENEMY_POOL`/`BOSS_POOL` dictionaries. This works well and should **not** be rewritten. This doc specs the minimal refactor that unlocks archetypes, boss phases, enemy abilities, and Phase-2 determinism without a rewrite.
 
 ---

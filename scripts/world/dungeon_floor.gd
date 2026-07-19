@@ -1306,6 +1306,8 @@ func force_move_entity(entity: Node2D, direction: Vector2i, max_distance: int, d
 		if is_instance_valid(trap_sprite):
 			await _play_trap_animation(trap_sprite)
 		return 0
+	if entity is Enemy and "forced_move" in (entity as Enemy).condition_immunities:
+		return 0
 	var e: Entity = entity as Entity
 	var start: Vector2i = e.grid_pos
 	var current: Vector2i = start
@@ -1832,6 +1834,8 @@ func drop_boss_loot(pos: Vector2i) -> void:
 ## Forced movement never provokes an Opportunity Attack (5e RAW) — intentionally OA-free.
 func resolve_push(enemy: Enemy, direction: Vector2i) -> void:
 	if not is_instance_valid(enemy) or direction == Vector2i.ZERO:
+		return
+	if "forced_move" in enemy.condition_immunities:
 		return
 	var dest: Vector2i = enemy.grid_pos + direction
 	if get_enemy_at(dest) != null or (_player != null and _player.grid_pos == dest):

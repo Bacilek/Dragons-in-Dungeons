@@ -7,6 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Maintenance rule (applies to all sessions)
 After every feature, fix, or refactor that changes architecture, adds a system, or modifies any documented behaviour: **update the relevant sub-directory CLAUDE.md and this root CLAUDE.md without waiting to be asked**. Sub-directory CLAUDE.md files live in `scripts/autoloads/`, `scripts/entities/`, `scripts/world/`, `scripts/ui/`, `scripts/dungeon/`, and `scripts/items/`. **Put class-specific / subsystem-specific detail in the sub-directory file, not here** — root should only gain a line or two pointing at it. If you're about to write more than ~3 sentences on one topic, it almost certainly belongs in a sub-doc instead.
 
+**Doc-cleanup habit (part of the same rule, not a separate ask):** once a `docs/architecture/*.md` design doc's scope has fully shipped AND the relevant sub-directory CLAUDE.md documents it in full, **delete the design doc** in that same pass — don't wait to be asked, don't leave it "for the record". A shipped design doc that still exists on disk is signal-to-noise debt: the sub-doc is what an agent actually reads, so a lingering design doc's status header silently rots (see `enemy-stat-block-design.md`'s history before this rule for what that looked like). Before deleting, grep the repo for the filename and fix any CLAUDE.md line that points at it as a "read this" pointer — reword to "implemented; design doc shipped and was deleted, `X/CLAUDE.md` is now authoritative" (the existing precedent for `opportunity-attacks-design.md`, already gone this way). Stray citations inside `.gd` comments (`"per docs/architecture/foo.md §3"`) are fine to leave as historical citations — not worth a mass edit. **Keep** a design doc if any real scope in it is still unbuilt (partial implementation, e.g. `special-rooms-economy-design.md`'s sessions 7c-7f, or `ENEMY_SYSTEM_ARCHITECTURE.md`'s boss phases) — annotate its top with an implementation-status line instead of deleting, same pattern as those two files.
+
 ## Project
 
 **Dragons in Dungeons** — a 2D pixel roguelike built in Godot 4 (GDScript only, Mono build). Pixel Dungeon gameplay loop crossed with D&D 5.5e (2024) mechanics: ability scores, classes, spells. Sprites from 0x72 DungeonTilesetII (CC0, 16×16 px).
@@ -39,7 +41,7 @@ Each turn: status effects tick (`Stats.tick_status()` → dmg). Hunger has been 
 - **`DungeonGenerator.generate(seed, floor_num)`** — pure static, returns `DungeonData`. Seed: `run_seed XOR (floor * 0x9e3779b9)`. BSP depth 5, 48×48 grid, L-shaped corridors. Internally a three-phase pipeline (`FloorPlanner` → `BspBuilder` → `LevelPainter`, with `Room` type classes) — details in `scripts/dungeon/CLAUDE.md`.
 - **`DungeonData`** — `grid: Array[Array[int]]` indexed `[y][x]`. `TileType`: `VOID=0, FLOOR=1, WALL=2, STAIRS_DOWN=3, CHASM=4, WATER=5, MUD=6, GRASS=7, TRAMPLED_GRASS=8`. `boss_room: Rect2i` (empty if not boss floor). `rooms: Array[Rect2i]` — all BSP leaf rooms. `feeling: String` — Floor Feeling id, `""` on boss floors (see `scripts/dungeon/CLAUDE.md`).
 - **`DungeonFloor`** (`scripts/world/dungeon_floor.gd`) — owns TileMapLayer, Entities node, enemy list, fog overlay, traps, doors, floor items. Full query-method list, FOV algorithm, traps, doors, floor items, spawning, water/bottle/throw mechanics, and boss floors: **`scripts/world/CLAUDE.md`**.
-- **Multi-entrance connectivity** — Entrance/Exit rooms are guaranteed ≥2 distinct corridor connections (Pixel Dungeon-style multi-path floors): `Room.min_connections()` + `LoopBuilder`'s forced-edge pass (hard guarantee) and `BspBuilder.reinforce_min_degree()` (best-effort fallback-path reinforcement). Design: `docs/architecture/multi-entrance-level-design.md`; implementation detail: `scripts/dungeon/CLAUDE.md`.
+- **Multi-entrance connectivity** — Entrance/Exit rooms are guaranteed ≥2 distinct corridor connections (Pixel Dungeon-style multi-path floors): `Room.min_connections()` + `LoopBuilder`'s forced-edge pass (hard guarantee) and `BspBuilder.reinforce_min_degree()` (best-effort fallback-path reinforcement). Fully implemented — the design doc (`multi-entrance-level-design.md`) was deleted from `docs/architecture/` once shipped; `scripts/dungeon/CLAUDE.md` is now the authoritative reference.
 - Special rooms (Shop/Treasure/Garden/Secret, left as placeholder-fallback stubs by the dungeon-generation doc) plus a gold currency to make a shop meaningful — full data model, `ROOM_POOL` mechanism, and session-sized implementation sequence: `docs/architecture/special-rooms-economy-design.md`. **Gold economy core (session 7a) is implemented**: `GameState.gold` wallet + `gold_changed` signal, `Item.gold_value` prices, floor-scatter/enemy-drop/boss gold piles, HUD counter, saved in `to_dict()` — see `scripts/autoloads/CLAUDE.md` and `scripts/world/CLAUDE.md`. **ROOM_POOL + metadata bridge (session 7b) is implemented**: `FloorPlanner.ROOM_POOL` Bernoulli selection, four stub room classes, `DungeonData.room_metadata`, `DungeonFloor._spawn_special_rooms()` dispatcher (branches stubbed) — see `scripts/dungeon/CLAUDE.md` and `scripts/world/CLAUDE.md`. Sessions 7c–7f (the four rooms' content + shop UI) remain design-only.
 
 ### Entity hierarchy
@@ -51,7 +53,7 @@ Entity (CharacterBody2D)   ← grid_pos, move_to() 0.08s tween, _tile_center(), 
 ```
 World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: floor items=1, enemies=1, player=3, fog=2, damage labels=10; blood decals=0.
 Full combat rolls, ADV/DISADV rules, status effects, enemy AI states, and per-class talent trees: **`scripts/entities/CLAUDE.md`**.
-Target schema for full D&D-style enemy stat blocks (CR, ability scores, resist/immune/vuln, creature type, size, senses, traits, multiattack, reactions, conditional triggers, legendary resistance) — design only, not yet implemented: `docs/architecture/enemy-stat-block-design.md`.
+Full D&D-style enemy stat-block schema — CR, ability-score `mods`/proficiency, damage resist/immune/vuln (3 lists), condition immunities, creature type, senses, multiattack, ability cooldown/uses_max/recharge, regeneration/undead-fortitude traits, legendary resistance — is **implemented** as optional `ENEMY_POOL`/`BOSS_POOL` pool keys (every new key has a safe legacy-behavior default, so authoring a new enemy is "add a dict"). Design doc (source of the schema, still useful as the field-by-field reference): `docs/architecture/enemy-stat-block-design.md`. Still design-only/deferred: size (multi-tile occupancy), reactions beyond Opportunity Attacks, conditional triggers, legendary actions, CR-budgeted spawning. Full field table and worked examples: `scripts/entities/CLAUDE.md`'s "Enemy D&D stat-block schema" section.
 Opportunity Attacks (movement out of threat range provokes a free reactive melee attack, Retaliation-style inline resolution, no TurnManager changes): **`scripts/entities/CLAUDE.md`**'s "Opportunity Attacks" section.
 
 ### D&D stats (`scripts/entities/stats.gd`)
@@ -121,11 +123,12 @@ Concentration support for Blade Ward/Witch Bolt/Expeditious Retreat/Fog Cloud (o
 only), no upcast slot-level picker (always casts at the cheapest available slot) — see
 `scripts/entities/CLAUDE.md`'s "Wizard leveled spells (spell slots)" section, `scripts/items/CLAUDE.md`'s spellcasting-data section, and
 `scripts/ui/CLAUDE.md`'s Spellbook/spell-learn-picker sections for the full implementation.
-Design docs: `docs/architecture/spellcasting-design.md` (the original full-framework design —
-concentration/reactions/enemy-casters/half-casters/multiclass remain design-only per that doc)
-and `docs/architecture/leveled-spells-and-slots-plan.md` (the narrower plan actually implemented
-here, which supersedes the framework doc's prepared-count formula and casting-surface UI for
-Wizard). The Spellbook overlay also has an always-present Cantrips tab and a **Special quick-cast
+Design doc: `docs/architecture/spellcasting-design.md` (the original full-framework design —
+concentration/reactions/enemy-casters/half-casters/multiclass remain design-only per that doc).
+The narrower leveled-spells-and-slots plan that was actually implemented (superseding the
+framework doc's prepared-count formula and casting-surface UI for Wizard) shipped and its
+design doc was deleted from `docs/architecture/` — `scripts/entities/CLAUDE.md`'s "Wizard
+leveled spells" section is now the authoritative reference. The Spellbook overlay also has an always-present Cantrips tab and a **Special quick-cast
 slot** (assigned there, one spell — cantrip or leveled — cast from anywhere with **Ctrl+click**,
 displayed read-only in the Inventory overlay next to Ranged) — see `scripts/ui/CLAUDE.md`'s
 Spellbook/Inventory sections and `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for
