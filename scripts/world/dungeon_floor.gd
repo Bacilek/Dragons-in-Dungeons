@@ -2,6 +2,7 @@ class_name DungeonFloor
 extends Node2D
 
 const TILE_SIZE: int = 16
+const FLOOR_ICON_MAX_PX: float = 24.0  # place_item_on_floor()'s longest-side clamp — 1.5x TILE_SIZE, lets art poke past the tile a bit without covering the screen
 const ATLAS_ORIGIN := Vector2i(0, 0)
 const SOURCE_FLOOR:       int = 0
 const SOURCE_WALL:        int = 1
@@ -1170,10 +1171,16 @@ func place_item_on_floor(pos: Vector2i, item: Item) -> void:
 		var fallback_img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
 		fallback_img.fill(Color(0.80, 0.55, 0.15))
 		tex = ImageTexture.create_from_image(fallback_img)
-	# Source art isn't uniformly tile-sized (e.g. res://icons/spells/ PNGs are thousands of px
-	# across, unlike the ~16px sprites/items/ art), so scale to fit one tile instead of trusting
-	# native resolution — otherwise a Scroll of <Spell> renders as a screen-covering giant icon.
-	var tile_scale: Vector2 = Vector2(TILE_SIZE, TILE_SIZE) / Vector2(tex.get_size())
+	# Source art isn't uniformly tile-sized (weapon sprites are tall/thin, ~10x37px; res://icons/spells/
+	# PNGs are thousands of px across), so clamp the longest side to FLOOR_ICON_MAX_PX instead of
+	# stretching to fill a square tile (that squashed thin weapon art wide-and-short) or trusting
+	# native resolution (that let huge spell PNGs render screen-covering). Scale is uniform — aspect
+	# ratio preserved — and only ever shrinks, so already-tile-sized art (~16px) is untouched and can
+	# still poke slightly past the tile edge, same as it always has.
+	var tex_size: Vector2 = Vector2(tex.get_size())
+	var longest_side: float = max(tex_size.x, tex_size.y)
+	var uniform_scale: float = min(1.0, FLOOR_ICON_MAX_PX / longest_side) if longest_side > 0.0 else 1.0
+	var tile_scale: Vector2 = Vector2(uniform_scale, uniform_scale)
 	if _floor_item_sprites.has(pos):
 		var existing: Sprite2D = _floor_item_sprites[pos]
 		if is_instance_valid(existing):
