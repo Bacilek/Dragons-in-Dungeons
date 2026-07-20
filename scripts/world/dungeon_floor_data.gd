@@ -70,18 +70,54 @@ const BOSS_POOL: Array = [
 ]
 
 const ENEMY_POOL: Array = [
-	{"enemy_id": "tiny_zombie",   "display_name": "Tiny Zombie", "sprite": "tiny_zombie", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 3,  "hp": 5,  "hp_per_floor": 1, "dmg_min": 1, "dmg_max": 3, "armor": 0, "ac": 10, "exp": 4,
-	 "cr": 0.125, "creature_type": "Undead"},
+	# Goblin Minion — Small Fey, CN, CR 1/8. HP 2d6 (avg 7), AC 12 (natural armor).
+	# STR 8 (-1) DEX 15 (+2) CON 10 (+0) INT 10 (+0) WIS 8 (-1) CHA 8 (-1). Speed 1 (default).
+	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 6 -> 7 here).
+	# Dagger: +4 to hit (DEX+prof, finesse), reach 1, 1 target, 1d4+2 Piercing (encoded as a
+	# single-entry multiattack sub-attack so the hit gets a real Piercing damage type/name instead
+	# of the top-level-stats default of Bludgeoning).
+	{"enemy_id": "goblin_minion", "display_name": "Goblin Minion", "sprite": "goblin", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 3,  "hp": 7,  "hp_per_floor": 1, "dmg_min": 3, "dmg_max": 6, "armor": 0, "ac": 12, "exp": 4,
+	 "cr": 0.125, "creature_type": "Fey",
+	 "mods": {"str": -1, "dex": 2, "con": 0, "int": 0, "wis": -1, "cha": -1},
+	 "senses": {"sight": 7},
+	 "passive_perception": 9,
+	 "attack_profile": {"attack_stat": "dex"},
+	 "multiattack": [{"name": "Dagger", "count": 1, "dmg_min": 3, "dmg_max": 6, "damage_type": "Piercing"}]},
 	{"enemy_id": "orc_warrior",   "display_name": "Orc Warrior", "sprite": "orc_warrior", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 5,  "hp": 8,  "hp_per_floor": 2, "dmg_min": 1, "dmg_max": 4, "armor": 0, "ac": 11, "exp": 8,
 	 "cr": 0.25, "creature_type": "Humanoid"},
 	{"enemy_id": "goblin",        "display_name": "Goblin",      "sprite": "goblin",      "idle_frames": 4, "run_frames": 4, "floor_min": 2, "floor_max": 6,  "hp": 7,  "hp_per_floor": 2, "dmg_min": 2, "dmg_max": 4, "armor": 0, "ac": 12, "exp": 6,
-	 "cr": 0.125, "creature_type": "Humanoid"},
+	 "cr": 0.125, "creature_type": "Humanoid",
+	 # WIS 8 (-1), same goblin-family stat as goblin_minion below -> passive_perception = 10-1 = 9.
+	 "passive_perception": 9},
 	{"enemy_id": "orc_shaman",    "display_name": "Orc Shaman",  "sprite": "orc_shaman",  "idle_frames": 4, "run_frames": 4, "floor_min": 3, "floor_max": 6,  "hp": 10, "hp_per_floor": 2, "dmg_min": 2, "dmg_max": 5, "armor": 0, "ac": 10, "exp": 12,
 	 "cr": 0.25, "creature_type": "Humanoid"},
 	{"enemy_id": "masked_orc",    "display_name": "Masked Orc",  "sprite": "masked_orc",  "idle_frames": 4, "run_frames": 4, "floor_min": 4, "floor_max": 7,  "hp": 12, "hp_per_floor": 2, "dmg_min": 2, "dmg_max": 5, "armor": 1, "ac": 13, "exp": 10,
 	 "cr": 0.25, "creature_type": "Humanoid"},
-	{"enemy_id": "skeleton",      "display_name": "Skeleton",    "sprite": "skelet",      "idle_frames": 4, "run_frames": 4, "floor_min": 4, "floor_max": 7,  "hp": 9,  "hp_per_floor": 2, "dmg_min": 3, "dmg_max": 6, "armor": 1, "ac": 12, "exp": 9, "resist": ["Piercing"], "vuln": ["Bludgeoning"],
-	 "cr": 0.25, "creature_type": "Undead", "condition_immunities": ["poisoned"]},
+	# Skeleton — Medium Undead, CR 1/4, proficiency +2. HP 13, AC 14 (natural armor).
+	# STR 10 (+0) DEX 14 (+2) CON 15 (+2) INT 6 (-2) WIS 8 (-1) CHA 3 (-4). Speed 1 (default).
+	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 6 -> 7 here).
+	# Passive Perception = 10 + WIS mod = 9.
+	# Shortsword: +4 to hit (DEX+prof), reach 1, 1d6+2 Piercing — encoded as a single-entry
+	# multiattack sub-attack so the hit gets a real Piercing damage type instead of the top-level
+	# stats' default Bludgeoning (same reasoning as Goblin Minion's Dagger above).
+	# Shortbow: +4 to hit (DEX+prof), range 4 (normal)/16 (long, DISADV via "long_range" —
+	# Enemy._ability_is_long_shot()), 1d6+2 Piercing — encoded as an uncapped "abilities" entry
+	# (no cooldown/uses_max/recharge = always ready), which the shared _pick_ready_ability() picks
+	# over melee approach whenever the target is visible and NOT already adjacent — switches to
+	# the Shortsword automatically once it closes in. DnD's 80/320 ft (16/64 squares) scaled down
+	# /20, not the /10 used for spell ranges — see scripts/entities/CLAUDE.md's "Ranged distance
+	# scaling convention" note for why shooting ranges get the steeper divisor.
+	{"enemy_id": "skeleton",      "display_name": "Skeleton",    "sprite": "skelet",      "idle_frames": 4, "run_frames": 4, "floor_min": 4, "floor_max": 7,  "hp": 13, "hp_per_floor": 2, "dmg_min": 3, "dmg_max": 8, "armor": 0, "ac": 14, "exp": 9,
+	 "cr": 0.25, "creature_type": "Undead",
+	 "mods": {"str": 0, "dex": 2, "con": 2, "int": -2, "wis": -1, "cha": -4},
+	 "senses": {"sight": 7},
+	 "passive_perception": 9,
+	 "damage_vulnerabilities": ["Bludgeoning"],
+	 "damage_immunities": ["Poison"],
+	 "condition_immunities": ["poisoned", "exhausted"],
+	 "attack_profile": {"attack_stat": "dex"},
+	 "multiattack": [{"name": "Shortsword", "count": 1, "dmg_min": 3, "dmg_max": 8, "damage_type": "Piercing"}],
+	 "abilities": [{"id": "skeleton_shortbow", "name": "Shortbow", "range": 4, "long_range": 16, "dmg_min": 3, "dmg_max": 8, "damage_type": "Piercing"}]},
 	{"enemy_id": "wogol",         "display_name": "Wogol",       "sprite": "wogol",       "idle_frames": 4, "run_frames": 4, "floor_min": 5, "floor_max": 8,  "hp": 14, "hp_per_floor": 3, "dmg_min": 3, "dmg_max": 6, "armor": 1, "ac": 13, "exp": 15,
 	 "cr": 0.5, "creature_type": "Beast"},
 	{"enemy_id": "imp",           "display_name": "Imp",         "sprite": "imp",         "idle_frames": 4, "run_frames": 4, "floor_min": 6, "floor_max": 9,  "hp": 11, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 7, "armor": 1, "ac": 13, "exp": 13, "resist": ["Fire"],

@@ -224,7 +224,10 @@ func _consume_ability(id: String, ab: Dictionary) -> void:
 
 # Picks a ready ability whose range covers `target`, preferring it over melee approach ONLY while
 # not already melee-adjacent (matches the stat-block doc's Skeleton example: snipe at range,
-# switch to melee once close). Returns {} if no ability qualifies.
+# switch to melee once close). Returns {} if no ability qualifies. An optional "long_range" key
+# extends the reachable distance beyond "range" (weapon-style normal/long split — see
+# _ability_is_long_shot()); a shot only possible at long_range still counts as "in range" here,
+# it just rolls with Disadvantage when actually executed.
 func _pick_ready_ability(target: Node) -> Dictionary:
 	var abilities: Array = _type.get("abilities", [])
 	if abilities.is_empty() or _chebyshev_to(target) <= 1:
@@ -233,11 +236,19 @@ func _pick_ready_ability(target: Node) -> Dictionary:
 		return {}
 	for ab: Dictionary in abilities:
 		var id: String = ab.get("id", "")
-		if id == "" or _chebyshev_to(target) > int(ab.get("range", 5)):
+		var max_reach: int = int(ab.get("long_range", ab.get("range", 5)))
+		if id == "" or _chebyshev_to(target) > max_reach:
 			continue
 		if _ability_ready(id, ab):
 			return ab
 	return {}
+
+# True when `ab` has a "long_range" key AND target is beyond its "range" (but within long_range,
+# already guaranteed by _pick_ready_ability's max_reach check) — the weapon-style normal/long
+# range split (mirrors PlayerRanged.ranged_shot_disadvantage()), Disadvantage instead of an
+# outright miss. Skeleton's Shortbow ("range": 8, "long_range": 32) is the first user.
+func _ability_is_long_shot(ab: Dictionary, target: Node) -> bool:
+	return ab.has("long_range") and _chebyshev_to(target) > int(ab.get("range", 999))
 
 # Rolls d20 + (con_modifier if use_con else str_modifier) vs dc.
 # Used by World Tree's Grip of the Forest (STR) and Branching Strike R3 push (CON).
@@ -613,10 +624,11 @@ func _execute_ability(intent: Dictionary) -> void:
 	if not is_instance_valid(target) or target.stats.is_dead():
 		return
 	_consume_ability(ab.get("id", ""), ab)
+	var long_shot: bool = _ability_is_long_shot(ab, target)
 	if target is Player:
-		_attack_player(target, ab)
+		_attack_player(target, ab, long_shot)
 	elif target is Companion:
-		_attack_companion(target, ab)
+		_attack_companion(target, ab, long_shot)
 	if ab.has("status") and target is Player and is_instance_valid(target) and not target.stats.is_dead():
 		if GameState.apply_player_status(String(ab["status"]), int(ab.get("turns", 1))):
 			GameState.game_log("[color=lime]You are %s! (%d turns)[/color]" % [String(ab["status"]), int(ab.get("turns", 1))])
@@ -837,7 +849,10 @@ func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -9999, ro
 
 # `sub`: optional multiattack/ability sub-attack dict ({name, dmg_min, dmg_max, damage_type}) —
 # empty (default) = the top-level pool stats, today's unchanged single-attack behavior.
-func _attack_player(_player: Player, sub: Dictionary = {}) -> void:
+# `long_shot`: true when an "abilities" attack is firing beyond its "range" into "long_range" —
+# see _ability_is_long_shot() — adds Disadvantage, same weapon-style normal/long split as the
+# player's own ranged attacks (PlayerRanged.ranged_shot_disadvantage()).
+func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = false) -> void:
 	# Rage's duration refresh cares about being attacked at all, not just being hit — set
 	# regardless of the roll's outcome (see player.gd._on_turn_started()'s rage tick).
 	GameState.player_attacked_this_turn = true
@@ -849,7 +864,7 @@ func _attack_player(_player: Player, sub: Dictionary = {}) -> void:
 	# Blade Ward cantrip: while active, subtract 1d4 from this attack roll before comparing to AC.
 	var bw_penalty: int = Rng.roll(4) if GameState.player_stats.blade_ward_turns > 0 else 0
 	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, -9999, bw_penalty,
-		GameState.is_in_fog_cloud(_player.grid_pos), GameState.is_in_fog_cloud(grid_pos))
+		GameState.is_in_fog_cloud(_player.grid_pos), long_shot or GameState.is_in_fog_cloud(grid_pos))
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]
@@ -890,10 +905,10 @@ func _attack_player(_player: Player, sub: Dictionary = {}) -> void:
 # Companion (Wild Heart summon) as attack target — see docs/architecture/enemy_system_architecture.md §5.
 # No invincible/poison/Retaliation hooks: those are player-only systems. Companion.take_damage_from_enemy()
 # already logs the hit/HP line and handles death, so only the miss line needs logging here.
-func _attack_companion(companion: Companion, sub: Dictionary = {}) -> void:
+func _attack_companion(companion: Companion, sub: Dictionary = {}, long_shot: bool = false) -> void:
 	var atk_label: String = display_name if sub.get("name", "") == "" else "%s's %s" % [display_name, sub["name"]]
 	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, -9999, 0,
-		GameState.is_in_fog_cloud(companion.grid_pos), GameState.is_in_fog_cloud(grid_pos))
+		GameState.is_in_fog_cloud(companion.grid_pos), long_shot or GameState.is_in_fog_cloud(grid_pos))
 	if not r["is_hit"]:
 		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [atk_label, companion.animal_name])
 		return
