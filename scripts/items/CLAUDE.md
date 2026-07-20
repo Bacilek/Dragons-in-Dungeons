@@ -29,7 +29,7 @@ TOOL   = 7
 | `item_type` | Type | enum above |
 | `quantity` | int | stackable; `get_display_name()` appends `×N` when > 1 |
 | `icon_path` | String | full `res://` path |
-| `heal_amount` | int | potions only — FOOD items no longer use this (see "Rations / long rest" below) |
+| `heal_amount` | int | potions, plus one FOOD exception: Healing Herb (special-rooms-economy-design.md §4.3, session 7d) is the only FOOD entry with `heal_amount > 0` — `GameState.use_item()`'s FOOD branch checks `heal_amount > 0` first and heals+consumes instead of the normal "saved as fuel" message. Every other FOOD item still has `heal_amount == 0` and keeps that message (see "Rations / long rest" below) |
 | `food_value` | int | FOOD items only: value sacrificed toward `GameState.LONG_REST_FOOD_COST` at a long rest |
 | `gold_value` | int | base shop price in gold (0 = unpriced/not for sale); for `Type.GOLD` items, the pile size. Set via the `"gold"` pool key (read by `_build_floor_item()`/`_roll_boss_loot_item()`/`debug_panel._on_give_item()`). GOLD items never enter the inventory — `PlayerActions.check_pickup()` routes them into `GameState.add_gold()` (see `scripts/autoloads/CLAUDE.md`'s "Gold economy") |
 | `bonus_damage` | int | weapon hit bonus |

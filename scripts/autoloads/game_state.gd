@@ -1505,7 +1505,23 @@ func use_item(item: Item) -> void:
 				consume_one(item)
 			potion_drunk.emit()
 		Item.Type.FOOD:
-			game_log("[color=gray]%s isn't eaten directly — it's saved as fuel for your next long rest (hold Alt).[/color]" % item.item_name)
+			# Healing Herb (special-rooms-economy-design.md §4.3) is the one FOOD item with a
+			# real heal_amount — every other FOOD entry has heal_amount == 0 and keeps the
+			# "saved as fuel" framing below unchanged.
+			if item.heal_amount > 0:
+				var before3: int = player_stats.current_hp
+				var bruiser_bonus3: int = heal(item.heal_amount)
+				var healed3: int = player_stats.current_hp - before3
+				if healed3 > 0:
+					var bonus_sources3: String = CombatMath.encode_bonus_sources([{"name": "Bruiser", "amount": bruiser_bonus3, "color": "cyan"}])
+					var _hm3: String = "heal:dice=0,sides=0,con=0,roll=0,bonus=%s,total=%d" % [bonus_sources3, healed3]
+					combat_message.emit("[color=green]You eat [b]%s[/b] and recover [url=%s]%d HP[/url].[/color]" % [item.item_name, _hm3, healed3])
+				else:
+					combat_message.emit("[color=gray]Already at full health.[/color]")
+				if not invincible:
+					consume_one(item)
+			else:
+				game_log("[color=gray]%s isn't eaten directly — it's saved as fuel for your next long rest (hold Alt).[/color]" % item.item_name)
 		Item.Type.WEAPON, Item.Type.ARMOR:
 			equip(item)  # equipping from bag/quickbar is always a free action
 		Item.Type.TOOL:

@@ -1,6 +1,14 @@
 # Special Rooms + Gold Economy — Design Doc
 
-Status: **design only, not implemented.** No code ships with this doc. It specs the content for
+**Implementation status: sessions 7a-7d are DONE.** Gold economy core (7a), `ROOM_POOL` +
+metadata bridge (7b), TreasureRoom (7c), and GardenRoom (7d) are all live — see root `CLAUDE.md`'s
+special-rooms pointer, `scripts/dungeon/CLAUDE.md`'s "Room types" section, and
+`scripts/world/CLAUDE.md`'s "Spawning"/"Doors"/"Gold" sections, which are now authoritative for
+those parts. **Still design-only**: session 7e (ShopRoom + shop panel) and 7f (SecretRoom +
+hidden doors) — this doc stays for those two sections (§4.1, §4.4) plus the still-relevant §5/§6
+sequencing and open questions.
+
+Status (superseded parts only): No code ships with this doc for §4.1/§4.4. It specs the content for
 the four special room types the (now-implemented and removed) dungeon-generation design doc left
 as placeholder-fallback stubs (`ShopRoom`, `TreasureRoom`, `GardenRoom`, `SecretRoom` — see
 `scripts/dungeon/CLAUDE.md`), plus the gold currency that makes a shop meaningful. This is the "Pixel Dungeon

@@ -951,6 +951,27 @@ func debug_spawn_enemy(type_data: Dictionary) -> void:
 
 # ── Trap system ───────────────────────────────────────────────────────────────
 
+# Shared floor-trap placement (sprite + _traps dict entry) — extracted from _spawn_traps()'s own
+# floor-trap loop so TreasureRoom (special-rooms-economy-design.md §4.2, session 7c) can place a
+# trap of its own using the exact same shape without duplicating the sprite setup.
+func _place_floor_trap(pos: Vector2i, t: Dictionary) -> void:
+	var tex: Texture2D = load(TRAP_PATH + t["sprite"])
+	if tex == null:
+		return
+	var sprite := Sprite2D.new()
+	sprite.texture = tex
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.region_enabled = true
+	sprite.region_rect = Rect2(0, 0, 32, 32)
+	sprite.scale = Vector2(0.5, 0.5)
+	sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+	sprite.z_index = 1
+	sprite.modulate.a = 0.0
+	entities.add_child(sprite)
+	_traps[pos] = {"name": t["name"], "damage": t["damage"], "msg": t["msg"],
+				   "sprite_node": sprite, "revealed": false, "is_push": false, "triggered": false,
+				   "reusable": t.get("reusable", false)}
+
 func _spawn_traps() -> void:
 	var floor_cands: Array = []
 	var wall_cands: Array = []
@@ -1003,22 +1024,7 @@ func _spawn_traps() -> void:
 		var t: Dictionary = floor_pool[_pop_rng.randi_range(0, floor_pool.size() - 1)]
 		var pos: Vector2i = floor_cands[i]
 		used[pos] = true
-		var tex: Texture2D = load(TRAP_PATH + t["sprite"])
-		if tex == null:
-			continue
-		var sprite := Sprite2D.new()
-		sprite.texture = tex
-		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		sprite.region_enabled = true
-		sprite.region_rect = Rect2(0, 0, 32, 32)
-		sprite.scale = Vector2(0.5, 0.5)
-		sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
-		sprite.z_index = 1
-		sprite.modulate.a = 0.0
-		entities.add_child(sprite)
-		_traps[pos] = {"name": t["name"], "damage": t["damage"], "msg": t["msg"],
-					   "sprite_node": sprite, "revealed": false, "is_push": false, "triggered": false,
-					   "reusable": t.get("reusable", false)}
+		_place_floor_trap(pos, t)
 
 	if not wall_pool.is_empty():
 		var valid_wc: Array = []
@@ -1684,18 +1690,120 @@ func _spawn_gold_piles() -> void:
 # Special-room population dispatcher (special-rooms-economy-design.md §3.3, session 7b).
 # The ONE place a room type_id string is matched — it dispatches *population*, not generation.
 # Runs LAST in the _load_floor() spawn order (after _spawn_gold_piles()) so every pre-existing
-# _pop_rng draw keeps its position; consumes zero _pop_rng draws while the branches are stubs.
+# _pop_rng draw keeps its position. Treasure/Garden are live (sessions 7c/7d) — floors that
+# actually roll one of those rooms now consume extra _pop_rng draws here, an intentional
+# generation-footprint change on those floors only (same precedent as the ROOM_POOL session).
 func _spawn_special_rooms() -> void:
 	for meta: Dictionary in _data.room_metadata:
 		match meta["type_id"]:
 			"shop":
 				pass  # _spawn_shop(meta["rect"]) — session 7e
 			"treasure":
-				pass  # _spawn_treasure(meta["rect"]) — session 7c
+				_spawn_treasure(meta["rect"])
 			"garden":
-				pass  # _spawn_garden_items(meta["rect"]) — session 7d
+				_spawn_garden_items(meta["rect"])
 			"secret":
 				pass  # _spawn_secret_room(meta["rect"]) — session 7f
+
+# TreasureRoom content (special-rooms-economy-design.md §4.2, session 7c): 3 guaranteed
+# ITEM_POOL rolls + 1 guaranteed gold pile, guarded by locking the room's one connecting door
+# (same manual lock — no AudioManager at generation time — as _spawn_locked_doors() above), and
+# on floors >= 4, 1-2 traps inside the vault. Guard mirrors every other special-room population
+# function: an empty rect (BSP-fallback floor, §3.2) means this room never materialized.
+func _spawn_treasure(rect: Rect2i) -> void:
+	if rect == Rect2i():
+		return
+	var eligible: Array = []
+	for entry: Dictionary in DungeonFloorData.ITEM_POOL:
+		if GameState.current_floor >= entry["fmin"] and GameState.current_floor <= entry["fmax"]:
+			eligible.append(entry)
+
+	var candidates: Array[Vector2i] = []
+	for y: int in range(rect.position.y, rect.position.y + rect.size.y):
+		for x: int in range(rect.position.x, rect.position.x + rect.size.x):
+			var pos := Vector2i(x, y)
+			if _data.get_tile(x, y) != DungeonData.TileType.FLOOR:
+				continue
+			if pos == _data.player_start or pos == _data.stairs_pos:
+				continue
+			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos):
+				continue
+			candidates.append(pos)
+	if candidates.is_empty():
+		return
+	RngUtil.shuffle(candidates, _pop_rng)
+
+	var used: int = 0
+	if not eligible.is_empty():
+		var loot_count: int = mini(3, candidates.size())
+		for i: int in loot_count:
+			var d: Dictionary = eligible[_pop_rng.randi_range(0, eligible.size() - 1)]
+			_build_floor_item(candidates[i], d)
+			used += 1
+	if used < candidates.size():
+		var amount: int = _pop_rng.randi_range(15, 25) + 2 * GameState.current_floor
+		place_item_on_floor(candidates[used], _make_gold_item(amount))
+		used += 1
+
+	if GameState.current_floor >= 4 and used < candidates.size():
+		var trap_pool: Array = []
+		for entry: Dictionary in DungeonFloorData.TRAP_POOL:
+			if not entry.get("wall_trap", false):
+				trap_pool.append(entry)
+		if not trap_pool.is_empty():
+			var trap_count: int = mini(_pop_rng.randi_range(1, 2), candidates.size() - used)
+			for i: int in trap_count:
+				var t: Dictionary = trap_pool[_pop_rng.randi_range(0, trap_pool.size() - 1)]
+				_place_floor_trap(candidates[used + i], t)
+
+	# Guard the vault: lock the door on the room's immediate perimeter ring (its one connection,
+	# max_connections() == 1). _spawn_doors() places doors probabilistically (65%/candidate), so
+	# an unlucky floor can leave this junction door-less — no lock exists to place; the loot still
+	# spawns, just undefended. Accepted degrade, same tolerance as BSP-fallback floors losing
+	# their special rooms entirely (§3.2) — no forcing machinery added for this edge case.
+	for pos: Vector2i in _doors.keys():
+		if rect.grow(1).has_point(pos) and not rect.has_point(pos):
+			if not _doors[pos]["locked"]:
+				_doors[pos]["locked"] = true
+				_doors[pos]["player_locked"] = false
+				var sp: Sprite2D = _doors[pos]["sprite"]
+				if is_instance_valid(sp):
+					sp.modulate = Color(0.55, 0.35, 0.85)
+				_add_lock_icon_at(pos)
+			break
+
+# GardenRoom content (special-rooms-economy-design.md §4.3, session 7d): 1-2 Healing Herb items
+# on the GRASS tiles GardenRoom.paint() already carpeted at generation time. Herb is looked up by
+# name (sentinel fmin/fmax 99 keeps it out of every floor-eligibility filter elsewhere) rather
+# than gated by floor range, since this room is its only spawn path.
+func _spawn_garden_items(rect: Rect2i) -> void:
+	if rect == Rect2i():
+		return
+	var herb: Dictionary = {}
+	for entry: Dictionary in DungeonFloorData.ITEM_POOL:
+		if entry["name"] == "Healing Herb":
+			herb = entry
+			break
+	if herb.is_empty():
+		return
+
+	var candidates: Array[Vector2i] = []
+	for y: int in range(rect.position.y, rect.position.y + rect.size.y):
+		for x: int in range(rect.position.x, rect.position.x + rect.size.x):
+			var pos := Vector2i(x, y)
+			if _data.get_tile(x, y) != DungeonData.TileType.GRASS:
+				continue
+			if pos == _data.player_start or pos == _data.stairs_pos:
+				continue
+			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos):
+				continue
+			candidates.append(pos)
+	if candidates.is_empty():
+		return
+	RngUtil.shuffle(candidates, _pop_rng)
+	var count: int = mini(_pop_rng.randi_range(1, 2), candidates.size())
+	for i: int in count:
+		_build_floor_item(candidates[i], herb)
 
 # Enemy gold drop: 30% chance on any non-boss enemy death (bosses drop a guaranteed pile in
 # drop_boss_loot() instead). Kill-time randomness → gameplay Rng stream, same load-time-vs-runtime
@@ -1712,6 +1820,12 @@ func maybe_drop_enemy_gold(enemy: Enemy) -> void:
 func _spawn_locked_doors() -> void:
 	if _doors.is_empty():
 		return
+	# One gated-loot room per floor (special-rooms-economy-design.md §4.2, session 7c) — a
+	# TreasureRoom already IS that room, so skip the generic locked-door pass entirely rather
+	# than double up on gated loot.
+	for meta: Dictionary in _data.room_metadata:
+		if meta["type_id"] == "treasure":
+			return
 	var eligible: Array = []
 	for entry: Dictionary in DungeonFloorData.ITEM_POOL:
 		if GameState.current_floor >= entry["fmin"] and GameState.current_floor <= entry["fmax"]:

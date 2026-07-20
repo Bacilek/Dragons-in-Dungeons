@@ -22,8 +22,11 @@ extends RefCounted
 
 
 static func paint(data: DungeonData, rooms: Array, rng: RandomNumberGenerator, feeling: String) -> void:
-	# Per-room paint first (§2.3 step 1). All current room types are no-ops that
-	# consume zero rng calls, so this cannot perturb the seeded stream.
+	# Per-room paint first (§2.3 step 1). Most room types are no-ops (zero rng calls);
+	# GardenRoom.paint() (special-rooms-economy-design.md §4.3, session 7d) is the first
+	# exception — it consumes rng draws, but only on floors where a GardenRoom actually
+	# spawned (an intentional, accepted generation-footprint change, same precedent as the
+	# ROOM_POOL session).
 	for room in rooms:
 		(room as Room).paint(data, rng)
 
