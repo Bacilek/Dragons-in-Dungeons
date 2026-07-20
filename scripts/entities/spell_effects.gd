@@ -99,7 +99,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
 
-	var result: Dictionary = target.take_typed_damage(inst["subtotal"], spell.damage_type)
+	var result: Dictionary = target.take_typed_damage(inst["subtotal"], spell.damage_type, is_crit)
 	inst["final"] = result["actual"]
 	inst["resist_mul"] = result["mul"]
 	var actual: int = result["actual"]
@@ -620,7 +620,7 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 
 	var rolls: Array[int] = Rng.roll_dice(spell.dice_count, spell.dice_sides)
 	var inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], is_crit, dtype)
-	var result: Dictionary = target.take_typed_damage(inst["subtotal"], dtype)
+	var result: Dictionary = target.take_typed_damage(inst["subtotal"], dtype, is_crit)
 	inst["final"] = result["actual"]
 	inst["resist_mul"] = result["mul"]
 	var actual: int = result["actual"]

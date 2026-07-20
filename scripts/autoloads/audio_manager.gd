@@ -155,7 +155,7 @@ func play_crit(weapon: Item = null) -> void:
 func play_hit(enemy_id: String = "") -> void:
 	match enemy_id:
 		"skeleton": play("hit_skeleton")
-		"tiny_zombie": play("hit_zombie")
+		"zombie": play("hit_zombie")
 		_: play("hit_enemy")
 
 func play_music(path: String) -> void:

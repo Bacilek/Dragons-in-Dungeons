@@ -157,7 +157,7 @@ func ranged_attack(enemy: Enemy) -> void:
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
 
-	var r_result: Dictionary = enemy.take_typed_damage(r_inst["subtotal"], r_dmg_type)
+	var r_result: Dictionary = enemy.take_typed_damage(r_inst["subtotal"], r_dmg_type, is_crit)
 	r_inst["final"] = r_result["actual"]
 	r_inst["resist_mul"] = r_result["mul"]
 	var actual: int = r_result["actual"]

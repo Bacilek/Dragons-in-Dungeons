@@ -53,6 +53,8 @@ var _regen_blocked_this_round: bool = false      # traits: "regeneration" — se
 var _ability_cooldowns: Dictionary = {}          # ability_id -> turns_remaining (pool "abilities" "cooldown")
 var _ability_uses: Dictionary = {}                # ability_id -> uses_remaining (pool "abilities" "uses_max")
 var _ability_recharge_ready: Dictionary = {}      # ability_id -> bool (pool "abilities" "recharge")
+var _speed_accum: int = 0                         # Bresenham-style accumulator backing _tick_speed_gate()
+var _moves_this_turn: int = 1                     # movement steps allowed THIS turn — pool "speed" (§ movement scaling)
 var _roam_target: Vector2i = Vector2i(-1, -1)
 var _roam_path: Array[Vector2i] = []
 # Search state — used when enemy loses sight of player after chasing
@@ -134,7 +136,7 @@ func _apply_stats() -> void:
 # attack/spell call site that deals damage to an enemy should route through this instead of
 # calling stats.take_damage() directly — see scripts/entities/CLAUDE.md's "Damage types /
 # resistances" section.
-func take_typed_damage(amount: int, damage_type: String) -> Dictionary:
+func take_typed_damage(amount: int, damage_type: String, is_crit: bool = false) -> Dictionary:
 	for tr: Dictionary in _type.get("traits", []):
 		if tr.get("id", "") == "regeneration" and damage_type in Array(tr.get("shutoff_types", []), TYPE_STRING, "", null):
 			_regen_blocked_this_round = true
@@ -148,7 +150,9 @@ func take_typed_damage(amount: int, damage_type: String) -> Dictionary:
 	if mul == 0.0:
 		return {"actual": 0, "mul": 0.0}
 	var effective: int = maxi(1, int(floor(amount * mul))) if mul != 1.0 else amount
-	if effective >= stats.current_hp and not _undead_fortitude_used:
+	# Undead Fortitude (§11) never triggers on Radiant damage or a critical hit — matches the D&D
+	# trait text exactly (Zombie is the first user, worked example in the design doc's §18).
+	if effective >= stats.current_hp and not _undead_fortitude_used and damage_type != "Radiant" and not is_crit:
 		for tr: Dictionary in _type.get("traits", []):
 			if tr.get("id", "") != "undead_fortitude":
 				continue
@@ -192,6 +196,32 @@ func _tick_regeneration() -> void:
 				stats.current_hp += healed
 				GameState.game_log("[color=gray]%s regenerates %d HP.[/color]" % [display_name, healed])
 		return
+
+# Movement-speed scaling (§ "Ranged distance scaling convention"'s sibling rule — see
+# scripts/entities/CLAUDE.md's "Movement speed scaling" note): D&D's default speed is 30 ft = our
+# baseline of 1 tile/turn. Pool key "speed": {"moves": N, "per": M} authors a creature slower
+# (moves < per, e.g. Zombie's 20 ft -> {"moves": 2, "per": 3}: skips movement roughly 1 turn in 3)
+# or faster (moves > per) than baseline. Absent = {"moves": 1, "per": 1}, i.e. exactly today's
+# unconditional 1-move-every-turn behavior — zero change for every enemy that doesn't author it.
+# Bresenham-style integer accumulator (no floats, no drift) — same technique as the FOV
+# shadowcasting multiplier tables, sets _moves_this_turn for _decide_action()/_act_toward() to
+# consume. Called once per real turn from take_turn(), alongside _tick_abilities()/_tick_regeneration().
+func _tick_speed_gate() -> void:
+	var sp: Dictionary = _type.get("speed", {})
+	var moves: int = int(sp.get("moves", 1))
+	var per: int = maxi(1, int(sp.get("per", 1)))
+	_speed_accum += moves
+	_moves_this_turn = 0
+	while _speed_accum >= per:
+		_speed_accum -= per
+		_moves_this_turn += 1
+
+# Pool "traits" membership check (id-only presence, no payload) — e.g. Orc Warrior's "aggressive".
+func _has_trait(id: String) -> bool:
+	for tr: Dictionary in _type.get("traits", []):
+		if tr.get("id", "") == id:
+			return true
+	return false
 
 # Ability cooldowns/uses/recharge (§12) — decremented/rolled once per real turn regardless of
 # what action was actually taken this turn. Called from take_turn().
@@ -444,6 +474,7 @@ func take_turn() -> void:
 		return
 	_tick_abilities()
 	_tick_regeneration()
+	_tick_speed_gate()
 	if prone_turns > 0:
 		prone_turns -= 1
 		await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
@@ -475,6 +506,14 @@ func _decide_action() -> Dictionary:
 	# Ray of Frost's Frozen Feet — same shape as rooted_turns above (no movement, can still attack).
 	if frozen_feet_turns > 0:
 		frozen_feet_turns -= 1
+		if _chebyshev_to(target) == 1:
+			return {"type": "attack", "target": target}
+		return {"type": "wait"}
+
+	# Movement-speed scaling (§ "Movement speed scaling"): a below-baseline "speed" pool entry
+	# (e.g. Zombie) can roll a turn with zero movement credit — same shape as rooted_turns above,
+	# still attacks if already adjacent.
+	if _moves_this_turn <= 0:
 		if _chebyshev_to(target) == 1:
 			return {"type": "attack", "target": target}
 		return {"type": "wait"}
@@ -543,7 +582,10 @@ func _execute_action(intent: Dictionary) -> void:
 		"attack":
 			_attack_target(intent["target"])
 		"act_toward":
-			await _act_toward(intent["target"])
+			# Aggressive (§ trait): while it can see its target, gets one extra movement step this
+			# turn on top of whatever _moves_this_turn/speed already grants — Orc Warrior's trait.
+			var bonus_moves: int = 1 if (intent.get("can_see", false) and _has_trait("aggressive")) else 0
+			await _act_toward(intent["target"], bonus_moves)
 			if not is_instance_valid(self) or stats.is_dead():
 				return
 			# Reached last known position without spotting the target — enter search mode.
@@ -633,12 +675,30 @@ func _execute_ability(intent: Dictionary) -> void:
 		if GameState.apply_player_status(String(ab["status"]), int(ab.get("turns", 1))):
 			GameState.game_log("[color=lime]You are %s! (%d turns)[/color]" % [String(ab["status"]), int(ab.get("turns", 1))])
 
-# Attack if in range of target; otherwise step toward last known / target position.
-func _act_toward(target: Node) -> void:
+# Attack if in range of target; otherwise step toward last known / target position — up to
+# maxi(1, _moves_this_turn) + bonus_moves steps this call (movement-speed scaling §, plus Orc
+# Warrior's Aggressive trait bonus passed in from _execute_action()). Re-checks attack range after
+# EVERY step so a multi-step turn stops moving and swings the instant it's in range (covers the
+# "move + attack" combo from the trait's D&D text; a target already in range on the very first
+# check is the plain "just attack" combo, unchanged from before this was multi-step).
+func _act_toward(target: Node, bonus_moves: int = 0) -> void:
+	var total_steps: int = maxi(1, _moves_this_turn) + bonus_moves
+	for _i: int in total_steps:
+		if _in_attack_range(target):
+			_attack_target(target)
+			return
+		var moved: bool = await _act_toward_single_step(target)
+		if not is_instance_valid(self) or stats.is_dead():
+			return
+		if not moved:
+			return
 	if _in_attack_range(target):
 		_attack_target(target)
-		return
 
+# One greedy-then-BFS movement step toward `target`'s last-known/current position. Returns true if
+# a step was actually taken (already awaited the move tween); false if stuck this turn (already
+# awaited the idle timer itself — see the comment below on why that still has to happen).
+func _act_toward_single_step(target: Node) -> bool:
 	var dest: Vector2i = last_known_target_pos if last_known_target_pos != Vector2i(-1, -1) else target.grid_pos
 	var tdx: int = dest.x - grid_pos.x
 	var tdy: int = dest.y - grid_pos.y
@@ -649,7 +709,7 @@ func _act_toward(target: Node) -> void:
 			_dungeon_floor.open_door(next_pos)
 		if _dungeon_floor.is_walkable_for_enemy(next_pos):
 			await _move_step(step, next_pos)
-			return
+			return true
 
 	# Greedy failed — BFS fallback to navigate around obstacles. If the BFS route is also empty,
 	# or its first step turns out to be unwalkable, the enemy is stuck this turn: still await the
@@ -664,8 +724,9 @@ func _act_toward(target: Node) -> void:
 			_dungeon_floor.open_door(next_pos)
 		if _dungeon_floor.is_walkable_for_enemy(next_pos):
 			await _move_step(step, next_pos)
-			return
+			return true
 	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
+	return false
 
 func _pick_roam_target() -> Vector2i:
 	var centers: Array[Vector2i] = _dungeon_floor.get_room_centers()

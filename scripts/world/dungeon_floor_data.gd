@@ -83,8 +83,33 @@ const ENEMY_POOL: Array = [
 	 "passive_perception": 9,
 	 "attack_profile": {"attack_stat": "dex"},
 	 "multiattack": [{"name": "Dagger", "count": 1, "dmg_min": 3, "dmg_max": 6, "damage_type": "Piercing"}]},
-	{"enemy_id": "orc_warrior",   "display_name": "Orc Warrior", "sprite": "orc_warrior", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 5,  "hp": 8,  "hp_per_floor": 2, "dmg_min": 1, "dmg_max": 4, "armor": 0, "ac": 11, "exp": 8,
-	 "cr": 0.25, "creature_type": "Humanoid"},
+	# Orc Warrior — Medium Humanoid (Orc), CR 1/2, proficiency +2. HP 15, AC 13.
+	# STR 16 (+3) DEX 12 (+1) CON 16 (+3) INT 7 (-2) WIS 11 (+0) CHA 10 (+0). Speed 1 (default).
+	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 6 -> 7 here).
+	# Passive Perception = 10 + WIS mod = 10.
+	# Greataxe: +5 to hit (STR+prof — the default melee attack_stat, no "attack_profile" override
+	# needed), reach 1, 1d12+3 Slashing — single-entry multiattack sub-attack for the real damage
+	# type (same pattern as Skeleton's Shortsword above).
+	# Javelin (our Spear item's numbers): +5 to hit (STR — abilities share _attack_bonus() with the
+	# top-level stats, so it's STR here too, not the ranged-default DEX), range 3 (matches
+	# ITEM_POOL's Spear "range": 3 — "make it our spear"), 1d6+3 Piercing — an uncapped "abilities"
+	# entry, picked over the Greataxe approach whenever not yet adjacent (same snipe-then-melee
+	# dispatch as Skeleton's Shortbow, just re-used for a thrown weapon instead of a bow).
+	# Aggressive trait: while it can see its target, gets +1 movement step this turn (Enemy._act_toward()'s
+	# bonus_moves param, wired from _execute_action()'s "act_toward" case whenever _has_trait("aggressive")
+	# and the target is visible) — covers "move + move" (still out of range after the bonus step) and
+	# "move + attack" (in range after either step, _act_toward() re-checks range every step and attacks
+	# immediately) for free; "attack + move" and "just attack" are the two cases where it's already
+	# adjacent, handled by the normal _act_toward_or_ability() dispatch (attacks immediately, no bonus
+	# movement spent) — D&D's own text only grants a movement bonus, never a second attack.
+	{"enemy_id": "orc_warrior",   "display_name": "Orc Warrior", "sprite": "orc_warrior", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 5,  "hp": 15, "hp_per_floor": 2, "dmg_min": 4, "dmg_max": 15, "armor": 0, "ac": 13, "exp": 8,
+	 "cr": 0.5, "creature_type": "Humanoid",
+	 "mods": {"str": 3, "dex": 1, "con": 3, "int": -2, "wis": 0, "cha": 0},
+	 "senses": {"sight": 7},
+	 "passive_perception": 10,
+	 "traits": [{"id": "aggressive"}],
+	 "multiattack": [{"name": "Greataxe", "count": 1, "dmg_min": 4, "dmg_max": 15, "damage_type": "Slashing"}],
+	 "abilities": [{"id": "orc_javelin", "name": "Javelin", "range": 3, "dmg_min": 4, "dmg_max": 9, "damage_type": "Piercing"}]},
 	{"enemy_id": "goblin",        "display_name": "Goblin",      "sprite": "goblin",      "idle_frames": 4, "run_frames": 4, "floor_min": 2, "floor_max": 6,  "hp": 7,  "hp_per_floor": 2, "dmg_min": 2, "dmg_max": 4, "armor": 0, "ac": 12, "exp": 6,
 	 "cr": 0.125, "creature_type": "Humanoid",
 	 # WIS 8 (-1), same goblin-family stat as goblin_minion below -> passive_perception = 10-1 = 9.
@@ -118,6 +143,29 @@ const ENEMY_POOL: Array = [
 	 "attack_profile": {"attack_stat": "dex"},
 	 "multiattack": [{"name": "Shortsword", "count": 1, "dmg_min": 3, "dmg_max": 8, "damage_type": "Piercing"}],
 	 "abilities": [{"id": "skeleton_shortbow", "name": "Shortbow", "range": 4, "long_range": 16, "dmg_min": 3, "dmg_max": 8, "damage_type": "Piercing"}]},
+	# Zombie — Medium Undead, CR 1/4, proficiency +2. HP 22, AC 8.
+	# STR 13 (+1) DEX 6 (-2) CON 16 (+3) INT 3 (-4) WIS 6 (-2) CHA 5 (-3).
+	# Speed 20 ft (below the 30 ft baseline) -> "speed": {"moves": 2, "per": 3}: skips its movement
+	# roughly 1 turn in 3 (Enemy._tick_speed_gate(), see scripts/entities/CLAUDE.md's "Movement
+	# speed scaling" note — still attacks if already adjacent on a no-move turn, same shape as
+	# rooted_turns). Darkvision: +1 to the default enemy notice/LOS radius (FOV_RADIUS 6 -> 7).
+	# Passive Perception = 10 + WIS mod = 8.
+	# Undead Fortitude (dc_base 5): on a would-be-lethal hit, CON check vs 5 + damage taken to stay
+	# at 1 HP instead — EXCEPT a Radiant killing blow or a critical hit, which the generic trait
+	# dispatch now excludes (Enemy.take_typed_damage()'s is_crit param — Zombie is the worked example
+	# that motivated adding it).
+	# Slam: +3 to hit (STR+prof — default melee attack_stat), reach 1, 1d6+1 Bludgeoning — single-entry
+	# multiattack sub-attack for the real damage type/name.
+	{"enemy_id": "zombie",        "display_name": "Zombie",      "sprite": "tiny_zombie", "idle_frames": 4, "run_frames": 4, "floor_min": 3, "floor_max": 7,  "hp": 22, "hp_per_floor": 3, "dmg_min": 2, "dmg_max": 7, "armor": 0, "ac": 8, "exp": 9,
+	 "cr": 0.25, "creature_type": "Undead",
+	 "mods": {"str": 1, "dex": -2, "con": 3, "int": -4, "wis": -2, "cha": -3},
+	 "senses": {"sight": 7},
+	 "passive_perception": 8,
+	 "speed": {"moves": 2, "per": 3},
+	 "damage_immunities": ["Poison"],
+	 "condition_immunities": ["poisoned"],
+	 "traits": [{"id": "undead_fortitude", "dc_base": 5}],
+	 "multiattack": [{"name": "Slam", "count": 1, "dmg_min": 2, "dmg_max": 7, "damage_type": "Bludgeoning"}]},
 	{"enemy_id": "wogol",         "display_name": "Wogol",       "sprite": "wogol",       "idle_frames": 4, "run_frames": 4, "floor_min": 5, "floor_max": 8,  "hp": 14, "hp_per_floor": 3, "dmg_min": 3, "dmg_max": 6, "armor": 1, "ac": 13, "exp": 15,
 	 "cr": 0.5, "creature_type": "Beast"},
 	{"enemy_id": "imp",           "display_name": "Imp",         "sprite": "imp",         "idle_frames": 4, "run_frames": 4, "floor_min": 6, "floor_max": 9,  "hp": 11, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 7, "armor": 1, "ac": 13, "exp": 13, "resist": ["Fire"],

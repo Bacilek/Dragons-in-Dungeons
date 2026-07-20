@@ -2,7 +2,7 @@ class_name Player
 extends Entity
 
 const KNIGHT_PATH := "res://sprites/characters/"
-const UNDEAD_NAMES: Array = ["Tiny Zombie", "Goblin", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
+const UNDEAD_NAMES: Array = ["Zombie", "Goblin", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
 
 var _dungeon_floor: Node
 
@@ -1514,7 +1514,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if is_crit:
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
-	var main_result: Dictionary = enemy.take_typed_damage(main_inst["subtotal"], dmg_type)
+	var main_result: Dictionary = enemy.take_typed_damage(main_inst["subtotal"], dmg_type, is_crit)
 	main_inst["final"] = main_result["actual"]
 	main_inst["resist_mul"] = main_result["mul"]
 	var actual: int = main_result["actual"]
@@ -1528,7 +1528,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if judgement_bonus > 0:
 		jd_type = _zealot.judgement_day_damage_type()
 		jd_inst = CombatMath.build_damage_instance([], 0, [{"name": "Judgement Day", "amount": judgement_bonus, "color": "gold"}], is_crit, jd_type)
-		var jd_result: Dictionary = enemy.take_typed_damage(jd_inst["subtotal"], jd_type)
+		var jd_result: Dictionary = enemy.take_typed_damage(jd_inst["subtotal"], jd_type, is_crit)
 		jd_inst["final"] = jd_result["actual"]
 		jd_inst["resist_mul"] = jd_result["mul"]
 		jd_actual = jd_result["actual"]
@@ -1685,7 +1685,7 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	if is_crit:
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
-	var result: Dictionary = enemy.take_typed_damage(inst["subtotal"], dmg_type)
+	var result: Dictionary = enemy.take_typed_damage(inst["subtotal"], dmg_type, is_crit)
 	inst["final"] = result["actual"]
 	inst["resist_mul"] = result["mul"]
 	var actual: int = result["actual"]
@@ -1779,7 +1779,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	if is_crit:
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
-	var result: Dictionary = enemy.take_typed_damage(inst["subtotal"], dmg_type)
+	var result: Dictionary = enemy.take_typed_damage(inst["subtotal"], dmg_type, is_crit)
 	inst["final"] = result["actual"]
 	inst["resist_mul"] = result["mul"]
 	var actual: int = result["actual"]
@@ -1868,7 +1868,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	if is_crit:
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
-	var result: Dictionary = enemy.take_typed_damage(inst["subtotal"], dmg_type)
+	var result: Dictionary = enemy.take_typed_damage(inst["subtotal"], dmg_type, is_crit)
 	inst["final"] = result["actual"]
 	inst["resist_mul"] = result["mul"]
 	var actual: int = result["actual"]
