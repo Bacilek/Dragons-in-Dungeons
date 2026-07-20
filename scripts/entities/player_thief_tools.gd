@@ -23,6 +23,7 @@ func attempt_disarm(trap_pos: Vector2i) -> void:
 		GameState.game_log("[color=red]You need Thief Tools to disarm traps![/color]")
 		return
 
+	GameState.stealth_check_stillness = true
 	TurnManager.begin_player_action()
 	AudioManager.play("lockpick")
 	var s: Stats = GameState.player_stats
@@ -65,6 +66,7 @@ func attempt_lock_door(door_pos: Vector2i) -> void:
 	if tools == null:
 		GameState.game_log("[color=gray]You need Thief Tools to lock a door.[/color]")
 		return
+	GameState.stealth_check_stillness = true
 	TurnManager.begin_player_action()
 	AudioManager.play("lockpick")
 	var dex_mod: int = player.stats.dex_modifier()
@@ -91,6 +93,7 @@ func attempt_disarm_lock(door_pos: Vector2i) -> void:
 	if tools == null:
 		GameState.game_log("[color=red]You need Thief Tools to pick this lock.[/color]")
 		return
+	GameState.stealth_check_stillness = true
 	TurnManager.begin_player_action()
 	AudioManager.play("lockpick")
 	var s: Stats = GameState.player_stats

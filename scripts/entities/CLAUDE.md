@@ -62,7 +62,7 @@ behavior refactor — decide/execute split, `attack_profile`, targeting — this
 | `"abilities"` | `[{"id","cooldown"\|"uses_max"\|"recharge","range","long_range","dmg_min","dmg_max","damage_type","status","turns"}, ...]` | Ranged damage(+optional status) ability, picked in `_decide_action()` over melee approach whenever ready, in range, LOS'd, AND the target isn't already melee-adjacent (snipe-then-melee, matching the Skeleton worked example in the design doc). Timer is exactly one of `cooldown` (flat turn counter), `uses_max` (per-life budget), or `recharge` (d6 roll ≥ N re-arms it, D&D "Recharge 5-6" style) — combining two on one ability is an authoring error. Optional `long_range` extends how far the ability can be picked from at all (`_pick_ready_ability()`'s reach check uses `long_range` if present, else falls back to `range`); a shot landing beyond `range` but within `long_range` rolls with Disadvantage (`Enemy._ability_is_long_shot()` → the `long_shot` param threaded through `_execute_ability()` → `_attack_player()`/`_attack_companion()` → `_resolve_attack_roll()`'s `extra_disadv`), the same weapon-style normal/long split as `PlayerRanged.ranged_shot_disadvantage()`. Absent `long_range` = flat cutoff at `range`, unchanged old behavior (e.g. Goblin Archer's plain `attack_profile`, not this key at all). Execution reuses `_attack_player()`/`_attack_companion()` wholesale (abilities and multiattack sub-attacks share the exact same damage shape) plus an optional `GameState.apply_player_status()` call if `"status"` is set. No per-ability custom code needed for this generic ranged-damage shape; a truly bespoke ability (summon, aura) still needs a `match ability_id:` special case added to `Enemy._execute_ability()`. Reference: Skeleton's Shortbow (`range: 8`, `long_range: 32`). |
 | `"traits"` | `[{"id":"regeneration","amount":N,"shutoff_types":[...]}]` or `[{"id":"undead_fortitude","dc_base":N}]` | The two traits the design doc specs in full are implemented generically: **regeneration** heals `amount` HP at the top of a real turn unless a `shutoff_types` damage type hit last round (`Enemy._tick_regeneration()`, hooked from `take_turn()`); **undead_fortitude** intercepts a would-be-lethal hit with a CON check vs `dc_base + damage`, once per life, surviving at 1 HP (`Enemy.take_typed_damage()`'s death branch) — **except** when the killing blow's damage type is `"Radiant"` or it was a critical hit, matching the real D&D trait text exactly (`Enemy.take_typed_damage(amount, damage_type, is_crit: bool = false)`'s 3rd param, threaded through from every attack-roll call site that has a local `is_crit` — melee/cleave/off-hand/OA in `player.gd`, ranged in `player_ranged.gd`, the two ATTACK_ROLL cantrip/spell paths in `spell_effects.gd`; SAVE-resolution and auto-hit spells have no crit concept and pass the default `false`). A third `"id"`, **aggressive** (no payload — `Enemy._has_trait(id)` is a bare presence check, not a per-trait dispatch table entry), grants +1 movement step on any turn where the enemy can see its target: wired at `_execute_action()`'s `"act_toward"` case (`bonus_moves = 1 if (intent.can_see and _has_trait("aggressive")) else 0`, passed into `_act_toward(target, bonus_moves)`) rather than through `_tick_speed_gate()`/`"speed"`, since it's conditional on visibility, not a flat per-turn ratio — it stacks on top of whatever `"speed"` already grants. Never adds a second attack (D&D's own text only grants the movement, not another swing) — `_act_toward()` re-checks attack range after every step of a multi-step turn and attacks (and stops moving) the instant it's in range, so "move + attack" falls out for free, and "attack + move"/"just attack" (already adjacent at decision time) never call `_act_toward()` at all, going straight through the normal `_act_toward_or_ability()` → attack dispatch with no extra movement spent. Any other `"id"` is inert (no dispatch exists yet — add one to `take_typed_damage()`/`_tick_regeneration()`/`_has_trait()`-style check/a new hook when a concrete monster needs it). References: `zombie`'s Undead Fortitude (`dc_base: 5`), `orc_warrior`'s Aggressive. |
 | `"legendary_resistances"` | int (BOSS_POOL only) | Per-life counter (`Enemy.legendary_resistances_remaining`) consumed inside `resist_check_detailed()`: a roll that would fail is forced to pass instead, logged gray. `big_demon` ships with 3, per the design doc's target-boss recommendation. |
-| `"passive_perception"` | int | **Reserved/inert** — not read by any code yet (no stealth/detection system exists). Convention going forward: `10 + WIS modifier` (from `"mods"`'s `wis`, or the flavor-known WIS score if the entry doesn't carry `"mods"`), authored on every new enemy so a future stealth mechanic can read it without a backfill pass. Currently set on `goblin_minion`/`goblin` (both 9, shared goblin-family WIS 8), `skeleton` (9, WIS 8), `zombie` (8, WIS 6), and `orc_warrior` (10, WIS 11) — the enemies with a full/authored D&D stat block so far. `goblin_archer` and every other pool entry still run on the legacy floor-scaling formula (no `"mods"`) and don't have an authored WIS — add it opportunistically when/if that entry gets the full-schema treatment, not required. |
+| `"passive_perception"` | int | **Implemented** — the Stealth-vs-Passive-Perception check's static DC (see "Stealth & Surprise Attacks" below). Authored value always wins; absent, `Enemy._apply_stats()` derives `10 + stats.wis_modifier()` from the now-resolved WIS score, so every enemy has a usable value even before the full bestiary is annotated. Currently authored on `goblin_minion`/`goblin` (both 9, shared goblin-family WIS 8), `skeleton` (9, WIS 8), `zombie` (8, WIS 6), and `orc_warrior` (10, WIS 11); every other pool entry runs on the derived default (WIS 10 → PP 10) until annotated for flavor — safe/playable either way. |
 
 **Deliberately not implemented** (see the design doc's own "explicitly out of scope"/"future design
 doc" calls): multi-tile Large/Huge occupancy (size above Medium still just renders a bigger sprite
@@ -142,7 +142,7 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 **RNG source rule**: every roll in this table — and every other gameplay-affecting random draw in entity code (damage dice, resist checks, talent proc chances, enemy roam/wander shuffles, loot rolled at kill time) — goes through the **`Rng` autoload** (`Rng.roll(20)`, `Rng.range_i(min,max)`, `Rng.chance(p)`, `Rng.shuffle(arr)`), never global `randi_range`/`randf`/`Array.shuffle()`. Seeded from `run_seed` for reproducible runs; see `scripts/autoloads/CLAUDE.md`. Cosmetic jitter (camera shake in `player_vfx.gd`) deliberately stays on the global RNG.
 
 ### Advantage / Disadvantage
-- **ADV**: attacking a SLEEPING enemy; attacking enemy whose `just_crossed_door == true` (consumed one-shot after check)
+- **ADV**: attacking a SLEEPING/STATIONARY/ROAMING enemy (unaware defender — see "Stealth & Surprise Attacks" below); attacking an enemy whose `door_ambush == true` (consumed one-shot after check)
 - **DISADV**: ranged attack at Chebyshev distance 1 (melee range); melee with a `is_heavy` weapon when STR < 13; ranged with a `is_heavy` weapon when DEX < 13; ranged shot beyond the weapon's normal range but within FOV (`player.gd._ranged_shot_disadvantage()` — every ranged weapon's "long range" is the player's live FOV, not a per-weapon field, see `scripts/items/CLAUDE.md`); a Thrown weapon (Spear/Handaxe/Dagger) thrown at Chebyshev distance 1, and a thrown weapon's own long-throw equivalent, both applied in `PlayerThrowTool._throw_weapon()` (`scripts/entities/player_throw_tool.gd`)
 - ADV + DISADV cancel → 1d20
 - Yellow "!" floats above enemy on ADV surprise attacks
@@ -226,12 +226,83 @@ Full design doc: `docs/architecture/opportunity-attacks-design.md`. Core rule (5
 
 `resolve_opportunity_attack(enemy: Enemy)` on `player.gd` is modeled on `_resolve_cleave_attack()` — self-contained roll+damage+log, no per-turn talent effects wired in (Vex/Frenzy/Divine-Fury/Ironwood-Bark deliberately excluded, since those are per-turn action effects and OA fires on someone else's turn). Reuses the existing `hit:`/`dmg:` tooltip metas (no new formatter needed) with an "Opportunity attack:" log prefix.
 
+## Stealth & Surprise Attacks
+
+Implemented; design doc shipped and was deleted — this section is now the authoritative
+reference (was `docs/architecture/stealth-and-surprise-attacks-design.md` +
+`stealth-surprise-attacks-prompt.md`, both removed once implemented).
+
+**Part A — Stealth check vs Passive Perception**: a 5e-style static-DC check (no enemy roll)
+deciding whether an unaware enemy notices the player. Applies to every enemy currently
+`SLEEPING`/`STATIONARY`/`ROAMING` (not yet `CHASING`/`SEARCHING`) that has the player in FOV —
+same sight metric `take_turn()` uses internally (`Enemy.can_see(target)`, a thin public wrapper
+around `_can_see_entity()`). Rolled **once per real player turn** from `Player._resolve_stealth_check()`
+(called at the top of `_on_turn_ending()`, which fires from `TurnManager.player_turn_ending` —
+exactly once per non-reverted action, never for a free action like Rager/Eagle/Battlefield
+Expert's side-step).
+
+- **Trigger classification** — `GameState.stealth_check_skip`/`stealth_check_stillness`: two
+  transient bools, set by the specific action's own call site right before its
+  `TurnManager.begin_player_action()`, consumed and reset to `false` inside
+  `_resolve_stealth_check()`. Neither set = "movement" (the default/untouched case — check fires,
+  no stillness ADV). `stealth_check_skip = true` (attack/spell turns: `_bump_attack()`,
+  `_resolve_cleave_attack()`, `_resolve_offhand_attack()`, `PlayerRanged.ranged_attack()`/
+  `ranged_attack_tile()`, `PlayerThrowTool._throw_weapon()`, Frenzy/Limit Break execution, every
+  `SpellEffects.cast_*()`) skips the check entirely that turn — the attacked enemy already got
+  `on_disturbed()` at the same call site, so a second roll against it is pointless.
+  `stealth_check_stillness = true` (wait, rest tick, search, door interact/lock/unlock, Thief
+  Tools disarm/lock/pick, non-weapon item throw, bottle fill, Grip of the Forest, Shield
+  equip/unequip/drag) grants +1 ADV on the roll (on top of whatever else applies) but the check
+  still fires — it doesn't gate whether the check happens, only its ADV input.
+- **Roll**: `d20 (Halfling-reroll-aware) + DEX mod + (proficiency_bonus if check_prof_dex)`.
+  Rolled **once**, reused against every qualifying observer (5e group-stealth style) — but ADV is
+  evaluated **per observer**: a base ADV count (stillness bonus + Zealous Presence) plus +1 more
+  if that specific observer is `SLEEPING`. A second d20 is only rolled for an observer whose own
+  net ADV differs from 0, so two observers in the same turn (one asleep, one awake-unaware) can
+  net different outcomes from what reads as "the same roll". Enemy notices iff
+  `stealth_total < enemy.passive_perception` (ties favor the player — stays hidden).
+- **`Enemy.passive_perception`**: static DC, see the schema table's `"passive_perception"` row
+  above for the authored-vs-derived rule.
+- **On detection**: `enemy.on_disturbed(player.grid_pos)` (wakes SLEEPING/STATIONARY/ROAMING →
+  CHASING, sets `last_known_target_pos`) + a log line
+  (`"<Enemy> [url=stealth:...]notices[/url] you!"`, `stealth:` meta,
+  `TooltipFormatters.fmt_stealth_tooltip()`). **Silent on a non-detection** by default — no floater,
+  no log spam for walking past sleepers. `GameState.debug_show_stealth_checks` (F3 debug panel
+  checkbox, "Show Stealth Checks") makes every roll — pass or fail — print a gray log line with
+  the same tooltip; toggling it never changes the roll or its outcome, visibility only.
+  `GameState.god_mode` appends a gray `(Stealth X vs PP Y)` suffix to either log line.
+- **Wake-on-attacked**: `Enemy.on_disturbed(source_pos)` — if `SLEEPING`/`STATIONARY`/`ROAMING`,
+  wakes + records `last_known_target_pos`. Called after every player-side attack against that
+  enemy, **hit or miss**, from `_bump_attack()`, `resolve_opportunity_attack()`,
+  `_resolve_cleave_attack()`, `_resolve_offhand_attack()`, `PlayerRanged.ranged_attack()`,
+  `PlayerThrowTool._throw_weapon()`, and `Companion._attack_enemy()`. Net effect: surprise ADV
+  (Part B) only ever applies to the first attack of an engagement.
+- **SLEEPING's only remaining wake path**: the free-wake tier in `_decide_action()` — Chebyshev
+  distance ≤ 1 to the target wakes it unconditionally, no roll. Lives in `take_turn()` (the
+  enemy's own turn), not the player-turn hook — preserves "sneak adjacent, strike first with
+  surprise ADV, THEN it wakes" while punishing lingering adjacent without attacking.
+
+**Part B — Surprise-attack Advantage**: `PlayerVfx.has_advantage(enemy)` (`player.gd:1196`,
+`player_ranged.gd`'s ranged call site) returns true iff the defender is unaware at the moment of
+the attack roll: `door_ambush` (one-shot, see below) OR Fog Cloud's Blinded clause OR
+`behavior in [SLEEPING, STATIONARY, ROAMING]`. `CHASING`/`SEARCHING` never grant it otherwise — a
+fully aware hunter, even one momentarily out of FOV, is **not** surprised (deliberate: surprise is
+purely a function of `behavior`, never re-evaluated against live FOV at attack time).
+
+**`Enemy.door_ambush`** (replaces the old, buggy `just_crossed_door`): set in `_move_step()` only
+when the enemy steps onto a door tile AND had **no** LOS to the player from its pre-step tile
+(`_had_los_to_player_from(prev_pos)`) — so a CHASING enemy that already sees you opening a door
+mid-pursuit does NOT get this (it's already covered by the CHASING-is-never-surprised rule
+above); only a genuine door-camping ambush does. Expires unconditionally at the top of the
+enemy's own next `take_turn()` (lifetime = exactly the round it happened) and is also consumed
+one-shot on read by `has_advantage()`.
+
 ## Enemy behavior states
 `SLEEPING → STATIONARY → ROAMING → CHASING → SEARCHING`
 
-**SLEEPING**: shows zzz label. Wakes when the selected target is within `WAKE_RADIUS_SQ = 4` (2-tile adjacency).
+**SLEEPING**: shows zzz label. No LOS-based wake of its own anymore — see "Stealth & Surprise Attacks" below. Only free-wake tier: true adjacency (Chebyshev ≤ 1) in `_decide_action()`.
 **ROAMING**: waypoint BFS. `_pick_roam_target()` shuffles `DungeonFloor.get_room_centers()`, picks tile at Chebyshev ≥ 4. Follows `_roam_path: Array[Vector2i]` via `_bfs_to()`. Falls back to `_do_random_step()` if blocked.
-**CHASING**: follows the selected target directly. Opens doors (sets `just_crossed_door = true` when stepping onto door tile). Records `_search_heading` (direction toward target) each turn target is visible.
+**CHASING**: follows the selected target directly. Opens doors (sets `door_ambush = true` when stepping onto a door tile it had no prior LOS to the player from — see "Stealth & Surprise Attacks" below). Records `_search_heading` (direction toward target) each turn target is visible.
 **SEARCHING**: entered when a CHASING enemy reaches `last_known_target_pos` without LOS. Searches for 7 turns in `_search_heading` direction (BFS to `_search_target = last_known_pos + heading * 5`). If the target is spotted → CHASING. After 7 turns → ROAMING. Fields: `_search_heading: Vector2i`, `_search_turns_remaining: int`, `_search_target: Vector2i`, `_search_path: Array[Vector2i]`.
 
 `_roam_path` and `_roam_target` are cleared on state transitions.

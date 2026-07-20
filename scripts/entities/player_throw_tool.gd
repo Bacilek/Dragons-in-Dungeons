@@ -51,6 +51,7 @@ func do_throw(pos: Vector2i) -> void:
 	if item.item_type == Item.Type.WEAPON and item.is_thrown:
 		await _throw_weapon(item, pos)
 		return
+	GameState.stealth_check_stillness = true
 	TurnManager.begin_player_action()
 	AudioManager.play("throw_item")
 	if player._dungeon_floor.has_door_at(pos) and not player._dungeon_floor.is_door_open(pos):
@@ -96,6 +97,7 @@ func try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 	if tile_t != DungeonData.TileType.WATER and tile_t != DungeonData.TileType.MUD:
 		GameState.game_log("[color=gray]Nothing to fill the bottle with here.[/color]")
 		return
+	GameState.stealth_check_stillness = true
 	TurnManager.begin_player_action()
 	# Nat 1: bottle shatters
 	var fill_roll: int = Rng.roll(20)
@@ -145,6 +147,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	if weapon.quantity > 1:
 		weapon = GameState._split_one_unit(weapon)
 		GameState.inventory_changed.emit()
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = pos.x < player.grid_pos.x
@@ -171,6 +174,8 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var long_throw: bool = not in_normal_range
 
 	var enemy: Enemy = player._dungeon_floor.get_enemy_at(pos)
+	if enemy != null:
+		enemy.on_disturbed(player.grid_pos)
 	var target_world_pos: Vector2 = enemy.position if enemy != null else Vector2(pos.x * 16 + 8, pos.y * 16 + 8)
 	player._ranged.show_projectile(target_world_pos, weapon)
 

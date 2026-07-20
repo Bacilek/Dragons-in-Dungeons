@@ -335,6 +335,7 @@ func _on_turn_started() -> void:
 # cast's own action-complete), so the first automatic 1d12 lands at the end of the turn AFTER the
 # casting turn, not the casting turn itself.
 func _on_turn_ending() -> void:
+	_resolve_stealth_check()
 	var stats: Stats = GameState.player_stats
 	if stats.witch_bolt_turns <= 0:
 		return
@@ -352,6 +353,65 @@ func _on_turn_ending() -> void:
 		if stats.concentration_spell_id == "witch_bolt":
 			stats.concentration_spell_id = ""
 		GameState.game_log("[color=gray]Witch Bolt fades.[/color]")
+
+# Stealth check vs Passive Perception (docs/architecture/stealth-and-surprise-attacks-design.md
+# §3): rolled once per REAL player turn (this fires from player_turn_ending, exactly once per
+# non-reverted action), reused against every currently-unaware enemy in FOV. Skipped entirely on
+# an attack/spell turn (the attacked enemy already got on_disturbed() at the attack call site —
+# a second roll against it would be pointless) and on noclip. Detection happens BEFORE the
+# player's next action, so a just-detected enemy never grants surprise ADV on that next attack.
+func _resolve_stealth_check() -> void:
+	var skip: bool = GameState.stealth_check_skip
+	var stillness: bool = GameState.stealth_check_stillness
+	GameState.stealth_check_skip = false
+	GameState.stealth_check_stillness = false
+	if skip or GameState.noclip or _dungeon_floor == null:
+		return
+	var observers: Array[Enemy] = []
+	for e: Enemy in _dungeon_floor.get_all_enemies():
+		if not is_instance_valid(e) or e.stats.is_dead():
+			continue
+		if e.behavior not in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]:
+			continue
+		if e.can_see(self):
+			observers.append(e)
+	if observers.is_empty():
+		return
+	var s: Stats = GameState.player_stats
+	var dex_mod: int = s.dex_modifier()
+	var prof: int = s.proficiency_bonus if s.check_prof_dex else 0
+	var base_adv: int = 0
+	if stillness:
+		base_adv += 1
+	if s.zealous_presence_turns > 0:
+		base_adv += 1
+	# Rolled once, reused against every observer (5e group-stealth style) — but ADV is a property
+	# of the roll against THAT specific target (SLEEPING grants +1 net ADV, per-observer), so a
+	# second d20 is only rolled when a given observer's own net ADV differs from 0.
+	var r1: Dictionary = CombatMath.halfling_reroll(Rng.roll(20))
+	var die1: int = r1["value"]
+	var lucky1: bool = r1["lucky"]
+	for e: Enemy in observers:
+		var obs_adv: int = base_adv + (1 if e.behavior == Enemy.Behavior.SLEEPING else 0)
+		var die: int = die1
+		var die2: int = die1
+		var lucky2: bool = false
+		if obs_adv > 0:
+			var r2: Dictionary = CombatMath.halfling_reroll(Rng.roll(20))
+			die2 = r2["value"]
+			lucky2 = r2["lucky"]
+			die = maxi(die1, die2)
+		var total: int = die + dex_mod + prof
+		var noticed: bool = total < e.passive_perception
+		var stealth_meta: String = "stealth:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,total=%d,epp=%d,adv=%d,pass=%d,lucky1=%d,lucky2=%d" % [
+			die, die1, die2, dex_mod, prof, total, e.passive_perception,
+			1 if obs_adv > 0 else 0, 0 if noticed else 1, 1 if lucky1 else 0, 1 if lucky2 else 0]
+		var god_suffix: String = " [color=gray](Stealth %d vs PP %d)[/color]" % [total, e.passive_perception] if GameState.god_mode else ""
+		if noticed:
+			e.on_disturbed(grid_pos)
+			GameState.game_log("[color=tomato]%s[/color] [url=%s]notices[/url] you!%s" % [e.display_name, stealth_meta, god_suffix])
+		elif GameState.debug_show_stealth_checks:
+			GameState.game_log("[color=gray][url=%s]Player vs %s: stealth check (not noticed)[/url]%s[/color]" % [stealth_meta, e.display_name, god_suffix])
 
 func _setup_animations() -> void:
 	var char_name: String
@@ -1145,6 +1205,7 @@ func _try_move(dir: Vector2i) -> void:
 				_thief_tools.attempt_lock_door(target)
 			elif _dungeon_floor.is_door_locked(target):
 				if _dungeon_floor.is_door_player_locked(target):
+					GameState.stealth_check_stillness = true
 					TurnManager.begin_player_action()
 					_dungeon_floor.unlock_door(target)
 					_dungeon_floor.open_door(target)
@@ -1310,6 +1371,7 @@ func _activate_grip_of_the_forest() -> void:
 
 func _execute_hook(enemy: Enemy) -> void:
 	_grip_used_this_turn = true
+	GameState.stealth_check_stillness = true
 	TurnManager.begin_player_action()
 	var rank: int = GameState.get_talent_rank("grip_of_the_forest")
 	var dc: int = 8 + stats.str_modifier() + stats.proficiency_bonus
@@ -1358,7 +1420,9 @@ func _find_ability(ab_id: String) -> Ability:
 # ── Melee attack ─────────────────────────────────────────────────────────────
 
 func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
+	enemy.on_disturbed(grid_pos)
 	$AnimatedSprite2D.flip_h = dir.x < 0
 	$AnimatedSprite2D.play("hit")
 	await $AnimatedSprite2D.animation_finished
@@ -1632,6 +1696,7 @@ func _try_cleave(primary: Enemy, is_str_weapon: bool) -> void:
 	_resolve_cleave_attack(candidates[0], weapon)
 
 func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
+	enemy.on_disturbed(grid_pos)
 	var str_mod: int = stats.str_modifier()
 	var prof: int = CombatMath.weapon_prof_bonus(weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
 	var weapon_bonus: int = weapon.bonus_damage
@@ -1720,6 +1785,7 @@ func _try_offhand_attack(enemy: Enemy, is_str_weapon: bool) -> void:
 		_resolve_offhand_attack(enemy, off_hand, "Nick")
 
 func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-hand") -> void:
+	enemy.on_disturbed(grid_pos)
 	var str_mod: int = stats.str_modifier()
 	var dex_mod: int = stats.dex_modifier()
 	var attack_mod: int = CombatMath.finesse_modifier(str_mod, dex_mod, weapon.is_finesse)
@@ -1801,6 +1867,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 func resolve_opportunity_attack(enemy: Enemy) -> void:
 	if not is_instance_valid(enemy) or enemy.stats.is_dead():
 		return
+	enemy.on_disturbed(grid_pos)
 	var weapon: Item = GameState.equipped_weapon
 	var is_unarmed: bool = weapon == null
 	var is_monk_unarmed: bool = is_unarmed and stats.character_class == Stats.CharacterClass.MONK

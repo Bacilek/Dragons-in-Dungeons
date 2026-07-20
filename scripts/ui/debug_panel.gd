@@ -1,7 +1,7 @@
 extends CanvasLayer
 
 const PANEL_W:    int = 280
-const PANEL_H:    int = 358
+const PANEL_H:    int = 394
 const FLOOR_SW:   int = 234
 const FLOOR_SH:   int = 96
 const ITEMS_SW:   int = 390
@@ -72,6 +72,7 @@ var _spells_sub:    Panel
 var _talent_vbox:   VBoxContainer
 var _talent_rank_labels: Dictionary = {}   # talent_id -> Label
 var _god_check:     CheckBox
+var _stealth_check: CheckBox
 var _mute_btn:      Button
 
 func _ready() -> void:
@@ -178,6 +179,19 @@ func _build_main_panel() -> void:
 	_main_panel.add_child(_mute_btn)
 	AudioManager.mute_changed.connect(_on_mute_changed)
 	_on_mute_changed(AudioManager.is_muted)
+
+	# Stealth Reveal (stealth-and-surprise-attacks-design.md §3.6): logs EVERY per-turn stealth
+	# check, pass or fail — normally only a real detection prints anything. Visibility only, never
+	# changes the roll/outcome.
+	_stealth_check = CheckBox.new()
+	_stealth_check.text = "Show Stealth Checks"
+	_stealth_check.position = Vector2(6.0, 358.0)
+	_stealth_check.size = Vector2(PANEL_W - 12.0, 30.0)
+	_stealth_check.add_theme_font_size_override("font_size", 12)
+	_stealth_check.add_theme_color_override("font_color", Color(0.65, 0.85, 1.0))
+	_stealth_check.focus_mode = Control.FOCUS_NONE
+	_stealth_check.toggled.connect(_on_stealth_check_toggled)
+	_main_panel.add_child(_stealth_check)
 
 func _build_floor_sub() -> void:
 	_floor_sub = Panel.new()
@@ -578,6 +592,9 @@ func _on_god_mode_toggled(pressed: bool) -> void:
 	GameState.debug_see_all.emit(pressed)
 	GameState.game_log("[color=%s][DEBUG] God Mode %s[/color]" % [
 		"gold" if pressed else "gray", "ON — all-knowing, untouchable" if pressed else "OFF"])
+
+func _on_stealth_check_toggled(pressed: bool) -> void:
+	GameState.debug_show_stealth_checks = pressed
 
 func _on_jump_pressed() -> void:
 	_floor_sub.visible = not _floor_sub.visible

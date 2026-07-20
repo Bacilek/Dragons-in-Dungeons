@@ -129,6 +129,7 @@ func _find_nearest_visible_enemy() -> Enemy:
 func _attack_enemy(target: Enemy) -> void:
 	if not is_instance_valid(target) or target.stats.is_dead():
 		return
+	target.on_disturbed(grid_pos)
 	var die_roll: int = Rng.roll(20)
 	# Zealous Presence: Advantage on all attack rolls while buffed.
 	if stats.zealous_presence_turns > 0:

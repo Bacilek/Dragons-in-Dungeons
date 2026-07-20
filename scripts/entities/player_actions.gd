@@ -46,6 +46,7 @@ func check_pickup() -> void:
 		GameState.game_log("[color=gold]Picked up %d gold.[/color]" % gold_total)
 
 func wait_action() -> void:
+	GameState.stealth_check_stillness = true
 	TurnManager.begin_player_action()
 	GameState.game_log("[color=gray]You skipped a turn.[/color]")
 	if player._dungeon_floor != null:
@@ -55,6 +56,7 @@ func wait_action() -> void:
 func do_rest_wait_turn() -> void:
 	if player._dungeon_floor != null:
 		player._dungeon_floor.update_fog(player.grid_pos)
+	GameState.stealth_check_stillness = true
 	TurnManager.begin_player_action()
 	TurnManager.on_player_action_complete()
 
@@ -74,6 +76,7 @@ func handle_rmb_click(pos: Vector2i) -> void:
 func search_action() -> void:
 	if player._dungeon_floor == null:
 		return
+	GameState.stealth_check_stillness = true
 	TurnManager.begin_player_action()
 	var wis_mod: int = GameState.player_stats.wis_modifier()
 	var dc: int = maxi(10, 10 + GameState.current_floor / 3)
@@ -208,6 +211,7 @@ func interact_action(can_lock: bool = true, target: Vector2i = Vector2i(-1, -1))
 		if player._dungeon_floor.is_door_locked(pos):
 			if player._dungeon_floor.is_door_player_locked(pos):
 				# Player set this lock — can unlock freely (free action on F)
+				GameState.stealth_check_stillness = true
 				TurnManager.begin_player_action()
 				player._dungeon_floor.unlock_door(pos)
 				player._dungeon_floor.open_door(pos)
@@ -223,6 +227,7 @@ func interact_action(can_lock: bool = true, target: Vector2i = Vector2i(-1, -1))
 			return
 		if player._dungeon_floor.is_door_open(pos):
 			# F/RMB on open door → close it
+			GameState.stealth_check_stillness = true
 			TurnManager.begin_player_action()
 			player._dungeon_floor.close_door(pos)
 			player._dungeon_floor.update_fog(player.grid_pos)
@@ -232,6 +237,7 @@ func interact_action(can_lock: bool = true, target: Vector2i = Vector2i(-1, -1))
 		if can_lock and player._thief_tools.find_thief_tools() != null:
 			player._thief_tools.attempt_lock_door(pos)
 		else:
+			GameState.stealth_check_stillness = true
 			TurnManager.begin_player_action()
 			player._dungeon_floor.open_door(pos)
 			player._dungeon_floor.update_fog(player.grid_pos)

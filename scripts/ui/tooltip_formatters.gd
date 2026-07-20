@@ -334,6 +334,38 @@ static func fmt_save_tooltip(p: Dictionary) -> String:
 	lines.append("= [color=yellow]%d[/color] vs DC %d  →  %s" % [total, dc, result])
 	return "\n".join(lines)
 
+# Stealth-vs-Passive-Perception check (docs/architecture/stealth-and-surprise-attacks-design.md
+# §3.6) — player's Stealth roll breakdown against the target's flat, un-rolled Passive Perception.
+static func fmt_stealth_tooltip(p: Dictionary) -> String:
+	var die: int   = int(p.get("die", "0"))
+	var d1: int    = int(p.get("d1", str(die)))
+	var d2: int    = int(p.get("d2", str(die)))
+	var dex: int   = int(p.get("dex", "0"))
+	var prof: int  = int(p.get("prof", "0"))
+	var total: int = int(p.get("total", "0"))
+	var epp: int   = int(p.get("epp", "0"))
+	var adv: bool  = p.get("adv", "0") == "1"
+	var passed: bool = p.get("pass", "0") == "1"
+	var lucky1: bool = p.get("lucky1", "0") == "1"
+	var lucky2: bool = p.get("lucky2", "0") == "1"
+	var lines: PackedStringArray = []
+	if adv:
+		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
+	else:
+		lines.append("d20 = [color=yellow]%d[/color]" % die)
+	if lucky1:
+		lines.append("[color=#2e8b3d]☘ Halfling Luck: [s]1[/s] → %d[/color]" % d1)
+	if lucky2:
+		lines.append("[color=#2e8b3d]☘ Halfling Luck: [s]1[/s] → %d[/color]" % d2)
+	if dex != 0:
+		lines.append("[color=lightblue]%+d[/color]  (DEX mod)" % dex)
+	if prof != 0:
+		lines.append("[color=lightblue]+%d[/color]  (Proficiency, DEX check)" % prof)
+	lines.append("─────────────────")
+	var result: String = "[color=red]NOTICED[/color]" if not passed else "[color=green]hidden[/color]"
+	lines.append("= [color=yellow]%d[/color] vs Passive Perception %d  →  %s" % [total, epp, result])
+	return "\n".join(lines)
+
 static func fmt_ehit_tooltip(p: Dictionary) -> String:
 	var die: int    = int(p.get("die", "0"))
 	var d1: int     = int(p.get("d1", str(die)))

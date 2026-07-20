@@ -5,7 +5,6 @@ enum Behavior { SLEEPING, STATIONARY, ROAMING, CHASING, SEARCHING }
 
 const SPRITES_PATH := "res://sprites/characters/"
 const FOV_RADIUS: int = 6
-const WAKE_RADIUS_SQ: int = 4  # 2-tile adjacency wakes sleeping enemies
 
 var _dungeon_floor: Node
 var display_name: String = "Enemy"
@@ -18,7 +17,8 @@ var initial_behavior: Behavior = Behavior.SLEEPING
 var behavior: Behavior = Behavior.SLEEPING
 var last_known_target_pos: Vector2i = Vector2i(-1, -1)
 
-var just_crossed_door: bool = false
+var door_ambush: bool = false  # set in _move_step() when stepping through a door with no prior LOS to the player; expires at the top of the NEXT take_turn() (lifetime = the round it happened), consumed one-shot by PlayerVfx.has_advantage()
+var passive_perception: int = 10  # docs/architecture/stealth-and-surprise-attacks-design.md §3.2 — static DC (pool key "passive_perception", default 10 + WIS mod, derived in _apply_stats())
 var oa_used_this_round: bool = false  # Opportunity Attack reaction cap — reset at the top of take_turn()
 var slowed_turns: int = 0
 var rooted_turns: int = 0        # World Tree Grip of the Forest R2 — skips movement, still attacks if adjacent
@@ -119,6 +119,11 @@ func _apply_stats() -> void:
 		stats.dexterity     = 10 + _type.get("dex_mod", 0) * 2
 		stats.wisdom        = 10 + _type.get("wis_mod", 0) * 2
 		stats.intelligence  = 10 + _type.get("int_mod", 0) * 2
+
+	# Passive Perception (stealth-and-surprise-attacks-design.md §3.2): an authored
+	# "passive_perception" pool key always wins (same "authored field overrides formula"
+	# precedent as "cr"); absent, derive the real 5e formula from the now-resolved WIS score.
+	passive_perception = int(_type.get("passive_perception", 10 + stats.wis_modifier()))
 
 	# Damage resist/immune/vuln (§5) — three explicit multiplier lists, priority immunity >
 	# vulnerability > resistance (an entry listing a type in more than one is an authoring error).
@@ -409,6 +414,19 @@ func _wake_up() -> void:
 	behavior = Behavior.CHASING
 	_stop_zzz()
 
+# Wake-on-attacked (stealth-and-surprise-attacks-design.md §3.5): call after EVERY player-side
+# attack against this enemy, hit or miss — you swung steel near its head. Only meaningful while
+# still unaware; a CHASING/SEARCHING enemy is already awake, so this is a no-op for them.
+func on_disturbed(source_pos: Vector2i) -> void:
+	if behavior in [Behavior.SLEEPING, Behavior.STATIONARY, Behavior.ROAMING]:
+		_wake_up()
+		last_known_target_pos = source_pos
+
+# Public wrapper for the Stealth-vs-Passive-Perception check (player.gd) — reuses the exact same
+# sight metric take_turn() uses internally, verbatim.
+func can_see(target: Node) -> bool:
+	return _can_see_entity(target)
+
 # Threat range in tiles for Opportunity Attacks. Flat 1 for all current enemies (pool key
 # "reach", default 1) — a future reach enemy (whip skeleton, tentacle boss) is a one-line pool entry.
 func melee_reach() -> int:
@@ -444,6 +462,18 @@ func _can_see_entity(e: Node) -> bool:
 	var r: int = _sight_range()
 	return _dist_sq_to(e) <= r * r and _dungeon_floor.has_line_of_sight(grid_pos, e.grid_pos)
 
+# door_ambush gate (§4.3): true if this enemy could already see the player from `from_pos`
+# (BEFORE the door step) — used to tell "door-camping ambush" (no prior LOS) apart from an
+# already-aware hunter that simply opened a door mid-chase (has LOS, no ambush).
+func _had_los_to_player_from(from_pos: Vector2i) -> bool:
+	var player: Player = _dungeon_floor.get_player()
+	if player == null or not is_instance_valid(player):
+		return false
+	var r: int = _sight_range()
+	var dx: int = player.grid_pos.x - from_pos.x
+	var dy: int = player.grid_pos.y - from_pos.y
+	return dx * dx + dy * dy <= r * r and _dungeon_floor.has_line_of_sight(from_pos, player.grid_pos)
+
 # Adjacency wins first (first to reach range gets attacked); ties broken by lower current HP.
 # Otherwise, whichever candidate is nearer is the one stepped toward / seen.
 func _select_target(candidates: Array) -> Node:
@@ -470,6 +500,7 @@ func _select_target(candidates: Array) -> Node:
 
 func take_turn() -> void:
 	oa_used_this_round = false
+	door_ambush = false  # lifetime = exactly one round ("the round it came through the door")
 	if _dungeon_floor == null:
 		return
 	_tick_abilities()
@@ -518,14 +549,18 @@ func _decide_action() -> Dictionary:
 			return {"type": "attack", "target": target}
 		return {"type": "wait"}
 
-	var dist_sq: int = _dist_sq_to(target)
 	var can_see: bool = _can_see_entity(target)
 	var dx: int = target.grid_pos.x - grid_pos.x
 	var dy: int = target.grid_pos.y - grid_pos.y
 
 	match behavior:
 		Behavior.SLEEPING:
-			if can_see or dist_sq <= WAKE_RADIUS_SQ:
+			# LOS-based deterministic wake is gone — replaced by the player-turn Stealth-vs-
+			# Passive-Perception check (player.gd._resolve_stealth_check()). This is only the
+			# free-wake backstop at true adjacency (stealth-and-surprise-attacks-design.md §3.4):
+			# sneak adjacent, strike first with surprise ADV, THEN it wakes — but lingering
+			# adjacent without attacking costs the surprise on its own next turn.
+			if _chebyshev_to(target) <= 1:
 				_wake_up()
 				last_known_target_pos = target.grid_pos
 				return _act_toward_or_ability(target, can_see)
@@ -787,8 +822,8 @@ func _move_step(step: Vector2i, next_pos: Vector2i) -> void:
 	$AnimatedSprite2D.play("idle")
 	if visible:
 		AudioManager.play("footstep")
-	if stepping_through_door:
-		just_crossed_door = true
+	if stepping_through_door and not _had_los_to_player_from(prev_pos):
+		door_ambush = true
 	if _dungeon_floor.has_door_at(prev_pos):
 		_dungeon_floor.close_door(prev_pos)
 	var tile_type: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)

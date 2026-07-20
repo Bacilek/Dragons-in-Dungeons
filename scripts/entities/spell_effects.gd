@@ -36,6 +36,7 @@ static func _cantrip_tier(character_level: int) -> int:
 	return tier
 
 static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
@@ -145,6 +146,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 # just makes a save. Mirrors cast_spell()'s turn envelope/animation but skips the hit-roll block
 # entirely (there's nothing to roll against an AC).
 static func cast_cantrip_save_at_enemy(player: Player, spell: Spell, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
@@ -244,6 +246,7 @@ static func _resolve_thunderclap(player: Player, spell: Spell, dungeon_floor: No
 # whatever was lit before); ends on rest or floor descent — see GameState.clear_light_source()'s
 # call sites.
 static func cast_light_at_tile(player: Player, spell: Spell, tile_pos: Vector2i, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = tile_pos.x < player.grid_pos.x
@@ -271,6 +274,7 @@ static func cast_light_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 # PlayerRanged.ranged_attack_tile()), but there's no attack roll/target: nothing happens unless
 # the tile itself is flammable (Fire Bolt's grass-ignite side effect, generic-path spells only).
 static func cast_spell_at_tile(player: Player, spell: Spell, tile_pos: Vector2i, dungeon_floor: Node) -> void:
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = tile_pos.x < player.grid_pos.x
@@ -305,6 +309,7 @@ static func _consume_slot(player: Player, cast_level: int, from_scroll: bool = f
 
 # SELF target (Shield) — no targeting, no attack roll, resolves on activation.
 static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	_consume_slot(player, cast_level, from_scroll)
 	match spell.effect_id:
@@ -354,6 +359,7 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 
 # TILE target (Misty Step teleport, Fireball AoE) — no attack roll against the tile itself.
 static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, tile_pos: Vector2i, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	_consume_slot(player, cast_level, from_scroll)
 	match spell.effect_id:
@@ -525,6 +531,7 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, 
 
 # ENEMY target, AUTO_HIT resolution (Magic Missile) — no attack roll.
 static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
@@ -660,6 +667,7 @@ static func _pick_chromatic_orb_leap_target(dungeon_floor: Node, exclude: Enemy)
 
 # ENEMY target, ATTACK_ROLL resolution, LEVELED spells (Chromatic Orb, Witch Bolt).
 static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = target.grid_pos.x < player.grid_pos.x

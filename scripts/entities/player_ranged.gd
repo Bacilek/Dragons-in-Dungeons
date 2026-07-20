@@ -40,7 +40,9 @@ func is_in_ranged_range(enemy: Enemy) -> bool:
 		and player._dungeon_floor.has_ranged_los(player.grid_pos, enemy.grid_pos)
 
 func ranged_attack(enemy: Enemy) -> void:
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
+	enemy.on_disturbed(player.grid_pos)
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = enemy.grid_pos.x < player.grid_pos.x
 	sprite.play("hit")
@@ -237,6 +239,7 @@ func show_projectile(target_world_pos: Vector2, weapon: Item) -> void:
 		t.tween_callback(sp.queue_free)
 
 func ranged_attack_tile(target_pos: Vector2i) -> void:
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = target_pos.x < player.grid_pos.x

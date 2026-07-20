@@ -12,14 +12,20 @@ func leave_blood_trail(pos: Vector2i) -> void:
 	if player._dungeon_floor != null and GameState.player_stats.bleeding_turns > 0:
 		player._dungeon_floor.place_blood_decal(pos)
 
+# Surprise-attack ADV (stealth-and-surprise-attacks-design.md §4.2): the defender is unaware of
+# the player at the moment of the attack roll — SLEEPING (never noticed), STATIONARY/ROAMING
+# (awake but hasn't spotted the player yet — they flip to CHASING the instant they do), or a
+# door_ambush this round (CHASING enemy stepped through a door with no prior LOS to the player).
+# CHASING/SEARCHING never grant it otherwise — a fully aware hunter, even one that's momentarily
+# out of FOV, is not surprised.
 func has_advantage(enemy: Enemy) -> bool:
-	if enemy.just_crossed_door:
-		enemy.just_crossed_door = false
+	if enemy.door_ambush:
+		enemy.door_ambush = false
 		return true
 	# Fog Cloud (Blinded): attack rolls against a Blinded creature have Advantage.
 	if GameState.is_in_fog_cloud(enemy.grid_pos):
 		return true
-	return enemy.behavior == Enemy.Behavior.SLEEPING
+	return enemy.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
 
 func show_surprise_mark(enemy: Enemy) -> void:
 	if not is_instance_valid(enemy):

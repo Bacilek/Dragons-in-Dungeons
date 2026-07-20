@@ -1107,6 +1107,7 @@ func _format_tooltip(meta: String) -> String:
 		"heal":          return TooltipFormatters.fmt_heal_tooltip(params)
 		"hplvl":         return TooltipFormatters.fmt_hplvl_tooltip(params)
 		"save", "check": return TooltipFormatters.fmt_save_tooltip(params)
+		"stealth":       return TooltipFormatters.fmt_stealth_tooltip(params)
 		"ehit":          return TooltipFormatters.fmt_ehit_tooltip(params)
 		"edmg":          return TooltipFormatters.fmt_edmg_tooltip(params)
 		"ret":           return TooltipFormatters.fmt_ret_tooltip(params)

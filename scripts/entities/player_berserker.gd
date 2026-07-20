@@ -24,6 +24,7 @@ func execute_frenzy(enemy: Enemy) -> void:
 	if not GameState.invincible:
 		GameState.berserker_frenzy_used = true
 	GameState.berserker_turns_since_frenzy = 0
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	# Frenzy is an attack — it must refresh Rage's duration just like a normal attack does,
 	# regardless of hit/miss (see player.gd._on_turn_started()'s rage tick).

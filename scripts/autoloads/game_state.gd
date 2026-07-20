@@ -152,6 +152,14 @@ var class_selected: bool = false
 var invincible: bool = false
 var noclip: bool = false
 var god_mode: bool = false
+# Stealth-vs-Passive-Perception check (docs/architecture/stealth-and-surprise-attacks-design.md
+# §3.3): the CURRENT player action's classification, set by the action's own call site right
+# before TurnManager.begin_player_action(), consumed and reset by Player._resolve_stealth_check()
+# (called from _on_turn_ending(), once per real action). Neither flag set = "movement" (check
+# fires, no stillness ADV) — the default, untouched classification.
+var stealth_check_skip: bool = false        # true: this action was an attack/spell — no check at all
+var stealth_check_stillness: bool = false   # true: this action was combat-free & movement-free — ADV on the check
+var debug_show_stealth_checks: bool = false # debug-only: log EVERY stealth check (pass or fail), not just detections — never changes the roll/outcome, visibility only
 var hit_dice: int = 1
 var short_rests_remaining: int = 2
 var max_short_rests: int = 2
@@ -1201,6 +1209,7 @@ func equip(item: Item, slot_name: String = "") -> void:
 
 	var costs_turn: bool = item.is_shield and TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT
 	if costs_turn:
+		stealth_check_stillness = true
 		TurnManager.begin_player_action()
 
 	var to_equip: Item = item
@@ -1281,6 +1290,7 @@ func unequip(slot_name: String) -> void:
 		return
 	var costs_turn: bool = item.is_shield and TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT
 	if costs_turn:
+		stealth_check_stillness = true
 		TurnManager.begin_player_action()
 	equipment[slot_name] = null
 	recalculate_stats()
@@ -1356,6 +1366,7 @@ func move_item(src: String, src_idx: int, src_slot: String,
 	var shield_involved: bool = entering_shield or leaving_shield or displaced_shield
 	var costs_turn: bool = shield_involved and TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT
 	if costs_turn:
+		stealth_check_stillness = true
 		TurnManager.begin_player_action()
 	# Dragging a stacked weapon (e.g. Handaxe/Dagger, quantity > 1) into an equipment slot only
 	# equips a single unit — the rest of the stack stays put instead of the whole pile moving

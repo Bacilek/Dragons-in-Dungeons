@@ -22,6 +22,7 @@ func activate_limit_break() -> void:
 func execute_limit_break(primary: Enemy) -> void:
 	if not GameState.invincible:
 		GameState.scarred_warrior_limit_break_used = true
+	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	var missing_hp: int = player.stats.max_hp - player.stats.current_hp
 	var rank: int = GameState.get_talent_rank("enough_is_enough")
