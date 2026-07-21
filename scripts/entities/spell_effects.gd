@@ -38,6 +38,7 @@ static func _cantrip_tier(character_level: int) -> int:
 static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
+	target.on_disturbed(player.grid_pos)
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
 	sprite.play("hit")
@@ -148,6 +149,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 static func cast_cantrip_save_at_enemy(player: Player, spell: Spell, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
+	target.on_disturbed(player.grid_pos)
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
 	sprite.play("hit")
@@ -217,6 +219,7 @@ static func _resolve_thunderclap(player: Player, spell: Spell, dungeon_floor: No
 			continue
 		if not dungeon_floor.has_ranged_los(player.grid_pos, e.grid_pos):
 			continue
+		e.on_disturbed(player.grid_pos)
 		var dc: int = _save_dc(stats)
 		var save: Dictionary = e.resist_check_detailed(dc, true)
 		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
@@ -440,6 +443,7 @@ static func _resolve_cone_aoe(player: Player, spell: Spell, aim_tile: Vector2i, 
 			continue
 		if not tile_set.has(e.grid_pos):
 			continue
+		e.on_disturbed(player.grid_pos)
 		var dc: int = _save_dc(stats)
 		var save: Dictionary = e.resist_check_detailed(dc, false, true)
 		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
@@ -483,6 +487,7 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, 
 
 	GameState.game_log("[color=orange]A sphere of fire erupts![/color]")
 	for e: Enemy in targets:
+		e.on_disturbed(player.grid_pos)
 		var dc: int = _save_dc(stats)
 		var save: Dictionary = e.resist_check_detailed(dc, false, true)
 		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
@@ -533,6 +538,7 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, 
 static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
+	target.on_disturbed(player.grid_pos)
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
 	sprite.play("hit")
@@ -571,6 +577,7 @@ static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int,
 # damage roll against a second target, reusing the same log-line shape with the "leaps to" phrasing
 # instead of "cast ... at".
 static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Enemy, dtype: String, dungeon_floor: Node, is_leap: bool) -> Dictionary:
+	target.on_disturbed(player.grid_pos)
 	var stats: Stats = player.stats
 	var attack_bonus: int = _attack_bonus(stats)
 
