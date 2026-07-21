@@ -123,7 +123,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 		match spell.effect_id:
 			"ray_of_frost":
 				var dc: int = _save_dc(stats)
-				var save: Dictionary = target.resist_check_detailed(dc, false)
+				var save: Dictionary = target.resist_check_detailed(dc, false, false, false, false, true)
 				var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
 					save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 				if not save["pass"]:
@@ -160,7 +160,7 @@ static func cast_cantrip_save_at_enemy(player: Player, spell: Spell, target: Ene
 	var dc: int = _save_dc(stats)
 	var use_wis: bool = spell.effect_id == "toll_the_dead"
 	var use_int: bool = spell.effect_id == "mind_sliver"
-	var save: Dictionary = target.resist_check_detailed(dc, false, false, use_wis, use_int)
+	var save: Dictionary = target.resist_check_detailed(dc, false, false, use_wis, use_int, true)
 	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
 		save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 
@@ -221,7 +221,7 @@ static func _resolve_thunderclap(player: Player, spell: Spell, dungeon_floor: No
 			continue
 		e.on_disturbed(player.grid_pos)
 		var dc: int = _save_dc(stats)
-		var save: Dictionary = e.resist_check_detailed(dc, true)
+		var save: Dictionary = e.resist_check_detailed(dc, true, false, false, false, true)
 		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
 			save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 		if save["pass"]:
@@ -354,6 +354,14 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			player.stats.temp_hp = maxi(player.stats.temp_hp, total)
 			GameState.player_hp_changed.emit(player.stats.current_hp, player.stats.max_hp)
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — a sickly resilience grants [color=lightblue]%d[/color] Temp HP.[/color]" % [spell.spell_name, total])
+		"invisibility":
+			# NOT concentration (5e RAW: ends on attacking/casting, not on taking damage) — see
+			# Stats.invisibility_turns's own doc comment. invisibility_just_cast skips this same
+			# cast's own stealth_check_skip=true (set above) from immediately ending it.
+			player.stats.invisibility_turns = 100
+			player.stats.invisibility_just_cast = true
+			player._update_invisibility_visual()
+			GameState.game_log("[color=cyan]You cast [b]%s[/b] — you fade from view for up to 100 turns.[/color]" % spell.spell_name)
 		_:
 			GameState.game_log("[color=cyan]You cast [b]%s[/b].[/color]" % spell.spell_name)
 	if dungeon_floor != null:
@@ -445,7 +453,7 @@ static func _resolve_cone_aoe(player: Player, spell: Spell, aim_tile: Vector2i, 
 			continue
 		e.on_disturbed(player.grid_pos)
 		var dc: int = _save_dc(stats)
-		var save: Dictionary = e.resist_check_detailed(dc, false, true)
+		var save: Dictionary = e.resist_check_detailed(dc, false, true, false, false, true)
 		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
 			save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 		var dmg: int = roll_total if not save["pass"] else roll_total / 2
@@ -489,7 +497,7 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, 
 	for e: Enemy in targets:
 		e.on_disturbed(player.grid_pos)
 		var dc: int = _save_dc(stats)
-		var save: Dictionary = e.resist_check_detailed(dc, false, true)
+		var save: Dictionary = e.resist_check_detailed(dc, false, true, false, false, true)
 		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
 			save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 		var dmg: int = roll_total if not save["pass"] else roll_total / 2

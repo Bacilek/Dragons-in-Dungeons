@@ -12,7 +12,7 @@ const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp
 # The Wizard's fixed round-1 starting choice (cantrip_select.gd) — unchanged by the 5 additions
 # above so the premade Jace's "cantrip": "fire_bolt" shortcut and existing save data stay valid.
 const STARTER_CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
-const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud"]
+const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud", "invisibility"]
 const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
 ## Shared level-name formatter — "Cantrips" for level 0, "1st"/"2nd"/"3rd"/"Nth" otherwise.
@@ -46,6 +46,7 @@ static func get_spell(id: String) -> Spell:
 		"expeditious_retreat": return _expeditious_retreat()
 		"false_life": return _false_life()
 		"fog_cloud": return _fog_cloud()
+		"invisibility": return _invisibility()
 	return null
 
 static func _fire_bolt() -> Spell:
@@ -375,5 +376,27 @@ static func _fog_cloud() -> Spell:
 	s.shape_size = 2
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "fog_cloud"
+	s.class_list = ["WIZARD"]
+	return s
+
+# Real 5e class list is Bard/Druid/Sorcerer/Warlock/Wizard — this codebase only has a Wizard
+# caster, so class_list stays ["WIZARD"] like every other spell (see LEVELED_SPELL_IDS's note).
+# TargetKind.SELF + range_tiles=1 (touch), same "arm-then-any-click-confirms-on-yourself" pattern
+# as Mage Armor — genuine touch-any-creature targeting doesn't exist in this engine (no ally-
+# targetable touch spell has ever needed it, see Mage Armor's own "No ally-buff targeting exists"
+# note), so both the Imp's own use and the player's are self-only in practice, matching how the
+# owner described intended usage ("mostly will use it on themselves anyway").
+static func _invisibility() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "invisibility"
+	s.spell_name = "Invisibility"
+	s.description = "Touch yourself and turn invisible for up to 100 turns. Enemies lose track of you as if you'd vanished (no attack, no attempt to find you — they head to your last known position and eventually give up). Ends early if you attack or cast a spell. You are NOT invincible — AoE spells and bumping into you still work."
+	s.icon_path = "res://icons/spells/2/invisibility.png"  # no art yet — renders blank until added
+	s.school = "Illusion"
+	s.level = 2
+	s.range_tiles = 1
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.effect_id = "invisibility"
 	s.class_list = ["WIZARD"]
 	return s

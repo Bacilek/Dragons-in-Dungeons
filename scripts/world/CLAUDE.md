@@ -21,6 +21,8 @@ dungeon_floor.has_ranged_los(p1, p2) -> bool                # permissive: blocks
 dungeon_floor.get_room_centers() -> Array[Vector2i]         # for enemy roam targets
 dungeon_floor.get_visible_enemies() -> Array[Enemy]         # enemies in current FOV
 dungeon_floor.get_all_enemies() -> Array[Enemy]             # all enemies (for companion targeting)
+dungeon_floor.get_enemy_at(pos) -> Enemy                    # unfiltered — bump-into-move detection must keep using this one
+dungeon_floor.get_targetable_enemy_at(pos) -> Enemy         # null for an Invisible enemy — every DIRECT click-target resolution uses this instead (see scripts/entities/CLAUDE.md's "Invisibility")
 # Companion system:
 dungeon_floor.spawn_companion(companion: Companion, pos: Vector2i)
 dungeon_floor.remove_companion(companion: Companion)
@@ -28,7 +30,18 @@ dungeon_floor.is_walkable_for_companion(pos: Vector2i) -> bool  # walkable + not
 ```
 
 ## FOV
-`FOV_RADIUS = 7`. Algorithm: recursive shadowcasting (`_compute_shadowcast`, 8 octants, Roguebasin multiplier tables). Result stored in `_visible_tiles: Dictionary`.
+`FOV_RADIUS = 7`. Algorithm: recursive shadowcasting (`_compute_shadowcast`, 8 octants, Roguebasin multiplier tables). Result stored in `_visible_tiles: Dictionary`. Both `_compute_shadowcast()` call sites' radius formula is `FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus + (1 if GameState.has_lit_torch_equipped() else 0)` — the last term is a lit Torch equipped in either hand (`scripts/items/CLAUDE.md`'s "Torch"), computed live rather than folded into `fov_radius_bonus` so it can't drift out of sync with equip/light/burnout state.
+
+**Torch light bubble (floor/embedded, separate from the equipped FOV bonus above)**:
+`update_fog()` also unions `_compute_torch_light_tiles()` into `_visible_tiles` and paints it via
+`_update_torch_light_glow()` — a sweep of every lit-and-unburnt Torch currently lying on
+`_floor_items` or embedded in a live enemy's `Enemy.embedded_items`, each contributing its own
+`GameState.TORCH_LIGHT_RADIUS` (2) shadowcast centered on its floor tile or (for an embedded one)
+its carrying enemy's current `grid_pos` — recomputed from scratch every call, same "Light cantrip"
+union pattern (`_compute_shadowcast` + a pooled-`Sprite2D` glow, see below) but with **zero**
+persistent registry: an embedded torch's bubble moves with its enemy for free, and a burnt-out or
+picked-up-and-relit torch just stops/starts contributing on the next recompute with no cleanup
+code needed anywhere. See `scripts/items/CLAUDE.md`'s "Torch" section.
 
 **Rule**: after every player action, call `_dungeon_floor.update_fog(grid_pos)` **before** `TurnManager.on_player_action_complete()`.
 
@@ -168,6 +181,9 @@ Gold piles are ordinary floor items of `Item.Type.GOLD` whose `gold_value` IS th
 - **Floor scatter** — `_spawn_gold_piles()` (see spawn list above, `_pop_rng`).
 - **Enemy drops** — `maybe_drop_enemy_gold(enemy)`: 30% chance (`Rng.chance`, gameplay stream — kill-time randomness, same split as `_roll_boss_loot_item()`) of `Rng.range_i(1,4) + floor/2` gold at the death tile. Called from `Enemy.die()` (the single chokepoint every death site ends with, same reasoning as `embedded_items`); no-ops for bosses.
 - **Boss kill** — `drop_boss_loot()` additionally places a guaranteed `20 + 5 × floor` pile alongside the potion.
+
+## Pending thrown-weapon drops (Goblin Minion, Orc Warrior)
+`DungeonFloor._pending_thrown_weapon_drops: Array[Dictionary]` (`{"target": Node, "item": Item, "chance": float}`) + `queue_thrown_weapon_drop(target, item, chance: float = 0.5)` + `_resolve_pending_thrown_weapon_drops()` (connected to `TurnManager.player_turn_started` in `_ready()`). A generic mechanism (`scripts/entities/CLAUDE.md`'s "Enemy D&D stat-block schema" — `"thrown_weapon"`/`"unarmed_fallback"` pool keys), used by both Goblin Minion's one-shot thrown Dagger and Orc Warrior's one-shot thrown Javelin: queues an entry in `Enemy.die()` when that enemy had a weapon lodged near a target; resolved on the player's very next turn — a per-enemy chance (`Rng.chance`, gameplay stream — both currently default to 50%) to drop a normal pickupable `Item` at the target's current tile, then the queue is cleared regardless of outcome (one-shot check, not a retry-every-turn poll).
 Pickup: `PlayerActions.check_pickup()` routes GOLD items into `GameState.add_gold()` (one coalesced "Picked up N gold." log line per tile stack) — gold never occupies an inventory slot. `_build_floor_item()`/`_roll_boss_loot_item()` also read a `"gold"` pool key into `Item.gold_value` (base shop price for ordinary items — see `scripts/items/CLAUDE.md`).
 
 ---

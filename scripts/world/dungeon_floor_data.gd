@@ -38,6 +38,7 @@ const ITEM_POOL: Array = [
 	{"name": "Spear",          "type": 0, "icon": "weapon_spear.png",                 "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Melee. Simple, Versatile (1d8): click Main Hand to grip two-handed. Thrown (3/FOV): RMB then LMB a tile — uses your melee attack modifier. Sap: on a hit, target has Disadvantage on its next attack next turn. 5 uses before it breaks.", "dmg_type": "Piercing", "category": "Simple", "die_min": 1, "die_max": 6, "vmin": 1, "vmax": 8, "mastery": "Sap", "versatile": true, "thrown": true, "range": 3, "uses_max": 5},
 	{"name": "Handaxe",        "type": 0, "icon": "weapon_throwing_axe.png",        "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Melee. Simple, Light: pair with another Light weapon in the Off-hand to attack with both (off-hand swing skips your ability modifier unless it's negative). Thrown (3/FOV): RMB then LMB a tile — uses your melee attack modifier. Vex: on a hit, gain Advantage on your next attack this round against that enemy. 5 uses before it breaks.", "dmg_type": "Slashing", "category": "Simple", "die_min": 1, "die_max": 6, "mastery": "Vex", "light": true, "thrown": true, "range": 3, "uses_max": 5},
 	{"name": "Dagger",         "type": 0, "icon": "weapon_knife.png",              "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Melee. Simple, Finesse, Light: pair with another Light weapon in the Off-hand to attack with both (off-hand swing skips your ability modifier unless it's negative). Thrown (3/FOV): RMB then LMB a tile — uses your melee attack modifier. Nick: while dual-wielding Light weapons, make one further attack this turn identical to the Off-hand swing (max 3 attacks total). 5 uses before it breaks.", "dmg_type": "Piercing", "category": "Simple", "die_min": 1, "die_max": 4, "mastery": "Nick", "finesse": true, "light": true, "thrown": true, "range": 3, "uses_max": 5},
+	{"name": "Torch",          "type": 0, "icon": "weapon_torch.png",             "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Melee. Simple. Can be equipped in Main Hand or Off-hand (like a Shield — never fires a bonus Off-hand attack). Click while equipped to light it: burns for 100 turns (even unequipped, in a stack, on the floor, or embedded in an enemy), granting +1 FOV while equipped and a radius-2 light wherever it's lying/embedded. While lit and wielded in Main Hand, melee attacks also deal +1d4 Fire damage. Thrown (3/FOV): RMB then LMB a tile — 1d4 Bludgeoning, +1d4 Fire if lit. 3 uses before it breaks. Burns out permanently into a Burnt Torch.", "dmg_type": "Bludgeoning", "category": "Simple", "die_min": 1, "die_max": 4, "torch": true, "thrown": true, "range": 3, "uses_max": 3},
 	{"name": "Arrow",          "type": 7, "icon": "Weapons/weapon_arrow.png",             "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Short Bow and Longbow.", "qty": 6, "gold": 1},
 	{"name": "Bolt",           "type": 7, "icon": "Weapons/weapon_arrow.png",             "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Heavy Crossbow.", "qty": 6},
 	{"name": "Thief Tools",    "type": 7, "icon": "Misc/KeyIron.png",                    "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Disarm traps, lock doors. Consumed on failure.", "qty": 2, "gold": 25},
@@ -65,6 +66,7 @@ const ITEM_POOL: Array = [
 	{"name": "Scroll of Expeditious Retreat", "type": 3, "icon": "expeditious_retreat.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts Expeditious Retreat once, then it crumbles to dust.", "scroll_spell": "expeditious_retreat", "gold": 60},
 	{"name": "Scroll of False Life",   "type": 3, "icon": "false_life.png",   "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts False Life once, then it crumbles to dust.", "scroll_spell": "false_life", "gold": 60},
 	{"name": "Scroll of Fog Cloud",    "type": 3, "icon": "fog_cloud.png",    "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts Fog Cloud once, then it crumbles to dust.", "scroll_spell": "fog_cloud", "gold": 60},
+	{"name": "Scroll of Invisibility", "type": 3, "icon": "invisibility.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "Reading this casts Invisibility once, then it crumbles to dust.", "scroll_spell": "invisibility", "gold": 100},
 ]
 
 const BOSS_POOL: Array = [
@@ -79,17 +81,41 @@ const BOSS_POOL: Array = [
 const ENEMY_POOL: Array = [
 	# Goblin Minion — Small Fey, CN, CR 1/8. HP 2d6 (avg 7), AC 12 (natural armor).
 	# STR 8 (-1) DEX 15 (+2) CON 10 (+0) INT 10 (+0) WIS 8 (-1) CHA 8 (-1). Speed 1 (default).
+	# Skills: Stealth +6 — flavor only, no mechanical consumer yet (see Goblin Warrior's note above).
 	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 6 -> 7 here).
-	# Dagger: +4 to hit (DEX+prof, finesse), reach 1, 1 target, 1d4+2 Piercing (encoded as a
+	# Nimble Escape: after being hit by a melee attack, its next action(s) become fleeing the
+	# attacker for a random 1-5 turns instead of acting normally, never provoking an Opportunity
+	# Attack while doing so — Enemy.escape_turns/on_melee_hit()/_flee_from().
+	# Dagger, melee: +4 to hit (DEX+prof, finesse), reach 1, 1 target, 1d4+2 Piercing (encoded as a
 	# single-entry multiattack sub-attack so the hit gets a real Piercing damage type/name instead
 	# of the top-level-stats default of Bludgeoning).
+	# Dagger, thrown (pool "thrown_weapon", one-shot per life — Enemy._thrown_weapon_used): whenever
+	# NOT currently escaping (Nimble Escape ended or never triggered) and the target is at least 2
+	# tiles away (not adjacent), throws the Dagger instead of closing to melee — same 1d4+2 Piercing,
+	# rolled with Disadvantage (reuses _attack_player()/_attack_companion()'s `long_shot` param
+	# purely for its Disadvantage side effect, not its usual normal/long-range meaning). Range capped
+	# at 4 tiles (authored judgment call — no player-facing "thrown Dagger at unlimited range" item
+	# exists to mirror). Once thrown, the Dagger is gone for good: every attack after this reverts to
+	# an unarmed Fist strike (pool "unarmed_fallback") — see Enemy._attack_target()'s dispatch.
+	# Fists (pool "unarmed_fallback"): STR-based (+prof) to-hit despite the Dagger being DEX-based —
+	# a per-sub "attack_stat" override (Enemy._attack_bonus_for()) so this one swing ignores
+	# attack_profile's enemy-wide "dex" default. Flat 1 Bludgeoning damage (1 + STR mod -1, floored
+	# at 1 — pre-baked into dmg_min/dmg_max like every other authored attack, not computed at
+	# runtime) — "can't go under 1" per spec.
+	# Recovering the thrown Dagger: DungeonFloor.queue_thrown_weapon_drop()/Enemy.die() — 50%
+	# chance (this pool entry's default "drop_chance") to find it (dropped at whoever it was
+	# thrown at) resolved on the player's next turn after THIS goblin dies, whether or not the
+	# throw actually landed (same generic mechanism Orc Warrior's Javelin below reuses).
 	{"enemy_id": "goblin_minion", "display_name": "Goblin Minion", "sprite": "goblin", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 3,  "hp": 7,  "hp_per_floor": 1, "dmg_min": 3, "dmg_max": 6, "armor": 0, "ac": 12, "exp": 4,
 	 "cr": 0.125, "creature_type": "Fey",
 	 "mods": {"str": -1, "dex": 2, "con": 0, "int": 0, "wis": -1, "cha": -1},
-	 "senses": {"sight": 7},
+	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 9,
 	 "attack_profile": {"attack_stat": "dex"},
-	 "multiattack": [{"name": "Dagger", "count": 1, "dmg_min": 3, "dmg_max": 6, "damage_type": "Piercing"}]},
+	 "traits": [{"id": "nimble_escape"}],
+	 "multiattack": [{"name": "Dagger", "count": 1, "dmg_min": 3, "dmg_max": 6, "damage_type": "Piercing"}],
+	 "thrown_weapon": {"name": "Dagger", "dmg_min": 3, "dmg_max": 6, "damage_type": "Piercing", "range": 4},
+	 "unarmed_fallback": {"name": "Fists", "dmg_min": 1, "dmg_max": 1, "damage_type": "Bludgeoning", "attack_stat": "str"}},
 	# Orc Warrior — Medium Humanoid (Orc), CR 1/2, proficiency +2. HP 15, AC 13.
 	# STR 16 (+3) DEX 12 (+1) CON 16 (+3) INT 7 (-2) WIS 11 (+0) CHA 10 (+0). Speed 1 (default).
 	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 6 -> 7 here).
@@ -97,11 +123,17 @@ const ENEMY_POOL: Array = [
 	# Greataxe: +5 to hit (STR+prof — the default melee attack_stat, no "attack_profile" override
 	# needed), reach 1, 1d12+3 Slashing — single-entry multiattack sub-attack for the real damage
 	# type (same pattern as Skeleton's Shortsword above).
-	# Javelin (our Spear item's numbers): +5 to hit (STR — abilities share _attack_bonus() with the
-	# top-level stats, so it's STR here too, not the ranged-default DEX), range 3 (matches
-	# ITEM_POOL's Spear "range": 3 — "make it our spear"), 1d6+3 Piercing — an uncapped "abilities"
-	# entry, picked over the Greataxe approach whenever not yet adjacent (same snipe-then-melee
-	# dispatch as Skeleton's Shortbow, just re-used for a thrown weapon instead of a bow).
+	# Javelin (pool "thrown_weapon"/"unarmed_fallback", one-shot per life — the exact same generic
+	# mechanism as Goblin Minion's Dagger above, just re-authored with Javelin/Fists numbers): +5 to
+	# hit (STR, same as the Greataxe — no "attack_stat" override needed), range 3, 1d6+3 Piercing,
+	# rolled with Disadvantage (reuses _attack_player()/_attack_companion()'s `long_shot` param).
+	# Whenever NOT yet adjacent, thrown once instead of closing to melee; once gone, every attack
+	# after this reverts to an unarmed Fist strike ("unarmed_fallback": flat 4 Bludgeoning — "1 +
+	# STR mod", Orc's STR mod is +3) — Enemy._attack_target()'s dispatch, same as Goblin's Fists.
+	# Recovery: 50% chance (this pool entry's default "drop_chance", same as Goblin's Dagger) to
+	# find it wherever the target stands when this Orc eventually dies. "random_uses": true — the
+	# recovered Javelin is already partially worn down (a random 1 to "drop_uses_max" uses left),
+	# not pristine — the one difference from Goblin's Dagger, which drops fully intact.
 	# Aggressive trait: while it can see its target, gets +1 movement step this turn (Enemy._act_toward()'s
 	# bonus_moves param, wired from _execute_action()'s "act_toward" case whenever _has_trait("aggressive")
 	# and the target is visible) — covers "move + move" (still out of range after the bonus step) and
@@ -112,15 +144,37 @@ const ENEMY_POOL: Array = [
 	{"enemy_id": "orc_warrior",   "display_name": "Orc Warrior", "sprite": "orc_warrior", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 5,  "hp": 15, "hp_per_floor": 2, "dmg_min": 4, "dmg_max": 15, "armor": 0, "ac": 13, "exp": 8,
 	 "cr": 0.5, "creature_type": "Humanoid",
 	 "mods": {"str": 3, "dex": 1, "con": 3, "int": -2, "wis": 0, "cha": 0},
-	 "senses": {"sight": 7},
+	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 10,
 	 "traits": [{"id": "aggressive"}],
 	 "multiattack": [{"name": "Greataxe", "count": 1, "dmg_min": 4, "dmg_max": 15, "damage_type": "Slashing"}],
-	 "abilities": [{"id": "orc_javelin", "name": "Javelin", "range": 3, "dmg_min": 4, "dmg_max": 9, "damage_type": "Piercing"}]},
-	{"enemy_id": "goblin",        "display_name": "Goblin",      "sprite": "goblin",      "idle_frames": 4, "run_frames": 4, "floor_min": 2, "floor_max": 6,  "hp": 7,  "hp_per_floor": 2, "dmg_min": 2, "dmg_max": 4, "armor": 0, "ac": 12, "exp": 6,
-	 "cr": 0.125, "creature_type": "Humanoid",
-	 # WIS 8 (-1), same goblin-family stat as goblin_minion below -> passive_perception = 10-1 = 9.
-	 "passive_perception": 9},
+	 "thrown_weapon": {"name": "Javelin", "range": 3, "dmg_min": 4, "dmg_max": 9, "damage_type": "Piercing",
+		"icon": "weapon_spear.png", "drop_die_min": 1, "drop_die_max": 6, "weapon_category": "Simple",
+		"is_finesse": false, "is_light": false, "weapon_mastery": "", "drop_uses_max": 5, "random_uses": true},
+	 "unarmed_fallback": {"name": "Fists", "dmg_min": 4, "dmg_max": 4, "damage_type": "Bludgeoning", "attack_stat": "str"}},
+	# Goblin Warrior — Small Fey, CE, CR 1/4. HP 10, AC 15 (natural armor — no shield).
+	# STR 8 (-1) DEX 15 (+2) CON 10 (+0) INT 10 (+0) WIS 8 (-1) CHA 8 (-1). Speed 1 (default).
+	# Skills: Stealth +6 — flavor only, no mechanical consumer yet (this codebase's Stealth system
+	# is player-sneaks-past-enemy via Passive Perception, not the reverse; nothing rolls an enemy's
+	# own Stealth check today).
+	# Darkvision: +1 to the default enemy notice/LOS radius (senses.sight_bonus).
+	# Passive Perception = 10 + WIS mod = 9.
+	# Scimitar: +4 to hit (DEX+prof, finesse — attack_profile.attack_stat), reach 1, 1d6+2 Slashing —
+	# single-entry multiattack sub-attack for the real damage type (same pattern as goblin_minion's
+	# Dagger above).
+	# Nimble Escape: after being hit by a melee attack, its next action(s) become fleeing the
+	# attacker for a random 1-5 turns instead of acting normally, and that flight never provokes an
+	# Opportunity Attack — see Enemy.escape_turns/on_melee_hit()/_flee_from() in enemy.gd.
+	# Advantage bonus: whenever this attack (Scimitar included) lands with net Advantage, deals an
+	# extra 1d4 damage — Enemy._advantage_bonus_sides()/_attack_player()/_attack_companion().
+	{"enemy_id": "goblin_warrior", "display_name": "Goblin Warrior", "sprite": "goblin", "idle_frames": 4, "run_frames": 4, "floor_min": 2, "floor_max": 6,  "hp": 10, "hp_per_floor": 2, "dmg_min": 3, "dmg_max": 8, "armor": 0, "ac": 15, "exp": 10,
+	 "cr": 0.25, "creature_type": "Fey",
+	 "mods": {"str": -1, "dex": 2, "con": 0, "int": 0, "wis": -1, "cha": -1},
+	 "senses": {"sight_bonus": 1},
+	 "passive_perception": 9,
+	 "attack_profile": {"attack_stat": "dex"},
+	 "traits": [{"id": "nimble_escape"}, {"id": "advantage_bonus", "sides": 4}],
+	 "multiattack": [{"name": "Scimitar", "count": 1, "dmg_min": 3, "dmg_max": 8, "damage_type": "Slashing"}]},
 	{"enemy_id": "orc_shaman",    "display_name": "Orc Shaman",  "sprite": "orc_shaman",  "idle_frames": 4, "run_frames": 4, "floor_min": 3, "floor_max": 6,  "hp": 10, "hp_per_floor": 2, "dmg_min": 2, "dmg_max": 5, "armor": 0, "ac": 10, "exp": 12,
 	 "cr": 0.25, "creature_type": "Humanoid"},
 	{"enemy_id": "masked_orc",    "display_name": "Masked Orc",  "sprite": "masked_orc",  "idle_frames": 4, "run_frames": 4, "floor_min": 4, "floor_max": 7,  "hp": 12, "hp_per_floor": 2, "dmg_min": 2, "dmg_max": 5, "armor": 1, "ac": 13, "exp": 10,
@@ -142,7 +196,7 @@ const ENEMY_POOL: Array = [
 	{"enemy_id": "skeleton",      "display_name": "Skeleton",    "sprite": "skelet",      "idle_frames": 4, "run_frames": 4, "floor_min": 4, "floor_max": 7,  "hp": 13, "hp_per_floor": 2, "dmg_min": 3, "dmg_max": 8, "armor": 0, "ac": 14, "exp": 9,
 	 "cr": 0.25, "creature_type": "Undead",
 	 "mods": {"str": 0, "dex": 2, "con": 2, "int": -2, "wis": -1, "cha": -4},
-	 "senses": {"sight": 7},
+	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 9,
 	 "damage_vulnerabilities": ["Bludgeoning"],
 	 "damage_immunities": ["Poison"],
@@ -166,7 +220,7 @@ const ENEMY_POOL: Array = [
 	{"enemy_id": "zombie",        "display_name": "Zombie",      "sprite": "tiny_zombie", "idle_frames": 4, "run_frames": 4, "floor_min": 3, "floor_max": 7,  "hp": 22, "hp_per_floor": 3, "dmg_min": 2, "dmg_max": 7, "armor": 0, "ac": 8, "exp": 9,
 	 "cr": 0.25, "creature_type": "Undead",
 	 "mods": {"str": 1, "dex": -2, "con": 3, "int": -4, "wis": -2, "cha": -3},
-	 "senses": {"sight": 7},
+	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 8,
 	 "speed": {"moves": 2, "per": 3},
 	 "damage_immunities": ["Poison"],
@@ -175,13 +229,80 @@ const ENEMY_POOL: Array = [
 	 "multiattack": [{"name": "Slam", "count": 1, "dmg_min": 2, "dmg_max": 7, "damage_type": "Bludgeoning"}]},
 	{"enemy_id": "wogol",         "display_name": "Wogol",       "sprite": "wogol",       "idle_frames": 4, "run_frames": 4, "floor_min": 5, "floor_max": 8,  "hp": 14, "hp_per_floor": 3, "dmg_min": 3, "dmg_max": 6, "armor": 1, "ac": 13, "exp": 15,
 	 "cr": 0.5, "creature_type": "Beast"},
-	{"enemy_id": "imp",           "display_name": "Imp",         "sprite": "imp",         "idle_frames": 4, "run_frames": 4, "floor_min": 6, "floor_max": 9,  "hp": 11, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 7, "armor": 1, "ac": 13, "exp": 13, "resist": ["Fire"],
-	 "cr": 0.5, "creature_type": "Fiend"},
+	# Imp — Small Fiend (Devil), LE, CR 1, proficiency +2. HP 21, AC 13 (natural armor).
+	# STR 6 (-2) DEX 17 (+3) CON 13 (+1) INT 11 (+0) WIS 12 (+1) CHA 14 (+2).
+	# Skills: Deception +4, Insight +3, Stealth +5 — flavor only, no mechanical consumer yet (same
+	# caveat as Goblin's Stealth +6 above).
+	# Superior darkvision: +2 to the default enemy notice/LOS radius (senses.sight_bonus).
+	# Passive Perception = 10 + WIS mod = 11.
+	# Speed: walks (20 ft, "speed_ground": {"moves":2,"per":3}) OR flies (40 ft, "speed_flying":
+	# {"moves":4,"per":3}) depending on behavior — Enemy._tick_speed_gate() picks "speed_flying"
+	# while CHASING/SEARCHING (knowingly pursuing/last saw the target) and "speed_ground" otherwise
+	# (SLEEPING/STATIONARY/ROAMING). Both pool keys are read generically; any future enemy that
+	# wants a single flat speed regardless of behavior just keeps using the legacy "speed" key.
+	# Magic Resistance (trait "magic_resistance"): Advantage on saves against spells — implemented
+	# as a `magical` flag on Enemy.resist_check_detailed(), rolling the die with Advantage when both
+	# the flag and this trait are present. Threaded through every SAVE-resolution spell in
+	# spell_effects.gd (Ray of Frost, Toll the Dead, Mind Sliver's own save, Thunderclap, Fireball) —
+	# NOT weapon-mastery saves (Push/Topple/Grip of the Forest/Branching Strike), which aren't spells.
+	# Shape Shift (trait "shape_shift"): can secretly transform into a Rat, Raven, or Spider (same
+	# stats, only speed differs — all three use {"moves":2,"per":3}) while CHASING/SEARCHING and the
+	# target hasn't seen it for at least 1 turn (invisible counts) — see Enemy._tick_shape_shift().
+	# 50% roll per eligible turn, no turn cost. 50% chance to already be shape-shifted (random form)
+	# at spawn. Reverts to true Imp form immediately after taking any damage. **No dedicated
+	# rat/raven/spider sprites exist yet** (checked `sprites/characters/`) — mechanically fully wired
+	# (speed changes, "true form" tracking, damage-triggered revert) but visually a no-op today,
+	# per direct owner decision (asset debt, not a missing feature) — swap in real sprites via
+	# `_setup_animations()`'s sprite-prefix lookup once art exists, no other change needed.
+	# Invisibility (pool "invisibility", cooldown 5 turns, duration up to 100 turns): while CHASING/
+	# SEARCHING (pursuing) and NOT yet adjacent to the target, and the cooldown is ready, casts
+	# Invisibility on itself instead of closing distance — costs the turn (a real action, unlike
+	# Nimble Escape's free-form flee). Ends immediately on attacking (Sting) or, per the mirrored
+	# player spell's own rule, would end on casting another spell (N/A for a non-caster enemy).
+	# Hides its own sprite (`Enemy.is_hidden_from_player()`) and is skipped by every direct
+	# click-target resolution (`DungeonFloor.get_targetable_enemy_at()`) — but NOT by bump-into-move
+	# attacks or AoE spells (Fireball/Thunderclap), which don't target by click at all. See
+	# "Invisibility" in this file's own header section below for the full mechanism (shared with the
+	# player-castable level-2 spell of the same name).
+	# Sting: +5 to hit (DEX+prof), reach 1, 1d6+3 Piercing AND 2d6 Poison on the SAME hit (one attack
+	# roll, two independent typed damage instances/floaters/log segments — pool "multiattack" sub-
+	# entry's new optional "extra" key, mirrors the player-side Judgement Day/Fireball-friendly-fire
+	# "one hit, multiple damage types" convention). Imp's own Poison IMMUNITY doesn't apply to
+	# damage it DEALS, only damage it takes — no interaction between the two.
+	{"enemy_id": "imp",           "display_name": "Imp",         "sprite": "imp",         "idle_frames": 4, "run_frames": 4, "floor_min": 6, "floor_max": 9,  "hp": 21, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 9, "armor": 0, "ac": 13, "exp": 22,
+	 "cr": 1, "creature_type": "Fiend",
+	 "mods": {"str": -2, "dex": 3, "con": 1, "int": 0, "wis": 1, "cha": 2},
+	 "senses": {"sight_bonus": 2},
+	 "passive_perception": 11,
+	 "attack_profile": {"attack_stat": "dex"},
+	 "speed_ground": {"moves": 2, "per": 3},
+	 "speed_flying": {"moves": 4, "per": 3},
+	 "damage_resistances": ["Cold"],
+	 "damage_immunities": ["Fire", "Poison"],
+	 "condition_immunities": ["poisoned"],
+	 "traits": [{"id": "magic_resistance"}, {"id": "shape_shift"}],
+	 "invisibility": {"cooldown": 5, "duration": 100},
+	 "multiattack": [{"name": "Sting", "count": 1, "dmg_min": 4, "dmg_max": 9, "damage_type": "Piercing",
+	                  "extra": {"dmg_min": 2, "dmg_max": 12, "damage_type": "Poison"}}]},
 	{"enemy_id": "chort",         "display_name": "Chort",       "sprite": "chort",       "idle_frames": 4, "run_frames": 4, "floor_min": 7, "floor_max": 10, "hp": 16, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 8, "armor": 2, "ac": 14, "exp": 20, "resist": ["Fire"],
 	 "cr": 0.5, "creature_type": "Fiend"},
 	{"enemy_id": "pumpkin_dude",  "display_name": "Pumpkin Dude","sprite": "pumpkin_dude","idle_frames": 4, "run_frames": 4, "floor_min": 8, "floor_max": 10, "hp": 20, "hp_per_floor": 4, "dmg_min": 5, "dmg_max": 9, "armor": 2, "ac": 12, "exp": 25,
 	 "cr": 1, "creature_type": "Plant"},
-	{"enemy_id": "goblin_archer", "display_name": "Goblin Archer", "sprite": "goblin", "idle_frames": 4, "run_frames": 4, "floor_min": 2, "floor_max": 7,  "hp": 6,  "hp_per_floor": 1, "dmg_min": 1, "dmg_max": 4, "armor": 0, "ac": 11, "exp": 7,
-	 "cr": 0.125, "creature_type": "Humanoid",
-	 "attack_profile": {"kind": "ranged", "range": 5, "projectile": "arrow"}},
+	# Goblin Archer — same base stat block as Goblin Warrior above (Small Fey, CE, CR 1/4, HP 10,
+	# AC 15 natural armor — no shield on either goblin now), re-equipped with a Shortbow instead of
+	# a Scimitar; everything else (mods, senses, passive perception, Nimble Escape, advantage bonus
+	# die) is identical.
+	# Shortbow: +4 to hit (DEX+prof), range 4 (normal)/16 (long, DISADV via "long_range" —
+	# Enemy._ability_is_long_shot()), 1d6+2 Piercing — encoded as an uncapped "abilities" entry
+	# (no cooldown/uses_max/recharge = always ready), same shape as Skeleton's Shortbow. No melee
+	# weapon of its own — closing to melee range falls back to the top-level dmg_min/dmg_max
+	# (a bare improvised scuffle, same fallback every legacy non-multiattack entry already uses).
+	{"enemy_id": "goblin_archer", "display_name": "Goblin Archer", "sprite": "goblin", "idle_frames": 4, "run_frames": 4, "floor_min": 2, "floor_max": 7,  "hp": 10, "hp_per_floor": 2, "dmg_min": 1, "dmg_max": 4, "armor": 0, "ac": 15, "exp": 10,
+	 "cr": 0.25, "creature_type": "Fey",
+	 "mods": {"str": -1, "dex": 2, "con": 0, "int": 0, "wis": -1, "cha": -1},
+	 "senses": {"sight_bonus": 1},
+	 "passive_perception": 9,
+	 "attack_profile": {"attack_stat": "dex"},
+	 "traits": [{"id": "nimble_escape"}, {"id": "advantage_bonus", "sides": 4}],
+	 "abilities": [{"id": "goblin_archer_shortbow", "name": "Shortbow", "range": 4, "long_range": 16, "dmg_min": 3, "dmg_max": 8, "damage_type": "Piercing"}]},
 ]

@@ -51,6 +51,8 @@ var _fog_texture: ImageTexture
 var _fog_sprite: Sprite2D
 var _light_glow_sprites: Array[Sprite2D] = []  # Light cantrip glow — see _update_light_source_glow()
 var _light_glow_tex: ImageTexture
+var _torch_glow_sprites: Array[Sprite2D] = []  # lit floor/embedded Torch glow — see _update_torch_light_glow()
+var _torch_glow_tex: ImageTexture
 var _fog_cloud_sprites: Array[Sprite2D] = []  # Fog Cloud spell zone — see _update_fog_cloud_visual()
 var _fog_cloud_tex: ImageTexture
 var _explored: Dictionary = {}
@@ -79,6 +81,7 @@ func _ready() -> void:
 	# call — refresh immediately so the glow sprite/lit tiles disappear right away instead of
 	# lingering until the player's next move.
 	GameState.light_source_changed.connect(func() -> void: update_fog(_fov_player_pos))
+	TurnManager.player_turn_started.connect(_resolve_pending_thrown_weapon_drops)
 
 func _on_debug_jump_floor(_n: int) -> void:
 	_load_floor()
@@ -355,7 +358,7 @@ func update_fog(player_pos: Vector2i) -> void:
 	_fov_player_pos = player_pos
 	var stairs_was_known: bool = _explored.get(_data.stairs_pos, false)
 
-	_visible_tiles = _compute_shadowcast(player_pos, FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus)
+	_visible_tiles = _compute_shadowcast(player_pos, FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus + (1 if GameState.has_lit_torch_equipped() else 0))
 
 	# Light cantrip: ends the instant the lit object is no longer on its floor tile (picked up, or
 	# otherwise removed) — checked every fog recompute, same cadence the light itself refreshes.
@@ -380,6 +383,16 @@ func update_fog(player_pos: Vector2i) -> void:
 		for pos: Vector2i in lit_tiles:
 			_visible_tiles[pos] = true
 	_update_light_source_glow(lit_tiles)
+
+	# Torch: every lit Torch lying on the floor or embedded in a live enemy casts its own
+	# radius-2 light bubble — recomputed fresh every fog update (no persistent registry to keep
+	# in sync with throw/pickup/drop/die/burnout — see GameState.TORCH_LIGHT_RADIUS). An embedded
+	# torch's bubble is centered on its carrying enemy's CURRENT grid_pos, so it moves for free as
+	# the enemy moves, without any dedicated tracking.
+	var torch_tiles: Dictionary = _compute_torch_light_tiles()
+	for pos: Vector2i in torch_tiles:
+		_visible_tiles[pos] = true
+	_update_torch_light_glow(torch_tiles)
 	_update_fog_cloud_visual()
 
 	for y: int in _data.height:
@@ -485,6 +498,75 @@ func _update_light_source_glow(lit_tiles: Dictionary) -> void:
 			spr.visible = true
 		else:
 			spr.visible = false
+
+# Torch: sweeps every lit-and-unburnt Torch currently lying on this floor's ground or embedded in
+# one of its live enemies, and unions a radius-2 shadowcast (GameState.TORCH_LIGHT_RADIUS) per
+# torch found into a single result dict — floor torches at their own tile, embedded torches at
+# their carrying enemy's CURRENT grid_pos (so the bubble moves with the enemy for free, no extra
+# tracking). Called fresh every update_fog() — no persistent state, so throw/pickup/drop/die/
+# burnout all "just work" without any dedicated cleanup code anywhere.
+func _compute_torch_light_tiles() -> Dictionary:
+	var result: Dictionary = {}
+	for pos: Vector2i in _floor_items.keys():
+		for it: Item in _floor_items[pos]:
+			if it.is_torch and it.torch_lit:
+				for lit_pos: Vector2i in _compute_shadowcast(pos, GameState.TORCH_LIGHT_RADIUS):
+					result[lit_pos] = true
+	for enemy: Enemy in get_all_enemies():
+		for it: Item in enemy.embedded_items:
+			if it.is_torch and it.torch_lit:
+				for lit_pos: Vector2i in _compute_shadowcast(enemy.grid_pos, GameState.TORCH_LIGHT_RADIUS):
+					result[lit_pos] = true
+	return result
+
+# Fixed warm-orange glow (a Torch's flame isn't randomized/per-cast the way the Light cantrip's
+# color is) — same pooled-Sprite2D convention as _update_light_source_glow() above, just its own
+# sprite pool/texture so the two light sources' visuals never fight over the same nodes.
+func _update_torch_light_glow(lit_tiles: Dictionary) -> void:
+	if lit_tiles.is_empty():
+		for spr: Sprite2D in _torch_glow_sprites:
+			spr.visible = false
+		return
+	if _torch_glow_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color(1, 1, 1, 1))
+		_torch_glow_tex = ImageTexture.create_from_image(img)
+	var tiles: Array = lit_tiles.keys()
+	while _torch_glow_sprites.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _torch_glow_tex
+		spr.centered = false
+		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
+		spr.z_index = 2
+		add_child(spr)
+		_torch_glow_sprites.append(spr)
+	var tint := Color(1.0, 0.55, 0.1, 0.28)
+	for i: int in _torch_glow_sprites.size():
+		var spr: Sprite2D = _torch_glow_sprites[i]
+		if i < tiles.size():
+			var pos: Vector2i = tiles[i]
+			spr.position = Vector2(pos.x * TILE_SIZE, pos.y * TILE_SIZE)
+			spr.modulate = tint
+			spr.visible = true
+		else:
+			spr.visible = false
+
+# Torch: ticks down torch_turns_remaining once per real turn for every lit Torch lying on this
+# floor's ground or embedded in one of its live enemies — the counterpart to player.gd's own
+# equipped/quickbar/bag sweep (see _on_turn_started()). Called from there once per real turn.
+func tick_torches() -> void:
+	for pos: Vector2i in _floor_items.keys():
+		for it: Item in _floor_items[pos]:
+			if it.is_torch and it.torch_lit:
+				it.torch_turns_remaining -= 1
+				if it.torch_turns_remaining <= 0:
+					GameState.burn_out_torch(it)
+	for enemy: Enemy in get_all_enemies():
+		for it: Item in enemy.embedded_items:
+			if it.is_torch and it.torch_lit:
+				it.torch_turns_remaining -= 1
+				if it.torch_turns_remaining <= 0:
+					GameState.burn_out_torch(it)
 
 # Fog Cloud spell — a persistent gray tint over GameState.fog_cloud_pos/radius (a raw Euclidean
 # disc, same distance check as GameState.is_in_fog_cloud() and show_aoe_preview()'s own preview
@@ -627,7 +709,7 @@ func reveal_all() -> void:
 func _update_enemy_visibility() -> void:
 	for enemy: Enemy in _enemies:
 		if is_instance_valid(enemy):
-			enemy.visible = _visible_tiles.has(enemy.grid_pos)
+			enemy.visible = _visible_tiles.has(enemy.grid_pos) and not enemy.is_hidden_from_player()
 
 func _blocks_los(bx: int, by: int) -> bool:
 	var t: DungeonData.TileType = _data.get_tile(bx, by)
@@ -763,6 +845,19 @@ func get_enemy_at(pos: Vector2i) -> Enemy:
 			return e as Enemy
 	return null
 
+# Same as get_enemy_at(), but returns null for an Invisible enemy (Enemy.is_hidden_from_player())
+# — the chokepoint for every DIRECT click-based target resolution (melee chase-click, Frenzy/
+# Limit Break click, spell Ctrl/LMB click, thrown-weapon click). Bump-into-movement detection
+# (walking into an enemy's tile) deliberately keeps calling get_enemy_at() directly instead — an
+# invisible enemy can still be bumped into, per "not invincible, just unseen" (see
+# scripts/entities/CLAUDE.md's "Invisibility" section). AoE spells (Fireball/Thunderclap) don't
+# target by click at all, so they're unaffected either way.
+func get_targetable_enemy_at(pos: Vector2i) -> Enemy:
+	var e: Enemy = get_enemy_at(pos)
+	if e != null and e.is_hidden_from_player():
+		return null
+	return e
+
 func get_player() -> Player:
 	return _player
 
@@ -820,7 +915,7 @@ func get_visible_enemies() -> Array[Enemy]:
 	var result: Array[Enemy] = []
 	if _player == null:
 		return result
-	var eff_radius: int = FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus
+	var eff_radius: int = FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus + (1 if GameState.has_lit_torch_equipped() else 0)
 	var r2: int = eff_radius * eff_radius
 	for e: Enemy in _enemies:
 		if not is_instance_valid(e):
@@ -1561,6 +1656,7 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.is_shield = d.get("is_shield", false)
 	item.is_finesse = d.get("finesse", false)
 	item.is_light = d.get("light", false)
+	item.is_torch = d.get("torch", false)
 	item.is_reach = d.get("reach", false)
 	item.is_versatile = d.get("versatile", false)
 	item.versatile_die_min = d.get("vmin", 0)
@@ -1816,6 +1912,27 @@ func maybe_drop_enemy_gold(enemy: Enemy) -> void:
 		return
 	var amount: int = Rng.range_i(1, 4) + GameState.current_floor / 2
 	place_item_on_floor(enemy.grid_pos, _make_gold_item(amount))
+
+# A one-shot thrown weapon (Goblin Minion's Dagger, Orc Warrior's Javelin, whether the throw
+# landed or missed — both are queued unconditionally, matching Goblin Minion's original behavior):
+# queued by Enemy.die() when that enemy had one lodged near a target, resolved one player turn
+# later (via TurnManager.player_turn_started, connected in _ready()) — a per-enemy chance to
+# actually find it (both Goblin's Dagger and Orc's Javelin default to 50%), dropped at wherever
+# the target currently stands (not the thrower's own death tile). Deliberately a one-turn delay,
+# not an instant drop, per the original spec ("the turn after goblin dies").
+var _pending_thrown_weapon_drops: Array[Dictionary] = []
+
+func queue_thrown_weapon_drop(target: Node, item: Item, chance: float = 0.5) -> void:
+	_pending_thrown_weapon_drops.append({"target": target, "item": item, "chance": chance})
+
+func _resolve_pending_thrown_weapon_drops() -> void:
+	if _pending_thrown_weapon_drops.is_empty():
+		return
+	for entry: Dictionary in _pending_thrown_weapon_drops:
+		var target: Node = entry["target"]
+		if is_instance_valid(target) and Rng.chance(float(entry.get("chance", 0.5))):
+			place_item_on_floor(target.grid_pos, entry["item"])
+	_pending_thrown_weapon_drops.clear()
 
 func _spawn_locked_doors() -> void:
 	if _doors.is_empty():

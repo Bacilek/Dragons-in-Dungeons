@@ -178,6 +178,11 @@ var spell_learn_picker_open: bool = false    # blocks ALL player input while spe
 var spellbook_open: bool = false             # blocks ALL player input while spellbook_overlay.gd (R key) is visible
 signal spell_slots_changed
 
+# Set on a level-up that raises Stats.mastery_cap() (e.g. Barbarian hitting level 4/10) —
+# hud.gd spawns mastery_picker.gd immediately so the extra slot can be picked on the spot,
+# same "instant pick" treatment as hit dice/spell slots growing on level-up.
+var mastery_learn_pending: bool = false
+
 # Talent system — points earned per level, invested per talent.
 # Points are tier-locked pools: talent_points[tier] holds that tier's unspent points
 # (levels 1-6 → tier 1, 7-12 → tier 2, 13-17 → tier 3, 18-20 → tier 4; see TIER_LEVEL_RANGES).
@@ -320,6 +325,7 @@ func start_new_run() -> void:
 	spell_learn_choices = []
 	spell_learn_picker_open = false
 	spellbook_open = false
+	mastery_learn_pending = false
 	light_source_pos = Vector2i(-1, -1)
 	light_source_item = null
 	talent_points = {1: 0, 2: 0, 3: 0, 4: 0}
@@ -739,6 +745,10 @@ func clear_special_slot() -> void:
 ## _on_short_rest_completed()/long_rest()/advance_floor() for the other three end conditions.
 signal light_source_changed()
 const LIGHT_SOURCE_RADIUS: int = 4
+# Torch: radius of the passive light bubble a lit Torch casts while lying on the floor or
+# embedded in an enemy (dungeon_floor.gd's DungeonFloor._compute_torch_light_tiles()) — separate
+# from the flat +1 FOV bonus an EQUIPPED lit torch grants (has_lit_torch_equipped()).
+const TORCH_LIGHT_RADIUS: int = 2
 var light_source_pos: Vector2i = Vector2i(-1, -1)
 var light_source_color: Color = Color.WHITE
 var light_source_item: Item = null
@@ -1026,6 +1036,7 @@ func gain_exp(amount: int) -> void:
 	var old_max_hp: int = player_stats.max_hp
 	var old_rage_max: int = player_stats.rage_uses_max
 	var old_max_hit_dice: int = max_hit_dice()
+	var old_mastery_cap: int = player_stats.mastery_cap()
 	var old_slot_max: Dictionary = player_stats.caster.slot_pool.max_slots() if player_stats.caster != null and player_stats.caster.slot_pool != null else {}
 	var leveled_up := player_stats.gain_exp(amount)
 	player_exp_changed.emit(player_stats.experience, player_stats.exp_to_next(), player_stats.character_level)
@@ -1073,6 +1084,8 @@ func gain_exp(amount: int) -> void:
 			player_stats.caster.slot_pool.grant_new_slots_on_levelup(old_slot_max)
 			spell_slots_changed.emit()
 			_roll_spell_learn_choices()
+		if player_stats.mastery_cap() > old_mastery_cap:
+			mastery_learn_pending = true
 		AudioManager.play("level_up")
 		player_leveled_up.emit(player_stats.character_level)
 
@@ -1317,6 +1330,42 @@ func toggle_versatile_grip() -> void:
 	recalculate_stats()
 	combat_message.emit("[color=cyan]%s gripped %s-handed.[/color]" % [item.item_name, "two" if item.is_two_handed else "one"])
 	equipment_changed.emit()
+
+# Torch: whether any currently-equipped Torch (Main Hand or Off-hand) is lit — computed live
+# (never cached) so the FOV formula and the Fire-bonus-damage check both stay in sync with
+# equip/unequip/light/burnout without a separate mutable fov bonus field to keep consistent.
+func has_lit_torch_equipped() -> bool:
+	var mh: Item = equipment.get("melee") as Item
+	var oh: Item = equipment.get("hand2") as Item
+	return (mh != null and mh.torch_lit) or (oh != null and oh.torch_lit)
+
+# Returns whichever currently-equipped Item is the lit torch (Main Hand checked first), or null.
+# Used by the status tray to show the icon + turns-remaining tooltip for the buff.
+func lit_torch_item() -> Item:
+	var mh: Item = equipment.get("melee") as Item
+	if mh != null and mh.torch_lit:
+		return mh
+	var oh: Item = equipment.get("hand2") as Item
+	if oh != null and oh.torch_lit:
+		return oh
+	return null
+
+func light_torch(item: Item) -> void:
+	if item == null or item.torch_burnt or item.torch_lit:
+		return
+	item.torch_lit = true
+	item.torch_turns_remaining = 100
+	game_log("You light the torch.")
+	equipment_changed.emit()
+	ability_bar_changed.emit()
+
+func burn_out_torch(item: Item) -> void:
+	item.torch_lit = false
+	item.torch_burnt = true
+	item.item_name = "Burnt Torch"
+	game_log("[color=gray]Your torch burns out.[/color]")
+	equipment_changed.emit()
+	ability_bar_changed.emit()
 
 func recalculate_stats() -> void:
 	var s: Stats = player_stats
@@ -1606,6 +1655,11 @@ var player_was_hit_this_turn: bool = false
 # Separate from player_was_hit_this_turn (which specifically means damage landed) because
 # Rage's duration refresh triggers on being attacked at all — see _on_turn_started()'s rage tick.
 var player_attacked_this_turn: bool = false
+# Set true by Enemy._notice_target() whenever a SLEEPING/STATIONARY/ROAMING enemy spots the
+# player (stealth check failed, or the true-adjacency/can-see wake backstops). Read by
+# Player._execute_queued_path()'s chase-to-attack loop to cancel an in-progress auto-chase the
+# instant the target (or any other enemy) notices the player, not just once it actually swings.
+var enemy_noticed_player_this_turn: bool = false
 
 # Synced by player.gd each turn so HUD can display remaining rage turns on the ability slot.
 var rage_turns_remaining: int = 0

@@ -403,11 +403,17 @@ func _finish_drag() -> void:
 			break
 	if dest != null:
 		_do_move(dest)
-	elif _drag_src_sname == "melee" and _drag_src_ctrl != null \
+	elif (_drag_src_sname == "melee" or _drag_src_sname == "hand2") and _drag_src_ctrl != null \
 			and Rect2(_drag_src_ctrl.position, Vector2(SLOT_SIZE, SLOT_SIZE)).has_point(local_mouse):
-		var main_hand: Item = GameState.equipment.get("melee") as Item
-		if main_hand != null and main_hand.is_versatile:
-			GameState.toggle_versatile_grip()
+		var slot_item: Item = GameState.equipment.get(_drag_src_sname) as Item
+		if slot_item != null:
+			if _drag_src_sname == "melee" and slot_item.is_versatile:
+				GameState.toggle_versatile_grip()
+			elif slot_item.is_torch and not slot_item.torch_lit and not slot_item.torch_burnt:
+				GameState.light_torch(slot_item)
+				var df: Node = get_tree().get_first_node_in_group("dungeon_floor")
+				if df != null:
+					df.update_fog(GameState.player_grid_pos)
 	if _drag_icon != null:
 		_drag_icon.queue_free()
 		_drag_icon = null
@@ -437,10 +443,15 @@ func _fits_slot(item: Item, slot_name: String) -> bool:
 		"armor":                   return item.item_type == Item.Type.ARMOR
 		# Off-hand: a Light melee weapon may only be dual-wielded here if Main Hand also holds
 		# a Light weapon (5e Two-Weapon Fighting rule); non-weapon items are always accepted.
+		# A Torch is a special case (like a Shield) — always allowed here regardless of Main
+		# Hand, and never fires a bonus Off-hand attack since it isn't Light (see
+		# player.gd._try_offhand_attack()'s off_hand.is_light gate).
 		"hand2":
 			if item.item_type != Item.Type.WEAPON:
 				if item.is_shield:
 					return GameState.can_equip_shield(item)
+				return true
+			if item.is_torch:
 				return true
 			var main_hand: Item = GameState.equipped_weapon
 			return not item.is_ranged and item.is_light and main_hand != null and main_hand.is_light

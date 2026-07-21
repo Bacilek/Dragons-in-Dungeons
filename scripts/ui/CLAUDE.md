@@ -98,7 +98,10 @@ special-cases the title to "Concentrating: &lt;Spell Name&gt;" by reading the id
 static `TITLES` entry — see `scripts/entities/CLAUDE.md`'s "Concentration (generic mechanism)").
 Both pending-ADV flags live on `GameState` (not on `PlayerBaseTalents`, where they used to live)
 specifically so this tray can read them without a live `Player` node reference — matches "HUD only
-reads GameState" above. No `icons/status/` art exists yet — every entry currently renders as a
+reads GameState" above. `torch` (`GameState.lit_torch_item() != null` — icon is that Torch's own `icon_path`, orange
+fallback tint; tooltip text (`status_tooltips.gd`'s `"torch"` case) is dynamic, showing
+`torch_turns_remaining` and whether the Fire-damage bonus applies (Main Hand only) — see
+`scripts/items/CLAUDE.md`'s "Torch"). No `icons/status/` art exists yet — every entry currently renders as a
 tinted placeholder square until real icons are supplied (`unarmored_defense`/`tactician`/
 `psycho_adv`/`concentration` already reuse existing talent/spell icons, so those render properly
 today). Open questions resolved: hover-only tooltip, shared tooltip panel, grow-panel layout.
@@ -403,8 +406,13 @@ render blank (`res://icons/masteries/<name>.png`, none exist) until supplied; th
 frame keeps each button visible/clickable regardless.
 **Selected vs. unselected contrast**: `_refresh()` dims every non-selected slot's `TextureButton.modulate` to `Color(0.55,0.55,0.55)` (selectable) or `Color(0.45,0.45,0.45,0.55)` (locked out at cap) so a known mastery's bright gold tint + thick 3px gold border (vs. the dimmed slots' 2px gray border) reads unambiguously at a glance — previously unselected slots rendered full white, which looked visually indistinguishable from "selected" at a glance.
 
-**Wired to fire twice**: right after class selection (`class_select.gd._on_class_selected()`),
-and again after any completed long rest if the player opts in — `player.gd` spawns
+**Wired to fire three ways**: right after class selection (`class_select.gd._on_class_selected()`),
+again after any completed long rest if the player opts in — `player.gd` spawns
 `mastery_reselect_prompt.gd` (a Yes/No confirm) right after `GameState.long_rest()` finishes;
 choosing "Yes" spawns this picker fresh, letting the player fully re-pick from scratch (subject
-to the same `mastery_cap()`). Never triggered by short rest or floor descent.
+to the same `mastery_cap()`) — and instantly on any level-up that raises `mastery_cap()` itself
+(currently only Barbarian, at levels 4 and 10 — `Stats.mastery_cap()`). `GameState.gain_exp()`
+snapshots `mastery_cap()` before applying the level-up and sets `mastery_learn_pending = true` if
+it grew; `hud.gd._on_player_leveled_up()` spawns this picker right away when that flag is set
+(same "instant pick" treatment as hit dice/spell slots growing on level-up — see root CLAUDE.md's
+"Talent system"). Never triggered by short rest or floor descent.

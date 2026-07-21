@@ -113,12 +113,14 @@ with real D&D 2024 spell slots are both implemented.** Leveled spells: `Standard
 level-up "pick 1 of 3" spellbook-growth picker (`scripts/ui/spell_learn_picker.gd`), scroll-taught
 spells, and an **R-key Spellbook overlay** (`scripts/ui/spellbook_overlay.gd`) — level tabs,
 hover description, click-to-prepare, drag-and-drop onto a specific ability-bar slot, bottom-right
-"X / Y prepared" counter. 11 leveled spells (Magic Missile, Shield, Mage Armor, Misty Step, Fireball,
+"X / Y prepared" counter. 12 leveled spells (Magic Missile, Shield, Mage Armor, Misty Step, Fireball,
 Chromatic Orb, Burning Hands, Witch Bolt — the last 3 add a leveled ATTACK_ROLL path with a
 one-shot leap-on-doubles mechanic, a directional cone AoE shape, and a second Concentration DoT
 effect alongside Blade Ward, respectively — plus Expeditious Retreat, False Life, Fog Cloud: a
 third/fourth Concentration effect (a free-move-once-per-turn buff and a Blinded status zone
-readable by both player- and enemy-side attack rolls) and a flat Temp HP grant). Full
+readable by both player- and enemy-side attack rolls) and a flat Temp HP grant — plus Invisibility,
+a NON-Concentration touch/self buff that makes enemies lose track of the caster entirely, ending
+early on attacking/casting; see `scripts/entities/CLAUDE.md`'s "Invisibility" section). Full
 Concentration support for Blade Ward/Witch Bolt/Expeditious Retreat/Fog Cloud (one slot,
 `Stats.concentration_spell_id`), no reactions, no line/cube AoE (sphere + cone
 only), no upcast slot-level picker (always casts at the cheapest available slot) — see
@@ -153,7 +155,7 @@ just Wizard — a non-caster reading one uses `proficiency_bonus + INT modifier`
 `Stats.ALL_WEAPON_MASTERIES` (all 8) + `Stats.mastery_cap()` (per-class/level, computed live) back `scripts/ui/mastery_picker.gd`, which populates `Stats.known_weapon_masteries` — the array every weapon-mastery combat effect already gates on. Spawns once right after class selection (`class_select.gd`), and again after any completed long rest if the player opts in (see "Rest system" below). Implementation detail: `scripts/ui/CLAUDE.md`.
 
 ### Items and combat
-Weapon fields (`damage_die_min/max`, `damage_type`, `weapon_mastery`, `weapon_category`, `is_heavy`, `is_two_handed`, `is_finesse`, `is_light`, `is_reach`, `is_versatile`/`versatile_die_min/max`, `is_thrown`/`uses_max`/`uses_remaining`, `ammo_item_name`), weapon masteries (Cleave, Vex, Push, Graze, Topple, Sap, Nick, Slow), weapon proficiency, ranged weapons/ammo/long-range rules, equipment slots + dual-wielding (Off-hand only accepts a Light weapon when Main Hand is also Light — Handaxe/Dagger — and fires a bonus Off-hand attack per swing, its damage roll dropping the ability modifier unless negative; a Nick-mastery weapon in either hand adds a third, identical bonus attack), the click-to-toggle Versatile grip (Quarterstaff, Spear), Thrown weapons (Spear, Handaxe, Dagger — RMB/LMB throw using the melee attack modifier, durability "uses"), Shields (`Item.is_shield` — Off-hand, +2 AC, gated by `Stats.proficient_shields` and an available non-two-handed Main Hand, blocks spellcasting while equipped, equip/unequip costs 1 turn — the only equip action that does), and the full `Item` field table: **`scripts/items/CLAUDE.md`**.
+Weapon fields (`damage_die_min/max`, `damage_type`, `weapon_mastery`, `weapon_category`, `is_heavy`, `is_two_handed`, `is_finesse`, `is_light`, `is_reach`, `is_versatile`/`versatile_die_min/max`, `is_thrown`/`uses_max`/`uses_remaining`, `ammo_item_name`), weapon masteries (Cleave, Vex, Push, Graze, Topple, Sap, Nick, Slow), weapon proficiency, ranged weapons/ammo/long-range rules, equipment slots + dual-wielding (Off-hand only accepts a Light weapon when Main Hand is also Light — Handaxe/Dagger — and fires a bonus Off-hand attack per swing, its damage roll dropping the ability modifier unless negative; a Nick-mastery weapon in either hand adds a third, identical bonus attack), the click-to-toggle Versatile grip (Quarterstaff, Spear), Thrown weapons (Spear, Handaxe, Dagger, Torch — RMB/LMB throw using the melee attack modifier, durability "uses"), Shields (`Item.is_shield` — Off-hand, +2 AC, gated by `Stats.proficient_shields` and an available non-two-handed Main Hand, blocks spellcasting while equipped, equip/unequip costs 1 turn — the only equip action that does), the Torch (`Item.is_torch`, not Light — equippable in either hand like a Shield without dual-wielding, also thrown (3 uses); click/thrown-hit-while-lit deals +1d4 Fire damage; the 100-turn burn ticks down everywhere — equipped, in a stack, on the floor, or embedded in an enemy — granting +1 FOV while equipped or a moving radius-2 light bubble while lying/embedded; permanently burns out into a Burnt Torch), and the full `Item` field table: **`scripts/items/CLAUDE.md`**.
 ADV/DISADV house rule, combat roll formulas, damage-stacking rule, and enemy resist checks: **`scripts/entities/CLAUDE.md`**.
 
 ### Rest system (short rest / long rest), traps, doors
