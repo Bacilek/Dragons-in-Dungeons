@@ -214,6 +214,14 @@ func _on_turn_started() -> void:
 					stats.concentration_spell_id = ""
 				GameState.clear_fog_cloud()
 				GameState.game_log("[color=gray]The fog cloud dissipates.[/color]")
+		# Torch: 100-turn duration per equipped+lit torch, ticked once per real turn. Only ticks
+		# while equipped — unequipping pauses it (GameState.has_lit_torch_equipped() reads live).
+		for _torch_slot: String in ["melee", "hand2"]:
+			var _torch: Item = GameState.equipment.get(_torch_slot) as Item
+			if _torch != null and _torch.is_torch and _torch.torch_lit:
+				_torch.torch_turns_remaining -= 1
+				if _torch.torch_turns_remaining <= 0:
+					GameState.burn_out_torch(_torch)
 	GameState.ability_bar_changed.emit()
 	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
 	# Only fires on real turns, not on reverted turns.
@@ -1600,6 +1608,22 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		if _dungeon_floor != null:
 			_dungeon_floor.show_damage(enemy.position, jd_actual, false, CombatMath.damage_type_color(jd_type), 1)
 
+	# Torch: while lit and wielded in Main Hand (the weapon _bump_attack always swings), a hit
+	# also deals a second, independent 1d4 Fire damage instance — see scripts/items/CLAUDE.md's
+	# damage-stacking rule (same "one hit, two damage types" shape as Judgement Day above).
+	var torch_actual: int = 0
+	var torch_inst: Dictionary = {}
+	if weapon_item_ref != null and weapon_item_ref.is_torch and weapon_item_ref.torch_lit:
+		var torch_rolls: Array[int] = Rng.roll_dice(1, 4)
+		torch_inst = CombatMath.build_damage_instance(torch_rolls, 4, [], is_crit, "Fire")
+		var torch_result: Dictionary = enemy.take_typed_damage(torch_inst["subtotal"], "Fire", is_crit)
+		torch_inst["final"] = torch_result["actual"]
+		torch_inst["resist_mul"] = torch_result["mul"]
+		torch_actual = torch_result["actual"]
+		enemy.update_hp_bar()
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(enemy.position, torch_actual, false, CombatMath.damage_type_color("Fire"), 2 if judgement_bonus > 0 else 1)
+
 	var is_lethal: bool = enemy.stats.is_dead()
 
 	var dmg_meta: String = CombatMath.encode_damage_instance(main_inst)
@@ -1609,6 +1633,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if jd_actual > 0:
 		var jd_meta: String = CombatMath.encode_damage_instance(jd_inst)
 		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [jd_meta, jd_actual, jd_type]
+	if torch_actual > 0:
+		var torch_meta: String = CombatMath.encode_damage_instance(torch_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Fire[/color]" % [torch_meta, torch_actual]
 	var verb: String = "strike" if is_monk_unarmed else ("punch" if is_unarmed else "strike")
 
 	if is_crit:

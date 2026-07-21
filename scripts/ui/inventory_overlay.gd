@@ -403,11 +403,17 @@ func _finish_drag() -> void:
 			break
 	if dest != null:
 		_do_move(dest)
-	elif _drag_src_sname == "melee" and _drag_src_ctrl != null \
+	elif (_drag_src_sname == "melee" or _drag_src_sname == "hand2") and _drag_src_ctrl != null \
 			and Rect2(_drag_src_ctrl.position, Vector2(SLOT_SIZE, SLOT_SIZE)).has_point(local_mouse):
-		var main_hand: Item = GameState.equipment.get("melee") as Item
-		if main_hand != null and main_hand.is_versatile:
-			GameState.toggle_versatile_grip()
+		var slot_item: Item = GameState.equipment.get(_drag_src_sname) as Item
+		if slot_item != null:
+			if _drag_src_sname == "melee" and slot_item.is_versatile:
+				GameState.toggle_versatile_grip()
+			elif slot_item.is_torch and not slot_item.torch_lit and not slot_item.torch_burnt:
+				GameState.light_torch(slot_item)
+				var df: Node = get_tree().get_first_node_in_group("dungeon_floor")
+				if df != null:
+					df.update_fog(GameState.player_grid_pos)
 	if _drag_icon != null:
 		_drag_icon.queue_free()
 		_drag_icon = null
