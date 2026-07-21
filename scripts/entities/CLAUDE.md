@@ -575,9 +575,11 @@ section below is now authoritative). Data classes (`Spell`, `SpellDb`, `Spellcas
 - **The original three cantrips** (`SpellDb`, `scripts/items/spell_db.gd`), all Evocation, 1
   action, tier-scaling dice:
   - **Fire Bolt** — 12 tiles, 1d10 Fire. No `effect_id` (pure generic damage path) — if the target
-    stands on a `GRASS` tile, the hit also calls `DungeonFloor.destroy_grass()` as the scoped-down
-    stand-in for "flammable objects ignite" (no burning-terrain system exists to build more than
-    that yet).
+    stands on a `GRASS` tile, the hit also calls `DungeonFloor.destroy_grass()`; otherwise it calls
+    `DungeonFloor.ignite_flammable()`, which sets a Barrel or (unlocked) Door alight for a real
+    3-turn burn-down timer — see `scripts/world/CLAUDE.md`'s "Barrels + flammable props". Fireball
+    and Burning Hands' AoE resolvers (below) ignite every flammable tile they pass through the same
+    way.
   - **Ray of Frost** — 6 tiles, 1d8 Cold. `effect_id = "ray_of_frost"`: on a hit, the target rolls
     a STR save (`resist_check_detailed()`, `dc = SpellcasterState.spell_save_dc()`) — logged to
     chat with a hoverable `save:` tooltip **either way** (pass or fail, Topple's

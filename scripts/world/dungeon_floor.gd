@@ -34,6 +34,12 @@ var _enemies: Array[Enemy] = []
 var _companions: Array = []  # Array[Companion] — ally entities processed in enemy phase
 var _traps: Dictionary = {}         # Vector2i → {name, damage, msg, sprite_node, revealed, triggered, is_push}
 var _doors: Dictionary = {}         # Vector2i → {is_open: bool, sprite: Sprite2D}
+var _barrels: Dictionary = {}       # Vector2i → {sprite: Sprite2D, burning: bool, burn_turns: int} — see "Flammable props" below
+const BARREL_TEX_PATH: String = DungeonFloorData.OBJECTS_PATH + "crate.png"
+const BARREL_COUNT_MIN: int = 1
+const BARREL_COUNT_MAX: int = 3
+const FLAMMABLE_BURN_TURNS: int = 3
+const FIRE_TINT := Color(1.0, 0.5, 0.25)
 
 var _floor_items: Dictionary = {}
 var _floor_item_sprites: Dictionary = {}
@@ -82,6 +88,7 @@ func _ready() -> void:
 	# lingering until the player's next move.
 	GameState.light_source_changed.connect(func() -> void: update_fog(_fov_player_pos))
 	TurnManager.player_turn_started.connect(_resolve_pending_thrown_weapon_drops)
+	TurnManager.player_turn_ending.connect(_tick_burning_props)
 
 func _on_debug_jump_floor(_n: int) -> void:
 	_load_floor()
@@ -175,6 +182,12 @@ func _load_floor() -> void:
 				icon.queue_free()
 	_doors.clear()
 
+	for pos: Vector2i in _barrels:
+		var bsp: Sprite2D = _barrels[pos].get("sprite")
+		if bsp != null and is_instance_valid(bsp):
+			bsp.queue_free()
+	_barrels.clear()
+
 	for pos: Vector2i in _floor_item_sprites:
 		var sn: Sprite2D = _floor_item_sprites[pos]
 		if is_instance_valid(sn):
@@ -241,6 +254,7 @@ func _load_floor() -> void:
 	_spawn_enemies()
 	_spawn_traps()
 	_spawn_doors()
+	_spawn_barrels()
 	_spawn_items()
 	_spawn_locked_doors()
 	_spawn_pending_chasm_items()
@@ -313,10 +327,14 @@ func get_tile_type(pos: Vector2i) -> DungeonData.TileType:
 func is_walkable(pos: Vector2i) -> bool:
 	if _doors.has(pos) and not _doors[pos]["is_open"]:
 		return false
+	if _barrels.has(pos):
+		return false
 	return _data.is_walkable(pos)
 
 func is_walkable_for_enemy(pos: Vector2i) -> bool:
 	if not _data.is_walkable(pos):
+		return false
+	if _barrels.has(pos):
 		return false
 	if _doors.has(pos):
 		# Closed doors block normal movement (enemy handles opening separately)
@@ -881,6 +899,8 @@ func remove_companion(companion: Companion) -> void:
 
 func is_walkable_for_companion(pos: Vector2i) -> bool:
 	if not _data.is_walkable(pos):
+		return false
+	if _barrels.has(pos):
 		return false
 	if _doors.has(pos) and not _doors[pos]["is_open"]:
 		return false
@@ -1624,6 +1644,140 @@ func close_door(pos: Vector2i) -> void:
 	AudioManager.play("close_door")
 	if _player != null:
 		update_fog(_player.grid_pos)
+
+# ── Barrels (flammable obstacle prop) ──────────────────────────────────────────
+
+# 1-3 per floor, scattered on plain FLOOR tiles like gold piles — a solid obstacle (blocks
+# movement, see is_walkable()/is_walkable_for_enemy()/is_walkable_for_companion() above) until
+# ignited (see "Flammable props" below), at which point it burns for FLAMMABLE_BURN_TURNS turns
+# and disappears, matching Shattered Pixel Dungeon's Sewer-level barrel (a flammable terrain
+# object that resolves to an empty tile once its fire timer runs out).
+func _spawn_barrels() -> void:
+	var candidates: Array[Vector2i] = []
+	for y: int in _data.height:
+		for x: int in _data.width:
+			var pos := Vector2i(x, y)
+			if _data.get_tile(x, y) != DungeonData.TileType.FLOOR:
+				continue
+			if pos == _data.player_start or pos == _data.stairs_pos:
+				continue
+			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos):
+				continue
+			candidates.append(pos)
+	if candidates.is_empty():
+		return
+	RngUtil.shuffle(candidates, _pop_rng)
+	var count: int = mini(_pop_rng.randi_range(BARREL_COUNT_MIN, BARREL_COUNT_MAX), candidates.size())
+	var tex: Texture2D = null
+	if ResourceLoader.exists(BARREL_TEX_PATH):
+		tex = load(BARREL_TEX_PATH)
+	for i: int in count:
+		_place_barrel(candidates[i], tex)
+
+func _place_barrel(pos: Vector2i, tex: Texture2D) -> void:
+	var sprite := Sprite2D.new()
+	sprite.texture = tex
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+	sprite.z_index = 1
+	if tex != null:
+		var ts: Vector2 = tex.get_size()
+		sprite.scale = Vector2(float(TILE_SIZE) / ts.x, float(TILE_SIZE) / ts.y)
+	entities.add_child(sprite)
+	_barrels[pos] = {"sprite": sprite, "burning": false, "burn_turns": 0}
+
+func has_barrel_at(pos: Vector2i) -> bool:
+	return _barrels.has(pos)
+
+# ── Flammable props (Barrels + Doors) ──────────────────────────────────────────
+
+# Generic ignition entry point — the single chokepoint every fire source calls (Fire Bolt/
+# Fireball/Burning Hands hitting a tile in spell_effects.gd, a thrown lit Torch landing on a tile
+# in player_throw_tool.gd, and the adjacency check in _check_burning_ignition_sources() below).
+# Barrels and OPEN or CLOSED (but not locked) doors are both flammable — mirrors Shattered Pixel
+# Dungeon's Terrain.FLAMABLE flag, which covers ordinary doors alongside grass/barrels but excludes
+# locked/crystal doors. No-ops (returns false) if the tile has neither, or is already burning.
+func ignite_flammable(pos: Vector2i) -> bool:
+	if _barrels.has(pos) and not _barrels[pos]["burning"]:
+		_barrels[pos]["burning"] = true
+		_barrels[pos]["burn_turns"] = FLAMMABLE_BURN_TURNS
+		var sp: Sprite2D = _barrels[pos]["sprite"]
+		if is_instance_valid(sp):
+			sp.modulate = FIRE_TINT
+		GameState.game_log("[color=orange]The barrel catches fire![/color]")
+		return true
+	if _doors.has(pos) and not _doors[pos]["locked"] and not _doors[pos].get("burning", false):
+		_doors[pos]["burning"] = true
+		_doors[pos]["burn_turns"] = FLAMMABLE_BURN_TURNS
+		var sp: Sprite2D = _doors[pos]["sprite"]
+		if is_instance_valid(sp):
+			sp.modulate = FIRE_TINT
+		GameState.game_log("[color=orange]The door catches fire![/color]")
+		return true
+	return false
+
+# Ticks every burning barrel/door once per real player turn (TurnManager.player_turn_ending —
+# same cadence status effects and Witch Bolt tick on). At 0 turns remaining, the prop is destroyed:
+# a barrel's sprite/entry is removed outright (tile becomes plain walkable floor again); a door's
+# sprite/lock-icon/entry is removed outright too (permanently gone, unlike close_door() — the tile
+# stays passable forever, matching SPD's door-burns-to-EMBERS behavior).
+func _tick_burning_props() -> void:
+	var burnt_barrels: Array[Vector2i] = []
+	for pos: Vector2i in _barrels:
+		if not _barrels[pos]["burning"]:
+			continue
+		_barrels[pos]["burn_turns"] -= 1
+		if _barrels[pos]["burn_turns"] <= 0:
+			burnt_barrels.append(pos)
+	for pos: Vector2i in burnt_barrels:
+		var sp: Sprite2D = _barrels[pos]["sprite"]
+		if is_instance_valid(sp):
+			sp.queue_free()
+		_barrels.erase(pos)
+		GameState.game_log("[color=gray]The barrel burns to nothing.[/color]")
+
+	var burnt_doors: Array[Vector2i] = []
+	for pos: Vector2i in _doors:
+		if not _doors[pos].get("burning", false):
+			continue
+		_doors[pos]["burn_turns"] -= 1
+		if _doors[pos]["burn_turns"] <= 0:
+			burnt_doors.append(pos)
+	for pos: Vector2i in burnt_doors:
+		var sp: Sprite2D = _doors[pos]["sprite"]
+		if is_instance_valid(sp):
+			sp.queue_free()
+		if _doors[pos].has("lock_icon"):
+			var icon: Node = _doors[pos]["lock_icon"]
+			if is_instance_valid(icon):
+				icon.queue_free()
+		_doors.erase(pos)
+		GameState.game_log("[color=gray]The door burns away.[/color]")
+
+	if not burnt_barrels.is_empty() or not burnt_doors.is_empty():
+		if _player != null:
+			update_fog(_player.grid_pos)
+
+	_check_burning_ignition_sources()
+
+# Fire spreads from a burning entity standing next to an unlit barrel/door — currently only the
+# player can carry burning_turns (see scripts/entities/CLAUDE.md's "Status effects" table; enemy
+# burning is reserved/unwired), so this checks the player only. Chebyshev adjacency, same reach
+# convention as melee.
+func _check_burning_ignition_sources() -> void:
+	if _player == null or GameState.player_stats.burning_turns <= 0:
+		return
+	var p: Vector2i = _player.grid_pos
+	for pos: Vector2i in _barrels.keys():
+		if _barrels[pos]["burning"]:
+			continue
+		if maxi(absi(pos.x - p.x), absi(pos.y - p.y)) <= 1:
+			ignite_flammable(pos)
+	for pos: Vector2i in _doors.keys():
+		if _doors[pos].get("burning", false) or _doors[pos]["locked"]:
+			continue
+		if maxi(absi(pos.x - p.x), absi(pos.y - p.y)) <= 1:
+			ignite_flammable(pos)
 
 # ── Grass ─────────────────────────────────────────────────────────────────────
 

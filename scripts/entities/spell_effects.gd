@@ -137,6 +137,8 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 				if dungeon_floor != null and dungeon_floor.get_tile_type(target.grid_pos) == DungeonData.TileType.GRASS:
 					dungeon_floor.destroy_grass(target.grid_pos)
 					GameState.game_log("[color=orange]The grass catches fire![/color]")
+				elif dungeon_floor != null:
+					dungeon_floor.ignite_flammable(target.grid_pos)
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
@@ -285,6 +287,8 @@ static func cast_spell_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 	if spell.effect_id == "" and dungeon_floor != null and dungeon_floor.get_tile_type(tile_pos) == DungeonData.TileType.GRASS:
 		dungeon_floor.destroy_grass(tile_pos)
 		GameState.game_log("[color=orange]The grass catches fire![/color]")
+	elif spell.effect_id == "" and dungeon_floor != null:
+		dungeon_floor.ignite_flammable(tile_pos)
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
@@ -442,6 +446,8 @@ static func _resolve_cone_aoe(player: Player, spell: Spell, aim_tile: Vector2i, 
 		tile_set[p] = true
 		if dungeon_floor.get_tile_type(p) == DungeonData.TileType.GRASS:
 			dungeon_floor.destroy_grass(p)
+		else:
+			dungeon_floor.ignite_flammable(p)
 
 	for e: Enemy in dungeon_floor.get_all_enemies():
 		if not is_instance_valid(e) or e.stats.is_dead():
@@ -490,6 +496,15 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, 
 			targets.append(e)
 
 	GameState.game_log("[color=orange]A sphere of fire erupts![/color]")
+	if dungeon_floor != null:
+		for dy: int in range(-r, r + 1):
+			for dx: int in range(-r, r + 1):
+				if dx * dx + dy * dy > r * r:
+					continue
+				var p: Vector2i = center + Vector2i(dx, dy)
+				if not dungeon_floor.has_ranged_los(center, p):
+					continue
+				dungeon_floor.ignite_flammable(p)
 	for e: Enemy in targets:
 		var dc: int = _save_dc(stats)
 		var save: Dictionary = e.resist_check_detailed(dc, false, true, false, false, true)

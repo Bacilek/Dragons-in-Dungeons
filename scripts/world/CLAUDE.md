@@ -113,8 +113,43 @@ Generalized from the old piston-trap-only `_push_entity`. Walks `entity` step-by
 
 ---
 
+## Barrels + flammable props (`_barrels: Dictionary[Vector2i, Dictionary]`)
+Value keys: `sprite: Sprite2D, burning: bool, burn_turns: int`. A solid obstacle prop (1-3 per
+floor, `_spawn_barrels()`, scattered on plain FLOOR tiles like gold piles) that blocks movement —
+`is_walkable()`/`is_walkable_for_enemy()`/`is_walkable_for_companion()` all treat an unburnt
+barrel tile as blocked — until ignited, at which point it burns down and disappears. Modeled on
+Shattered Pixel Dungeon's Sewer-level Barrel (a `Terrain.FLAMABLE` tile, not its own entity/class,
+that resolves to an empty tile once its fire timer runs out).
+
+`dungeon_floor.has_barrel_at(pos) -> bool`
+
+**Ignition is generic** — `dungeon_floor.ignite_flammable(pos: Vector2i) -> bool` is the single
+chokepoint every fire source calls: a barrel OR an OPEN/CLOSED (not locked) door both count as
+flammable (mirrors SPD's `Terrain.FLAMABLE` flag, which covers ordinary doors alongside
+grass/barrels but excludes locked/crystal doors). No-ops if the tile has neither, or is already
+burning. Call sites: Fire Bolt/Fireball/Burning Hands hitting a tile (`spell_effects.gd`, same
+call sites as the existing grass-ignite hook — see `scripts/entities/CLAUDE.md`'s "Wizard
+spellcasting"/"More 1st-level spells"), a thrown **lit** Torch landing on an empty tile
+(`player_throw_tool.gd._throw_weapon()`), and fire spreading from an adjacent burning entity (see
+below).
+
+**Burn timer**: `FLAMMABLE_BURN_TURNS = 3`. `_tick_burning_props()` (connected to
+`TurnManager.player_turn_ending`, same per-real-turn cadence status effects/Witch Bolt use)
+decrements every burning barrel's/door's counter; at 0, the prop is destroyed outright — sprite
+(+ a door's lock icon) freed, dict entry erased, `update_fog()` called once if anything burned
+this tick. A burnt door is **gone permanently** (unlike `close_door()`, which just re-closes it —
+burning removes the door from `_doors` entirely, so the tile stays passable forever, matching
+SPD's door-burns-to-EMBERS terrain change). While burning, the sprite is tinted `FIRE_TINT`
+(orange) as the only visual cue — no separate flame sprite/animation exists yet.
+
+**Fire spreads from a burning entity standing adjacent** (Chebyshev 1) to an unlit barrel/door —
+`_check_burning_ignition_sources()`, called at the end of every `_tick_burning_props()` tick,
+checks `GameState.player_stats.burning_turns > 0` only (enemies don't carry a burning status yet
+— see `scripts/entities/CLAUDE.md`'s "Status effects" table). Covers e.g. a player who caught fire
+from a Fire Trap walking next to a barrel.
+
 ## Doors (`_doors: Dictionary[Vector2i, Dictionary]`)
-Value keys: `is_open: bool, locked: bool, sprite: Sprite2D, tex_open, tex_closed, lock_icon?: Sprite2D`
+Value keys: `is_open: bool, locked: bool, sprite: Sprite2D, tex_open, tex_closed, lock_icon?: Sprite2D, burning?: bool, burn_turns?: int` — the last two only present once `ignite_flammable()` has set a door alight, see "Barrels + flammable props" above.
 
 Auto-opens when an entity steps on the tile; auto-closes when entity leaves. Enemies open and walk through in the same turn. **Locked doors**: enemies cannot open (blocked); player auto-unlocks by walking through. Purple sprite tint + small key icon = locked.
 
@@ -156,6 +191,7 @@ _spawn_enemies()        # pulls from DungeonFloorData.ENEMY_POOL filtered by flo
 _spawn_boss()           # floor % 5 == 0 → picks from DungeonFloorData.BOSS_POOL
 _spawn_items()          # 2-3 random items from DungeonFloorData.ITEM_POOL; calls _build_floor_item()
 _spawn_traps()          # places traps by type
+_spawn_barrels()        # 1-3 flammable obstacle props/floor on plain FLOOR tiles, see "Barrels + flammable props" above; runs right after _spawn_doors()
 _spawn_locked_doors()   # locks 1 door/floor that doesn't block spawn→stairs; places 2-3 rewards inside
 _spawn_pending_chasm_items()  # drains GameState.pending_chasm_items (ammo that fell into a chasm on the PREVIOUS floor) onto random walkable tiles of this floor; called after _spawn_locked_doors(), before _setup_fog()
 _spawn_gold_piles()     # 1-2 Type.GOLD piles of randi_range(5,10)+floor gold on random walkable tiles; appended after _spawn_pending_chasm_items() so every pre-existing _pop_rng draw keeps its position
