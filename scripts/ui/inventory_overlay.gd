@@ -443,10 +443,15 @@ func _fits_slot(item: Item, slot_name: String) -> bool:
 		"armor":                   return item.item_type == Item.Type.ARMOR
 		# Off-hand: a Light melee weapon may only be dual-wielded here if Main Hand also holds
 		# a Light weapon (5e Two-Weapon Fighting rule); non-weapon items are always accepted.
+		# A Torch is a special case (like a Shield) — always allowed here regardless of Main
+		# Hand, and never fires a bonus Off-hand attack since it isn't Light (see
+		# player.gd._try_offhand_attack()'s off_hand.is_light gate).
 		"hand2":
 			if item.item_type != Item.Type.WEAPON:
 				if item.is_shield:
 					return GameState.can_equip_shield(item)
+				return true
+			if item.is_torch:
 				return true
 			var main_hand: Item = GameState.equipped_weapon
 			return not item.is_ranged and item.is_light and main_hand != null and main_hand.is_light
