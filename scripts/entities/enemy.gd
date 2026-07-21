@@ -66,6 +66,9 @@ var _search_path: Array[Vector2i] = []
 var _zzz_label: Label
 var _zzz_tween: Tween
 
+var just_noticed: bool = false  # set the instant an unaware enemy detects the player (stealth-check notice or SLEEPING's true-adjacency backstop) — consumed by the very next _decide_action(), which skips movement/attack that round (shows _notice_label instead) so a freshly-noticed enemy can't also act the same round it noticed. NOT set on the "wake-on-attacked" path (on_disturbed's default via_attack), which still wakes+acts immediately, unchanged.
+var _notice_label: Label
+
 func configure(type_data: Dictionary) -> void:
 	_type = type_data
 	display_name = type_data.get("display_name", "Enemy")
@@ -78,6 +81,7 @@ func _ready() -> void:
 	_setup_animations()
 	_setup_hp_bar()
 	_setup_zzz()
+	_setup_notice_mark()
 	behavior = initial_behavior
 	if behavior == Behavior.SLEEPING:
 		_start_zzz()
@@ -410,13 +414,44 @@ func _stop_zzz() -> void:
 	if is_instance_valid(_zzz_label):
 		_zzz_label.visible = false
 
+func _setup_notice_mark() -> void:
+	_notice_label = Label.new()
+	_notice_label.text = "?"
+	_notice_label.add_theme_font_size_override("font_size", 16)
+	_notice_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.0))
+	_notice_label.position = Vector2(-4, -24)
+	_notice_label.z_index = 10
+	_notice_label.visible = false
+	add_child(_notice_label)
+
+func _show_notice_mark() -> void:
+	if is_instance_valid(_notice_label):
+		_notice_label.visible = true
+
+func _hide_notice_mark() -> void:
+	if is_instance_valid(_notice_label):
+		_notice_label.visible = false
+
 func _wake_up() -> void:
 	behavior = Behavior.CHASING
 	_stop_zzz()
 
+# Shared by every "just spotted the player, hasn't acted on it yet" transition (stealth-check
+# notice, SLEEPING's true-adjacency backstop, STATIONARY/ROAMING's can-see wake): wakes to
+# CHASING and flags just_noticed so the very next _decide_action() burns this round showing the
+# golden "?" instead of moving/attacking — "noticed intent this round, acts on it next round".
+# Deliberately NOT used by the wake-on-attacked path below (that one still acts immediately).
+func _notice_target(source_pos: Vector2i) -> void:
+	_wake_up()
+	last_known_target_pos = source_pos
+	just_noticed = true
+	_show_notice_mark()
+
 # Wake-on-attacked (stealth-and-surprise-attacks-design.md §3.5): call after EVERY player-side
 # attack against this enemy, hit or miss — you swung steel near its head. Only meaningful while
-# still unaware; a CHASING/SEARCHING enemy is already awake, so this is a no-op for them.
+# still unaware; a CHASING/SEARCHING enemy is already awake, so this is a no-op for them. Unlike
+# _notice_target() above, this wakes the enemy WITHOUT the notice freeze — it can act (retaliate)
+# on its very next turn, since being struck is a much bigger tell than merely being spotted.
 func on_disturbed(source_pos: Vector2i) -> void:
 	if behavior in [Behavior.SLEEPING, Behavior.STATIONARY, Behavior.ROAMING]:
 		_wake_up()
@@ -522,6 +557,12 @@ func take_turn() -> void:
 # visuals), returns an intent for _execute_action() to carry out. See docs/architecture/
 # enemy_system_architecture.md §1.
 func _decide_action() -> Dictionary:
+	# Just noticed the player this round (stealth-check notice from the player's own turn, set via
+	# on_disturbed(..., true)/_notice_target()) — burn this round showing the "?" instead of
+	# moving/attacking. Consumed here so it only ever costs the one round right after noticing.
+	if just_noticed:
+		just_noticed = false
+		return {"type": "notice"}
 	var candidates: Array = _get_target_candidates()
 	if candidates.is_empty():
 		return {"type": "wait"}
@@ -558,28 +599,25 @@ func _decide_action() -> Dictionary:
 			# LOS-based deterministic wake is gone — replaced by the player-turn Stealth-vs-
 			# Passive-Perception check (player.gd._resolve_stealth_check()). This is only the
 			# free-wake backstop at true adjacency (stealth-and-surprise-attacks-design.md §3.4):
-			# sneak adjacent, strike first with surprise ADV, THEN it wakes — but lingering
-			# adjacent without attacking costs the surprise on its own next turn.
+			# lingering adjacent without ever having been noticed still wakes it, but — same as
+			# every other notice path — it only notices this round (golden "?"), acting next round.
 			if _chebyshev_to(target) <= 1:
-				_wake_up()
-				last_known_target_pos = target.grid_pos
-				return _act_toward_or_ability(target, can_see)
+				_notice_target(target.grid_pos)
+				return {"type": "notice"}
 			return {"type": "wait"}
 
 		Behavior.STATIONARY:
 			if can_see:
-				last_known_target_pos = target.grid_pos
-				behavior = Behavior.CHASING
-				return _act_toward_or_ability(target, can_see)
+				_notice_target(target.grid_pos)
+				return {"type": "notice"}
 			return {"type": "wait"}
 
 		Behavior.ROAMING:
 			if can_see:
-				last_known_target_pos = target.grid_pos
-				behavior = Behavior.CHASING
 				_roam_path.clear()
 				_roam_target = Vector2i(-1, -1)
-				return _act_toward_or_ability(target, can_see)
+				_notice_target(target.grid_pos)
+				return {"type": "notice"}
 			return {"type": "roam"}
 
 		Behavior.CHASING:
@@ -613,7 +651,14 @@ func _act_toward_or_ability(target: Node, can_see: bool, extra: Dictionary = {})
 # All the tween/animation/await/log side effects, dispatched on intent.type. See docs/
 # architecture/enemy_system_architecture.md §1.
 func _execute_action(intent: Dictionary) -> void:
+	# The "?" marker is a one-round flag — clear it the instant this enemy takes any real action
+	# (the round after noticing), so it never lingers into a turn where the enemy is actually
+	# chasing/attacking. "notice" itself is handled by its own case below (label stays up).
+	if intent.get("type", "wait") != "notice":
+		_hide_notice_mark()
 	match intent.get("type", "wait"):
+		"notice":
+			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		"attack":
 			_attack_target(intent["target"])
 		"act_toward":
