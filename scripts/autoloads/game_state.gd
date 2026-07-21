@@ -1646,6 +1646,11 @@ var player_was_hit_this_turn: bool = false
 # Separate from player_was_hit_this_turn (which specifically means damage landed) because
 # Rage's duration refresh triggers on being attacked at all — see _on_turn_started()'s rage tick.
 var player_attacked_this_turn: bool = false
+# Set true by Enemy._notice_target() whenever a SLEEPING/STATIONARY/ROAMING enemy spots the
+# player (stealth check failed, or the true-adjacency/can-see wake backstops). Read by
+# Player._execute_queued_path()'s chase-to-attack loop to cancel an in-progress auto-chase the
+# instant the target (or any other enemy) notices the player, not just once it actually swings.
+var enemy_noticed_player_this_turn: bool = false
 
 # Synced by player.gd each turn so HUD can display remaining rage turns on the ability slot.
 var rage_turns_remaining: int = 0

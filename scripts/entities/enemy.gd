@@ -546,6 +546,7 @@ func _notice_target(source_pos: Vector2i) -> void:
 	last_known_target_pos = source_pos
 	just_noticed = true
 	_show_notice_mark()
+	GameState.enemy_noticed_player_this_turn = true
 
 # Wake-on-attacked (stealth-and-surprise-attacks-design.md §3.5): call after EVERY player-side
 # attack against this enemy, hit or miss — you swung steel near its head. Only meaningful while

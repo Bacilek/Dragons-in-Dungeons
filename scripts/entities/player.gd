@@ -25,6 +25,12 @@ var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
 var _last_move_dir := Vector2i.ZERO
 var _target_enemy: Enemy = null
+# Snapshot of GameState.player_attacked_this_turn taken in _on_turn_started() BEFORE that
+# function clears it — lets the chase-to-attack loop below see "an enemy attacked me last round"
+# without racing the flag's own reset (see _execute_queued_path()'s chase-interrupt check).
+var _enemy_attacked_last_round: bool = false
+# Same snapshot-before-clear pattern, for GameState.enemy_noticed_player_this_turn.
+var _enemy_noticed_last_round: bool = false
 
 var _prev_dir: Vector2i = Vector2i.ZERO  # direction held in the previous WAITING_FOR_INPUT frame
 var _interrupted: bool = false           # set when enemy seen mid-hold; cleared only on key release
@@ -312,9 +318,14 @@ func _on_turn_started() -> void:
 	# last turn" check (read further up) stays scoped to "last turn" instead of leaking true
 	# forever after the first hit of the run.
 	if not came_from_revert:
+		# Snapshot before clearing — chase-to-attack (_execute_queued_path()) reads this after
+		# the round to know an enemy noticed/attacked the player (hit or miss) mid-chase.
+		_enemy_attacked_last_round = GameState.player_attacked_this_turn
+		_enemy_noticed_last_round = GameState.enemy_noticed_player_this_turn
 		_rage_attacked_this_turn = false
 		GameState.player_was_hit_this_turn = false
 		GameState.player_attacked_this_turn = false
+		GameState.enemy_noticed_player_this_turn = false
 
 	# Short rest in progress — player waits in place
 	if GameState.short_rest_active:
@@ -831,6 +842,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				var enemy_on_tile: Enemy = _dungeon_floor.get_targetable_enemy_at(pending)
 				if enemy_on_tile != null:
 					_target_enemy = enemy_on_tile
+					_enemy_attacked_last_round = false
+					_enemy_noticed_last_round = false
 					_queued_path.clear()
 					if not _path_executing:
 						_execute_queued_path()
@@ -983,6 +996,14 @@ func _execute_queued_path() -> void:
 
 		# ── Enemy-chase mode: target was set by clicking on an enemy ──────
 		if _target_enemy != null:
+			# An enemy noticed or attacked the player (hit or miss) during the round that just
+			# resolved — cancel the auto-chase so a fast-approaching ranged/aware enemy can't
+			# get several free swings in before the player can react and issue a new command.
+			if _enemy_attacked_last_round or _enemy_noticed_last_round:
+				_target_enemy = null
+				var _interrupt_msg: String = "An enemy attacks" if _enemy_attacked_last_round else "An enemy notices you"
+				GameState.game_log("[color=yellow]%s — chase interrupted.[/color]" % _interrupt_msg)
+				break
 			if not is_instance_valid(_target_enemy) or _target_enemy.stats.is_dead():
 				_target_enemy = null
 				break
