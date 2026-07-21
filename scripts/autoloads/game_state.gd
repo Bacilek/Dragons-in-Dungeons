@@ -1318,6 +1318,42 @@ func toggle_versatile_grip() -> void:
 	combat_message.emit("[color=cyan]%s gripped %s-handed.[/color]" % [item.item_name, "two" if item.is_two_handed else "one"])
 	equipment_changed.emit()
 
+# Torch: whether any currently-equipped Torch (Main Hand or Off-hand) is lit — computed live
+# (never cached) so the FOV formula and the Fire-bonus-damage check both stay in sync with
+# equip/unequip/light/burnout without a separate mutable fov bonus field to keep consistent.
+func has_lit_torch_equipped() -> bool:
+	var mh: Item = equipment.get("melee") as Item
+	var oh: Item = equipment.get("hand2") as Item
+	return (mh != null and mh.torch_lit) or (oh != null and oh.torch_lit)
+
+# Returns whichever currently-equipped Item is the lit torch (Main Hand checked first), or null.
+# Used by the status tray to show the icon + turns-remaining tooltip for the buff.
+func lit_torch_item() -> Item:
+	var mh: Item = equipment.get("melee") as Item
+	if mh != null and mh.torch_lit:
+		return mh
+	var oh: Item = equipment.get("hand2") as Item
+	if oh != null and oh.torch_lit:
+		return oh
+	return null
+
+func light_torch(item: Item) -> void:
+	if item == null or item.torch_burnt or item.torch_lit:
+		return
+	item.torch_lit = true
+	item.torch_turns_remaining = 100
+	game_log("You light the torch.")
+	equipment_changed.emit()
+	ability_bar_changed.emit()
+
+func burn_out_torch(item: Item) -> void:
+	item.torch_lit = false
+	item.torch_burnt = true
+	item.item_name = "Burnt Torch"
+	game_log("[color=gray]Your torch burns out.[/color]")
+	equipment_changed.emit()
+	ability_bar_changed.emit()
+
 func recalculate_stats() -> void:
 	var s: Stats = player_stats
 	s.armor = 0

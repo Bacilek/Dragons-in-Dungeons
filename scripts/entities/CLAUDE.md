@@ -331,24 +331,39 @@ Expert's side-step).
   `stealth_total < enemy.passive_perception` (ties favor the player — stays hidden).
 - **`Enemy.passive_perception`**: static DC, see the schema table's `"passive_perception"` row
   above for the authored-vs-derived rule.
-- **On detection**: `enemy.on_disturbed(player.grid_pos)` (wakes SLEEPING/STATIONARY/ROAMING →
-  CHASING, sets `last_known_target_pos`) + a log line
-  (`"<Enemy> [url=stealth:...]notices[/url] you!"`, `stealth:` meta,
-  `TooltipFormatters.fmt_stealth_tooltip()`). **Silent on a non-detection** by default — no floater,
-  no log spam for walking past sleepers. `GameState.debug_show_stealth_checks` (F3 debug panel
-  checkbox, "Show Stealth Checks") makes every roll — pass or fail — print a gray log line with
-  the same tooltip; toggling it never changes the roll or its outcome, visibility only.
+- **On detection**: `enemy._notice_target(player.grid_pos)` (wakes SLEEPING/STATIONARY/ROAMING →
+  CHASING, sets `last_known_target_pos`, AND sets `just_noticed`/shows the "?" marker — see
+  "Notice freeze" below) + a log line (`"<Enemy> [url=stealth:...]notices[/url] you!"`, `stealth:`
+  meta, `TooltipFormatters.fmt_stealth_tooltip()`). **Silent on a non-detection** by default — no
+  floater, no log spam for walking past sleepers. `GameState.debug_show_stealth_checks` (F3 debug
+  panel checkbox, "Show Stealth Checks") makes every roll — pass or fail — print a gray log line
+  with the same tooltip; toggling it never changes the roll or its outcome, visibility only.
   `GameState.god_mode` appends a gray `(Stealth X vs PP Y)` suffix to either log line.
 - **Wake-on-attacked**: `Enemy.on_disturbed(source_pos)` — if `SLEEPING`/`STATIONARY`/`ROAMING`,
-  wakes + records `last_known_target_pos`. Called after every player-side attack against that
-  enemy, **hit or miss**, from `_bump_attack()`, `resolve_opportunity_attack()`,
-  `_resolve_cleave_attack()`, `_resolve_offhand_attack()`, `PlayerRanged.ranged_attack()`,
-  `PlayerThrowTool._throw_weapon()`, and `Companion._attack_enemy()`. Net effect: surprise ADV
-  (Part B) only ever applies to the first attack of an engagement.
-- **SLEEPING's only remaining wake path**: the free-wake tier in `_decide_action()` — Chebyshev
-  distance ≤ 1 to the target wakes it unconditionally, no roll. Lives in `take_turn()` (the
-  enemy's own turn), not the player-turn hook — preserves "sneak adjacent, strike first with
-  surprise ADV, THEN it wakes" while punishing lingering adjacent without attacking.
+  wakes + records `last_known_target_pos`, **without** the notice freeze below (being struck is a
+  much bigger tell than merely being spotted — the enemy can retaliate on its very next turn).
+  Called after every player-side attack against that enemy, **hit or miss**, from `_bump_attack()`,
+  `resolve_opportunity_attack()`, `_resolve_cleave_attack()`, `_resolve_offhand_attack()`,
+  `PlayerRanged.ranged_attack()`, `PlayerThrowTool._throw_weapon()`, and
+  `Companion._attack_enemy()`. Net effect: surprise ADV (Part B) only ever applies to the first
+  attack of an engagement.
+- **Notice freeze — the golden "?"** (Shattered Pixel Dungeon-style): every transition from
+  unaware (SLEEPING/STATIONARY/ROAMING) to CHASING that happens via *noticing* rather than *being
+  attacked* — the stealth-check detection above, SLEEPING's true-adjacency backstop, and
+  STATIONARY/ROAMING's can-see wake, all three now go through the shared `Enemy._notice_target(pos)`
+  helper — sets `just_noticed = true` and shows a golden `"?"` label (`_notice_label`,
+  `_show_notice_mark()`/`_hide_notice_mark()`, same per-enemy-child-Label pattern as `_zzz_label`).
+  `_decide_action()` checks `just_noticed` first, before anything else: if set, it's consumed
+  (cleared) and the enemy's ENTIRE round is spent on a `{"type": "notice"}` intent — no movement,
+  no attack, marker stays up — so a freshly-noticed enemy always gets exactly one free round
+  before it can act, regardless of distance (a far-off ROAMING enemy that spots you across a room
+  also just notices that round rather than immediately closing distance). `_execute_action()`
+  hides the marker the instant any OTHER intent type runs (the following round, when the enemy
+  actually moves/attacks/etc.) — so the "?" is visible for exactly the one round between noticing
+  and acting. SLEEPING's true-adjacency backstop (Chebyshev ≤ 1 in `_decide_action()`, still the
+  final catch-all for "player stayed hidden vs. the stealth roll but is standing right next to a
+  sleeper on ITS turn") now also routes through `_notice_target()` + `"notice"` instead of
+  attacking immediately.
 
 **Part B — Surprise-attack Advantage**: `PlayerVfx.has_advantage(enemy)` (`player.gd:1196`,
 `player_ranged.gd`'s ranged call site) returns true iff the defender is unaware at the moment of
@@ -368,8 +383,8 @@ one-shot on read by `has_advantage()`.
 ## Enemy behavior states
 `SLEEPING → STATIONARY → ROAMING → CHASING → SEARCHING`
 
-**SLEEPING**: shows zzz label. No LOS-based wake of its own anymore — see "Stealth & Surprise Attacks" below. Only free-wake tier: true adjacency (Chebyshev ≤ 1) in `_decide_action()`.
-**ROAMING**: waypoint BFS. `_pick_roam_target()` shuffles `DungeonFloor.get_room_centers()`, picks tile at Chebyshev ≥ 4. Follows `_roam_path: Array[Vector2i]` via `_bfs_to()`. Falls back to `_do_random_step()` if blocked.
+**SLEEPING**: shows zzz label. No LOS-based wake of its own anymore — see "Stealth & Surprise Attacks" below. Only free-wake tier: true adjacency (Chebyshev ≤ 1) in `_decide_action()` — now routes through `_notice_target()` (golden "?", one-round freeze) instead of attacking immediately.
+**ROAMING**: waypoint BFS. `_pick_roam_target()` shuffles `DungeonFloor.get_room_centers()`, picks tile at Chebyshev ≥ 4. Follows `_roam_path: Array[Vector2i]` via `_bfs_to()`. Falls back to `_do_random_step()` if blocked. Spotting the target (`can_see`) also routes through `_notice_target()` — a one-round freeze before it starts actually chasing.
 **CHASING**: follows the selected target directly. Opens doors (sets `door_ambush = true` when stepping onto a door tile it had no prior LOS to the player from — see "Stealth & Surprise Attacks" below). Records `_search_heading` (direction toward target) each turn target is visible.
 **SEARCHING**: entered when a CHASING enemy reaches `last_known_target_pos` without LOS. Searches for 7 turns in `_search_heading` direction (BFS to `_search_target = last_known_pos + heading * 5`). If the target is spotted → CHASING. After 7 turns → ROAMING. Fields: `_search_heading: Vector2i`, `_search_turns_remaining: int`, `_search_target: Vector2i`, `_search_path: Array[Vector2i]`.
 

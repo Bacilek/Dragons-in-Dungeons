@@ -439,6 +439,9 @@ func _update_status_icons() -> void:
 		entries.append({"id": "tactician", "icon_path": GameState.talent_icon_path("battlefield_expert", maxi(1, GameState.get_talent_rank("battlefield_expert"))), "fallback_color": Color(0.3, 0.9, 0.9)})
 	if GameState.psycho_adv_pending:
 		entries.append({"id": "psycho_adv", "icon_path": GameState.talent_icon_path("psycho", maxi(1, GameState.get_talent_rank("psycho"))), "fallback_color": Color(0.9, 0.3, 0.3)})
+	var _lit_torch: Item = GameState.lit_torch_item()
+	if _lit_torch != null:
+		entries.append({"id": "torch", "icon_path": _lit_torch.icon_path, "fallback_color": Color(1.0, 0.55, 0.1)})
 	_status_tray.refresh(entries)
 
 func _on_status_tray_icon_hovered(id: String) -> void:

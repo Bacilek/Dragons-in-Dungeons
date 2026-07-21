@@ -98,7 +98,10 @@ special-cases the title to "Concentrating: &lt;Spell Name&gt;" by reading the id
 static `TITLES` entry — see `scripts/entities/CLAUDE.md`'s "Concentration (generic mechanism)").
 Both pending-ADV flags live on `GameState` (not on `PlayerBaseTalents`, where they used to live)
 specifically so this tray can read them without a live `Player` node reference — matches "HUD only
-reads GameState" above. No `icons/status/` art exists yet — every entry currently renders as a
+reads GameState" above. `torch` (`GameState.lit_torch_item() != null` — icon is that Torch's own `icon_path`, orange
+fallback tint; tooltip text (`status_tooltips.gd`'s `"torch"` case) is dynamic, showing
+`torch_turns_remaining` and whether the Fire-damage bonus applies (Main Hand only) — see
+`scripts/items/CLAUDE.md`'s "Torch"). No `icons/status/` art exists yet — every entry currently renders as a
 tinted placeholder square until real icons are supplied (`unarmored_defense`/`tactician`/
 `psycho_adv`/`concentration` already reuse existing talent/spell icons, so those render properly
 today). Open questions resolved: hover-only tooltip, shared tooltip panel, grow-panel layout.
