@@ -355,7 +355,7 @@ func update_fog(player_pos: Vector2i) -> void:
 	_fov_player_pos = player_pos
 	var stairs_was_known: bool = _explored.get(_data.stairs_pos, false)
 
-	_visible_tiles = _compute_shadowcast(player_pos, FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus)
+	_visible_tiles = _compute_shadowcast(player_pos, FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus + (1 if GameState.has_lit_torch_equipped() else 0))
 
 	# Light cantrip: ends the instant the lit object is no longer on its floor tile (picked up, or
 	# otherwise removed) — checked every fog recompute, same cadence the light itself refreshes.
@@ -820,7 +820,7 @@ func get_visible_enemies() -> Array[Enemy]:
 	var result: Array[Enemy] = []
 	if _player == null:
 		return result
-	var eff_radius: int = FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus
+	var eff_radius: int = FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus + (1 if GameState.has_lit_torch_equipped() else 0)
 	var r2: int = eff_radius * eff_radius
 	for e: Enemy in _enemies:
 		if not is_instance_valid(e):
@@ -1561,6 +1561,7 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.is_shield = d.get("is_shield", false)
 	item.is_finesse = d.get("finesse", false)
 	item.is_light = d.get("light", false)
+	item.is_torch = d.get("torch", false)
 	item.is_reach = d.get("reach", false)
 	item.is_versatile = d.get("versatile", false)
 	item.versatile_die_min = d.get("vmin", 0)

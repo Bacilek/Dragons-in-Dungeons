@@ -39,6 +39,14 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 @export var is_finesse: bool = false      # Finesse: attack/damage modifier uses max(STR, DEX) instead of STR — see CombatMath.finesse_modifier()
 @export var is_light: bool = false        # Light: pairs with a Light Main Hand weapon in the Off-hand slot to attack with both — see player.gd._try_offhand_attack()
 @export var is_reach: bool = false        # Reach: +1 tile melee range — see CombatMath.melee_reach()
+# Torch: click-to-light while equipped (Main Hand or Off-hand) — see GameState.light_torch(). Once
+# lit, burns for 100 turns (torch_turns_remaining), granting +1 FOV in either hand and +1d4 Fire
+# damage on the standard melee swing only while wielded in Main Hand. Reaching 0 permanently sets
+# torch_burnt = true and renames the item "Burnt Torch" — it can never be relit.
+@export var is_torch: bool = false
+@export var torch_lit: bool = false
+@export var torch_burnt: bool = false
+@export var torch_turns_remaining: int = 0
 # If > 0, overrides Stats.base_min/max_damage when this weapon is equipped (e.g. 1d12 Greataxe).
 # recalculate_stats() in GameState applies these instead of base_min/max_damage when non-zero.
 @export var damage_die_min: int = 0
@@ -141,6 +149,10 @@ func to_dict() -> Dictionary:
 		"is_finesse": is_finesse,
 		"is_light": is_light,
 		"is_reach": is_reach,
+		"is_torch": is_torch,
+		"torch_lit": torch_lit,
+		"torch_burnt": torch_burnt,
+		"torch_turns_remaining": torch_turns_remaining,
 		"damage_die_min": damage_die_min,
 		"damage_die_max": damage_die_max,
 		"damage_type": damage_type,
@@ -185,6 +197,10 @@ static func from_dict(d: Dictionary) -> Item:
 	it.is_finesse = bool(d.get("is_finesse", false))
 	it.is_light = bool(d.get("is_light", false))
 	it.is_reach = bool(d.get("is_reach", false))
+	it.is_torch = bool(d.get("is_torch", false))
+	it.torch_lit = bool(d.get("torch_lit", false))
+	it.torch_burnt = bool(d.get("torch_burnt", false))
+	it.torch_turns_remaining = int(d.get("torch_turns_remaining", 0))
 	it.damage_die_min = int(d.get("damage_die_min", 0))
 	it.damage_die_max = int(d.get("damage_die_max", 0))
 	it.damage_type = String(d.get("damage_type", ""))

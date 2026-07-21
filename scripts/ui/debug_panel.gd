@@ -43,6 +43,7 @@ const ALL_ITEMS: Array = [
 	{"name": "Spear",           "type": 0, "src": "weapons", "icon": "weapon_spear.png",                       "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "versatile": true, "die_min": 1, "die_max": 6, "vmin": 1, "vmax": 8, "dmg_type": "Piercing", "mastery": "Sap", "category": "Simple", "thrown": true, "range": 3, "uses_max": 5},
 	{"name": "Handaxe",         "type": 0, "src": "weapons", "icon": "weapon_throwing_axe.png",               "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "light": true, "die_min": 1, "die_max": 6, "dmg_type": "Slashing", "mastery": "Vex", "category": "Simple", "thrown": true, "range": 3, "uses_max": 5},
 	{"name": "Dagger",          "type": 0, "src": "weapons", "icon": "weapon_knife.png",                      "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "finesse": true, "light": true, "die_min": 1, "die_max": 4, "dmg_type": "Piercing", "mastery": "Nick", "category": "Simple", "thrown": true, "range": 3, "uses_max": 5},
+	{"name": "Torch",           "type": 0, "src": "weapons", "icon": "weapon_torch.png",                      "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "desc": "", "light": true, "die_min": 1, "die_max": 4, "dmg_type": "Bludgeoning", "category": "Simple", "torch": true},
 	{"name": "Scroll of Fire Bolt",     "type": 3, "src": "spells", "icon": "fire_bolt.png",      "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Fire Bolt once, then it crumbles to dust.", "scroll_spell": "fire_bolt", "gold": 25},
 	{"name": "Scroll of Ray of Frost",  "type": 3, "src": "spells", "icon": "ray_of_frost.png",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Ray of Frost once, then it crumbles to dust.", "scroll_spell": "ray_of_frost", "gold": 25},
 	{"name": "Scroll of Shocking Grasp","type": 3, "src": "spells", "icon": "shocking_grasp.png", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Shocking Grasp once, then it crumbles to dust.", "scroll_spell": "shocking_grasp", "gold": 25},
@@ -730,6 +731,7 @@ func _on_give_item(d: Dictionary) -> void:
 	item.is_heavy           = d.get("heavy", false)
 	item.is_finesse         = d.get("finesse", false)
 	item.is_light           = d.get("light", false)
+	item.is_torch           = d.get("torch", false)
 	item.is_reach           = d.get("reach", false)
 	item.is_versatile       = d.get("versatile", false)
 	item.versatile_die_min  = d.get("vmin", 0)
