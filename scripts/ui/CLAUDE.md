@@ -406,8 +406,13 @@ render blank (`res://icons/masteries/<name>.png`, none exist) until supplied; th
 frame keeps each button visible/clickable regardless.
 **Selected vs. unselected contrast**: `_refresh()` dims every non-selected slot's `TextureButton.modulate` to `Color(0.55,0.55,0.55)` (selectable) or `Color(0.45,0.45,0.45,0.55)` (locked out at cap) so a known mastery's bright gold tint + thick 3px gold border (vs. the dimmed slots' 2px gray border) reads unambiguously at a glance — previously unselected slots rendered full white, which looked visually indistinguishable from "selected" at a glance.
 
-**Wired to fire twice**: right after class selection (`class_select.gd._on_class_selected()`),
-and again after any completed long rest if the player opts in — `player.gd` spawns
+**Wired to fire three ways**: right after class selection (`class_select.gd._on_class_selected()`),
+again after any completed long rest if the player opts in — `player.gd` spawns
 `mastery_reselect_prompt.gd` (a Yes/No confirm) right after `GameState.long_rest()` finishes;
 choosing "Yes" spawns this picker fresh, letting the player fully re-pick from scratch (subject
-to the same `mastery_cap()`). Never triggered by short rest or floor descent.
+to the same `mastery_cap()`) — and instantly on any level-up that raises `mastery_cap()` itself
+(currently only Barbarian, at levels 4 and 10 — `Stats.mastery_cap()`). `GameState.gain_exp()`
+snapshots `mastery_cap()` before applying the level-up and sets `mastery_learn_pending = true` if
+it grew; `hud.gd._on_player_leveled_up()` spawns this picker right away when that flag is set
+(same "instant pick" treatment as hit dice/spell slots growing on level-up — see root CLAUDE.md's
+"Talent system"). Never triggered by short rest or floor descent.

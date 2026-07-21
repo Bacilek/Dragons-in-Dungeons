@@ -522,6 +522,12 @@ func _on_player_leveled_up(level: int) -> void:
 	if GameState.spell_learn_pending and not GameState.spell_learn_picker_open:
 		var picker = load("res://scripts/ui/spell_learn_picker.gd").new()
 		get_tree().root.add_child(picker)
+	# Mastery cap grew this level-up (e.g. Barbarian hitting level 4/10) — let the player pick
+	# the new slot immediately, same "instant pick" treatment as hit dice/spell slots.
+	if GameState.mastery_learn_pending and not GameState.mastery_picker_open:
+		GameState.mastery_learn_pending = false
+		var mastery_picker = load("res://scripts/ui/mastery_picker.gd").new()
+		get_tree().root.add_child(mastery_picker)
 
 func _on_subclass_choice_required() -> void:
 	# One-time Tier 2 subclass choice (gating boss defeated) — spawn the blocking overlay.

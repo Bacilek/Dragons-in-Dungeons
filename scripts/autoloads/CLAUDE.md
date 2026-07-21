@@ -126,6 +126,7 @@ player_grid_pos: Vector2i    # synced every move
 pending_chasm_items: Array[Item]  # ammo (or any future item) that fell into a chasm mid-shot; drained onto the NEXT floor's random walkable tiles by DungeonFloor._spawn_pending_chasm_items()
 gold: int                    # the wallet (special-rooms-economy-design.md §2, session 7a) — plain int counter like hit_dice
 spell_learn_pending: bool    # Wizard level-up spell-learn picker should be shown (leveled-spells-and-slots-plan.md §4.1)
+mastery_learn_pending: bool  # a level-up raised Stats.mastery_cap() — hud.gd should spawn mastery_picker.gd immediately
 spell_learn_choices: Array[String]  # up to 3 rolled candidate spell ids for that picker
 spell_learn_picker_open: bool       # blocks ALL player input while spell_learn_picker.gd is visible
 spellbook_open: bool                # blocks ALL player input while spellbook_overlay.gd (R key) is visible

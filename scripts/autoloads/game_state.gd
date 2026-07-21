@@ -178,6 +178,11 @@ var spell_learn_picker_open: bool = false    # blocks ALL player input while spe
 var spellbook_open: bool = false             # blocks ALL player input while spellbook_overlay.gd (R key) is visible
 signal spell_slots_changed
 
+# Set on a level-up that raises Stats.mastery_cap() (e.g. Barbarian hitting level 4/10) —
+# hud.gd spawns mastery_picker.gd immediately so the extra slot can be picked on the spot,
+# same "instant pick" treatment as hit dice/spell slots growing on level-up.
+var mastery_learn_pending: bool = false
+
 # Talent system — points earned per level, invested per talent.
 # Points are tier-locked pools: talent_points[tier] holds that tier's unspent points
 # (levels 1-6 → tier 1, 7-12 → tier 2, 13-17 → tier 3, 18-20 → tier 4; see TIER_LEVEL_RANGES).
@@ -320,6 +325,7 @@ func start_new_run() -> void:
 	spell_learn_choices = []
 	spell_learn_picker_open = false
 	spellbook_open = false
+	mastery_learn_pending = false
 	light_source_pos = Vector2i(-1, -1)
 	light_source_item = null
 	talent_points = {1: 0, 2: 0, 3: 0, 4: 0}
@@ -1030,6 +1036,7 @@ func gain_exp(amount: int) -> void:
 	var old_max_hp: int = player_stats.max_hp
 	var old_rage_max: int = player_stats.rage_uses_max
 	var old_max_hit_dice: int = max_hit_dice()
+	var old_mastery_cap: int = player_stats.mastery_cap()
 	var old_slot_max: Dictionary = player_stats.caster.slot_pool.max_slots() if player_stats.caster != null and player_stats.caster.slot_pool != null else {}
 	var leveled_up := player_stats.gain_exp(amount)
 	player_exp_changed.emit(player_stats.experience, player_stats.exp_to_next(), player_stats.character_level)
@@ -1077,6 +1084,8 @@ func gain_exp(amount: int) -> void:
 			player_stats.caster.slot_pool.grant_new_slots_on_levelup(old_slot_max)
 			spell_slots_changed.emit()
 			_roll_spell_learn_choices()
+		if player_stats.mastery_cap() > old_mastery_cap:
+			mastery_learn_pending = true
 		AudioManager.play("level_up")
 		player_leveled_up.emit(player_stats.character_level)
 
