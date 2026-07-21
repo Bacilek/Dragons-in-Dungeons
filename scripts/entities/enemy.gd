@@ -30,9 +30,10 @@ var mind_sliver_penalty_die: bool = false  # Mind Sliver cantrip — the next ch
 var embedded_items: Array[Item] = []  # thrown weapons stuck in a non-lethal hit (PlayerThrowTool._throw_weapon) — dropped at 100% chance wherever/whenever this enemy eventually dies, see die() override below
 var escape_turns: int = 0    # Nimble Escape trait (Goblin) — random 1-5 turns fleeing escape_from, set in on_melee_hit()
 var escape_from: Node = null  # entity being fled from; always is_instance_valid()-checked before use (may die/despawn mid-flee)
-var _thrown_weapon_used: bool = false        # Goblin Minion's one-shot thrown Dagger (pool "thrown_weapon") — true once used; _attack_target() then dispatches to "unarmed_fallback" instead of the normal multiattack
-var _thrown_weapon_lodged_target: Node = null  # who the thrown Dagger was aimed at, for the delayed drop-on-death check in die()
-var _thrown_weapon_lodged_item: Item = null    # the actual Dagger Item to place on the floor if the drop chance succeeds
+var _thrown_weapon_used: bool = false        # a one-shot thrown weapon (pool "thrown_weapon") — true once used; _attack_target() then dispatches to "unarmed_fallback" (a bare-handed Fist strike) instead of the normal multiattack — Goblin Minion's Dagger and Orc Warrior's Javelin both work this way
+var _thrown_weapon_lodged_target: Node = null  # who the thrown weapon was aimed at, for the delayed drop-on-death check in die()
+var _thrown_weapon_lodged_item: Item = null    # the actual Item to place on the floor if the drop chance succeeds
+var _thrown_weapon_lodged_chance: float = 0.5  # per-enemy drop chance (pool "thrown_weapon"'s "drop_chance", default 0.5 matches Goblin Minion's original hardcoded rate)
 var _invis_turns: int = 0                # Invisibility ability (Imp) — turns remaining; hides sprite (visible=false) + skipped by DungeonFloor.get_targetable_enemy_at()
 var _invis_cooldown_remaining: int = 0   # turns until Invisibility can be cast again (pool "invisibility" -> "cooldown")
 const SHAPE_SHIFT_FORMS: PackedStringArray = ["rat", "raven", "spider"]
@@ -456,12 +457,13 @@ func die() -> void:
 		for it: Item in embedded_items:
 			_dungeon_floor.place_item_on_floor(grid_pos, it)
 		embedded_items.clear()
-	# Goblin Minion's thrown Dagger: queued for a 50% chance to be found near whoever it was thrown
-	# at, resolved on the player's next turn (see DungeonFloor.queue_dagger_drop()/
-	# _resolve_pending_dagger_drops()) — not dropped here directly, since "the turn after it dies"
-	# is a deliberate one-turn delay, not an instant drop.
+	# A one-shot thrown weapon (Goblin Minion's Dagger, Orc Warrior's Javelin), whether it hit or
+	# missed: queued for a per-enemy drop chance to be found near whoever it was thrown at,
+	# resolved on the player's next turn (see DungeonFloor.queue_thrown_weapon_drop()/
+	# _resolve_pending_thrown_weapon_drops()) — not dropped here directly, since "the turn after it
+	# dies" is a deliberate one-turn delay, not an instant drop.
 	if _thrown_weapon_lodged_target != null and is_instance_valid(_thrown_weapon_lodged_target) and _dungeon_floor != null:
-		_dungeon_floor.queue_dagger_drop(_thrown_weapon_lodged_target, _thrown_weapon_lodged_item)
+		_dungeon_floor.queue_thrown_weapon_drop(_thrown_weapon_lodged_target, _thrown_weapon_lodged_item, _thrown_weapon_lodged_chance)
 	super.die()
 
 func _setup_animations() -> void:
@@ -682,17 +684,19 @@ func _decide_action() -> Dictionary:
 		escape_turns -= 1
 		return {"type": "flee", "target": escape_from if is_instance_valid(escape_from) else target}
 
-	# Goblin Minion — one-shot thrown Dagger (pool "thrown_weapon"): once not actively escaping (the
-	# check above already guarantees escape_turns <= 0 here), if the target isn't adjacent, throw
-	# the Dagger at range instead of closing to melee. Doesn't need movement budget, so this is
-	# checked before the rooted/frozen/speed-gate movement restrictions below — a rooted or
-	# speed-gated goblin can still throw.
+	# One-shot thrown weapon (pool "thrown_weapon" — Goblin Minion's Dagger, Orc Warrior's Javelin):
+	# once not actively escaping (the check above already guarantees escape_turns <= 0 here), if
+	# the target isn't adjacent, throw the weapon at range instead of closing to melee. Doesn't
+	# need movement budget, so this is checked before the rooted/frozen/speed-gate movement
+	# restrictions below — a rooted or speed-gated enemy can still throw. Generic — keyed purely
+	# on the pool key's presence, not on enemy_id, so any enemy can opt in by authoring the same
+	# two dict keys (see "thrown_weapon"/"unarmed_fallback" in the Enemy D&D stat-block schema).
 	var thrown_wpn: Dictionary = _type.get("thrown_weapon", {})
 	if not thrown_wpn.is_empty() and not _thrown_weapon_used:
 		var throw_range: int = int(thrown_wpn.get("range", 4))
 		var dist: int = _chebyshev_to(target)
 		if dist >= 2 and dist <= throw_range and _dungeon_floor.has_ranged_los(grid_pos, target.grid_pos):
-			return {"type": "throw_dagger", "target": target, "weapon": thrown_wpn}
+			return {"type": "throw_weapon", "target": target, "weapon": thrown_wpn}
 
 	# Imp — Invisibility (pool "invisibility"): while pursuing (CHASING/SEARCHING) and not yet
 	# adjacent, casts Invisibility on itself instead of closing distance, once the cooldown is
@@ -803,8 +807,8 @@ func _execute_action(intent: Dictionary) -> void:
 				var flee_target: Node = intent["target"]
 				if is_instance_valid(flee_target) and not flee_target.stats.is_dead() and _in_attack_range(flee_target):
 					_attack_target(flee_target)
-		"throw_dagger":
-			_execute_dagger_throw(intent["target"], intent["weapon"])
+		"throw_weapon":
+			_execute_thrown_weapon_attack(intent["target"], intent["weapon"])
 			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		"cast_invisibility":
 			_execute_cast_invisibility(intent["config"])
@@ -872,9 +876,9 @@ func _attack_target(target: Node) -> void:
 	if _invis_turns > 0:
 		_end_invisibility()
 		GameState.game_log("[color=purple]%s reappears![/color]" % display_name)
-	# Goblin Minion: once its one-shot thrown Dagger is used, every attack reverts to an unarmed
-	# Fist strike (pool "unarmed_fallback") instead of the normal multiattack — the Dagger is gone,
-	# thrown at range earlier this fight.
+	# Once a one-shot thrown weapon is used (Goblin Minion's Dagger, Orc Warrior's Javelin), every
+	# attack reverts to an unarmed Fist strike (pool "unarmed_fallback") instead of the normal
+	# multiattack — the weapon is gone, thrown at range earlier this fight.
 	var fallback: Dictionary = _type.get("unarmed_fallback", {})
 	if _thrown_weapon_used and not fallback.is_empty():
 		if target is Player:
@@ -1041,13 +1045,17 @@ func _flee_from(from_entity: Node) -> bool:
 	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 	return false
 
-# Goblin Minion's one-shot thrown Dagger — resolves as a normal attack but forces Disadvantage via
-# _attack_player()/_attack_companion()'s `long_shot` param (reused here purely for its Disadvantage
-# side effect, not its usual normal/long-range meaning). Marks _thrown_weapon_used so this only
-# ever fires once per Goblin Minion's life — _attack_target() reverts every attack after this to
-# the "unarmed_fallback" pool stats. Also registers the target with DungeonFloor.queue_dagger_drop()
-# so a 50% chance to recover the Dagger resolves the turn after THIS goblin dies (see die() below).
-func _execute_dagger_throw(target: Node, wpn: Dictionary) -> void:
+# One-shot thrown weapon (Goblin Minion's Dagger, Orc Warrior's Javelin) — resolves as a normal
+# attack but forces Disadvantage via _attack_player()/_attack_companion()'s `long_shot` param
+# (reused here purely for its Disadvantage side effect, not its usual normal/long-range meaning).
+# Marks _thrown_weapon_used so this only ever fires once per this enemy's life — _attack_target()
+# reverts every subsequent attack to "unarmed_fallback" (both Goblin Minion and Orc Warrior author
+# one — a bare-handed Fist strike either way). Registers the target with
+# DungeonFloor.queue_thrown_weapon_drop() unconditionally, regardless of hit or miss (matches
+# Goblin Minion's original behavior exactly) — a per-enemy chance (pool "drop_chance", default 0.5)
+# to recover the weapon resolves the turn after THIS enemy dies (see die() below), dropped wherever
+# the target stands at that time.
+func _execute_thrown_weapon_attack(target: Node, wpn: Dictionary) -> void:
 	_thrown_weapon_used = true
 	var sub: Dictionary = {
 		"name": wpn.get("name", "Dagger"),
@@ -1061,29 +1069,34 @@ func _execute_dagger_throw(target: Node, wpn: Dictionary) -> void:
 		_attack_companion(target, sub, true)
 	if _dungeon_floor != null and is_instance_valid(target):
 		_thrown_weapon_lodged_target = target
-		_thrown_weapon_lodged_item = _build_thrown_dagger_item()
+		_thrown_weapon_lodged_item = _build_thrown_weapon_item(wpn)
+		_thrown_weapon_lodged_chance = float(wpn.get("drop_chance", 0.5))
 
-# A plain pickupable Dagger Item matching DungeonFloorData.ITEM_POOL's own "Dagger" entry exactly
-# (Simple, Finesse, Light, Thrown, 1d4 Piercing, Nick mastery) — NOT built from the enemy's own
-# "thrown_weapon" dmg_min/dmg_max (those are the enemy's already-ability-mod-inflated attack
-# numbers, not the raw weapon's die), since this is meant to be the same ordinary Dagger a player
-# could otherwise find or buy.
-func _build_thrown_dagger_item() -> Item:
+# A plain pickupable weapon Item, built generically from the "thrown_weapon" pool dict — NOT from
+# the enemy's own dmg_min/dmg_max (those are the enemy's already-ability-mod-inflated attack
+# numbers, not the raw weapon's die). Every field has a Dagger-shaped default so Goblin Minion's
+# original pool entry (which doesn't set any of these new keys) reproduces its exact old output —
+# see the field-by-field defaults below, each matching what the old hardcoded Dagger builder set.
+# A new consumer (Orc Warrior's Javelin, or any future one) is expected to set every field itself
+# rather than lean on these fallbacks. "random_uses" (default false) picks between an already-full
+# weapon (Goblin's Dagger) and a randomly-worn-down one (Orc's Javelin — "already used").
+func _build_thrown_weapon_item(wpn: Dictionary) -> Item:
 	var it := Item.new()
-	it.item_name = "Dagger"
+	it.item_name = wpn.get("name", "Dagger")
 	it.item_type = Item.Type.WEAPON
-	it.icon_path = DungeonFloorData.WEAPONS_PATH + "weapon_knife.png"
-	it.damage_die_min = 1
-	it.damage_die_max = 4
-	it.damage_type = "Piercing"
-	it.weapon_category = "Simple"
-	it.is_finesse = true
-	it.is_light = true
+	it.icon_path = DungeonFloorData.WEAPONS_PATH + String(wpn.get("icon", "weapon_knife.png"))
+	it.damage_die_min = int(wpn.get("drop_die_min", 1))
+	it.damage_die_max = int(wpn.get("drop_die_max", 4))
+	it.damage_type = wpn.get("damage_type", "Piercing")
+	it.weapon_category = wpn.get("weapon_category", "Simple")
+	it.is_finesse = bool(wpn.get("is_finesse", true))
+	it.is_light = bool(wpn.get("is_light", true))
 	it.is_thrown = true
-	it.range = 3
-	it.uses_max = 5
-	it.uses_remaining = 5
-	it.weapon_mastery = "Nick"
+	it.range = int(wpn.get("range", 3))
+	it.weapon_mastery = wpn.get("weapon_mastery", "Nick")
+	var uses_max: int = int(wpn.get("drop_uses_max", 5))
+	it.uses_max = uses_max
+	it.uses_remaining = Rng.range_i(1, uses_max) if bool(wpn.get("random_uses", false)) else uses_max
 	return it
 
 # Imp's Invisibility ability (pool "invisibility": {"cooldown", "duration"}) — the enemy-side

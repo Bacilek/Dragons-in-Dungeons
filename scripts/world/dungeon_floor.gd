@@ -81,7 +81,7 @@ func _ready() -> void:
 	# call — refresh immediately so the glow sprite/lit tiles disappear right away instead of
 	# lingering until the player's next move.
 	GameState.light_source_changed.connect(func() -> void: update_fog(_fov_player_pos))
-	TurnManager.player_turn_started.connect(_resolve_pending_dagger_drops)
+	TurnManager.player_turn_started.connect(_resolve_pending_thrown_weapon_drops)
 
 func _on_debug_jump_floor(_n: int) -> void:
 	_load_floor()
@@ -1913,24 +1913,26 @@ func maybe_drop_enemy_gold(enemy: Enemy) -> void:
 	var amount: int = Rng.range_i(1, 4) + GameState.current_floor / 2
 	place_item_on_floor(enemy.grid_pos, _make_gold_item(amount))
 
-# Goblin Minion's thrown Dagger: queued by Enemy.die() when that goblin had a Dagger lodged near a
-# target, resolved one player turn later (via TurnManager.player_turn_started, connected in
-# _ready()) — a 50% chance to actually find it, dropped at wherever the target currently stands
-# (not the goblin's own death tile). Deliberately a one-turn delay, not an instant drop, per spec
-# ("the turn after goblin dies").
-var _pending_dagger_drops: Array[Dictionary] = []
+# A one-shot thrown weapon (Goblin Minion's Dagger, Orc Warrior's Javelin, whether the throw
+# landed or missed — both are queued unconditionally, matching Goblin Minion's original behavior):
+# queued by Enemy.die() when that enemy had one lodged near a target, resolved one player turn
+# later (via TurnManager.player_turn_started, connected in _ready()) — a per-enemy chance to
+# actually find it (both Goblin's Dagger and Orc's Javelin default to 50%), dropped at wherever
+# the target currently stands (not the thrower's own death tile). Deliberately a one-turn delay,
+# not an instant drop, per the original spec ("the turn after goblin dies").
+var _pending_thrown_weapon_drops: Array[Dictionary] = []
 
-func queue_dagger_drop(target: Node, item: Item) -> void:
-	_pending_dagger_drops.append({"target": target, "item": item})
+func queue_thrown_weapon_drop(target: Node, item: Item, chance: float = 0.5) -> void:
+	_pending_thrown_weapon_drops.append({"target": target, "item": item, "chance": chance})
 
-func _resolve_pending_dagger_drops() -> void:
-	if _pending_dagger_drops.is_empty():
+func _resolve_pending_thrown_weapon_drops() -> void:
+	if _pending_thrown_weapon_drops.is_empty():
 		return
-	for entry: Dictionary in _pending_dagger_drops:
+	for entry: Dictionary in _pending_thrown_weapon_drops:
 		var target: Node = entry["target"]
-		if is_instance_valid(target) and Rng.chance(0.5):
+		if is_instance_valid(target) and Rng.chance(float(entry.get("chance", 0.5))):
 			place_item_on_floor(target.grid_pos, entry["item"])
-	_pending_dagger_drops.clear()
+	_pending_thrown_weapon_drops.clear()
 
 func _spawn_locked_doors() -> void:
 	if _doors.is_empty():

@@ -102,11 +102,10 @@ const ENEMY_POOL: Array = [
 	# attack_profile's enemy-wide "dex" default. Flat 1 Bludgeoning damage (1 + STR mod -1, floored
 	# at 1 — pre-baked into dmg_min/dmg_max like every other authored attack, not computed at
 	# runtime) — "can't go under 1" per spec.
-	# Recovering the thrown Dagger: DungeonFloor.queue_dagger_drop()/Enemy.die() — 50% chance to
-	# find it (dropped at whoever it was thrown at) resolved on the player's next turn after THIS
-	# goblin dies, whether or not the throw actually landed (simplification — _attack_player()/
-	# _attack_companion() don't return their hit result, so gating strictly on a landed hit would
-	# need a broader refactor of both; not attempted for one enemy's flavor mechanic).
+	# Recovering the thrown Dagger: DungeonFloor.queue_thrown_weapon_drop()/Enemy.die() — 50%
+	# chance (this pool entry's default "drop_chance") to find it (dropped at whoever it was
+	# thrown at) resolved on the player's next turn after THIS goblin dies, whether or not the
+	# throw actually landed (same generic mechanism Orc Warrior's Javelin below reuses).
 	{"enemy_id": "goblin_minion", "display_name": "Goblin Minion", "sprite": "goblin", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 3,  "hp": 7,  "hp_per_floor": 1, "dmg_min": 3, "dmg_max": 6, "armor": 0, "ac": 12, "exp": 4,
 	 "cr": 0.125, "creature_type": "Fey",
 	 "mods": {"str": -1, "dex": 2, "con": 0, "int": 0, "wis": -1, "cha": -1},
@@ -124,11 +123,17 @@ const ENEMY_POOL: Array = [
 	# Greataxe: +5 to hit (STR+prof — the default melee attack_stat, no "attack_profile" override
 	# needed), reach 1, 1d12+3 Slashing — single-entry multiattack sub-attack for the real damage
 	# type (same pattern as Skeleton's Shortsword above).
-	# Javelin (our Spear item's numbers): +5 to hit (STR — abilities share _attack_bonus() with the
-	# top-level stats, so it's STR here too, not the ranged-default DEX), range 3 (matches
-	# ITEM_POOL's Spear "range": 3 — "make it our spear"), 1d6+3 Piercing — an uncapped "abilities"
-	# entry, picked over the Greataxe approach whenever not yet adjacent (same snipe-then-melee
-	# dispatch as Skeleton's Shortbow, just re-used for a thrown weapon instead of a bow).
+	# Javelin (pool "thrown_weapon"/"unarmed_fallback", one-shot per life — the exact same generic
+	# mechanism as Goblin Minion's Dagger above, just re-authored with Javelin/Fists numbers): +5 to
+	# hit (STR, same as the Greataxe — no "attack_stat" override needed), range 3, 1d6+3 Piercing,
+	# rolled with Disadvantage (reuses _attack_player()/_attack_companion()'s `long_shot` param).
+	# Whenever NOT yet adjacent, thrown once instead of closing to melee; once gone, every attack
+	# after this reverts to an unarmed Fist strike ("unarmed_fallback": flat 4 Bludgeoning — "1 +
+	# STR mod", Orc's STR mod is +3) — Enemy._attack_target()'s dispatch, same as Goblin's Fists.
+	# Recovery: 50% chance (this pool entry's default "drop_chance", same as Goblin's Dagger) to
+	# find it wherever the target stands when this Orc eventually dies. "random_uses": true — the
+	# recovered Javelin is already partially worn down (a random 1 to "drop_uses_max" uses left),
+	# not pristine — the one difference from Goblin's Dagger, which drops fully intact.
 	# Aggressive trait: while it can see its target, gets +1 movement step this turn (Enemy._act_toward()'s
 	# bonus_moves param, wired from _execute_action()'s "act_toward" case whenever _has_trait("aggressive")
 	# and the target is visible) — covers "move + move" (still out of range after the bonus step) and
@@ -143,7 +148,10 @@ const ENEMY_POOL: Array = [
 	 "passive_perception": 10,
 	 "traits": [{"id": "aggressive"}],
 	 "multiattack": [{"name": "Greataxe", "count": 1, "dmg_min": 4, "dmg_max": 15, "damage_type": "Slashing"}],
-	 "abilities": [{"id": "orc_javelin", "name": "Javelin", "range": 3, "dmg_min": 4, "dmg_max": 9, "damage_type": "Piercing"}]},
+	 "thrown_weapon": {"name": "Javelin", "range": 3, "dmg_min": 4, "dmg_max": 9, "damage_type": "Piercing",
+		"icon": "weapon_spear.png", "drop_die_min": 1, "drop_die_max": 6, "weapon_category": "Simple",
+		"is_finesse": false, "is_light": false, "weapon_mastery": "", "drop_uses_max": 5, "random_uses": true},
+	 "unarmed_fallback": {"name": "Fists", "dmg_min": 4, "dmg_max": 4, "damage_type": "Bludgeoning", "attack_stat": "str"}},
 	# Goblin Warrior — Small Fey, CE, CR 1/4. HP 10, AC 15 (natural armor — no shield).
 	# STR 8 (-1) DEX 15 (+2) CON 10 (+0) INT 10 (+0) WIS 8 (-1) CHA 8 (-1). Speed 1 (default).
 	# Skills: Stealth +6 — flavor only, no mechanical consumer yet (this codebase's Stealth system
