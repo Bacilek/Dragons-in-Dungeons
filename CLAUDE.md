@@ -113,12 +113,14 @@ with real D&D 2024 spell slots are both implemented.** Leveled spells: `Standard
 level-up "pick 1 of 3" spellbook-growth picker (`scripts/ui/spell_learn_picker.gd`), scroll-taught
 spells, and an **R-key Spellbook overlay** (`scripts/ui/spellbook_overlay.gd`) — level tabs,
 hover description, click-to-prepare, drag-and-drop onto a specific ability-bar slot, bottom-right
-"X / Y prepared" counter. 11 leveled spells (Magic Missile, Shield, Mage Armor, Misty Step, Fireball,
+"X / Y prepared" counter. 12 leveled spells (Magic Missile, Shield, Mage Armor, Misty Step, Fireball,
 Chromatic Orb, Burning Hands, Witch Bolt — the last 3 add a leveled ATTACK_ROLL path with a
 one-shot leap-on-doubles mechanic, a directional cone AoE shape, and a second Concentration DoT
 effect alongside Blade Ward, respectively — plus Expeditious Retreat, False Life, Fog Cloud: a
 third/fourth Concentration effect (a free-move-once-per-turn buff and a Blinded status zone
-readable by both player- and enemy-side attack rolls) and a flat Temp HP grant). Full
+readable by both player- and enemy-side attack rolls) and a flat Temp HP grant — plus Invisibility,
+a NON-Concentration touch/self buff that makes enemies lose track of the caster entirely, ending
+early on attacking/casting; see `scripts/entities/CLAUDE.md`'s "Invisibility" section). Full
 Concentration support for Blade Ward/Witch Bolt/Expeditious Retreat/Fog Cloud (one slot,
 `Stats.concentration_spell_id`), no reactions, no line/cube AoE (sphere + cone
 only), no upcast slot-level picker (always casts at the cheapest available slot) — see

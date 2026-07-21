@@ -21,6 +21,8 @@ dungeon_floor.has_ranged_los(p1, p2) -> bool                # permissive: blocks
 dungeon_floor.get_room_centers() -> Array[Vector2i]         # for enemy roam targets
 dungeon_floor.get_visible_enemies() -> Array[Enemy]         # enemies in current FOV
 dungeon_floor.get_all_enemies() -> Array[Enemy]             # all enemies (for companion targeting)
+dungeon_floor.get_enemy_at(pos) -> Enemy                    # unfiltered — bump-into-move detection must keep using this one
+dungeon_floor.get_targetable_enemy_at(pos) -> Enemy         # null for an Invisible enemy — every DIRECT click-target resolution uses this instead (see scripts/entities/CLAUDE.md's "Invisibility")
 # Companion system:
 dungeon_floor.spawn_companion(companion: Companion, pos: Vector2i)
 dungeon_floor.remove_companion(companion: Companion)
@@ -179,6 +181,9 @@ Gold piles are ordinary floor items of `Item.Type.GOLD` whose `gold_value` IS th
 - **Floor scatter** — `_spawn_gold_piles()` (see spawn list above, `_pop_rng`).
 - **Enemy drops** — `maybe_drop_enemy_gold(enemy)`: 30% chance (`Rng.chance`, gameplay stream — kill-time randomness, same split as `_roll_boss_loot_item()`) of `Rng.range_i(1,4) + floor/2` gold at the death tile. Called from `Enemy.die()` (the single chokepoint every death site ends with, same reasoning as `embedded_items`); no-ops for bosses.
 - **Boss kill** — `drop_boss_loot()` additionally places a guaranteed `20 + 5 × floor` pile alongside the potion.
+
+## Pending thrown-weapon drops (Goblin Minion, Orc Warrior)
+`DungeonFloor._pending_thrown_weapon_drops: Array[Dictionary]` (`{"target": Node, "item": Item, "chance": float}`) + `queue_thrown_weapon_drop(target, item, chance: float = 0.5)` + `_resolve_pending_thrown_weapon_drops()` (connected to `TurnManager.player_turn_started` in `_ready()`). A generic mechanism (`scripts/entities/CLAUDE.md`'s "Enemy D&D stat-block schema" — `"thrown_weapon"`/`"unarmed_fallback"` pool keys), used by both Goblin Minion's one-shot thrown Dagger and Orc Warrior's one-shot thrown Javelin: queues an entry in `Enemy.die()` when that enemy had a weapon lodged near a target; resolved on the player's very next turn — a per-enemy chance (`Rng.chance`, gameplay stream — both currently default to 50%) to drop a normal pickupable `Item` at the target's current tile, then the queue is cleared regardless of outcome (one-shot check, not a retry-every-turn poll).
 Pickup: `PlayerActions.check_pickup()` routes GOLD items into `GameState.add_gold()` (one coalesced "Picked up N gold." log line per tile stack) — gold never occupies an inventory slot. `_build_floor_item()`/`_roll_boss_loot_item()` also read a `"gold"` pool key into `Item.gold_value` (base shop price for ordinary items — see `scripts/items/CLAUDE.md`).
 
 ---

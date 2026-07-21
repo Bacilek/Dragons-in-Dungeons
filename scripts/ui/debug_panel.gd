@@ -63,6 +63,7 @@ const ALL_ITEMS: Array = [
 	{"name": "Scroll of Expeditious Retreat", "type": 3, "src": "spells", "icon": "expeditious_retreat.png", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Expeditious Retreat once, then it crumbles to dust.", "scroll_spell": "expeditious_retreat", "gold": 60},
 	{"name": "Scroll of False Life",   "type": 3, "src": "spells", "icon": "false_life.png",    "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts False Life once, then it crumbles to dust.", "scroll_spell": "false_life", "gold": 60},
 	{"name": "Scroll of Fog Cloud",    "type": 3, "src": "spells", "icon": "fog_cloud.png",     "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Fog Cloud once, then it crumbles to dust.", "scroll_spell": "fog_cloud", "gold": 60},
+	{"name": "Scroll of Invisibility", "type": 3, "src": "spells", "icon": "invisibility.png", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Invisibility once, then it crumbles to dust.", "scroll_spell": "invisibility", "gold": 100},
 ]
 
 var _main_panel:    Panel

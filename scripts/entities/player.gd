@@ -2,7 +2,7 @@ class_name Player
 extends Entity
 
 const KNIGHT_PATH := "res://sprites/characters/"
-const UNDEAD_NAMES: Array = ["Zombie", "Goblin", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
+const UNDEAD_NAMES: Array = ["Zombie", "Goblin Warrior", "Goblin Archer", "Goblin Minion", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
 
 var _dungeon_floor: Node
 
@@ -214,6 +214,15 @@ func _on_turn_started() -> void:
 					stats.concentration_spell_id = ""
 				GameState.clear_fog_cloud()
 				GameState.game_log("[color=gray]The fog cloud dissipates.[/color]")
+		# Invisibility: 100-turn duration, ticked once per real turn. Usually already ended earlier
+		# this same turn transition via _resolve_stealth_check()'s attack/cast check (which runs
+		# first, from _on_turn_ending()) — this decrement is a no-op whenever that already zeroed
+		# it, and only matters for the "never attacked, just wore off" case.
+		if stats.invisibility_turns > 0:
+			stats.invisibility_turns -= 1
+			if stats.invisibility_turns <= 0:
+				GameState.game_log("[color=gray]You fade back into view.[/color]")
+				_update_invisibility_visual()
 		# Torch: 100-turn duration per lit torch, ticked once per real turn — regardless of
 		# where it currently is (equipped, quickbar/bag, floor, or embedded in an enemy). Equipped
 		# slots + quickbar/bag are swept here (GameState-only data); floor items and enemy-embedded
@@ -387,6 +396,16 @@ func _resolve_stealth_check() -> void:
 	var stillness: bool = GameState.stealth_check_stillness
 	GameState.stealth_check_skip = false
 	GameState.stealth_check_stillness = false
+	# Invisibility ends the instant an attack or spell-cast turn happens (5e RAW) — `skip` IS
+	# exactly that same "this turn was an attack/spell-cast" signal every attack/cast call site
+	# already sets right before its own begin_player_action() call.
+	if skip and stats.invisibility_turns > 0:
+		if stats.invisibility_just_cast:
+			stats.invisibility_just_cast = false
+		else:
+			stats.invisibility_turns = 0
+			GameState.game_log("[color=purple]Your Invisibility ends.[/color]")
+			_update_invisibility_visual()
 	if skip or GameState.noclip or _dungeon_floor == null:
 		return
 	var observers: Array[Enemy] = []
@@ -434,6 +453,11 @@ func _resolve_stealth_check() -> void:
 			GameState.game_log("[color=tomato]%s[/color] [url=%s]notices[/url] you!%s" % [e.display_name, stealth_meta, god_suffix])
 		elif GameState.debug_show_stealth_checks:
 			GameState.game_log("[color=gray][url=%s]Player vs %s: stealth check (not noticed)[/url]%s[/color]" % [stealth_meta, e.display_name, god_suffix])
+
+# Purely cosmetic — the actual "can't be seen" mechanic is Enemy._can_see_entity()'s invisibility
+# check, not this. Translucent tint so the PLAYER can still tell their own state at a glance.
+func _update_invisibility_visual() -> void:
+	$AnimatedSprite2D.modulate.a = 0.4 if stats.invisibility_turns > 0 else 1.0
 
 func _setup_animations() -> void:
 	var char_name: String
@@ -533,7 +557,7 @@ func _update_hover_indicator() -> void:
 		return
 	var world_mouse: Vector2 = get_global_mouse_position()
 	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
-	var enemy: Enemy = _dungeon_floor.get_enemy_at(tile)
+	var enemy: Enemy = _dungeon_floor.get_targetable_enemy_at(tile)
 	if enemy == null or not is_instance_valid(enemy):
 		_hover_indicator.visible = false
 		return
@@ -798,13 +822,13 @@ func _unhandled_input(event: InputEvent) -> void:
 					if not _dungeon_floor.has_ranged_los(grid_pos, pending):
 						GameState.game_log("[color=gray]No clear shot to target.[/color]")
 						return
-					var enemy_shift: Enemy = _dungeon_floor.get_enemy_at(pending)
+					var enemy_shift: Enemy = _dungeon_floor.get_targetable_enemy_at(pending)
 					if enemy_shift != null:
 						_ranged.ranged_attack(enemy_shift)
 					else:
 						_ranged.ranged_attack_tile(pending)
 					return
-				var enemy_on_tile: Enemy = _dungeon_floor.get_enemy_at(pending)
+				var enemy_on_tile: Enemy = _dungeon_floor.get_targetable_enemy_at(pending)
 				if enemy_on_tile != null:
 					_target_enemy = enemy_on_tile
 					_queued_path.clear()
@@ -870,7 +894,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
 				var rank_h: int = GameState.get_talent_rank("grip_of_the_forest")
 				var hook_range: int = [0, 3, 4, 5][mini(rank_h, 3)]
-				var target_enemy: Enemy = _dungeon_floor.get_enemy_at(clicked)
+				var target_enemy: Enemy = _dungeon_floor.get_targetable_enemy_at(clicked)
 				if target_enemy == null:
 					GameState.game_log("[color=gray]Grip of the Forest: no target there.[/color]")
 				else:
@@ -887,7 +911,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _berserker.frenzy_mode_active:
 			_berserker.frenzy_mode_active = false
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
-				var frenzy_target: Enemy = _dungeon_floor.get_enemy_at(clicked)
+				var frenzy_target: Enemy = _dungeon_floor.get_targetable_enemy_at(clicked)
 				if frenzy_target == null:
 					GameState.game_log("[color=gray]Frenzy: no target there.[/color]")
 				else:
@@ -902,7 +926,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _scarred_warrior.limit_break_mode_active:
 			_scarred_warrior.limit_break_mode_active = false
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
-				var lb_target: Enemy = _dungeon_floor.get_enemy_at(clicked)
+				var lb_target: Enemy = _dungeon_floor.get_targetable_enemy_at(clicked)
 				if lb_target == null:
 					GameState.game_log("[color=gray]Limit Break: no target there.[/color]")
 				else:
@@ -1144,6 +1168,9 @@ func _resolve_enemy_opportunity_attacks(prev: Vector2i, next: Vector2i) -> void:
 	var noclip: bool = GameState.noclip
 	var evading: bool = GameState.player_evades_opportunity_attacks
 	var evaded_any: bool = false
+	# Invisible (unseen) player: enemies have no idea where you are, so they can't react with an
+	# Opportunity Attack — matches Enemy._can_see_entity()'s same outright-false treatment.
+	var player_invisible: bool = GameState.player_stats.invisibility_turns > 0
 	for e: Enemy in _dungeon_floor.get_all_enemies():
 		if not is_instance_valid(e) or e.stats.is_dead() or e.behavior == Enemy.Behavior.SLEEPING:
 			continue
@@ -1163,6 +1190,8 @@ func _resolve_enemy_opportunity_attacks(prev: Vector2i, next: Vector2i) -> void:
 		if d_prev <= reach and d_next <= reach and prev != next and is_diagonal_step:
 			_base_talents.on_sidestep(e)
 		if noclip:
+			continue
+		if player_invisible:
 			continue
 		if d_prev > reach or d_next <= reach:
 			continue
@@ -1605,6 +1634,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	main_inst["resist_mul"] = main_result["mul"]
 	var actual: int = main_result["actual"]
 	enemy.update_hp_bar()
+	if actual > 0:
+		enemy.on_melee_hit(self)
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false, CombatMath.damage_type_color(dmg_type), 0)
 
@@ -1796,6 +1827,8 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	inst["resist_mul"] = result["mul"]
 	var actual: int = result["actual"]
 	enemy.update_hp_bar()
+	if actual > 0:
+		enemy.on_melee_hit(self)
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false, CombatMath.damage_type_color(dmg_type))
 	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
@@ -1891,6 +1924,8 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	inst["resist_mul"] = result["mul"]
 	var actual: int = result["actual"]
 	enemy.update_hp_bar()
+	if actual > 0:
+		enemy.on_melee_hit(self)
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false, CombatMath.damage_type_color(dmg_type))
 	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
@@ -1981,6 +2016,8 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	inst["resist_mul"] = result["mul"]
 	var actual: int = result["actual"]
 	enemy.update_hp_bar()
+	if actual > 0:
+		enemy.on_melee_hit(self)
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false, CombatMath.damage_type_color(dmg_type))
 	var dmg_meta: String = CombatMath.encode_damage_instance(inst)

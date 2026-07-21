@@ -28,6 +28,16 @@ var frozen_feet_turns: int = 0   # Ray of Frost's STR-save-fail — skips moveme
 var shocked_no_oa: bool = false  # Shocking Grasp — blocks this enemy's next Opportunity Attack exposure, whenever it next happens
 var mind_sliver_penalty_die: bool = false  # Mind Sliver cantrip — the next check this enemy makes (any resist_check_detailed() call) rolls with -1d4. Consumed on that next check; deliberately not turn-expiry-timed against "until the end of your next turn" per the spell text — enemy checks are rare enough that this one-shot-consumed simplification is documented here rather than adding a second timing system for it.
 var embedded_items: Array[Item] = []  # thrown weapons stuck in a non-lethal hit (PlayerThrowTool._throw_weapon) — dropped at 100% chance wherever/whenever this enemy eventually dies, see die() override below
+var escape_turns: int = 0    # Nimble Escape trait (Goblin) — random 1-5 turns fleeing escape_from, set in on_melee_hit()
+var escape_from: Node = null  # entity being fled from; always is_instance_valid()-checked before use (may die/despawn mid-flee)
+var _thrown_weapon_used: bool = false        # a one-shot thrown weapon (pool "thrown_weapon") — true once used; _attack_target() then dispatches to "unarmed_fallback" (a bare-handed Fist strike) instead of the normal multiattack — Goblin Minion's Dagger and Orc Warrior's Javelin both work this way
+var _thrown_weapon_lodged_target: Node = null  # who the thrown weapon was aimed at, for the delayed drop-on-death check in die()
+var _thrown_weapon_lodged_item: Item = null    # the actual Item to place on the floor if the drop chance succeeds
+var _thrown_weapon_lodged_chance: float = 0.5  # per-enemy drop chance (pool "thrown_weapon"'s "drop_chance", default 0.5 matches Goblin Minion's original hardcoded rate)
+var _invis_turns: int = 0                # Invisibility ability (Imp) — turns remaining; hides sprite (visible=false) + skipped by DungeonFloor.get_targetable_enemy_at()
+var _invis_cooldown_remaining: int = 0   # turns until Invisibility can be cast again (pool "invisibility" -> "cooldown")
+const SHAPE_SHIFT_FORMS: PackedStringArray = ["rat", "raven", "spider"]
+var _shifted_form: String = ""  # Shape Shift trait (Imp) — "" = true form; else one of SHAPE_SHIFT_FORMS. No dedicated sprites exist yet (mechanic-only: forces the shared small-critter speed, reverts on any damage taken)
 
 # ── D&D stat-block schema (docs/architecture/enemy-stat-block-design.md) ──────────────────────
 var cr: float = 0.25                             # authored challenge rating, pool key "cr"
@@ -36,15 +46,15 @@ var damage_resistances: Array[String] = []       # ×0.5 — pool "damage_resist
 var damage_immunities: Array[String] = []        # ×0   — pool "damage_immunities"
 var damage_vulnerabilities: Array[String] = []   # ×2.0 — pool "damage_vulnerabilities" (fallback: legacy "vuln")
 var condition_immunities: Array[String] = []     # blocks the STATUS COUNTER from ever being set (§6) —
-                                                  # separate axis from damage immunity above. Vocabulary:
-                                                  # "slowed"/"rooted"/"prone"/"forced_move" (enemy-side
-                                                  # control fields) and "poisoned"/"burning"/"bleeding"
-                                                  # (Stats counters, reserved — nothing ticks them on
-                                                  # enemies yet, see apply_status() below).
+												  # separate axis from damage immunity above. Vocabulary:
+												  # "slowed"/"rooted"/"prone"/"forced_move" (enemy-side
+												  # control fields) and "poisoned"/"burning"/"bleeding"
+												  # (Stats counters, reserved — nothing ticks them on
+												  # enemies yet, see apply_status() below).
 var legendary_resistances_remaining: int = 0     # pool "legendary_resistances" (BOSS_POOL only) — consumed
-                                                  # on a would-be-failed resist_check_detailed() (§15)
+												  # on a would-be-failed resist_check_detailed() (§15)
 var _mods: Dictionary = {}                       # ability score modifiers, pool "mods" (§4). Empty = every
-                                                  # attack/check roll falls back to the legacy floor/3 bonus.
+												  # attack/check roll falls back to the legacy floor/3 bonus.
 var _check_profs: Array = []                     # pool "check_profs" — which _mods stats add _prof_bonus to checks
 var _prof_bonus: int = 0                         # pool "prof_bonus", default derived from cr when "mods" is set
 var _attack_prof: bool = true                    # pool "attack_prof" — whether _prof_bonus applies to attacks
@@ -85,6 +95,9 @@ func _ready() -> void:
 	behavior = initial_behavior
 	if behavior == Behavior.SLEEPING:
 		_start_zzz()
+	# Shape Shift (Imp): 50% chance to already be shape-shifted into a random form at spawn.
+	if _has_trait("shape_shift") and Rng.chance(0.5):
+		_shifted_form = SHAPE_SHIFT_FORMS[Rng.range_i(0, SHAPE_SHIFT_FORMS.size() - 1)]
 
 func _apply_stats() -> void:
 	var f: int = GameState.current_floor
@@ -172,6 +185,10 @@ func take_typed_damage(amount: int, damage_type: String, is_crit: bool = false) 
 				GameState.game_log("[color=gray]%s's Undead Fortitude keeps it standing![/color]" % display_name)
 			break
 	var actual: int = stats.take_damage(effective)
+	# Shape Shift (Imp): any actual damage taken (an immune hit deals 0 and returned earlier above,
+	# so this never fires from those) reverts a shape-shifted enemy to its true form immediately.
+	if actual > 0 and _shifted_form != "":
+		_shifted_form = ""
 	return {"actual": actual, "mul": mul}
 
 # Single chokepoint for applying a condition to this enemy (§6) — a separate axis from typed
@@ -190,6 +207,18 @@ func apply_status(condition: String, turns: int) -> bool:
 		"bleeding": stats.bleeding_turns = maxi(stats.bleeding_turns, turns)
 	return true
 
+# Nimble Escape (Goblin trait): after taking damage from a MELEE attack, the enemy's next action(s)
+# become fleeing the attacker for a random 1-5 turns instead of acting normally — see the
+# escape_turns branch in _decide_action() and _flee_from() below. Wired only into the melee-only
+# player attack call sites (_bump_attack/_resolve_cleave_attack/_resolve_offhand_attack/
+# resolve_opportunity_attack in player.gd) — NOT ranged/thrown/spell hits, which aren't "a melee
+# attack" by the trait's own text.
+func on_melee_hit(attacker: Node) -> void:
+	if stats.is_dead() or not _has_trait("nimble_escape"):
+		return
+	escape_turns = Rng.range_i(1, 5)
+	escape_from = attacker
+
 # Traits (§11): "regeneration" heals at the top of a real turn unless a shutoff-type hit landed
 # last round (take_typed_damage() sets _regen_blocked_this_round). Called from take_turn().
 func _tick_regeneration() -> void:
@@ -206,6 +235,40 @@ func _tick_regeneration() -> void:
 				GameState.game_log("[color=gray]%s regenerates %d HP.[/color]" % [display_name, healed])
 		return
 
+# Invisibility ability (Imp, pool "invisibility"): ticks the cast-again cooldown and the active
+# duration every real turn. Ending via duration expiry restores visibility the same way
+# _end_invisibility() does when it ends early from attacking (see _attack_target()).
+func _tick_invisibility() -> void:
+	if _invis_cooldown_remaining > 0:
+		_invis_cooldown_remaining -= 1
+	if _invis_turns > 0:
+		_invis_turns -= 1
+		if _invis_turns <= 0:
+			_end_invisibility()
+
+func is_hidden_from_player() -> bool:
+	return _invis_turns > 0
+
+func _end_invisibility() -> void:
+	_invis_turns = 0
+	visible = _dungeon_floor.is_tile_visible(grid_pos) if _dungeon_floor != null else true
+
+# Shape Shift (Imp, trait "shape_shift"): while CHASING and the player hasn't seen this enemy on
+# THIS turn (either it's out of the player's FOV, or it's currently Invisible), 50% chance per
+# eligible turn to secretly transform into a random small-critter form (SHAPE_SHIFT_FORMS) — no
+# turn cost. "Hasn't seen it for at least 1 turn" is simplified to "isn't seen right now" (checked
+# once per turn at decision time) rather than a running unseen-turn counter — same one-shot-
+# checked-at-use-time simplification precedent as Mind Sliver's penalty die. Reverts to the true
+# Imp form the instant it takes any damage — see take_typed_damage()'s revert call.
+func _tick_shape_shift() -> void:
+	if _shifted_form != "" or not _has_trait("shape_shift") or behavior != Behavior.CHASING:
+		return
+	if _dungeon_floor == null:
+		return
+	var unseen: bool = is_hidden_from_player() or not _dungeon_floor.is_tile_visible(grid_pos)
+	if unseen and Rng.chance(0.5):
+		_shifted_form = SHAPE_SHIFT_FORMS[Rng.range_i(0, SHAPE_SHIFT_FORMS.size() - 1)]
+
 # Movement-speed scaling (§ "Ranged distance scaling convention"'s sibling rule — see
 # scripts/entities/CLAUDE.md's "Movement speed scaling" note): D&D's default speed is 30 ft = our
 # baseline of 1 tile/turn. Pool key "speed": {"moves": N, "per": M} authors a creature slower
@@ -215,8 +278,19 @@ func _tick_regeneration() -> void:
 # Bresenham-style integer accumulator (no floats, no drift) — same technique as the FOV
 # shadowcasting multiplier tables, sets _moves_this_turn for _decide_action()/_act_toward() to
 # consume. Called once per real turn from take_turn(), alongside _tick_abilities()/_tick_regeneration().
+# Dual ground/flying speed (Imp): an entry with BOTH "speed_ground" and "speed_flying" picks
+# between them by current `behavior` instead of a single flat "speed" — flying while CHASING/
+# SEARCHING (knowingly pursuing or still hunting a lost target), grounded otherwise (SLEEPING/
+# STATIONARY/ROAMING). Falls back to the legacy single "speed" key (or the {1,1} default) whenever
+# either half of the pair is missing, so every existing single-speed entry is unaffected.
 func _tick_speed_gate() -> void:
 	var sp: Dictionary = _type.get("speed", {})
+	if _shifted_form != "":
+		# Shape Shift (Imp): all three animal forms share the same mundane ground speed regardless
+		# of the true form's own speed_ground/speed_flying pair — none of them can fly.
+		sp = {"moves": 2, "per": 3}
+	elif _type.has("speed_ground") and _type.has("speed_flying"):
+		sp = _type["speed_flying"] if behavior in [Behavior.CHASING, Behavior.SEARCHING] else _type["speed_ground"]
 	var moves: int = int(sp.get("moves", 1))
 	var per: int = maxi(1, int(sp.get("per", 1)))
 	_speed_accum += moves
@@ -231,6 +305,18 @@ func _has_trait(id: String) -> bool:
 		if tr.get("id", "") == id:
 			return true
 	return false
+
+# "advantage_bonus" trait (Goblin Warrior/Archer): whenever this enemy's OWN attack roll lands
+# with net Advantage, its damage gets one extra die (pool `{"id": "advantage_bonus", "sides": N}`,
+# default 4 — a d4). Returns the die size, or 0 if the enemy doesn't carry this trait at all (0 =
+# "don't roll a bonus die" — the caller only rolls when both this is nonzero AND the roll had
+# advantage). Rolled by _attack_player()/_attack_companion(), which both already have the roll
+# result (`_resolve_attack_roll()`'s "adv" key — net advantage, disadvantage already cancelled out).
+func _advantage_bonus_sides() -> int:
+	for tr: Dictionary in _type.get("traits", []):
+		if tr.get("id", "") == "advantage_bonus":
+			return int(tr.get("sides", 4))
+	return 0
 
 # Ability cooldowns/uses/recharge (§12) — decremented/rolled once per real turn regardless of
 # what action was actually taken this turn. Called from take_turn().
@@ -300,7 +386,11 @@ func resist_check(dc: int, use_con: bool = false) -> bool:
 # bool. "pass" here means the enemy RESISTS (roll >= dc), matching resist_check().
 # Priority when multiple use_* flags are somehow true: DEX > WIS > INT > CON > STR (arbitrary —
 # every real call site only ever sets one).
-func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false, use_wis: bool = false, use_int: bool = false) -> Dictionary:
+# `magical`: true when this check is a saving throw against a SPELL (Ray of Frost, Toll the Dead,
+# Mind Sliver, Thunderclap, Fireball) — NOT a weapon-mastery save (Push/Topple/Grip of the Forest/
+# Branching Strike), which aren't spells and never pass this. Combined with the "magic_resistance"
+# trait (Imp), rolls the d20 with Advantage (max of two rolls) — Magic Resistance's real D&D text.
+func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false, use_wis: bool = false, use_int: bool = false, magical: bool = false) -> Dictionary:
 	var mod: int
 	var stat_name: String
 	var stat_key: String
@@ -326,6 +416,9 @@ func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false
 		bonus = _prof_bonus if stat_key in _check_profs else 0
 		prof_label = "Proficiency"
 	var die: int = Rng.roll(20)
+	var magic_resistance_adv: bool = magical and _has_trait("magic_resistance")
+	if magic_resistance_adv:
+		die = maxi(die, Rng.roll(20))
 	# Mind Sliver cantrip: the target's next check (any resist_check_detailed() call) rolls with
 	# -1d4 — consumed here regardless of which stat this particular check happens to use.
 	var sliver_penalty: int = 0
@@ -364,6 +457,13 @@ func die() -> void:
 		for it: Item in embedded_items:
 			_dungeon_floor.place_item_on_floor(grid_pos, it)
 		embedded_items.clear()
+	# A one-shot thrown weapon (Goblin Minion's Dagger, Orc Warrior's Javelin), whether it hit or
+	# missed: queued for a per-enemy drop chance to be found near whoever it was thrown at,
+	# resolved on the player's next turn (see DungeonFloor.queue_thrown_weapon_drop()/
+	# _resolve_pending_thrown_weapon_drops()) — not dropped here directly, since "the turn after it
+	# dies" is a deliberate one-turn delay, not an instant drop.
+	if _thrown_weapon_lodged_target != null and is_instance_valid(_thrown_weapon_lodged_target) and _dungeon_floor != null:
+		_dungeon_floor.queue_thrown_weapon_drop(_thrown_weapon_lodged_target, _thrown_weapon_lodged_item, _thrown_weapon_lodged_chance)
 	super.die()
 
 func _setup_animations() -> void:
@@ -488,12 +588,20 @@ func _dist_sq_to(e: Node) -> int:
 func _chebyshev_to(e: Node) -> int:
 	return maxi(absi(e.grid_pos.x - grid_pos.x), absi(e.grid_pos.y - grid_pos.y))
 
-# §10: pool "senses" -> "sight" overrides the default notice radius (max Chebyshev-ish distance,
-# compared via squared distance below same as before). Absent = FOV_RADIUS, unchanged behavior.
+# §10: pool "senses" -> "sight_bonus" is an offset relative to FOV_RADIUS (e.g. +1 = darkvision,
+# +2 = superior darkvision, -1 = weak sight), so changing the default FOV_RADIUS doesn't require
+# re-touching every enemy's authored value. Absent = 0 (FOV_RADIUS unchanged).
 func _sight_range() -> int:
-	return int(_type.get("senses", {}).get("sight", FOV_RADIUS))
+	return FOV_RADIUS + int(_type.get("senses", {}).get("sight_bonus", 0))
 
 func _can_see_entity(e: Node) -> bool:
+	# Invisibility (player-cast spell, or a future invisible companion): an invisible target is
+	# treated as fully unseen regardless of distance/LOS — per direct owner design, enemies don't
+	# "try" to track it; they just lose it like any other lost-sight target (existing CHASING ->
+	# reaches last_known_target_pos -> SEARCHING -> ROAMING flow already covers "goes to where it
+	# vanished, searches briefly, then gives up").
+	if e is Player and GameState.player_stats.invisibility_turns > 0:
+		return false
 	var r: int = _sight_range()
 	return _dist_sq_to(e) <= r * r and _dungeon_floor.has_line_of_sight(grid_pos, e.grid_pos)
 
@@ -541,6 +649,8 @@ func take_turn() -> void:
 	_tick_abilities()
 	_tick_regeneration()
 	_tick_speed_gate()
+	_tick_invisibility()
+	_tick_shape_shift()
 	if prone_turns > 0:
 		prone_turns -= 1
 		await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
@@ -567,6 +677,34 @@ func _decide_action() -> Dictionary:
 	if candidates.is_empty():
 		return {"type": "wait"}
 	var target: Node = _select_target(candidates)
+
+	# Nimble Escape (Goblin trait): fleeing takes priority over every other behavior below,
+	# including attacking an adjacent target — a fleeing goblin doesn't stop to swing.
+	if escape_turns > 0:
+		escape_turns -= 1
+		return {"type": "flee", "target": escape_from if is_instance_valid(escape_from) else target}
+
+	# One-shot thrown weapon (pool "thrown_weapon" — Goblin Minion's Dagger, Orc Warrior's Javelin):
+	# once not actively escaping (the check above already guarantees escape_turns <= 0 here), if
+	# the target isn't adjacent, throw the weapon at range instead of closing to melee. Doesn't
+	# need movement budget, so this is checked before the rooted/frozen/speed-gate movement
+	# restrictions below — a rooted or speed-gated enemy can still throw. Generic — keyed purely
+	# on the pool key's presence, not on enemy_id, so any enemy can opt in by authoring the same
+	# two dict keys (see "thrown_weapon"/"unarmed_fallback" in the Enemy D&D stat-block schema).
+	var thrown_wpn: Dictionary = _type.get("thrown_weapon", {})
+	if not thrown_wpn.is_empty() and not _thrown_weapon_used:
+		var throw_range: int = int(thrown_wpn.get("range", 4))
+		var dist: int = _chebyshev_to(target)
+		if dist >= 2 and dist <= throw_range and _dungeon_floor.has_ranged_los(grid_pos, target.grid_pos):
+			return {"type": "throw_weapon", "target": target, "weapon": thrown_wpn}
+
+	# Imp — Invisibility (pool "invisibility"): while pursuing (CHASING/SEARCHING) and not yet
+	# adjacent, casts Invisibility on itself instead of closing distance, once the cooldown is
+	# ready and it isn't already invisible. Costs the turn (a real action).
+	var invis_cfg: Dictionary = _type.get("invisibility", {})
+	if not invis_cfg.is_empty() and _invis_turns <= 0 and _invis_cooldown_remaining <= 0 \
+			and behavior in [Behavior.CHASING, Behavior.SEARCHING] and _chebyshev_to(target) > 1:
+		return {"type": "cast_invisibility", "config": invis_cfg}
 
 	# World Tree Grip of the Forest R2: rooted — no movement this turn, but can still attack if adjacent.
 	if rooted_turns > 0:
@@ -661,6 +799,20 @@ func _execute_action(intent: Dictionary) -> void:
 			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		"attack":
 			_attack_target(intent["target"])
+		"flee":
+			var fled: bool = await _flee_from(intent["target"])
+			if not fled and is_instance_valid(self) and not stats.is_dead():
+				# Cornered: couldn't step directly away (wall/occupied tile behind it) — turns and
+				# fights instead of idling in place, if whatever it's fleeing is in attack range.
+				var flee_target: Node = intent["target"]
+				if is_instance_valid(flee_target) and not flee_target.stats.is_dead() and _in_attack_range(flee_target):
+					_attack_target(flee_target)
+		"throw_weapon":
+			_execute_thrown_weapon_attack(intent["target"], intent["weapon"])
+			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
+		"cast_invisibility":
+			_execute_cast_invisibility(intent["config"])
+			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		"act_toward":
 			# Aggressive (§ trait): while it can see its target, gets one extra movement step this
 			# turn on top of whatever _moves_this_turn/speed already grants — Orc Warrior's trait.
@@ -719,6 +871,21 @@ func _in_attack_range(target: Node) -> bool:
 # _attack_player()/_attack_companion() functions (they accept an optional `sub` dict — see below).
 # Absent = today's single top-level-stats attack, unchanged.
 func _attack_target(target: Node) -> void:
+	# Invisibility ends the instant this enemy attacks (Imp, or the mirrored player spell's own
+	# rule) — matches 5e Invisibility's "ends early if you attack" text.
+	if _invis_turns > 0:
+		_end_invisibility()
+		GameState.game_log("[color=purple]%s reappears![/color]" % display_name)
+	# Once a one-shot thrown weapon is used (Goblin Minion's Dagger, Orc Warrior's Javelin), every
+	# attack reverts to an unarmed Fist strike (pool "unarmed_fallback") instead of the normal
+	# multiattack — the weapon is gone, thrown at range earlier this fight.
+	var fallback: Dictionary = _type.get("unarmed_fallback", {})
+	if _thrown_weapon_used and not fallback.is_empty():
+		if target is Player:
+			_attack_player(target, fallback)
+		elif target is Companion:
+			_attack_companion(target, fallback)
+		return
 	var multi: Array = _type.get("multiattack", [])
 	if multi.is_empty():
 		if target is Player:
@@ -853,9 +1020,100 @@ func _do_random_step() -> void:
 			return
 	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 
-func _move_step(step: Vector2i, next_pos: Vector2i) -> void:
+# Nimble Escape (Goblin trait): step directly away from `from_entity` (the attacker who last hit
+# it in melee — see on_melee_hit()/escape_turns above). provokes_oa=false on the _move_step() call
+# is the trait's "doesn't provoke Opportunity Attacks while escaping" clause — its own movement can
+# never trigger the player/companion OA hook during a flee, unlike every other enemy movement path.
+# Greedy-only (no BFS fallback, unlike _act_toward_single_step) — a cornered goblin that can't step
+# directly away doesn't path the long way around; it lashes out at whatever cornered it instead
+# (see the caller in _execute_action()'s "flee" case, which attacks if this returns false and the
+# target is in range — a trapped animal turning to fight, not idling in place).
+# Returns true if a step was actually taken (already awaited the move tween); false if stuck.
+func _flee_from(from_entity: Node) -> bool:
+	var from_pos: Vector2i = from_entity.grid_pos if is_instance_valid(from_entity) else grid_pos
+	var dx: int = grid_pos.x - from_pos.x
+	var dy: int = grid_pos.y - from_pos.y
+	if dx == 0 and dy == 0:
+		dx = 1
+	for step: Vector2i in _preferred_steps(dx, dy):
+		var next_pos: Vector2i = grid_pos + step
+		if _dungeon_floor.has_door_at(next_pos) and not _dungeon_floor.is_door_open(next_pos):
+			_dungeon_floor.open_door(next_pos)
+		if _dungeon_floor.is_walkable_for_enemy(next_pos):
+			await _move_step(step, next_pos, false)
+			return true
+	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
+	return false
+
+# One-shot thrown weapon (Goblin Minion's Dagger, Orc Warrior's Javelin) — resolves as a normal
+# attack but forces Disadvantage via _attack_player()/_attack_companion()'s `long_shot` param
+# (reused here purely for its Disadvantage side effect, not its usual normal/long-range meaning).
+# Marks _thrown_weapon_used so this only ever fires once per this enemy's life — _attack_target()
+# reverts every subsequent attack to "unarmed_fallback" (both Goblin Minion and Orc Warrior author
+# one — a bare-handed Fist strike either way). Registers the target with
+# DungeonFloor.queue_thrown_weapon_drop() unconditionally, regardless of hit or miss (matches
+# Goblin Minion's original behavior exactly) — a per-enemy chance (pool "drop_chance", default 0.5)
+# to recover the weapon resolves the turn after THIS enemy dies (see die() below), dropped wherever
+# the target stands at that time.
+func _execute_thrown_weapon_attack(target: Node, wpn: Dictionary) -> void:
+	_thrown_weapon_used = true
+	var sub: Dictionary = {
+		"name": wpn.get("name", "Dagger"),
+		"dmg_min": wpn.get("dmg_min", stats.min_damage),
+		"dmg_max": wpn.get("dmg_max", stats.max_damage),
+		"damage_type": wpn.get("damage_type", "Piercing"),
+	}
+	if target is Player:
+		_attack_player(target, sub, true)
+	elif target is Companion:
+		_attack_companion(target, sub, true)
+	if _dungeon_floor != null and is_instance_valid(target):
+		_thrown_weapon_lodged_target = target
+		_thrown_weapon_lodged_item = _build_thrown_weapon_item(wpn)
+		_thrown_weapon_lodged_chance = float(wpn.get("drop_chance", 0.5))
+
+# A plain pickupable weapon Item, built generically from the "thrown_weapon" pool dict — NOT from
+# the enemy's own dmg_min/dmg_max (those are the enemy's already-ability-mod-inflated attack
+# numbers, not the raw weapon's die). Every field has a Dagger-shaped default so Goblin Minion's
+# original pool entry (which doesn't set any of these new keys) reproduces its exact old output —
+# see the field-by-field defaults below, each matching what the old hardcoded Dagger builder set.
+# A new consumer (Orc Warrior's Javelin, or any future one) is expected to set every field itself
+# rather than lean on these fallbacks. "random_uses" (default false) picks between an already-full
+# weapon (Goblin's Dagger) and a randomly-worn-down one (Orc's Javelin — "already used").
+func _build_thrown_weapon_item(wpn: Dictionary) -> Item:
+	var it := Item.new()
+	it.item_name = wpn.get("name", "Dagger")
+	it.item_type = Item.Type.WEAPON
+	it.icon_path = DungeonFloorData.WEAPONS_PATH + String(wpn.get("icon", "weapon_knife.png"))
+	it.damage_die_min = int(wpn.get("drop_die_min", 1))
+	it.damage_die_max = int(wpn.get("drop_die_max", 4))
+	it.damage_type = wpn.get("damage_type", "Piercing")
+	it.weapon_category = wpn.get("weapon_category", "Simple")
+	it.is_finesse = bool(wpn.get("is_finesse", true))
+	it.is_light = bool(wpn.get("is_light", true))
+	it.is_thrown = true
+	it.range = int(wpn.get("range", 3))
+	it.weapon_mastery = wpn.get("weapon_mastery", "Nick")
+	var uses_max: int = int(wpn.get("drop_uses_max", 5))
+	it.uses_max = uses_max
+	it.uses_remaining = Rng.range_i(1, uses_max) if bool(wpn.get("random_uses", false)) else uses_max
+	return it
+
+# Imp's Invisibility ability (pool "invisibility": {"cooldown", "duration"}) — the enemy-side
+# mirror of the player-castable level-2 spell of the same name (SpellEffects' "invisibility"
+# effect_id). Hides this enemy's own sprite immediately (also re-applied generically every
+# DungeonFloor.update_fog() via _update_enemy_visibility()) and starts the cooldown; ends early on
+# attacking (_attack_target()'s hook below) or naturally via _tick_invisibility()'s duration countdown.
+func _execute_cast_invisibility(cfg: Dictionary) -> void:
+	_invis_turns = int(cfg.get("duration", 100))
+	_invis_cooldown_remaining = int(cfg.get("cooldown", 5))
+	visible = false
+	GameState.game_log("[color=purple]%s fades from view.[/color]" % display_name)
+
+func _move_step(step: Vector2i, next_pos: Vector2i, provokes_oa: bool = true) -> void:
 	var prev_pos: Vector2i = grid_pos
-	_check_opportunity_attacks_on_move(prev_pos, next_pos)
+	if provokes_oa:
+		_check_opportunity_attacks_on_move(prev_pos, next_pos)
 	if not is_instance_valid(self) or stats.is_dead():
 		return
 	var stepping_through_door: bool = _dungeon_floor.has_door_at(next_pos)
@@ -889,6 +1147,8 @@ func _check_opportunity_attacks_on_move(prev_pos: Vector2i, next_pos: Vector2i) 
 		return
 	if shocked_no_oa:
 		shocked_no_oa = false
+		return
+	if _invis_turns > 0:
 		return
 	var player: Player = _dungeon_floor.get_player()
 	if player != null and is_instance_valid(player) and not player.stats.is_dead() and not player._oa_used_this_round:
@@ -956,12 +1216,27 @@ func _bfs_to(target: Vector2i) -> Array[Vector2i]:
 # §4: with "mods" present, the attack roll uses ability modifier + proficiency (stat from
 # attack_profile's "attack_stat", default STR melee / DEX ranged) INSTEAD OF the legacy
 # floor-scaling bonus — never both, same opt-in-per-entry rule as resist_check_detailed().
+# TODO(future refactor): "attack_stat" is authored by hand per enemy (e.g. goblin_minion's Dagger
+# sets it to "dex" for finesse) because enemy weapons are plain dmg_min/dmg_max/damage_type dicts,
+# not a real weapon object with an is_finesse flag the way Item is for the player. If enemy
+# multiattack/abilities entries ever grow a proper weapon shape, attack_stat should be DERIVED
+# from that (finesse -> max(STR,DEX), else STR melee/DEX ranged) instead of authored — flagged
+# here, not attempted yet, since it's a schema change across ENEMY_POOL/BOSS_POOL, not a one-liner.
 func _attack_bonus() -> int:
 	if _mods.is_empty():
 		return GameState.current_floor / 3
 	var profile: Dictionary = _type.get("attack_profile", {})
 	var stat_key: String = profile.get("attack_stat", "dex" if profile.get("kind", "melee") == "ranged" else "str")
 	return int(_mods.get(stat_key, 0)) + (_prof_bonus if _attack_prof else 0)
+
+# Per-sub-attack stat override: a multiattack/ability/thrown_weapon/unarmed_fallback sub dict may
+# carry its own "attack_stat" (e.g. Goblin Minion's Fists use STR while its Dagger uses DEX) —
+# overrides attack_profile's enemy-wide default for just this one swing. Falls back to the normal
+# _attack_bonus() when the sub doesn't specify one (every pre-existing multiattack/ability entry).
+func _attack_bonus_for(sub: Dictionary) -> int:
+	if not sub.has("attack_stat") or _mods.is_empty():
+		return _attack_bonus()
+	return int(_mods.get(String(sub["attack_stat"]), 0)) + (_prof_bonus if _attack_prof else 0)
 
 func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -9999, roll_penalty: int = 0, extra_adv: bool = false, extra_disadv: bool = false) -> Dictionary:
 	# D&D attack roll: d20 + floor-scaled (or mods+prof, see _attack_bonus()) bonus vs target AC.
@@ -1004,7 +1279,7 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	var dmg_type: String = sub.get("damage_type", "Bludgeoning")
 	# Blade Ward cantrip: while active, subtract 1d4 from this attack roll before comparing to AC.
 	var bw_penalty: int = Rng.roll(4) if GameState.player_stats.blade_ward_turns > 0 else 0
-	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, -9999, bw_penalty,
+	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, _attack_bonus_for(sub), bw_penalty,
 		GameState.is_in_fog_cloud(_player.grid_pos), long_shot or GameState.is_in_fog_cloud(grid_pos))
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
@@ -1016,7 +1291,12 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	var is_crit: bool = r["is_crit"]
 	var min_d: int = int(sub.get("dmg_min", stats.min_damage))
 	var max_d: int = int(sub.get("dmg_max", stats.max_damage))
-	var dmg_roll: int = Rng.range_i(min_d, maxi(min_d, max_d))
+	# "advantage_bonus" trait (Goblin Warrior/Archer): an extra die on top of the normal roll
+	# whenever this attack landed with net Advantage — folded into the crit doubling below, same
+	# as any other damage die (matches how a weapon's own dice would double on a crit).
+	var adv_bonus_sides: int = _advantage_bonus_sides()
+	var adv_bonus_roll: int = Rng.roll(adv_bonus_sides) if (adv_bonus_sides > 0 and r["adv"]) else 0
+	var dmg_roll: int = Rng.range_i(min_d, maxi(min_d, max_d)) + adv_bonus_roll
 	var dmg: int = dmg_roll * (2 if is_crit else 1)
 	if is_crit:
 		AudioManager.play("crit")
@@ -1032,12 +1312,29 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	# Rage's 50% DR (take_damage_raw()) was live for this hit whenever the player was raging AND
 	# dmg_type is one of the three physical types.
 	var rage_applied: int = 1 if GameState.is_raging else 0
-	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,rage=%d,final=%d" % [dmg_roll, min_d, max_d, 1 if is_crit else 0, rage_applied, actual]
+	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,rage=%d,final=%d,advb=%d" % [dmg_roll, min_d, max_d, 1 if is_crit else 0, rage_applied, actual, adv_bonus_roll]
 	var god_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [r["bonus"], r["roll"], r["target_ac"]] if GameState.god_mode else ""
+	# Second typed damage component on the SAME hit (Imp's Sting — Piercing weapon dmg + Poison
+	# venom, one attack roll, two independent damage instances/floaters/log segments) — pool
+	# "multiattack" sub-entry's optional "extra" key. Mirrors the player-side Judgement Day/
+	# Fireball-friendly-fire "one hit, multiple damage types" convention.
+	var extra_suffix: String = ""
+	if sub.has("extra"):
+		var extra: Dictionary = sub["extra"]
+		var extra_type: String = extra.get("damage_type", "Poison")
+		var e_min: int = int(extra.get("dmg_min", 0))
+		var e_max: int = int(extra.get("dmg_max", 0))
+		var e_roll: int = Rng.range_i(e_min, maxi(e_min, e_max))
+		var e_dmg: int = e_roll * (2 if is_crit else 1)
+		var e_actual: int = GameState.take_damage_raw(e_dmg, false, extra_type)
+		if _dungeon_floor != null and not invincible:
+			_dungeon_floor.show_damage(_player.position, e_actual, true, CombatMath.damage_type_color(extra_type), 1)
+		var extra_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,rage=0,final=%d,advb=0" % [e_roll, e_min, e_max, 1 if is_crit else 0, e_actual]
+		extra_suffix = " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [extra_meta, e_actual, extra_type]
 	if is_crit:
-		GameState.game_log("%s[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [bracket_l, atk_label, hit_meta, dmg_meta, actual, god_suffix, bracket_r])
+		GameState.game_log("%s[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg%s.%s%s" % [bracket_l, atk_label, hit_meta, dmg_meta, actual, extra_suffix, god_suffix, bracket_r])
 	else:
-		GameState.game_log("%s[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg.%s%s" % [bracket_l, atk_label, hit_meta, dmg_meta, actual, god_suffix, bracket_r])
+		GameState.game_log("%s[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg%s.%s%s" % [bracket_l, atk_label, hit_meta, dmg_meta, actual, extra_suffix, god_suffix, bracket_r])
 	# Orc Shaman applies poison on hit (top-level attack only — never a multiattack/ability sub-swing).
 	if sub.is_empty() and not invincible and display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
 		if GameState.apply_player_status("poison", 3):
@@ -1048,15 +1345,27 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 # already logs the hit/HP line and handles death, so only the miss line needs logging here.
 func _attack_companion(companion: Companion, sub: Dictionary = {}, long_shot: bool = false) -> void:
 	var atk_label: String = display_name if sub.get("name", "") == "" else "%s's %s" % [display_name, sub["name"]]
-	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, -9999, 0,
+	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, _attack_bonus_for(sub), 0,
 		GameState.is_in_fog_cloud(companion.grid_pos), long_shot or GameState.is_in_fog_cloud(grid_pos))
 	if not r["is_hit"]:
 		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [atk_label, companion.animal_name])
 		return
 	var min_d: int = int(sub.get("dmg_min", stats.min_damage))
 	var max_d: int = int(sub.get("dmg_max", stats.max_damage))
-	var dmg_roll: int = Rng.range_i(min_d, maxi(min_d, max_d))
+	# "advantage_bonus" trait — see the matching comment in _attack_player() above.
+	var adv_bonus_sides: int = _advantage_bonus_sides()
+	var adv_bonus_roll: int = Rng.roll(adv_bonus_sides) if (adv_bonus_sides > 0 and r["adv"]) else 0
+	var dmg_roll: int = Rng.range_i(min_d, maxi(min_d, max_d)) + adv_bonus_roll
 	var dmg: int = dmg_roll * (2 if r["is_crit"] else 1)
+	# Second typed damage component on the same hit (e.g. Imp's Sting) — Companion has no per-type
+	# resist/tooltip system at all (pre-existing simplification), so this just folds straight into
+	# the one flat damage number rather than getting its own instance/floater.
+	if sub.has("extra"):
+		var extra: Dictionary = sub["extra"]
+		var e_min: int = int(extra.get("dmg_min", 0))
+		var e_max: int = int(extra.get("dmg_max", 0))
+		var e_roll: int = Rng.range_i(e_min, maxi(e_min, e_max))
+		dmg += e_roll * (2 if r["is_crit"] else 1)
 	if r["is_crit"]:
 		AudioManager.play("crit")
 	else:

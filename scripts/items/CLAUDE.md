@@ -286,11 +286,11 @@ spell." instead). No scroll items use this mechanism in any loot pool yet — se
 `Item.scroll_spell_id: String` (`""` = not this kind of scroll) — a SCROLL item with one spell
 cast baked in, distinct from (and independent of) `taught_spell_id` above: reading it does NOT
 teach the spell, it just casts it once at the spell's base level (no upcasting, no slot spent)
-then crumbles. **Castable by any class**, not just Wizard — the point of this item type. 19 exist
+then crumbles. **Castable by any class**, not just Wizard — the point of this item type. 20 exist
 in `ITEM_POOL`/`debug_panel.ALL_ITEMS` today, one per `SpellDb` spell (`Scroll of Fire Bolt`,
 `Ray of Frost`, `Shocking Grasp`, `Toll the Dead`, `Blade Ward`, `Thunderclap`, `Mind Sliver`,
 `Light`, `Magic Missile`, `Shield`, `Mage Armor`, `Misty Step`, `Fireball`, `Chromatic Orb`,
-`Burning Hands`, `Witch Bolt`, `Expeditious Retreat`, `False Life`, `Fog Cloud`); icon reuses the
+`Burning Hands`, `Witch Bolt`, `Expeditious Retreat`, `False Life`, `Fog Cloud`, `Invisibility`); icon reuses the
 spell's own `Spell.icon_path` (`"src": "spells"` pool key) — `DungeonFloor._build_floor_item()`
 and `debug_panel._on_give_item()` both resolve it via `SpellDb.get_spell(item.scroll_spell_id).
 icon_path` rather than reconstructing a flat path from the `ITEM_POOL` entry's own `"icon"` key,
