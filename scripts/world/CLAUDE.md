@@ -30,6 +30,17 @@ dungeon_floor.is_walkable_for_companion(pos: Vector2i) -> bool  # walkable + not
 ## FOV
 `FOV_RADIUS = 7`. Algorithm: recursive shadowcasting (`_compute_shadowcast`, 8 octants, Roguebasin multiplier tables). Result stored in `_visible_tiles: Dictionary`. Both `_compute_shadowcast()` call sites' radius formula is `FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus + (1 if GameState.has_lit_torch_equipped() else 0)` — the last term is a lit Torch equipped in either hand (`scripts/items/CLAUDE.md`'s "Torch"), computed live rather than folded into `fov_radius_bonus` so it can't drift out of sync with equip/light/burnout state.
 
+**Torch light bubble (floor/embedded, separate from the equipped FOV bonus above)**:
+`update_fog()` also unions `_compute_torch_light_tiles()` into `_visible_tiles` and paints it via
+`_update_torch_light_glow()` — a sweep of every lit-and-unburnt Torch currently lying on
+`_floor_items` or embedded in a live enemy's `Enemy.embedded_items`, each contributing its own
+`GameState.TORCH_LIGHT_RADIUS` (2) shadowcast centered on its floor tile or (for an embedded one)
+its carrying enemy's current `grid_pos` — recomputed from scratch every call, same "Light cantrip"
+union pattern (`_compute_shadowcast` + a pooled-`Sprite2D` glow, see below) but with **zero**
+persistent registry: an embedded torch's bubble moves with its enemy for free, and a burnt-out or
+picked-up-and-relit torch just stops/starts contributing on the next recompute with no cleanup
+code needed anywhere. See `scripts/items/CLAUDE.md`'s "Torch" section.
+
 **Rule**: after every player action, call `_dungeon_floor.update_fog(grid_pos)` **before** `TurnManager.on_player_action_complete()`.
 
 **Light cantrip — a second light emitter**: `update_fog()` unions a SECOND `_compute_shadowcast()`

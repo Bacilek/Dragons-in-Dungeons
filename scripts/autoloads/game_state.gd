@@ -739,6 +739,10 @@ func clear_special_slot() -> void:
 ## _on_short_rest_completed()/long_rest()/advance_floor() for the other three end conditions.
 signal light_source_changed()
 const LIGHT_SOURCE_RADIUS: int = 4
+# Torch: radius of the passive light bubble a lit Torch casts while lying on the floor or
+# embedded in an enemy (dungeon_floor.gd's DungeonFloor._compute_torch_light_tiles()) — separate
+# from the flat +1 FOV bonus an EQUIPPED lit torch grants (has_lit_torch_equipped()).
+const TORCH_LIGHT_RADIUS: int = 2
 var light_source_pos: Vector2i = Vector2i(-1, -1)
 var light_source_color: Color = Color.WHITE
 var light_source_item: Item = null

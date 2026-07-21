@@ -214,14 +214,28 @@ func _on_turn_started() -> void:
 					stats.concentration_spell_id = ""
 				GameState.clear_fog_cloud()
 				GameState.game_log("[color=gray]The fog cloud dissipates.[/color]")
-		# Torch: 100-turn duration per equipped+lit torch, ticked once per real turn. Only ticks
-		# while equipped — unequipping pauses it (GameState.has_lit_torch_equipped() reads live).
+		# Torch: 100-turn duration per lit torch, ticked once per real turn — regardless of
+		# where it currently is (equipped, quickbar/bag, floor, or embedded in an enemy). Equipped
+		# slots + quickbar/bag are swept here (GameState-only data); floor items and enemy-embedded
+		# items are swept by DungeonFloor.tick_torches() (needs _floor_items/get_all_enemies()).
 		for _torch_slot: String in ["melee", "hand2"]:
 			var _torch: Item = GameState.equipment.get(_torch_slot) as Item
 			if _torch != null and _torch.is_torch and _torch.torch_lit:
 				_torch.torch_turns_remaining -= 1
 				if _torch.torch_turns_remaining <= 0:
 					GameState.burn_out_torch(_torch)
+		for _qb_item: Variant in GameState.player_quickbar:
+			if _qb_item is Item and _qb_item.is_torch and _qb_item.torch_lit:
+				_qb_item.torch_turns_remaining -= 1
+				if _qb_item.torch_turns_remaining <= 0:
+					GameState.burn_out_torch(_qb_item)
+		for _bag_item: Variant in GameState.player_inventory:
+			if _bag_item is Item and _bag_item.is_torch and _bag_item.torch_lit:
+				_bag_item.torch_turns_remaining -= 1
+				if _bag_item.torch_turns_remaining <= 0:
+					GameState.burn_out_torch(_bag_item)
+		if _dungeon_floor != null:
+			_dungeon_floor.tick_torches()
 	GameState.ability_bar_changed.emit()
 	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
 	# Only fires on real turns, not on reverted turns.

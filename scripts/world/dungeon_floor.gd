@@ -51,6 +51,8 @@ var _fog_texture: ImageTexture
 var _fog_sprite: Sprite2D
 var _light_glow_sprites: Array[Sprite2D] = []  # Light cantrip glow — see _update_light_source_glow()
 var _light_glow_tex: ImageTexture
+var _torch_glow_sprites: Array[Sprite2D] = []  # lit floor/embedded Torch glow — see _update_torch_light_glow()
+var _torch_glow_tex: ImageTexture
 var _fog_cloud_sprites: Array[Sprite2D] = []  # Fog Cloud spell zone — see _update_fog_cloud_visual()
 var _fog_cloud_tex: ImageTexture
 var _explored: Dictionary = {}
@@ -380,6 +382,16 @@ func update_fog(player_pos: Vector2i) -> void:
 		for pos: Vector2i in lit_tiles:
 			_visible_tiles[pos] = true
 	_update_light_source_glow(lit_tiles)
+
+	# Torch: every lit Torch lying on the floor or embedded in a live enemy casts its own
+	# radius-2 light bubble — recomputed fresh every fog update (no persistent registry to keep
+	# in sync with throw/pickup/drop/die/burnout — see GameState.TORCH_LIGHT_RADIUS). An embedded
+	# torch's bubble is centered on its carrying enemy's CURRENT grid_pos, so it moves for free as
+	# the enemy moves, without any dedicated tracking.
+	var torch_tiles: Dictionary = _compute_torch_light_tiles()
+	for pos: Vector2i in torch_tiles:
+		_visible_tiles[pos] = true
+	_update_torch_light_glow(torch_tiles)
 	_update_fog_cloud_visual()
 
 	for y: int in _data.height:
@@ -485,6 +497,75 @@ func _update_light_source_glow(lit_tiles: Dictionary) -> void:
 			spr.visible = true
 		else:
 			spr.visible = false
+
+# Torch: sweeps every lit-and-unburnt Torch currently lying on this floor's ground or embedded in
+# one of its live enemies, and unions a radius-2 shadowcast (GameState.TORCH_LIGHT_RADIUS) per
+# torch found into a single result dict — floor torches at their own tile, embedded torches at
+# their carrying enemy's CURRENT grid_pos (so the bubble moves with the enemy for free, no extra
+# tracking). Called fresh every update_fog() — no persistent state, so throw/pickup/drop/die/
+# burnout all "just work" without any dedicated cleanup code anywhere.
+func _compute_torch_light_tiles() -> Dictionary:
+	var result: Dictionary = {}
+	for pos: Vector2i in _floor_items.keys():
+		for it: Item in _floor_items[pos]:
+			if it.is_torch and it.torch_lit:
+				for lit_pos: Vector2i in _compute_shadowcast(pos, GameState.TORCH_LIGHT_RADIUS):
+					result[lit_pos] = true
+	for enemy: Enemy in get_all_enemies():
+		for it: Item in enemy.embedded_items:
+			if it.is_torch and it.torch_lit:
+				for lit_pos: Vector2i in _compute_shadowcast(enemy.grid_pos, GameState.TORCH_LIGHT_RADIUS):
+					result[lit_pos] = true
+	return result
+
+# Fixed warm-orange glow (a Torch's flame isn't randomized/per-cast the way the Light cantrip's
+# color is) — same pooled-Sprite2D convention as _update_light_source_glow() above, just its own
+# sprite pool/texture so the two light sources' visuals never fight over the same nodes.
+func _update_torch_light_glow(lit_tiles: Dictionary) -> void:
+	if lit_tiles.is_empty():
+		for spr: Sprite2D in _torch_glow_sprites:
+			spr.visible = false
+		return
+	if _torch_glow_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color(1, 1, 1, 1))
+		_torch_glow_tex = ImageTexture.create_from_image(img)
+	var tiles: Array = lit_tiles.keys()
+	while _torch_glow_sprites.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _torch_glow_tex
+		spr.centered = false
+		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
+		spr.z_index = 2
+		add_child(spr)
+		_torch_glow_sprites.append(spr)
+	var tint := Color(1.0, 0.55, 0.1, 0.28)
+	for i: int in _torch_glow_sprites.size():
+		var spr: Sprite2D = _torch_glow_sprites[i]
+		if i < tiles.size():
+			var pos: Vector2i = tiles[i]
+			spr.position = Vector2(pos.x * TILE_SIZE, pos.y * TILE_SIZE)
+			spr.modulate = tint
+			spr.visible = true
+		else:
+			spr.visible = false
+
+# Torch: ticks down torch_turns_remaining once per real turn for every lit Torch lying on this
+# floor's ground or embedded in one of its live enemies — the counterpart to player.gd's own
+# equipped/quickbar/bag sweep (see _on_turn_started()). Called from there once per real turn.
+func tick_torches() -> void:
+	for pos: Vector2i in _floor_items.keys():
+		for it: Item in _floor_items[pos]:
+			if it.is_torch and it.torch_lit:
+				it.torch_turns_remaining -= 1
+				if it.torch_turns_remaining <= 0:
+					GameState.burn_out_torch(it)
+	for enemy: Enemy in get_all_enemies():
+		for it: Item in enemy.embedded_items:
+			if it.is_torch and it.torch_lit:
+				it.torch_turns_remaining -= 1
+				if it.torch_turns_remaining <= 0:
+					GameState.burn_out_torch(it)
 
 # Fog Cloud spell — a persistent gray tint over GameState.fog_cloud_pos/radius (a raw Euclidean
 # disc, same distance check as GameState.is_in_fog_cloud() and show_aoe_preview()'s own preview
