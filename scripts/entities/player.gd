@@ -408,7 +408,7 @@ func _resolve_stealth_check() -> void:
 			1 if obs_adv > 0 else 0, 0 if noticed else 1, 1 if lucky1 else 0, 1 if lucky2 else 0]
 		var god_suffix: String = " [color=gray](Stealth %d vs PP %d)[/color]" % [total, e.passive_perception] if GameState.god_mode else ""
 		if noticed:
-			e.on_disturbed(grid_pos)
+			e._notice_target(grid_pos)
 			GameState.game_log("[color=tomato]%s[/color] [url=%s]notices[/url] you!%s" % [e.display_name, stealth_meta, god_suffix])
 		elif GameState.debug_show_stealth_checks:
 			GameState.game_log("[color=gray][url=%s]Player vs %s: stealth check (not noticed)[/url]%s[/color]" % [stealth_meta, e.display_name, god_suffix])
