@@ -163,6 +163,19 @@ var expeditious_retreat_turns: int = 0
 # Deliberately NOT serialized, same as witch_bolt_turns above.
 var fog_cloud_turns: int = 0
 
+# Invisibility (level-2 spell, touch/self) — NOT a concentration effect (5e RAW: it ends on
+# attacking or casting a spell, not on taking damage, so it doesn't use concentration_spell_id at
+# all). Ticked in player.gd's per-real-turn block; ended early via Player._resolve_stealth_check()
+# reading GameState.stealth_check_skip (the same "this turn was an attack/spell-cast" flag the
+# Stealth-vs-Passive-Perception system already sets at every attack/cast call site — see
+# scripts/entities/CLAUDE.md's "Invisibility" section). Deliberately NOT serialized, same
+# mid-floor-only simplification as witch_bolt_turns/fog_cloud_turns above.
+var invisibility_turns: int = 0
+# Set true on cast, consumed (cleared) the first time _resolve_stealth_check() runs afterward —
+# skips ending Invisibility on its OWN casting turn (cast_leveled_self() sets stealth_check_skip
+# unconditionally, same as every other spell), same "just_cast" pattern as witch_bolt_just_cast.
+var invisibility_just_cast: bool = false
+
 # Wizard spellcasting (cantrips per docs/architecture/spellcasting-design.md, leveled spells +
 # slots per docs/architecture/leveled-spells-and-slots-plan.md). Built in
 # apply_class_defaults()'s WIZARD branch; null for every other class. See

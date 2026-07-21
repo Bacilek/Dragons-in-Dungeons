@@ -79,6 +79,7 @@ func _ready() -> void:
 	# call — refresh immediately so the glow sprite/lit tiles disappear right away instead of
 	# lingering until the player's next move.
 	GameState.light_source_changed.connect(func() -> void: update_fog(_fov_player_pos))
+	TurnManager.player_turn_started.connect(_resolve_pending_dagger_drops)
 
 func _on_debug_jump_floor(_n: int) -> void:
 	_load_floor()
@@ -627,7 +628,7 @@ func reveal_all() -> void:
 func _update_enemy_visibility() -> void:
 	for enemy: Enemy in _enemies:
 		if is_instance_valid(enemy):
-			enemy.visible = _visible_tiles.has(enemy.grid_pos)
+			enemy.visible = _visible_tiles.has(enemy.grid_pos) and not enemy.is_hidden_from_player()
 
 func _blocks_los(bx: int, by: int) -> bool:
 	var t: DungeonData.TileType = _data.get_tile(bx, by)
@@ -762,6 +763,19 @@ func get_enemy_at(pos: Vector2i) -> Enemy:
 		if is_instance_valid(e) and e.grid_pos == pos:
 			return e as Enemy
 	return null
+
+# Same as get_enemy_at(), but returns null for an Invisible enemy (Enemy.is_hidden_from_player())
+# — the chokepoint for every DIRECT click-based target resolution (melee chase-click, Frenzy/
+# Limit Break click, spell Ctrl/LMB click, thrown-weapon click). Bump-into-movement detection
+# (walking into an enemy's tile) deliberately keeps calling get_enemy_at() directly instead — an
+# invisible enemy can still be bumped into, per "not invincible, just unseen" (see
+# scripts/entities/CLAUDE.md's "Invisibility" section). AoE spells (Fireball/Thunderclap) don't
+# target by click at all, so they're unaffected either way.
+func get_targetable_enemy_at(pos: Vector2i) -> Enemy:
+	var e: Enemy = get_enemy_at(pos)
+	if e != null and e.is_hidden_from_player():
+		return null
+	return e
 
 func get_player() -> Player:
 	return _player
@@ -1816,6 +1830,25 @@ func maybe_drop_enemy_gold(enemy: Enemy) -> void:
 		return
 	var amount: int = Rng.range_i(1, 4) + GameState.current_floor / 2
 	place_item_on_floor(enemy.grid_pos, _make_gold_item(amount))
+
+# Goblin Minion's thrown Dagger: queued by Enemy.die() when that goblin had a Dagger lodged near a
+# target, resolved one player turn later (via TurnManager.player_turn_started, connected in
+# _ready()) — a 50% chance to actually find it, dropped at wherever the target currently stands
+# (not the goblin's own death tile). Deliberately a one-turn delay, not an instant drop, per spec
+# ("the turn after goblin dies").
+var _pending_dagger_drops: Array[Dictionary] = []
+
+func queue_dagger_drop(target: Node, item: Item) -> void:
+	_pending_dagger_drops.append({"target": target, "item": item})
+
+func _resolve_pending_dagger_drops() -> void:
+	if _pending_dagger_drops.is_empty():
+		return
+	for entry: Dictionary in _pending_dagger_drops:
+		var target: Node = entry["target"]
+		if is_instance_valid(target) and Rng.chance(0.5):
+			place_item_on_floor(target.grid_pos, entry["item"])
+	_pending_dagger_drops.clear()
 
 func _spawn_locked_doors() -> void:
 	if _doors.is_empty():

@@ -173,7 +173,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 		return
 	var long_throw: bool = not in_normal_range
 
-	var enemy: Enemy = player._dungeon_floor.get_enemy_at(pos)
+	var enemy: Enemy = player._dungeon_floor.get_targetable_enemy_at(pos)
 	if enemy != null:
 		enemy.on_disturbed(player.grid_pos)
 	var target_world_pos: Vector2 = enemy.position if enemy != null else Vector2(pos.x * 16 + 8, pos.y * 16 + 8)
