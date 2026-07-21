@@ -553,7 +553,14 @@ func _notice_target(source_pos: Vector2i) -> void:
 # still unaware; a CHASING/SEARCHING enemy is already awake, so this is a no-op for them. Unlike
 # _notice_target() above, this wakes the enemy WITHOUT the notice freeze — it can act (retaliate)
 # on its very next turn, since being struck is a much bigger tell than merely being spotted.
+# Also unconditionally cancels an ALREADY-PENDING notice freeze from a prior round (just_noticed/
+# the "?" marker) — being directly attacked always overrides "merely noticed", even if the enemy
+# had already spotted the player one or more rounds ago and was still sitting on its freebie
+# freeze round when the attack landed.
 func on_disturbed(source_pos: Vector2i) -> void:
+	if just_noticed:
+		just_noticed = false
+		_hide_notice_mark()
 	if behavior in [Behavior.SLEEPING, Behavior.STATIONARY, Behavior.ROAMING]:
 		_wake_up()
 		last_known_target_pos = source_pos
