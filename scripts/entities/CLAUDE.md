@@ -342,11 +342,19 @@ Expert's side-step).
 - **Wake-on-attacked**: `Enemy.on_disturbed(source_pos)` — if `SLEEPING`/`STATIONARY`/`ROAMING`,
   wakes + records `last_known_target_pos`, **without** the notice freeze below (being struck is a
   much bigger tell than merely being spotted — the enemy can retaliate on its very next turn).
-  Called after every player-side attack against that enemy, **hit or miss**, from `_bump_attack()`,
+  **Also unconditionally cancels an already-pending notice freeze** (`just_noticed`/the "?"
+  marker) even if it was set one or more ROUNDS ago and the enemy was still sitting on its freebie
+  freeze round — a direct attack always overrides "merely noticed", regardless of timing. Called
+  after every player-side attack against that enemy, **hit or miss**, from `_bump_attack()`,
   `resolve_opportunity_attack()`, `_resolve_cleave_attack()`, `_resolve_offhand_attack()`,
-  `PlayerRanged.ranged_attack()`, `PlayerThrowTool._throw_weapon()`, and
-  `Companion._attack_enemy()`. Net effect: surprise ADV (Part B) only ever applies to the first
-  attack of an engagement.
+  `PlayerRanged.ranged_attack()`, `PlayerThrowTool._throw_weapon()`, `Companion._attack_enemy()`,
+  and every enemy-targeting cast in `spell_effects.gd` (`cast_spell()`, `cast_cantrip_save_at_enemy()`,
+  `cast_leveled_at_enemy()`, `_resolve_spell_attack_bolt()` — covers both Chromatic Orb/Witch
+  Bolt's primary AND leap target — and the per-target loop inside every AoE resolver:
+  `_resolve_thunderclap()`, `_resolve_cone_aoe()`, `_resolve_sphere_aoe()`). Net effect: surprise
+  ADV (Part B) only ever applies to the first attack of an engagement, and casting a spell/cantrip
+  at (or catching in an AoE) an unaware enemy wakes it exactly like a melee/ranged/thrown attack —
+  no "?" freeze, hit or miss.
 - **Notice freeze — the golden "?"** (Shattered Pixel Dungeon-style): every transition from
   unaware (SLEEPING/STATIONARY/ROAMING) to CHASING that happens via *noticing* rather than *being
   attacked* — the stealth-check detection above, SLEEPING's true-adjacency backstop, and
