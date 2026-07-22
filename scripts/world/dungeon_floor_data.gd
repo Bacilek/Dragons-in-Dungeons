@@ -90,17 +90,17 @@ const ENEMY_POOL: Array = [
 	# single-entry multiattack sub-attack so the hit gets a real Piercing damage type/name instead
 	# of the top-level-stats default of Bludgeoning).
 	# Dagger, thrown (pool "thrown_weapon", one-shot per life — Enemy._thrown_weapon_used,
-	# "flee_only": true): a parting shot thrown ONLY while actively fleeing from a melee hit
-	# (Nimble Escape, escape_turns > 0) and the target is at least 2 tiles away — NOT a general
-	# chase-opener before closing to melee (owner-requested: a goblin hit by a ranged/spell attack
-	# like Fire Bolt should never throw its dagger, since it was never disarmed via melee and has
-	# no reason to disengage — see Enemy._decide_action()'s escape_turns branch, which checks this
-	# before falling through to the flee move itself). Same 1d4+2 Piercing, rolled with
-	# Disadvantage (reuses _attack_player()/_attack_companion()'s `long_shot` param purely for its
-	# Disadvantage side effect, not its usual normal/long-range meaning). Range capped at 4 tiles
-	# (authored judgment call — no player-facing "thrown Dagger at unlimited range" item exists to
-	# mirror). Once thrown, the Dagger is gone for good: every attack after this reverts to an
-	# unarmed Fist strike (pool "unarmed_fallback") — see Enemy._attack_target()'s dispatch.
+	# "flee_only": true): a parting shot thrown the instant Nimble Escape's flee state (melee-hit
+	# triggered, escape_turns > 0) WEARS OFF — never mid-flee, and never off a ranged/spell hit
+	# (Fire Bolt etc. never sets escape_turns at all) — and only if the target still isn't
+	# adjacent at that moment (close enough, it just stabs instead). NOT a general chase-opener
+	# before closing to melee — see Enemy._decide_action()'s `escape_turns == 0` check, reached
+	# only on the turn the counter's own decrement brings it to zero. Same 1d4+2 Piercing, rolled
+	# with Disadvantage (reuses _attack_player()/_attack_companion()'s `long_shot` param purely
+	# for its Disadvantage side effect, not its usual normal/long-range meaning). Range capped at
+	# 4 tiles (authored judgment call — no player-facing "thrown Dagger at unlimited range" item
+	# exists to mirror). Once thrown, the Dagger is gone for good: every attack after this reverts
+	# to an unarmed Fist strike (pool "unarmed_fallback") — see Enemy._attack_target()'s dispatch.
 	# Contrast with Orc Warrior's Javelin below, which has no "flee_only" key and is instead a
 	# general opener thrown whenever CHASING/SEARCHING and not yet adjacent.
 	# Fists (pool "unarmed_fallback"): STR-based (+prof) to-hit despite the Dagger being DEX-based —

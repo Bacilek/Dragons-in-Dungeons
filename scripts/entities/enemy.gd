@@ -688,19 +688,24 @@ func _decide_action() -> Dictionary:
 
 	# Nimble Escape (Goblin trait): fleeing takes priority over every other behavior below,
 	# including attacking an adjacent target — a fleeing goblin doesn't stop to swing. A
-	# "flee_only" thrown weapon (Goblin Minion's Dagger) is a parting shot thrown WHILE fleeing
-	# instead of running this turn, if the fleeing target is at throwing range/LOS — see the
-	# "thrown_weapon" check below for the non-flee-only case (Orc Warrior's Javelin).
+	# "flee_only" thrown weapon (Goblin Minion's Dagger) is NOT thrown mid-flee — it's a parting
+	# shot thrown the instant Nimble Escape WEARS OFF, only if the target still isn't adjacent
+	# (close enough to just stab instead). See the "thrown_weapon" check further below for the
+	# non-flee-only case (Orc Warrior's Javelin).
 	if escape_turns > 0:
 		escape_turns -= 1
-		var flee_wpn: Dictionary = _type.get("thrown_weapon", {})
-		if not flee_wpn.is_empty() and bool(flee_wpn.get("flee_only", false)) and not _thrown_weapon_used:
-			var flee_target: Node = escape_from if is_instance_valid(escape_from) else target
-			var throw_range_flee: int = int(flee_wpn.get("range", 4))
-			var dist_flee: int = _chebyshev_to(flee_target)
-			if dist_flee >= 2 and dist_flee <= throw_range_flee and _dungeon_floor.has_ranged_los(grid_pos, flee_target.grid_pos):
-				return {"type": "throw_weapon", "target": flee_target, "weapon": flee_wpn}
-		return {"type": "flee", "target": escape_from if is_instance_valid(escape_from) else target}
+		if escape_turns == 0:
+			var flee_wpn: Dictionary = _type.get("thrown_weapon", {})
+			if not flee_wpn.is_empty() and bool(flee_wpn.get("flee_only", false)) and not _thrown_weapon_used:
+				var flee_target: Node = escape_from if is_instance_valid(escape_from) else target
+				var throw_range_flee: int = int(flee_wpn.get("range", 4))
+				var dist_flee: int = _chebyshev_to(flee_target)
+				if dist_flee >= 2 and dist_flee <= throw_range_flee and _dungeon_floor.has_ranged_los(grid_pos, flee_target.grid_pos):
+					return {"type": "throw_weapon", "target": flee_target, "weapon": flee_wpn}
+			# Escape just wore off with no throw (adjacent, or out of throw range/LOS) — fall
+			# through to the normal decision logic below (chase/attack) instead of fleeing again.
+		else:
+			return {"type": "flee", "target": escape_from if is_instance_valid(escape_from) else target}
 
 	# One-shot thrown weapon (pool "thrown_weapon" — Orc Warrior's Javelin; Goblin Minion's Dagger
 	# is "flee_only" and handled above instead): once not actively escaping (the check above
