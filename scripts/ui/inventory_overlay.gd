@@ -219,7 +219,7 @@ func _build_equipment_section() -> void:
 	# Gloves-Armor-Hand1-Hand2 middle row; Headgear above Armor; Boots below Armor;
 	# Ranged centered above the gap between Hand 1 and Hand 2.
 	var layout: Array = [
-		["head",   1.0, 0],                                   ["ranged", 2.5, 0], ["special", 3.5, 0],
+		["trinket", 0.0, 0], ["head",   1.0, 0],              ["ranged", 2.5, 0], ["special", 3.5, 0],
 		["gloves", 0.0, 1], ["armor", 1.0, 1], ["melee", 2.0, 1], ["hand2", 3.0, 1],
 		["boots",  1.0, 2],
 	]
