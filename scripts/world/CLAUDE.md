@@ -187,7 +187,7 @@ dungeon_floor.cook_rotten_meat(trap_pos: Vector2i) -> Item  # erases Fire Trap, 
 
 ## Spawning
 ```gdscript
-_spawn_enemies()        # pulls from DungeonFloorData.ENEMY_POOL filtered by floor range, registers with TurnManager
+_spawn_enemies()        # pulls from DungeonFloorData.ENEMY_POOL filtered by floor range, registers with TurnManager. A Large-footprint entry (pool "size", scripts/entities/CLAUDE.md's "Multi-tile footprint") requires an entire free WxH block of eligible floor tiles (_footprint_fits()) — guarantees it never spawns in a 1-wide corridor; skips the slot outright if this floor's layout has no room for it
 _spawn_boss()           # floor % 5 == 0 → picks from DungeonFloorData.BOSS_POOL
 _spawn_items()          # 2-3 random items from DungeonFloorData.ITEM_POOL; calls _build_floor_item()
 _spawn_traps()          # places traps by type

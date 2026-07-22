@@ -331,7 +331,7 @@ func is_walkable(pos: Vector2i) -> bool:
 		return false
 	return _data.is_walkable(pos)
 
-func is_walkable_for_enemy(pos: Vector2i) -> bool:
+func is_walkable_for_enemy(pos: Vector2i, excluding: Enemy = null) -> bool:
 	if not _data.is_walkable(pos):
 		return false
 	if _barrels.has(pos):
@@ -343,7 +343,7 @@ func is_walkable_for_enemy(pos: Vector2i) -> bool:
 	if _player != null and _player.grid_pos == pos:
 		return false
 	for e in _enemies:
-		if is_instance_valid(e) and e.grid_pos == pos:
+		if is_instance_valid(e) and e != excluding and e.occupies(pos):
 			return false
 	if _traps.has(pos):
 		var trap: Dictionary = _traps[pos]
@@ -352,6 +352,18 @@ func is_walkable_for_enemy(pos: Vector2i) -> bool:
 		if not trap.get("triggered", false):
 			return false  # Active non-push traps avoided
 		# Triggered single-use traps: enemy can walk through
+	return true
+
+# Whether an entire WxH footprint anchored at `top_left` is walkable for an enemy — every tile
+# checked via is_walkable_for_enemy() above (so a large enemy needs a full free block, never a
+# 1-wide corridor: a corridor's cross-section is only 1 tile, so no 2x2+ block can exist inside
+# one). `excluding` should be the enemy doing the moving, so its own current footprint's tiles
+# (which overlap the destination when it only steps 1 tile) never falsely block the move.
+func is_area_walkable_for_enemy(top_left: Vector2i, size: Vector2i, excluding: Enemy = null) -> bool:
+	for dy: int in size.y:
+		for dx: int in size.x:
+			if not is_walkable_for_enemy(top_left + Vector2i(dx, dy), excluding):
+				return false
 	return true
 
 # ── Fog of war ────────────────────────────────────────────────────────────────
@@ -862,7 +874,7 @@ func _bfs_collect(from: Vector2i, exclude: Array) -> Dictionary:
 
 func get_enemy_at(pos: Vector2i) -> Enemy:
 	for e in _enemies:
-		if is_instance_valid(e) and e.grid_pos == pos:
+		if is_instance_valid(e) and e.occupies(pos):
 			return e as Enemy
 	return null
 
@@ -910,7 +922,7 @@ func is_walkable_for_companion(pos: Vector2i) -> bool:
 	if _player != null and _player.grid_pos == pos:
 		return false
 	for e: Enemy in _enemies:
-		if is_instance_valid(e) and e.grid_pos == pos:
+		if is_instance_valid(e) and e.occupies(pos):
 			return false
 	for c in _companions:
 		if is_instance_valid(c) and c.grid_pos == pos:
@@ -943,9 +955,10 @@ func get_visible_enemies() -> Array[Enemy]:
 	for e: Enemy in _enemies:
 		if not is_instance_valid(e):
 			continue
-		var dx: int = e.grid_pos.x - _player.grid_pos.x
-		var dy: int = e.grid_pos.y - _player.grid_pos.y
-		if dx * dx + dy * dy <= r2 and has_line_of_sight(_player.grid_pos, e.grid_pos):
+		var near: Vector2i = e.nearest_occupied_tile(_player.grid_pos)
+		var dx: int = near.x - _player.grid_pos.x
+		var dy: int = near.y - _player.grid_pos.y
+		if dx * dx + dy * dy <= r2 and has_line_of_sight(_player.grid_pos, near):
 			result.append(e)
 	return result
 
@@ -961,7 +974,7 @@ func on_player_reached_stairs() -> void:
 func _spawn_enemies() -> void:
 	var is_boss_floor: bool = GameState.current_floor % 5 == 0 and _data.boss_room.has_area()
 
-	var candidates: Array = []
+	var candidates: Array[Vector2i] = []
 	for y: int in _data.height:
 		for x: int in _data.width:
 			var pos: Vector2i = Vector2i(x, y)
@@ -982,11 +995,45 @@ func _spawn_enemies() -> void:
 	if eligible.is_empty():
 		eligible = [DungeonFloorData.ENEMY_POOL[0]]
 
+	# `remaining` tracks which shuffled candidate tiles are still free THIS spawn pass — every
+	# non-Large pick still just pops the front in shuffled order (identical to the old plain
+	# candidates[i] indexing, since nothing else ever removed from that array either), so a floor
+	# with no Large-footprint entry in its `eligible` pool spawns byte-identical to before this.
+	var remaining: Array[Vector2i] = candidates.duplicate()
+	var remaining_set: Dictionary = {}
+	for c: Vector2i in remaining:
+		remaining_set[c] = true
+
 	var enemy_scene: PackedScene = preload("res://scenes/game/enemy.tscn")
 	var count: int = mini(_pop_rng.randi_range(ENEMY_COUNT_MIN, ENEMY_COUNT_MAX), candidates.size())
 
 	for i: int in count:
 		var type_data: Dictionary = eligible[_pop_rng.randi_range(0, eligible.size() - 1)]
+		var footprint: Vector2i = _enemy_pool_footprint(type_data)
+		var spawn_pos: Vector2i = Vector2i(-1, -1)
+		if footprint != Vector2i.ONE:
+			# Large enemy (e.g. Ogre, 2x2): needs an ENTIRE free footprint of plain open floor —
+			# every tile independently re-passes the same single-tile eligibility rules that built
+			# `remaining_set` (not start/stairs-adjacent, not the boss room). A straight 1-wide
+			# corridor can never contain a 2x2+ block of floor tiles, so this alone is what keeps a
+			# Large enemy from ever spawning in one — no separate corridor-detection code needed.
+			for cand: Vector2i in remaining:
+				if _footprint_fits(cand, footprint, remaining_set):
+					spawn_pos = cand
+					break
+			if spawn_pos == Vector2i(-1, -1):
+				continue  # this floor's layout has no room for it this pass — skip the slot
+			for dy: int in footprint.y:
+				for dx: int in footprint.x:
+					var t: Vector2i = spawn_pos + Vector2i(dx, dy)
+					remaining.erase(t)
+					remaining_set.erase(t)
+		else:
+			if remaining.is_empty():
+				continue
+			spawn_pos = remaining.pop_front()
+			remaining_set.erase(spawn_pos)
+
 		var enemy: Enemy = enemy_scene.instantiate() as Enemy
 		enemy.configure(type_data)
 		# Assign random initial behavior
@@ -997,12 +1044,23 @@ func _spawn_enemies() -> void:
 			2: enemy.initial_behavior = Enemy.Behavior.ROAMING
 		enemy._dungeon_floor = self
 		entities.add_child(enemy)
-		enemy.set_grid_pos(candidates[i])
+		enemy.set_grid_pos(spawn_pos)
 		_enemies.append(enemy)
 		TurnManager.register_enemy(enemy)
 
 	if is_boss_floor:
 		_spawn_boss()
+
+func _enemy_pool_footprint(type_data: Dictionary) -> Vector2i:
+	var s: Dictionary = type_data.get("size", {})
+	return Vector2i(int(s.get("w", 1)), int(s.get("h", 1)))
+
+func _footprint_fits(top_left: Vector2i, size: Vector2i, remaining_set: Dictionary) -> bool:
+	for dy: int in size.y:
+		for dx: int in size.x:
+			if not remaining_set.has(top_left + Vector2i(dx, dy)):
+				return false
+	return true
 
 func _spawn_boss() -> void:
 	var floor_num: int = GameState.current_floor
@@ -1436,17 +1494,25 @@ func force_move_entity(entity: Node2D, direction: Vector2i, max_distance: int, d
 	var start: Vector2i = e.grid_pos
 	var current: Vector2i = start
 	var hit_wall: bool = false
+	var large_enemy: Enemy = (entity as Enemy) if entity is Enemy and (entity as Enemy).size != Vector2i.ONE else null
 	for _i: int in max_distance:
 		var nxt: Vector2i = current + direction
-		if not _data.is_walkable(nxt):
-			hit_wall = true
-			break
-		if entity is Player and get_enemy_at(nxt) != null:
-			hit_wall = true
-			break
-		if entity is Enemy and _player != null and _player.grid_pos == nxt:
-			hit_wall = true
-			break
+		if large_enemy != null:
+			# A multi-tile mover needs its WHOLE footprint free at every step — a single-tile
+			# is_walkable() check would let e.g. only its top-left corner clip through a wall.
+			if not is_area_walkable_for_enemy(nxt, large_enemy.size, large_enemy):
+				hit_wall = true
+				break
+		else:
+			if not _data.is_walkable(nxt):
+				hit_wall = true
+				break
+			if entity is Player and get_enemy_at(nxt) != null:
+				hit_wall = true
+				break
+			if entity is Enemy and _player != null and _player.grid_pos == nxt:
+				hit_wall = true
+				break
 		current = nxt
 	if is_instance_valid(trap_sprite):
 		_play_trap_animation(trap_sprite)  # fires async — simultaneous with movement
@@ -2226,6 +2292,16 @@ func resolve_push(enemy: Enemy, direction: Vector2i) -> void:
 	if "forced_move" in enemy.condition_immunities:
 		return
 	var dest: Vector2i = enemy.grid_pos + direction
+	if enemy.size != Vector2i.ONE:
+		# Large enemy (multi-tile footprint): the wall-bump/chasm special cases below are authored
+		# for a single destination tile and don't generalize cleanly to a 2x2+ block straddling a
+		# wall corner or a chasm edge — Push instead only succeeds when the ENTIRE destination
+		# footprint is plain open floor, otherwise it's simply blocked (too bulky to shove).
+		if not is_area_walkable_for_enemy(dest, enemy.size, enemy):
+			return
+		await enemy.move_to(dest, 0.15)
+		GameState.game_log("[color=cyan]Push:[/color] [color=orange]%s[/color] [color=gray]is shoved back.[/color]" % enemy.display_name)
+		return
 	if get_enemy_at(dest) != null or (_player != null and _player.grid_pos == dest):
 		return  # blocked by another occupant — stays put, no damage
 	var tile: DungeonData.TileType = _data.get_tile(dest.x, dest.y)

@@ -53,8 +53,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	var disadv_count: int = 0
 	if player._vfx.has_advantage(target): adv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
-	var d_vec: Vector2i = target.grid_pos - player.grid_pos
-	if spell.range_tiles > 1 and maxi(abs(d_vec.x), abs(d_vec.y)) <= 1: disadv_count += 1
+	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1: disadv_count += 1
 	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
 
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
@@ -610,8 +609,7 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	var disadv_count: int = 0
 	if player._vfx.has_advantage(target): adv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
-	var d_vec: Vector2i = target.grid_pos - player.grid_pos
-	if spell.range_tiles > 1 and maxi(abs(d_vec.x), abs(d_vec.y)) <= 1: disadv_count += 1
+	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1: disadv_count += 1
 	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
 
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)

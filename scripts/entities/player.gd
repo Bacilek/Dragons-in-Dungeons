@@ -1022,14 +1022,18 @@ func _execute_queued_path() -> void:
 				_target_enemy = null
 				break
 
-			var chase_path: Array[Vector2i] = _dungeon_floor.find_path(grid_pos, _target_enemy.grid_pos)
+			# Path to whichever occupied tile of the target is closest — for a 1x1 enemy this is
+			# always just its grid_pos; for a Large enemy it lets the player approach from whatever
+			# side of its footprint is nearest instead of always circling to its top-left corner.
+			var chase_dest: Vector2i = _target_enemy.nearest_occupied_tile(grid_pos)
+			var chase_path: Array[Vector2i] = _dungeon_floor.find_path(grid_pos, chase_dest)
 			if chase_path.is_empty():
 				_target_enemy = null
 				break
 
 			if chase_path.size() <= CombatMath.melee_reach(GameState.equipped_weapon, GameState.get_talent_rank("branching_strike")):
 				# In melee (or extended reach) range — attack
-				var atk_dir: Vector2i = _target_enemy.grid_pos - grid_pos
+				var atk_dir: Vector2i = chase_dest - grid_pos
 				_bump_attack(_target_enemy, atk_dir)
 				_target_enemy = null
 				if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
@@ -1211,11 +1215,11 @@ func _resolve_enemy_opportunity_attacks(prev: Vector2i, next: Vector2i) -> void:
 			continue
 		if e.oa_used_this_round:
 			continue
-		if not _dungeon_floor.has_line_of_sight(e.grid_pos, prev):
+		if not _dungeon_floor.has_line_of_sight(e.nearest_occupied_tile(prev), prev):
 			continue
 		var reach: int = e.melee_reach()
-		var d_prev: int = maxi(absi(prev.x - e.grid_pos.x), absi(prev.y - e.grid_pos.y))
-		var d_next: int = maxi(absi(next.x - e.grid_pos.x), absi(next.y - e.grid_pos.y))
+		var d_prev: int = e.min_dist_to(prev)
+		var d_next: int = e.min_dist_to(next)
 		# Battlefield Expert: a side-step (still-adjacent move around this same enemy) falls
 		# through the no-OA branch below with zero changes to OA logic itself — see
 		# markdowns/barbarian_base.md. Only counts as a genuine "around the enemy" pivot when the
@@ -1471,7 +1475,7 @@ func _execute_hook(enemy: Enemy) -> void:
 		GameState.game_log("[color=lime]Grip of the Forest pulls %s toward you! [url=%s]%d vs DC %d[/url][/color]" % [enemy.display_name, check_meta, roll, dc])
 		if _dungeon_floor != null:
 			var guard: int = 0
-			while maxi(absi(enemy.grid_pos.x - grid_pos.x), absi(enemy.grid_pos.y - grid_pos.y)) > 1 and guard < 20:
+			while enemy.min_dist_to(grid_pos) > 1 and guard < 20:
 				guard += 1
 				var step_dir: Vector2i = Vector2i(sign(grid_pos.x - enemy.grid_pos.x), sign(grid_pos.y - enemy.grid_pos.y))
 				var moved: int = await _dungeon_floor.force_move_entity(enemy, step_dir, 1, false)

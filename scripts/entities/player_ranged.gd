@@ -36,8 +36,9 @@ func is_in_ranged_range(enemy: Enemy) -> bool:
 	var weapon: Item = GameState.equipped_ranged
 	if weapon == null or not weapon.is_ranged or player._dungeon_floor == null:
 		return false
-	return is_ranged_target_in_range(weapon, enemy.grid_pos) \
-		and player._dungeon_floor.has_ranged_los(player.grid_pos, enemy.grid_pos)
+	var near: Vector2i = enemy.nearest_occupied_tile(player.grid_pos)
+	return is_ranged_target_in_range(weapon, near) \
+		and player._dungeon_floor.has_ranged_los(player.grid_pos, near)
 
 func ranged_attack(enemy: Enemy) -> void:
 	GameState.stealth_check_skip = true
@@ -95,10 +96,10 @@ func ranged_attack(enemy: Enemy) -> void:
 	if vex_triggered: adv_count += 1
 	# Disadvantage: ranged weapon fired at melee range (Chebyshev distance 1), Heavy weapon with
 	# DEX < 13, or a long-range shot (beyond the weapon's normal range but within FOV).
-	var d_vec: Vector2i = enemy.grid_pos - player.grid_pos
-	if maxi(abs(d_vec.x), abs(d_vec.y)) <= 1: disadv_count += 1
+	var near_tile: Vector2i = enemy.nearest_occupied_tile(player.grid_pos)
+	if enemy.min_dist_to(player.grid_pos) <= 1: disadv_count += 1
 	if weapon != null and weapon.is_heavy and player.stats.dexterity < 13: disadv_count += 1
-	if ranged_shot_disadvantage(weapon, enemy.grid_pos): disadv_count += 1
+	if ranged_shot_disadvantage(weapon, near_tile): disadv_count += 1
 	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]

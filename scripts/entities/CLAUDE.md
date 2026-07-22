@@ -72,6 +72,68 @@ behavior refactor — decide/execute split, `attack_profile`, targeting — this
 - **`magic_resistance`**: Advantage on saving throws against spells — `Enemy.resist_check_detailed()` gained a `magical: bool = false` param; when true AND this trait is present, the d20 is rolled with Advantage (max of two rolls). Threaded through every SAVE-resolution spell's enemy-facing call in `spell_effects.gd` (Ray of Frost, Toll the Dead, Mind Sliver's own save, Thunderclap, Fireball) — **not** weapon-mastery saves (Push/Topple/Grip of the Forest/Branching Strike), which aren't spells and never pass `magical=true`.
 - **`shape_shift`**: while CHASING and unseen by the player THIS turn (out of FOV, or the enemy is Invisible — `_tick_shape_shift()`'s `unseen` check), 50% chance per eligible turn to secretly transform into a random small-critter form (`Enemy.SHAPE_SHIFT_FORMS = ["rat","raven","spider"]`, tracked in `_shifted_form`) — no turn cost, and a further 50% chance to already be shape-shifted at spawn (`_ready()`). Reverts to the true form instantly on taking any actual damage (`take_typed_damage()`'s revert check — an immune 0-damage hit does NOT revert it). **Mechanically wired, visually a no-op**: no `rat`/`raven`/`spider` sprites exist yet (checked `sprites/characters/`) — per direct owner decision this is asset debt, not a missing feature; swap in real sprites via `_setup_animations()`'s sprite-prefix lookup once art exists. The one real mechanical effect today: while shape-shifted, `_tick_speed_gate()` forces the shared mundane `{"moves":2,"per":3}` ground speed regardless of the true form's own `"speed_ground"`/`"speed_flying"` pair (none of the three animals can fly).
 
+## Multi-tile footprint (Large enemies)
+
+`Entity.size: Vector2i` (default `ONE`) gives an entity a real WxH footprint instead of a single
+tile — `grid_pos` is always the **top-left** corner. Only `Enemy` ever sets it above `(1,1)` today
+(pool `"size": {"w","h"}`, read in `Enemy._apply_stats()`), so Player/Companion stay 1x1 forever
+and every function below reduces to exactly today's single-tile behavior for them. First (only)
+user: `ogre` (2x2, `dungeon_floor_data.gd`).
+
+**Entity API** (`entity.gd`, generic — usable on any `Entity` reference):
+- `occupied_tiles() -> Array[Vector2i]` — every tile the footprint covers, top-left first.
+- `occupies(pos) -> bool` — is `pos` anywhere inside the footprint.
+- `min_dist_to(pos) -> int` — Chebyshev distance from `pos` to the NEAREST occupied tile. The
+  generic replacement for "distance to `grid_pos`" everywhere adjacency/range is checked against
+  an entity that might be Large — melee/ranged/spell range checks, Opportunity Attack trigger
+  radius, and Grip of the Forest's pull-until-adjacent loop all call this instead of hand-rolled
+  `maxi(absi(...))` against `.grid_pos` now.
+- `nearest_occupied_tile(pos) -> Vector2i` — the specific occupied tile closest to `pos`, used as
+  the concrete LOS ray/pathing origin once `min_dist_to()` says "close enough" (e.g. `Enemy._can_see_entity()`'s
+  `has_line_of_sight()` origin, `PlayerRanged.is_in_ranged_range()`'s LOS/range target, the
+  player's enemy-chase click pathing to whichever side of the footprint is nearest instead of
+  always circling to the top-left corner).
+- `_tile_center(pos)` (already existed) now centers on the WxH block anchored at `pos`, so a Large
+  enemy's sprite renders centered on its own footprint, not offset toward one corner.
+
+**Collision/targeting** (`dungeon_floor.gd`): `is_walkable_for_enemy(pos, excluding)` and
+`get_enemy_at(pos)`/`get_targetable_enemy_at(pos)`/`is_walkable_for_companion(pos)` all check
+`enemy.occupies(pos)` instead of `enemy.grid_pos == pos` — so a click, bump-attack, or companion
+avoidance check on ANY of the 4 tiles resolves to the Large enemy. `excluding` (new optional param
+on `is_walkable_for_enemy`) lets a mover's own current tiles never falsely block its next step.
+`is_area_walkable_for_enemy(top_left, size, excluding)` is the multi-tile counterpart — every tile
+of a WxH block must independently pass `is_walkable_for_enemy`; `Enemy._footprint_walkable(pos)`
+wraps it with the enemy's own `size`/self-exclusion and is what every movement decision site
+(`_act_toward_single_step`, `_bfs_to`, `_do_roam_walk`, `_do_random_step`, `_flee_from`,
+`_pick_roam_target`) now calls instead of the old single-tile `is_walkable_for_enemy()` — a no-op
+change in behavior for every 1x1 enemy.
+
+**Spawn placement** (`DungeonFloor._spawn_enemies()`): a Large pool entry (footprint ≠ `(1,1)`,
+read via `_enemy_pool_footprint()`) must find a candidate tile where the **entire** footprint is
+still-free single-tile-eligible ground (`_footprint_fits()` against the same eligibility set every
+1x1 spawn already draws from — not start/stairs-adjacent, not the boss room). A straight 1-wide
+corridor can never contain a 2x2+ block of floor tiles, so this alone is what keeps a Large enemy
+from ever spawning in one — no separate corridor-detection code needed. If no fit exists this
+floor, that spawn slot is skipped outright rather than falling back to a 1-tile placement.
+Non-Large spawns are completely unaffected (same shuffled-candidate consumption order as before).
+
+**Forced movement**: `force_move_entity()` and the Heavy Crossbow Push mastery's `resolve_push()`
+both branch on `entity.size != Vector2i.ONE` — a Large mover validates its whole footprint via
+`is_area_walkable_for_enemy()` at every step instead of the single-tile wall/occupant checks.
+`resolve_push()` specifically: the wall-bump-damage and chasm-death special cases are authored for
+a single destination tile and don't generalize to a straddling 2x2 block, so a Large target instead
+just needs its whole destination footprint to be plain open floor — otherwise the push is a no-op
+(too bulky to shove into a wall corner or half over a chasm edge). No enemy uses Push resistance
+today, so this hasn't been exercised beyond Ogre.
+
+**Known simplifications** (documented gaps, not bugs): `Companion`'s own AI targeting
+(`companion.gd`) still measures distance/adjacency against `enemy.grid_pos` directly, not
+footprint-aware — a companion may take one extra approach step against a Large enemy before it's
+actually able to attack. `Enemy._move_step()`'s post-move trap/water/grass tile check only looks
+at `grid_pos` (the top-left tile), not the full footprint. Sprite `z_index`/HP-bar/notice-mark
+vertical offsets are unchanged constants, tuned for 1-tile art — a Large enemy's HP bar sits lower
+relative to its (taller) sprite than a normal enemy's.
+
 ## Invisibility
 
 Implemented both as an enemy-side ability (Imp, pool key `"invisibility"` above) and the real

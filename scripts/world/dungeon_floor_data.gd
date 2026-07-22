@@ -317,10 +317,14 @@ const ENEMY_POOL: Array = [
 	# {"moves": 4, "per": 3} (Enemy._tick_speed_gate()'s Bresenham-style accumulator: 4 moves over
 	# every 3 real turns, landing as 1/1/2 — an extra step on every 3rd turn — same mechanism as
 	# Zombie's 20ft-speed {"moves": 2, "per": 3} slow-down, just above baseline instead of below it).
-	# "Large" size is flavor only — multi-tile occupancy is
-	# still design-only per the stat-block schema doc (scripts/entities/CLAUDE.md), so the Ogre
-	# occupies a single tile like every other enemy; its sprite (ogre_idle_anim_f0-3/ogre_run_anim_f0-3,
-	# already dropped into sprites/characters/) is just drawn larger by the art itself.
+	# "Large" size is a real 2x2 footprint — pool "size": {"w": 2, "h": 2} (Entity.size, see
+	# scripts/entities/CLAUDE.md's "Multi-tile footprint (Large enemies)"), the first enemy to use
+	# it: occupies 4 tiles at once (grid_pos is the top-left corner), blocks movement/targeting on
+	# all 4, and its own attack range/sight/LOS are measured from whichever occupied tile is
+	# closest. Spawn placement requires the WHOLE 2x2 block to be free — see
+	# DungeonFloor._spawn_enemies()'s footprint guard — so it can never land in a 1-wide corridor.
+	# Its sprite (ogre_idle_anim_f0-3/ogre_run_anim_f0-3, already dropped into sprites/characters/,
+	# 32x36px vs. e.g. Orc Warrior's 16x23px) is sized to match the 2x2 footprint.
 	# Darkvision: +1 to the default enemy notice/LOS radius (senses.sight_bonus).
 	# Passive Perception = 10 + WIS mod (-2) = 8.
 	# Greatclub: +6 to hit (STR+prof — default melee attack_stat, no "attack_profile" override
@@ -342,6 +346,7 @@ const ENEMY_POOL: Array = [
 	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 8,
 	 "speed": {"moves": 4, "per": 3},
+	 "size": {"w": 2, "h": 2},
 	 "multiattack": [{"name": "Greatclub", "count": 1, "dmg_min": 6, "dmg_max": 20, "damage_type": "Bludgeoning"}],
 	 "thrown_weapon": {"name": "Javelin", "range": 3, "dmg_min": 6, "dmg_max": 20, "damage_type": "Piercing",
 		"icon": "weapon_spear.png", "drop_die_min": 2, "drop_die_max": 8, "weapon_category": "Simple",

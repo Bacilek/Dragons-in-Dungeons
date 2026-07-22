@@ -112,6 +112,12 @@ func _apply_stats() -> void:
 	creature_type     = String(_type.get("creature_type", "Humanoid"))
 	legendary_resistances_remaining = int(_type.get("legendary_resistances", 0))
 
+	# Multi-tile footprint (pool "size": {"w","h"}, e.g. Ogre's Large 2x2) — Entity.size, default
+	# ONE. grid_pos stays the top-left corner (Entity.occupied_tiles()/occupies()/min_dist_to()/
+	# nearest_occupied_tile() derive everything else from it) — see "Enemy D&D stat-block schema".
+	var size_data: Dictionary = _type.get("size", {})
+	size = Vector2i(int(size_data.get("w", 1)), int(size_data.get("h", 1)))
+
 	# Ability score modifiers (docs/architecture/enemy-stat-block-design.md §4). "mods" is the
 	# real stat block (six ability modifiers); an entry that supplies it switches to the real
 	# mod+proficiency formula EVERYWHERE (checks, attacks) INSTEAD OF the legacy floor-scaling
@@ -588,13 +594,17 @@ func _get_target_candidates() -> Array:
 		out.append(comp)
 	return out
 
+# Both measured against the NEAREST tile of this enemy's own footprint, not always grid_pos —
+# a no-op for every 1x1 enemy (occupied_tiles() == [grid_pos]), and what makes a Large enemy's
+# attack range/sight/adjacency checks correct from whichever side of its 2x2 block is closest.
 func _dist_sq_to(e: Node) -> int:
-	var dx: int = e.grid_pos.x - grid_pos.x
-	var dy: int = e.grid_pos.y - grid_pos.y
+	var t: Vector2i = nearest_occupied_tile(e.grid_pos)
+	var dx: int = e.grid_pos.x - t.x
+	var dy: int = e.grid_pos.y - t.y
 	return dx * dx + dy * dy
 
 func _chebyshev_to(e: Node) -> int:
-	return maxi(absi(e.grid_pos.x - grid_pos.x), absi(e.grid_pos.y - grid_pos.y))
+	return min_dist_to(e.grid_pos)
 
 # §10: pool "senses" -> "sight_bonus" is an offset relative to FOV_RADIUS (e.g. +1 = darkvision,
 # +2 = superior darkvision, -1 = weak sight), so changing the default FOV_RADIUS doesn't require
@@ -611,7 +621,7 @@ func _can_see_entity(e: Node) -> bool:
 	if e is Player and GameState.player_stats.invisibility_turns > 0:
 		return false
 	var r: int = _sight_range()
-	return _dist_sq_to(e) <= r * r and _dungeon_floor.has_line_of_sight(grid_pos, e.grid_pos)
+	return _dist_sq_to(e) <= r * r and _dungeon_floor.has_line_of_sight(nearest_occupied_tile(e.grid_pos), e.grid_pos)
 
 # door_ambush gate (§4.3): true if this enemy could already see the player from `from_pos`
 # (BEFORE the door step) — used to tell "door-camping ambush" (no prior LOS) apart from an
@@ -890,7 +900,7 @@ func _in_attack_range(target: Node) -> bool:
 	match profile.get("kind", "melee"):
 		"ranged":
 			var rng: int = profile.get("range", 4)
-			return _chebyshev_to(target) <= rng and _dungeon_floor.has_ranged_los(grid_pos, target.grid_pos)
+			return _chebyshev_to(target) <= rng and _dungeon_floor.has_ranged_los(nearest_occupied_tile(target.grid_pos), target.grid_pos)
 		_:
 			return _chebyshev_to(target) == 1
 
@@ -956,6 +966,13 @@ func _execute_ability(intent: Dictionary) -> void:
 # EVERY step so a multi-step turn stops moving and swings the instant it's in range (covers the
 # "move + attack" combo from the trait's D&D text; a target already in range on the very first
 # check is the plain "just attack" combo, unchanged from before this was multi-step).
+# Whether this enemy's WHOLE footprint fits at `top_left` (all size.x*size.y tiles walkable,
+# excluding itself so its own current tiles never falsely block a move that vacates them) —
+# a no-op wrapper around DungeonFloor.is_walkable_for_enemy() for a 1x1 enemy, so every existing
+# non-Large call site behaves exactly as before.
+func _footprint_walkable(top_left: Vector2i) -> bool:
+	return _dungeon_floor.is_area_walkable_for_enemy(top_left, size, self)
+
 func _act_toward(target: Node, bonus_moves: int = 0) -> void:
 	var total_steps: int = maxi(1, _moves_this_turn) + bonus_moves
 	for _i: int in total_steps:
@@ -982,7 +999,7 @@ func _act_toward_single_step(target: Node) -> bool:
 		var next_pos: Vector2i = grid_pos + step
 		if _dungeon_floor.has_door_at(next_pos) and not _dungeon_floor.is_door_open(next_pos):
 			_dungeon_floor.open_door(next_pos)
-		if _dungeon_floor.is_walkable_for_enemy(next_pos):
+		if _footprint_walkable(next_pos):
 			await _move_step(step, next_pos)
 			return true
 
@@ -997,7 +1014,7 @@ func _act_toward_single_step(target: Node) -> bool:
 		var step: Vector2i = next_pos - grid_pos
 		if _dungeon_floor.has_door_at(next_pos) and not _dungeon_floor.is_door_open(next_pos):
 			_dungeon_floor.open_door(next_pos)
-		if _dungeon_floor.is_walkable_for_enemy(next_pos):
+		if _footprint_walkable(next_pos):
 			await _move_step(step, next_pos)
 			return true
 	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
@@ -1009,7 +1026,7 @@ func _pick_roam_target() -> Vector2i:
 	for c: Vector2i in centers:
 		if maxi(absi(c.x - grid_pos.x), absi(c.y - grid_pos.y)) < 4:
 			continue
-		if _dungeon_floor.is_walkable_for_enemy(c):
+		if _footprint_walkable(c):
 			return c
 	return Vector2i(-1, -1)
 
@@ -1025,7 +1042,7 @@ func _do_roam_walk() -> void:
 			await _do_random_step()
 			return
 	var next_pos: Vector2i = _roam_path[0]
-	if not _dungeon_floor.is_walkable_for_enemy(next_pos):
+	if not _footprint_walkable(next_pos):
 		_roam_path.clear()
 		_roam_target = Vector2i(-1, -1)
 		await _do_random_step()
@@ -1043,7 +1060,7 @@ func _do_random_step() -> void:
 		var target: Vector2i = grid_pos + dir
 		if _dungeon_floor.has_door_at(target):
 			continue
-		if _dungeon_floor.is_walkable_for_enemy(target):
+		if _footprint_walkable(target):
 			await _move_step(dir, target)
 			return
 	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
@@ -1067,7 +1084,7 @@ func _flee_from(from_entity: Node) -> bool:
 		var next_pos: Vector2i = grid_pos + step
 		if _dungeon_floor.has_door_at(next_pos) and not _dungeon_floor.is_door_open(next_pos):
 			_dungeon_floor.open_door(next_pos)
-		if _dungeon_floor.is_walkable_for_enemy(next_pos):
+		if _footprint_walkable(next_pos):
 			await _move_step(step, next_pos, false)
 			return true
 	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
@@ -1231,7 +1248,7 @@ func _bfs_to(target: Vector2i) -> Array[Vector2i]:
 		for d: Vector2i in [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
 				Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]:
 			var nxt: Vector2i = cur + d
-			if not came.has(nxt) and (_dungeon_floor.is_walkable_for_enemy(nxt) or nxt == target):
+			if not came.has(nxt) and (_footprint_walkable(nxt) or nxt == target):
 				came[nxt] = cur
 				queue.append(nxt)
 	return []
