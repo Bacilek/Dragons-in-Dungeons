@@ -146,8 +146,40 @@ CanvasLayer, layer = 25. Spawned by `PlayerActions.open_short_rest()` (`scripts/
 Esc always closes/cancels regardless of tab. Sets `GameState.short_rest_open = true` on open → blocks all player input until closed.
 **Important ordering in `_on_rest()`/`_on_long_rest()`**: `GameState.short_rest_open = false` and `queue_free()` must be called **before** emitting `player_action_requested("short_rest_begin")` because the signal is synchronous — `_on_turn_started` fires inside the chain and checks `short_rest_open`.
 
-## Mastery reselect prompt (`mastery_reselect_prompt.gd`)
-CanvasLayer, layer = 26. Spawned by `player.gd` right after `GameState.long_rest()` completes — a simple Yes/No confirm ("Change your weapon masteries?"). Sets `GameState.mastery_picker_open = true` for its own duration (blocking input like the picker itself); "Yes" hands off to `mastery_picker.gd` (which keeps the flag set via its own `_ready()`), "No" clears the flag. Never shown after a short rest, only a completed long rest.
+## Long-rest hub (`mastery_reselect_prompt.gd`)
+CanvasLayer, layer = 26. Spawned by `player.gd` right after `GameState.long_rest()` completes — was
+originally a plain Yes/No "reselect masteries?" confirm, now a small hub offering every
+long-rest-gated adjustment in one place: **Weapon Masteries** (only shown when
+`player_stats.mastery_cap() > 0`), **Attunement** (always shown), **Spellbook** (only shown when
+`player_stats.caster != null`), and **Done**. Sets `GameState.mastery_picker_open = true` for its
+own duration (blocking input like every other long-rest picker — reused deliberately rather than
+adding a parallel flag, since every input gate check in `player.gd`/`scripts/entities/CLAUDE.md`
+already keys off this one name). Clicking an option hides the hub's own panel (`_panel.visible =
+false`, node stays alive) and spawns that sub-picker fresh (`mastery_picker.gd` /
+`attunement_picker.gd` / `spellbook_overlay.gd`) — each sub-picker owns its own
+`GameState.*_open` flag independently (Spellbook's `spellbook_open`, the other two also set
+`mastery_picker_open` themselves, redundant but harmless). `_on_subpicker_closed()` (connected to
+the sub-picker's `tree_exited`) re-shows the hub panel and restores `mastery_picker_open = true`
+(the sub-picker's own `_close()` just cleared it on its way out) — so the player can visit any
+number of the three options before finally pressing Done/Esc, which is what actually frees the hub
+and clears the flag for good. Never shown after a short rest, only a completed long rest.
+
+## Attunement picker (`attunement_picker.gd`)
+CanvasLayer, layer = 25. Magic item attunement — see `scripts/items/CLAUDE.md`'s "Attunement"
+section for the underlying mechanism. Only ever reachable from the long-rest hub above (never
+opened directly by a hotkey). Modeled on `mastery_picker.gd`'s conventions (dim overlay + centered
+bordered `Panel`, hard-blocked at a cap, `focus_mode = FOCUS_NONE` everywhere) but lists items
+instead of a fixed mastery set: one row per `GameState.attunable_items()` entry (every
+`Item.requires_attunement` item currently in the quickbar/bag/equipment, attuned or not), each with
+an icon, name, "Attuned"/"Not attuned" sublabel, and a toggle button ("Attune"/"Unattune") that
+calls `GameState.attune_item()`/`unattune_item()` — the Attune button disables itself (silent
+no-op feel, same as the Mastery Picker's cap block) once `attuned_count() >= MAX_ATTUNED_ITEMS`.
+Top-right counter shows `"X / 3"`, red if somehow over cap. Shows a plain "No magic items requiring
+attunement in your inventory." label instead of an empty list when `attunable_items()` is empty —
+expected today, since no `ITEM_POOL` entry sets `requires_attunement` yet (infrastructure-only
+pass). Sets `GameState.mastery_picker_open = true`/`false` on open/close like every other picker in
+this family. Esc or the Done button closes it, which the parent hub's `tree_exited` hook detects to
+re-show itself.
 
 ---
 
@@ -196,10 +228,17 @@ premade card (`_on_premade_selected()`) applies class + `GameState.give_class_st
 `GameState.choose_race(race, variant, prof_ability)` + (for Barbarian/Ranger) directly populates
 `Stats.known_weapon_masteries` and emits `known_masteries_changed` + (for Wizard) a `"cantrip"` key
 in the `PREMADE` entry calls `GameState.choose_cantrip(id)` directly — bypassing class_select/
-point_buy_select/race_select/mastery_picker/cantrip_select entirely and dropping straight into the already-loaded
-floor 1 (premade heroes use `apply_class_defaults()`'s fixed scores, no point buy). Clicking
+point_buy_select/background_select/race_select/mastery_picker/cantrip_select entirely and dropping
+straight into the already-loaded floor 1. Each `PREMADE` entry also carries a fixed `"scores"`
+dict (`{"str","dex","con","int","wis","cha"}`, applied via `Stats.apply_point_buy_scores()` right
+after `apply_class_defaults()` — reusing the same point-buy setter rather than a separate
+mechanism) instead of `apply_class_defaults()`'s own generic per-class defaults: Garrem
+16/14/16/8/10/10, Tish 8/16/14/10/16/10, Grok 10/16/16/10/14/8, Jace 8/14/16/16/10/10 — no
+point buy or background ASI screen either way, just a different fixed stat block per hero.
+Clicking
 "Custom" (`_on_custom_selected()`) spawns `class_select.gd` unchanged, preserving the full
-**class select → point buy → race select → mastery picker** chain for a from-scratch build. Also
+**class select → point buy → background ASI → race select → mastery picker** chain for a
+from-scratch build. Also
 owns the "Continue Saved Run" button (moved here from `class_select.gd` since this is now the true
 entry point) — same behavior as before, see `scripts/autoloads/CLAUDE.md`'s SaveManager
 "Continue flow" section. Jace's card also carries a `"spell1": "magic_missile"` key, applied via
@@ -215,11 +254,11 @@ Continue-Saved-Run button (that moved to `character_select.gd`, the actual entry
 
 ## Point buy select (`point_buy_select.gd`)
 CanvasLayer, layer = 22. One-time, mandatory ability-score allocation spawned by
-`class_select.gd._on_class_selected()` right after `class_chosen` fires, **before** race select
-— Custom character-creation path only (premade heroes never reach it). D&D 2024 rules: no race
-grants a raw ability-score bonus (`Stats.apply_race_defaults()` never touches base scores), so
-this is the only ability-score input point in onboarding, and running it before race select is
-safe regardless of ordering. Modeled on `race_select.gd`'s conventions (dim overlay + centered
+`class_select.gd._on_class_selected()` right after `class_chosen` fires, **before** the
+background picker — Custom character-creation path only (premade heroes never reach it). D&D
+2024 rules: no race grants a raw ability-score bonus (`Stats.apply_race_defaults()` never touches
+base scores — a background's ASI fills that role instead, see "Background select" below).
+Modeled on `race_select.gd`'s conventions (dim overlay + centered
 bordered `Panel`, `focus_mode = FOCUS_NONE` everywhere, `GameState.point_buy_open` input-gate
 flag, non-dismissible — no close button, `_unhandled_input` swallows Esc/keys).
 
@@ -239,11 +278,34 @@ simply left on the table — not enforced to be fully spent). Confirm calls
 `GameState.player_stats.apply_point_buy_scores(_scores)` (`scripts/entities/stats.gd` — overrides
 the six base scores set by `apply_class_defaults()` and re-derives `max_hp`/`current_hp`/
 `armor_class`, mirroring that function's own tail), re-emits `GameState.player_hp_changed`, then
-spawns `race_select.gd` itself before `queue_free()`.
+spawns `background_select.gd` itself before `queue_free()`.
+
+## Background select (`background_select.gd`)
+CanvasLayer, layer = 22. One-time, mandatory ability-score-bonus allocation spawned by
+`point_buy_select.gd._on_confirm()` — Custom character-creation path only, right after point buy
+and before race select. D&D 2024 rules: a character's **background** (not race) grants an ability
+score increase — 3 points, max 2 into any single score. Modeled directly on
+`point_buy_select.gd`'s layout (dim overlay + centered bordered `Panel`, `focus_mode = FOCUS_NONE`
+everywhere, `GameState.background_select_open` input-gate flag, non-dismissible).
+
+Snapshots the six scores right after point buy (`_base_scores`) in `_ready()`, then a `-`/`+`
+button row per stat adjusts a separate `_bonus[key]` in `0..Stats.BACKGROUND_MAX_PER_STAT`(2),
+spending from a shared `Stats.BACKGROUND_POINTS`(3) pool — unlike point buy, there's no `Min`/`Max`
+row (only 3 points total, `Min`/`Max` would be redundant) and, unlike point buy, **Confirm is
+disabled until all 3 points are spent** (`_confirm_btn.disabled = remaining > 0`) — a background's
+grant isn't optional budget to leave on the table the way point buy's is. Each row's label shows
+`"base (+bonus) -> final (mod)"` so the resulting score/modifier is visible before confirming.
+Confirm calls `GameState.player_stats.apply_background_bonus(_bonus)`
+(`scripts/entities/stats.gd` — **adds** to, never overrides, the six scores point buy already set,
+then re-derives `max_hp`/`current_hp`/`armor_class` the same way `apply_point_buy_scores()` does),
+re-emits `GameState.player_hp_changed`, then spawns `race_select.gd` itself before `queue_free()`.
+Not a full 2024 background system — no named backgrounds, skills, tool proficiencies, origin feat,
+or starting-equipment table (none of those systems exist elsewhere in this codebase); scope is
+deliberately just the ability-score increase.
 
 ## Race select (`race_select.gd`)
-CanvasLayer, layer = 25. One-time, mandatory choice spawned by `point_buy_select.gd._on_confirm()`
-(Custom path) — see "Point buy select" above. Modeled directly on
+CanvasLayer, layer = 25. One-time, mandatory choice spawned by `background_select.gd._on_confirm()`
+(Custom path) — see "Background select" above. Modeled directly on
 `subclass_select.gd`'s conventions (dim overlay + centered bordered `Panel`, `focus_mode =
 FOCUS_NONE` everywhere, `race_picker_open` input-gate flag, non-dismissible — no close button,
 `_unhandled_input` swallows Esc/keys). 6 race cards (Orc/Human/Halfling/Dwarf/Elf/Dragonborn);
@@ -251,9 +313,9 @@ Human/Elf/Dragonborn additionally show an inline sub-choice row (ability-score p
 sub-race / ancestry) that must be picked before Confirm enables. Confirm calls
 `GameState.choose_race(race, variant, prof_ability)`, then spawns `mastery_picker.gd` itself
 (same `mastery_cap() > 0` gate class_select used to apply) before `queue_free()` — so the full
-onboarding order for the Custom path is **class select → point buy → race select → mastery
-picker**. The Continue-saved-run flow (`character_select.gd._on_continue_pressed()`) skips all
-four; ability scores and race are both restored via `Stats.to_dict()`/`from_dict()`
+onboarding order for the Custom path is **class select → point buy → background ASI → race
+select → mastery picker**. The Continue-saved-run flow (`character_select.gd._on_continue_pressed()`)
+skips all five; ability scores and race are both restored via `Stats.to_dict()`/`from_dict()`
 (`character_race`/`race_variant`/`race_prof_ability` plus the plain score ints) same as any other
 stat.
 

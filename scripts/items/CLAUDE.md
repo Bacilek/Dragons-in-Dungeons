@@ -60,6 +60,8 @@ TOOL   = 7
 | `is_torch`/`torch_lit`/`torch_burnt`/`torch_turns_remaining` | bool/bool/bool/int | Torch: click-to-light while equipped. See "Torch" below |
 | `taught_spell_id` | String | SCROLL items only: spell id taught into the reader's spellbook on use. `""` = not a spell scroll. See "Scroll-taught spells" below |
 | `scroll_spell_id` | String | SCROLL items only: spell id for a single one-shot cast baked into this scroll (distinct from `taught_spell_id` — doesn't teach anything). `""` = not a cast-scroll. Castable by any class. See "Scroll of &lt;Spell&gt;" below |
+| `requires_attunement` | bool | This is a magic item — its `bonus_ac`/`bonus_damage` only apply once `is_attuned` is true. `false` (default) = a normal item, unaffected by this system. See "Attunement" below |
+| `is_attuned` | bool | Whether this specific item is currently one of the player's `GameState.MAX_ATTUNED_ITEMS` (3) attuned items. Only ever set by `GameState.attune_item()`/`unattune_item()`, both only reachable from `scripts/ui/attunement_picker.gd`. Meaningless when `requires_attunement` is `false` |
 
 ## Rations / long rest
 FOOD items (`Ration`, `Mystery Meat`, `Rotten Meat`, `Cooked Meat`) are no longer directly edible — `GameState.use_item()`'s `FOOD` branch just logs a hint and consumes nothing. Their only purpose is `Item.food_value`, sacrificed toward `GameState.LONG_REST_FOOD_COST` (100) when the player completes a long rest (`scripts/ui/short_rest_panel.gd`'s Long Rest tab, see `scripts/autoloads/CLAUDE.md`'s "Rest system"). Current values: Ration 50, Cooked Meat 75, Mystery Meat 25, Rotten Meat 10 (tune here if rebalancing). `GameState.total_food_value()` sums `food_value × quantity` across quickbar+bag; `GameState._consume_food_value(amount)` spends the cheapest-value items first and is skipped entirely while `invincible` (God Mode long rests cost nothing). Rotten Meat can still be thrown into a revealed Fire Trap to cook into Cooked Meat (`DungeonFloor.cook_rotten_meat()`) — unrelated to the eating mechanic, which no longer exists for any food item.
@@ -231,6 +233,41 @@ unrelated and unchanged.
 `GameState.equipment` dict keys: `"melee"`, `"hand2"`, `"ranged"`, `"armor"`, `"boots"`, `"gloves"`, `"head"`, `"trinket"`. `equip()` routes `is_ranged` items automatically to `"ranged"`; melee weapons always go to `"melee"` (Main Hand) — every auto-equip path (pickup, starting gear, debug give-item), not just explicit drag equips. Inventory overlay labels `"melee"`/`"hand2"`/`"ranged"` as Main Hand/Off-hand/Ranged and enforces slot type. `"hand2"` (Off-hand) accepts non-weapon items freely; a weapon is only accepted if it's Light, not ranged, **and** Main Hand also currently holds a Light weapon (`inventory_overlay.gd._fits_slot()`) — dragging a non-Light weapon there, or a Light weapon while Main Hand isn't Light, is rejected — **except** the Torch (`Item.is_torch`), always accepted here regardless of Main Hand, same special-case treatment as a Shield (see "Torch" above). `equip()` never auto-routes here (only explicit drag). See "Dual-wielding" below for what equipping a second Light weapon actually does in combat. When Main Hand holds a two-handed weapon, the Off-hand slot shows a red ✕ overlay (purely visual, `inventory_overlay.gd._refresh()`, does not additionally block the drag — the Light checks above are what actually gate it).
 
 **Dragging a stack**: `GameState.move_item()` (the drag-and-drop path — `inventory_overlay._do_move()` is the only caller) special-cases dropping onto an `"equipment"` destination: if the dragged item is a stacked durability weapon (`_should_split_for_equip()`, currently Handaxe/Dagger/Spear — anything with `uses_max > 0` and `quantity > 1`), only a single unit is equipped (`_split_one_unit()`); the rest of the stack stays exactly where it was instead of the whole pile moving into the slot. Whatever was previously in that equipment slot goes to the first empty quickbar/bag slot (`_add_to_bags_silent()`, same as `equip()`'s replaced-item handling) rather than swapping back into the drag's source slot. This is what makes it comfortable to equip just one Handaxe/Dagger into the Off-hand out of a full stack of 5.
+
+## Attunement
+
+`Item.requires_attunement`/`is_attuned` — a magic item can be equipped/carried completely freely
+(no gate on `equip()`, no separate equipment slot) but only contributes its `bonus_ac`/
+`bonus_damage` once it's one of the player's `GameState.MAX_ATTUNED_ITEMS` (3) currently attuned
+items — `GameState._item_bonus_active(item) -> bool` (`not requires_attunement or is_attuned`) is
+the single chokepoint `recalculate_stats()` checks before folding either bonus in, so an unattuned
+magic weapon/armor still occupies its slot and still shows in every UI exactly like a mundane
+item, it just doesn't grant its numbers yet. **No concrete magic items ship with this pass** —
+every current `ITEM_POOL`/`WEAPON_POOL` entry still has `requires_attunement == false` (the
+default), so this is pure infrastructure until a future item sets the flag; a new magic item just
+needs `"requires_attunement": true` in its pool entry like any other bool field (see "Adding a new
+item" below).
+
+**Changeable only at a long rest** (direct owner request — mirrors the Mastery Picker's own
+"reselect after a long rest" gating): `GameState.attune_item(item)`/`unattune_item(item)` are only
+ever called from `scripts/ui/attunement_picker.gd`, itself only reachable from the long-rest hub
+(`scripts/ui/mastery_reselect_prompt.gd`, spawned by `player.gd` right after `GameState.long_rest()`
+completes — see `scripts/ui/CLAUDE.md`'s "Long-rest hub" section). There is no other UI path to
+attune/unattune an item — dragging a magic item around the inventory, equipping it, or unequipping
+it never touches `is_attuned`.
+
+`GameState.attunable_items() -> Array[Item]` scans quickbar + bag + every equipment slot for
+`requires_attunement == true` items (attuned or not — the picker lists both states).
+`attuned_count()` sums how many of those are currently `is_attuned`. `can_attune(item) -> bool`
+hard-blocks at `MAX_ATTUNED_ITEMS`, same silent-no-op-at-cap feel as `can_select_mastery()`.
+
+**Visual indicator**: an attuned item's slot gets a blue border (`Color(0.3, 0.55, 1.0)`, 3px)
+instead of the default gray in both `inventory_overlay.gd` (`_update_slot()`, bag/quickbar/every
+equipment slot) and its own dedicated row styling in `attunement_picker.gd`. Item tooltips (both
+`inventory_overlay.gd` and `hud.gd`'s quickbar tooltip) show a blue `"Attuned"` or `"Requires
+Attunement (set during a Long Rest)"` line right after the item's description whenever
+`requires_attunement` is true — the only place a plain unattuned magic item visibly differs from a
+mundane one.
 
 ## Shields
 `Item.is_shield` (currently one item, "Shield" — flat `bonus_ac = 2`, `res://sprites/items/Shields/Shield1.png`) is an `Item.Type.ARMOR` item that `GameState.equip()` routes to `"hand2"` (Off-hand) instead of `"armor"` — the only ARMOR-type item that doesn't land in the Armor slot. Its `bonus_ac` flows into AC through `recalculate_stats()`'s existing generic per-slot loop (see root `CLAUDE.md`'s combat-roll table) — no special-cased AC code needed. Gated by `Stats.proficient_shields` (`scripts/entities/CLAUDE.md`'s "Weapon proficiency flags" — Barbarian/Ranger only) via `GameState.can_equip_shield(item) -> bool`, checked at every entry point that can place a Shield into `"hand2"`: `equip()`, `move_item()` (drag), and `inventory_overlay.gd._fits_slot()` (drag preview gate). Lacking proficiency, or having a two-handed Main Hand weapon equipped, blocks equipping outright (unlike weapon proficiency, which just drops a bonus) — `GameState.log_shield_equip_blocked(item)` logs which reason applied. A two-handed Main Hand weapon (via `equip()`/`move_item()`'s existing `_auto_unequip_offhand()`, or `toggle_versatile_grip()` switching to a two-handed grip) auto-kicks an equipped Shield back to the bag, same as it would any other Off-hand item. **Blocks all spellcasting while equipped** — `PlayerSpellcasting._shield_blocks_casting()` gates the top of `begin_cast()`, `cast_direct()`, and `on_scroll_primed()` (`scripts/entities/player_spellcasting.gd`). **Equip/unequip costs 1 turn** (the one exception to "equip is always a free action" — see `scripts/autoloads/CLAUDE.md`'s Equipment slots section): `equip()`/`unequip()`/`move_item()` each wrap the mutation in `TurnManager.begin_player_action()`/`on_player_action_complete()` when a Shield is entering or leaving `"hand2"` (including being displaced by a different item dragged into an occupied slot) AND `TurnManager.phase == WAITING_FOR_INPUT` (guards against double-costing if ever called outside a normal player turn). **Ends Mage Armor**: equipping a Shield clears `Stats.mage_armor_active` exactly like equipping real Armor does — 5e RAW counts a shield as worn armor for this purpose even though it lives in `"hand2"`, not `"armor"` — checked independently in both `equip()` and `move_item()` (see `scripts/entities/CLAUDE.md`'s "Mage Armor").

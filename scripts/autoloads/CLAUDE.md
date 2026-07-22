@@ -200,6 +200,8 @@ repopulates `known_spells`, and silently clears if the saved id is no longer kno
 **Auto-unequip on two-handed equip**: equipping (or drag-dropping) a two-handed weapon into `"melee"` automatically kicks whatever's sitting in `"hand2"` back to the bag first (`GameState._auto_unequip_offhand()`, called from both `equip()` and `move_item()`) — a two-handed Main Hand and an Off-hand item can never coexist anymore, so switching from dual Light weapons to e.g. the Greataxe no longer strands the off-hand weapon equipped.
 **Equip is always a free action** — with one exception: `equip()`/`unequip()`/`move_item()` never cost a turn (the old `equip_action_taken` signal + `costs_turn` params + `player.gd`'s `_pending_equip_turn` machinery were removed) — swapping gear, including mid-combat, doesn't burn the player's turn. **Shields are the sole exception**: a Shield (`Item.is_shield`) entering or leaving `"hand2"` costs 1 turn — see `scripts/items/CLAUDE.md`'s "Shields".
 
+**Magic item attunement** (`Item.requires_attunement`/`is_attuned`, see `scripts/items/CLAUDE.md`'s "Attunement"): `MAX_ATTUNED_ITEMS` (const, 3), `attunable_items()`, `attuned_count()`, `can_attune(item)`, `attune_item(item) -> bool`, `unattune_item(item)`. `_item_bonus_active(item) -> bool` is the gate `recalculate_stats()` checks before folding a magic item's `bonus_ac`/melee `bonus_damage` in — an unattuned magic item still equips normally, it just contributes neither bonus. Attuning is only ever called from `scripts/ui/attunement_picker.gd`, itself only reachable from the long-rest hub — nothing else may mutate `is_attuned`.
+
 ---
 
 ## SaveManager (`save_manager.gd`)

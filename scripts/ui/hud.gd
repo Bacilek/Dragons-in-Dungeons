@@ -105,7 +105,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if key.pressed and not key.echo and key.physical_keycode == KEY_TAB:
 			if not GameState.is_game_over and GameState.class_selected and not GameState.mastery_picker_open \
 					and not GameState.subclass_picker_open and not GameState.race_picker_open \
-					and not GameState.point_buy_open:
+					and not GameState.point_buy_open and not GameState.background_select_open:
 				_toggle_ability_bar()
 				get_viewport().set_input_as_handled()
 
@@ -1007,6 +1007,11 @@ func _on_qbar_slot_hover(idx: int) -> void:
 				text += "\n%s" % ", ".join(props)
 		if not item.description.is_empty():
 			text += "\n[color=gray]%s[/color]" % item.description
+		if item.requires_attunement:
+			if item.is_attuned:
+				text += "\n[color=#4aa3ff]Attuned[/color]"
+			else:
+				text += "\n[color=#4aa3ff]Requires Attunement[/color] [color=gray](set during a Long Rest)[/color]"
 	if not _ability_bar_mode:
 		var thrown_item := item_or_ability as Item
 		if thrown_item != null and thrown_item.item_type == Item.Type.WEAPON and thrown_item.is_thrown:

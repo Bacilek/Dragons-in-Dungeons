@@ -558,6 +558,11 @@ func _on_slot_hover(slot: Control) -> void:
 			text += "\n+%d HP" % item.heal_amount
 	if not item.description.is_empty():
 		text += "\n[color=gray]%s[/color]" % item.description
+	if item.requires_attunement:
+		if item.is_attuned:
+			text += "\n[color=#4aa3ff]Attuned[/color]"
+		else:
+			text += "\n[color=#4aa3ff]Requires Attunement[/color] [color=gray](set during a Long Rest)[/color]"
 	if item.item_type == Item.Type.WEAPON and item.is_thrown:
 		text += "\n[color=#999][font_size=11][right]Uses: %d/%d[/right][/font_size][/color]" % [item.uses_remaining, item.uses_max]
 	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
@@ -671,11 +676,25 @@ func _update_special_slot(slot: Control) -> void:
 func _update_slot(slot: Control, item: Item) -> void:
 	var icon:  TextureRect = slot.get_node_or_null("Icon") as TextureRect
 	var count: Label       = slot.get_node_or_null("Count") as Label
+	# Attuned magic items get a blue/magical border — the only visible sign an item is currently
+	# granting its bonuses (see scripts/items/CLAUDE.md's "Attunement"). Set/reset here rather than
+	# only on attune/unattune so it also updates on plain slot refreshes (e.g. after a drag).
+	var sbox: StyleBoxFlat = slot.get_theme_stylebox("panel") as StyleBoxFlat
 	if item == null:
 		if icon  != null: icon.texture = null
 		if count != null: count.text = ""
+		if sbox != null:
+			sbox.border_color = Color(0.35, 0.34, 0.38)
+			sbox.set_border_width_all(1)
 		return
 	if icon != null:
 		icon.texture = load(item.icon_path) if item.icon_path != "" and ResourceLoader.exists(item.icon_path) else null
 	if count != null:
 		count.text = str(item.quantity) if item.quantity > 1 else ""
+	if sbox != null:
+		if item.is_attuned:
+			sbox.border_color = Color(0.3, 0.55, 1.0)
+			sbox.set_border_width_all(3)
+		else:
+			sbox.border_color = Color(0.35, 0.34, 0.38)
+			sbox.set_border_width_all(1)

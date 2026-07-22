@@ -101,6 +101,16 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 # optional attack-bonus/save-DC helpers, which use the reader's own spellcasting ability if they
 # have one (a caster class), or fall back to proficiency_bonus + INT modifier otherwise.
 @export var scroll_spell_id: String = ""
+# Magic item attunement (D&D-style, max GameState.MAX_ATTUNED_ITEMS at once). A magic item can
+# still be equipped/carried freely with requires_attunement=true and is_attuned=false — it just
+# sits inert: GameState.recalculate_stats() skips its bonus_ac/bonus_damage contribution via
+# _item_bonus_active() until is_attuned flips true. Attuning/unattuning is only ever done through
+# scripts/ui/attunement_picker.gd (GameState.attune_item()/unattune_item()), itself only reachable
+# from the long-rest hub (scripts/ui/mastery_reselect_prompt.gd) — see scripts/items/CLAUDE.md's
+# "Attunement" section. requires_attunement=false (the default) means the item's bonuses always
+# apply, exactly like before this system existed — every pre-existing item is unaffected.
+@export var requires_attunement: bool = false
+@export var is_attuned: bool = false
 
 # Returns one durability value per unit in the stack (size == quantity). Falls back to repeating
 # `uses_remaining` when stack_uses hasn't been materialized (fresh item, or every unit identical).
@@ -167,6 +177,8 @@ func to_dict() -> Dictionary:
 		"stack_uses": stack_uses,
 		"taught_spell_id": taught_spell_id,
 		"scroll_spell_id": scroll_spell_id,
+		"requires_attunement": requires_attunement,
+		"is_attuned": is_attuned,
 	}
 
 static func from_dict(d: Dictionary) -> Item:
@@ -219,4 +231,6 @@ static func from_dict(d: Dictionary) -> Item:
 	it.stack_uses = su_typed
 	it.taught_spell_id = String(d.get("taught_spell_id", ""))
 	it.scroll_spell_id = String(d.get("scroll_spell_id", ""))
+	it.requires_attunement = bool(d.get("requires_attunement", false))
+	it.is_attuned = bool(d.get("is_attuned", false))
 	return it

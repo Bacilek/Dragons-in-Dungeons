@@ -170,6 +170,7 @@ var mastery_picker_open: bool = false
 var subclass_picker_open: bool = false  # blocks ALL player input while the subclass-select overlay is visible
 var race_picker_open: bool = false  # blocks ALL player input while the race-select overlay is visible (scripts/ui/race_select.gd)
 var point_buy_open: bool = false  # blocks ALL player input while the point-buy overlay is visible (scripts/ui/point_buy_select.gd, Custom path only)
+var background_select_open: bool = false  # blocks ALL player input while the background-select overlay is visible (scripts/ui/background_select.gd, Custom path only)
 var cantrip_picker_open: bool = false  # blocks ALL player input while the cantrip-select overlay is visible (scripts/ui/cantrip_select.gd, Wizard only)
 # Leveled spells / spellbook (docs/architecture/leveled-spells-and-slots-plan.md):
 var spell_learn_pending: bool = false        # set on a Wizard level-up with eligible spells to learn
@@ -331,6 +332,7 @@ func start_new_run() -> void:
 	subclass_picker_open = false
 	race_picker_open = false
 	point_buy_open = false
+	background_select_open = false
 	cantrip_picker_open = false
 	spell_learn_pending = false
 	spell_learn_choices = []
@@ -1450,19 +1452,21 @@ func recalculate_stats() -> void:
 	s.recalc_ac(has_armor)
 	# Start from weapon's own damage die if it defines one, else base stats
 	var melee: Item = equipment.get("melee") as Item
+	var melee_bonus_dmg: int = melee.bonus_damage if (melee != null and _item_bonus_active(melee)) else 0
 	if melee != null and melee.damage_die_min > 0:
-		s.min_damage = melee.damage_die_min + melee.bonus_damage
-		s.max_damage = melee.damage_die_max + melee.bonus_damage
+		s.min_damage = melee.damage_die_min + melee_bonus_dmg
+		s.max_damage = melee.damage_die_max + melee_bonus_dmg
 	else:
-		s.min_damage = s.base_min_damage + (melee.bonus_damage if melee != null else 0)
-		s.max_damage = s.base_max_damage + (melee.bonus_damage if melee != null else 0)
+		s.min_damage = s.base_min_damage + melee_bonus_dmg
+		s.max_damage = s.base_max_damage + melee_bonus_dmg
 	for slot_name: String in equipment:
 		var it: Item = equipment[slot_name] as Item
 		if it == null:
 			continue
 		if slot_name == "melee":
 			continue  # already handled above
-		s.armor_class += it.bonus_ac
+		if _item_bonus_active(it):
+			s.armor_class += it.bonus_ac
 	s.armor_class += terrain_ac_bonus
 	s.armor_class += masochist_ac_bonus
 	# Bruiser R2: +1 AC while Bloodied.
@@ -1933,6 +1937,62 @@ func toggle_mastery(mastery_name: String) -> bool:
 	player_stats.known_weapon_masteries.append(mastery_name)
 	known_masteries_changed.emit()
 	return true
+
+# ── Magic item attunement (Item.requires_attunement/is_attuned) ─────────────────────
+# Only ever mutated from scripts/ui/attunement_picker.gd, itself only reachable from the
+# long-rest hub (mastery_reselect_prompt.gd) — "changeable only at a long rest" per direct owner
+# request. An unattuned magic item can still be equipped/carried; it just doesn't contribute its
+# bonus_ac/bonus_damage — see _item_bonus_active(), used by recalculate_stats().
+const MAX_ATTUNED_ITEMS: int = 3
+
+# Every item currently requiring attunement, across quickbar + bag + every equipment slot —
+# whether or not it's actually attuned yet (the attunement picker needs to list both states).
+func attunable_items() -> Array[Item]:
+	var out: Array[Item] = []
+	for it: Variant in player_quickbar:
+		if it is Item and (it as Item).requires_attunement:
+			out.append(it as Item)
+	for it: Variant in player_inventory:
+		if it is Item and (it as Item).requires_attunement:
+			out.append(it as Item)
+	for slot_name: String in equipment:
+		var it: Item = equipment[slot_name] as Item
+		if it != null and it.requires_attunement:
+			out.append(it)
+	return out
+
+func attuned_count() -> int:
+	var count: int = 0
+	for it: Item in attunable_items():
+		if it.is_attuned:
+			count += 1
+	return count
+
+func can_attune(item: Item) -> bool:
+	return item != null and item.requires_attunement and not item.is_attuned \
+		and attuned_count() < MAX_ATTUNED_ITEMS
+
+# A non-magic item (requires_attunement == false) always contributes its bonuses — unaffected
+# by this system. A magic item only contributes once attuned.
+func _item_bonus_active(item: Item) -> bool:
+	return item != null and (not item.requires_attunement or item.is_attuned)
+
+func attune_item(item: Item) -> bool:
+	if not can_attune(item):
+		return false   # hard-block at MAX_ATTUNED_ITEMS, same silent-no-op feel as mastery cap
+	item.is_attuned = true
+	recalculate_stats()
+	inventory_changed.emit()
+	equipment_changed.emit()
+	return true
+
+func unattune_item(item: Item) -> void:
+	if item == null or not item.is_attuned:
+		return
+	item.is_attuned = false
+	recalculate_stats()
+	inventory_changed.emit()
+	equipment_changed.emit()
 
 func debug_set_talent_rank(id: String, new_rank: int) -> void:
 	var talent: Talent = _find_talent(id)
