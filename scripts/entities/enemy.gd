@@ -687,23 +687,34 @@ func _decide_action() -> Dictionary:
 	var target: Node = _select_target(candidates)
 
 	# Nimble Escape (Goblin trait): fleeing takes priority over every other behavior below,
-	# including attacking an adjacent target — a fleeing goblin doesn't stop to swing.
+	# including attacking an adjacent target — a fleeing goblin doesn't stop to swing. A
+	# "flee_only" thrown weapon (Goblin Minion's Dagger) is a parting shot thrown WHILE fleeing
+	# instead of running this turn, if the fleeing target is at throwing range/LOS — see the
+	# "thrown_weapon" check below for the non-flee-only case (Orc Warrior's Javelin).
 	if escape_turns > 0:
 		escape_turns -= 1
+		var flee_wpn: Dictionary = _type.get("thrown_weapon", {})
+		if not flee_wpn.is_empty() and bool(flee_wpn.get("flee_only", false)) and not _thrown_weapon_used:
+			var flee_target: Node = escape_from if is_instance_valid(escape_from) else target
+			var throw_range_flee: int = int(flee_wpn.get("range", 4))
+			var dist_flee: int = _chebyshev_to(flee_target)
+			if dist_flee >= 2 and dist_flee <= throw_range_flee and _dungeon_floor.has_ranged_los(grid_pos, flee_target.grid_pos):
+				return {"type": "throw_weapon", "target": flee_target, "weapon": flee_wpn}
 		return {"type": "flee", "target": escape_from if is_instance_valid(escape_from) else target}
 
-	# One-shot thrown weapon (pool "thrown_weapon" — Goblin Minion's Dagger, Orc Warrior's Javelin):
-	# once not actively escaping (the check above already guarantees escape_turns <= 0 here), if
-	# the target isn't adjacent, throw the weapon at range instead of closing to melee. Doesn't
-	# need movement budget, so this is checked before the rooted/frozen/speed-gate movement
-	# restrictions below — a rooted or speed-gated enemy can still throw. Generic — keyed purely
-	# on the pool key's presence, not on enemy_id, so any enemy can opt in by authoring the same
-	# two dict keys (see "thrown_weapon"/"unarmed_fallback" in the Enemy D&D stat-block schema).
+	# One-shot thrown weapon (pool "thrown_weapon" — Orc Warrior's Javelin; Goblin Minion's Dagger
+	# is "flee_only" and handled above instead): once not actively escaping (the check above
+	# already guarantees escape_turns <= 0 here), if the target isn't adjacent, throw the weapon
+	# at range instead of closing to melee. Doesn't need movement budget, so this is checked
+	# before the rooted/frozen/speed-gate movement restrictions below — a rooted or speed-gated
+	# enemy can still throw. Generic — keyed purely on the pool key's presence, not on enemy_id,
+	# so any enemy can opt in by authoring the same two dict keys (see "thrown_weapon"/
+	# "unarmed_fallback" in the Enemy D&D stat-block schema).
 	# Gated on the enemy actually being aware of (actively pursuing) the target — an unaware
 	# SLEEPING/STATIONARY/ROAMING enemy has no business throwing a weapon at someone it hasn't
 	# noticed yet; `has_ranged_los()` (below) only checks line-of-sight, not awareness.
 	var thrown_wpn: Dictionary = _type.get("thrown_weapon", {})
-	if not thrown_wpn.is_empty() and not _thrown_weapon_used \
+	if not thrown_wpn.is_empty() and not bool(thrown_wpn.get("flee_only", false)) and not _thrown_weapon_used \
 			and behavior in [Behavior.CHASING, Behavior.SEARCHING]:
 		var throw_range: int = int(thrown_wpn.get("range", 4))
 		var dist: int = _chebyshev_to(target)

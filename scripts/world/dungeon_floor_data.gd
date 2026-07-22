@@ -89,14 +89,20 @@ const ENEMY_POOL: Array = [
 	# Dagger, melee: +4 to hit (DEX+prof, finesse), reach 1, 1 target, 1d4+2 Piercing (encoded as a
 	# single-entry multiattack sub-attack so the hit gets a real Piercing damage type/name instead
 	# of the top-level-stats default of Bludgeoning).
-	# Dagger, thrown (pool "thrown_weapon", one-shot per life — Enemy._thrown_weapon_used): whenever
-	# NOT currently escaping (Nimble Escape ended or never triggered) and the target is at least 2
-	# tiles away (not adjacent), throws the Dagger instead of closing to melee — same 1d4+2 Piercing,
-	# rolled with Disadvantage (reuses _attack_player()/_attack_companion()'s `long_shot` param
-	# purely for its Disadvantage side effect, not its usual normal/long-range meaning). Range capped
-	# at 4 tiles (authored judgment call — no player-facing "thrown Dagger at unlimited range" item
-	# exists to mirror). Once thrown, the Dagger is gone for good: every attack after this reverts to
-	# an unarmed Fist strike (pool "unarmed_fallback") — see Enemy._attack_target()'s dispatch.
+	# Dagger, thrown (pool "thrown_weapon", one-shot per life — Enemy._thrown_weapon_used,
+	# "flee_only": true): a parting shot thrown ONLY while actively fleeing from a melee hit
+	# (Nimble Escape, escape_turns > 0) and the target is at least 2 tiles away — NOT a general
+	# chase-opener before closing to melee (owner-requested: a goblin hit by a ranged/spell attack
+	# like Fire Bolt should never throw its dagger, since it was never disarmed via melee and has
+	# no reason to disengage — see Enemy._decide_action()'s escape_turns branch, which checks this
+	# before falling through to the flee move itself). Same 1d4+2 Piercing, rolled with
+	# Disadvantage (reuses _attack_player()/_attack_companion()'s `long_shot` param purely for its
+	# Disadvantage side effect, not its usual normal/long-range meaning). Range capped at 4 tiles
+	# (authored judgment call — no player-facing "thrown Dagger at unlimited range" item exists to
+	# mirror). Once thrown, the Dagger is gone for good: every attack after this reverts to an
+	# unarmed Fist strike (pool "unarmed_fallback") — see Enemy._attack_target()'s dispatch.
+	# Contrast with Orc Warrior's Javelin below, which has no "flee_only" key and is instead a
+	# general opener thrown whenever CHASING/SEARCHING and not yet adjacent.
 	# Fists (pool "unarmed_fallback"): STR-based (+prof) to-hit despite the Dagger being DEX-based —
 	# a per-sub "attack_stat" override (Enemy._attack_bonus_for()) so this one swing ignores
 	# attack_profile's enemy-wide "dex" default. Flat 1 Bludgeoning damage (1 + STR mod -1, floored
@@ -114,7 +120,7 @@ const ENEMY_POOL: Array = [
 	 "attack_profile": {"attack_stat": "dex"},
 	 "traits": [{"id": "nimble_escape"}],
 	 "multiattack": [{"name": "Dagger", "count": 1, "dmg_min": 3, "dmg_max": 6, "damage_type": "Piercing"}],
-	 "thrown_weapon": {"name": "Dagger", "dmg_min": 3, "dmg_max": 6, "damage_type": "Piercing", "range": 4},
+	 "thrown_weapon": {"name": "Dagger", "dmg_min": 3, "dmg_max": 6, "damage_type": "Piercing", "range": 4, "flee_only": true},
 	 "unarmed_fallback": {"name": "Fists", "dmg_min": 1, "dmg_max": 1, "damage_type": "Bludgeoning", "attack_stat": "str"}},
 	# Orc Warrior — Medium Humanoid (Orc), CR 1/2, proficiency +2. HP 15, AC 13.
 	# STR 16 (+3) DEX 12 (+1) CON 16 (+3) INT 7 (-2) WIS 11 (+0) CHA 10 (+0). Speed 1 (default).
