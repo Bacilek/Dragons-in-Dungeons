@@ -185,6 +185,48 @@ from scratch every `update_fog()` call, the same "compute live" philosophy as
 ## Versatile weapons
 `Item.is_versatile` + `versatile_die_min/max` (currently only the Quarterstaff, 1d6 one-handed / 1d8 two-handed). Left-clicking the Main Hand (`"melee"`) equipment slot in `inventory_overlay.gd` **without dragging** (press+release inside the same slot, detected in `_finish_drag()`) calls `GameState.toggle_versatile_grip()` when the equipped item is versatile: swaps `damage_die_min/max` with `versatile_die_min/max` (so the "other" grip's die is always sitting in `versatile_die_min/max`), flips `is_two_handed`, and calls `recalculate_stats()` — no turn cost, purely a grip switch. `inventory_overlay.gd._refresh()` gives the Main Hand slot a highlighted gold border (`border_color`/width bumped) while gripped two-handed, and the tooltip's Versatile keyword line shows the current grip and the die you'd get by switching. Flipping `is_two_handed` also drives the existing Off-hand ✕ block indicator for free (same mechanism as any other two-handed weapon).
 
+## Item interaction menu (RMB) / LMB-equip
+
+Unified rule across both the bottom quickbar (`hud.gd`) and the Inventory/bag overlay
+(`inventory_overlay.gd`): **LMB (click, not drag)** on an equippable item (`Item.Type.WEAPON` or
+`Item.Type.ARMOR` — covers plain weapons, Shields, and the Torch) always **equips** it; Equip is
+never offered anywhere else. **RMB** offers every *other* interaction the item has — Throw is
+universal (every non-Food item can be thrown), plus Light for an unlit/unburnt Torch, Read for a
+Scroll, Drink for a Potion, Prime for Thief Tools/Empty Bottle, and Learn for a Scroll whose spell a
+Wizard doesn't yet know (see "Learn (Wizard-only RMB scroll interaction)" below). `ItemInteractions.
+get_available_interactions(item) -> Array[String]` (`scripts/items/item_interactions.gd`,
+static-func-only helper) computes that list; if it comes back with exactly one entry, RMB performs
+it immediately (e.g. a Spear — a thrown weapon with no other action once Equip is excluded — just
+throws on RMB, no menu); with 2+ entries, RMB spawns `scripts/ui/item_interaction_menu.gd`'s
+`ItemInteractionMenu` (a small transient stacked-button popup, not a blocking modal — dismiss by
+clicking elsewhere or Esc) anchored near the slot/cursor, and picking an entry dispatches it.
+**Food is entirely excluded** from this system (eating Food currently does nothing useful — see
+"Rations / long rest" below) — both `hud.gd` and `inventory_overlay.gd`'s RMB handlers special-case
+`item.item_type == Item.Type.FOOD` first and keep their pre-existing behavior verbatim (quickbar:
+unconditional throw; overlay: `GameState.use_item()`'s eat/fuel-message branch).
+
+`ItemInteractions.needs_world_targeting(id, item) -> bool` flags which resolved interactions arm a
+follow-up world click (`"throw"` and `"prime"` always — Thief Tools/Empty Bottle both target an
+adjacent tile; `"read"` only when the scroll casts via `Item.scroll_spell_id`, not when it merely
+teaches via `taught_spell_id`) — `inventory_overlay.gd._dispatch_item_interaction()` closes the
+overlay first whenever this is true, so picking e.g. Throw or Prime from inside the bag drops
+straight into "aim at the world" mode instead of resolving invisibly behind a still-open panel.
+`hud.gd`'s quickbar dispatcher never needs this (no overlay to close).
+
+Both dispatchers share the same `match id:` body: `"throw"` emits `GameState.player_throw_primed`;
+`"light"` calls `GameState.light_torch(item)` + `update_fog()` (works on ANY Torch reference, not
+just an equipped one — a deliberate widening past the old equipped-slot-only click gate, consistent
+with "Torch burns everywhere"); `"learn"` calls `GameState.begin_scroll_learn(item)` (see below);
+every other id (`"read"`/`"drink"`/`"prime"`) falls through to
+`GameState.use_item(item)`, which already implements exactly that non-equip primary action for
+SCROLL/POTION/TOOL — no duplicated logic. `inventory_overlay.gd._finish_drag()`'s old
+click-no-drag-on-an-equipped-slot Torch-light branch was removed (Light moved to the RMB menu); a
+new click-no-drag-on-a-**bag**-slot branch calls `GameState.equip(_drag_item)` for any
+WEAPON/ARMOR item, mirroring the quickbar's pre-existing LMB-equips-via-`use_item()` behavior
+(quickbar LMB needed no changes — `GameState.use_item()`'s `WEAPON`/`ARMOR` branch already just
+calls `equip()`). The Main-Hand versatile-grip-toggle click (see "Versatile weapons" above) is
+unrelated and unchanged.
+
 ## Equipment slots
 `GameState.equipment` dict keys: `"melee"`, `"hand2"`, `"ranged"`, `"armor"`, `"boots"`, `"gloves"`, `"head"`, `"trinket"`. `equip()` routes `is_ranged` items automatically to `"ranged"`; melee weapons always go to `"melee"` (Main Hand) — every auto-equip path (pickup, starting gear, debug give-item), not just explicit drag equips. Inventory overlay labels `"melee"`/`"hand2"`/`"ranged"` as Main Hand/Off-hand/Ranged and enforces slot type. `"hand2"` (Off-hand) accepts non-weapon items freely; a weapon is only accepted if it's Light, not ranged, **and** Main Hand also currently holds a Light weapon (`inventory_overlay.gd._fits_slot()`) — dragging a non-Light weapon there, or a Light weapon while Main Hand isn't Light, is rejected — **except** the Torch (`Item.is_torch`), always accepted here regardless of Main Hand, same special-case treatment as a Shield (see "Torch" above). `equip()` never auto-routes here (only explicit drag). See "Dual-wielding" below for what equipping a second Light weapon actually does in combat. When Main Hand holds a two-handed weapon, the Off-hand slot shows a red ✕ overlay (purely visual, `inventory_overlay.gd._refresh()`, does not additionally block the drag — the Light checks above are what actually gate it).
 
@@ -321,3 +363,22 @@ range/LOS check passes), so a scroll is spent even on a miss, same as a real D&D
 `SpellEffects.cast_spell()`/`cast_leveled_self()`/`cast_leveled_at_tile()`/`cast_leveled_at_enemy()`
 all take an added `from_scroll: bool = false` param threaded down to `_consume_slot()`, which
 early-returns when true instead of touching `player.stats.caster.slot_pool`.
+
+**"Learn" (Wizard-only RMB scroll interaction)**: a Wizard (any character with `Stats.caster !=
+null`) who doesn't yet know a scroll's spell gets a third RMB menu option, **Learn**, alongside
+Read/Throw (`ItemInteractions.get_available_interactions()`'s
+`GameState.can_learn_scroll_spell(item)` check — works on either scroll flavor, `scroll_spell_id`
+or `taught_spell_id`). Unlike Read, Learn does **not** cast the spell — it studies the scroll into
+the permanent spellbook instead, then the scroll is consumed. A cantrip (`Spell.level == 0`) is
+learned instantly (`GameState.begin_scroll_learn()` calls `learn_spell()` + `remove_item()`
+directly, no delay); a leveled spell takes **2 real turns per spell level** (a 5th-level spell
+takes 10 turns) — `GameState.scroll_learn_active`/`scroll_learn_turns_remaining`/
+`scroll_learn_item`/`scroll_learn_spell_id` (`scripts/autoloads/CLAUDE.md`), ticked in
+`player.gd._on_turn_started()` right after the short-rest block, same auto-wait shape as a rest
+(`PlayerActions.do_rest_wait_turn()` every real turn until the counter hits 0) but its own
+independent flag, not a rest. **Interrupted outright** (no Continue/Abort prompt, unlike
+short/long rest) the instant any enemy is in FOV at a turn boundary — `GameState.
+cancel_scroll_learn(true)` — since nothing has been consumed yet, the player just re-issues Learn
+once it's safe. On completion, `GameState.complete_scroll_learn()` calls `learn_spell(spell_id)`
+(which logs "You add X to your spellbook.") then `remove_item()` on the scroll — the scroll is
+only ever destroyed on a successful finish, never on an interrupt.

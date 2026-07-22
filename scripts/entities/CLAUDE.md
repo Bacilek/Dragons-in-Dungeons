@@ -759,9 +759,18 @@ impact point rather than stop at the first wall it can't directly see through.
   (the "is this a cantrip" question is answered by `Spell.level == 0`, not by which array it's
   in) — `SpellcasterState.is_cantrip(id)`.
 - **Starting spellbook**: `GameState._give_wizard_starting_items()` (called from
-  `give_class_starting_items()`, same dispatch as `_give_barbarian_starting_items()`) seeds 2
-  fixed level-1 spells (Magic Missile, Shield — the doc's plan for "3 fixed spells" predates the
-  content list being trimmed to 4 total), Magic Missile prepared by default.
+  `give_class_starting_items()`, same dispatch as `_give_barbarian_starting_items()`) only seeds
+  the level-1 spell-slot pool — no spells are auto-known anymore (owner-requested: a starting
+  Wizard now picks exactly 1 cantrip and 1 level-1 spell, not 2+2). `scripts/ui/cantrip_select.gd`
+  (Custom path, spawned by `race_select.gd`) runs two "pick 1 of N" rounds: round 1 offers
+  `SpellDb.STARTER_CANTRIP_IDS` (3) via `GameState.choose_cantrip()` — which also auto-assigns the
+  pick into the Special quick-cast slot (`set_special_slot()`) so it's immediately Ctrl+click-able
+  — round 2 offers the fixed level-1 pair (Magic Missile, Shield) via
+  `GameState.choose_starting_spell()`, which learns AND prepares it in one call (prepared cap is 1
+  at level 1, so there's nothing else to contend with). Premade heroes bypass both pickers: `Jace`
+  in `character_select.gd`'s `PREMADE` const carries fixed `"cantrip": "fire_bolt"` /
+  `"spell1": "magic_missile"` keys, applied the same way (`choose_cantrip()` +
+  `choose_starting_spell()`) directly on card click.
 - **Level-up spell-learn picker**: `GameState.gain_exp()`'s level-up block, WIZARD only, calls
   `_roll_spell_learn_choices()` — rolls up to 3 random candidates from `SpellDb.CLASS_SPELL_LISTS`
   filtered to spells the character can currently slot-cast and not already known, sets

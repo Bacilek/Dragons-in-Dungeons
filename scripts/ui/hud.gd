@@ -586,6 +586,20 @@ func _on_slot_pressed(slot_index: int) -> void:
 		return
 	GameState.use_item(raw as Item)
 
+func _dispatch_item_interaction(item: Item, id: String) -> void:
+	match id:
+		"throw":
+			GameState.player_throw_primed.emit(item)
+		"light":
+			GameState.light_torch(item)
+			var df: Node = get_tree().get_first_node_in_group("dungeon_floor")
+			if df != null:
+				df.update_fog(GameState.player_grid_pos)
+		"learn":
+			GameState.begin_scroll_learn(item)
+		_:
+			GameState.use_item(item)  # read / drink / prime
+
 func _on_slot_gui_input(event: InputEvent, slot_index: int) -> void:
 	if not (event is InputEventMouseButton):
 		return
@@ -598,7 +612,16 @@ func _on_slot_gui_input(event: InputEvent, slot_index: int) -> void:
 		if raw == null:
 			return
 		var it := raw as Item
-		GameState.player_throw_primed.emit(it)
+		if it.item_type == Item.Type.FOOD:
+			GameState.player_throw_primed.emit(it)
+			return
+		var interactions: Array[String] = ItemInteractions.get_available_interactions(it)
+		if interactions.size() == 1:
+			_dispatch_item_interaction(it, interactions[0])
+		else:
+			var m := ItemInteractionMenu.new()
+			add_child(m)
+			m.open(get_viewport().get_mouse_position(), interactions, func(id: String): _dispatch_item_interaction(it, id))
 		return
 	# LMB press: only *records* the drag-start candidate — does NOT consume the event, so the
 	# Button's own `pressed` signal (→ _on_slot_pressed, use/cast) still fires normally for a

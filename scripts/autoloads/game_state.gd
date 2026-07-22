@@ -229,6 +229,17 @@ var short_rest_pending_heal: int = 0
 # long_rest() instead of applying the short-rest heal. See long_rest() below.
 var long_rest_pending: bool = false
 
+# ── Scroll-learning (Wizard "Learn" RMB interaction, scripts/items/CLAUDE.md's
+# "Scroll of <Spell>" section) ────────────────────────────────────────────────
+# Studying a scroll into the spellbook takes 2 real turns per spell level (a cantrip scroll is
+# learned instantly, no turns). Ticked in player.gd's _on_turn_started(), mirrors short_rest_active's
+# auto-wait/interrupt shape but is its own independent flag (not a rest).
+var scroll_learn_active: bool = false
+var scroll_learn_turns_remaining: int = 0
+var scroll_learn_total_turns: int = 0
+var scroll_learn_spell_id: String = ""
+var scroll_learn_item: Item = null
+
 # ── Wild Heart Tier 2 state ───────────────────────────────────────────────────
 # Natural Rager: toggle between Bear/Eagle/Wolf; effects only apply while is_raging.
 var natural_rager_form: String = "Bear"
@@ -423,21 +434,23 @@ func choose_race(race: Stats.CharacterRace, variant: int = 0, prof_ability: int 
 func give_race_starting_items() -> void:
 	pass
 
-# Wizard's one-time cantrip pick (cantrip_select.gd, spawned after race select in place of the
-# Mastery Picker — Wizard's mastery_cap() is already 0). `silent` skips the log line for save/load
-# replay (game_state.gd from_dict()), mirroring how talent replay never re-logs old investments.
+# Wizard's one-time cantrip pick (cantrip_select.gd's round 1, or a premade hero's "cantrip" key
+# in character_select.gd). `silent` skips the log line for save/load replay (game_state.gd
+# from_dict()), mirroring how talent replay never re-logs old investments. Also auto-assigns the
+# picked cantrip into the Special quick-cast slot (owner-requested — always available via
+# Ctrl+click immediately, no separate Spellbook trip needed) — safe to do unconditionally since
+# this function only ever runs once per character (the old "2 cantrips" round 2 was repurposed
+# into choose_starting_spell()'s level-1 spell pick, see above).
 func choose_cantrip(spell_id: String, silent: bool = false) -> void:
 	if player_stats.caster == null:
 		return
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return
-	# Append, don't overwrite — leveled-spells-and-slots-plan.md's Wizard starting spellbook
-	# (_give_wizard_starting_items()) already populates known_spells before the cantrip picker
-	# runs; overwriting here would silently wipe it.
 	if not player_stats.caster.known_spells.has(spell_id):
 		player_stats.caster.known_spells.append(spell_id)
 	add_ability(_build_spell_ability(spell_id))
+	set_special_slot(spell_id)
 	if not silent:
 		game_log("[color=lime]You learn %s![/color]" % spell.spell_name)
 
@@ -456,23 +469,34 @@ func _build_spell_ability(spell_id: String) -> Ability:
 	ab.uses_max = 0
 	return ab
 
-## Wizard's fixed level-1 starting spellbook (leveled-spells-and-slots-plan.md §4.3) — 2 fixed
-## level-1 spells (Magic Missile, Shield; the doc's "3 fixed spells" was written before the
-## example spell list was trimmed to 4 total — see docs/architecture/leveled-spells-and-slots-plan.md
-## §7's content-count caveat), Magic Missile prepared by default (prepared cap is 1 at level 1).
+## Wizard's starting spell-slot pool — no known spells populated here anymore (owner-requested:
+## a Custom Wizard now picks their own single starting level-1 spell via cantrip_select.gd's
+## round 2, see choose_starting_spell() below; premade heroes grant one explicitly via their
+## PREMADE entry's "spell1" key in character_select.gd).
 func _give_wizard_starting_items() -> void:
 	if player_stats.caster == null:
 		return
-	for sid: String in ["magic_missile", "shield"]:
-		if not player_stats.caster.known_spells.has(sid):
-			player_stats.caster.known_spells.append(sid)
-	set_spell_prepared("magic_missile", true)
 	# BUGFIX: slot_pool.remaining otherwise stays {} (no slots at all) until the first long rest
 	# or level-up — a level-1 Wizard needs their 2× 1st-level slots available from character
 	# creation, not zero. Same population StandardSlotPool.on_long_rest() does.
 	if player_stats.caster.slot_pool != null:
 		player_stats.caster.slot_pool.remaining = player_stats.caster.slot_pool.max_slots().duplicate()
 		spell_slots_changed.emit()
+
+## Wizard's one-time starting level-1 spell pick (cantrip_select.gd's round 2, or a premade
+## hero's fixed "spell1" key in character_select.gd) — learns AND prepares it in one call, since
+## prepared cap is 1 at level 1 so there's nothing else it could contend with.
+func choose_starting_spell(spell_id: String, silent: bool = false) -> void:
+	if player_stats.caster == null:
+		return
+	var spell: Spell = SpellDb.get_spell(spell_id)
+	if spell == null:
+		return
+	if not player_stats.caster.known_spells.has(spell_id):
+		player_stats.caster.known_spells.append(spell_id)
+	set_spell_prepared(spell_id, true)
+	if not silent:
+		game_log("[color=lime]You learn %s![/color]" % spell.spell_name)
 
 func _give_barbarian_starting_items() -> void:
 	var axe := Item.new()
@@ -585,6 +609,58 @@ func learn_spell(spell_id: String) -> void:
 	var s: Spell = SpellDb.get_spell(spell_id)
 	if s != null:
 		game_log("[color=lime]You add %s to your spellbook.[/color]" % s.spell_name)
+
+## Wizard-only "Learn" RMB scroll interaction (scripts/items/item_interactions.gd's "learn" id):
+## true iff the player is a caster who doesn't already know the scroll's spell. Works on either
+## kind of scroll — scroll_spell_id (one-shot cast scrolls) or taught_spell_id.
+func can_learn_scroll_spell(item: Item) -> bool:
+	if player_stats == null or player_stats.caster == null:
+		return false
+	var spell_id: String = item.scroll_spell_id if item.scroll_spell_id != "" else item.taught_spell_id
+	if spell_id == "":
+		return false
+	return not player_stats.caster.known_spells.has(spell_id)
+
+## Starts studying a scroll into the spellbook: a cantrip (level 0) is learned instantly; a leveled
+## spell takes 2 real turns per spell level, ticked in player.gd's _on_turn_started(). The scroll is
+## only consumed on successful completion — see complete_scroll_learn()/cancel_scroll_learn().
+func begin_scroll_learn(item: Item) -> void:
+	var spell_id: String = item.scroll_spell_id if item.scroll_spell_id != "" else item.taught_spell_id
+	var spell: Spell = SpellDb.get_spell(spell_id)
+	if spell == null:
+		return
+	if spell.level <= 0:
+		learn_spell(spell_id)
+		remove_item(item)
+		return
+	var turns: int = 2 * spell.level
+	scroll_learn_active = true
+	scroll_learn_turns_remaining = turns
+	scroll_learn_total_turns = turns
+	scroll_learn_spell_id = spell_id
+	scroll_learn_item = item
+	game_log("[color=cyan]You begin studying the scroll... (%d turns)[/color]" % turns)
+
+func cancel_scroll_learn(interrupted: bool = false) -> void:
+	if interrupted:
+		game_log("[color=gray]Your studying is interrupted![/color]")
+	scroll_learn_active = false
+	scroll_learn_turns_remaining = 0
+	scroll_learn_total_turns = 0
+	scroll_learn_spell_id = ""
+	scroll_learn_item = null
+
+func complete_scroll_learn() -> void:
+	var spell_id: String = scroll_learn_spell_id
+	var item: Item = scroll_learn_item
+	scroll_learn_active = false
+	scroll_learn_turns_remaining = 0
+	scroll_learn_total_turns = 0
+	scroll_learn_spell_id = ""
+	scroll_learn_item = null
+	learn_spell(spell_id)
+	if item != null:
+		remove_item(item)
 
 ## Reconciles the ability bar's "spell:" entries against the (just-restored) known/prepared lists
 ## after Stats.from_dict() — abilities are derived state, never serialized as objects (same

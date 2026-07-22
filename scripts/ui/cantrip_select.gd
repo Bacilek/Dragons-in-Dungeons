@@ -1,23 +1,23 @@
 extends CanvasLayer
 
-# Wizard's cantrip pick — spawned by race_select.gd right after race confirm, in place of the
-# Mastery Picker (Wizard's mastery_cap() is already 0). Modeled on mastery_picker.gd's
+# Wizard's starting-spell pick — spawned by race_select.gd right after race confirm, in place of
+# the Mastery Picker (Wizard's mastery_cap() is already 0). Modeled on mastery_picker.gd's
 # overlay/panel styling, but card-click commits immediately (subclass_select.gd's style) since
 # there's no multi-select here — a single irreversible pick per round.
 #
-# TWO rounds, each "pick 1 of 3" (owner-requested — a full caster picks 2 cantrips total at
-# character creation): round 1 always offers the original fixed trio
-# (SpellDb.STARTER_CANTRIP_IDS — unchanged so the premade Jace's "cantrip": "fire_bolt" shortcut
-# and old saves stay valid); on that pick, this same script re-builds itself for round 2, offering
-# 3 candidates picked at random (Rng, gameplay stream) from every remaining cantrip
-# (SpellDb.CANTRIP_IDS minus round 1's pick) — could include the two unchosen starters or any of
-# the 5 newer cantrips. Round 2's pick closes the picker for good.
+# TWO rounds (owner-requested: one cantrip AND one level-1 spell, not two cantrips): round 1
+# "pick 1 of 3" always offers the fixed cantrip trio (SpellDb.STARTER_CANTRIP_IDS — unchanged so
+# the premade Jace's "cantrip": "fire_bolt" shortcut and old saves stay valid) via
+# GameState.choose_cantrip(), which also auto-assigns the pick into the Special quick-cast slot;
+# on that pick, this same script re-builds itself for round 2, "pick 1 of 2" from the fixed
+# level-1 starting pair (Magic Missile, Shield) via GameState.choose_starting_spell(). Round 2's
+# pick closes the picker for good.
 
 const PANEL_W: float = 760.0
 const CARD_H: float = 160.0
 const CARD_GAP: float = 16.0
 const MARGIN: float = 24.0
-const ROUND_CANDIDATE_COUNT: int = 3
+const STARTING_SPELL_IDS: Array[String] = ["magic_missile", "shield"]
 
 var _panel: Panel
 var _round: int = 1
@@ -49,7 +49,7 @@ func _build_ui() -> void:
 	add_child(_panel)
 
 	var title := Label.new()
-	title.text = "Choose Your Starting Cantrip" if _round == 1 else "Choose a Second Cantrip"
+	title.text = "Choose Your Starting Cantrip" if _round == 1 else "Choose Your Starting Level-1 Spell"
 	title.add_theme_font_size_override("font_size", 26)
 	title.add_theme_color_override("font_color", Color(1.0, 0.82, 0.22))
 	title.position = Vector2(MARGIN, 14.0)
@@ -119,17 +119,12 @@ func _build_card(spell: Spell, pos: Vector2, card_size: Vector2) -> void:
 	card.add_child(blurb_lbl)
 
 func _on_chosen(spell_id: String) -> void:
-	GameState.choose_cantrip(spell_id)
 	if _round == 1:
-		# Round 2: 3 random candidates from every cantrip NOT just chosen — reuse this same
-		# script/scene rather than a second file, just re-seed round/_candidates and rebuild.
-		var pool: Array[String] = []
-		for id: String in SpellDb.CANTRIP_IDS:
-			if id != spell_id:
-				pool.append(id)
-		Rng.shuffle(pool)
+		GameState.choose_cantrip(spell_id)
+		# Round 2: the fixed level-1 starting pair — reuse this same script/scene rather than a
+		# second file, just re-seed round/_candidates and rebuild.
 		_round = 2
-		_candidates = pool.slice(0, mini(ROUND_CANDIDATE_COUNT, pool.size()))
+		_candidates = STARTING_SPELL_IDS.duplicate()
 		# queue_free() (not free()) — this runs from inside a card Button's own "pressed" signal,
 		# so the old nodes must be torn down deferred, not synchronously. Hide immediately so the
 		# freshly-built round-2 panel doesn't render on top of a visible stale round-1 one for a frame.
@@ -140,6 +135,7 @@ func _on_chosen(spell_id: String) -> void:
 		_panel = null
 		_build_ui()
 		return
+	GameState.choose_starting_spell(spell_id)
 	GameState.cantrip_picker_open = false
 	queue_free()
 

@@ -364,6 +364,20 @@ func _on_turn_started() -> void:
 		_actions.do_rest_wait_turn()
 		return
 
+	# Scroll-learning in progress — player waits in place, same auto-wait/interrupt shape as a
+	# short rest but its own independent flag (not a rest). Any enemy entering FOV interrupts the
+	# studying outright (no Continue/Abort prompt — nothing's been consumed yet, just re-issue the
+	# RMB Learn command once it's safe again).
+	if GameState.scroll_learn_active:
+		if not _fov_this_turn.is_empty():
+			GameState.cancel_scroll_learn(true)
+			return
+		GameState.scroll_learn_turns_remaining -= 1
+		if GameState.scroll_learn_turns_remaining <= 0:
+			GameState.complete_scroll_learn()  # logs "You add X to your spellbook." via learn_spell()
+		_actions.do_rest_wait_turn()
+		return
+
 	var status_dmg: int = GameState.player_stats.tick_status()
 	if status_dmg > 0:
 		GameState.take_damage_raw(status_dmg)

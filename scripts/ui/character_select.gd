@@ -58,6 +58,7 @@ const PREMADE: Array = [
 		"prof":    -1,
 		"masteries": [],
 		"cantrip": "fire_bolt",
+		"spell1":  "magic_missile",
 		"sprite":  CHAR_PATH + "wizzard_m_idle_anim_f0.png",
 		"subtitle": "Halfling Wizard",
 		"desc":    "Frail but brilliant,\nlucky in a pinch.",
@@ -375,7 +376,11 @@ func _on_premade_selected(data: Dictionary) -> void:
 
 	var cantrip: String = String(data.get("cantrip", ""))
 	if not cantrip.is_empty():
-		GameState.choose_cantrip(cantrip)
+		GameState.choose_cantrip(cantrip)   # also auto-assigns it to the Special quick-cast slot
+
+	var spell1: String = String(data.get("spell1", ""))
+	if not spell1.is_empty():
+		GameState.choose_starting_spell(spell1)
 
 	queue_free()
 

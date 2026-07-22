@@ -406,14 +406,12 @@ func _finish_drag() -> void:
 	elif (_drag_src_sname == "melee" or _drag_src_sname == "hand2") and _drag_src_ctrl != null \
 			and Rect2(_drag_src_ctrl.position, Vector2(SLOT_SIZE, SLOT_SIZE)).has_point(local_mouse):
 		var slot_item: Item = GameState.equipment.get(_drag_src_sname) as Item
-		if slot_item != null:
-			if _drag_src_sname == "melee" and slot_item.is_versatile:
-				GameState.toggle_versatile_grip()
-			elif slot_item.is_torch and not slot_item.torch_lit and not slot_item.torch_burnt:
-				GameState.light_torch(slot_item)
-				var df: Node = get_tree().get_first_node_in_group("dungeon_floor")
-				if df != null:
-					df.update_fog(GameState.player_grid_pos)
+		if slot_item != null and _drag_src_sname == "melee" and slot_item.is_versatile:
+			GameState.toggle_versatile_grip()
+	elif _drag_src != "equipment" and _drag_item != null and _drag_src_ctrl != null \
+			and Rect2(_drag_src_ctrl.position, Vector2(SLOT_SIZE, SLOT_SIZE)).has_point(local_mouse) \
+			and _drag_item.item_type in [Item.Type.WEAPON, Item.Type.ARMOR]:
+		GameState.equip(_drag_item)
 	if _drag_icon != null:
 		_drag_icon.queue_free()
 		_drag_icon = null
@@ -465,8 +463,36 @@ func _right_click(slot: Control) -> void:
 		GameState.unequip(slot.get_meta("slot_name", ""))  # free action, except a Shield (1 turn)
 	else:
 		var item: Item = _slot_item(slot)
-		if item != null:
-			GameState.use_item(item)
+		if item == null:
+			return
+		if item.item_type == Item.Type.FOOD:
+			GameState.use_item(item)  # unchanged existing behavior — Food is excluded from the menu
+			return
+		var interactions: Array[String] = ItemInteractions.get_available_interactions(item)
+		if interactions.size() == 1:
+			_dispatch_item_interaction(item, interactions[0])
+		else:
+			var m := ItemInteractionMenu.new()
+			add_child(m)
+			m.open(slot.global_position, interactions, func(id: String): _dispatch_item_interaction(item, id))
+
+func _dispatch_item_interaction(item: Item, id: String) -> void:
+	if ItemInteractions.needs_world_targeting(id, item):
+		_unfreeze_tooltip()
+		visible = false
+		GameState.inventory_open = false
+	match id:
+		"throw":
+			GameState.player_throw_primed.emit(item)
+		"light":
+			GameState.light_torch(item)
+			var df: Node = get_tree().get_first_node_in_group("dungeon_floor")
+			if df != null:
+				df.update_fog(GameState.player_grid_pos)
+		"learn":
+			GameState.begin_scroll_learn(item)
+		_:
+			GameState.use_item(item)  # read / drink / prime
 
 func _is_weapon_category_proficient(category: String) -> bool:
 	var s: Stats = GameState.player_stats

@@ -17,7 +17,7 @@ After every feature, fix, or refactor that changes architecture, adds a system, 
 
 Open `project.godot` in **Godot 4.6 (Mono build)**. Press **F5** to run. No CLI build commands.
 
-**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait (also forfeits Extra Attack). Alt = rest (short/long tabs). RMB on world (no tool primed) = instant Inspect on the clicked tile/enemy; a quick second RMB (within 0.5s) instead performs a full-area Search. 1–9 = use active quickbar slot 0–8. **Tab = toggle between item bar and ability bar**. I = open inventory. **R = open Wizard Spellbook** (choose prepared leveled spells; no-op for non-casters). Left-click enemy = chase+attack (melee). Shift+left-click enemy/tile = ranged attack (if ranged weapon equipped and in range). Ctrl+left-click enemy/tile = cast whichever spell is in the Special quick-cast slot (if one is assigned — see Spellbook overlay). Left-click floor = pathfind. RMB on food in quickbar = throw mode, then LMB = throw. Esc = cancel throw/tool. **Thief Tools keyboard**: prime via quickbar hotkey → WASD into open/closed door = lock attempt; WASD into locked door = pick/unlock attempt; RMB while primed also completes the same action without moving. Note: F key no longer opens doors.
+**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait (also forfeits Extra Attack). Alt = rest (short/long tabs). RMB on world (no tool primed) = instant Inspect on the clicked tile/enemy; a quick second RMB (within 0.5s) instead performs a full-area Search. 1–9 = use active quickbar slot 0–8. **Tab = toggle between item bar and ability bar**. I = open inventory. **R = open Wizard Spellbook** (choose prepared leveled spells; no-op for non-casters). Left-click enemy = chase+attack (melee). Shift+left-click enemy/tile = ranged attack (if ranged weapon equipped and in range). Ctrl+left-click enemy/tile = cast whichever spell is in the Special quick-cast slot (if one is assigned — see Spellbook overlay). Left-click floor = pathfind. LMB (click, not drag) on a Weapon/Armor item in the quickbar or bag = equip it. RMB on any other item (quickbar or bag) = its non-equip interaction(s) — a single interaction (e.g. a thrown weapon's Throw) resolves immediately; 2+ (e.g. a Torch's Light/Throw) pop a small clickable menu (see `scripts/items/CLAUDE.md`'s "Item interaction menu"). RMB on food = throw mode unchanged (food's own eat action does nothing useful today), then LMB = throw. Esc = cancel throw/tool. **Thief Tools keyboard**: prime via quickbar hotkey → WASD into open/closed door = lock attempt; WASD into locked door = pick/unlock attempt; RMB while primed also completes the same action without moving. Note: F key no longer opens doors.
 
 ## Architecture
 
@@ -106,8 +106,11 @@ roll used by all 6 player attack sites) so every attack gets it for free; `playe
 **Wizard cantrips** (free, at-will — 8 total: the original attack-roll trio Fire Bolt / Ray of
 Frost / Shocking Grasp, plus 5 more adding SAVE-resolution and SELF-target/AoE cantrips —
 Toll the Dead, Blade Ward (the one cantrip with a real, minimal Concentration mechanic), Thunderclap,
-Mind Sliver, Light (a real FOV light source, not cosmetic) — picked via **two** "pick 1 of 3"
-rounds right after race select via `scripts/ui/cantrip_select.gd`) **and leveled spells
+Mind Sliver, Light (a real FOV light source, not cosmetic) — a **Custom** Wizard picks exactly
+**one** starting cantrip ("pick 1 of 3" from the fixed starter trio, auto-loaded into the Special
+quick-cast slot) and **one** starting level-1 spell ("pick 1 of 2": Magic Missile/Shield) via two
+back-to-back rounds of `scripts/ui/cantrip_select.gd` right after race select; premade Jace skips
+both pickers via fixed `"cantrip"`/`"spell1"` keys) **and leveled spells
 with real D&D 2024 spell slots are both implemented.** Leveled spells: `StandardSlotPool`'s
 1–20 full-caster slot table (long-rest-only recharge), prepared count = character level, a
 level-up "pick 1 of 3" spellbook-growth picker (`scripts/ui/spell_learn_picker.gd`), scroll-taught

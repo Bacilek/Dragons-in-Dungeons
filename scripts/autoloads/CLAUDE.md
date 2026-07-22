@@ -99,6 +99,9 @@ AudioManager.stop_music()
 short_rest_open: bool        # blocks ALL player input while true
 short_rest_active: bool      # a rest is in progress (ticking turns) — short OR long, see long_rest_pending
 long_rest_pending: bool      # true when the in-progress short_rest_active countdown is actually a long rest
+scroll_learn_active: bool    # Wizard "Learn" RMB scroll interaction in progress — ticked in player.gd, see scripts/items/CLAUDE.md's "Learn"
+scroll_learn_turns_remaining/scroll_learn_total_turns: int  # 2 real turns per spell level; a cantrip learns instantly, never sets this
+scroll_learn_spell_id: String # the spell being studied; scroll_learn_item: Item — consumed only on GameState.complete_scroll_learn()
 hit_dice: int                # available dice (refills to max_hit_dice() in long_rest(); gain_exp() also grants the level-up's +1 die to CURRENT hit_dice, not just the cap, so it's usable in a short rest before the next long rest)
 short_rests_remaining: int   # 2 per long-rest cycle, resets in long_rest() (NOT advance_floor)
 LONG_REST_FOOD_COST: int     # const 100 — combined Item.food_value required to long rest
@@ -158,7 +161,9 @@ newly-grown slots are immediately usable rather than empty until the next long r
 `player_ability_bar` and `prepared_spells`, assigned from inside the Spellbook overlay (see
 `scripts/ui/CLAUDE.md`), displayed read-only in the Inventory overlay next to Ranged, cast with
 Ctrl+click via `PlayerSpellcasting.cast_direct()` (see `scripts/entities/CLAUDE.md`'s "Wizard
-leveled spells"). Persisted as a top-level `"special_slot_spell_id"` string in `to_dict()`/
+leveled spells"). `choose_cantrip()` also calls this automatically on the character-creation
+cantrip pick (both the Custom `cantrip_select.gd` flow and premade Jace), so a fresh Wizard
+always starts with their cantrip already loaded into Ctrl+click. Persisted as a top-level `"special_slot_spell_id"` string in `to_dict()`/
 `from_dict()` (same pattern as `gold`); restored last in `from_dict()`, after `Stats.from_dict()`
 repopulates `known_spells`, and silently clears if the saved id is no longer known.
 

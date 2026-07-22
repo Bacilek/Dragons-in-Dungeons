@@ -176,6 +176,13 @@ Slot type enforced via `_fits_slot()`: Main Hand (`"melee"`) rejects ranged item
 **Thrown weapon durability**: item tooltips (both here and `hud.gd`'s quickbar tooltip) show a right-aligned `Uses: X/Y` line for any `Item.Type.WEAPON` with `is_thrown == true` (currently only the Spear — see `scripts/items/CLAUDE.md`'s "Thrown weapons"), placed just above the existing "Ctrl: inspect" hint.
 Quickbar: 9 slots (indices 0–8). Bag: 24 slots.
 
+**RMB item-interaction menu / LMB-equip**: see `scripts/items/CLAUDE.md`'s "Item interaction menu
+(RMB) / LMB-equip" section — `_right_click()`, `_dispatch_item_interaction()`, and the new
+click-no-drag-equip branch in `_finish_drag()` all live in this file; the shared `ItemInteractions`
+helper (`scripts/items/item_interactions.gd`) and the transient popup Control
+(`scripts/ui/item_interaction_menu.gd`, `ItemInteractionMenu`) are both new files this feature
+introduced, reused identically by `hud.gd`'s quickbar RMB handler.
+
 **Ctrl-freeze tooltip**: pressing Ctrl while hovering an item (tooltip visible) freezes the tooltip in place and switches `_inv_tooltip.mouse_filter = MOUSE_FILTER_STOP` + `_inv_tooltip_rtl.mouse_filter = MOUSE_FILTER_PASS`. This allows `meta_hover_started` to fire for `[url=keyword:X]` links (e.g. "Heavy"), showing the glossary popup. Ctrl again or closing inventory unfreezes. `_unfreeze_tooltip()` helper restores MOUSE_FILTER_IGNORE on both AND hides the tooltip. `_on_slot_hover()` returns early when `_tooltip_frozen` so moving mouse to other slots does not overwrite the frozen tooltip. Same Ctrl-freeze feature also implemented for the qbar tooltip in `hud.gd` (`_qbar_tooltip_frozen`, `_unfreeze_qbar_tooltip()`, `_input()` handler). All item tooltips show a small gray "Ctrl: inspect" hint in the bottom-right corner.
 
 ---
@@ -195,7 +202,9 @@ floor 1 (premade heroes use `apply_class_defaults()`'s fixed scores, no point bu
 **class select → point buy → race select → mastery picker** chain for a from-scratch build. Also
 owns the "Continue Saved Run" button (moved here from `class_select.gd` since this is now the true
 entry point) — same behavior as before, see `scripts/autoloads/CLAUDE.md`'s SaveManager
-"Continue flow" section.
+"Continue flow" section. Jace's card also carries a `"spell1": "magic_missile"` key, applied via
+`GameState.choose_starting_spell()` right after the `"cantrip"` key's `choose_cantrip()` call —
+premade heroes get their fixed cantrip + level-1 spell without ever seeing `cantrip_select.gd`.
 
 ## Class select (`class_select.gd`)
 The **Custom** path only now (see `character_select.gd` above) — no longer spawned directly by
@@ -248,27 +257,28 @@ four; ability scores and race are both restored via `Stats.to_dict()`/`from_dict
 (`character_race`/`race_variant`/`race_prof_ability` plus the plain score ints) same as any other
 stat.
 
-## Cantrip picker (`cantrip_select.gd`)
+## Cantrip / starting-spell picker (`cantrip_select.gd`)
 CanvasLayer, layer = 25. Wizard-only, mandatory pick spawned by `race_select.gd._on_confirm()` in
 the same slot the Mastery Picker would occupy (Wizard's `mastery_cap()` is already 0, so the two
 branches are mutually exclusive — `elif` off of it). Dim overlay + centered bordered `Panel`,
 `focus_mode = FOCUS_NONE`, non-dismissible (no close button, `_unhandled_input` swallows all keys
 — mirrors `race_select.gd`'s conventions). Unlike the Mastery Picker's toggle-and-Done
-multi-select, each cantrip card commits immediately on click (`subclass_select.gd`'s
-card-click-commits style) since there's no multi-select within a round — but there ARE **two
-rounds**, each an independent "pick 1 of 3" (owner-requested — a full caster starts with 2
-cantrips): round 1 (`_round = 1`) always shows the fixed `SpellDb.STARTER_CANTRIP_IDS` trio (Fire
-Bolt / Ray of Frost / Shocking Grasp — unchanged pool, so the premade Jace's
+multi-select, each card commits immediately on click (`subclass_select.gd`'s card-click-commits
+style) since there's no multi-select within a round — but there ARE **two rounds**
+(owner-requested: a starting Wizard picks exactly **one cantrip and one level-1 spell**, not
+two of either): round 1 (`_round = 1`) is "pick 1 of 3" from the fixed `SpellDb.STARTER_CANTRIP_IDS`
+trio (Fire Bolt / Ray of Frost / Shocking Grasp — unchanged pool, so the premade Jace's
 `"cantrip": "fire_bolt"` shortcut and old saves stay valid); its `_on_chosen()` calls
-`GameState.choose_cantrip()`, then re-seeds `_round = 2` and `_candidates` (3 random ids —
-`Rng.shuffle()`, gameplay stream — drawn from every `SpellDb.CANTRIP_IDS` entry except the round-1
-pick, so it can surface an unchosen starter or any of the 5 newer cantrips), tears down the old
-panel (`queue_free()` — deferred, since this runs inside the pressed card's own signal handler;
-hidden via `visible = false` first so the new round-2 panel doesn't render on top of a
-still-visible stale one for a frame) and calls `_build_ui()` again on the SAME script instance
-(title swaps to "Choose a Second Cantrip"). Round 2's pick sets `GameState.cantrip_picker_open =
+`GameState.choose_cantrip()` (which also auto-assigns the pick into the Special quick-cast slot —
+see `scripts/autoloads/CLAUDE.md`), then re-seeds `_round = 2` and `_candidates` to the fixed
+`STARTING_SPELL_IDS` pair (Magic Missile, Shield — "pick 1 of 2"), tears down the old panel
+(`queue_free()` — deferred, since this runs inside the pressed card's own signal handler; hidden
+via `visible = false` first so the new round-2 panel doesn't render on top of a still-visible
+stale one for a frame) and calls `_build_ui()` again on the SAME script instance (title swaps to
+"Choose Your Starting Level-1 Spell"). Round 2's pick calls `GameState.choose_starting_spell()`
+(learns AND prepares it — prepared cap is 1 at level 1) then sets `GameState.cantrip_picker_open =
 false` and frees the overlay for good. See `scripts/entities/CLAUDE.md`'s "Wizard spellcasting"
-section for what each pick actually grants, and for the 5 newer cantrips.
+section for what each pick actually grants.
 
 ## Spell-learn picker (`spell_learn_picker.gd`)
 CanvasLayer, layer = 25. Wizard-only, spawned by `hud.gd._on_player_leveled_up()` whenever
