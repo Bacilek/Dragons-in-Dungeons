@@ -2,6 +2,9 @@ class_name Player
 extends Entity
 
 const KNIGHT_PATH := "res://sprites/characters/"
+# Bloodhound R2: how much easier the Hunter's Mark target is to sneak past (Passive Perception
+# effectively lowered by this much, vs the player only) — tunable, see markdowns/ranger_base.md.
+const BLOODHOUND_R2_PP_DEBUFF: int = 2
 const UNDEAD_NAMES: Array = ["Zombie", "Goblin Warrior", "Goblin Archer", "Goblin Minion", "Skeleton", "Orc Warrior", "Orc Shaman", "Masked Orc", "Wogol"]
 
 var _dungeon_floor: Node
@@ -13,6 +16,7 @@ var _zealot: PlayerZealot
 var _berserker: PlayerBerserker
 var _scarred_warrior: PlayerScarredWarrior
 var _base_talents: PlayerBaseTalents
+var _ranger_talents: PlayerRangerTalents
 var _ammo: PlayerAmmo
 var _throw_tool: PlayerThrowTool
 var _thief_tools: PlayerThiefTools
@@ -86,6 +90,11 @@ var _ironwood_bark_bonus_pending: int = 0
 var _hook_mode_active: bool = false
 var _grip_used_this_turn: bool = false
 
+# ── Ranger state ───────────────────────────────────────────────────────────────
+# Hunter's Mark: same arm-then-click targeting-mode pattern as Grip of the Forest's hook mode
+# above, but no per-turn "used" cap (retargeting an active mark is free, see player_ranger_talents.gd).
+var _hunters_mark_mode_active: bool = false
+
 # ── Weapon mastery state ────────────────────────────────────────────────────────
 # Vex (Short Bow): after a Short-Bow hit, grants Advantage on the very next attack THIS ROUND
 # against that exact same enemy (any attack type — melee, cleave, ranged). Consumed on the
@@ -117,6 +126,7 @@ func _ready() -> void:
 	_berserker = PlayerBerserker.new(); _berserker.player = self; add_child(_berserker)
 	_scarred_warrior = PlayerScarredWarrior.new(); _scarred_warrior.player = self; add_child(_scarred_warrior)
 	_base_talents = PlayerBaseTalents.new(); _base_talents.player = self; add_child(_base_talents)
+	_ranger_talents = PlayerRangerTalents.new(); _ranger_talents.player = self; add_child(_ranger_talents)
 	GameState.force_rage_end.connect(_end_rage)
 	_ammo = PlayerAmmo.new(); _ammo.player = self; add_child(_ammo)
 	_throw_tool = PlayerThrowTool.new(); _throw_tool.player = self; add_child(_throw_tool)
@@ -468,9 +478,13 @@ func _resolve_stealth_check() -> void:
 			lucky2 = r2["lucky"]
 			die = maxi(die1, die2)
 		var total: int = die + dex_mod + prof
-		var noticed: bool = total < e.passive_perception
+		# Bloodhound R2: the Marked target is easier for the player specifically to sneak up on.
+		var effective_pp: int = e.passive_perception
+		if e == s.hunters_mark_target and GameState.get_talent_rank("bloodhound") >= 2:
+			effective_pp -= BLOODHOUND_R2_PP_DEBUFF
+		var noticed: bool = total < effective_pp
 		var stealth_meta: String = "stealth:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,total=%d,epp=%d,adv=%d,pass=%d,lucky1=%d,lucky2=%d" % [
-			die, die1, die2, dex_mod, prof, total, e.passive_perception,
+			die, die1, die2, dex_mod, prof, total, effective_pp,
 			1 if obs_adv > 0 else 0, 0 if noticed else 1, 1 if lucky1 else 0, 1 if lucky2 else 0]
 		var god_suffix: String = " [color=gray](Stealth %d vs PP %d)[/color]" % [total, e.passive_perception] if GameState.god_mode else ""
 		if noticed:
@@ -514,6 +528,7 @@ func _process(_delta: float) -> void:
 	_update_spell_aoe_preview()
 	if GameState.is_game_over or GameState.inventory_open or GameState.short_rest_open \
 			or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
+			or GameState.background_select_open \
 			or not GameState.class_selected:
 		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
@@ -694,6 +709,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active \
 			or GameState.talent_picker_open or GameState.mastery_picker_open \
 			or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
+			or GameState.background_select_open \
 			or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open):
 		return
 	if event is InputEventKey:
@@ -704,7 +720,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if key.physical_keycode == KEY_I:
 			if not GameState.short_rest_open and not GameState.mastery_picker_open \
 					and not GameState.subclass_picker_open and not GameState.race_picker_open \
-					and not GameState.point_buy_open and not GameState.cantrip_picker_open \
+					and not GameState.point_buy_open and not GameState.background_select_open \
+					and not GameState.cantrip_picker_open \
 					and not GameState.spell_learn_picker_open and not GameState.spellbook_open:
 				GameState.inventory_toggle.emit()
 			return
@@ -714,6 +731,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					and not GameState.short_rest_active and not GameState.talent_picker_open \
 					and not GameState.mastery_picker_open and not GameState.subclass_picker_open \
 					and not GameState.race_picker_open and not GameState.point_buy_open \
+					and not GameState.background_select_open \
 					and not GameState.cantrip_picker_open and not GameState.spell_learn_picker_open \
 					and not GameState.spellbook_open:
 				_actions.open_talent_picker()
@@ -726,6 +744,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					and not GameState.short_rest_active and not GameState.talent_picker_open \
 					and not GameState.mastery_picker_open and not GameState.subclass_picker_open \
 					and not GameState.race_picker_open and not GameState.point_buy_open \
+					and not GameState.background_select_open \
 					and not GameState.cantrip_picker_open and not GameState.spell_learn_picker_open \
 					and not GameState.spellbook_open:
 				var picker = load("res://scripts/ui/spellbook_overlay.gd").new()
@@ -735,6 +754,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active \
 				or GameState.talent_picker_open or GameState.mastery_picker_open \
 				or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
+				or GameState.background_select_open \
 				or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
@@ -747,6 +767,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _hook_mode_active:
 				_hook_mode_active = false
 				GameState.game_log("[color=gray]Grip of the Forest cancelled.[/color]")
+			if _hunters_mark_mode_active:
+				_hunters_mark_mode_active = false
+				GameState.game_log("[color=gray]Hunter's Mark cancelled.[/color]")
 			if _spellcasting.spell_targeting_active:
 				_spellcasting.cancel()
 				GameState.game_log("[color=gray]Spell cancelled.[/color]")
@@ -913,6 +936,17 @@ func _unhandled_input(event: InputEvent) -> void:
 				_spellcasting.try_cast_at(cast_target)
 			else:
 				_spellcasting.cancel()
+			return
+
+		# Hunter's Mark targeting mode (Ranger) — no range/LOS gate beyond what's clickable/visible.
+		if _hunters_mark_mode_active:
+			_hunters_mark_mode_active = false
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				var mark_target: Enemy = _dungeon_floor.get_targetable_enemy_at(clicked)
+				if mark_target == null:
+					GameState.game_log("[color=gray]Hunter's Mark: no target there.[/color]")
+				else:
+					_ranger_talents.commit_mark(mark_target)
 			return
 
 		# Grip of the Forest hook-targeting mode
@@ -1162,14 +1196,16 @@ func _execute_queued_path() -> void:
 			break
 
 		# Difficult terrain or slowed: costs 2 turns — stop queued path and waste a turn
+		# (Trailblazer R1 ignores Mud/Water entirely — same bypass as _try_move()'s.)
 		var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
-		if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
+		if (tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD) \
+				and GameState.get_talent_rank("trailblazer") < 1:
 			GameState.apply_player_status("slowed", maxi(1, GameState.player_stats.slowed_turns))
 		if tile_t == DungeonData.TileType.WATER and GameState.player_stats.burning_turns > 0:
 			GameState.player_stats.burning_turns = 0
 			GameState.player_status_changed.emit()
 			GameState.game_log("[color=cyan]The water extinguishes your flames![/color]")
-		if GameState.player_stats.slowed_turns > 0:
+		if GameState.player_stats.slowed_turns > 0 and GameState.get_talent_rank("trailblazer") < 1:
 			_queued_path.clear()
 			if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
 				await TurnManager.player_turn_started
@@ -1379,8 +1415,10 @@ func _try_move(dir: Vector2i) -> void:
 	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
 	var _panther_bypass: bool = _sleeper_on and _ns_form == "Panther" and tile_t == DungeonData.TileType.MUD
 	var _salmon_bypass: bool = _sleeper_on and _ns_form == "Salmon" and tile_t == DungeonData.TileType.WATER
+	# Trailblazer R1: Ranger ignores Mud/Water's difficult-terrain penalty entirely.
+	var _trailblazer_bypass: bool = GameState.get_talent_rank("trailblazer") >= 1
 	if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
-		if not _panther_bypass and not _salmon_bypass:
+		if not _panther_bypass and not _salmon_bypass and not _trailblazer_bypass:
 			GameState.apply_player_status("slowed", maxi(1, GameState.player_stats.slowed_turns))
 	if tile_t == DungeonData.TileType.WATER and GameState.player_stats.burning_turns > 0:
 		GameState.player_stats.burning_turns = 0
@@ -1409,8 +1447,8 @@ func _try_move(dir: Vector2i) -> void:
 		TurnManager.revert_to_waiting()
 		return
 	TurnManager.on_player_action_complete()
-	# Slowed extra turn cost (skip if Panther/Salmon bypassed the terrain penalty)
-	if GameState.player_stats.slowed_turns > 0 and not _panther_bypass and not _salmon_bypass:
+	# Slowed extra turn cost (skip if Panther/Salmon/Trailblazer bypassed the terrain penalty)
+	if GameState.player_stats.slowed_turns > 0 and not _panther_bypass and not _salmon_bypass and not _trailblazer_bypass:
 		await TurnManager.player_turn_started
 		TurnManager.begin_player_action()
 		_dungeon_floor.update_fog(grid_pos)
@@ -1538,6 +1576,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Two ADV sources + one DISADV = net +1 = ADV (house rule: count beats cancel).
 	var adv_count: int = 0
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
+	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
+	adv_count += _ranger_talents.consume_bloodhound_fresh_adv(enemy)
 	var disadv_count: int = 0
 	if _vfx.has_advantage(enemy): adv_count += 1
 	# Zealous Presence: Advantage on all attack rolls while buffed.
@@ -1708,6 +1748,25 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		if _dungeon_floor != null:
 			_dungeon_floor.show_damage(enemy.position, torch_actual, false, CombatMath.damage_type_color("Fire"), 2 if judgement_bonus > 0 else 1)
 
+	# Hunter's Mark (Ranger, baseline): a hit against the marked target deals a second, independent
+	# Force damage instance — same "one hit, two damage types" shape as Judgement Day/Torch above.
+	var hm_actual: int = 0
+	var hm_inst: Dictionary = {}
+	var hm_die: int = _ranger_talents.hunters_mark_bonus_die(enemy, true)
+	if hm_die > 0:
+		var hm_rolls: Array[int] = [hm_die]
+		hm_inst = CombatMath.build_damage_instance(hm_rolls, 6, [], is_crit, "Force")
+		var hm_result: Dictionary = enemy.take_typed_damage(hm_inst["subtotal"], "Force", is_crit)
+		hm_inst["final"] = hm_result["actual"]
+		hm_inst["resist_mul"] = hm_result["mul"]
+		hm_actual = hm_result["actual"]
+		enemy.update_hp_bar()
+		var hm_stack_index: int = 1
+		if jd_actual > 0: hm_stack_index += 1
+		if torch_actual > 0: hm_stack_index += 1
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(enemy.position, hm_actual, false, CombatMath.damage_type_color("Force"), hm_stack_index)
+
 	var is_lethal: bool = enemy.stats.is_dead()
 
 	var dmg_meta: String = CombatMath.encode_damage_instance(main_inst)
@@ -1720,6 +1779,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if torch_actual > 0:
 		var torch_meta: String = CombatMath.encode_damage_instance(torch_inst)
 		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Fire[/color]" % [torch_meta, torch_actual]
+	if hm_actual > 0:
+		var hm_meta: String = CombatMath.encode_damage_instance(hm_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Force[/color]" % [hm_meta, hm_actual]
 	var verb: String = "strike" if is_monk_unarmed else ("punch" if is_unarmed else "strike")
 
 	if is_crit:
@@ -1813,6 +1875,8 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var weapon_bonus: int = weapon.bonus_damage
 	var adv_count: int = 0
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
+	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
+	adv_count += _ranger_talents.consume_bloodhound_fresh_adv(enemy)
 	var disadv_count: int = 0
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
@@ -1906,6 +1970,8 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	var weapon_bonus: int = weapon.bonus_damage
 	var adv_count: int = 0
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
+	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
+	adv_count += _ranger_talents.consume_bloodhound_fresh_adv(enemy)
 	var disadv_count: int = 0
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
@@ -1945,8 +2011,10 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	var dice_ct: Vector2i = CombatMath.dice_notation(w_dmin, w_dmax)
 	var rolls: Array[int] = Rng.roll_dice(dice_ct.x, dice_ct.y)
 	var rage_bonus: int = stats.rage_bonus_damage if _is_raging else 0
-	# Off-hand damage drops the positive ability modifier; a negative modifier still always applies.
-	var dmg_mod: int = mini(attack_mod, 0)
+	# Off-hand damage drops the positive ability modifier; a negative modifier still always applies
+	# — UNLESS Twin Fang R2 is active against this exact target (Marked, rank >= 2), which keeps
+	# the full modifier just for that swing.
+	var dmg_mod: int = attack_mod if _ranger_talents.twin_fang_r2_active(enemy) else mini(attack_mod, 0)
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var raw_mods: Array = [
 		{"name": "Weapon enhancement", "amount": weapon_bonus, "color": "lightblue"},
@@ -1967,10 +2035,31 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 		enemy.on_melee_hit(self)
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false, CombatMath.damage_type_color(dmg_type))
+
+	# Hunter's Mark: Twin Fang R1 extends the bonus die to Off-hand/Nick swings — see
+	# hunters_mark_bonus_die()'s is_primary=false gate.
+	var hm_actual: int = 0
+	var hm_inst: Dictionary = {}
+	var hm_die: int = _ranger_talents.hunters_mark_bonus_die(enemy, false)
+	if hm_die > 0:
+		var hm_rolls: Array[int] = [hm_die]
+		hm_inst = CombatMath.build_damage_instance(hm_rolls, 6, [], is_crit, "Force")
+		var hm_result: Dictionary = enemy.take_typed_damage(hm_inst["subtotal"], "Force", is_crit)
+		hm_inst["final"] = hm_result["actual"]
+		hm_inst["resist_mul"] = hm_result["mul"]
+		hm_actual = hm_result["actual"]
+		enemy.update_hp_bar()
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(enemy.position, hm_actual, false, CombatMath.damage_type_color("Force"), 1)
+
 	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	var is_lethal: bool = enemy.stats.is_dead()
-	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]%s:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [label, hit_meta, enemy.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
+	var dmg_segment: String = "[url=%s][color=yellow]%d[/color][/url]%s" % [dmg_meta, actual, type_tag]
+	if hm_actual > 0:
+		var hm_meta: String = CombatMath.encode_damage_instance(hm_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Force[/color]" % [hm_meta, hm_actual]
+	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]%s:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for %s dmg.%s" % [label, hit_meta, enemy.display_name, dmg_segment, CombatMath.death_suffix(is_lethal)], r["lucky"]))
 	if is_lethal:
 		_finish_kill(enemy)
 
@@ -1995,6 +2084,8 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	var attack_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
 	var adv_count: int = 0
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
+	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
+	adv_count += _ranger_talents.consume_bloodhound_fresh_adv(enemy)
 	var disadv_count: int = 0
 	if weapon != null and weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
@@ -2165,6 +2256,7 @@ func _use_ability_slot(idx: int) -> void:
 		return
 	match ab.ability_id:
 		"rage":                    _activate_rage()
+		"hunters_mark":            _ranger_talents.activate_hunters_mark()
 		"unarmored_defense_monk":  GameState.game_log("[color=gray]Unarmored Defense is passive — active when unarmored (AC = 10+DEX+WIS).[/color]")
 		"martial_arts":            GameState.game_log("[color=gray]Martial Arts is passive — attack unarmed to trigger a bonus-action strike.[/color]")
 		"wild_companion":         _wild_heart.activate_one_with_nature(ab)

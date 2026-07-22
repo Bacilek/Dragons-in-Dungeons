@@ -1,10 +1,10 @@
 extends CanvasLayer
 
-# Race-select overlay — one-time, mandatory choice spawned right after class selection
-# (class_select.gd._on_class_selected()), before the Mastery Picker. Modeled directly on
-# subclass_select.gd's conventions: dim overlay + centered bordered Panel, focus_mode =
-# FOCUS_NONE everywhere, blocks input via a GameState flag (race_picker_open), NOT dismissible
-# (no close button, Esc ignored) — the choice is permanent.
+# Race-select overlay — one-time, mandatory choice spawned by background_select.gd's confirm
+# (Custom path: class select -> point buy -> background ASI -> race select -> mastery picker),
+# before the Mastery Picker. Modeled directly on subclass_select.gd's conventions: dim overlay +
+# centered bordered Panel, focus_mode = FOCUS_NONE everywhere, blocks input via a GameState flag
+# (race_picker_open), NOT dismissible (no close button, Esc ignored) — the choice is permanent.
 # See docs/architecture/race-selection-design.md.
 
 const PANEL_W: float = 1200.0

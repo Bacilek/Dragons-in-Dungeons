@@ -118,6 +118,22 @@ var rage_bonus_damage: int:
 		if character_level >= 9:  return 3
 		return 2
 
+# Hunter's Mark uses (Ranger only) — baseline level-1 ability, not talent-gated, same
+# "granted directly, resource-limited" shape as Rage. A use is spent only when establishing a
+# mark on a target from having none (retargeting an already-active mark is free — 5e "move
+# Hunter's Mark for free"); refilled to max in GameState.long_rest(). Flat, doesn't scale by
+# level (unlike Rage) — simple to start, tune later.
+var hunters_mark_uses_remaining: int = 0
+const HUNTERS_MARK_USES_MAX: int = 3
+
+# The currently marked enemy (Hunter's Mark). Deliberately NOT serialized in to_dict()/from_dict()
+# — a live Enemy node reference can't survive save/load, same precedent as witch_bolt_target
+# above: the mark simply ends silently on load, no cleanup needed.
+var hunters_mark_target: Enemy = null
+# Set true the moment a mark is (re)established, cleared on the marked target's first taken hit —
+# drives Bloodhound R1's "first attack against a fresh mark gets Advantage".
+var hunters_mark_fresh: bool = false
+
 var poison_turns: int = 0
 var burning_turns: int = 0
 var bleeding_turns: int = 0
@@ -335,6 +351,7 @@ func to_dict() -> Dictionary:
 		"base_min_damage": base_min_damage,
 		"base_max_damage": base_max_damage,
 		"rage_uses_remaining": rage_uses_remaining,
+		"hunters_mark_uses_remaining": hunters_mark_uses_remaining,
 		"temp_hp": temp_hp,
 		"poison_turns": poison_turns,
 		"burning_turns": burning_turns,
@@ -375,6 +392,7 @@ func from_dict(d: Dictionary) -> void:
 	base_min_damage = int(d.get("base_min_damage", base_min_damage))
 	base_max_damage = int(d.get("base_max_damage", base_max_damage))
 	rage_uses_remaining = int(d.get("rage_uses_remaining", 0))
+	hunters_mark_uses_remaining = int(d.get("hunters_mark_uses_remaining", 0))
 	temp_hp = int(d.get("temp_hp", 0))
 	poison_turns = int(d.get("poison_turns", 0))
 	burning_turns = int(d.get("burning_turns", 0))
@@ -430,6 +448,27 @@ func apply_point_buy_scores(scores: Dictionary) -> void:
 	current_hp = max_hp
 	recalc_ac(false)
 
+# ── Background ability score bonus (D&D 2024 backgrounds, scripts/ui/background_select.gd) ──
+# Replaces 5e's racial ability-score bonuses — race grants none (see apply_race_defaults()).
+# 3 points to distribute after point buy, max 2 into any single score, no cap on the resulting
+# total (a point-buy 15 can become a background 17).
+const BACKGROUND_POINTS: int = 3
+const BACKGROUND_MAX_PER_STAT: int = 2
+
+# Adds (never overrides) a background bonus on top of the already-applied point-buy scores, then
+# re-derives max_hp/current_hp/armor_class exactly like apply_point_buy_scores()'s own tail —
+# called strictly after apply_point_buy_scores(), before apply_race_defaults().
+func apply_background_bonus(bonuses: Dictionary) -> void:
+	strength += int(bonuses.get("str", 0))
+	dexterity += int(bonuses.get("dex", 0))
+	constitution += int(bonuses.get("con", 0))
+	intelligence += int(bonuses.get("int", 0))
+	wisdom += int(bonuses.get("wis", 0))
+	charisma += int(bonuses.get("cha", 0))
+	max_hp = point_buy_hit_die_base() + modifier(constitution)
+	current_hp = max_hp
+	recalc_ac(false)
+
 func apply_class_defaults() -> void:
 	match character_class:
 		CharacterClass.BARBARIAN:
@@ -446,8 +485,11 @@ func apply_class_defaults() -> void:
 			dexterity = 16; wisdom = 14; constitution = 12
 			strength = 10; intelligence = 10; charisma = 8
 			max_hp = 10 + modifier(constitution)   # Ranger HD d10
+			hunters_mark_uses_remaining = HUNTERS_MARK_USES_MAX
 			check_prof_str = true
 			check_prof_dex = true
+			proficient_simple_weapons = true
+			proficient_martial_weapons = true
 			proficient_shields = true
 		CharacterClass.WIZARD:
 			intelligence = 16; dexterity = 14; wisdom = 12

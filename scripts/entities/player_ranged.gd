@@ -88,6 +88,8 @@ func ranged_attack(enemy: Enemy) -> void:
 	# a simple boolean OR/cancel). See player.gd._bump_attack() for the reference melee implementation.
 	var adv_count: int = 0
 	adv_count += player._base_talents.consume_psycho_or_battlefield_adv()
+	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
+	adv_count += player._ranger_talents.consume_bloodhound_fresh_adv(enemy)
 	var disadv_count: int = 0
 	if player._vfx.has_advantage(enemy): adv_count += 1
 	if player.stats.zealous_presence_turns > 0: adv_count += 1
@@ -168,14 +170,33 @@ func ranged_attack(enemy: Enemy) -> void:
 	if player._dungeon_floor != null:
 		player._dungeon_floor.show_damage(enemy.position, actual, false, CombatMath.damage_type_color(r_dmg_type))
 
+	# Hunter's Mark: second, independent Force damage instance on a hit against the marked target.
+	var hm_actual: int = 0
+	var hm_inst: Dictionary = {}
+	var hm_die: int = player._ranger_talents.hunters_mark_bonus_die(enemy, true)
+	if hm_die > 0:
+		var hm_rolls: Array[int] = [hm_die]
+		hm_inst = CombatMath.build_damage_instance(hm_rolls, 6, [], is_crit, "Force")
+		var hm_result: Dictionary = enemy.take_typed_damage(hm_inst["subtotal"], "Force", is_crit)
+		hm_inst["final"] = hm_result["actual"]
+		hm_inst["resist_mul"] = hm_result["mul"]
+		hm_actual = hm_result["actual"]
+		enemy.update_hp_bar()
+		if player._dungeon_floor != null:
+			player._dungeon_floor.show_damage(enemy.position, hm_actual, false, CombatMath.damage_type_color("Force"), 1)
+
 	var dmg_meta: String = CombatMath.encode_damage_instance(r_inst)
 	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
 	var is_lethal: bool = enemy.stats.is_dead()
+	var r_dmg_segment: String = "[url=%s][color=yellow]%d[/color][/url]%s" % [dmg_meta, actual, r_type_tag]
+	if hm_actual > 0:
+		var hm_meta: String = CombatMath.encode_damage_instance(hm_inst)
+		r_dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Force[/color]" % [hm_meta, hm_actual]
 
 	if is_crit:
-		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for %s dmg.%s" % [hit_meta, enemy.display_name, r_dmg_segment, CombatMath.death_suffix(is_lethal)], r["lucky"]))
 	else:
-		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]shoot[/url] [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [hit_meta, enemy.display_name, dmg_meta, actual, r_type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
+		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]shoot[/url] [color=orange]%s[/color] for %s dmg.%s" % [hit_meta, enemy.display_name, r_dmg_segment, CombatMath.death_suffix(is_lethal)], r["lucky"]))
 
 	if is_lethal:
 		# Enemy died to this shot — arrow drop-from-corpse (50% chance) is handled inside

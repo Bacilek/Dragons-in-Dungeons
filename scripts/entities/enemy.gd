@@ -470,6 +470,9 @@ func die() -> void:
 	# dies" is a deliberate one-turn delay, not an instant drop.
 	if _thrown_weapon_lodged_target != null and is_instance_valid(_thrown_weapon_lodged_target) and _dungeon_floor != null:
 		_dungeon_floor.queue_thrown_weapon_drop(_thrown_weapon_lodged_target, _thrown_weapon_lodged_item, _thrown_weapon_lodged_chance)
+	# Bloodhound R3: if this was the Hunter's Mark target, re-mark the nearest visible enemy for free.
+	if _dungeon_floor != null and _dungeon_floor._player != null:
+		_dungeon_floor._player._ranger_talents.try_bloodhound_remark(self)
 	super.die()
 
 func _setup_animations() -> void:
@@ -1324,8 +1327,19 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	var dmg_type: String = sub.get("damage_type", "Bludgeoning")
 	# Blade Ward cantrip: while active, subtract 1d4 from this attack roll before comparing to AC.
 	var bw_penalty: int = Rng.roll(4) if GameState.player_stats.blade_ward_turns > 0 else 0
+	# Trailblazer R2: this enemy standing on Mud/Water when it attacks rolls with Disadvantage.
+	var terrain_disadv: bool = false
+	if _dungeon_floor != null:
+		var my_tile: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
+		if (my_tile == DungeonData.TileType.MUD or my_tile == DungeonData.TileType.WATER) \
+				and GameState.get_talent_rank("trailblazer") >= 2:
+			terrain_disadv = true
+	# Twin Fang R3: the Marked target can never gain Advantage on attacks against the Ranger.
+	var twin_fang_blocks_adv: bool = GameState.get_talent_rank("twin_fang") >= 3 \
+		and GameState.player_stats.hunters_mark_target == self
+	var fog_adv: bool = GameState.is_in_fog_cloud(_player.grid_pos) and not twin_fang_blocks_adv
 	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, _attack_bonus_for(sub), bw_penalty,
-		GameState.is_in_fog_cloud(_player.grid_pos), long_shot or GameState.is_in_fog_cloud(grid_pos))
+		fog_adv, long_shot or GameState.is_in_fog_cloud(grid_pos) or terrain_disadv)
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]

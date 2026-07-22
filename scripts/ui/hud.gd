@@ -45,6 +45,7 @@ var _bar_dragging: bool = false
 var _bar_drag_start_pos: Vector2 = Vector2.ZERO
 var _bar_drag_icon: TextureRect = null
 var _compass: Compass
+var _hunters_mark_indicator: HuntersMarkIndicator
 var _crit_banner: CritBanner
 
 # ── Ability bar toggle ────────────────────────────────────────────────────────
@@ -171,11 +172,14 @@ func _ready() -> void:
 	GameState.short_rest_changed.connect(_update_hit_dice_label)
 	_compass = Compass.new()
 	add_child(_compass)
+	_hunters_mark_indicator = HuntersMarkIndicator.new()
+	add_child(_hunters_mark_indicator)
 	_crit_banner = CritBanner.new()
 	add_child(_crit_banner)
 	GameState.stairs_discovered.connect(_compass.on_stairs_discovered)
 	GameState.crit_banner.connect(_crit_banner.show_banner)
 	TurnManager.player_turn_started.connect(_compass.update_display)
+	TurnManager.player_turn_started.connect(_hunters_mark_indicator.update_display)
 	TurnManager.player_turn_started.connect(_update_status_icons)
 	portrait.pressed.connect(_on_portrait_pressed)
 	portrait.focus_mode      = Control.FOCUS_NONE
@@ -507,6 +511,8 @@ func _on_floor_changed(new_floor: int) -> void:
 	log_label.text = ""
 	_update_hit_dice_label()
 	_compass.reset_for_new_floor()
+	_hunters_mark_indicator.reset_for_new_floor()
+	GameState.player_stats.hunters_mark_target = null
 
 func _on_player_hp_changed(current_hp: int, max_hp: int) -> void:
 	_update_hp_bar(current_hp, max_hp)

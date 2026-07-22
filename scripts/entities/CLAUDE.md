@@ -568,6 +568,49 @@ Tier 1 (levels 1–6): earns 5 talent points, spent across 3 talents — Psycho,
 - **Overheal Shield** (`talent_id: "overheal_shield"`, max 3): When a Zealot Strike heal resolves, grants Temporary HP (replace, not stack) based on rank: R1 = overheal amount only (`max(0, (pre-heal HP + heal roll) - max HP)`); R2 = the entire heal roll; R3 = heal roll + overheal. Scoped to Zealot Strike's own heal only (the source spec left "applies to all healing?" as an open question — this pass keeps it Zealot-Strike-only, the narrower/safer reading).
 - **Never Back Down** (`talent_id: "never_back_down"`, max 3): +1/+2/+4 max Hit Dice by rank (**non-cumulative** — higher rank replaces, doesn't stack with, the previous rank's bonus; matches every other Barbarian talent's rank-replaces convention). `GameState.max_hit_dice() -> int` returns `character_level + bonus_by_rank`, used by `long_rest()`'s `hit_dice` refill and `short_rest_panel.gd`'s displayed cap instead of the raw level.
 
+## Ranger class
+
+Level-1 baseline: **Hunter's Mark** (ability_id `"hunters_mark"`, granted directly at character
+creation like Rage, not talent-gated) — arm-then-click targeting (same UX as Grip of the Forest's
+hook mode), marks one enemy; every hit against it (any weapon) deals a second, independent +1d6
+Force damage instance. `Stats.hunters_mark_target`/`hunters_mark_fresh` (not serialized, same
+precedent as `witch_bolt_target`) + `Stats.hunters_mark_uses_remaining`/`HUNTERS_MARK_USES_MAX`
+(3, serialized, refilled in `long_rest()`) — a use is spent only when establishing a mark from
+none; retargeting an active mark is free. Direction to the marked target shows on-screen even
+outside FOV/LOS via `scripts/ui/hunters_mark_indicator.gd` (mirrors `compass.gd`'s pattern).
+Composition module: `scripts/entities/player_ranger_talents.gd` (`PlayerRangerTalents`,
+`_ranger_talents`). Full spec: `markdowns/ranger_base.md`.
+
+**Starting gear** (`GameState._give_ranger_starting_items()`): two Daggers (Main Hand + Off-hand
+— immediate dual-wield melee is a fully "correct" build, not a fallback) plus a Short Bow + 20
+Arrows in the ranged slot. `Stats.apply_class_defaults()`'s RANGER branch also sets
+`proficient_simple_weapons`/`proficient_martial_weapons` true (previously unset — every Ranger
+weapon would've shown "not proficient").
+
+**Tier 1 talents** (levels 1–5, point-gated, same schedule as Barbarian's — see
+`GameState._setup_ranger_talents()`), all three deliberately weapon-agnostic (none require a
+ranged weapon to be useful):
+- **Trailblazer** (`talent_id: "trailblazer"`, max 3): R1 ignores Mud/Water's difficult-terrain
+  penalty (`player.gd._try_move()`/`_execute_queued_path()`, new bypass flag alongside the
+  existing Wild Heart Panther/Salmon ones). R2 gives enemies standing in Mud/Water Disadvantage
+  when attacking the player (`Enemy._attack_player()`'s `extra_disadv`). R3 (passive wider trap
+  detection radius) is **not yet wired** — `player_actions.gd`'s passive trap-perception mechanism
+  needs review first; investing the rank is safe, just currently inert.
+- **Bloodhound** (`talent_id: "bloodhound"`, max 3): R1 grants Advantage on the first attack
+  against a freshly-marked target (`Stats.hunters_mark_fresh`, consumed on that first attempt
+  regardless of hit/miss/rank — wired into all 4 player.gd melee attack-roll sites plus ranged/
+  thrown). R2 debuffs the Marked target's effective Passive Perception by `BLOODHOUND_R2_PP_DEBUFF`
+  (2) against the player only, in `player.gd._resolve_stealth_check()`. R3: when the Marked target
+  dies, `Enemy.die()` calls `PlayerRangerTalents.try_bloodhound_remark()` to re-mark the nearest
+  visible enemy for free (no use spent).
+- **Twin Fang** (`talent_id: "twin_fang"`, max 3): R1 extends Hunter's Mark's bonus die to
+  Off-hand/Nick swings (`hunters_mark_bonus_die(enemy, is_primary)` — the turn's primary
+  melee/ranged/thrown attack always gets it regardless of rank). R2 keeps the Off-hand attack's
+  full ability modifier against the Marked target specifically (`_resolve_offhand_attack()`'s
+  `dmg_mod`, skipping the usual dual-wield penalty). R3: the Marked target can never gain
+  Advantage on its attacks against the player (`Enemy._attack_player()` suppresses the Fog-Cloud
+  ADV source when the attacker IS the mark — the only enemy-side ADV source that exists today).
+
 ## Wizard spellcasting (cantrips)
 
 A deliberately-scoped slice of `docs/architecture/spellcasting-design.md`: at-will, free-to-cast

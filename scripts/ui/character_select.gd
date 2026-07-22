@@ -21,6 +21,7 @@ const PREMADE: Array = [
 		"variant": 0,
 		"prof":    -1,
 		"masteries": ["Cleave", "Graze"],
+		"scores":  {"str": 16, "dex": 14, "con": 16, "int": 8, "wis": 10, "cha": 10},
 		"sprite":  CHAR_PATH + "knight_m_idle_anim_f0.png",
 		"subtitle": "Orc Barbarian",
 		"desc":    "A raging orc warrior.\nMasteries: Cleave, Graze.",
@@ -33,6 +34,7 @@ const PREMADE: Array = [
 		"variant": Stats.ElfSubrace.WOOD_ELF,
 		"prof":    -1,
 		"masteries": ["Slow", "Nick"],
+		"scores":  {"str": 8, "dex": 16, "con": 14, "int": 10, "wis": 16, "cha": 10},
 		"sprite":  CHAR_PATH + "elf_m_idle_anim_f0.png",
 		"subtitle": "Wood Elf Ranger",
 		"desc":    "A swift hunter of the wilds.\nMasteries: Slow, Nick.",
@@ -45,6 +47,7 @@ const PREMADE: Array = [
 		"variant": Stats.DragonbornAncestry.WHITE,
 		"prof":    -1,
 		"masteries": [],
+		"scores":  {"str": 10, "dex": 16, "con": 16, "int": 10, "wis": 14, "cha": 8},
 		"sprite":  CHAR_PATH + "dwarf_m_idle_anim_f0.png",
 		"subtitle": "White Dragonborn Monk",
 		"desc":    "A martial artist with\ncold-resistant scales.",
@@ -57,6 +60,7 @@ const PREMADE: Array = [
 		"variant": 0,
 		"prof":    -1,
 		"masteries": [],
+		"scores":  {"str": 8, "dex": 14, "con": 16, "int": 16, "wis": 10, "cha": 10},
 		"cantrip": "fire_bolt",
 		"spell1":  "magic_missile",
 		"sprite":  CHAR_PATH + "wizzard_m_idle_anim_f0.png",
@@ -360,6 +364,9 @@ func _add_stat_row(parent: Control, y: float, stat_name: String, score: int, mod
 func _on_premade_selected(data: Dictionary) -> void:
 	GameState.player_stats.character_class = data["cls"] as Stats.CharacterClass
 	GameState.player_stats.apply_class_defaults()
+	var scores: Variant = data.get("scores")
+	if scores != null:
+		GameState.player_stats.apply_point_buy_scores(scores as Dictionary)
 	GameState.give_class_starting_items()
 	GameState.class_selected = true
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)

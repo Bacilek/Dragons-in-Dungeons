@@ -191,6 +191,8 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 
 	var adv_count: int = 0
 	adv_count += player._base_talents.consume_psycho_or_battlefield_adv()
+	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
+	adv_count += player._ranger_talents.consume_bloodhound_fresh_adv(enemy)
 	var disadv_count: int = 0
 	if player._vfx.has_advantage(enemy): adv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
@@ -272,12 +274,29 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 		enemy.update_hp_bar()
 		player._dungeon_floor.show_damage(enemy.position, torch_actual, false, CombatMath.damage_type_color("Fire"), 1)
 
+	# Hunter's Mark: second, independent Force damage instance on a hit against the marked target.
+	var hm_actual: int = 0
+	var hm_inst: Dictionary = {}
+	var hm_die: int = player._ranger_talents.hunters_mark_bonus_die(enemy, true)
+	if hm_die > 0:
+		var hm_rolls: Array[int] = [hm_die]
+		hm_inst = CombatMath.build_damage_instance(hm_rolls, 6, [], is_crit, "Force")
+		var hm_result: Dictionary = enemy.take_typed_damage(hm_inst["subtotal"], "Force", is_crit)
+		hm_inst["final"] = hm_result["actual"]
+		hm_inst["resist_mul"] = hm_result["mul"]
+		hm_actual = hm_result["actual"]
+		enemy.update_hp_bar()
+		player._dungeon_floor.show_damage(enemy.position, hm_actual, false, CombatMath.damage_type_color("Force"), 2 if torch_actual > 0 else 1)
+
 	var is_lethal: bool = enemy.stats.is_dead()
 
 	var dmg_segment: String = "[url=%s][color=yellow]%d[/color][/url]%s" % [dmg_meta, actual, type_tag]
 	if torch_actual > 0:
 		var torch_meta: String = CombatMath.encode_damage_instance(torch_inst)
 		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Fire[/color]" % [torch_meta, torch_actual]
+	if hm_actual > 0:
+		var hm_meta: String = CombatMath.encode_damage_instance(hm_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Force[/color]" % [hm_meta, hm_actual]
 
 	if is_crit:
 		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]throw[/url] [b]%s[/b] at [color=orange]%s[/color] for %s dmg.%s" % [hit_meta, weapon.item_name, enemy.display_name, dmg_segment, CombatMath.death_suffix(is_lethal)], r["lucky"]))

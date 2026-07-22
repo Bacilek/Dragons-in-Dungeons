@@ -95,6 +95,18 @@ const TALENT_ICON_FLAT: Dictionary = {
 	"unarmored_defense": "t0/unarmored_defence",
 }
 
+# Ranger talent/ability icons — separate dict + folder prefix (see talent_icon_path() below) since
+# TALENT_ICON_FLAT above always resolves under res://icons/classes/barbarian/. No art exists yet
+# for any of these — talent_icon_path() returns a path that fails ResourceLoader.exists(), which
+# every icon-consuming UI already guards (falls back to name-text), same asset-debt precedent as
+# the Imp's shape-shift forms — not a blocker.
+const RANGER_TALENT_ICON_FLAT: Dictionary = {
+	"hunters_mark": "t0/hunters_mark",
+	"trailblazer": "t1/trailblazer",
+	"bloodhound": "t1/bloodhound",
+	"twin_fang": "t1/twin_fang",
+}
+
 # Animal Form's icon follows the currently active form (Bear/Eagle/Wolf) instead of rank.
 const WILD_HEART_FORM_ICON: Dictionary = {
 	"Bear": "res://icons/classes/barbarian/t2/wild_heart/wild_form_bear.png",
@@ -129,6 +141,8 @@ func talent_icon_path(id: String, rank: int) -> String:
 			return WILD_HEART_SLEEPER_ICON.get(preview, WILD_HEART_SLEEPER_ICON["Owl"])
 		"wild_companion":
 			return WILD_HEART_COMPANION_ICON.get(clampi(rank, 1, 3), WILD_HEART_COMPANION_ICON[1])
+	if RANGER_TALENT_ICON_FLAT.has(id):
+		return "res://icons/classes/ranger/%s.png" % RANGER_TALENT_ICON_FLAT[id]
 	if TALENT_ICON_FLAT.has(id):
 		return "res://icons/classes/barbarian/%s.png" % TALENT_ICON_FLAT[id]
 	if TALENT_ICON_FOLDER.has(id):
@@ -407,6 +421,9 @@ func give_class_starting_items() -> void:
 		Stats.CharacterClass.BARBARIAN:
 			_give_barbarian_starting_items()
 			_setup_barbarian_talents()
+		Stats.CharacterClass.RANGER:
+			_give_ranger_starting_items()
+			_setup_ranger_talents()
 		Stats.CharacterClass.MONK:
 			_give_monk_starting_items()
 		Stats.CharacterClass.WIZARD:
@@ -543,6 +560,80 @@ func _give_barbarian_starting_items() -> void:
 	ud.uses_max = 0
 	ud.is_passive = true
 	add_ability(ud)
+
+func _give_ranger_starting_items() -> void:
+	# Two Daggers (Main Hand + Off-hand — immediate dual-wield melee is a fully "correct" Ranger
+	# build, not a fallback) plus a Short Bow in the ranged slot — the player picks whichever
+	# fits the moment, neither path is favored mechanically.
+	var dagger_main := _build_ranger_dagger()
+	var dagger_off := _build_ranger_dagger()
+	equipment["melee"] = dagger_main
+	equipment["hand2"] = dagger_off
+
+	var bow := Item.new()
+	bow.item_name = "Short Bow"
+	bow.item_type = Item.Type.WEAPON
+	bow.icon_path = "res://sprites/items/Weapons/BowArrow.png"
+	bow.description = "Ranged, DEX-based. Normal range 4, long range = FOV (DISADV). Requires Arrows."
+	bow.is_ranged = true
+	bow.range = 4
+	bow.damage_type = "Piercing"
+	bow.weapon_category = "Simple"
+	bow.damage_die_min = 1
+	bow.damage_die_max = 6
+	bow.weapon_mastery = "Vex"
+	bow.ammo_item_name = "Arrow"
+	equipment["ranged"] = bow
+
+	var arrows := Item.new()
+	arrows.item_name = "Arrow"
+	arrows.item_type = Item.Type.TOOL
+	arrows.icon_path = "res://sprites/weapons/weapon_arrow.png"
+	arrows.description = "Ammunition for the Short Bow and Longbow."
+	arrows.quantity = 20
+	add_item(arrows)
+
+	recalculate_stats()
+	equipment_changed.emit()
+
+	# Hunter's Mark ability in slot 0 of ability bar — granted directly like Rage, not
+	# talent-gated. Uses tracking lives on Stats.hunters_mark_uses_remaining, not the Ability's
+	# own uses_remaining/uses_max (which stay 0/0, matching the cantrip-ability convention).
+	var mark := Ability.new()
+	mark.ability_id = "hunters_mark"
+	mark.ability_name = "Hunter's Mark"
+	mark.description = _build_hunters_mark_description()
+	mark.icon_path = talent_icon_path("hunters_mark", 1)
+	mark.uses_remaining = 0
+	mark.uses_max = 0
+	add_ability(mark)
+
+func _build_ranger_dagger() -> Item:
+	var dagger := Item.new()
+	dagger.item_name = "Dagger"
+	dagger.item_type = Item.Type.WEAPON
+	dagger.icon_path = "res://sprites/weapons/weapon_knife.png"
+	dagger.description = "Melee. Simple, Finesse, Light. Nick: while dual-wielding Light weapons, make one further attack this turn."
+	dagger.damage_type = "Piercing"
+	dagger.weapon_category = "Simple"
+	dagger.damage_die_min = 1
+	dagger.damage_die_max = 4
+	dagger.weapon_mastery = "Nick"
+	dagger.is_finesse = true
+	dagger.is_light = true
+	dagger.is_thrown = true
+	dagger.range = 3
+	dagger.uses_max = 5
+	dagger.uses_remaining = 5
+	return dagger
+
+func _build_hunters_mark_description() -> String:
+	var uses: int = Stats.HUNTERS_MARK_USES_MAX
+	var lines: Array[String] = []
+	lines.append("Mark a visible enemy. Every hit against it (any weapon) deals +1d6 Force damage.")
+	lines.append("Retargeting an already-marked hunt is free; establishing a fresh one costs a use.")
+	lines.append("%d use%s per long rest." % [uses, "s" if uses != 1 else ""])
+	return "\n".join(lines)
 
 func _give_monk_starting_items() -> void:
 	# Monks start unarmed — fists are their weapons.
@@ -981,6 +1072,7 @@ func long_rest() -> void:
 	player_stats.slowed_turns = 0
 	player_status_changed.emit()
 	player_stats.rage_uses_remaining = player_stats.rage_uses_max
+	player_stats.hunters_mark_uses_remaining = Stats.HUNTERS_MARK_USES_MAX
 	hit_dice = max_hit_dice()
 	short_rests_remaining = max_short_rests
 	berserker_frenzy_used = false
@@ -2032,7 +2124,7 @@ func _apply_talent_rank(id: String, rank: int) -> void:
 			var frenzy_ab: Ability = _find_ability_by_id("frenzy")
 			if frenzy_ab != null:
 				frenzy_ab.description = _build_frenzy_description()
-		"born_in_blood", "bloodied_regen", "psycho", "bruiser", "battlefield_expert":
+		"born_in_blood", "bloodied_regen", "psycho", "bruiser", "battlefield_expert", "trailblazer", "bloodhound", "twin_fang":
 			pass  # pure stat-modifier/reactive talents — no ability to refresh
 		"enough_is_enough":
 			var lb_ab: Ability = _find_ability_by_id("limit_break")
@@ -2318,6 +2410,55 @@ func _setup_barbarian_talents() -> void:
 		{"description": "Once per turn: if you were hit last turn, your first side-step this turn is free (doesn't cost the turn)."},
 	]
 	_class_talents.append(battlefield_talent)
+
+
+func _setup_ranger_talents() -> void:
+	_class_talents = []
+
+	var trailblazer_talent := Talent.new()
+	trailblazer_talent.talent_id = "trailblazer"
+	trailblazer_talent.talent_name = "Trailblazer"
+	trailblazer_talent.description = "You move through the wild like it isn't even there."
+	trailblazer_talent.icon_path = talent_icon_path("trailblazer", 1)
+	trailblazer_talent.tier = 1
+	trailblazer_talent.class_id = Stats.CharacterClass.RANGER
+	trailblazer_talent.max_rank = 3
+	trailblazer_talent.ranks = [
+		{"description": "Mud and Water no longer slow you down — you move through difficult terrain at full speed."},
+		{"description": "Enemies standing in Mud or Water have Disadvantage on attacks against you."},
+		{"description": "Passively detect traps in a wider radius around you as you move."},
+	]
+	_class_talents.append(trailblazer_talent)
+
+	var bloodhound_talent := Talent.new()
+	bloodhound_talent.talent_id = "bloodhound"
+	bloodhound_talent.talent_name = "Bloodhound"
+	bloodhound_talent.description = "Once you've marked something, it's already dead — it just doesn't know it yet."
+	bloodhound_talent.icon_path = talent_icon_path("bloodhound", 1)
+	bloodhound_talent.tier = 1
+	bloodhound_talent.class_id = Stats.CharacterClass.RANGER
+	bloodhound_talent.max_rank = 3
+	bloodhound_talent.ranks = [
+		{"description": "Your first attack against a freshly-marked target is made with Advantage."},
+		{"description": "Your Marked target is easier for you to sneak up on (reduced effective Passive Perception vs. you)."},
+		{"description": "When your Marked target dies, Hunter's Mark instantly and freely re-attaches to the nearest visible enemy."},
+	]
+	_class_talents.append(bloodhound_talent)
+
+	var twin_fang_talent := Talent.new()
+	twin_fang_talent.talent_id = "twin_fang"
+	twin_fang_talent.talent_name = "Twin Fang"
+	twin_fang_talent.description = "Bow, blade, it makes no difference to the hunt."
+	twin_fang_talent.icon_path = talent_icon_path("twin_fang", 1)
+	twin_fang_talent.tier = 1
+	twin_fang_talent.class_id = Stats.CharacterClass.RANGER
+	twin_fang_talent.max_rank = 3
+	twin_fang_talent.ranks = [
+		{"description": "Hunter's Mark's bonus damage also applies to your Off-hand and Nick bonus attacks against the mark."},
+		{"description": "Your Off-hand attack against the Marked target keeps its full ability modifier (no dual-wield penalty)."},
+		{"description": "The Marked target can never gain Advantage on attacks against you."},
+	]
+	_class_talents.append(twin_fang_talent)
 
 
 func _setup_barbarian_tier2_talents() -> void:
