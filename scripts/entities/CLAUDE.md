@@ -48,7 +48,7 @@ behavior refactor — decide/execute split, `attack_profile`, targeting — this
 
 | Key | Shape | Effect |
 |---|---|---|
-| `"cr"` | float | Challenge rating, pure data today (no CR-budgeted spawner yet — floor-linear scaling in `_apply_stats()` is unchanged and still the only difficulty knob). Default `0.25`. |
+| `"cr"` | float | Challenge rating. **Drives CR-budgeted spawning** (`DungeonFloor._pick_cr_budgeted_enemies()`, see `scripts/world/CLAUDE.md`'s "Spawning" section and `docs/architecture/cr-budgeted-spawning-design.md`) — floor-linear scaling in `_apply_stats()` is still unchanged and still the only within-band difficulty knob; CR only decides which enemies spawn together, not how strong each one is. Default `0.25` when absent. |
 | `"creature_type"` | string | `"Undead"`/`"Fiend"`/`"Beast"`/... flavor tag, stored on `Enemy.creature_type`. No mechanical effect by itself (reserved for a future type-conditional damage rule or talent synergy). |
 | `"mods"` | `{"str":0,"dex":0,"con":0,"int":0,"wis":0,"cha":0}` | Real ability-score modifiers. **Presence of this key switches the enemy's attack roll AND every `resist_check_detailed()` call to the mod+proficiency formula, replacing the legacy `floor_num/3` bonus — never both.** Absent = 100% unchanged legacy behavior (also true of the older `str_mod`/`con_mod`/`dex_mod`/`wis_mod`/`int_mod` single-stat keys, which still work as a fallback and do NOT trigger the mods formula). |
 | `"prof_bonus"` | int | Only read when `"mods"` is present. Default derived from `cr`: `2 + max(0, ceil(cr)-1)/4`. |
@@ -199,8 +199,8 @@ doc" calls): multi-tile Large/Huge occupancy (size above Medium still just rende
 on one tile), reactions beyond Opportunity Attacks (`"reactions"` key is unread), conditional
 triggers (`"triggers"` key is unread — no flee/enrage-on-ally-death behavior), Legendary Actions
 (shared action-point pool spent between other combatants' turns — a genuine turn-economy change,
-its own future design doc), and CR-budgeted floor spawning (population is still pure
-`floor_min`/`floor_max` band + count, `cr` is authored but unread by the spawner).
+its own future design doc). CR-budgeted floor spawning **is** implemented — see the `"cr"` schema
+row above and `scripts/world/CLAUDE.md`'s "Spawning" section.
 
 **Ranged distance scaling convention (still settling)**: converting a D&D 2024 distance (feet,
 5 ft/square) into tiles is not necessarily one universal divisor. What's decided so far: shooting

@@ -1,7 +1,6 @@
 **Implementation status (update this line, don't rewrite the doc): steps 1-7 of §20 are DONE** —
 `mods`/`prof_bonus`/`check_profs` (§4), the three damage R/I/V lists + `condition_immunities`
-(§5/§6), `cr`/`creature_type` annotation (§3/§7, CR-derived `exp`/CR-budgeted spawning NOT done —
-still open per §3's "playtest-driven" note), `senses.sight` (§10), `multiattack` (§12), generic
+(§5/§6), `cr`/`creature_type` annotation (§3/§7), `senses.sight` (§10), `multiattack` (§12), generic
 `abilities` cooldown/uses_max/recharge dispatch (§12, reusing the multiattack sub-attack shape —
 no per-ability custom code needed for a plain ranged-damage(+status) ability), `regeneration`/
 `undead_fortitude` traits (§11), and Legendary Resistance on `big_demon` (§15) are all live in

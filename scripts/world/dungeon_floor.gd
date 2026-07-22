@@ -16,8 +16,11 @@ const SOURCE_DOOR_OPEN:      int = 8
 const SOURCE_TRAMPLED_GRASS: int = 9
 const TILE_SPRITES_PATH := "res://sprites/tiles/"
 
-const ENEMY_COUNT_MIN: int = 3
-const ENEMY_COUNT_MAX: int = 5
+const CR_BUDGET_BASE: float = 1.0
+const CR_BUDGET_PER_FLOOR: float = 0.35
+const CR_BUDGET_DEFAULT_CR: float = 0.25
+const BOSS_FLOOR_BUDGET_SCALE: float = 0.4
+const CR_BUDGET_SAFETY_CAP: int = 12
 const FOV_RADIUS: int = 7
 const TRAP_COUNT_MIN: int = 4
 const TRAP_COUNT_MAX: int = 7
@@ -1005,10 +1008,9 @@ func _spawn_enemies() -> void:
 		remaining_set[c] = true
 
 	var enemy_scene: PackedScene = preload("res://scenes/game/enemy.tscn")
-	var count: int = mini(_pop_rng.randi_range(ENEMY_COUNT_MIN, ENEMY_COUNT_MAX), candidates.size())
+	var to_spawn: Array[Dictionary] = _pick_cr_budgeted_enemies(eligible, is_boss_floor)
 
-	for i: int in count:
-		var type_data: Dictionary = eligible[_pop_rng.randi_range(0, eligible.size() - 1)]
+	for type_data: Dictionary in to_spawn:
 		var footprint: Vector2i = _enemy_pool_footprint(type_data)
 		var spawn_pos: Vector2i = Vector2i(-1, -1)
 		if footprint != Vector2i.ONE:
@@ -1050,6 +1052,33 @@ func _spawn_enemies() -> void:
 
 	if is_boss_floor:
 		_spawn_boss()
+
+func _cr_budget(floor_num: int) -> float:
+	return CR_BUDGET_BASE + floor_num * CR_BUDGET_PER_FLOOR
+
+# CR-budgeted selection (docs/architecture/cr-budgeted-spawning-design.md): repeatedly picks a
+# uniformly-random enemy from whichever `eligible` entries still fit the remaining budget, instead
+# of a flat random count — a floor whose eligible band skews expensive (e.g. late-game Ogre) ends up
+# with fewer, scarier spawns rather than always 3-5 regardless of strength. Boss's own "cr" is never
+# deducted here — `_spawn_boss()` always spawns unconditionally on top of this.
+func _pick_cr_budgeted_enemies(eligible: Array, is_boss_floor: bool) -> Array[Dictionary]:
+	var budget: float = _cr_budget(GameState.current_floor)
+	if is_boss_floor:
+		budget *= BOSS_FLOOR_BUDGET_SCALE
+
+	var to_spawn: Array[Dictionary] = []
+	while to_spawn.size() < CR_BUDGET_SAFETY_CAP:
+		var affordable: Array = []
+		for entry in eligible:
+			var t: Dictionary = entry
+			if float(t.get("cr", CR_BUDGET_DEFAULT_CR)) <= budget:
+				affordable.append(t)
+		if affordable.is_empty():
+			break
+		var pick: Dictionary = affordable[_pop_rng.randi_range(0, affordable.size() - 1)]
+		to_spawn.append(pick)
+		budget -= float(pick.get("cr", CR_BUDGET_DEFAULT_CR))
+	return to_spawn
 
 func _enemy_pool_footprint(type_data: Dictionary) -> Vector2i:
 	var s: Dictionary = type_data.get("size", {})

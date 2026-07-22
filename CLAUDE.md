@@ -53,7 +53,7 @@ Entity (CharacterBody2D)   ← grid_pos, move_to() 0.08s tween, _tile_center(), 
 ```
 World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: floor items=1, enemies=1, player=3, fog=2, damage labels=10; blood decals=0.
 Full combat rolls, ADV/DISADV rules, status effects, enemy AI states, and per-class talent trees: **`scripts/entities/CLAUDE.md`**.
-Full D&D-style enemy stat-block schema — CR, ability-score `mods`/proficiency, damage resist/immune/vuln (3 lists), condition immunities, creature type, senses, multiattack, ability cooldown/uses_max/recharge, regeneration/undead-fortitude traits, legendary resistance — is **implemented** as optional `ENEMY_POOL`/`BOSS_POOL` pool keys (every new key has a safe legacy-behavior default, so authoring a new enemy is "add a dict"). Design doc (source of the schema, still useful as the field-by-field reference): `docs/architecture/enemy-stat-block-design.md`. Still design-only/deferred: size (multi-tile occupancy), reactions beyond Opportunity Attacks, conditional triggers, legendary actions, CR-budgeted spawning. Full field table and worked examples: `scripts/entities/CLAUDE.md`'s "Enemy D&D stat-block schema" section.
+Full D&D-style enemy stat-block schema — CR, ability-score `mods`/proficiency, damage resist/immune/vuln (3 lists), condition immunities, creature type, senses, multiattack, ability cooldown/uses_max/recharge, regeneration/undead-fortitude traits, legendary resistance — is **implemented** as optional `ENEMY_POOL`/`BOSS_POOL` pool keys (every new key has a safe legacy-behavior default, so authoring a new enemy is "add a dict"). Design doc (source of the schema, still useful as the field-by-field reference): `docs/architecture/enemy-stat-block-design.md`. **Size (multi-tile occupancy) is implemented**: `Entity.size`/`occupied_tiles()`/`occupies()`/`min_dist_to()`/`nearest_occupied_tile()` (pool `"size": {"w","h"}`) give a Large+ enemy a real WxH footprint — movement, targeting/click, attack range, LOS, and spawn placement (which requires the whole footprint to be free floor, so a Large enemy can never spawn in a 1-wide corridor) are all footprint-aware. First/only user today: Ogre (2x2). See `scripts/entities/CLAUDE.md`'s "Multi-tile footprint (Large enemies)". **CR-budgeted floor spawning is implemented**: `DungeonFloor._pick_cr_budgeted_enemies()` replaces the old flat random-count spawn with a per-floor CR budget (`_cr_budget()`) that repeatedly picks a uniformly-random affordable enemy until the budget or a safety cap is exhausted — a floor whose eligible band skews expensive (e.g. late-game Ogre) now legitimately spawns fewer, stronger enemies instead of always 3-5; the boss itself still always spawns unconditionally on top of a scaled-down regular budget on boss floors. See `scripts/world/CLAUDE.md`'s "Spawning" section and `docs/architecture/cr-budgeted-spawning-design.md`. Still design-only/deferred: reactions beyond Opportunity Attacks, conditional triggers, legendary actions, per-room CR distribution, elite/pack variants, CR-derived `exp`. Full field table and worked examples: `scripts/entities/CLAUDE.md`'s "Enemy D&D stat-block schema" section.
 Opportunity Attacks (movement out of threat range provokes a free reactive melee attack, Retaliation-style inline resolution, no TurnManager changes): **`scripts/entities/CLAUDE.md`**'s "Opportunity Attacks" section.
 Stealth & Surprise Attacks (5e-style Stealth-vs-Passive-Perception check deciding whether a SLEEPING/STATIONARY/ROAMING enemy notices the player, rolled once per real player turn; corrected surprise-ADV trigger table; debug-only "Show Stealth Checks" reveal toggle): **`scripts/entities/CLAUDE.md`**'s "Stealth & Surprise Attacks" section.
 
@@ -68,19 +68,34 @@ and a "Custom" card that hands off unchanged to the class/race/mastery flow. Als
 "Continue Saved Run" button. Full detail: `scripts/ui/CLAUDE.md`'s "Character select" section.
 
 ### Point buy (ability score allocation)
-Custom-path onboarding order: **class select → point buy → race select → mastery picker → game
-starts**. `point_buy_select.gd` is a one-time blocking overlay spawned right after class
-selection, before race select (premade heroes bypass it entirely). D&D 2024 point-buy: all six
-scores start at 8, `-`/`+` per score within 8–15, 27-point budget, 14/15 cost 2 points/step
-(others 1) — matches the standard 5e point-buy cost table exactly. No racial ability-score
-bonuses (race select runs after and never touches base scores). `Stats.apply_point_buy_scores()`
+Custom-path onboarding order: **class select → point buy → background ASI → race select →
+mastery picker → game starts**. `point_buy_select.gd` is a one-time blocking overlay spawned
+right after class selection, before the background picker (premade heroes bypass it entirely).
+D&D 2024 point-buy: all six scores start at 8, `-`/`+` per score within 8–15, 27-point budget,
+14/15 cost 2 points/step (others 1) — matches the standard 5e point-buy cost table exactly. No
+racial ability-score bonuses (race select runs after and never touches base scores — that role is
+now filled by the background ASI below). `Stats.apply_point_buy_scores()`
 (`scripts/entities/stats.gd`) applies the result and re-derives HP/AC; UI is
 `scripts/ui/point_buy_select.gd` (`scripts/ui/CLAUDE.md`).
 
+### Background ability score increase (D&D 2024 backgrounds)
+Custom-path only, spawned by `point_buy_select.gd`'s confirm, right after point buy and before
+race select — the 2024 5.5e rule that a **background**, not race, grants the ability-score bonus.
+`scripts/ui/background_select.gd` (mirrors `point_buy_select.gd`'s layout/conventions,
+`GameState.background_select_open` input-gate flag) grants 3 points to freely distribute across
+the six already-point-bought scores, max 2 into any single score (so `+1/+1/+1` or `+2/+1` — a
+15 can become 17, or two different 15s can each become 16), Confirm gated on spending all 3.
+`Stats.apply_background_bonus(bonuses)` **adds** to (never overrides) the existing scores and
+re-derives HP/AC exactly like `apply_point_buy_scores()`'s own tail. Not a full 2024 background
+(no named backgrounds, skills, tool proficiencies, origin feat, or starting equipment table — none
+of those systems exist elsewhere in this codebase either; scope is the ability-score increase
+only, per direct owner request). Premade heroes skip this screen too (fixed stat blocks).
+
 ### Race system
-Onboarding order (Custom path): **class select → point buy → race select → mastery picker → game
-starts**. `race_select.gd` is a one-time blocking overlay spawned right after point buy confirms
-(mirrors `subclass_select.gd`'s pattern), and itself spawns the Mastery Picker on confirm. 6 races (Orc, Human, Halfling, Dwarf,
+Onboarding order (Custom path): **class select → point buy → background ASI → race select →
+mastery picker → game starts**. `race_select.gd` is a one-time blocking overlay spawned right
+after the background picker confirms (mirrors `subclass_select.gd`'s pattern), and itself spawns
+the Mastery Picker on confirm. 6 races (Orc, Human, Halfling, Dwarf,
 Elf w/ 3 sub-races, Dragonborn) each with distinct traits — darkvision/FOV bonus, long-rest-gated
 charges (Orc Relentless Endurance, Human Heroic Inspiration), a d20-reroll mechanic (Human
 miss-reroll — still stubbed; Halfling nat-1-reroll — implemented, see below), Dwarf +1 HP/level
