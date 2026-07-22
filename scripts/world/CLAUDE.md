@@ -17,7 +17,7 @@ When adding a new trap type, subsystem, or floor event, **immediately update thi
 dungeon_floor.is_tile_visible(pos: Vector2i) -> bool        # O(1) dict, use for visibility
 dungeon_floor.is_explored(pos: Vector2i) -> bool            # fog-of-war explored
 dungeon_floor.has_line_of_sight(p1, p2) -> bool             # Bresenham — enemy AI + search_around
-dungeon_floor.has_ranged_los(p1, p2) -> bool                # permissive: blocks WALL/VOID only
+dungeon_floor.has_ranged_los(p1, p2) -> bool                # blocks WALL/VOID and closed doors (not GRASS, unlike has_line_of_sight)
 dungeon_floor.get_room_centers() -> Array[Vector2i]         # for enemy roam targets
 dungeon_floor.get_visible_enemies() -> Array[Enemy]         # enemies in current FOV
 dungeon_floor.get_all_enemies() -> Array[Enemy]             # all enemies (for companion targeting)

@@ -699,8 +699,12 @@ func _decide_action() -> Dictionary:
 	# restrictions below — a rooted or speed-gated enemy can still throw. Generic — keyed purely
 	# on the pool key's presence, not on enemy_id, so any enemy can opt in by authoring the same
 	# two dict keys (see "thrown_weapon"/"unarmed_fallback" in the Enemy D&D stat-block schema).
+	# Gated on the enemy actually being aware of (actively pursuing) the target — an unaware
+	# SLEEPING/STATIONARY/ROAMING enemy has no business throwing a weapon at someone it hasn't
+	# noticed yet; `has_ranged_los()` (below) only checks line-of-sight, not awareness.
 	var thrown_wpn: Dictionary = _type.get("thrown_weapon", {})
-	if not thrown_wpn.is_empty() and not _thrown_weapon_used:
+	if not thrown_wpn.is_empty() and not _thrown_weapon_used \
+			and behavior in [Behavior.CHASING, Behavior.SEARCHING]:
 		var throw_range: int = int(thrown_wpn.get("range", 4))
 		var dist: int = _chebyshev_to(target)
 		if dist >= 2 and dist <= throw_range and _dungeon_floor.has_ranged_los(grid_pos, target.grid_pos):

@@ -738,7 +738,10 @@ func _blocks_los(bx: int, by: int) -> bool:
 
 func _blocks_projectile(bx: int, by: int) -> bool:
 	var t: DungeonData.TileType = _data.get_tile(bx, by)
-	return t == DungeonData.TileType.WALL or t == DungeonData.TileType.VOID
+	if t == DungeonData.TileType.WALL or t == DungeonData.TileType.VOID:
+		return true
+	var pos := Vector2i(bx, by)
+	return _doors.has(pos) and not _doors[pos]["is_open"]
 
 func has_ranged_los(from: Vector2i, to: Vector2i) -> bool:
 	var x: int = from.x; var y: int = from.y
