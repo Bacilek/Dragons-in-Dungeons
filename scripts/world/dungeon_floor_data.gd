@@ -312,10 +312,12 @@ const ENEMY_POOL: Array = [
 	 "traits": [{"id": "nimble_escape"}, {"id": "advantage_bonus", "sides": 4}],
 	 "abilities": [{"id": "goblin_archer_shortbow", "name": "Shortbow", "range": 4, "long_range": 16, "dmg_min": 3, "dmg_max": 8, "damage_type": "Piercing"}]},
 	# Ogre — Large Giant, CE, CR 2, proficiency +2. HP 59, AC 11 (natural armor).
-	# STR 19 (+4) DEX 8 (-1) CON 16 (+3) INT 5 (-3) WIS 7 (-2) CHA 7 (-2). Speed 1 (default) — the
-	# stat block's 40ft/30ft swim speed is flavor only, this codebase has no fractional/variable
-	# per-turn movement rate to encode it against (see "aggressive"-trait bonus_moves for the only
-	# movement-rate lever that exists). "Large" size is flavor only too — multi-tile occupancy is
+	# STR 19 (+4) DEX 8 (-1) CON 16 (+3) INT 5 (-3) WIS 7 (-2) CHA 7 (-2). Speed 40ft, faster than
+	# the 30ft baseline every other pool entry implicitly runs at (1 move/turn) — pool "speed":
+	# {"moves": 4, "per": 3} (Enemy._tick_speed_gate()'s Bresenham-style accumulator: 4 moves over
+	# every 3 real turns, landing as 1/1/2 — an extra step on every 3rd turn — same mechanism as
+	# Zombie's 20ft-speed {"moves": 2, "per": 3} slow-down, just above baseline instead of below it).
+	# "Large" size is flavor only — multi-tile occupancy is
 	# still design-only per the stat-block schema doc (scripts/entities/CLAUDE.md), so the Ogre
 	# occupies a single tile like every other enemy; its sprite (ogre_idle_anim_f0-3/ogre_run_anim_f0-3,
 	# already dropped into sprites/characters/) is just drawn larger by the art itself.
@@ -339,6 +341,7 @@ const ENEMY_POOL: Array = [
 	 "mods": {"str": 4, "dex": -1, "con": 3, "int": -3, "wis": -2, "cha": -2},
 	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 8,
+	 "speed": {"moves": 4, "per": 3},
 	 "multiattack": [{"name": "Greatclub", "count": 1, "dmg_min": 6, "dmg_max": 20, "damage_type": "Bludgeoning"}],
 	 "thrown_weapon": {"name": "Javelin", "range": 3, "dmg_min": 6, "dmg_max": 20, "damage_type": "Piercing",
 		"icon": "weapon_spear.png", "drop_die_min": 2, "drop_die_max": 8, "weapon_category": "Simple",
