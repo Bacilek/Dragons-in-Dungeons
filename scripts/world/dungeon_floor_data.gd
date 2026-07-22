@@ -311,4 +311,37 @@ const ENEMY_POOL: Array = [
 	 "attack_profile": {"attack_stat": "dex"},
 	 "traits": [{"id": "nimble_escape"}, {"id": "advantage_bonus", "sides": 4}],
 	 "abilities": [{"id": "goblin_archer_shortbow", "name": "Shortbow", "range": 4, "long_range": 16, "dmg_min": 3, "dmg_max": 8, "damage_type": "Piercing"}]},
+	# Ogre — Large Giant, CE, CR 2, proficiency +2. HP 59, AC 11 (natural armor).
+	# STR 19 (+4) DEX 8 (-1) CON 16 (+3) INT 5 (-3) WIS 7 (-2) CHA 7 (-2). Speed 1 (default) — the
+	# stat block's 40ft/30ft swim speed is flavor only, this codebase has no fractional/variable
+	# per-turn movement rate to encode it against (see "aggressive"-trait bonus_moves for the only
+	# movement-rate lever that exists). "Large" size is flavor only too — multi-tile occupancy is
+	# still design-only per the stat-block schema doc (scripts/entities/CLAUDE.md), so the Ogre
+	# occupies a single tile like every other enemy; its sprite (ogre_idle_anim_f0-3/ogre_run_anim_f0-3,
+	# already dropped into sprites/characters/) is just drawn larger by the art itself.
+	# Darkvision: +1 to the default enemy notice/LOS radius (senses.sight_bonus).
+	# Passive Perception = 10 + WIS mod (-2) = 8.
+	# Greatclub: +6 to hit (STR+prof — default melee attack_stat, no "attack_profile" override
+	# needed), reach 1, 2d8+4 Bludgeoning — single-entry multiattack sub-attack for the real damage
+	# type (same pattern as Orc Warrior's Greataxe above).
+	# Javelin (pool "thrown_weapon"/"unarmed_fallback", one-shot per life — the same generic
+	# mechanism as Orc Warrior's Javelin above, re-authored with Ogre's numbers): +6 to hit (STR,
+	# same as the Greatclub), range 3 tiles — reusing Orc Warrior's own Javelin range verbatim, the
+	# only precedent in this codebase for how far a thrown Javelin flies — 2d8+4 Piercing, rolled
+	# with Disadvantage (`long_shot` param). Whenever NOT yet adjacent, thrown once instead of
+	# closing to melee; once gone, every attack after this reverts to an unarmed Fist strike
+	# ("unarmed_fallback": flat 5 Bludgeoning — "1 + STR mod", Ogre's STR mod is +4).
+	# Recovery: 50% chance (default "drop_chance", same as Orc Warrior's Javelin) to find it
+	# wherever the target stands when this Ogre eventually dies; "random_uses": true — the
+	# recovered Javelin is already partially worn down, not pristine.
+	{"enemy_id": "ogre", "display_name": "Ogre", "sprite": "ogre", "idle_frames": 4, "run_frames": 4, "floor_min": 8, "floor_max": 10, "hp": 59, "hp_per_floor": 4, "dmg_min": 6, "dmg_max": 20, "armor": 0, "ac": 11, "exp": 40,
+	 "cr": 2, "creature_type": "Giant",
+	 "mods": {"str": 4, "dex": -1, "con": 3, "int": -3, "wis": -2, "cha": -2},
+	 "senses": {"sight_bonus": 1},
+	 "passive_perception": 8,
+	 "multiattack": [{"name": "Greatclub", "count": 1, "dmg_min": 6, "dmg_max": 20, "damage_type": "Bludgeoning"}],
+	 "thrown_weapon": {"name": "Javelin", "range": 3, "dmg_min": 6, "dmg_max": 20, "damage_type": "Piercing",
+		"icon": "weapon_spear.png", "drop_die_min": 2, "drop_die_max": 8, "weapon_category": "Simple",
+		"is_finesse": false, "is_light": false, "weapon_mastery": "", "drop_uses_max": 5, "random_uses": true},
+	 "unarmed_fallback": {"name": "Fists", "dmg_min": 5, "dmg_max": 5, "damage_type": "Bludgeoning", "attack_stat": "str"}},
 ]
