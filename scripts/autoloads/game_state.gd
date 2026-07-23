@@ -249,6 +249,12 @@ var long_rest_pending: bool = false
 # Studying a scroll into the spellbook takes 2 real turns per spell level (a cantrip scroll is
 # learned instantly, no turns). Ticked in player.gd's _on_turn_started(), mirrors short_rest_active's
 # auto-wait/interrupt shape but is its own independent flag (not a rest).
+var armor_change_active: bool = false
+var armor_change_turns_remaining: int = 0
+var armor_change_total_turns: int = 0
+var armor_change_new_item: Item = null  # item being equipped into "armor" — null if only removing
+var armor_change_old_item: Item = null  # item being removed from "armor" — null if only equipping
+
 var scroll_learn_active: bool = false
 var scroll_learn_turns_remaining: int = 0
 var scroll_learn_total_turns: int = 0
@@ -690,18 +696,31 @@ func _remove_ability_by_id(id: String) -> void:
 
 # ── Leveled spells / spellbook (docs/architecture/leveled-spells-and-slots-plan.md) ──────
 
-## Adds `spell_id` to the Wizard's known spellbook (level-up picker choice or scroll-taught) —
-## does NOT prepare it. spell_learn_picker.gd calls this on a card click.
+## Adds `spell_id` to the Wizard's known spellbook (level-up picker choice or scroll-taught).
+## Also auto-slots it onto the ability bar if there's room: a cantrip goes straight on (subject to
+## SpellcasterState.cantrip_max()); a leveled spell auto-prepares via set_spell_prepared(), which
+## itself no-ops past SpellcasterState.prepared_max() — matches the owner-requested "auto-add to
+## the spell quickbar, provided I'm not already full" behavior. spell_learn_picker.gd calls this
+## on a card click.
 func learn_spell(spell_id: String) -> void:
 	if player_stats.caster == null:
 		return
-	if not player_stats.caster.known_spells.has(spell_id):
-		player_stats.caster.known_spells.append(spell_id)
+	var caster: SpellcasterState = player_stats.caster
+	var s: Spell = SpellDb.get_spell(spell_id)
+	if not caster.known_spells.has(spell_id):
+		if s != null and s.level == 0 and caster.known_cantrip_count() >= caster.cantrip_max(player_stats):
+			game_log("[color=gray]You already know the maximum number of cantrips.[/color]")
+			return
+		caster.known_spells.append(spell_id)
 	spell_learn_pending = false
 	spell_learn_choices.clear()
-	var s: Spell = SpellDb.get_spell(spell_id)
 	if s != null:
 		game_log("[color=lime]You add %s to your spellbook.[/color]" % s.spell_name)
+		if s.level == 0:
+			if _find_ability_by_id("spell:" + spell_id) == null:
+				add_ability(_build_spell_ability(spell_id))
+		else:
+			set_spell_prepared(spell_id, true)
 
 ## Wizard-only "Learn" RMB scroll interaction (scripts/items/item_interactions.gd's "learn" id):
 ## true iff the player is a caster who doesn't already know the scroll's spell. Works on either
@@ -712,7 +731,13 @@ func can_learn_scroll_spell(item: Item) -> bool:
 	var spell_id: String = item.scroll_spell_id if item.scroll_spell_id != "" else item.taught_spell_id
 	if spell_id == "":
 		return false
-	return not player_stats.caster.known_spells.has(spell_id)
+	var caster: SpellcasterState = player_stats.caster
+	if caster.known_spells.has(spell_id):
+		return false
+	var s: Spell = SpellDb.get_spell(spell_id)
+	if s != null and s.level == 0 and caster.known_cantrip_count() >= caster.cantrip_max(player_stats):
+		return false
+	return true
 
 ## Starts studying a scroll into the spellbook: a cantrip (level 0) is learned instantly; a leveled
 ## spell takes 2 real turns per spell level, ticked in player.gd's _on_turn_started(). The scroll is
@@ -733,6 +758,12 @@ func begin_scroll_learn(item: Item) -> void:
 	scroll_learn_spell_id = spell_id
 	scroll_learn_item = item
 	game_log("[color=cyan]You begin studying the scroll... (%d turns)[/color]" % turns)
+	# Kick the first countdown tick immediately instead of waiting for the player's next real
+	# turn — without this, the countdown only started once the player pressed another key.
+	if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT:
+		stealth_check_stillness = true
+		TurnManager.begin_player_action()
+		TurnManager.on_player_action_complete()
 
 func cancel_scroll_learn(interrupted: bool = false) -> void:
 	if interrupted:
@@ -1372,8 +1403,137 @@ func log_shield_equip_blocked(item: Item) -> void:
 	else:
 		combat_message.emit("[color=red]Cannot equip a Shield while wielding a two-handed weapon.[/color]")
 
+# ── Body armor (Item.Type.ARMOR, is_shield == false) ───────────────────────────
+# Gate: armor_category requires the matching Stats.proficient_*_armor flag, and str_requirement
+# (Heavy armor only) blocks equipping below that STR score. Returns true for any non-body-armor
+# item (Shield, or any other item type — no-op gate, mirrors can_equip_shield()'s own shape).
+func can_equip_armor(item: Item) -> bool:
+	if item == null or item.item_type != Item.Type.ARMOR or item.is_shield:
+		return true
+	match item.armor_category:
+		Item.ArmorCategory.LIGHT:
+			if not player_stats.proficient_light_armor:
+				return false
+		Item.ArmorCategory.MEDIUM:
+			if not player_stats.proficient_medium_armor:
+				return false
+		Item.ArmorCategory.HEAVY:
+			if not player_stats.proficient_heavy_armor:
+				return false
+	if item.str_requirement > 0 and player_stats.strength < item.str_requirement:
+		return false
+	return true
+
+## Whether the currently-equipped body armor imposes Disadvantage on the Stealth-vs-Passive-
+## Perception check (Item.stealth_disadvantage — Studded Leather/Scale Mail/Half Plate/Ring
+## Mail/Chain Mail/Splint/Plate all set it, per their real D&D "Stealth (Disadvantage)" property).
+## Read by Player._resolve_stealth_check() — see scripts/entities/CLAUDE.md's "Stealth & Surprise
+## Attacks".
+func player_has_stealth_disadvantage() -> bool:
+	var a: Item = equipment.get("armor") as Item
+	return a != null and a.stealth_disadvantage
+
+func log_armor_equip_blocked(item: Item) -> void:
+	var lacks_prof: bool = false
+	match item.armor_category:
+		Item.ArmorCategory.LIGHT:    lacks_prof = not player_stats.proficient_light_armor
+		Item.ArmorCategory.MEDIUM:   lacks_prof = not player_stats.proficient_medium_armor
+		Item.ArmorCategory.HEAVY:    lacks_prof = not player_stats.proficient_heavy_armor
+	if lacks_prof:
+		combat_message.emit("[color=red]You lack proficiency with this armor.[/color]")
+	else:
+		combat_message.emit("[color=red]You aren't strong enough to wear %s (requires %d STR).[/color]" % [item.item_name, item.str_requirement])
+
+# Turns required to equip/unequip/swap body armor — keyed by the HEAVIEST armor_category involved
+# (putting on, taking off, or swapping between two pieces all cost the same as their own worst
+# category — see markdowns/ranger_base.md-style direct owner spec). NONE (unarmored/clothing-tier,
+# no current ITEM_POOL entry) is 1 turn, same as a free equip effectively costing "an action".
+const ARMOR_CHANGE_TURNS: Dictionary = {
+	Item.ArmorCategory.NONE: 1,
+	Item.ArmorCategory.LIGHT: 5,
+	Item.ArmorCategory.MEDIUM: 10,
+	Item.ArmorCategory.HEAVY: 15,
+}
+
+func _armor_change_turns(new_item: Item, old_item: Item) -> int:
+	var worst: int = int(Item.ArmorCategory.NONE)
+	if new_item != null:
+		worst = maxi(worst, int(new_item.armor_category))
+	if old_item != null:
+		worst = maxi(worst, int(old_item.armor_category))
+	return ARMOR_CHANGE_TURNS.get(worst, 1)
+
+func _has_bag_space() -> bool:
+	for i: int in QUICKBAR_SIZE:
+		if player_quickbar[i] == null:
+			return true
+	for i: int in INVENTORY_SIZE:
+		if player_inventory[i] == null:
+			return true
+	return false
+
+# Body armor (Item.Type.ARMOR, non-shield) equip/unequip/swap in the "armor" slot takes real turns
+# to resolve (ARMOR_CHANGE_TURNS above) instead of being a free action like every other equip —
+# see equip()/unequip()/move_item()'s "armor" branches. Neither item is actually moved yet (mirrors
+# GameState.begin_scroll_learn()'s "nothing consumed until it finishes" precedent) — the physical
+# slot swap happens in complete_armor_change(). Interrupted outright (no Continue/Abort prompt,
+# nothing's changed yet) the instant an enemy enters FOV — same convention as scroll-learning
+# (GameState.scroll_learn_active), ticked in player.gd._on_turn_started().
+func begin_armor_change(new_item: Item, old_item: Item) -> void:
+	var turns: int = _armor_change_turns(new_item, old_item)
+	armor_change_active = true
+	armor_change_turns_remaining = turns
+	armor_change_total_turns = turns
+	armor_change_new_item = new_item
+	armor_change_old_item = old_item
+	var verb: String = "swap"
+	if new_item == null:
+		verb = "take off"
+	elif old_item == null:
+		verb = "put on"
+	game_log("[color=cyan]You begin to %s your armor... (%d turns)[/color]" % [verb, turns])
+	# Kick the first countdown tick immediately instead of waiting for the player's next real
+	# turn — without this, the countdown only started once the player pressed another key.
+	if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT:
+		stealth_check_stillness = true
+		TurnManager.begin_player_action()
+		TurnManager.on_player_action_complete()
+
+func cancel_armor_change(interrupted: bool = false) -> void:
+	if interrupted:
+		game_log("[color=gray]Your armor change is interrupted![/color]")
+	armor_change_active = false
+	armor_change_turns_remaining = 0
+	armor_change_total_turns = 0
+	armor_change_new_item = null
+	armor_change_old_item = null
+
+func complete_armor_change() -> void:
+	var new_item: Item = armor_change_new_item
+	var old_item: Item = armor_change_old_item
+	armor_change_active = false
+	armor_change_turns_remaining = 0
+	armor_change_total_turns = 0
+	armor_change_new_item = null
+	armor_change_old_item = null
+	if new_item != null:
+		_remove_from_bags(new_item)
+	equipment["armor"] = new_item
+	if old_item != null:
+		_add_to_bags_silent(old_item)
+	if new_item != null and player_stats.mage_armor_active:
+		player_stats.mage_armor_active = false
+	recalculate_stats()
+	if new_item != null:
+		combat_message.emit("[color=cyan]Equipped [b]%s[/b].[/color]" % new_item.item_name)
+	elif old_item != null:
+		combat_message.emit("[color=cyan]Unequipped [b]%s[/b].[/color]" % old_item.item_name)
+	equipment_changed.emit()
+	inventory_changed.emit()
+
 # Equip/unequip/re-equip is always a free action — EXCEPT a Shield (Item.is_shield), which takes
-# 1 turn to equip or unequip (see can_equip_shield() and the "costs_turn" blocks below).
+# 1 turn to equip or unequip (see can_equip_shield() and the "costs_turn" blocks below), and body
+# armor (the "armor" slot), which takes real turns per ARMOR_CHANGE_TURNS (see begin_armor_change()).
 func equip(item: Item, slot_name: String = "") -> void:
 	if slot_name == "":
 		match item.item_type:
@@ -1388,6 +1548,15 @@ func equip(item: Item, slot_name: String = "") -> void:
 		return
 	if item.is_shield and not can_equip_shield(item):
 		log_shield_equip_blocked(item)
+		return
+
+	if slot_name == "armor":
+		if armor_change_active:
+			return
+		if not can_equip_armor(item):
+			log_armor_equip_blocked(item)
+			return
+		begin_armor_change(item, equipment.get("armor") as Item)
 		return
 
 	var costs_turn: bool = item.is_shield and TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT
@@ -1468,6 +1637,14 @@ func unequip(slot_name: String) -> void:
 	var item: Item = equipment[slot_name] as Item
 	if item == null:
 		return
+	if slot_name == "armor":
+		if armor_change_active:
+			return
+		if not _has_bag_space():
+			combat_message.emit("[color=red]No bag space to unequip %s![/color]" % item.item_name)
+			return
+		begin_armor_change(null, item)
+		return
 	if not add_item(item):
 		combat_message.emit("[color=red]No bag space to unequip %s![/color]" % item.item_name)
 		return
@@ -1540,8 +1717,9 @@ func burn_out_torch(item: Item) -> void:
 func recalculate_stats() -> void:
 	var s: Stats = player_stats
 	s.armor = 0
-	var has_armor: bool = (equipment.get("armor") as Item) != null
-	s.recalc_ac(has_armor)
+	var armor_item: Item = equipment.get("armor") as Item
+	var has_armor: bool = armor_item != null
+	s.recalc_ac(has_armor, armor_item)
 	# Start from weapon's own damage die if it defines one, else base stats
 	var melee: Item = equipment.get("melee") as Item
 	var melee_bonus_dmg: int = melee.bonus_damage if (melee != null and _item_bonus_active(melee)) else 0
@@ -1571,6 +1749,24 @@ func move_item(src: String, src_idx: int, src_slot: String,
 		return
 	var src_item: Item  = _get_slot_item(src, src_idx, src_slot)
 	var dest_item: Item = _get_slot_item(dest, dest_idx, dest_slot)
+	# Body armor (Item.Type.ARMOR, non-shield) landing in or leaving "armor" takes real turns
+	# instead of the instant swap below — see begin_armor_change(). Neither item is physically
+	# moved here; complete_armor_change() does that once the turn countdown finishes.
+	var entering_armor: bool = dest == "equipment" and dest_slot == "armor" \
+		and src_item != null and src_item.item_type == Item.Type.ARMOR and not src_item.is_shield
+	var leaving_armor: bool = src == "equipment" and src_slot == "armor" \
+		and src_item != null and not src_item.is_shield
+	if entering_armor or leaving_armor:
+		if armor_change_active:
+			return
+		if entering_armor and not can_equip_armor(src_item):
+			log_armor_equip_blocked(src_item)
+			return
+		if entering_armor:
+			begin_armor_change(src_item, dest_item)
+		else:
+			begin_armor_change(null, src_item)
+		return
 	# Shield (Item.is_shield) equip/unequip via drag costs 1 turn and is gated by
 	# can_equip_shield() — covers dragging a Shield into "hand2" (entering), dragging it back out
 	# to the bag/quickbar (leaving), and dragging a different item onto an occupied "hand2" Shield
@@ -1744,7 +1940,7 @@ func use_item(item: Item) -> void:
 			else:
 				game_log("[color=gray]%s isn't eaten directly — it's saved as fuel for your next long rest (hold Alt).[/color]" % item.item_name)
 		Item.Type.WEAPON, Item.Type.ARMOR:
-			equip(item)  # equipping from bag/quickbar is always a free action
+			equip(item)  # free action except a Shield (1 turn) or body armor (ARMOR_CHANGE_TURNS)
 		Item.Type.TOOL:
 			player_tool_primed.emit(item)
 		Item.Type.SCROLL:

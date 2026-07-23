@@ -39,6 +39,18 @@ func max_slots() -> Dictionary:
 	var lv: int = mini(owner_stats.character_level, 20)
 	return SLOT_TABLE.get(lv, {})
 
+# Highest spell level a full caster can currently cast at, by character level — 0 if no slots at
+# all yet (never happens for Wizard, who has 1st-level slots from level 1). Static/table-driven so
+# it can be reused anywhere that needs "what level could this character learn right now" without
+# an actual SpellcasterState instance (e.g. floor-loot scroll eligibility).
+static func highest_accessible_level(character_level: int) -> int:
+	var lv: int = mini(character_level, 20)
+	var slots: Dictionary = SLOT_TABLE.get(lv, {})
+	var highest: int = 0
+	for slot_level: int in slots:
+		highest = maxi(highest, slot_level)
+	return highest
+
 # A spell is locked to its OWN slot level — no upcasting into a higher, still-available slot.
 # Returns spell.level if that level currently has an unspent slot, else -1. Cantrips (level 0)
 # never touch this pool at all.

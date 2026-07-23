@@ -32,6 +32,14 @@ var proficient_martial_weapons: bool = false
 # (Monk also loses Unarmored Defense in any armor — see the class's "No armor training" note).
 var proficient_shields: bool = false
 
+# Armor proficiency — whether the class may equip a given weight class of body armor
+# (Item.armor_category) at all. Lacking it blocks equipping outright, same as proficient_shields
+# above — see GameState.can_equip_armor(). Barbarian/Ranger: Light + Medium (5e RAW — neither
+# trains with Heavy armor). Wizard/Monk: none (Monk's Unarmored Defense is strictly better anyway).
+var proficient_light_armor: bool = false
+var proficient_medium_armor: bool = false
+var proficient_heavy_armor: bool = false
+
 # Weapon mastery ownership — a weapon's Item.weapon_mastery (e.g. "Cleave", "Vex") only
 # triggers its effect if the character actually knows that mastery. Populated by the Mastery
 # Picker (scripts/ui/mastery_picker.gd, via GameState.toggle_mastery()) — see mastery_cap()
@@ -314,8 +322,20 @@ func tick_status() -> int:
 # Called externally by GameState.recalculate_stats().
 # Barbarian unarmored defense: AC = 10 + DEX + CON when no armor.
 # Monk unarmored defense:     AC = 10 + DEX + WIS when no armor.
-func recalc_ac(has_armor_equipped: bool) -> void:
-	if character_class == CharacterClass.BARBARIAN and not has_armor_equipped:
+# `armor_item`: the equipped body-armor Item (Type.ARMOR, not a Shield), or null if unarmored —
+# real body armor (armor_item.base_ac > 0) always wins over every unarmored-defense formula below
+# (5e RAW: unarmored defense only applies while wearing no armor at all).
+func recalc_ac(has_armor_equipped: bool, armor_item: Item = null) -> void:
+	if armor_item != null and armor_item.base_ac > 0:
+		var dex_bonus: int
+		if armor_item.dex_cap == 0:
+			dex_bonus = 0  # Heavy: no DEX bonus at all, not even a negative one
+		elif armor_item.dex_cap > 0:
+			dex_bonus = mini(dex_modifier(), armor_item.dex_cap)  # Medium: capped from above only
+		else:
+			dex_bonus = dex_modifier()  # Light: unlimited
+		armor_class = armor_item.base_ac + dex_bonus
+	elif character_class == CharacterClass.BARBARIAN and not has_armor_equipped:
 		armor_class = 10 + dex_modifier() + con_modifier()
 	elif character_class == CharacterClass.MONK and not has_armor_equipped:
 		armor_class = 10 + dex_modifier() + wis_modifier()
@@ -481,6 +501,8 @@ func apply_class_defaults() -> void:
 			proficient_simple_weapons = true
 			proficient_martial_weapons = true
 			proficient_shields = true
+			proficient_light_armor = true
+			proficient_medium_armor = true
 		CharacterClass.RANGER:
 			dexterity = 16; wisdom = 14; constitution = 12
 			strength = 10; intelligence = 10; charisma = 8
@@ -491,6 +513,8 @@ func apply_class_defaults() -> void:
 			proficient_simple_weapons = true
 			proficient_martial_weapons = true
 			proficient_shields = true
+			proficient_light_armor = true
+			proficient_medium_armor = true
 		CharacterClass.WIZARD:
 			intelligence = 16; dexterity = 14; wisdom = 12
 			constitution = 10; strength = 8; charisma = 10

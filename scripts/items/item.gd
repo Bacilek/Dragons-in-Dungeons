@@ -2,6 +2,12 @@ class_name Item
 extends Resource
 
 enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
+# Body-armor weight class (Item.Type.ARMOR, non-shield only — Item.is_shield ignores this entirely,
+# it's gated by Stats.proficient_shields instead). NONE = not a body-armor item, or an unarmored/
+# clothing-tier item (1-turn equip cost, same tier as no armor at all — no ITEM_POOL entry uses
+# this yet, reserved for a future robe/clothing item). Drives both AC math (Stats.recalc_ac()'s
+# dex_cap handling) and the equip/unequip/swap turn cost (GameState.ARMOR_CHANGE_TURNS).
+enum ArmorCategory { NONE, LIGHT, MEDIUM, HEAVY }
 
 @export var item_name: String = ""
 @export var item_type: Type = Type.POTION
@@ -30,6 +36,21 @@ enum Type { WEAPON, ARMOR, POTION, SCROLL, FOOD, GOLD, KEY, TOOL }
 # to equip/unequip. bonus_ac (usually 2) applies the same way any other equipment slot's AC bonus
 # does — via the generic per-slot loop in GameState.recalculate_stats().
 @export var is_shield: bool = false
+# Body armor (Item.Type.ARMOR, is_shield == false only). armor_category == NONE = not body armor
+# (every non-armor item, plus the Shield). base_ac > 0 marks a real body-armor item — AC becomes
+# base_ac + a DEX bonus capped per dex_cap (-1 = unlimited/Light, N = capped at N/Medium, 0 = none
+# at all/Heavy — see Stats.recalc_ac()). str_requirement > 0 blocks equipping below that STR score
+# (Heavy armor). stealth_disadvantage adds a Disadvantage source to the Stealth-vs-Passive-
+# Perception check (scripts/entities/CLAUDE.md's "Stealth & Surprise Attacks") while worn. Gated
+# by GameState.can_equip_armor() (Stats.proficient_light_armor/medium_armor/heavy_armor) — lacking
+# proficiency or STR blocks equipping outright, same as a Shield lacking proficiency. Equip/
+# unequip/swap takes real turns (GameState.ARMOR_CHANGE_TURNS, keyed by armor_category) instead of
+# being a free action — see GameState.begin_armor_change().
+@export var armor_category: ArmorCategory = ArmorCategory.NONE
+@export var base_ac: int = 0
+@export var dex_cap: int = -1
+@export var str_requirement: int = 0
+@export var stealth_disadvantage: bool = false
 @export var is_heavy: bool = false        # Heavy: attacking with STR < 13 imposes Disadvantage
 @export var is_versatile: bool = false    # Versatile: World Tree's Branching Strike keys off it alongside is_heavy; also toggles two-handed grip (see versatile_die_min/max)
 # Versatile weapons only: damage die used while gripped two-handed (toggled via Main Hand slot
@@ -152,6 +173,11 @@ func to_dict() -> Dictionary:
 		"is_two_handed": is_two_handed,
 		"is_heavy_armor": is_heavy_armor,
 		"is_shield": is_shield,
+		"armor_category": int(armor_category),
+		"base_ac": base_ac,
+		"dex_cap": dex_cap,
+		"str_requirement": str_requirement,
+		"stealth_disadvantage": stealth_disadvantage,
 		"is_heavy": is_heavy,
 		"is_versatile": is_versatile,
 		"versatile_die_min": versatile_die_min,
@@ -202,6 +228,11 @@ static func from_dict(d: Dictionary) -> Item:
 	it.is_two_handed = bool(d.get("is_two_handed", false))
 	it.is_heavy_armor = bool(d.get("is_heavy_armor", false))
 	it.is_shield = bool(d.get("is_shield", false))
+	it.armor_category = int(d.get("armor_category", ArmorCategory.NONE)) as ArmorCategory
+	it.base_ac = int(d.get("base_ac", 0))
+	it.dex_cap = int(d.get("dex_cap", -1))
+	it.str_requirement = int(d.get("str_requirement", 0))
+	it.stealth_disadvantage = bool(d.get("stealth_disadvantage", false))
 	it.is_heavy = bool(d.get("is_heavy", false))
 	it.is_versatile = bool(d.get("is_versatile", false))
 	it.versatile_die_min = int(d.get("versatile_die_min", 0))

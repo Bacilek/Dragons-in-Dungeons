@@ -733,7 +733,7 @@ func _decide_action() -> Dictionary:
 	# noticed yet; `has_ranged_los()` (below) only checks line-of-sight, not awareness.
 	var thrown_wpn: Dictionary = _type.get("thrown_weapon", {})
 	if not thrown_wpn.is_empty() and not bool(thrown_wpn.get("flee_only", false)) and not _thrown_weapon_used \
-			and behavior in [Behavior.CHASING, Behavior.SEARCHING]:
+			and behavior in [Behavior.CHASING, Behavior.SEARCHING] and not _target_is_untouchable(target):
 		var throw_range: int = int(thrown_wpn.get("range", 4))
 		var dist: int = _chebyshev_to(target)
 		if dist >= 2 and dist <= throw_range and _dungeon_floor.has_ranged_los(grid_pos, target.grid_pos):
@@ -750,14 +750,14 @@ func _decide_action() -> Dictionary:
 	# World Tree Grip of the Forest R2: rooted — no movement this turn, but can still attack if adjacent.
 	if rooted_turns > 0:
 		rooted_turns -= 1
-		if _chebyshev_to(target) == 1:
+		if _chebyshev_to(target) == 1 and not _target_is_untouchable(target):
 			return {"type": "attack", "target": target}
 		return {"type": "wait"}
 
 	# Ray of Frost's Frozen Feet — same shape as rooted_turns above (no movement, can still attack).
 	if frozen_feet_turns > 0:
 		frozen_feet_turns -= 1
-		if _chebyshev_to(target) == 1:
+		if _chebyshev_to(target) == 1 and not _target_is_untouchable(target):
 			return {"type": "attack", "target": target}
 		return {"type": "wait"}
 
@@ -765,7 +765,7 @@ func _decide_action() -> Dictionary:
 	# (e.g. Zombie) can roll a turn with zero movement credit — same shape as rooted_turns above,
 	# still attacks if already adjacent.
 	if _moves_this_turn <= 0:
-		if _chebyshev_to(target) == 1:
+		if _chebyshev_to(target) == 1 and not _target_is_untouchable(target):
 			return {"type": "attack", "target": target}
 		return {"type": "wait"}
 
@@ -898,7 +898,16 @@ func _execute_action(intent: Dictionary) -> void:
 			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 
 # True if `target` is within this enemy's current attack_profile range (melee default = adjacent).
+# An invisible player can't be attacked even while adjacent — an enemy that has no idea where
+# it is standing shouldn't be able to swing at it (see "Invisibility" in scripts/entities/
+# CLAUDE.md). Movement already can't land ON the player's tile (is_walkable_for_enemy() always
+# blocks it), so this only ever matters for the "already adjacent" attack-without-moving case.
+func _target_is_untouchable(target: Node) -> bool:
+	return target is Player and GameState.player_stats.invisibility_turns > 0
+
 func _in_attack_range(target: Node) -> bool:
+	if _target_is_untouchable(target):
+		return false
 	var profile: Dictionary = _type.get("attack_profile", {})
 	match profile.get("kind", "melee"):
 		"ranged":
@@ -1197,6 +1206,11 @@ func _check_opportunity_attacks_on_move(prev_pos: Vector2i, next_pos: Vector2i) 
 		shocked_no_oa = false
 		return
 	if _invis_turns > 0:
+		return
+	# An invisible PLAYER doesn't get a reactive Opportunity Attack either — same "unseen mover"
+	# logic as the enemy-side check above, just from the other direction (see "Invisibility" in
+	# scripts/entities/CLAUDE.md).
+	if GameState.player_stats.invisibility_turns > 0:
 		return
 	var player: Player = _dungeon_floor.get_player()
 	if player != null and is_instance_valid(player) and not player.stats.is_dead() and not player._oa_used_this_round:

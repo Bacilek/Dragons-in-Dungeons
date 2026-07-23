@@ -344,13 +344,15 @@ static func fmt_stealth_tooltip(p: Dictionary) -> String:
 	var prof: int  = int(p.get("prof", "0"))
 	var total: int = int(p.get("total", "0"))
 	var epp: int   = int(p.get("epp", "0"))
-	var adv: bool  = p.get("adv", "0") == "1"
+	var adv_net: int = int(p.get("adv", "0"))
 	var passed: bool = p.get("pass", "0") == "1"
 	var lucky1: bool = p.get("lucky1", "0") == "1"
 	var lucky2: bool = p.get("lucky2", "0") == "1"
 	var lines: PackedStringArray = []
-	if adv:
+	if adv_net > 0:
 		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
+	elif adv_net < 0:
+		lines.append("d20 (disadv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
 	else:
 		lines.append("d20 = [color=yellow]%d[/color]" % die)
 	if lucky1:

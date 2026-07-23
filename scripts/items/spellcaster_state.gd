@@ -39,3 +39,24 @@ func prepared_max(stats: Stats) -> int:
 func is_cantrip(spell_id: String) -> bool:
 	var s: Spell = SpellDb.get_spell(spell_id)
 	return s != null and s.level == 0
+
+func known_cantrip_count() -> int:
+	var count: int = 0
+	for sid: String in known_spells:
+		if is_cantrip(sid):
+			count += 1
+	return count
+
+# How many cantrips this caster can know at once, by class + character level. Wizard: 3 (levels
+# 1-3), 4 (levels 4-9), 5 (levels 10+) — direct owner spec. Not derived generically since other
+# classes are expected to get their own progression later; add a branch here when they do.
+func cantrip_max(stats: Stats) -> int:
+	match stats.character_class:
+		Stats.CharacterClass.WIZARD:
+			if stats.character_level >= 10:
+				return 5
+			if stats.character_level >= 4:
+				return 4
+			return 3
+		_:
+			return 0

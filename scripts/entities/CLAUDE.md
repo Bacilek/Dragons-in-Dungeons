@@ -168,17 +168,31 @@ underlying mechanism, described once here.
   vanished, searches briefly, then leaves" behavior the owner asked for falls out for free.
   **Opportunity Attacks and invisibility**: an unseen mover can't provoke a reactive attack from
   someone who has no idea where it is — `Enemy._check_opportunity_attacks_on_move()` (enemy moves)
-  returns immediately if `_invis_turns > 0`, and `Player._resolve_enemy_opportunity_attacks()`
-  (player moves) skips the actual attack for every enemy whenever
-  `GameState.player_stats.invisibility_turns > 0` (Battlefield Expert's Side Step *detection* still
-  runs even while invisible — that's the player's own movement-pattern trigger, not an enemy
-  reaction, so it's unaffected).
-  **Known gap**: a few OTHER adjacency-based checks still don't go through `_can_see_entity()`
-  (`_select_target()`'s "already-adjacent wins outright" and SLEEPING's true-adjacency free-wake in
-  `_decide_action()`) — an invisible player standing directly adjacent to an enemy may still
-  trigger these, a documented simplification rather than an oversight, since covering it would mean
-  threading an invisibility check through more unrelated call sites for a corner case (standing
-  right next to a hostile enemy while invisible) that's easy for the player to just avoid.
+  returns immediately if `_invis_turns > 0` **or** if `GameState.player_stats.invisibility_turns > 0`
+  (the invisible player doesn't get a free reactive swing either — they have no business reacting to
+  a fleeing enemy they can't see any better than it can see them), and
+  `Player._resolve_enemy_opportunity_attacks()` (player moves) skips the actual attack for every
+  enemy whenever `GameState.player_stats.invisibility_turns > 0` (Battlefield Expert's Side Step
+  *detection* still runs even while invisible — that's the player's own movement-pattern trigger,
+  not an enemy reaction, so it's unaffected).
+  **Adjacent-attack suppression**: being unseen also blocks a plain (non-reactive) melee/ranged/
+  thrown attack against the invisible player, not just OAs — `Enemy._target_is_untouchable(target)`
+  (true for a Player target with `invisibility_turns > 0`) gates `_in_attack_range()` (the chokepoint
+  `_act_toward()`'s already-adjacent swing and the cornered-flee counterattack both go through) plus
+  the three movement-restricted branches that check adjacency directly instead of via
+  `_in_attack_range()` (`rooted_turns`/`frozen_feet_turns`/zero-movement-credit) and the one-shot
+  `thrown_weapon` ranged branch. Movement itself already can never land ON the player's tile
+  (`is_walkable_for_enemy()` always blocks it regardless of visibility), so an already-CHASING enemy
+  that ends up adjacent to an invisible player now just stands there unable to act on it — same
+  "lost the trail" feel as `_can_see_entity()`'s false return, extended to cover "stumbled directly
+  into them" too.
+  **Known gap**: `_select_target()`'s "already-adjacent wins outright" and SLEEPING's true-adjacency
+  free-wake in `_decide_action()` still don't go through `_can_see_entity()`/`_target_is_untouchable()`
+  — an invisible player standing directly adjacent to an enemy can still be picked as the enemy's
+  notional target and can still free-wake a SLEEPING enemy (it just can't be hit — see above), a
+  documented simplification rather than an oversight, since covering it would mean threading an
+  invisibility check through more unrelated call sites for a corner case (standing right next to a
+  hostile enemy while invisible) that's easy for the player to just avoid.
 - **Visuals**: an invisible enemy's sprite (and HP bar/zzz label, hidden along with the parent
   node) goes to `visible = false` immediately on casting and is also re-derived generically every
   `DungeonFloor.update_fog()` via `_update_enemy_visibility()`'s `and not enemy.is_hidden_from_player()`
@@ -244,6 +258,8 @@ cycle) — the two stack rather than reusing one mechanism, since Aggressive is 
 **Weapon mastery ownership**: `Stats.known_weapon_masteries: Array[String]` (default empty) + `Stats.knows_mastery(name) -> bool`. A weapon's `Item.weapon_mastery` only triggers its effect if the wielder knows that mastery. `Stats.ALL_WEAPON_MASTERIES` (const, alphabetical, all 8) and `Stats.mastery_cap() -> int` (computed live from `character_class` + `character_level`, never cached) back the Mastery Picker (`scripts/ui/mastery_picker.gd`) — see `scripts/ui/CLAUDE.md`'s "Mastery picker" section. The picker fires once right after class selection, and again after any completed long rest if the player opts into it from the long-rest hub (see `scripts/ui/CLAUDE.md`'s "Long-rest hub" section). See `scripts/items/CLAUDE.md`'s "Weapon masteries" section for gating call sites.
 
 **Shield proficiency flag**: `Stats.proficient_shields: bool` (default `false`, set per-class in `apply_class_defaults()` — Barbarian and Ranger only). Gates `GameState.can_equip_shield()`: lacking it blocks equipping a Shield outright (unlike weapon proficiency below, which just drops a bonus) — see `scripts/items/CLAUDE.md`'s "Shields".
+
+**Body armor proficiency flags**: `Stats.proficient_light_armor`/`proficient_medium_armor`/`proficient_heavy_armor: bool` (all default `false`; Barbarian/Ranger set Light+Medium true in `apply_class_defaults()`, no class trains Heavy). Gates `GameState.can_equip_armor()` the same hard-block way as Shield proficiency, plus a real body-armor item's own `str_requirement` (Heavy only). `Stats.recalc_ac(has_armor_equipped, armor_item)` takes the equipped `"armor"` slot `Item` directly: when it's real body armor (`armor_item.base_ac > 0`), AC = `base_ac + DEX bonus` (capped per `armor_item.dex_cap` — see `scripts/items/CLAUDE.md`'s "Body armor") and this always wins over Barbarian/Monk unarmored defense or Mage Armor. Equip/unequip/swap of body armor is NOT a free action (unlike every other equip except Shield) — see `scripts/items/CLAUDE.md`'s "Body armor" for `GameState.begin_armor_change()`'s multi-turn mechanism.
 
 **Weapon proficiency flags**: `Stats.proficient_simple_weapons: bool`, `Stats.proficient_martial_weapons: bool` (both default `false`, set per-class in `apply_class_defaults()`). Only Barbarian currently has both `true`. `Item.weapon_category` ("Simple"/"Martial"/`""`) determines which flag gates a given weapon. `CombatMath.weapon_prof_bonus(weapon, proficiency_bonus, proficient_simple, proficient_martial) -> int` (`scripts/entities/combat_math.gd`, moved from the old `player.gd._weapon_prof_bonus()` — see "Split-out modules" below) is the single chokepoint: unarmed (`weapon == null`) is always proficient; otherwise returns the proficiency bonus if the matching flag is set, else `0`. Used for `prof` in `player.gd._bump_attack()`/`_resolve_cleave_attack()` and `PlayerRanged.ranged_attack()` — lacking proficiency does not block using the weapon, it only drops the proficiency bonus from the attack roll (damage is unaffected). Weapon tooltips (`hud.gd`, `inventory_overlay.gd`) show the category right under the damage line, colored red when the equipped class lacks that proficiency (`_is_weapon_category_proficient()` in each file).
 
@@ -387,12 +403,15 @@ Expert's side-step).
   equip/unequip/drag) grants +1 ADV on the roll (on top of whatever else applies) but the check
   still fires — it doesn't gate whether the check happens, only its ADV input.
 - **Roll**: `d20 (Halfling-reroll-aware) + DEX mod + (proficiency_bonus if check_prof_dex)`.
-  Rolled **once**, reused against every qualifying observer (5e group-stealth style) — but ADV is
-  evaluated **per observer**: a base ADV count (stillness bonus + Zealous Presence) plus +1 more
-  if that specific observer is `SLEEPING`. A second d20 is only rolled for an observer whose own
-  net ADV differs from 0, so two observers in the same turn (one asleep, one awake-unaware) can
-  net different outcomes from what reads as "the same roll". Enemy notices iff
-  `stealth_total < enemy.passive_perception` (ties favor the player — stays hidden).
+  Rolled **once**, reused against every qualifying observer (5e group-stealth style) — but
+  ADV/DISADV is evaluated **per observer**: a base ADV count (stillness bonus + Zealous Presence)
+  minus a base DISADV count (`GameState.player_has_stealth_disadvantage()` — the equipped body
+  armor's `Item.stealth_disadvantage` flag, see `scripts/items/CLAUDE.md`'s "Body armor"), plus +1
+  ADV if that specific observer is `SLEEPING`. A second d20 is only rolled for an observer whose
+  own net ADV/DISADV differs from 0 (max of two rolls if net > 0, min of two if net < 0), so two
+  observers in the same turn (one asleep, one awake-unaware) can net different outcomes from what
+  reads as "the same roll". Enemy notices iff `stealth_total < enemy.passive_perception` (ties
+  favor the player — stays hidden).
 - **`Enemy.passive_perception`**: static DC, see the schema table's `"passive_perception"` row
   above for the authored-vs-derived rule.
 - **On detection**: `enemy._notice_target(player.grid_pos)` (wakes SLEEPING/STATIONARY/ROAMING →
@@ -886,6 +905,25 @@ impact point rather than stop at the first wall it can't directly see through.
   whenever `spell_learn_pending` is true. With only 4 example spells this often finds zero
   eligible candidates a few levels in — expected, logs a gray "No new spells available to learn."
   line instead of blocking (see the plan doc §7's content-count caveat).
+- **Learning auto-slots the ability bar (owner request)**: `GameState.learn_spell(id)` — the single
+  chokepoint for the level-up picker AND scroll-taught spells (see "Scrolls" below) — no longer
+  just appends to `known_spells`. A newly learned cantrip is immediately added to the ability bar
+  (`add_ability(_build_spell_ability(id))`, skipped if already present) gated only by
+  `SpellcasterState.cantrip_max(stats)` (see below — a cantrip beyond the cap is refused outright,
+  never learned, logs "You already know the maximum number of cantrips."); a newly learned leveled
+  spell auto-prepares via `set_spell_prepared(id, true)`, which itself silently no-ops past
+  `prepared_max()` (character level) — so learning past your prepared cap still adds the spell to
+  your spellbook, it just doesn't jump onto the bar until you free a prepared slot and prepare it
+  manually from the Spellbook overlay.
+- **Cantrip cap**: `SpellcasterState.cantrip_max(stats) -> int` — Wizard-only today (0 for every
+  other class, extend with a new `match` branch when another caster class ships): 3 known cantrips
+  at character level < 4, 4 at levels 4–9, 5 at level 10+. `known_cantrip_count()` counts
+  `known_spells` entries where `is_cantrip()` is true. Enforced at both learn sites:
+  `GameState.learn_spell()` (level-up growth pick — though `CLASS_SPELL_LISTS` never offers
+  cantrips there today, so this is a defensive guard — and scroll "Learn") and
+  `GameState.can_learn_scroll_spell()` (gates whether the RMB "Learn" menu option even appears on
+  a cantrip scroll once the cap is hit). The one-time character-creation starter pick
+  (`choose_cantrip()`) bypasses the cap entirely — it only ever grants 1 cantrip, always under it.
 - **Scrolls**: `Item.taught_spell_id` (empty = not a spell scroll). `GameState.use_item()`'s
   SCROLL branch calls `learn_spell()` and consumes the scroll if the spell isn't already known.
   No scroll items use this teaching mechanism in any loot pool yet.
@@ -992,6 +1030,11 @@ impact point rather than stop at the first wall it can't directly see through.
   no duplicated resolution code. Dispatched from `player.gd`'s mouse-release handler, as an `elif`
   alongside the Shift+Ranged branch (`Input.is_key_pressed(KEY_CTRL) and GameState.
   special_slot_spell_id != ""`).
+- **Hover indicator over enemies** (`player.gd._update_hover_indicator()`): the small icon shown
+  above a moused-over enemy reflects whichever action a click would actually perform, checked in
+  the same priority order as the click handler above — Ctrl-held (Special-slot spell icon, if one
+  is assigned) beats Shift-held (equipped ranged weapon icon) beats the default (equipped melee
+  weapon icon).
 - **Misty Step**: instant teleport via `Entity.set_grid_pos()` (no tween) to a clicked visible
   tile within range.
 - **Persistence**: `Stats.to_dict()`/`from_dict()` gained `caster_known_spells`,

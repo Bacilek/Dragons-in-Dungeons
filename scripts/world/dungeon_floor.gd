@@ -1906,6 +1906,11 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.is_two_handed = d.get("two_handed", false)
 	item.bonus_ac = d.get("bonus_ac", 0)
 	item.is_shield = d.get("is_shield", false)
+	item.armor_category = int(d.get("armor_cat", 0)) as Item.ArmorCategory
+	item.base_ac = d.get("base_ac", 0)
+	item.dex_cap = d.get("dex_cap", -1)
+	item.str_requirement = d.get("str_req", 0)
+	item.stealth_disadvantage = d.get("stealth_disadv", false)
 	item.is_finesse = d.get("finesse", false)
 	item.is_light = d.get("light", false)
 	item.is_torch = d.get("torch", false)
@@ -1947,7 +1952,8 @@ func _spawn_items() -> void:
 	var eligible: Array = []
 	for entry in DungeonFloorData.ITEM_POOL:
 		var d: Dictionary = entry
-		if GameState.current_floor >= d["fmin"] and GameState.current_floor <= d["fmax"]:
+		if GameState.current_floor >= d["fmin"] and GameState.current_floor <= d["fmax"] \
+				and DungeonFloorData.is_scroll_level_eligible(d, GameState.player_stats.character_level):
 			eligible.append(d)
 	if eligible.is_empty():
 		return
@@ -2063,7 +2069,8 @@ func _spawn_treasure(rect: Rect2i) -> void:
 		return
 	var eligible: Array = []
 	for entry: Dictionary in DungeonFloorData.ITEM_POOL:
-		if GameState.current_floor >= entry["fmin"] and GameState.current_floor <= entry["fmax"]:
+		if GameState.current_floor >= entry["fmin"] and GameState.current_floor <= entry["fmax"] \
+				and DungeonFloorData.is_scroll_level_eligible(entry, GameState.player_stats.character_level):
 			eligible.append(entry)
 
 	var candidates: Array[Vector2i] = []
@@ -2197,7 +2204,8 @@ func _spawn_locked_doors() -> void:
 			return
 	var eligible: Array = []
 	for entry: Dictionary in DungeonFloorData.ITEM_POOL:
-		if GameState.current_floor >= entry["fmin"] and GameState.current_floor <= entry["fmax"]:
+		if GameState.current_floor >= entry["fmin"] and GameState.current_floor <= entry["fmax"] \
+				and DungeonFloorData.is_scroll_level_eligible(entry, GameState.player_stats.character_level):
 			eligible.append(entry)
 	if eligible.is_empty():
 		return

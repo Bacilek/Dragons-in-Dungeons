@@ -45,6 +45,11 @@ TOOL   = 7
 | `is_two_handed` | bool | cosmetic flag; shown as "Two-handed" in weapon tooltip |
 | `is_heavy_armor` | bool | ends Barbarian Rage on equip |
 | `is_shield` | bool | ARMOR-type item that routes to `"hand2"` (Off-hand) instead of `"armor"` on `equip()`; see "Shields" below |
+| `armor_category` | `Item.ArmorCategory` | `NONE`/`LIGHT`/`MEDIUM`/`HEAVY` — body armor's weight class; `NONE` = not body armor (every non-armor item, plus the Shield). See "Body armor" below |
+| `base_ac` | int | Body armor only: base AC before the DEX bonus. `0` = not a real body-armor item |
+| `dex_cap` | int | Body armor only: `-1` = unlimited DEX bonus (Light), `N` = capped at `+N` (Medium), `0` = no DEX bonus at all, even negative (Heavy) |
+| `str_requirement` | int | Body armor only: minimum STR score to equip (Heavy armor only); `0` = no requirement |
+| `stealth_disadvantage` | bool | Body armor only: imposes Disadvantage on the Stealth-vs-Passive-Perception check while worn |
 | `is_heavy` | bool | Heavy weapon: melee attack with STR < 13, or ranged attack with DEX < 13, imposes Disadvantage; shown as hoverable "Heavy" keyword in tooltip |
 | `is_versatile` | bool | Versatile weapon (currently only Quarterstaff). World Tree's Branching Strike keys off `is_heavy or is_versatile` for reach/push. Also gates the click-to-toggle two-handed grip in `inventory_overlay.gd` — see "Versatile weapons" below |
 | `versatile_die_min`/`versatile_die_max` | int | Versatile weapons only: the damage die used in the *other* grip. `GameState.toggle_versatile_grip()` swaps these with `damage_die_min/max` and flips `is_two_handed` each time the Main Hand slot is clicked. `0`/`0` = not versatile |
@@ -272,6 +277,45 @@ mundane one.
 ## Shields
 `Item.is_shield` (currently one item, "Shield" — flat `bonus_ac = 2`, `res://sprites/items/Shields/Shield1.png`) is an `Item.Type.ARMOR` item that `GameState.equip()` routes to `"hand2"` (Off-hand) instead of `"armor"` — the only ARMOR-type item that doesn't land in the Armor slot. Its `bonus_ac` flows into AC through `recalculate_stats()`'s existing generic per-slot loop (see root `CLAUDE.md`'s combat-roll table) — no special-cased AC code needed. Gated by `Stats.proficient_shields` (`scripts/entities/CLAUDE.md`'s "Weapon proficiency flags" — Barbarian/Ranger only) via `GameState.can_equip_shield(item) -> bool`, checked at every entry point that can place a Shield into `"hand2"`: `equip()`, `move_item()` (drag), and `inventory_overlay.gd._fits_slot()` (drag preview gate). Lacking proficiency, or having a two-handed Main Hand weapon equipped, blocks equipping outright (unlike weapon proficiency, which just drops a bonus) — `GameState.log_shield_equip_blocked(item)` logs which reason applied. A two-handed Main Hand weapon (via `equip()`/`move_item()`'s existing `_auto_unequip_offhand()`, or `toggle_versatile_grip()` switching to a two-handed grip) auto-kicks an equipped Shield back to the bag, same as it would any other Off-hand item. **Blocks all spellcasting while equipped** — `PlayerSpellcasting._shield_blocks_casting()` gates the top of `begin_cast()`, `cast_direct()`, and `on_scroll_primed()` (`scripts/entities/player_spellcasting.gd`). **Equip/unequip costs 1 turn** (the one exception to "equip is always a free action" — see `scripts/autoloads/CLAUDE.md`'s Equipment slots section): `equip()`/`unequip()`/`move_item()` each wrap the mutation in `TurnManager.begin_player_action()`/`on_player_action_complete()` when a Shield is entering or leaving `"hand2"` (including being displaced by a different item dragged into an occupied slot) AND `TurnManager.phase == WAITING_FOR_INPUT` (guards against double-costing if ever called outside a normal player turn). **Ends Mage Armor**: equipping a Shield clears `Stats.mage_armor_active` exactly like equipping real Armor does — 5e RAW counts a shield as worn armor for this purpose even though it lives in `"hand2"`, not `"armor"` — checked independently in both `equip()` and `move_item()` (see `scripts/entities/CLAUDE.md`'s "Mage Armor").
 
+## Body armor
+`Item.armor_category` (`Item.ArmorCategory` enum: `NONE`/`LIGHT`/`MEDIUM`/`HEAVY`) + `base_ac` +
+`dex_cap` (`-1` = unlimited/Light, `N` = capped at `+N`/Medium, `0` = none at all, even negative/
+Heavy) + `str_requirement` (Heavy only) + `stealth_disadvantage` — a real `Item.Type.ARMOR`,
+non-shield item landing in the `"armor"` slot. 12 entries in `ITEM_POOL`/`debug_panel.ALL_ITEMS`:
+Light (Padded 11+DEX w/ stealth disadv, Leather 11+DEX, Studded Leather 12+DEX), Medium (Hide
+12+DEX≤2, Chain Shirt 13+DEX≤2, Scale Mail 14+DEX≤2 w/ stealth disadv, Breastplate 14+DEX≤2, Half
+Plate 15+DEX≤2 w/ stealth disadv), Heavy (Ring Mail 14 w/ stealth disadv, Chain Mail 16/STR 13 w/
+stealth disadv, Splint 17/STR 15 w/ stealth disadv, Plate 18/STR 15 w/ stealth disadv) — no
+dedicated armor sprites exist yet, every entry placeholder-reuses `Materials/PlateIron.png` or
+`PlateGold.png`. `Stats.recalc_ac()` (`scripts/entities/CLAUDE.md`) folds `base_ac`/`dex_cap` in
+ahead of every unarmored-defense formula (real body armor always wins over Barbarian/Monk/Mage
+Armor while worn). Gated by `GameState.can_equip_armor()` — `Stats.proficient_light_armor`/
+`proficient_medium_armor`/`proficient_heavy_armor` (Barbarian/Ranger: Light+Medium only, no class
+trains Heavy) and `str_requirement`, both hard blocks (not just a dropped bonus), mirroring
+`can_equip_shield()`'s own shape; `GameState.log_armor_equip_blocked()` reports which reason.
+
+**Equip/unequip/swap takes real turns, not a free action**: `GameState.ARMOR_CHANGE_TURNS`
+(`NONE`→1, `LIGHT`→5, `MEDIUM`→10, `HEAVY`→15), keyed by the **heavier** of the item entering and
+the item leaving the `"armor"` slot (`GameState._armor_change_turns()`) — swapping Leather for
+Plate costs 15 turns, not 5. `GameState.begin_armor_change(new_item, old_item)` is the entry point
+`equip()`/`unequip()`/`move_item()` all route "armor"-slot mutations through instead of their
+normal instant swap; neither item is physically moved yet (mirrors `begin_scroll_learn()`'s "no
+consumption until it finishes" precedent) — the slot swap happens in `complete_armor_change()`.
+Ticked in `player.gd._on_turn_started()` exactly like scroll-learning: one real turn per tick,
+auto-waiting (`PlayerActions.do_rest_wait_turn()`) until `armor_change_turns_remaining` hits 0, and
+**interrupted outright** (no Continue/Abort prompt — nothing's changed yet) the instant an enemy
+enters FOV (`GameState.cancel_armor_change(true)`). While `GameState.armor_change_active`, no
+second equip/unequip/swap can start (`equip()`/`unequip()`/`move_item()` all early-return). Ending
+Mage Armor on real armor landing (see "Mage Armor" in `scripts/entities/CLAUDE.md`) is checked
+inside `complete_armor_change()`, at the moment the swap actually resolves.
+
+**Stealth interaction**: `GameState.player_has_stealth_disadvantage()` (reads the currently-
+equipped `"armor"` item's `stealth_disadvantage` flag) adds a Disadvantage source to the Stealth-
+vs-Passive-Perception check (`Player._resolve_stealth_check()`) alongside the existing ADV sources
+(stillness, Zealous Presence, a SLEEPING observer) — net ADV/DISADV cancel per the house rule,
+same as every other roll in this codebase. See `scripts/entities/CLAUDE.md`'s "Stealth & Surprise
+Attacks".
+
 ## Dual-wielding
 When Main Hand (`"melee"`) and Off-hand (`"hand2"`) both hold a Light melee weapon (currently only the **Handaxe** — the first and so far only Light weapon), every melee attack also swings the Off-hand weapon at the same target: a fully independent d20 roll + damage roll, fired regardless of whether the primary Main Hand attack hit or missed (same "always fires" pattern as Cleave). Implemented in `player.gd._try_offhand_attack()` / `_resolve_offhand_attack()`, called from both the hit and miss paths of `_bump_attack()` right after `_try_cleave()`. Gated on `is_str_weapon` (Main Hand must be an equipped melee weapon, not unarmed/ranged) — Monk unarmed and ranged weapons never trigger it.
 
@@ -317,7 +361,8 @@ cast-resolution walkthroughs.
   code, same "no `.tres` files" convention as `Talent`/`SpriteFrames`. `CANTRIP_IDS` (8 cantrips:
   the original `fire_bolt`/`ray_of_frost`/`shocking_grasp` plus `toll_the_dead`/`blade_ward`/
   `thunderclap`/`mind_sliver`/`light` — see `scripts/entities/CLAUDE.md`'s "Wizard spellcasting"
-  section for all 8) + `STARTER_CANTRIP_IDS` (the fixed 3-cantrip round-1 pool `cantrip_select.gd`
+  section for all 8, including `SpellcasterState.cantrip_max(stats)` — the known-cantrip cap,
+  Wizard 3/4/5 at character levels 1/4/10) + `STARTER_CANTRIP_IDS` (the fixed 3-cantrip round-1 pool `cantrip_select.gd`
   always offers — kept separate from `CANTRIP_IDS` so old saves/the premade Jace's
   `"cantrip": "fire_bolt"` shortcut stay valid) + `LEVELED_SPELL_IDS` (11:
   `magic_missile`/`shield`/`mage_armor`/`misty_step`/`fireball`/`chromatic_orb`/`burning_hands`/
@@ -377,6 +422,15 @@ since real spell art lives nested by level (`res://icons/spells/<level>/<id>.png
 `scripts/entities/CLAUDE.md`'s "Wizard spellcasting" section) and reusing the spell's own path
 keeps the two from drifting out of sync. No dedicated scroll-item sprite exists — every scroll
 just shows its spell's icon.
+
+**Floor-loot level gate**: `DungeonFloorData.is_scroll_level_eligible(entry, character_level) ->
+bool` — an entry carrying `"scroll_spell"` is only eligible to spawn once the player could
+actually LEARN a spell of that level themselves (`StandardSlotPool.highest_accessible_level()`,
+the standard 5e level→highest-slot-level table: 1-2→1st, 3-4→2nd, 5-6→3rd, ...); non-scroll
+entries are unaffected. Applied alongside the existing `fmin`/`fmax` floor-range check at all
+three `ITEM_POOL` eligibility filters in `dungeon_floor.gd` (`_spawn_items()`, `_spawn_treasure()`,
+`_spawn_locked_doors()`) — a level-1 character can never find a scroll of a 2nd-level-or-higher
+spell, regardless of what floor it's tuned to spawn on.
 
 **Casting math without a caster**: `SpellEffects._attack_bonus()`/`_save_dc()`/`_cast_ability_mod()`
 (`scripts/entities/spell_effects.gd`) are caster-optional — if `Stats.caster` exists (Wizard) they

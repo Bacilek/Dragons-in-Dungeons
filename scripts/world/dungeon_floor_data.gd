@@ -5,6 +5,20 @@ const WEAPONS_PATH := "res://sprites/weapons/"
 const OBJECTS_PATH := "res://sprites/objects/"
 const ITEMS_PATH   := "res://sprites/items/"
 
+# Scroll of <Spell> loot gate: an entry carrying "scroll_spell" is only eligible to spawn once the
+# player could actually LEARN a spell of that level themselves (StandardSlotPool.
+# highest_accessible_level()) — a level-1 character can never find a 2nd-level scroll, etc.
+# Non-scroll entries (no "scroll_spell" key) are unaffected. Shared by every ITEM_POOL floor/loot
+# eligibility filter in dungeon_floor.gd (_spawn_items(), _spawn_treasure(), _spawn_locked_doors()).
+static func is_scroll_level_eligible(entry: Dictionary, character_level: int) -> bool:
+	var spell_id: String = entry.get("scroll_spell", "")
+	if spell_id == "":
+		return true
+	var s: Spell = SpellDb.get_spell(spell_id)
+	if s == null:
+		return true
+	return s.level <= StandardSlotPool.highest_accessible_level(character_level)
+
 const TRAP_POOL: Array = [
 	{"name": "Bear Trap",  "sprite": "Bear_Trap.png",       "damage": 0, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
 	{"name": "Fire Trap",  "sprite": "Fire_Trap.png",        "damage": 8, "msg": "Jets of flame engulf you!",        "wall_trap": false},
@@ -43,6 +57,22 @@ const ITEM_POOL: Array = [
 	{"name": "Bolt",           "type": 7, "icon": "Weapons/weapon_arrow.png",             "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Heavy Crossbow.", "qty": 6},
 	{"name": "Thief Tools",    "type": 7, "icon": "Misc/KeyIron.png",                    "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Disarm traps, lock doors. Consumed on failure.", "qty": 2, "gold": 25},
 	{"name": "Shield",         "type": 1, "icon": "Shields/Shield1.png",                "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Off-hand. +2 AC. Requires shield proficiency; can't be worn with a two-handed Main Hand weapon, and blocks spellcasting while equipped. Equip/unequip takes 1 turn.", "bonus_ac": 2, "is_shield": true, "gold": 40},
+	# Body armor (Item.armor_category — see Item.gd, GameState.can_equip_armor()/ARMOR_CHANGE_TURNS
+	# and Stats.recalc_ac()). No dedicated armor sprites exist yet — every entry placeholder-reuses
+	# sprites/items/Materials/PlateIron.png (same "no art yet" precedent as several weapons above).
+	# 1=Light armor_cat, 2=Medium, 3=Heavy. dex_cap: -1=unlimited, N=capped at N, 0=none.
+	{"name": "Padded Armor",           "type": 1, "icon": "Materials/PlateIron.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Light armor. AC = 11 + DEX. Disadvantage on Stealth. Equip/unequip/swap takes 5 turns.", "armor_cat": 1, "base_ac": 11, "dex_cap": -1, "stealth_disadv": true, "gold": 5},
+	{"name": "Leather Armor",          "type": 1, "icon": "Materials/PlateIron.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Light armor. AC = 11 + DEX. Equip/unequip/swap takes 5 turns.", "armor_cat": 1, "base_ac": 11, "dex_cap": -1, "gold": 10},
+	{"name": "Studded Leather Armor",  "type": 1, "icon": "Materials/PlateIron.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Light armor. AC = 12 + DEX. Equip/unequip/swap takes 5 turns.", "armor_cat": 1, "base_ac": 12, "dex_cap": -1, "gold": 45},
+	{"name": "Hide Armor",             "type": 1, "icon": "Materials/PlateIron.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Medium armor. AC = 12 + DEX (max +2). Equip/unequip/swap takes 10 turns.", "armor_cat": 2, "base_ac": 12, "dex_cap": 2, "gold": 10},
+	{"name": "Chain Shirt",            "type": 1, "icon": "Materials/PlateIron.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Medium armor. AC = 13 + DEX (max +2). Equip/unequip/swap takes 10 turns.", "armor_cat": 2, "base_ac": 13, "dex_cap": 2, "gold": 50},
+	{"name": "Scale Mail",             "type": 1, "icon": "Materials/PlateIron.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Medium armor. AC = 14 + DEX (max +2). Disadvantage on Stealth. Equip/unequip/swap takes 10 turns.", "armor_cat": 2, "base_ac": 14, "dex_cap": 2, "stealth_disadv": true, "gold": 50},
+	{"name": "Breastplate",            "type": 1, "icon": "Materials/PlateIron.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 4, "fmax": 10, "desc": "Medium armor. AC = 14 + DEX (max +2). Equip/unequip/swap takes 10 turns.", "armor_cat": 2, "base_ac": 14, "dex_cap": 2, "gold": 400},
+	{"name": "Half Plate Armor",       "type": 1, "icon": "Materials/PlateGold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "Medium armor. AC = 15 + DEX (max +2). Disadvantage on Stealth. Equip/unequip/swap takes 10 turns.", "armor_cat": 2, "base_ac": 15, "dex_cap": 2, "stealth_disadv": true, "gold": 750},
+	{"name": "Ring Mail",              "type": 1, "icon": "Materials/PlateIron.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Heavy armor. AC = 14 (no DEX bonus). Disadvantage on Stealth. Equip/unequip/swap takes 15 turns.", "armor_cat": 3, "base_ac": 14, "dex_cap": 0, "stealth_disadv": true, "gold": 30},
+	{"name": "Chain Mail",             "type": 1, "icon": "Materials/PlateIron.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "Heavy armor. AC = 16 (no DEX bonus). Requires 13 STR. Disadvantage on Stealth. Equip/unequip/swap takes 15 turns.", "armor_cat": 3, "base_ac": 16, "dex_cap": 0, "str_req": 13, "stealth_disadv": true, "gold": 75},
+	{"name": "Splint Armor",           "type": 1, "icon": "Materials/PlateGold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 5, "fmax": 10, "desc": "Heavy armor. AC = 17 (no DEX bonus). Requires 15 STR. Disadvantage on Stealth. Equip/unequip/swap takes 15 turns.", "armor_cat": 3, "base_ac": 17, "dex_cap": 0, "str_req": 15, "stealth_disadv": true, "gold": 200},
+	{"name": "Plate Armor",            "type": 1, "icon": "Materials/PlateGold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 8, "fmax": 10, "desc": "Heavy armor. AC = 18 (no DEX bonus). Requires 15 STR. Disadvantage on Stealth. Equip/unequip/swap takes 15 turns.", "armor_cat": 3, "base_ac": 18, "dex_cap": 0, "str_req": 15, "stealth_disadv": true, "gold": 1500},
 	# Scroll of <Spell> — a single one-shot cast of the named spell, castable by ANY class
 	# (see Item.scroll_spell_id / SpellEffects' caster-optional attack-bonus/save-DC helpers:
 	# non-casters use their INT modifier + proficiency bonus). Reusing the spell's own icon since

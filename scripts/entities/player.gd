@@ -374,6 +374,19 @@ func _on_turn_started() -> void:
 		_actions.do_rest_wait_turn()
 		return
 
+	# Armor change (equip/unequip/swap of body armor) in progress — player waits in place, same
+	# auto-wait/interrupt shape as scroll-learning below (no Continue/Abort prompt — nothing's
+	# physically moved yet, just re-issue the equip/unequip once it's safe again).
+	if GameState.armor_change_active:
+		if not _fov_this_turn.is_empty():
+			GameState.cancel_armor_change(true)
+			return
+		GameState.armor_change_turns_remaining -= 1
+		if GameState.armor_change_turns_remaining <= 0:
+			GameState.complete_armor_change()
+		_actions.do_rest_wait_turn()
+		return
+
 	# Scroll-learning in progress — player waits in place, same auto-wait/interrupt shape as a
 	# short rest but its own independent flag (not a rest). Any enemy entering FOV interrupts the
 	# studying outright (no Continue/Abort prompt — nothing's been consumed yet, just re-issue the
@@ -461,22 +474,23 @@ func _resolve_stealth_check() -> void:
 		base_adv += 1
 	if s.zealous_presence_turns > 0:
 		base_adv += 1
-	# Rolled once, reused against every observer (5e group-stealth style) — but ADV is a property
-	# of the roll against THAT specific target (SLEEPING grants +1 net ADV, per-observer), so a
-	# second d20 is only rolled when a given observer's own net ADV differs from 0.
+	var base_disadv: int = 1 if GameState.player_has_stealth_disadvantage() else 0
+	# Rolled once, reused against every observer (5e group-stealth style) — but ADV/DISADV is a
+	# property of the roll against THAT specific target (SLEEPING grants +1 net ADV, per-observer),
+	# so a second d20 is only rolled when a given observer's own net ADV/DISADV differs from 0.
 	var r1: Dictionary = CombatMath.halfling_reroll(Rng.roll(20))
 	var die1: int = r1["value"]
 	var lucky1: bool = r1["lucky"]
 	for e: Enemy in observers:
-		var obs_adv: int = base_adv + (1 if e.behavior == Enemy.Behavior.SLEEPING else 0)
+		var obs_net: int = base_adv + (1 if e.behavior == Enemy.Behavior.SLEEPING else 0) - base_disadv
 		var die: int = die1
 		var die2: int = die1
 		var lucky2: bool = false
-		if obs_adv > 0:
+		if obs_net != 0:
 			var r2: Dictionary = CombatMath.halfling_reroll(Rng.roll(20))
 			die2 = r2["value"]
 			lucky2 = r2["lucky"]
-			die = maxi(die1, die2)
+			die = maxi(die1, die2) if obs_net > 0 else mini(die1, die2)
 		var total: int = die + dex_mod + prof
 		# Bloodhound R2: the Marked target is easier for the player specifically to sneak up on.
 		var effective_pp: int = e.passive_perception
@@ -485,7 +499,7 @@ func _resolve_stealth_check() -> void:
 		var noticed: bool = total < effective_pp
 		var stealth_meta: String = "stealth:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,total=%d,epp=%d,adv=%d,pass=%d,lucky1=%d,lucky2=%d" % [
 			die, die1, die2, dex_mod, prof, total, effective_pp,
-			1 if obs_adv > 0 else 0, 0 if noticed else 1, 1 if lucky1 else 0, 1 if lucky2 else 0]
+			signi(obs_net), 0 if noticed else 1, 1 if lucky1 else 0, 1 if lucky2 else 0]
 		var god_suffix: String = " [color=gray](Stealth %d vs PP %d)[/color]" % [total, e.passive_perception] if GameState.god_mode else ""
 		if noticed:
 			e._notice_target(grid_pos)
@@ -601,13 +615,27 @@ func _update_hover_indicator() -> void:
 	if enemy == null or not is_instance_valid(enemy):
 		_hover_indicator.visible = false
 		return
-	var weapon: Item = GameState.equipped_ranged if Input.is_key_pressed(KEY_SHIFT) else GameState.equipped_weapon
-	if weapon == null:
+	# Priority mirrors the LMB click handler's own dispatch order: Ctrl+Special-slot spell wins
+	# over Shift+Ranged, which wins over the default melee weapon.
+	var icon_path: String = ""
+	if Input.is_key_pressed(KEY_CTRL) and GameState.special_slot_spell_id != "":
+		var spell: Spell = SpellDb.get_spell(GameState.special_slot_spell_id)
+		if spell != null:
+			icon_path = spell.icon_path
+	elif Input.is_key_pressed(KEY_SHIFT):
+		var ranged: Item = GameState.equipped_ranged
+		if ranged != null:
+			icon_path = ranged.icon_path
+	else:
+		var weapon: Item = GameState.equipped_weapon
+		if weapon != null:
+			icon_path = weapon.icon_path
+	if icon_path == "":
 		_hover_indicator.visible = false
 		return
-	if weapon.icon_path != _hover_last_icon_path:
-		_hover_last_icon_path = weapon.icon_path
-		_hover_last_texture = load(weapon.icon_path) as Texture2D
+	if icon_path != _hover_last_icon_path:
+		_hover_last_icon_path = icon_path
+		_hover_last_texture = load(icon_path) as Texture2D
 		_hover_indicator.texture = _hover_last_texture
 	_hover_indicator.global_position = enemy.global_position + Vector2(6, -14)
 	_hover_indicator.visible = true
