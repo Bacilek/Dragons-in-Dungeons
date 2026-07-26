@@ -56,6 +56,11 @@ func do_throw(pos: Vector2i) -> void:
 	AudioManager.play("throw_item")
 	if player._dungeon_floor.has_door_at(pos) and not player._dungeon_floor.is_door_open(pos):
 		player._dungeon_floor.open_door(pos)
+	if item.item_type == Item.Type.POTION:
+		_shatter_potion(item, pos)
+		player._dungeon_floor.update_fog(player.grid_pos)
+		TurnManager.on_player_action_complete()
+		return
 	var trap: Dictionary = player._dungeon_floor.get_trap_at(pos)
 	var is_fire: bool = not trap.is_empty() and trap.get("name", "") == "Fire Trap"
 	if is_fire and item.item_name == "Rotten Meat":
@@ -87,6 +92,33 @@ func do_throw(pos: Vector2i) -> void:
 		GameState.game_log("[color=gray]You throw [b]%s[/b].[/color]" % dropped.item_name)
 	player._dungeon_floor.update_fog(player.grid_pos)
 	TurnManager.on_player_action_complete()
+
+# Potions are glass — thrown, they never land intact (unlike Drop, which places the whole,
+# unbroken stack — see GameState.drop_item()). Whatever's on the target tile takes the shattered
+# effect (heal-type potions heal it; a potion with no applicable effect just shatters harmlessly);
+# an empty tile just breaks the glass for nothing. No Empty Bottle or any other item is ever
+# dropped from the shattering — the potion is fully consumed either way.
+func _shatter_potion(item: Item, pos: Vector2i) -> void:
+	var enemy: Enemy = player._dungeon_floor.get_targetable_enemy_at(pos)
+	GameState.consume_one(item)
+	if enemy == null:
+		GameState.game_log("[color=gray]You throw [b]%s[/b] — it shatters on the ground.[/color]" % item.item_name)
+		return
+	enemy.on_disturbed(player.grid_pos)
+	if item.heal_dice_count > 0 or item.heal_amount > 0:
+		var amount: int = 0
+		if item.heal_dice_count > 0:
+			for _i: int in item.heal_dice_count:
+				amount += Rng.roll(item.heal_dice_sides)
+		else:
+			amount = item.heal_amount
+		var before: int = enemy.stats.current_hp
+		enemy.stats.current_hp = mini(enemy.stats.max_hp, enemy.stats.current_hp + amount)
+		var healed: int = enemy.stats.current_hp - before
+		enemy.update_hp_bar()
+		GameState.game_log("[color=orange]You throw [b]%s[/b] at [color=orange]%s[/color] — it shatters, healing them for %d HP![/color]" % [item.item_name, enemy.display_name, healed])
+	else:
+		GameState.game_log("[color=gray]You throw [b]%s[/b] at [color=orange]%s[/color] — it shatters harmlessly.[/color]" % [item.item_name, enemy.display_name])
 
 func make_empty_bottle() -> Item:
 	var b := Item.new()
@@ -136,9 +168,10 @@ func try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 	TurnManager.on_player_action_complete()
 
 # Thrown weapon (e.g. Spear): uses the melee attack modifier (STR, or max(STR,DEX) if Finesse),
-# not a separate DEX/ranged stat. Normal range = weapon.range; beyond that but within the live
-# FOV the throw still works but rolls with Disadvantage — same convention as ranged weapons
-# (see PlayerRanged.is_ranged_target_in_range()/ranged_shot_disadvantage()). A throw at an
+# not a separate DEX/ranged stat. Normal range = weapon.range; beyond that but within weapon.
+# long_range (a real fixed field, same as ranged weapons — see item.gd) the throw still works but
+# rolls with Disadvantage, and must be in current FOV (is_tile_visible) — same convention as
+# ranged weapons (see PlayerRanged.is_ranged_target_in_range()/ranged_shot_disadvantage()). A throw at an
 # adjacent target (Chebyshev 1) also rolls with Disadvantage, mirroring ranged_attack()'s
 # melee-range check.
 #
@@ -174,9 +207,9 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 
 	var d: Vector2i = pos - player.grid_pos
 	var dist_sq: int = d.x * d.x + d.y * d.y
-	var fov_r: int = DungeonFloor.FOV_RADIUS
+	var long_r: int = weapon.long_range if weapon.long_range > 0 else DungeonFloor.FOV_RADIUS
 	var in_normal_range: bool = dist_sq <= weapon.range * weapon.range
-	var in_range: bool = in_normal_range or (dist_sq <= fov_r * fov_r and player._dungeon_floor.is_tile_visible(pos))
+	var in_range: bool = in_normal_range or (dist_sq <= long_r * long_r and player._dungeon_floor.is_tile_visible(pos))
 	if not in_range:
 		GameState.game_log("[color=gray]Too far to throw %s.[/color]" % weapon.item_name)
 		player._handle_post_attack_turn()
@@ -227,6 +260,8 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	# exemption the surprise-attack Advantage from has_advantage() always cancels right back out.
 	if maxi(absi(d.x), absi(d.y)) <= 1 and not target_was_unaware: disadv_count += 1
 	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
+	if stats.has_disadvantage_condition(): disadv_count += 1
+	if enemy.prone: disadv_count += 1  # Prone: ranged/thrown attacks against it have DISADV
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]
 	var die2: int = r["die2"]

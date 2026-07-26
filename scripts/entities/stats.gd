@@ -200,6 +200,39 @@ var invisibility_turns: int = 0
 # unconditionally, same as every other spell), same "just_cast" pattern as witch_bolt_just_cast.
 var invisibility_just_cast: bool = false
 
+# Spider's Web ability (enemy pool "web") — a persistent Restrained condition, NOT a turn-counter
+# status like slowed/poisoned/etc.: it lasts until the web structure is destroyed, not for N turns,
+# so it can't reuse tick_status()'s countdown shape. `web_escape_dc` is the DC the DEX save that
+# webbed you rolled against (stashed here so the escape-attempt STR check in player.gd uses the
+# same DC without needing a second authored number). Cleared by Player._attempt_web_escape() on a
+# successful STR check, which also calls DungeonFloor.destroy_web(grid_pos) — safe to assume the
+# web is still directly underfoot since being Restrained blocks all movement (see player.gd's
+# _try_move()). Deliberately NOT serialized, same mid-floor-only simplification as
+# witch_bolt_turns/fog_cloud_turns/invisibility_turns above.
+var web_restrained: bool = false
+var web_escape_dc: int = 13
+
+# ── Conditions (Poisoned/Prone/Restrained/Incapacitated) ─────────────────────────
+# Restrained is `web_restrained` above (Spider's Web is still its only source). The three below
+# are turn-counter conditions, same tick_status() shape as poison_turns/burning_turns/etc., but
+# kept as SEPARATE fields from those — poisoned_condition_turns is the real 5e Poisoned condition
+# (DISADV on attacks/checks) and is deliberately independent of poison_turns (the pre-existing
+# damage-over-time counter every potion/Rend/etc. already sets): a source that inflicts one
+# doesn't have to inflict the other (Rend inflicts ONLY the condition, no poison damage; a
+# Poison Potion still deals ONLY damage, no condition) — see GameState.apply_player_status().
+# Deliberately NOT serialized, same mid-floor-only simplification as web_restrained/
+# invisibility_turns/fog_cloud_turns above — combat conditions simply end on save/load.
+var poisoned_condition_turns: int = 0
+var prone: bool = false                # persists until stood up (Player._try_move()'s redirect), not turn-counted
+var incapacitated_turns: int = 0
+
+# True while any condition that imposes a blanket DISADV on attack rolls/ability checks is active
+# (5e: Poisoned, Prone [attacks only], Restrained). Multiple conditions never stack disadvantage
+# (5e has no "double disadvantage") — every attack/check call site adds at most 1 to its
+# disadv_count from this single helper instead of checking each field separately.
+func has_disadvantage_condition() -> bool:
+	return poisoned_condition_turns > 0 or prone or web_restrained
+
 # Wizard spellcasting (cantrips per docs/architecture/spellcasting-design.md, leveled spells +
 # slots per docs/architecture/leveled-spells-and-slots-plan.md). Built in
 # apply_class_defaults()'s WIZARD branch; null for every other class. See
@@ -316,6 +349,10 @@ func tick_status() -> int:
 		bleeding_turns -= 1
 	if slowed_turns > 0:
 		slowed_turns -= 1
+	if poisoned_condition_turns > 0:
+		poisoned_condition_turns -= 1
+	if incapacitated_turns > 0:
+		incapacitated_turns -= 1
 	return dmg
 
 # Recalculates armor_class based on what is equipped.

@@ -345,16 +345,16 @@ const ENEMY_POOL: Array = [
 	# Quasit — Tiny Fiend (Demon), Chaotic Evil, CR 1. AC 13 (natural armor). STR 5 (-3) DEX 17 (+3)
 	# CON 10 (+0) INT 7 (-2) WIS 10 (+0) CHA 10 (+0). Speed 30ft -> {"moves": 4, "per": 3}. Superior
 	# darkvision -> "senses": {"sight_bonus": 2}. Passive Perception 10.
-	# Rend: +5 to hit (DEX+prof), reach 1, 1d4+3 Slashing (dmg_min/dmg_max 4/7). The
-	# real text also inflicts the Poisoned condition until the start of Quasit's next turn — this
-	# engine has no mechanical Poisoned CONDITION today (only a same-named but different "poison"
-	# DoT status, see GameState.apply_player_status()), so Rend is damage-only for now; the
-	# condition effect is a documented, deferred follow-up (owner is authoring the conditions
-	# system in a future update), not an oversight.
+	# Rend: +5 to hit (DEX+prof), reach 1, 1d4+3 Slashing (dmg_min/dmg_max 4/7), plus the real
+	# Poisoned condition (DISADV on attacks/checks) for 1 turn — "status"/"status_turns" on the
+	# "multiattack" sub-entry, applied generically by Enemy._attack_player() on a landed hit (see
+	# its own comment). Distinct from "poison" (the pre-existing damage-over-time status) — Rend
+	# deals no poison damage, only the condition.
 	# Scare (pool "scare": {"range","save_dc"}, enemy.gd's _execute_cast_scare()): ranged (2 tiles),
 	# WIS save DC 10, 1/life (real text is "1/Day" — enemies don't rest, see legendary-resistance
-	# precedent). On a fail the target is meant to become Frightened — same deferred-condition gap
-	# as Rend above, flavor-logged only until the conditions system lands.
+	# precedent). On a fail the target is meant to become Frightened — this engine still has no
+	# mechanical Frightened condition (only Poisoned/Prone/Restrained/Incapacitated exist today),
+	# so this one's still flavor-logged only, a documented gap pending a Frightened pass.
 	# Invisibility: identical mechanism to Imp's own (pool "invisibility": {"cooldown","duration"}).
 	# Shape Shift: same trait as Imp, but its own form list (pool "shape_shift_forms") — Bat
 	# (flying), Centipede, Toad, all keeping Quasit's own 4/3 speed (pool "shape_shift_speed",
@@ -379,7 +379,8 @@ const ENEMY_POOL: Array = [
 	 "shape_shift_speed": {"moves": 4, "per": 3},
 	 "invisibility": {"cooldown": 5, "duration": 100},
 	 "scare": {"range": 2, "save_dc": 10},
-	 "multiattack": [{"name": "Rend", "count": 1, "dmg_min": 4, "dmg_max": 7, "damage_type": "Slashing"}]},
+	 "multiattack": [{"name": "Rend", "count": 1, "dmg_min": 4, "dmg_max": 7, "damage_type": "Slashing",
+	                  "status": "poisoned_condition", "status_turns": 1}]},
 	{"enemy_id": "pumpkin_dude",  "display_name": "Pumpkin Dude","sprite": "pumpkin_dude","idle_frames": 4, "run_frames": 4, "floor_min": 8, "floor_max": 10, "hp": 20, "hp_per_floor": 4, "dmg_min": 5, "dmg_max": 9, "armor": 2, "ac": 12, "exp": 25,
 	 "cr": 1, "creature_type": "Plant"},
 	# Goblin Archer — same base stat block as Goblin Warrior above (Small Fey, CE, CR 1/4, HP 10,

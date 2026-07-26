@@ -58,6 +58,12 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1: disadv_count += 1
 	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
+	if stats.has_disadvantage_condition(): disadv_count += 1
+	# Prone: melee/touch spells (range_tiles <= 1) get ADV against a prone target, ranged spells
+	# get DISADV — same split as every other attack-roll site.
+	if target.prone:
+		if spell.range_tiles <= 1: adv_count += 1
+		else: disadv_count += 1
 
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]
@@ -617,6 +623,12 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1: disadv_count += 1
 	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
+	if stats.has_disadvantage_condition(): disadv_count += 1
+	# Prone: melee/touch spells (range_tiles <= 1) get ADV against a prone target, ranged spells
+	# get DISADV — same split as every other attack-roll site.
+	if target.prone:
+		if spell.range_tiles <= 1: adv_count += 1
+		else: disadv_count += 1
 
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]

@@ -36,7 +36,9 @@ var oa_used_this_round: bool = false  # Opportunity Attack reaction cap — rese
 var slowed_turns: int = 0
 var rooted_turns: int = 0        # World Tree Grip of the Forest R2 — skips movement, still attacks if adjacent
 var disadv_next_attack: bool = false  # World Tree Grip of the Forest R3 — consumed on next attack roll
-var prone_turns: int = 0         # Maul's Topple mastery — skips the ENTIRE turn (no movement, no attack)
+var prone: bool = false          # Maul's Topple mastery — real Prone condition (not turn-counted): auto-stands at the top of this enemy's own next turn, consuming one point of movement budget to do so (see decide_turn()). While it remains prone (i.e. on the PLAYER's turns before then), Player.gd's melee/ranged attack sites grant ADV/DISADV against it directly off this field.
+var poisoned_condition_turns: int = 0  # true 5e Poisoned condition (DISADV on this enemy's own attack rolls/checks) — separate from any future enemy-side damage-over-time status, mirrors Stats.poisoned_condition_turns
+var incapacitated_turns: int = 0       # "can't take actions" — skips this enemy's entire turn (decide_turn() below) and makes every player attack against it a Surprise Attack (PlayerVfx.has_advantage())
 var frozen_feet_turns: int = 0   # Ray of Frost's STR-save-fail — skips movement, still attacks if adjacent (same shape as rooted_turns, kept separate so inspect can name it "Frozen Feet")
 var shocked_no_oa: bool = false  # Shocking Grasp — blocks this enemy's next Opportunity Attack exposure, whenever it next happens
 var mind_sliver_penalty_die: bool = false  # Mind Sliver cantrip — the next check this enemy makes (any resist_check_detailed() call) rolls with -1d4. Consumed on that next check; deliberately not turn-expiry-timed against "until the end of your next turn" per the spell text — enemy checks are rare enough that this one-shot-consumed simplification is documented here rather than adding a second timing system for it.
@@ -73,10 +75,11 @@ var damage_immunities: Array[String] = []        # ×0   — pool "damage_immuni
 var damage_vulnerabilities: Array[String] = []   # ×2.0 — pool "damage_vulnerabilities" (fallback: legacy "vuln")
 var condition_immunities: Array[String] = []     # blocks the STATUS COUNTER from ever being set (§6) —
 												  # separate axis from damage immunity above. Vocabulary:
-												  # "slowed"/"rooted"/"prone"/"forced_move" (enemy-side
-												  # control fields) and "poisoned"/"burning"/"bleeding"
-												  # (Stats counters, reserved — nothing ticks them on
-												  # enemies yet, see apply_status() below).
+												  # "slowed"/"rooted"/"prone"/"forced_move"/
+												  # "poisoned_condition"/"incapacitated" (enemy-side
+												  # control fields, see apply_status() below) and
+												  # "poisoned"/"burning"/"bleeding" (Stats counters,
+												  # reserved — nothing ticks them on enemies yet).
 var legendary_resistances_remaining: int = 0     # pool "legendary_resistances" (BOSS_POOL only) — consumed
 												  # on a would-be-failed resist_check_detailed() (§15)
 var _mods: Dictionary = {}                       # ability score modifiers, pool "mods" (§4). Empty = every
@@ -241,10 +244,12 @@ func apply_status(condition: String, turns: int) -> bool:
 	match condition:
 		"slowed":   slowed_turns = maxi(slowed_turns, turns)
 		"rooted":   rooted_turns = maxi(rooted_turns, turns)
-		"prone":    prone_turns  = maxi(prone_turns, turns)
+		"prone":    prone = true  # not turn-counted — see the `prone` field's own comment
 		"poisoned": stats.poison_turns  = maxi(stats.poison_turns, turns)
 		"burning":  stats.burning_turns = maxi(stats.burning_turns, turns)
 		"bleeding": stats.bleeding_turns = maxi(stats.bleeding_turns, turns)
+		"poisoned_condition": poisoned_condition_turns = maxi(poisoned_condition_turns, turns)
+		"incapacitated": incapacitated_turns = maxi(incapacitated_turns, turns)
 	return true
 
 # Nimble Escape (Goblin trait): after taking damage from a MELEE attack, the enemy's next action(s)
@@ -836,9 +841,26 @@ func decide_turn() -> Dictionary:
 	_tick_invisibility()
 	_tick_web_cooldown()
 	_tick_shape_shift()
-	if prone_turns > 0:
-		prone_turns -= 1
+	if poisoned_condition_turns > 0:
+		poisoned_condition_turns -= 1
+	# Incapacitated: "can't take actions" — skips this entire turn outright, same shape the OLD
+	# Prone behavior used to have (see below). Checked before target selection since it doesn't
+	# need one.
+	if incapacitated_turns > 0:
+		incapacitated_turns -= 1
 		return {"type": "idle_tick"}
+	# Prone (real 5e rules, not a turn-skip): auto-stands at the top of this enemy's own turn,
+	# consuming one point of this turn's movement budget to do so (`_tick_speed_gate()` already
+	# ran above) — matches the player's own "any direction key stands up instead of moving"
+	# behavior. Does NOT return: once stood, this enemy is no longer prone and falls straight
+	# through to the normal decision logic below with whatever movement budget remains (an
+	# Aggressive-bonus-move enemy that was adjacent when knocked prone can still stand AND attack
+	# the same turn — the exact "Orc Warrior gets up and still attacks" case). While it REMAINS
+	# prone (i.e. on the player's own turns, before this code runs), Player.gd's melee/ranged
+	# attack sites read `prone` directly for ADV/DISADV against it.
+	if prone:
+		prone = false
+		_moves_this_turn = maxi(0, _moves_this_turn - 1)
 	# Slowed (Mud/Water): unlike prone/rooted, this is deliberately NOT a full-turn skip — an
 	# attack this turn is completely unaffected (per direct owner correction: "slow by nemělo mít
 	# nic společného s útokem"). It only ever shaves ONE step off whatever movement this turn would
@@ -1195,7 +1217,7 @@ func _execute_ability(intent: Dictionary) -> void:
 	_consume_ability(ab.get("id", ""), ab)
 	var long_shot: bool = _ability_is_long_shot(ab, target)
 	if target is Player:
-		_attack_player(target, ab, long_shot)
+		_attack_player(target, ab, long_shot, true)
 	elif target is Companion:
 		_attack_companion(target, ab, long_shot)
 	if ab.has("status") and target is Player and is_instance_valid(target) and not target.stats.is_dead():
@@ -1380,7 +1402,7 @@ func _execute_thrown_weapon_attack(target: Node, wpn: Dictionary) -> void:
 		"damage_type": wpn.get("damage_type", "Piercing"),
 	}
 	if target is Player:
-		_attack_player(target, sub, true)
+		_attack_player(target, sub, true, true)
 	elif target is Companion:
 		_attack_companion(target, sub, true)
 	if _dungeon_floor != null and is_instance_valid(target):
@@ -1650,7 +1672,7 @@ func _resolve_attack_roll(target_ac: int, attack_bonus_override: int = -9999, ro
 # `long_shot`: true when an "abilities" attack is firing beyond its "range" into "long_range" —
 # see _ability_is_long_shot() — adds Disadvantage, same weapon-style normal/long split as the
 # player's own ranged attacks (PlayerRanged.ranged_shot_disadvantage()).
-func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = false) -> void:
+func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = false, is_ranged: bool = false) -> void:
 	# Rage's duration refresh cares about being attacked at all, not just being hit — set
 	# regardless of the roll's outcome (see player.gd._on_turn_started()'s rage tick).
 	GameState.player_attacked_this_turn = true
@@ -1682,8 +1704,20 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 					and other.min_dist_to(_player.grid_pos) <= 1:
 				pack_tactics_adv = true
 				break
+	# Restrained/Prone conditions on the TARGET (5e: these affect attacks made against them, not
+	# the attacker's own condition state — unlike Poisoned/Prone's own-attack DISADV above, which
+	# is entirely the player's side and lives in has_disadvantage_condition()). Restrained grants
+	# ADV regardless of attack kind; Prone splits by kind (melee ADV, ranged DISADV) since a prone
+	# target is an easy target up close but a harder one at range.
+	var target_restrained: bool = GameState.player_stats.web_restrained
+	var target_prone: bool = GameState.player_stats.prone
+	var condition_adv: bool = target_restrained or (target_prone and not is_ranged)
+	var condition_disadv: bool = target_prone and is_ranged
 	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, _attack_bonus_for(sub), bw_penalty,
-		fog_adv or pack_tactics_adv, long_shot or GameState.is_in_fog_cloud(grid_pos) or terrain_disadv)
+		fog_adv or pack_tactics_adv or condition_adv,
+		# poisoned_condition_turns here is THIS enemy's own Poisoned condition (DISADV on its own
+		# attack) — separate from target_prone/target_restrained above, which are the PLAYER's.
+		long_shot or GameState.is_in_fog_cloud(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0)
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]
@@ -1746,6 +1780,16 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	if sub.is_empty() and not invincible and display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
 		if GameState.apply_player_status("poison", 3):
 			GameState.game_log("[color=lime]You are poisoned! (3 turns)[/color]")
+	# Generic on-hit condition (pool "multiattack" sub-entry's optional "status"/"status_turns" —
+	# same shape "abilities" already supports via _execute_ability()'s own status block). First
+	# user: Quasit's Rend (real text: "poisoned condition until Quasit's next turn" — modeled as a
+	# flat 1-turn Poisoned condition here, since this engine doesn't track individual enemies'
+	# own next-turn timing against the player's status counters).
+	if sub.has("status") and not invincible and is_instance_valid(_player) and not _player.stats.is_dead():
+		var cond_turns: int = int(sub.get("status_turns", 1))
+		if GameState.apply_player_status(String(sub["status"]), cond_turns):
+			var cond_label: String = String(sub["status"]).replace("_condition", "").capitalize()
+			GameState.game_log("[color=lime]You are %s! (%d turn%s)[/color]" % [cond_label, cond_turns, "" if cond_turns == 1 else "s"])
 
 # Companion (Wild Heart summon) as attack target — see docs/architecture/enemy_system_architecture.md §5.
 # No invincible/poison/Retaliation hooks: those are player-only systems. Companion.take_damage_from_enemy()
@@ -1761,7 +1805,8 @@ func _attack_companion(companion: Companion, sub: Dictionary = {}, long_shot: bo
 				pack_tactics_adv = true
 				break
 	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, _attack_bonus_for(sub), 0,
-		GameState.is_in_fog_cloud(companion.grid_pos) or pack_tactics_adv, long_shot or GameState.is_in_fog_cloud(grid_pos))
+		GameState.is_in_fog_cloud(companion.grid_pos) or pack_tactics_adv,
+		long_shot or GameState.is_in_fog_cloud(grid_pos) or poisoned_condition_turns > 0)
 	if not r["is_hit"]:
 		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [atk_label, companion.animal_name])
 		return

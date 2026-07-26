@@ -1435,6 +1435,33 @@ func _try_move(dir: Vector2i) -> void:
 	if _dungeon_floor == null:
 		return
 	_reset_camera_offset()
+	# Spider's Web (see scripts/entities/CLAUDE.md's "Spider" entry): Restrained blocks ALL
+	# movement — any direction key instead attempts to tear free (a STR check, D&D's alternate
+	# "5+ slashing/fire damage or a Strength/Dexterity check against the escape DC" text
+	# simplified to just the check, since this engine has no attack-a-structure system to hang the
+	# damage-based escape route on). Consumes the turn either way, same as a real move would.
+	# Incapacitated: "can't take actions" — blocks movement/bump-attack entirely, costing the turn
+	# (same "any direction key redirects" shape as Restrained/Prone below). See _use_ability_slot()
+	# for the ability/spell half of the guard.
+	if stats.incapacitated_turns > 0:
+		GameState.game_log("[color=gray]You're incapacitated and can't act![/color]")
+		TurnManager.begin_player_action()
+		TurnManager.on_player_action_complete()
+		return
+	if stats.web_restrained:
+		_attempt_web_escape()
+		return
+	# Prone: can't move — any direction key instead stands up (5e: "standing up... uses all of
+	# your movement for the turn"), costing the turn without moving, same "any direction key gets
+	# redirected" simplification as Restrained above. Attacking while Prone (mouse click, not a
+	# directional bump) is still allowed — this only blocks movement/bump-bump-attack.
+	if stats.prone:
+		stats.prone = false
+		GameState.player_status_changed.emit()
+		GameState.game_log("[color=silver]You stand up.[/color]")
+		TurnManager.begin_player_action()
+		TurnManager.on_player_action_complete()
+		return
 	var target: Vector2i = grid_pos + dir
 
 	var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
@@ -1601,6 +1628,38 @@ func _try_move(dir: Vector2i) -> void:
 
 # ── Rage helpers ─────────────────────────────────────────────────────────────
 
+# Spider's Web escape attempt (Stats.web_restrained) — a Strength check against the DC the
+# original failed DEX save rolled against (Stats.web_escape_dc), rolled the same
+# die+mod+proficiency-if-trained shape as every other authored check in this file. Success clears
+# the condition and destroys the web at the player's own tile (guaranteed to still be underfoot —
+# Restrained blocks ALL movement, see _try_move()'s guard above, so the player can never have
+# wandered off the web's tile in the meantime). Failure just costs the turn, same as a real D&D
+# escape-attempt action.
+func _attempt_web_escape() -> void:
+	TurnManager.begin_player_action()
+	var dc: int = stats.web_escape_dc
+	var str_mod: int = stats.str_modifier()
+	var prof: int = stats.proficiency_bonus if stats.check_prof_str else 0
+	# Poisoned (DISADV on ALL checks, including this STR check — Restrained's own DEX-check
+	# clause doesn't apply here since this is STR).
+	var has_disadv: bool = stats.poisoned_condition_turns > 0
+	var die1: int = Rng.roll(20)
+	var die2: int = Rng.roll(20) if has_disadv else die1
+	var die: int = mini(die1, die2) if has_disadv else die1
+	var total: int = die + str_mod + prof
+	var passed: bool = total >= dc
+	var meta: String = "check:stat=STR,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=0" % [
+		die, die1, die2, str_mod, prof, total, dc, int(passed)]
+	if passed:
+		GameState.game_log("[color=lime]You tear free of the webbing! [url=%s]%d vs DC %d[/url][/color]" % [meta, total, dc])
+		stats.web_restrained = false
+		GameState.player_status_changed.emit()
+		if _dungeon_floor != null:
+			_dungeon_floor.destroy_web(grid_pos)
+	else:
+		GameState.game_log("[color=gray]You struggle against the webbing but can't break free. [url=%s]%d vs DC %d[/url][/color]" % [meta, total, dc])
+	TurnManager.on_player_action_complete()
+
 func _activate_rage() -> void:
 	if _is_raging:
 		GameState.game_log("[color=red]You are already raging![/color]")
@@ -1729,6 +1788,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	adv_count += _ranger_talents.consume_bloodhound_fresh_adv(enemy)
 	var disadv_count: int = 0
 	if was_surprised: adv_count += 1
+	# Prone (melee attacks against a prone target have ADV; see the matching ranged-DISADV note
+	# at the ranged/thrown/spell attack sites).
+	if enemy.prone: adv_count += 1
 	# Zealous Presence: Advantage on all attack rolls while buffed.
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	# Vex (Short Bow): ADV on the attack immediately following a Short-Bow hit on this same enemy.
@@ -1739,6 +1801,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if weapon_item_ref != null and weapon_item_ref.is_heavy and stats.strength < 13: disadv_count += 1
 	# Fog Cloud (Blinded): your own attack rolls have Disadvantage while standing inside the cloud.
 	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
+	# Poisoned / Prone / Restrained condition — DISADV on your own attack rolls (5e: none of
+	# these three stack disadvantage with each other, hence the single combined helper).
+	if stats.has_disadvantage_condition(): disadv_count += 1
 	# Animal Form Wolf: ADV when enough enemies are in FOV — always active in Wolf form (no
 	# Rage required). Enhanced Forms lowers the threshold; R3 also counts 1 enemy + 1 friendly.
 	# active_rager_form is the LOCKED-IN form, not natural_rager_form (the preview for next rest).
@@ -1978,7 +2043,9 @@ func _try_graze(enemy: Enemy, is_str_weapon: bool, attack_mod: int) -> void:
 		_finish_kill(enemy)
 
 # Topple mastery (Maul): on a hit, the target rolls a CON save (DC 8 + prof + STR mod) or is
-# knocked Prone — Enemy.prone_turns skips its entire next turn (no movement, no attack).
+# knocked Prone — the real Prone condition (Enemy.prone), not a turn-skip: melee attacks against
+# it get ADV / ranged get DISADV until its own next turn, when it auto-stands (consuming one
+# point of movement) and can still act normally. See scripts/entities/CLAUDE.md's "Conditions".
 func _try_topple(enemy: Enemy, is_str_weapon: bool, prof: int, str_mod: int) -> void:
 	var weapon: Item = GameState.equipped_weapon
 	if weapon == null or weapon.weapon_mastery != "Topple" or not stats.knows_mastery("Topple") \
@@ -2031,9 +2098,15 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
 	adv_count += _ranger_talents.consume_bloodhound_fresh_adv(enemy)
 	if was_surprised: adv_count += 1
+	# Prone (melee attacks against a prone target have ADV; see the matching ranged-DISADV note
+	# at the ranged/thrown/spell attack sites).
+	if enemy.prone: adv_count += 1
 	var disadv_count: int = 0
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
+	# Poisoned / Prone / Restrained condition — DISADV on your own attack rolls (5e: none of
+	# these three stack disadvantage with each other, hence the single combined helper).
+	if stats.has_disadvantage_condition(): disadv_count += 1
 	# Vex (Short Bow): future-proofing — a weapon could carry both Cleave and Vex.
 	var vex_triggered: bool = _vex_adv_target == enemy
 	if vex_triggered: adv_count += 1
@@ -2126,9 +2199,13 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
 	adv_count += _ranger_talents.consume_bloodhound_fresh_adv(enemy)
+	if enemy.prone: adv_count += 1  # Prone: melee attacks against it have ADV
 	var disadv_count: int = 0
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
+	# Poisoned / Prone / Restrained condition — DISADV on your own attack rolls (5e: none of
+	# these three stack disadvantage with each other, hence the single combined helper).
+	if stats.has_disadvantage_condition(): disadv_count += 1
 	var vex_triggered: bool = _vex_adv_target == enemy
 	if vex_triggered: adv_count += 1
 	if vex_triggered:
@@ -2244,9 +2321,15 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
 	adv_count += _ranger_talents.consume_bloodhound_fresh_adv(enemy)
 	if was_surprised: adv_count += 1
+	# Prone (melee attacks against a prone target have ADV; see the matching ranged-DISADV note
+	# at the ranged/thrown/spell attack sites).
+	if enemy.prone: adv_count += 1
 	var disadv_count: int = 0
 	if weapon != null and weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
+	# Poisoned / Prone / Restrained condition — DISADV on your own attack rolls (5e: none of
+	# these three stack disadvantage with each other, hence the single combined helper).
+	if stats.has_disadvantage_condition(): disadv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]
@@ -2391,6 +2474,12 @@ var _last_ability_slot_press_msec: int = 0
 
 func _use_ability_slot(idx: int) -> void:
 	if idx < 0 or idx >= GameState.ABILITY_BAR_SIZE:
+		return
+	# Incapacitated: "can't take actions" — blocks ability/spell activation. See _try_move()'s own
+	# incapacitated guard for the movement/melee-bump half; mouse-click attacks and item/tool use
+	# aren't gated here (partial coverage — see scripts/entities/CLAUDE.md's "Conditions" section).
+	if stats.incapacitated_turns > 0:
+		GameState.game_log("[color=gray]You're incapacitated and can't act![/color]")
 		return
 	var raw = GameState.player_ability_bar[idx]
 	if raw == null:

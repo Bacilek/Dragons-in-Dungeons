@@ -25,6 +25,11 @@ func has_advantage(enemy: Enemy) -> bool:
 	# Fog Cloud (Blinded): attack rolls against a Blinded creature have Advantage.
 	if GameState.is_in_fog_cloud(enemy.grid_pos):
 		return true
+	# Incapacitated condition: "every attack against it is a Surprise Attack" (5e — an
+	# incapacitated creature can't react to danger). Reuses this same mechanism rather than a
+	# second ADV source, since a Surprise Attack already IS "the defender never saw it coming".
+	if enemy.incapacitated_turns > 0:
+		return true
 	return enemy.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
 
 func show_surprise_mark(enemy: Enemy) -> void:

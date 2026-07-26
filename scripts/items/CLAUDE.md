@@ -32,6 +32,7 @@ TOOL   = 7
 | `heal_amount` | int | potions, plus one FOOD exception: Healing Herb (special-rooms-economy-design.md §4.3, session 7d) is the only FOOD entry with `heal_amount > 0` — `GameState.use_item()`'s FOOD branch checks `heal_amount > 0` first and heals+consumes instead of the normal "saved as fuel" message. Every other FOOD item still has `heal_amount == 0` and keeps that message (see "Rations / long rest" below) |
 | `food_value` | int | FOOD items only: value sacrificed toward `GameState.LONG_REST_FOOD_COST` at a long rest |
 | `gold_value` | int | base shop price in gold (0 = unpriced/not for sale); for `Type.GOLD` items, the pile size. Set via the `"gold"` pool key (read by `_build_floor_item()`/`_roll_boss_loot_item()`/`debug_panel._on_give_item()`). GOLD items never enter the inventory — `PlayerActions.check_pickup()` routes them into `GameState.add_gold()` (see `scripts/autoloads/CLAUDE.md`'s "Gold economy") |
+| `silver_value` | int | sub-gold price remainder in silver pieces (0-9; 10 sp = 1 gp, always normalized at authoring time — e.g. a 2sp item is `gold_value=0, silver_value=2`, never `silver_value=20`). Set via the `"silver"` pool key, same read sites as `gold_value`. Display-only — `WeaponTooltip.format_price()` is the only consumer (`scripts/items/CLAUDE.md`'s "Unified weapon tooltip format"), no shop/spend path reads it |
 | `bonus_damage` | int | weapon hit bonus |
 | `bonus_ac` | int | armor AC bonus |
 | `str_bonus` | int | ability score bonus |
@@ -85,17 +86,79 @@ FOOD items (`Ration`, `Mystery Meat`, `Rotten Meat`, `Cooked Meat`) are no longe
 - **Vex** (Short Bow, Rapier): after a Vex-mastery hit (any hit, including crits — not on a miss), the attacker gains Advantage on their very next attack THIS ROUND against that exact same enemy — any attack type (melee, cleave, ranged), consumed on the next attack attempt regardless of hit/miss. Implemented as `player.gd._vex_adv_target: Enemy`, set both in `player.gd._bump_attack()`'s melee hit branch (Rapier) and `PlayerRanged.ranged_attack()`'s hit branch (Short Bow), checked/consumed as an ADV source in `_bump_attack()`, `_resolve_cleave_attack()`, and `PlayerRanged.ranged_attack()`. Cleared in `_on_turn_started()`'s `if not came_from_revert:` reset block, so it survives a `revert_to_waiting()` free-action chain (e.g. Rager) within the same round but clears at a real new round — see `_reverted_this_round` in `scripts/entities/CLAUDE.md`.
 - **Push** (Heavy Crossbow): on a ranged hit that doesn't kill the target, the enemy rolls `Enemy.resist_check(dc, true)` (CON-based) vs `dc = 8 + prof + DEX mod` — same DC convention as World Tree's Grip of the Forest/Branching Strike (see `scripts/entities/CLAUDE.md`). On a failed save the target is shoved exactly 1 tile directly away from the player via `DungeonFloor.resolve_push(enemy, direction)` (`scripts/world/dungeon_floor.gd`) — a dedicated resolver, **not** `force_move_entity()`, because it needs non-generic per-tile outcomes: WALL → 1d4 Bludgeoning damage, no movement; a trap tile → moves the enemy there and calls `trigger_trap()`; CHASM → the enemy is removed entirely (counts as a kill for exp), and if it was a boss its rolled loot item is appended to `GameState.pending_chasm_items` to appear on the next floor down (see "Ammo items" chasm handling below — same drain mechanism, reused as-is). Implemented in `PlayerRanged.ranged_attack()` (`scripts/entities/player_ranged.gd`), gated the same `weapon.weapon_mastery == "Push" and stats.knows_mastery("Push")` way as Cleave/Vex — live once the wielder knows that mastery via the Mastery Picker (`scripts/ui/mastery_picker.gd`).
 - **Graze** (Greatsword, Glaive): on a melee **miss** (including a nat-1 critical fail), the attack still deals damage equal to the ability modifier used for that attack roll (STR for both — neither weapon is Finesse, `min 0`) — a fully separate damage instance, not folded into the (nonexistent) hit damage of the same swing. Implemented in `player.gd._try_graze()`, called from the miss branch of `_bump_attack()` only (melee-only, mirrors Cleave's miss-path call site); logged as its own `[color=cyan]Graze:[/color]` chat line with its own `grz` tooltip meta (`TooltipFormatters.fmt_grz_tooltip()`). Gated the same `weapon.weapon_mastery == "Graze" and stats.knows_mastery("Graze")` way as the others — live once the wielder knows that mastery via the Mastery Picker (`scripts/ui/mastery_picker.gd`).
-- **Topple** (Maul): on a melee **hit**, the target rolls `Enemy.resist_check(dc, true)` (CON-based) vs `dc = 8 + prof + STR mod` — same DC convention as Push/Grip of the Forest/Branching Strike. On a failed save the enemy is set `prone_turns = 1` (`scripts/entities/enemy.gd`), which makes it skip its entire next turn (no movement, no attack) — checked at the very top of `Enemy.take_turn()`, before the `slowed_turns` check. Implemented in `player.gd._try_topple()`, called from the hit branch of `_bump_attack()` only (melee-only, right after the Branching Strike R3 push block). No damage is dealt, so there's no `[url=]` tooltip meta — just a plain colored log line (mirrors Push's "resists the shove" plain-text style for the same reason). Gated the same `weapon.weapon_mastery == "Topple" and stats.knows_mastery("Topple")` way as the others — live once the wielder knows that mastery via the Mastery Picker (`scripts/ui/mastery_picker.gd`).
+- **Topple** (Maul): on a melee **hit**, the target rolls `Enemy.resist_check(dc, true)` (CON-based) vs `dc = 8 + prof + STR mod` — same DC convention as Push/Grip of the Forest/Branching Strike. On a failed save the enemy is knocked **Prone** (`Enemy.apply_status("prone", 1)`, `scripts/entities/enemy.gd`) — the real 5e condition, not a turn-skip: melee attacks against it get ADV, ranged get DISADV, and it auto-stands at the top of its own next turn (consuming one point of movement) instead of losing the whole turn — see `scripts/entities/CLAUDE.md`'s "Conditions" section. Implemented in `player.gd._try_topple()`, called from the hit branch of `_bump_attack()` only (melee-only, right after the Branching Strike R3 push block). No damage is dealt, so there's no `[url=]` tooltip meta — just a plain colored log line (mirrors Push's "resists the shove" plain-text style for the same reason). Gated the same `weapon.weapon_mastery == "Topple" and stats.knows_mastery("Topple")` way as the others — live once the wielder knows that mastery via the Mastery Picker (`scripts/ui/mastery_picker.gd`).
 - **Sap** (Spear, thrown only): on a **thrown** hit, sets `Enemy.disadv_next_attack = true` — the same flag/consumption point World Tree's Grip of the Forest R3 already uses, so it fires as Disadvantage on the target's very next attack (whichever turn that happens to be next, i.e. its own next turn). Implemented in `PlayerThrowTool._throw_weapon()` (`scripts/entities/player_throw_tool.gd`), gated the same `weapon.weapon_mastery == "Sap" and stats.knows_mastery("Sap")` way as the others — live once the wielder knows that mastery via the Mastery Picker (`scripts/ui/mastery_picker.gd`). Sap only fires on a throw, never on a normal melee attack with the same Spear.
 - **Vex** is also carried by the **Handaxe** (see "Dual-wielding" below) — same trigger/consumption rules as Short Bow/Rapier, just a second weapon that can grant it.
 - **Nick** (Dagger): while dual-wielding two Light weapons (see "Dual-wielding" below) with either the Main Hand or the Off-hand weapon carrying Nick, the Off-hand swing is followed by one further attack this same turn — identical rules to the Off-hand swing itself (independent d20 roll, damage drops the ability modifier unless negative) — for a maximum of **3** attacks total (Main Hand, Off-hand, Nick bonus). Implemented as a second call to `player.gd._resolve_offhand_attack()` right after the first, from `_try_offhand_attack()`, gated the same `stats.knows_mastery("Nick")` way as the others — live once the wielder knows that mastery via the Mastery Picker (`scripts/ui/mastery_picker.gd`). Logged as its own `[color=cyan]Nick:[/color]` chat line (the shared `_resolve_offhand_attack(enemy, weapon, label)` function's `label` param defaults to `"Off-hand"` but is passed `"Nick"` for this second swing) so it's distinguishable from the ordinary Off-hand line even though the roll math is identical.
-- **Slow** (Longbow): on a ranged hit that doesn't kill the target, sets `Enemy.slowed_turns = maxi(enemy.slowed_turns, 1)` — the same field/mechanism as stepping into Mud/Water (`enemy.gd`'s difficult-terrain handling), which makes the enemy skip its entire next turn (checked at the top of `Enemy.take_turn()`, right after `prone_turns`). No save/resist roll, unlike Push/Topple — always applies on a non-lethal hit. Implemented in `PlayerRanged.ranged_attack()` right after the Push `elif` branch, gated the same `weapon.weapon_mastery == "Slow" and stats.knows_mastery("Slow")` way as the others — live once the wielder knows that mastery via the Mastery Picker (`scripts/ui/mastery_picker.gd`).
-- New masteries: add the glossary text to `KEYWORD_GLOSSARY` in both `hud.gd` and `inventory_overlay.gd` (key = mastery name lowercased) and implement the effect wherever it naturally hooks into combat (see Cleave for the melee-attack pattern, Vex for the per-turn-flag pattern, Push for the forced-movement pattern, Graze for the miss-damage pattern, Topple for the save-vs-status pattern, Sap for the thrown-attack pattern).
+- **Slow** (Longbow): on a ranged hit that doesn't kill the target, sets `Enemy.slowed_turns = maxi(enemy.slowed_turns, 1)` — the same field/mechanism as stepping into Mud/Water (`enemy.gd`'s difficult-terrain handling): shaves one step off the target's next movement budget, does NOT affect its attack (see `scripts/entities/CLAUDE.md`'s `Enemy.slowed_turns` entry). No save/resist roll, unlike Push/Topple — always applies on a non-lethal hit. Implemented in `PlayerRanged.ranged_attack()` right after the Push `elif` branch, gated the same `weapon.weapon_mastery == "Slow" and stats.knows_mastery("Slow")` way as the others — live once the wielder knows that mastery via the Mastery Picker (`scripts/ui/mastery_picker.gd`).
+- New masteries: add the glossary text to `WeaponTooltip.KEYWORD_GLOSSARY` (`scripts/items/weapon_tooltip.gd`, key = mastery name lowercased — shared by both `hud.gd` and `inventory_overlay.gd`, see "Unified weapon tooltip format" below) and implement the effect wherever it naturally hooks into combat (see Cleave for the melee-attack pattern, Vex for the per-turn-flag pattern, Push for the forced-movement pattern, Graze for the miss-damage pattern, Topple for the save-vs-status pattern, Sap for the thrown-attack pattern).
+
+## Unified weapon tooltip format
+
+Every `Item.Type.WEAPON` tooltip — the bottom quickbar (`hud.gd`) and the Inventory/bag overlay
+(`inventory_overlay.gd`) — is built by one shared function, `WeaponTooltip.build(item) -> String`
+(`scripts/items/weapon_tooltip.gd`, `WeaponTooltip extends RefCounted`, static-func-only), so the
+two callers can never drift apart again. Fixed line order, generated purely from `Item` fields —
+no per-weapon hand-written tooltip text:
+
+1. **`[b]Name[/b] (Mastery)`** — name is always bold, default color. If the weapon has a
+   `weapon_mastery`, it's appended in parens, colored **green** if `Stats.knows_mastery()` is true
+   (the wielder currently knows it) or **red** if not — the mastery text itself carries the color,
+   never the name. A weapon with no mastery at all (currently only the Torch) shows a bare name,
+   no parens.
+2. **Requirements** — one comma-joined line of everything the wielder might not meet, each
+   individually red if unmet / white (not colored red) if met: `weapon_category` (Simple/Martial
+   proficiency) and, for a Heavy weapon, `STR 13+` (melee) or `DEX 13+` (ranged). Both link to a
+   glossary popup like every other keyword. (Heavy's STR/DEX requirement lives ONLY here, not
+   also as a Properties tag — direct owner decision, since Requirements already names the exact
+   stat and threshold.)
+3. **Damage + type** — `1dN[+bonus] [color=gray]Type[/color]`, from `damage_die_max`/`bonus_damage`/
+   `damage_type`. (No current weapon has more than one damage-type instance; a future one would be
+   `+`-joined here — `build()`'s own comment marks where.)
+4. **Range** — `is_ranged` weapons only, bare `"normal/long"` (e.g. `"4/16"`), no extra text — see
+   "Ranged weapons (current)" below for what `long_range` actually is. Melee/thrown weapons never
+   get this line (their own reach/throw distance shows via the Reach/Thrown Properties tags
+   instead).
+5. **Properties** — alphabetical, one per line, each a hoverable keyword: `Ammo(<ammo type>)`,
+   `Finesse`, `Light`, `Reach`, `Thrown`, `Two-handed`, `Versatile (1dN two/one-handed)`. Ammo is
+   the one property with a value baked into the tag itself; Versatile keeps its own die/grip detail
+   since that's genuinely extra info with no other line to live on. Thrown is now a bare tag (no
+   inline range numbers — see "Thrown weapons" below for where that number actually lives).
+
+Everything below Properties (`item.description` as gray "additional info", `Uses: X/Y` durability,
+Attunement, the gold-price line — `WeaponTooltip.format_price(item)` (`"Xg Ysp"`/`"Xg"`/`"Ysp"`,
+`""` if fully unpriced), `#c9a227`, weapon-only for now, right-aligned just above the existing
+"Ctrl: inspect" hint) is appended by each caller AFTER `WeaponTooltip.build()` returns, unchanged
+from before — those lines are either generic across every item type or already positioned
+per-caller, not weapon-tooltip-specific.
+
+**Every weapon's `desc` field was trimmed** to remove information the structured format above now
+shows on its own (mastery effect text, category/Heavy requirement text, Versatile/Thrown mechanic
+text, durability text) — most melee/ranged weapons now have `desc = ""` (no "additional info" line
+at all). The one exception is the **Torch**, whose light/FOV/Fire-bonus/burnout mechanic isn't
+representable by any generic property or mastery, so it keeps a real (shortened) description.
+`WeaponTooltip.KEYWORD_GLOSSARY` (moved here from the two former per-file duplicate consts) is the
+single source of truth for every keyword popup body, including a new `"ammo"` entry.
+
+**Every weapon is now priced** (real 5e PHB gold/silver costs, per the owner): Greataxe 30gp,
+Rapier 25gp, Greatsword 50gp, Glaive 20gp, Maul 10gp, Quarterstaff 2sp, Spear 1gp, Handaxe 5gp,
+Dagger 2gp, Javelin 5sp, Torch 10gp, Short Bow 50gp, Heavy Crossbow 120gp, Longbow 50gp, Arrow/Bolt
+1gp per stack-of-6. Sub-gold prices use the new `Item.silver_value` field (see the field table
+above) via the `"silver"` `ITEM_POOL`/`debug_panel.ALL_ITEMS` pool key, mirroring `"gold"`.
+
+**Weapon tiers (design-only, not implemented)**: `docs/architecture/weapon-tiers-design.md` — now
+that every weapon has a real price, price doesn't track combat power 1:1 (a 5e price reflects
+crafting rarity, not this engine's own balance), and the Barbarian's guaranteed starting Greataxe
+(1d12, free Cleave) bypasses the `floor_min`/`floor_max` floor-gate every other weapon is subject
+to entirely. That doc proposes an explicit Tier 0-4 table re-deriving `fmin`/`fmax` from price +
+dice + mastery utility (concrete finding: Rapier is priced/statted like a Tier-3 weapon but gated
+like Tier-1), plus a real `ITEM_POOL` entry for the Greataxe — blocked on an unresolved
+class-balance question (what the Barbarian starts with instead), not on engineering effort.
 
 ## Thrown weapons
 `Item.is_thrown` + `range` (normal throw range) + `uses_max`/`uses_remaining` (currently only the Spear: Simple, Piercing, Versatile 1d6/1d8, `weapon_mastery="Sap"`, `range=3`, `uses_max=5`). Primed exactly like throwing a food item from the quickbar — **RMB a quickbar slot** (`hud.gd`'s `_on_slot_gui_input()` → `GameState.player_throw_primed`, no item-type filter) then **LMB a target tile** (`PlayerActions`/`player.gd` → `PlayerThrowTool.do_throw()`). `do_throw()` branches on `item.item_type == Item.Type.WEAPON and item.is_thrown` *before* the generic food/item-throw branch, dispatching to `PlayerThrowTool._throw_weapon(weapon, pos)`. Because priming only reads `GameState.player_quickbar` (not the equipment slots), a Spear must be sitting in the quickbar/bag to be thrown — an *equipped* copy in Main Hand is a separate `Item` instance and still attacks normally in melee.
 
-**Attack roll**: uses the wielder's **melee** attack modifier (STR, or `max(STR,DEX)` if `is_finesse`) and melee weapon-proficiency bonus — never a DEX/ranged stat, even though it's thrown. **Range**: `Item.range` is the normal range (full accuracy); beyond that but within the player's live FOV (`DungeonFloor.FOV_RADIUS`, `is_tile_visible()`-gated) the throw still works but rolls with Disadvantage — identical convention to ranged weapons' normal/long-range rule (`PlayerRanged.is_ranged_target_in_range()`/`ranged_shot_disadvantage()`), just off the melee modifier instead of DEX. Throwing at an empty tile (no `DungeonFloor.get_enemy_at(pos)`) auto-"misses" (no roll, no use lost) and just lands. The chat log line's roll breakdown uses tooltip meta kind `"thrhit"` (same param shape as melee `"hit"`/`"miss"` — `hud.gd._format_tooltip()`'s `kind` dispatch routes it to the existing `TooltipFormatters.fmt_hit_tooltip(params, false)`, no new formatter needed) and `"dmg"` for the damage breakdown (shared with every other attack type). The **Dagger** is Finesse as well as Thrown/Light — its thrown attack roll uses `max(STR, DEX)` like any other Finesse weapon, same as a normal melee swing with it would.
+**Attack roll**: uses the wielder's **melee** attack modifier (STR, or `max(STR,DEX)` if `is_finesse`) and melee weapon-proficiency bonus — never a DEX/ranged stat, even though it's thrown. **Range**: `Item.range` is the normal range (full accuracy); beyond that but within `Item.long_range` (a real fixed field — every current thrown weapon sets `long_range = 12`, i.e. `range × 4`, same ratio as the ranged-weapon table above) the throw still works but rolls with Disadvantage, and must be in current FOV (`is_tile_visible()`) — identical convention to ranged weapons' normal/long-range rule (`PlayerRanged.is_ranged_target_in_range()`/`ranged_shot_disadvantage()`), just off the melee modifier instead of DEX. Throwing at an empty tile (no `DungeonFloor.get_enemy_at(pos)`) auto-"misses" (no roll, no use lost) and just lands. The chat log line's roll breakdown uses tooltip meta kind `"thrhit"` (same param shape as melee `"hit"`/`"miss"` — `hud.gd._format_tooltip()`'s `kind` dispatch routes it to the existing `TooltipFormatters.fmt_hit_tooltip(params, false)`, no new formatter needed) and `"dmg"` for the damage breakdown (shared with every other attack type). The **Dagger** is Finesse as well as Thrown/Light — its thrown attack roll uses `max(STR, DEX)` like any other Finesse weapon, same as a normal melee swing with it would.
 
 **Landing** (mirrors "Ammo items" above, with the thrown weapon's own rules): no enemy on the target tile → lands on the ground there as a normal pickupable floor item (`DungeonFloor.place_item_on_floor()`), **no use lost**. A **miss** OR a **non-lethal hit** against an enemy → embeds in the enemy — `Enemy.embedded_items: Array[Item]` (`scripts/entities/enemy.gd`) — instead of landing anywhere (`-1` use, `-2` on a nat-1 fumble miss, `0` on a nat-20 crit hit); no pickup while the enemy is still alive (a miss used to drop it as an immediately-pickable floor item at the enemy's tile — changed to embed-until-death so it behaves like ranged ammo instead of being trivially recoverable mid-fight). Enemy.**die()** is overridden to drop every item in `embedded_items` at its `grid_pos` (100% chance each, not the ranged-ammo 50%) right before freeing — every death call site (`player.gd._finish_kill()`, `companion.gd`, the trap/chasm death sites in `dungeon_floor.gd`) already ends with `enemy.die()`, so this single override covers an embedded Spear being recovered whenever/however that enemy eventually dies, not just from the throw that embedded it. A hit that also kills the enemy in the same throw still embeds first, so the override drops it immediately at the same tile.
 
@@ -106,13 +169,24 @@ FOOD items (`Ration`, `Mystery Meat`, `Rotten Meat`, `Cooked Meat`) are no longe
 ---
 
 ## Ranged weapons (current)
-Every ranged weapon has just one range value — `Item.range`, the "normal" range at full accuracy. **Long range is NOT a per-weapon field**: every ranged weapon can additionally fire anywhere within the player's live FOV (`DungeonFloor.FOV_RADIUS`, gated by actual `is_tile_visible()` — not just distance, so shots around corners don't count), but a shot beyond `range` rolls with Disadvantage. See `PlayerRanged.is_ranged_target_in_range()` / `ranged_shot_disadvantage()` (`scripts/entities/player_ranged.gd`).
+Every ranged weapon has two range values — `Item.range` (normal, full accuracy) and `Item.long_range`
+(a real fixed field — **not** a per-weapon FOV lookup anymore). Beyond `range` but within
+`long_range`, a shot still works but rolls with Disadvantage; beyond `long_range` it can't be taken
+at all — the shot must also currently be in FOV (`is_tile_visible()`) to use that extended reach,
+so blind-firing through unexplored fog is still impossible. `long_range` is always `range × 4` for
+every ranged weapon in the current roster, matching 5e's own normal/long ratio (Short Bow 80/320 ft,
+Heavy Crossbow 100/400 ft, Longbow 150/600 ft are all exactly 4×). See
+`PlayerRanged.is_ranged_target_in_range()` / `ranged_shot_disadvantage()`
+(`scripts/entities/player_ranged.gd`) — a ranged item that doesn't set `long_range` (`0`, none
+exist today) falls back to the player's live FOV radius as its cap, the old behavior.
+**Thrown weapons** (Spear/Handaxe/Dagger/Torch, `Item.is_thrown`) use the exact same
+`range`/`long_range` mechanism for their own throw distance — see "Thrown weapons" below.
 
-| Item | Bonus | Normal range | Ammo | Stat | Category | Mastery |
-|---|---|---|---|---|---|---|
-| Short Bow | +0 | 4 | Arrow | DEX | Simple | Vex |
-| Heavy Crossbow | +0 | 4 | Bolt | DEX | Martial | Push |
-| Longbow | +0 | 5 | Arrow | DEX | Martial | Slow |
+| Item | Bonus | Normal range | Long range | Ammo | Stat | Category | Mastery |
+|---|---|---|---|---|---|---|---|
+| Short Bow | +0 | 4 | 16 | Arrow | DEX | Simple | Vex |
+| Heavy Crossbow | +0 | 4 | 16 | Bolt | DEX | Martial | Push |
+| Longbow | +0 | 5 | 20 | Arrow | DEX | Martial | Slow |
 
 Heavy Crossbow and Longbow are both also `is_heavy=true` (DEX 13+ or Disadvantage) and `is_two_handed=true` (cosmetic for a ranged weapon — see root `CLAUDE.md`'s note that `is_two_handed` doesn't block the ranged slot).
 
@@ -128,7 +202,7 @@ Heavy Crossbow and Longbow are both also `is_heavy=true` (DEX 13+ or Disadvantag
 - **Killing hit** → handled inside `player.gd._finish_kill(enemy, dropped_ammo)`: 50% chance the ammo drops at the corpse's tile (pickupable), 50% chance it's lost with the kill.
 
 ## Weapons (current, game-wide)
-The only weapons in the game are the Barbarian's starting **Greataxe** (melee, two-handed, given via `GameState._give_barbarian_starting_items()` — never spawns as floor loot), **Short Bow**, **Heavy Crossbow** above (formerly named "Crossbow" — renamed as the first of a small family of ranged weapons sharing the same normal-range/FOV-long-range rule; 1d10 Piercing, Martial, requires **Bolt** ammo), **Longbow** (ranged, floor loot, 1d8 Piercing, Martial, `is_heavy=true`, `is_two_handed=true`, `weapon_mastery="Slow"`, normal range 5 (one tile further than Short Bow/Heavy Crossbow's 4), requires **Arrow** ammo (shared with Short Bow); floor loot `fmin`/`fmax` 5–10, sprite `weapons/bow.png` — see "Weapon masteries" above for what Slow does), **Rapier** (melee, 1d8 Piercing, Martial, `is_finesse=true` — attack/damage use `max(STR, DEX)` — `weapon_mastery="Vex"`; not Light, not Two-handed; floor loot `fmin`/`fmax` 1–10, `weapon_arrow.png`-free sprite `weapon_duel_sword.png`), **Greatsword** (melee, floor loot, 2d6 Slashing — approximated as a single `randi_range(2, 12)` roll, same simplified single-die-roll convention every other weapon uses rather than summing two separate d6 rolls — Martial, `is_heavy=true`, `is_two_handed=true`, `weapon_mastery="Graze"`; floor loot `fmin`/`fmax` 3–10, sprite `weapon_knight_sword.png` — no dedicated greatsword sprite exists yet), **Glaive** (melee, floor loot, 1d10 Slashing, Martial, `is_heavy=true`, `is_two_handed=true`, `is_reach=true`, `weapon_mastery="Graze"`; floor loot `fmin`/`fmax` 3–10, sprite `weapon_spear.png` — no dedicated polearm sprite exists yet — the first and so far only weapon to set `is_reach`), **Maul** (melee, floor loot, 2d6 Bludgeoning, Martial, `is_heavy=true`, `is_two_handed=true`, `weapon_mastery="Topple"`; floor loot `fmin`/`fmax` 3–10, sprite `weapon_big_hammer.png` — the first weapon with Bludgeoning damage type), and **Quarterstaff** (melee, floor loot, Simple, Bludgeoning, `weapon_mastery="Topple"`; 1d6 one-handed / 1d8 two-handed — `is_versatile=true`, `damage_die_min/max=1/6`, `versatile_die_min/max=1/8` at rest; floor loot `fmin`/`fmax` 1–10, sprite `weapon_green_magic_staff.png` — no dedicated plain-staff sprite exists yet — the first Versatile weapon, see "Versatile weapons" below), **Spear** (melee, floor loot, Simple, Piercing, `weapon_mastery="Sap"`; also Versatile 1d6/1d8 like the Quarterstaff, plus `is_thrown=true`, `range=3` (normal throw range, FOV beyond that at Disadvantage), `uses_max=5`; floor loot `fmin`/`fmax` 1–10, sprite `weapon_spear.png` (shared with Glaive — no dedicated javelin/spear-only sprite exists yet) — the first Thrown weapon, see "Thrown weapons" below), **Handaxe** (melee, floor loot, Simple, Slashing, 1d6, `weapon_mastery="Vex"`, `is_light=true` — the first Light weapon; also `is_thrown=true`, `range=3`, `uses_max=5` like the Spear; floor loot `fmin`/`fmax` 1–10, sprite `weapon_throwing_axe.png` — dual-wielding a second Light weapon in the Off-hand fires a bonus attack each melee swing, see "Dual-wielding" below), **Dagger** (melee, floor loot, Simple, Piercing, 1d4, `is_finesse=true`, `is_light=true`, `weapon_mastery="Nick"`; also `is_thrown=true`, `range=3`, `uses_max=5` like the Handaxe; floor loot `fmin`/`fmax` 1–10, sprite `weapon_knife.png` — see "Weapon masteries" above for what Nick does), and **Torch** (melee, floor loot, Simple, Bludgeoning, 1d4, `is_torch=true`, **not** Light — equippable in Off-hand like a Shield without dual-wielding; also `is_thrown=true`, `range=3`, `uses_max=3` (fewer uses than the other thrown weapons); no mastery; floor loot `fmin`/`fmax` 1–10, sprite `weapon_torch.png` — no dedicated torch sprite exists yet, this is a placeholder path — see "Torch" above for the click-to-light mechanic, the thrown Fire bonus, and the passive light bubble). All physical melee weapons that used to spawn as floor loot (Rusty/Short/Regular/Knight/Golden/Lavish Sword) and **Throwing Daggers** have been removed from `DungeonFloorData.ITEM_POOL`, `debug_panel.ALL_ITEMS`, and boss loot (`dungeon_floor.gd drop_boss_loot()`, now potions-only). Their sprite assets live under `res://sprites/weapons/_unused/` (unused, not deleted) in case they're reintroduced later.
+The only weapons in the game are the Barbarian's starting **Greataxe** (melee, two-handed, given via `GameState._give_barbarian_starting_items()` — never spawns as floor loot), **Short Bow**, **Heavy Crossbow** above (formerly named "Crossbow" — renamed as the first of a small family of ranged weapons sharing the same normal-range/FOV-long-range rule; 1d10 Piercing, Martial, requires **Bolt** ammo), **Longbow** (ranged, floor loot, 1d8 Piercing, Martial, `is_heavy=true`, `is_two_handed=true`, `weapon_mastery="Slow"`, normal range 5 (one tile further than Short Bow/Heavy Crossbow's 4), requires **Arrow** ammo (shared with Short Bow); floor loot `fmin`/`fmax` 5–10, sprite `weapons/bow.png` — see "Weapon masteries" above for what Slow does), **Rapier** (melee, 1d8 Piercing, Martial, `is_finesse=true` — attack/damage use `max(STR, DEX)` — `weapon_mastery="Vex"`; not Light, not Two-handed; floor loot `fmin`/`fmax` 1–10, `weapon_arrow.png`-free sprite `weapon_duel_sword.png`), **Greatsword** (melee, floor loot, 2d6 Slashing — approximated as a single `randi_range(2, 12)` roll, same simplified single-die-roll convention every other weapon uses rather than summing two separate d6 rolls — Martial, `is_heavy=true`, `is_two_handed=true`, `weapon_mastery="Graze"`; floor loot `fmin`/`fmax` 3–10, sprite `weapon_knight_sword.png` — no dedicated greatsword sprite exists yet), **Glaive** (melee, floor loot, 1d10 Slashing, Martial, `is_heavy=true`, `is_two_handed=true`, `is_reach=true`, `weapon_mastery="Graze"`; floor loot `fmin`/`fmax` 3–10, sprite `weapon_spear.png` — no dedicated polearm sprite exists yet — the first and so far only weapon to set `is_reach`), **Maul** (melee, floor loot, 2d6 Bludgeoning, Martial, `is_heavy=true`, `is_two_handed=true`, `weapon_mastery="Topple"`; floor loot `fmin`/`fmax` 3–10, sprite `weapon_big_hammer.png` — the first weapon with Bludgeoning damage type), and **Quarterstaff** (melee, floor loot, Simple, Bludgeoning, `weapon_mastery="Topple"`; 1d6 one-handed / 1d8 two-handed — `is_versatile=true`, `damage_die_min/max=1/6`, `versatile_die_min/max=1/8` at rest; floor loot `fmin`/`fmax` 1–10, sprite `weapon_green_magic_staff.png` — no dedicated plain-staff sprite exists yet — the first Versatile weapon, see "Versatile weapons" below), **Spear** (melee, floor loot, Simple, Piercing, `weapon_mastery="Sap"`; also Versatile 1d6/1d8 like the Quarterstaff, plus `is_thrown=true`, `range=3` (normal throw range, FOV beyond that at Disadvantage), `uses_max=5`; floor loot `fmin`/`fmax` 1–10, sprite `weapon_spear.png` (shared with Glaive — no dedicated javelin/spear-only sprite exists yet) — the first Thrown weapon, see "Thrown weapons" below), **Handaxe** (melee, floor loot, Simple, Slashing, 1d6, `weapon_mastery="Vex"`, `is_light=true` — the first Light weapon; also `is_thrown=true`, `range=3`, `uses_max=5` like the Spear; floor loot `fmin`/`fmax` 1–10, sprite `weapon_throwing_axe.png` — dual-wielding a second Light weapon in the Off-hand fires a bonus attack each melee swing, see "Dual-wielding" below), **Dagger** (melee, floor loot, Simple, Piercing, 1d4, `is_finesse=true`, `is_light=true`, `weapon_mastery="Nick"`; also `is_thrown=true`, `range=3`, `uses_max=5` like the Handaxe; floor loot `fmin`/`fmax` 1–10, sprite `weapon_knife.png` — see "Weapon masteries" above for what Nick does), **Javelin** (melee, floor loot, Simple, Piercing, 1d6, `weapon_mastery="Slow"`; not Light, not Finesse, not Versatile — a plain Simple melee/thrown weapon; also `is_thrown=true`, `range=3`, `long_range=12`, `uses_max=5` like the other thrown weapons; floor loot `fmin`/`fmax` 1–10, sprite `weapon_spear.png` (shared with Spear/Glaive — no dedicated javelin sprite exists yet); 5sp — the cheapest weapon in the game. Distinct from the same-named `"thrown_weapon"` pool key on Orc Warrior/Ogre's own `ENEMY_POOL`/`BOSS_POOL` entries (`scripts/entities/CLAUDE.md`'s "Enemy D&D stat-block schema") — that's a separate enemy-attack mechanism building its own dropped `Item` from the enemy schema's own fields, unrelated to this `ITEM_POOL` entry, and the two happening to share a name is coincidental, not a shared code path), and **Torch** (melee, floor loot, Simple, Bludgeoning, 1d4, `is_torch=true`, **not** Light — equippable in Off-hand like a Shield without dual-wielding; also `is_thrown=true`, `range=3`, `uses_max=3` (fewer uses than the other thrown weapons); no mastery; floor loot `fmin`/`fmax` 1–10, sprite `weapon_torch.png` — no dedicated torch sprite exists yet, this is a placeholder path — see "Torch" above for the click-to-light mechanic, the thrown Fire bonus, and the passive light bubble). All physical melee weapons that used to spawn as floor loot (Rusty/Short/Regular/Knight/Golden/Lavish Sword) and **Throwing Daggers** have been removed from `DungeonFloorData.ITEM_POOL`, `debug_panel.ALL_ITEMS`, and boss loot (`dungeon_floor.gd drop_boss_loot()`, now potions-only). Their sprite assets live under `res://sprites/weapons/_unused/` (unused, not deleted) in case they're reintroduced later.
 
 ---
 
@@ -198,24 +272,45 @@ from scratch every `update_fog()` call, the same "compute live" philosophy as
 Unified rule across both the bottom quickbar (`hud.gd`) and the Inventory/bag overlay
 (`inventory_overlay.gd`): **LMB (click, not drag)** on an equippable item (`Item.Type.WEAPON` or
 `Item.Type.ARMOR` — covers plain weapons, Shields, and the Torch) always **equips** it; Equip is
-never offered anywhere else. **RMB** offers every *other* interaction the item has — Throw is
-universal (every non-Food item can be thrown), plus Light for an unlit/unburnt Torch, Read for a
-Scroll, Drink for a Potion, Prime for Thief Tools/Empty Bottle, and Learn for a Scroll whose spell a
-Wizard doesn't yet know (see "Learn (Wizard-only RMB scroll interaction)" below). `ItemInteractions.
-get_available_interactions(item) -> Array[String]` (`scripts/items/item_interactions.gd`,
-static-func-only helper) computes that list; if it comes back with exactly one entry, RMB performs
-it immediately (e.g. a Spear — a thrown weapon with no other action once Equip is excluded — just
-throws on RMB, no menu); with 2+ entries, RMB spawns `scripts/ui/item_interaction_menu.gd`'s
+never offered anywhere else. **RMB** offers every *other* interaction the item has — Throw and
+**Drop are universal** (every item can be thrown or dropped), plus Light for an unlit/unburnt
+Torch, Read for a Scroll, Drink for a Potion, Prime for Thief Tools/Empty Bottle, and Learn for a
+Scroll whose spell a Wizard doesn't yet know (see "Learn (Wizard-only RMB scroll interaction)"
+below). `ItemInteractions.get_available_interactions(item) -> Array[String]`
+(`scripts/items/item_interactions.gd`, static-func-only helper) computes that list — every item
+now returns at least `["throw", "drop"]`, so RMB always spawns `scripts/ui/item_interaction_menu.gd`'s
 `ItemInteractionMenu` (a small transient stacked-button popup, not a blocking modal — dismiss by
-clicking elsewhere or Esc) anchored near the slot/cursor, and picking an entry dispatches it.
-**Food goes through the same system as everything else** and always resolves to Throw: eating Food
-currently does nothing useful (see "Rations / long rest" below), and `get_available_interactions()`
-never adds any other entry for `Item.Type.FOOD`, so it always comes back as the single-entry
-`["throw"]` list — RMB on a Food item (quickbar via `hud.gd`, or deep in the bag via
-`inventory_overlay.gd`) throws it immediately, no menu, exactly like a Spear or any other
-single-interaction item; the overlay case also closes itself first (`needs_world_targeting("throw",
-item)` is always true) so the player lands straight in "aim at the world" mode instead of resolving
-behind a still-open panel.
+clicking elsewhere or Esc) anchored near the slot/cursor, and picking an entry dispatches it (the
+`interactions.size() == 1` auto-resolve branch in both dispatch call sites is now unreachable dead
+code kept only because a future item type could theoretically drop below 2 entries — harmless to
+leave). **Food goes through the same system as everything else**: eating Food currently does
+nothing useful (see "Rations / long rest" below), so a Food item's RMB menu is just `["throw",
+"drop"]` like any other non-specialized item, no hardcoded bypass.
+
+**Throwing a Potion shatters it**: unlike every other thrown item (which lands intact, pickable),
+`PlayerThrowTool.do_throw()` special-cases `Item.item_type == Item.Type.POTION` (checked before the
+trap-landing branch) to `_shatter_potion(item, pos)` instead of `place_item_on_floor()` — potions
+are glass, so a thrown one never survives the landing, on a trap tile or otherwise. Whatever
+occupies the target tile takes the effect: a heal-type potion (`heal_dice_count`/`heal_amount` set
+— currently Health Potion) heals that target for the same roll a player drinking it would get (no
+CON mod — that's specifically a player benefit from `use_item()`); a potion with no applicable
+effect (currently Strength Potion — its `str_bonus` has no enemy-side analogue) just shatters
+harmlessly. An empty target tile also just shatters, no effect, no item created — there's no floor
+loot before OR after a potion shatters (not even an Empty Bottle) — the whole `Item` (one unit off
+the stack, `GameState.consume_one()`) is simply gone. Extending this to a future harmful potion
+(e.g. Poison) just needs a new branch in `_shatter_potion()` reading that potion's own field(s),
+mirroring how `heal_dice_count`/`heal_amount` are read today — no new `Item` field required for
+"is this glass," since gating on `item_type == Item.Type.POTION` already covers every potion, present or future.
+
+**Drop** (`"drop"`, `GameState.drop_item(item)`): drops the item's entire stack (whatever
+`Item.quantity` currently is — e.g. a stack of 5 Healing Potions drops as one pile, not
+one-at-a-time) onto the player's own tile via `DungeonFloor.place_item_on_floor()` **fully intact
+— Drop never breaks a Potion**, unlike Throw above; removes it from
+the quickbar/bag (`remove_item()`), and costs 1 turn (`TurnManager.begin_player_action()`/
+`on_player_action_complete()`, unconditional — unlike the Shield's turn-cost, dropping is never a
+free action). Quickbar/bag items only — there is no Drop entry point for an equipped item (RMB on
+an equipment slot in `inventory_overlay.gd` still unequips instead, see `_right_click()`'s
+`source == "equipment"` branch); unequip first, then Drop from the bag.
 
 `ItemInteractions.needs_world_targeting(id, item) -> bool` flags which resolved interactions arm a
 follow-up world click (`"throw"` and `"prime"` always — Thief Tools/Empty Bottle both target an

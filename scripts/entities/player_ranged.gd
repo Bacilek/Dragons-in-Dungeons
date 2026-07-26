@@ -9,18 +9,18 @@ const ARROW_SPRITE := "res://sprites/weapons/weapon_arrow.png"
 var player: Player
 
 # Range gate for ranged weapons: within a weapon's "normal" range (weapon.range), the shot
-# rolls normally. Beyond normal range but within the player's live FOV (DungeonFloor.FOV_RADIUS,
-# gated by actual is_tile_visible — not just distance, so shots around corners don't count) the
-# shot is still possible but will roll with Disadvantage (see ranged_shot_disadvantage()).
-# "Long range" is intentionally NOT a per-weapon field — every ranged weapon shares this same
-# FOV-based long-range rule; only the normal range differs per weapon.
+# rolls normally. Beyond normal range but within the weapon's own fixed long_range (Item.
+# long_range — a real per-weapon field, see item.gd), the shot is still possible but will roll
+# with Disadvantage (see ranged_shot_disadvantage()) and must actually be in current FOV
+# (is_tile_visible — no blind long shots through unexplored fog). A ranged item that doesn't set
+# long_range (none exist today) falls back to the player's live FOV radius as its cap instead.
 func is_ranged_target_in_range(weapon: Item, target_pos: Vector2i) -> bool:
 	if weapon == null or player._dungeon_floor == null:
 		return false
 	var d: Vector2i = target_pos - player.grid_pos
 	var dist_sq: int = d.x * d.x + d.y * d.y
-	var fov_r: int = DungeonFloor.FOV_RADIUS
-	if dist_sq > fov_r * fov_r:
+	var long_r: int = weapon.long_range if weapon.long_range > 0 else DungeonFloor.FOV_RADIUS
+	if dist_sq > long_r * long_r:
 		return false
 	if dist_sq > weapon.range * weapon.range and not player._dungeon_floor.is_tile_visible(target_pos):
 		return false
@@ -118,6 +118,8 @@ func ranged_attack(enemy: Enemy) -> void:
 	if weapon != null and weapon.is_heavy and player.stats.dexterity < 13: disadv_count += 1
 	if ranged_shot_disadvantage(weapon, near_tile): disadv_count += 1
 	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
+	if player.stats.has_disadvantage_condition(): disadv_count += 1
+	if enemy.prone: disadv_count += 1  # Prone: ranged attacks against it have DISADV
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]
 	var die2: int = r["die2"]

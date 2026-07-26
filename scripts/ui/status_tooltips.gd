@@ -16,6 +16,10 @@ const TITLES: Dictionary = {
 	"tactician": "Tactician",
 	"psycho_adv": "Psycho",
 	"torch": "Torch Lit",
+	"poisoned_condition": "Poisoned",
+	"prone": "Prone",
+	"restrained": "Restrained",
+	"incapacitated": "Incapacitated",
 }
 
 static func get_text(id: String) -> String:
@@ -52,6 +56,14 @@ static func get_text(id: String) -> String:
 			var in_main_hand: bool = GameState.equipment.get("melee") as Item == t
 			var fire_note: String = " Attacks also deal +1d4 Fire damage." if in_main_hand else ""
 			return "Lit — burns out in %d more turns.\n+1 FOV.%s" % [t.torch_turns_remaining, fire_note]
+		"poisoned_condition":
+			return "Disadvantage on attack rolls and ability checks. Separate from the green Poisoned damage-over-time status."
+		"prone":
+			return "Melee attacks against you have Advantage, ranged attacks against you have Disadvantage. Can't move — any direction key stands up instead, costing the turn."
+		"restrained":
+			return "Speed 0. Attacks against you have Advantage, your own attacks have Disadvantage, and you have Disadvantage on DEX checks. Attempt a STR check each turn (movement key) to break free."
+		"incapacitated":
+			return "Can't take actions — movement, attacks, and ability/spell use are all blocked. Breaks Concentration immediately."
 		_:
 			return ""
 

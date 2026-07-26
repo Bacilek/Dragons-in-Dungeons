@@ -637,6 +637,7 @@ func _give_barbarian_starting_items() -> void:
 	axe.damage_type = "Slashing"
 	axe.weapon_mastery = "Cleave"
 	axe.weapon_category = "Martial"
+	axe.gold_value = 30
 	# Equip silently (no turn cost, no turn consumed — startup)
 	equipment["melee"] = axe
 	recalculate_stats()
@@ -677,9 +678,10 @@ func _give_ranger_starting_items() -> void:
 	bow.item_name = "Short Bow"
 	bow.item_type = Item.Type.WEAPON
 	bow.icon_path = "res://sprites/items/weapons/bow_arrow.png"
-	bow.description = "Ranged, DEX-based. Normal range 4, long range = FOV (DISADV). Requires Arrows."
+	bow.description = ""
 	bow.is_ranged = true
 	bow.range = 4
+	bow.long_range = 16
 	bow.damage_type = "Piercing"
 	bow.weapon_category = "Simple"
 	bow.damage_die_min = 1
@@ -716,7 +718,7 @@ func _build_ranger_dagger() -> Item:
 	dagger.item_name = "Dagger"
 	dagger.item_type = Item.Type.WEAPON
 	dagger.icon_path = "res://sprites/weapons/weapon_knife.png"
-	dagger.description = "Melee. Simple, Finesse, Light. Nick: while dual-wielding Light weapons, make one further attack this turn."
+	dagger.description = ""
 	dagger.damage_type = "Piercing"
 	dagger.weapon_category = "Simple"
 	dagger.damage_die_min = 1
@@ -726,6 +728,7 @@ func _build_ranger_dagger() -> Item:
 	dagger.is_light = true
 	dagger.is_thrown = true
 	dagger.range = 3
+	dagger.long_range = 12
 	dagger.uses_max = 5
 	dagger.uses_remaining = 5
 	return dagger
@@ -2063,6 +2066,16 @@ func consume_one(item: Item) -> void:
 	else:
 		remove_item(item)
 
+func drop_item(item: Item) -> void:
+	var df: Node = get_tree().get_first_node_in_group("dungeon_floor")
+	if df == null:
+		return
+	TurnManager.begin_player_action()
+	remove_item(item)
+	df.place_item_on_floor(player_grid_pos, item)
+	combat_message.emit("[color=gray]You drop [b]%s[/b].[/color]" % item.get_display_name())
+	TurnManager.on_player_action_complete()
+
 func remove_item(item: Item) -> void:
 	for i: int in QUICKBAR_SIZE:
 		if player_quickbar[i] == item:
@@ -2243,6 +2256,18 @@ func apply_player_status(type: String, turns: int) -> bool:
 		"burning":  player_stats.burning_turns = maxi(player_stats.burning_turns, turns)
 		"bleeding": player_stats.bleeding_turns = maxi(player_stats.bleeding_turns, turns)
 		"slowed":   player_stats.slowed_turns  = maxi(player_stats.slowed_turns, turns)
+		# Poisoned CONDITION (DISADV on attacks/checks — Stats.has_disadvantage_condition()) —
+		# deliberately separate from "poison" above (the pre-existing damage-over-time counter).
+		"poisoned_condition": player_stats.poisoned_condition_turns = maxi(player_stats.poisoned_condition_turns, turns)
+		# Prone — not turn-counted (see Stats.prone's own comment); "turns" is ignored, stays
+		# Prone until Player._try_move()'s stand-up redirect fires.
+		"prone": player_stats.prone = true
+		# Incapacitated — also breaks Concentration immediately (5e: "can't concentrate on
+		# anything" — same chokepoint the CON-check break path already uses).
+		"incapacitated":
+			player_stats.incapacitated_turns = maxi(player_stats.incapacitated_turns, turns)
+			if player_stats.concentration_spell_id != "":
+				end_concentration("You lose concentration!")
 	player_status_changed.emit()
 	return true
 
