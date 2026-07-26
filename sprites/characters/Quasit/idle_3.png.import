@@ -10,7 +10,7 @@ metadata={
 
 [deps]
 
-source_file="res://sprites/characters/Chort/idle_3.png"
+source_file="res://sprites/characters/Quasit/idle_3.png"
 dest_files=["res://.godot/imported/idle_3.png-36b60d9f0802a1d39f3daf668f7ef2b0.ctex"]
 
 [params]
