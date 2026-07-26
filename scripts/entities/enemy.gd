@@ -50,7 +50,18 @@ var _thrown_weapon_lodged_chance: float = 0.5  # per-enemy drop chance (pool "th
 var _invis_turns: int = 0                # Invisibility ability (Imp) — turns remaining; hides sprite (visible=false) + skipped by DungeonFloor.get_targetable_enemy_at()
 var _invis_cooldown_remaining: int = 0   # turns until Invisibility can be cast again (pool "invisibility" -> "cooldown")
 const SHAPE_SHIFT_FORMS: PackedStringArray = ["rat", "raven", "spider"]
-var _shifted_form: String = ""  # Shape Shift trait (Imp) — "" = true form; else one of SHAPE_SHIFT_FORMS. No dedicated sprites exist yet (mechanic-only: forces the shared small-critter speed, reverts on any damage taken)
+var _shifted_form: String = ""  # Shape Shift trait (Imp) — "" = true form; else one of SHAPE_SHIFT_FORMS. Reverts on any damage taken (take_typed_damage()), swaps the visible sprite via _refresh_shape_shift_visual().
+# Visual sprite config for shape-shifted forms (SHAPE_SHIFT_FORMS keys missing here — currently
+# just "raven", no art yet — fall back to leaving whatever sprite is already showing untouched,
+# i.e. the true Imp form stays visible; asset debt only, not a missing feature). "variants" empty
+# = single fixed look (Spider); non-empty = a Rat-style random cosmetic recolor, same convention as
+# Giant Rat's own "sprite_variants" pool key (picked with plain randi(), not Rng — cosmetic only).
+const SHAPE_SHIFT_SPRITES: Dictionary = {
+	"rat":    {"folder": "Rat", "variants": ["Gray", "Brown", "White"], "idle_frames": 6, "run_frames": 6,
+			   "frame_size": {"w": 64, "h": 64}, "scale": 0.35},
+	"spider": {"folder": "Spider", "variants": [], "idle_frames": 6, "run_frames": 6,
+			   "frame_size": {"w": 32, "h": 32}, "scale": 0.5},
+}
 
 # ── D&D stat-block schema (docs/architecture/enemy-stat-block-design.md) ──────────────────────
 var cr: float = 0.25                             # authored challenge rating, pool key "cr"
@@ -111,6 +122,7 @@ func _ready() -> void:
 	# Shape Shift (Imp): 50% chance to already be shape-shifted into a random form at spawn.
 	if _has_trait("shape_shift") and Rng.chance(0.5):
 		_shifted_form = SHAPE_SHIFT_FORMS[Rng.range_i(0, SHAPE_SHIFT_FORMS.size() - 1)]
+		_refresh_shape_shift_visual()
 
 func _apply_stats() -> void:
 	var f: int = GameState.current_floor
@@ -208,6 +220,7 @@ func take_typed_damage(amount: int, damage_type: String, is_crit: bool = false) 
 	# so this never fires from those) reverts a shape-shifted enemy to its true form immediately.
 	if actual > 0 and _shifted_form != "":
 		_shifted_form = ""
+		_refresh_shape_shift_visual()
 	return {"actual": actual, "mul": mul}
 
 # Single chokepoint for applying a condition to this enemy (§6) — a separate axis from typed
@@ -287,6 +300,7 @@ func _tick_shape_shift() -> void:
 	var unseen: bool = is_hidden_from_player() or not _dungeon_floor.is_tile_visible(grid_pos)
 	if unseen and Rng.chance(0.5):
 		_shifted_form = SHAPE_SHIFT_FORMS[Rng.range_i(0, SHAPE_SHIFT_FORMS.size() - 1)]
+		_refresh_shape_shift_visual()
 
 # Movement-speed scaling (§ "Ranged distance scaling convention"'s sibling rule — see
 # scripts/entities/CLAUDE.md's "Movement speed scaling" note): D&D's default speed is 30 ft = our
@@ -552,6 +566,38 @@ func _add_anim_sheet(frames: SpriteFrames, anim_name: String, sheet_path: String
 		atlas.atlas = tex
 		atlas.region = Rect2(i * fw, 0, fw, fh)
 		frames.add_frame(anim_name, atlas)
+
+# Shape Shift (Imp) visual swap — called whenever _shifted_form changes (spawn roll, mid-chase
+# roll in _tick_shape_shift(), or reverting to true form on taking damage). Reverting rebuilds the
+# true Imp sprite via the normal _setup_animations() path; shifting in swaps to the small-critter
+# sheet described by SHAPE_SHIFT_SPRITES (a no-op, keeping whatever's currently shown, for a form
+# with no entry — i.e. Raven today).
+func _refresh_shape_shift_visual() -> void:
+	if _shifted_form == "":
+		_setup_animations()
+		$AnimatedSprite2D.scale = Vector2.ONE  # undo any shifted-form scale (e.g. Spider's 0.5)
+		return
+	var cfg: Dictionary = SHAPE_SHIFT_SPRITES.get(_shifted_form, {})
+	if cfg.is_empty():
+		return
+	var folder: String = String(cfg.get("folder", ""))
+	var variants: Array = cfg.get("variants", [])
+	var sheet_path_fmt: String
+	if variants.is_empty():
+		sheet_path_fmt = "%s%s/%%s.png" % [SPRITES_PATH, folder]
+	else:
+		var variant: String = String(variants[randi() % variants.size()])
+		sheet_path_fmt = "%s%s/%s/%%s.png" % [SPRITES_PATH, folder, variant.to_lower()]
+	var frame_size: Dictionary = cfg.get("frame_size", {})
+	var fw: int = int(frame_size.get("w", 64))
+	var fh: int = int(frame_size.get("h", 64))
+	var frames := SpriteFrames.new()
+	_add_anim_sheet(frames, "idle", sheet_path_fmt % "idle", int(cfg.get("idle_frames", 6)), fw, fh, true,  8.0)
+	_add_anim_sheet(frames, "run",  sheet_path_fmt % "run",  int(cfg.get("run_frames", 6)),  fw, fh, false, 16.0)
+	$AnimatedSprite2D.sprite_frames = frames
+	$AnimatedSprite2D.offset = Vector2(0, -8)
+	$AnimatedSprite2D.scale = Vector2.ONE * float(cfg.get("scale", 1.0))
+	$AnimatedSprite2D.play("idle")
 
 func _setup_zzz() -> void:
 	_zzz_label = Label.new()
