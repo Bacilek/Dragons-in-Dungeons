@@ -94,10 +94,10 @@ var _popup_cha_label: Label = null
 var _ac_label: Label = null
 
 const CLASS_PORTRAIT: Dictionary = {
-	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/knight_m_idle_anim_f0.png",
-	Stats.CharacterClass.RANGER:    "res://sprites/characters/elf_m_idle_anim_f0.png",
-	Stats.CharacterClass.WIZARD:    "res://sprites/characters/wizzard_m_idle_anim_f0.png",
-	Stats.CharacterClass.MONK:      "res://sprites/characters/dwarf_m_idle_anim_f0.png",
+	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/Barbarian/knight_m_idle_anim_f0.png",
+	Stats.CharacterClass.RANGER:    "res://sprites/characters/Ranger/elf_m_idle_anim_f0.png",
+	Stats.CharacterClass.WIZARD:    "res://sprites/characters/Wizard/wizzard_m_idle_anim_f0.png",
+	Stats.CharacterClass.MONK:      "res://sprites/characters/Monk/dwarf_m_idle_anim_f0.png",
 }
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -460,7 +460,7 @@ func _on_status_tray_icon_hovered(id: String) -> void:
 	_qbar_tooltip.visible = true
 
 func _on_class_chosen(cls: Stats.CharacterClass) -> void:
-	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/knight_m_idle_anim_f0.png")
+	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/Barbarian/knight_m_idle_anim_f0.png")
 	portrait.texture_normal = load(path)
 	_update_hit_dice_label()
 

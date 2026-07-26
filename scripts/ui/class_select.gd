@@ -9,7 +9,7 @@ const CLASS_DATA: Array = [
 	{
 		"cls":    0,  # Stats.CharacterClass.BARBARIAN
 		"name":   "Barbarian",
-		"sprite": CHAR_PATH + "knight_m_idle_anim_f0.png",
+		"sprite": CHAR_PATH + "Barbarian/knight_m_idle_anim_f0.png",
 		"hd":     "d12 HD",
 		"hp":     "14 HP",
 		"desc":   "Raging warrior of\nimmense strength.\nHighest HP, hits hardest.",
@@ -18,7 +18,7 @@ const CLASS_DATA: Array = [
 	{
 		"cls":    1,  # Stats.CharacterClass.RANGER
 		"name":   "Ranger",
-		"sprite": CHAR_PATH + "elf_m_idle_anim_f0.png",
+		"sprite": CHAR_PATH + "Ranger/elf_m_idle_anim_f0.png",
 		"hd":     "d10 HD",
 		"hp":     "11 HP",
 		"desc":   "Swift hunter of the wilds.\nHigh DEX grants the\nbest Armor Class.",
@@ -27,7 +27,7 @@ const CLASS_DATA: Array = [
 	{
 		"cls":    2,  # Stats.CharacterClass.WIZARD
 		"name":   "Wizard",
-		"sprite": CHAR_PATH + "wizzard_m_idle_anim_f0.png",
+		"sprite": CHAR_PATH + "Wizard/wizzard_m_idle_anim_f0.png",
 		"hd":     "d6 HD",
 		"hp":     "6 HP",
 		"desc":   "Frail but brilliant.\nBenefits most from\nscrolls and wands.",
@@ -36,7 +36,7 @@ const CLASS_DATA: Array = [
 	{
 		"cls":    3,  # Stats.CharacterClass.MONK
 		"name":   "Monk",
-		"sprite": CHAR_PATH + "dwarf_m_idle_anim_f0.png",
+		"sprite": CHAR_PATH + "Monk/dwarf_m_idle_anim_f0.png",
 		"hd":     "d8 HD",
 		"hp":     "9 HP",
 		"desc":   "Master of martial arts.\nDEX unarmed strikes + bonus\naction fist every attack.",

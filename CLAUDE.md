@@ -188,7 +188,7 @@ Hunger has been removed. `Alt` opens a tabbed rest panel (`scripts/ui/short_rest
 
 ## Sprite Assets
 
-- `sprites/characters/` — `{character}_{anim}_f{n}.png`. Characters: `knight_m`, `elf_m`, `wizzard_m`, `dwarf_m`, `orc_warrior`, `masked_orc`, `big_demon`, `necromancer`, etc.
+- `sprites/characters/<Character>/` — one subfolder per in-game character identity (folder named after the class/enemy/boss identity, e.g. `Barbarian/`, `Ranger/`, `Wizard/`, `Monk/` for the 4 player classes, `BigDemon/`, `Necromancer/`, `Goblin/` (shared by Goblin Minion/Warrior/Archer), `OrcWarrior/`, `OrcShaman/`, `MaskedOrc/`, `Skeleton/`, `Zombie/`, `Wogol/`, `Imp/`, `Chort/`, `PumpkinDude/`, `Ogre/` for enemies/bosses), files inside each folder keeping the `{character}_{anim}_f{n}.png` convention (e.g. `Barbarian/knight_m_idle_anim_f0.png`, `BigDemon/big_demon_idle_anim_f0.png`) — `Enemy.SPRITE_FOLDER` (`scripts/entities/enemy.gd`) maps a pool `"sprite"` prefix to its folder when the folder name diverges from the prefix (e.g. `"skelet"` → `Skeleton/`). Unused/unreferenced sprite sets (art with no in-game consumer, e.g. the game's unused female character variants) live in `sprites/characters/_unused/` rather than being deleted.
 - `sprites/tiles/` — `floor_1.png`, `wall_mid.png` (**not** `wall_top_mid.png`), `floor_stairs.png`.
 - `sprites/objects/` — props, flasks, doors, etc.
 - `sprites/weapons/` — `weapon_anime_sword.png`, etc.

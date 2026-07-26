@@ -514,12 +514,13 @@ func _update_invisibility_visual() -> void:
 
 func _setup_animations() -> void:
 	var char_name: String
+	var char_folder: String
 	match GameState.player_stats.character_class:
-		Stats.CharacterClass.RANGER:  char_name = "elf_m"
-		Stats.CharacterClass.WIZARD:  char_name = "wizzard_m"
-		Stats.CharacterClass.MONK:    char_name = "dwarf_m"
-		_:                            char_name = "knight_m"   # BARBARIAN default
-	var base: String = KNIGHT_PATH + char_name + "_"
+		Stats.CharacterClass.RANGER:  char_name = "elf_m";    char_folder = "Ranger"
+		Stats.CharacterClass.WIZARD:  char_name = "wizzard_m"; char_folder = "Wizard"
+		Stats.CharacterClass.MONK:    char_name = "dwarf_m";  char_folder = "Monk"
+		_:                            char_name = "knight_m"; char_folder = "Barbarian"   # BARBARIAN default
+	var base: String = KNIGHT_PATH + char_folder + "/" + char_name + "_"
 	var frames := SpriteFrames.new()
 	_add_anim(frames, "idle", base + "idle_anim_f%d.png", 4, true,  8.0)
 	_add_anim(frames, "run",  base + "run_anim_f%d.png",  4, false, 16.0)

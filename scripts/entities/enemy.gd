@@ -6,6 +6,19 @@ enum Behavior { SLEEPING, STATIONARY, ROAMING, CHASING, SEARCHING }
 const SPRITES_PATH := "res://sprites/characters/"
 const FOV_RADIUS: int = 6
 
+# sprites/characters/ is organized one subfolder per in-game character identity (see
+# scripts/world/CLAUDE.md's "Sprite Assets" section) — a pool "sprite" prefix maps to its
+# containing folder here. Filenames keep their original prefix even where the folder name
+# differs (e.g. "skelet" files live under "Skeleton/") — only the folder was renamed to match
+# the enemy's display identity. Absent = prefix used verbatim as both folder and filename base
+# (the common case for every prefix that already matches its folder name 1:1).
+const SPRITE_FOLDER: Dictionary = {
+	"big_demon": "BigDemon", "necromancer": "Necromancer", "goblin": "Goblin",
+	"orc_warrior": "OrcWarrior", "orc_shaman": "OrcShaman", "masked_orc": "MaskedOrc",
+	"skelet": "Skeleton", "tiny_zombie": "Zombie", "wogol": "Wogol", "imp": "Imp",
+	"chort": "Chort", "pumpkin_dude": "PumpkinDude", "ogre": "Ogre",
+}
+
 var _dungeon_floor: Node
 var display_name: String = "Enemy"
 var exp_reward: int = 5
@@ -479,8 +492,10 @@ func _setup_animations() -> void:
 	var prefix: String = _type.get("sprite", "orc_warrior")
 	var idle_n: int    = _type.get("idle_frames", 4)
 	var run_n: int     = _type.get("run_frames", 4)
-	var idle_fmt: String = _type.get("idle_fmt", SPRITES_PATH + prefix + "_idle_anim_f%d.png")
-	var run_fmt: String  = _type.get("run_fmt",  SPRITES_PATH + prefix + "_run_anim_f%d.png")
+	var folder: String = SPRITE_FOLDER.get(prefix, prefix)
+	var folder_path: String = SPRITES_PATH + folder + "/"
+	var idle_fmt: String = _type.get("idle_fmt", folder_path + prefix + "_idle_anim_f%d.png")
+	var run_fmt: String  = _type.get("run_fmt",  folder_path + prefix + "_run_anim_f%d.png")
 	var frames := SpriteFrames.new()
 	_add_anim(frames, "idle", idle_fmt, idle_n, true,  8.0)
 	_add_anim(frames, "run",  run_fmt,  run_n, false, 16.0)
