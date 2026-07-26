@@ -57,20 +57,30 @@ func do_throw(pos: Vector2i) -> void:
 	if player._dungeon_floor.has_door_at(pos) and not player._dungeon_floor.is_door_open(pos):
 		player._dungeon_floor.open_door(pos)
 	var trap: Dictionary = player._dungeon_floor.get_trap_at(pos)
-	var is_fire: bool = not trap.is_empty() and trap.get("name", "") == "Fire Trap" and trap.get("revealed", false)
+	var is_fire: bool = not trap.is_empty() and trap.get("name", "") == "Fire Trap"
 	if is_fire and item.item_name == "Rotten Meat":
 		GameState.consume_one(item)
 		var cooked: Item = player._dungeon_floor.cook_rotten_meat(pos)
 		player._dungeon_floor.place_item_on_floor(pos, cooked)
 		GameState.game_log("[color=orange]You throw the meat into the fire — it sizzles and cooks! [b]Cooked Meat[/b] landed where the trap was.[/color]")
+	elif not trap.is_empty():
+		var trap_name: String = trap.get("name", "trap")
+		var land_pos: Vector2i = player._dungeon_floor.throw_item_onto_trap(pos, item)
+		GameState.consume_one(item)
+		if land_pos == Vector2i(-1, -1):
+			GameState.game_log("[color=orange]You throw [b]%s[/b] onto the %s — it catches fire and burns to ash![/color]" % [item.item_name, trap_name])
+		else:
+			var dropped: Item = Item.from_dict(item.to_dict())
+			dropped.quantity = 1
+			player._dungeon_floor.place_item_on_floor(land_pos, dropped)
+			if trap_name == "Pit Spikes":
+				GameState.game_log("[color=gray]You throw [b]%s[/b].[/color]" % dropped.item_name)
+			elif land_pos != pos:
+				GameState.game_log("[color=gray]You throw [b]%s[/b] — the trap shoves it aside as it lands.[/color]" % dropped.item_name)
+			else:
+				GameState.game_log("[color=gray]You throw [b]%s[/b] — it triggers the trap![/color]" % dropped.item_name)
 	else:
-		var dropped := Item.new()
-		dropped.item_name = item.item_name
-		dropped.item_type = item.item_type
-		dropped.heal_amount = item.heal_amount
-		dropped.food_value = item.food_value
-		dropped.icon_path = item.icon_path
-		dropped.description = item.description
+		var dropped: Item = Item.from_dict(item.to_dict())
 		dropped.quantity = 1
 		GameState.consume_one(item)
 		player._dungeon_floor.place_item_on_floor(pos, dropped)
@@ -174,7 +184,14 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var long_throw: bool = not in_normal_range
 
 	var enemy: Enemy = player._dungeon_floor.get_targetable_enemy_at(pos)
+	# Captured BEFORE on_disturbed() wakes the enemy — both has_advantage() and the melee-range
+	# DISADV exemption below read pre-attack behavior/door_ambush state, which on_disturbed()
+	# immediately mutates away.
+	var was_surprised: bool = false
+	var target_was_unaware: bool = false
 	if enemy != null:
+		was_surprised = player._vfx.has_advantage(enemy)
+		target_was_unaware = enemy.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
 		enemy.on_disturbed(player.grid_pos)
 	var target_world_pos: Vector2 = enemy.position if enemy != null else Vector2(pos.x * 16 + 8, pos.y * 16 + 8)
 	player._ranged.show_projectile(target_world_pos, weapon)
@@ -194,13 +211,17 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
 	adv_count += player._ranger_talents.consume_bloodhound_fresh_adv(enemy)
 	var disadv_count: int = 0
-	if player._vfx.has_advantage(enemy): adv_count += 1
+	if was_surprised: adv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	if long_throw: disadv_count += 1
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	# Same convention as ranged weapons: throwing at an adjacent target (Chebyshev 1) is
 	# awkward at that range, so it rolls with Disadvantage too (PlayerRanged.ranged_attack()).
-	if maxi(absi(d.x), absi(d.y)) <= 1: disadv_count += 1
+	# EXCEPT against an unaware target (SLEEPING/STATIONARY/ROAMING) — 5e RAW exempts an
+	# incapacitated nearby creature from this "distracted by a hostile at melee range" penalty,
+	# and a sleeping/unaware enemy is the closest equivalent this engine has; without this
+	# exemption the surprise-attack Advantage from has_advantage() always cancels right back out.
+	if maxi(absi(d.x), absi(d.y)) <= 1 and not target_was_unaware: disadv_count += 1
 	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]

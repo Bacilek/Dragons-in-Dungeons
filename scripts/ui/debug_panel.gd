@@ -765,6 +765,7 @@ func _on_give_item(d: Dictionary) -> void:
 	item.ammo_item_name     = d.get("ammo", "")
 	item.taught_spell_id    = d.get("taught_spell", "")
 	item.scroll_spell_id    = d.get("scroll_spell", "")
+	item.is_flammable       = item.item_type == Item.Type.SCROLL
 	item.description = d["desc"]
 	match d["src"]:
 		"weapons": item.icon_path = WEAPONS_PATH + d["icon"]

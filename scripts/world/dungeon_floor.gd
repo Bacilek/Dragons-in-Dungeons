@@ -1405,6 +1405,50 @@ func disarm_trap(pos: Vector2i) -> void:
 		tw.tween_callback(sprite_node.queue_free)
 	_traps.erase(pos)
 
+# Throwing ANY item onto a trap tile activates it — reveals it and, for Fire/Bear Traps, consumes
+# its single use exactly like an entity triggering it — but nobody rolls a dodge check and no
+# damage/status is ever applied (an inanimate item can't dodge or bleed). A Piston trap shoves the
+# item exactly as far as it would shove an entity (same 2-tile/wall-stop rule as
+# force_move_entity(), reimplemented here without a tween since there's no Entity to move). Pit
+# Spikes are inert against a thrown item — it just lands on top, no reveal, no trigger. Returns the
+# tile the item should actually land on (`pos` unless a Piston shoved it), or the
+# Vector2i(-1, -1) sentinel if a flammable item (Item.is_flammable) landed on a Fire Trap and burned
+# to ash instead of landing anywhere. No-ops (returns `pos`) if there's no trap at `pos` at all.
+func throw_item_onto_trap(pos: Vector2i, item: Item) -> Vector2i:
+	if not _traps.has(pos):
+		return pos
+	var trap: Dictionary = _traps[pos]
+	var trap_name: String = trap.get("name", "")
+	if trap_name == "Pit Spikes":
+		return pos
+	var sprite_node: Sprite2D = trap.get("sprite_node") as Sprite2D
+	trap["revealed"] = true
+	if is_instance_valid(sprite_node):
+		sprite_node.modulate = Color(1.0, 1.0, 1.0, 1.0)
+	if trap.get("is_push", false):
+		AudioManager.play("trap_piston")
+		var current: Vector2i = pos
+		var dir: Vector2i = trap["push_dir"]
+		for _i: int in 2:
+			var nxt: Vector2i = current + dir
+			if not _data.is_walkable(nxt):
+				break
+			current = nxt
+		_play_trap_animation(sprite_node)
+		return current
+	if not trap.get("triggered", false):
+		trap["triggered"] = true
+		if is_instance_valid(sprite_node):
+			sprite_node.modulate = Color(0.25, 0.25, 0.25, 0.85)
+		_play_trap_animation(sprite_node)
+	if trap_name == "Fire Trap":
+		AudioManager.play("trap_fire")
+		if item.is_flammable:
+			return Vector2i(-1, -1)
+	elif trap_name == "Bear Trap":
+		AudioManager.play("trap_bear")
+	return pos
+
 
 # Multiple items can occupy the same tile — they stack in _floor_items[pos] (Array[Item],
 # oldest first). Only the newest (last) item's sprite is shown, so a spot where several
@@ -1781,32 +1825,58 @@ func close_door(pos: Vector2i) -> void:
 
 # ── Barrels (flammable obstacle prop) ──────────────────────────────────────────
 
-# 1-3 per floor, scattered on plain FLOOR tiles like gold piles — a solid obstacle (blocks
-# movement, see is_walkable()/is_walkable_for_enemy()/is_walkable_for_companion() above) until
-# ignited (see "Flammable props" below), at which point it burns for FLAMMABLE_BURN_TURNS turns
-# and disappears, matching Shattered Pixel Dungeon's Sewer-level barrel (a flammable terrain
-# object that resolves to an empty tile once its fire timer runs out).
+# 1-3 per floor, confined to room interiors (never corridors, so a barrel can never be the only
+# thing blocking a 1-wide passage) — a solid obstacle (blocks movement, see
+# is_walkable()/is_walkable_for_enemy()/is_walkable_for_companion() above) until ignited (see
+# "Flammable props" below), at which point it burns for FLAMMABLE_BURN_TURNS turns and disappears,
+# matching Shattered Pixel Dungeon's Sewer-level barrel (a flammable terrain object that resolves
+# to an empty tile once its fire timer runs out). Candidates are gathered per `_data.rooms` rect
+# (corridors are carved outside every room rect, so restricting to rects alone already excludes
+# them) and corner tiles of the rect are preferred — clusters of 2-3 in one room's corners are
+# fine, since gameplay-visible clumping was the actual ask, only corridor-blocking wasn't wanted.
+# Each candidate is placement-checked with `_bfs_reachable()` (same connectivity guard
+# `_spawn_locked_doors()` uses) against every barrel already placed this floor, so a barrel is
+# never allowed to be the move that disconnects player_start from stairs_pos.
 func _spawn_barrels() -> void:
-	var candidates: Array[Vector2i] = []
-	for y: int in _data.height:
-		for x: int in _data.width:
-			var pos := Vector2i(x, y)
-			if _data.get_tile(x, y) != DungeonData.TileType.FLOOR:
-				continue
-			if pos == _data.player_start or pos == _data.stairs_pos:
-				continue
-			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos):
-				continue
-			candidates.append(pos)
-	if candidates.is_empty():
+	var corner_candidates: Array[Vector2i] = []
+	var room_candidates: Array[Vector2i] = []
+	for room: Rect2i in _data.rooms:
+		var left: int = room.position.x
+		var right: int = room.position.x + room.size.x - 1
+		var top: int = room.position.y
+		var bottom: int = room.position.y + room.size.y - 1
+		for y: int in range(top, bottom + 1):
+			for x: int in range(left, right + 1):
+				var pos := Vector2i(x, y)
+				if _data.get_tile(x, y) != DungeonData.TileType.FLOOR:
+					continue
+				if pos == _data.player_start or pos == _data.stairs_pos:
+					continue
+				if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos):
+					continue
+				if (x == left or x == right) and (y == top or y == bottom):
+					corner_candidates.append(pos)
+				else:
+					room_candidates.append(pos)
+	if corner_candidates.is_empty() and room_candidates.is_empty():
 		return
-	RngUtil.shuffle(candidates, _pop_rng)
-	var count: int = mini(_pop_rng.randi_range(BARREL_COUNT_MIN, BARREL_COUNT_MAX), candidates.size())
+	RngUtil.shuffle(corner_candidates, _pop_rng)
+	RngUtil.shuffle(room_candidates, _pop_rng)
+	var ordered: Array[Vector2i] = corner_candidates + room_candidates
+	var target: int = _pop_rng.randi_range(BARREL_COUNT_MIN, BARREL_COUNT_MAX)
 	var tex: Texture2D = null
 	if ResourceLoader.exists(BARREL_TEX_PATH):
 		tex = load(BARREL_TEX_PATH)
-	for i: int in count:
-		_place_barrel(candidates[i], tex)
+	var placed: Array[Vector2i] = []
+	for pos: Vector2i in ordered:
+		if placed.size() >= target:
+			break
+		var exclude: Array[Vector2i] = placed.duplicate()
+		exclude.append(pos)
+		if not _bfs_reachable(_data.player_start, _data.stairs_pos, exclude):
+			continue
+		_place_barrel(pos, tex)
+		placed.append(pos)
 
 func _place_barrel(pos: Vector2i, tex: Texture2D) -> void:
 	var sprite := Sprite2D.new()
@@ -1965,6 +2035,7 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.quantity = d.get("qty", 1)
 	item.taught_spell_id = d.get("taught_spell", "")
 	item.scroll_spell_id = d.get("scroll_spell", "")
+	item.is_flammable = item.item_type == Item.Type.SCROLL
 	item.floor_min = d["fmin"]
 	item.floor_max = d["fmax"]
 	item.description = d["desc"]

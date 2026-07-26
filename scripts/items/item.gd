@@ -132,6 +132,13 @@ enum ArmorCategory { NONE, LIGHT, MEDIUM, HEAVY }
 # apply, exactly like before this system existed — every pre-existing item is unaffected.
 @export var requires_attunement: bool = false
 @export var is_attuned: bool = false
+# Whether this item catches fire when it lands on/is thrown onto a Fire Trap tile (see
+# PlayerThrowTool.do_throw()/DungeonFloor.throw_item_onto_trap()) — burns to ash instead of
+# landing as a pickupable floor item. Every SCROLL item is flammable (set generically in
+# DungeonFloor._build_floor_item()/debug_panel._on_give_item() off item_type, not a per-pool-entry
+# key). Rotten Meat is a special case handled separately (cooks into Cooked Meat) regardless of
+# this flag. Default false = every other item is unaffected, lands normally even on a Fire Trap.
+@export var is_flammable: bool = false
 
 # Returns one durability value per unit in the stack (size == quantity). Falls back to repeating
 # `uses_remaining` when stack_uses hasn't been materialized (fresh item, or every unit identical).
@@ -205,6 +212,7 @@ func to_dict() -> Dictionary:
 		"scroll_spell_id": scroll_spell_id,
 		"requires_attunement": requires_attunement,
 		"is_attuned": is_attuned,
+		"is_flammable": is_flammable,
 	}
 
 static func from_dict(d: Dictionary) -> Item:
@@ -264,4 +272,5 @@ static func from_dict(d: Dictionary) -> Item:
 	it.scroll_spell_id = String(d.get("scroll_spell_id", ""))
 	it.requires_attunement = bool(d.get("requires_attunement", false))
 	it.is_attuned = bool(d.get("is_attuned", false))
+	it.is_flammable = bool(d.get("is_flammable", false))
 	return it

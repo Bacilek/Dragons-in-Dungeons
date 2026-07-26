@@ -105,6 +105,20 @@ dungeon_floor.search_around(pos) -> int   # returns number of traps revealed
 
 Piston: `search_around` only detects from the `-push_dir` side.
 
+**Throwing an item onto a trap** (`DungeonFloor.throw_item_onto_trap(pos, item) -> Vector2i`,
+called from `PlayerThrowTool.do_throw()` whenever the target tile has ANY trap, before the generic
+"drop it on the ground" path): activates the trap — reveals it and, for Fire/Bear, consumes its
+single use exactly like an entity triggering it — but there's no dodge check and no damage/status
+applied (an item can't dodge or bleed). Piston shoves the item exactly as far as it would shove an
+entity (same 2-tile/wall-stop rule as `force_move_entity()`, reimplemented inline without a tween
+since there's no `Entity` to move) — the returned landing tile differs from `pos` in this case.
+Pit Spikes are inert against a thrown item (no reveal, no trigger — it just lands on top). A
+flammable item (`Item.is_flammable` — every Scroll, set generically in `_build_floor_item()`/
+`debug_panel._on_give_item()` off `item_type`) landing on a Fire Trap burns to ash instead of
+landing anywhere (`Vector2i(-1, -1)` sentinel return) — Rotten Meat is a separate, pre-existing
+special case (`cook_rotten_meat()`, checked first in `do_throw()`) that still cooks into Cooked
+Meat regardless of this flag. See `scripts/items/CLAUDE.md`'s `Item.is_flammable` entry.
+
 ## Forced movement (`force_move_entity`)
 ```gdscript
 dungeon_floor.force_move_entity(entity: Node2D, direction: Vector2i, max_distance: int, deal_damage: bool = false, trap_sprite: Sprite2D = null) -> int
@@ -117,11 +131,18 @@ Generalized from the old piston-trap-only `_push_entity`. Walks `entity` step-by
 
 ## Barrels + flammable props (`_barrels: Dictionary[Vector2i, Dictionary]`)
 Value keys: `sprite: Sprite2D, burning: bool, burn_turns: int`. A solid obstacle prop (1-3 per
-floor, `_spawn_barrels()`, scattered on plain FLOOR tiles like gold piles) that blocks movement —
-`is_walkable()`/`is_walkable_for_enemy()`/`is_walkable_for_companion()` all treat an unburnt
-barrel tile as blocked — until ignited, at which point it burns down and disappears. Modeled on
-Shattered Pixel Dungeon's Sewer-level Barrel (a `Terrain.FLAMABLE` tile, not its own entity/class,
-that resolves to an empty tile once its fire timer runs out).
+floor, `_spawn_barrels()`) that blocks movement — `is_walkable()`/`is_walkable_for_enemy()`/
+`is_walkable_for_companion()` all treat an unburnt barrel tile as blocked — until ignited, at
+which point it burns down and disappears. Modeled on Shattered Pixel Dungeon's Sewer-level Barrel
+(a `Terrain.FLAMABLE` tile, not its own entity/class, that resolves to an empty tile once its fire
+timer runs out). **Placement is confined to room interiors** — candidates are gathered per
+`_data.rooms` rect (corridors are carved outside every room rect, so this alone keeps barrels out
+of them), with rect-corner tiles preferred over other room floor tiles (`RngUtil.shuffle`'d
+separately, corners first) so clustering 2-3 in one room's corners is the common case. Every
+candidate is placement-checked with `_bfs_reachable(player_start, stairs_pos, exclude)` (same
+connectivity guard `_spawn_locked_doors()` uses, `exclude` growing with each barrel already placed
+this floor) and skipped if placing it there would disconnect player_start from stairs_pos — a
+barrel can never be the thing that blocks the only path.
 
 `dungeon_floor.has_barrel_at(pos) -> bool`
 
@@ -253,7 +274,7 @@ on_player_reached_stairs() → GameState.advance_floor() → _load_floor()
 Drinking any POTION adds an `Empty Bottle` (TOOL type, `sprites/items/Materials/BottleSmall.png`) to inventory via `potion_drunk` signal → `GameState.add_item()`. **Fill is manual**: use the bottle from quickbar/inventory (enters tool mode via `player_tool_primed`), then LMB or RMB on an adjacent WATER tile → `Bottle of Water` (TOOL, BottleMedium sprite); adjacent MUD → `Bottle of Mud` (TOOL, BottleSmall sprite). Neither is FOOD-typed or contributes to long rest food value. Fill costs 1 turn. `PlayerThrowTool.try_fill_bottle(bottle, target)` (`scripts/entities/player_throw_tool.gd`) checks adjacency and tile type. **Nat-1 roll on fill**: rolling 1 on a d20 shatters the bottle (consumed, no fill). LMB tool routing checks item name before dispatching: "Empty Bottle" → `_throw_tool.try_fill_bottle()`; other tools → `_actions.interact_action()` (`scripts/entities/player_actions.gd`).
 
 ## Throw mechanic
-Right-click food item in HUD quickbar → `GameState.player_throw_primed.emit(item)` → player enters throw mode. Left-click target tile → `_do_throw(pos)`. Rotten Meat + Fire Trap = Cooked Meat (see "Floor items" above). Esc cancels.
+Right-click food item in HUD quickbar → `GameState.player_throw_primed.emit(item)` → player enters throw mode. Left-click target tile → `_do_throw(pos)`. Rotten Meat + Fire Trap = Cooked Meat (see "Floor items" above). Throwing any other item onto a trap tile activates it instead of just dropping — see "Traps" above's `throw_item_onto_trap()`. Esc cancels.
 
 ## Boss floors
 `DungeonData.boss_room: Rect2i` set on floors divisible by 5. `_spawn_boss()` spawns from `DungeonFloorData.BOSS_POOL`. Floor 5: Big Demon (hp=80). Floor 10: Necromancer (hp=120). Boss dies → `drop_boss_loot(pos)`. `enemy.is_boss: bool`. `ENEMY_POOL`/`BOSS_POOL` entries carry stable `"enemy_id"`/`"boss_id"` keys (see `scripts/entities/CLAUDE.md`'s "Enemy/boss pool ids") and may carry an `"attack_profile"` key for ranged enemies (see that file's "Attack profiles" section) — both are read generically by `Enemy`, no `dungeon_floor.gd` changes needed.
