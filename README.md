@@ -45,6 +45,7 @@ Open `project.godot` in **Godot 4.6 (Mono build)** and press **F5**. No CLI buil
 - Characters: `sprites/characters/<Character>/` — one subfolder per in-game character identity (e.g. `Barbarian/idle_1.png`, `BigDemon/idle_1.png`), simple `{idle|run|hit}_{n}.png` (1-indexed, no character prefix) within each folder. Unused sprite sets live in `sprites/characters/_unused/`.  
 - Tiles: `sprites/tiles/` — `floor/1.png`, `wall/mid.png`, `floor_stairs.png`, `hole.png`, `water_rock_dirt.png`, `grass.png`; unused variants in `sprites/tiles/_unused/`
 - Objects: `sprites/objects/` — `crate.png`, `doors/`; unused props (flasks, chests, coins, etc.) in `sprites/objects/_unused/`
-- Weapons: `sprites/weapons/`
+- Weapons: `sprites/weapons/`; unused weapon sprites in `sprites/weapons/_unused/`
+- Traps: `sprites/traps/` — `bear_trap.png`, `fire_trap.png`, `pit_trap_spikes.png`, `push_trap/front.png`; unused in `sprites/traps/_unused/`
 
 All sprites from [0x72 DungeonTilesetII](https://0x72.itch.io/dungeontileset-ii) (CC0, 16×16 px).

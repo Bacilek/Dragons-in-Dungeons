@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dvi0srvkoi0nl"
-path="res://.godot/imported/Push_Trap_Right.png-b3a890ff3935a80a08e75b835f477c4f.ctex"
+uid="uid://ckqa08qvbcact"
+path="res://.godot/imported/Spike Trap.png-268a69b9bf51e18b1e22753c5f6721f1.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/traps/Push_Trap_Right.png"
-dest_files=["res://.godot/imported/Push_Trap_Right.png-b3a890ff3935a80a08e75b835f477c4f.ctex"]
+source_file="res://sprites/traps/_unused/spike_trap.png"
+dest_files=["res://.godot/imported/Spike Trap.png-268a69b9bf51e18b1e22753c5f6721f1.ctex"]
 
 [params]
 

@@ -10,7 +10,7 @@ metadata={
 
 [deps]
 
-source_file="res://sprites/weapons/weapon_red_gem_sword.png"
+source_file="res://sprites/weapons/_unused/weapon_red_gem_sword.png"
 dest_files=["res://.godot/imported/weapon_red_gem_sword.png-5ef9bb6c1f6302ce4a45d579212b73cb.ctex"]
 
 [params]

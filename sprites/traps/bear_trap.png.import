@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ke1fi0ngy25w"
-path="res://.godot/imported/weapon_waraxe.png-31dd0d9628969cbb3822b7bebf9e8369.ctex"
+uid="uid://bnt6iaouxmh3f"
+path="res://.godot/imported/Bear_Trap.png-38f7ac926522923e84d3ec54dd6965fc.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/weapons/weapon_waraxe.png"
-dest_files=["res://.godot/imported/weapon_waraxe.png-31dd0d9628969cbb3822b7bebf9e8369.ctex"]
+source_file="res://sprites/traps/bear_trap.png"
+dest_files=["res://.godot/imported/Bear_Trap.png-38f7ac926522923e84d3ec54dd6965fc.ctex"]
 
 [params]
 

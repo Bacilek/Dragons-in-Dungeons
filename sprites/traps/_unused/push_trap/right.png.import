@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ce8hhgchvyrlt"
-path="res://.godot/imported/Pit_Trap_Spikes.png-6b7064dca45c974238d3a49d0fb94f97.ctex"
+uid="uid://dvi0srvkoi0nl"
+path="res://.godot/imported/Push_Trap_Right.png-b3a890ff3935a80a08e75b835f477c4f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/traps/Pit_Trap_Spikes.png"
-dest_files=["res://.godot/imported/Pit_Trap_Spikes.png-6b7064dca45c974238d3a49d0fb94f97.ctex"]
+source_file="res://sprites/traps/_unused/push_trap/right.png"
+dest_files=["res://.godot/imported/Push_Trap_Right.png-b3a890ff3935a80a08e75b835f477c4f.ctex"]
 
 [params]
 

@@ -20,10 +20,10 @@ static func is_scroll_level_eligible(entry: Dictionary, character_level: int) ->
 	return s.level <= StandardSlotPool.highest_accessible_level(character_level)
 
 const TRAP_POOL: Array = [
-	{"name": "Bear Trap",  "sprite": "Bear_Trap.png",       "damage": 0, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
-	{"name": "Fire Trap",  "sprite": "Fire_Trap.png",        "damage": 8, "msg": "Jets of flame engulf you!",        "wall_trap": false},
-	{"name": "Pit Spikes", "sprite": "Pit_Trap_Spikes.png",  "damage": 7, "msg": "You fall into a spike pit!",       "wall_trap": false, "reusable": true},
-	{"name": "Piston",     "sprite": "Push_Trap_Front.png",  "damage": 0, "msg": "A piston blasts you!",             "wall_trap": true},
+	{"name": "Bear Trap",  "sprite": "bear_trap.png",       "damage": 0, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
+	{"name": "Fire Trap",  "sprite": "fire_trap.png",        "damage": 8, "msg": "Jets of flame engulf you!",        "wall_trap": false},
+	{"name": "Pit Spikes", "sprite": "pit_trap_spikes.png",  "damage": 7, "msg": "You fall into a spike pit!",       "wall_trap": false, "reusable": true},
+	{"name": "Piston",     "sprite": "push_trap/front.png",  "damage": 0, "msg": "A piston blasts you!",             "wall_trap": true},
 ]
 
 # item_type: 0=WEAPON 1=ARMOR 2=POTION 4=FOOD  (matches Item.Type enum)

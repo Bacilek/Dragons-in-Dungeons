@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dw2lpvvqfejwq"
-path="res://.godot/imported/weapon_hammer.png-2086d2952ae78213fe16e3e626ffbd32.ctex"
+uid="uid://djmhvmrm0qr53"
+path="res://.godot/imported/weapon_red_magic_staff.png-df915174f7c7ab586889f3e67394b590.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/weapons/weapon_hammer.png"
-dest_files=["res://.godot/imported/weapon_hammer.png-2086d2952ae78213fe16e3e626ffbd32.ctex"]
+source_file="res://sprites/weapons/_unused/weapon_red_magic_staff.png"
+dest_files=["res://.godot/imported/weapon_red_magic_staff.png-df915174f7c7ab586889f3e67394b590.ctex"]
 
 [params]
 

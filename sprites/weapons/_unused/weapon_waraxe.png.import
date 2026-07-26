@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cary6gtcnivjf"
-path="res://.godot/imported/weapon_machete.png-d2831079eaa99f95685d2c8c88ebc4fc.ctex"
+uid="uid://ke1fi0ngy25w"
+path="res://.godot/imported/weapon_waraxe.png-31dd0d9628969cbb3822b7bebf9e8369.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/weapons/weapon_machete.png"
-dest_files=["res://.godot/imported/weapon_machete.png-d2831079eaa99f95685d2c8c88ebc4fc.ctex"]
+source_file="res://sprites/weapons/_unused/weapon_waraxe.png"
+dest_files=["res://.godot/imported/weapon_waraxe.png-31dd0d9628969cbb3822b7bebf9e8369.ctex"]
 
 [params]
 

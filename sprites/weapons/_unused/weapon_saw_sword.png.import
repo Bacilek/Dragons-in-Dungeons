@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c7konj1rsaoli"
-path="res://.godot/imported/weapon_lavish_sword.png-14e8ca881faa74e2233bb8263d60ba69.ctex"
+uid="uid://bjegpq8gtungm"
+path="res://.godot/imported/weapon_saw_sword.png-308f056d29369b99ff29712364ad1e19.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/weapons/weapon_lavish_sword.png"
-dest_files=["res://.godot/imported/weapon_lavish_sword.png-14e8ca881faa74e2233bb8263d60ba69.ctex"]
+source_file="res://sprites/weapons/_unused/weapon_saw_sword.png"
+dest_files=["res://.godot/imported/weapon_saw_sword.png-308f056d29369b99ff29712364ad1e19.ctex"]
 
 [params]
 

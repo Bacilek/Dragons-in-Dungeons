@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c5a8qgeishuph"
-path="res://.godot/imported/weapon_katana.png-5534baef3e19e2e3f215c9043acdb9b5.ctex"
+uid="uid://cary6gtcnivjf"
+path="res://.godot/imported/weapon_machete.png-d2831079eaa99f95685d2c8c88ebc4fc.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/weapons/weapon_katana.png"
-dest_files=["res://.godot/imported/weapon_katana.png-5534baef3e19e2e3f215c9043acdb9b5.ctex"]
+source_file="res://sprites/weapons/_unused/weapon_machete.png"
+dest_files=["res://.godot/imported/weapon_machete.png-d2831079eaa99f95685d2c8c88ebc4fc.ctex"]
 
 [params]
 

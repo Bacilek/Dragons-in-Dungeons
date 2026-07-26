@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://drxdsdk2t01ut"
-path="res://.godot/imported/weapon_cleaver.png-b1250800662f70a5c5b4621383e884fa.ctex"
+uid="uid://ie4qgillboiw"
+path="res://.godot/imported/Push_Trap_Front.png-d3d77ded7808992752f9ac1983f6b464.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/weapons/weapon_cleaver.png"
-dest_files=["res://.godot/imported/weapon_cleaver.png-b1250800662f70a5c5b4621383e884fa.ctex"]
+source_file="res://sprites/traps/push_trap/front.png"
+dest_files=["res://.godot/imported/Push_Trap_Front.png-d3d77ded7808992752f9ac1983f6b464.ctex"]
 
 [params]
 

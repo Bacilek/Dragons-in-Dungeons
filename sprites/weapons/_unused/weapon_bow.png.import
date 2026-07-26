@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d3xpgdgpnr6ou"
-path="res://.godot/imported/weapon_golden_sword.png-4834035ef5da5e1906c50f163cdf01ef.ctex"
+uid="uid://dqff16a5kv3l8"
+path="res://.godot/imported/weapon_bow.png-30e8ecf2ee8299b440c0076194104df1.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/weapons/weapon_golden_sword.png"
-dest_files=["res://.godot/imported/weapon_golden_sword.png-4834035ef5da5e1906c50f163cdf01ef.ctex"]
+source_file="res://sprites/weapons/_unused/weapon_bow.png"
+dest_files=["res://.godot/imported/weapon_bow.png-30e8ecf2ee8299b440c0076194104df1.ctex"]
 
 [params]
 
