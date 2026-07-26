@@ -16,3 +16,6 @@ aren't lost. Delete an entry once it's picked up (either built, or promoted to a
   starting-gear list per class (see `GameState.give_class_starting_items()` →
   `_give_{class}_starting_items()` in `scripts/autoloads/game_state.gd` for the real granted
   items) written out as player-facing text. Raised 2026-07-26; not started.
+
+- **Sort/triage unused Orc textures.** `sprites/characters/Orcs - unused/Orcs/orcs.png` — not yet
+  gone through, sitting there raw. 2026-07-26.
