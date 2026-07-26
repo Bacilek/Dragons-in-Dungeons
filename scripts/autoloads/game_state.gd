@@ -239,6 +239,9 @@ const TIER2_BASE_ABILITY_ID: Dictionary = {
 var short_rest_active: bool = false
 var short_rest_turns_remaining: int = 0
 var short_rest_pending_heal: int = 0
+# Individual per-hit-die raw rolls (before CON) behind short_rest_pending_heal's total — lets the
+# completion log's tooltip show each die separately instead of just the summed number.
+var short_rest_pending_heal_rolls: Array[int] = []
 # Set true when the in-progress short_rest_active countdown is actually a long rest (Alt menu's
 # Long Rest tab). Consumed on completion by player.gd's _on_turn_started(), which calls
 # long_rest() instead of applying the short-rest heal. See long_rest() below.

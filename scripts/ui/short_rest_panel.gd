@@ -322,12 +322,16 @@ func _on_rest() -> void:
 	var sides: int = GameState.hit_die_sides()
 	var con_mod: int = GameState.player_stats.con_modifier()
 	var total_heal: int = 0
+	var rolls: Array[int] = []
 	for _i: int in _dice_to_spend:
-		total_heal += maxi(1, Rng.roll(sides) + con_mod)
+		var r: int = Rng.roll(sides)
+		rolls.append(r)
+		total_heal += maxi(1, r + con_mod)
 	if not GameState.invincible:
 		GameState.hit_dice -= _dice_to_spend
 	GameState.short_rests_remaining -= 1
 	GameState.short_rest_pending_heal = total_heal
+	GameState.short_rest_pending_heal_rolls = rolls
 	GameState.short_rest_active = true
 	GameState.short_rest_turns_remaining = GameState.SHORT_REST_TURNS
 	GameState.game_log("[color=cyan]You settle in for a short rest... (%d turns)[/color]" % GameState.SHORT_REST_TURNS)

@@ -361,13 +361,17 @@ func _on_turn_started() -> void:
 				get_tree().root.call_deferred("add_child", prompt_script.new())
 			else:
 				var pending_heal: int = GameState.short_rest_pending_heal
+				var pending_rolls: Array[int] = GameState.short_rest_pending_heal_rolls
 				GameState.short_rest_pending_heal = 0
+				GameState.short_rest_pending_heal_rolls = []
 				var before_hp: int = GameState.player_stats.current_hp
 				var bruiser_bonus: int = GameState.heal(pending_heal)
 				var healed: int = GameState.player_stats.current_hp - before_hp
 				AudioManager.play("rest")
 				var bonus_sources: String = CombatMath.encode_bonus_sources([{"name": "Bruiser", "amount": bruiser_bonus, "color": "cyan"}])
-				var _hm: String = "heal:dice=0,sides=0,con=0,roll=0,bonus=%s,total=%d" % [bonus_sources, healed]
+				var con_mod: int = GameState.player_stats.con_modifier()
+				var rolls_str: String = "|".join(pending_rolls.map(func(x: int) -> String: return str(x)))
+				var _hm: String = "heal:dice=%d,sides=%d,con=%d,rolls=%s,bonus=%s,total=%d" % [pending_rolls.size(), GameState.hit_die_sides(), con_mod, rolls_str, bonus_sources, healed]
 				GameState.game_log("[color=cyan]You finish your short rest and recover [url=%s][b]+%d HP[/b][/url].[/color]" % [_hm, healed])
 				GameState.short_rest_completed.emit()
 			GameState.short_rest_changed.emit()

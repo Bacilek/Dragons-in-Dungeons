@@ -63,6 +63,7 @@ func _on_continue() -> void:
 func _on_abort() -> void:
 	GameState.short_rest_active = false
 	GameState.short_rest_pending_heal = 0
+	GameState.short_rest_pending_heal_rolls = []
 	GameState.short_rest_open = false
 	if GameState.long_rest_pending:
 		GameState.long_rest_pending = false

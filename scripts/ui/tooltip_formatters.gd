@@ -254,13 +254,28 @@ static func fmt_heal_tooltip(p: Dictionary) -> String:
 	var total: int = int(p.get("total", "0"))
 	var lines: PackedStringArray = []
 	var uncapped: int = 0
-	if dice > 0 and sides > 0:
-		var roll: int = int(p.get("roll", "0"))
-		lines.append("%dd%d = [color=lime]%d[/color]" % [dice, sides, roll])
-		uncapped += roll
-	if con != 0:
-		lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)
-		uncapped += con
+	var rolls_raw: String = str(p.get("rolls", ""))
+	if dice > 0 and sides > 0 and not rolls_raw.is_empty():
+		# Per-die breakdown (short rest hit dice, each with its own CON mod applied) —
+		# see short_rest_panel.gd's per-die roll capture.
+		var per_die_total: int = 0
+		for tok: String in rolls_raw.split("|"):
+			var r: int = int(tok)
+			var die_total: int = maxi(1, r + con)
+			per_die_total += die_total
+			if con != 0:
+				lines.append("d%d: %d %+d = [color=lime]%d[/color]" % [sides, r, con, die_total])
+			else:
+				lines.append("d%d: [color=lime]%d[/color]" % [sides, r])
+		uncapped += per_die_total
+	else:
+		if dice > 0 and sides > 0:
+			var roll: int = int(p.get("roll", "0"))
+			lines.append("%dd%d = [color=lime]%d[/color]" % [dice, sides, roll])
+			uncapped += roll
+		if con != 0:
+			lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)
+			uncapped += con
 	# Generic bonus-heal sources (Bruiser R1, ...) — see CombatMath.encode_bonus_sources()/
 	# decode_bonus_sources(). A future bonus-heal source only needs to be added at the call site.
 	for src: Dictionary in CombatMath.decode_bonus_sources(p.get("bonus", "")):
