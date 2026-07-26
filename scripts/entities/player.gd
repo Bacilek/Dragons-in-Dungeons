@@ -68,6 +68,7 @@ var _pending_click_tile: Vector2i = Vector2i(-1, -1)
 var _hover_indicator: Sprite2D = null
 var _hover_last_icon_path: String = ""
 var _hover_last_texture: Texture2D = null
+const HOVER_ICON_TARGET_PX: float = 12.0  # ~16px weapon/ranged art at the old flat 0.75 scale
 
 # ── Rage state ────────────────────────────────────────────────────────────────
 # Baseline: lasts 1 turn, refreshed to 1 by attacking or being attacked (unconditional).
@@ -680,6 +681,16 @@ func _update_hover_indicator() -> void:
 		_hover_last_icon_path = icon_path
 		_hover_last_texture = load(icon_path) as Texture2D
 		_hover_indicator.texture = _hover_last_texture
+		# Weapon/ranged icons are ~tile-sized source art (fine at the old flat 0.75 scale), but a
+		# spell's icon comes from res://icons/spells/ at a much higher native resolution — scale by
+		# the texture's own longest side so every icon kind ends up the same on-screen size instead
+		# of a spell icon dwarfing the melee/ranged one. Same longest-side-uniform-scale approach as
+		# place_item_on_floor() (scripts/world/CLAUDE.md's "Floor items").
+		if _hover_last_texture != null:
+			var tex_size: Vector2 = _hover_last_texture.get_size()
+			var longest_side: float = maxf(tex_size.x, tex_size.y)
+			var s: float = HOVER_ICON_TARGET_PX / longest_side if longest_side > 0.0 else 0.75
+			_hover_indicator.scale = Vector2(s, s)
 	_hover_indicator.global_position = enemy.global_position + Vector2(6, -14)
 	_hover_indicator.visible = true
 

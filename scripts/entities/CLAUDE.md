@@ -1140,7 +1140,13 @@ impact point rather than stop at the first wall it can't directly see through.
   since it's the same lookup blind-fire clicks rely on) — otherwise hovering an unseen tile would
   reveal a hidden enemy's exact position via the icon alone. Blind-firing a ranged attack/spell at
   an enemy through a wall or into an unlit tile is still intentionally allowed by the click
-  handlers themselves; only the icon's visibility is FOV-gated, not the action.
+  handlers themselves; only the icon's visibility is FOV-gated, not the action. **Icon size is
+  normalized, not a flat scale**: a spell icon's source PNG (`res://icons/spells/`) is thousands of
+  px across versus melee/ranged weapon art's ~16px tile-sized source, so a flat `Sprite2D.scale`
+  would render a spell hover icon far larger on-screen than the weapon one — `scale` is instead
+  recomputed per texture as `HOVER_ICON_TARGET_PX / longest_source_side` (same longest-side-uniform
+  approach as `DungeonFloor.place_item_on_floor()`, `scripts/world/CLAUDE.md`'s "Floor items"),
+  giving every icon kind the same on-screen footprint.
 - **Misty Step**: instant teleport via `Entity.set_grid_pos()` (no tween) to a clicked visible
   tile within range.
 - **Persistence**: `Stats.to_dict()`/`from_dict()` gained `caster_known_spells`,
