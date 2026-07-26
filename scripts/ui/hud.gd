@@ -339,7 +339,7 @@ func _ready() -> void:
 	coin_icon.position = Vector2(72.0, 107.0)
 	coin_icon.size = Vector2(12.0, 12.0)
 	coin_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var coin_path: String = "res://sprites/items/Misc/CoinGold.png"
+	var coin_path: String = "res://sprites/items/misc/coin_gold.png"
 	if ResourceLoader.exists(coin_path):
 		coin_icon.texture = load(coin_path)
 	$StatsPanel.add_child(coin_icon)

@@ -2329,7 +2329,7 @@ func _finish_kill(enemy: Enemy, dropped_ammo: Item = null) -> void:
 		rotten.item_name = "Rotten Meat"
 		rotten.item_type = Item.Type.FOOD
 		rotten.food_value = 10
-		rotten.icon_path = "res://sprites/items/Food/Meat.png"
+		rotten.icon_path = "res://sprites/items/food/meat.png"
 		rotten.description = "Throw into fire to cook into Cooked Meat."
 		_dungeon_floor.place_item_on_floor(kill_pos, rotten)
 	# Ammo drop-from-corpse: 50% chance the killing shot's arrow/bolt is recoverable.

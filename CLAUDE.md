@@ -196,7 +196,7 @@ Hunger has been removed. `Alt` opens a tabbed rest panel (`scripts/ui/short_rest
 - `sprites/tiles/` — `floor_1.png`, `wall_mid.png` (**not** `wall_top_mid.png`), `floor_stairs.png`.
 - `sprites/objects/` — props, flasks, doors, etc.
 - `sprites/weapons/` — `weapon_anime_sword.png`, etc.
-- `sprites/items/Sprites trial/` — item icons. Constant `ITEMS_PATH` in `dungeon_floor.gd`. Subfolders: `Food/`, `Potions/Health/`, `Potions/Mana/`, `Misc/`.
+- `sprites/items/` — item icons. Constant `ITEMS_PATH` in `dungeon_floor_data.gd`/`debug_panel.gd`. All-lowercase snake_case, one folder per category (`food/`, `potions/health/`, `potions/mana/`, `misc/`, `materials/`, `shields/`, `weapons/`, etc.), variant tiers of the same item grouped into their own subfolder and named by material (`shields/wood.png`/`iron.png`/`gold.png`) or size (`potions/health/small.png`/`medium.png`). Every sprite with zero current code reference lives under `sprites/items/_unused/` (mirroring the same category convention) instead of being deleted — browse it for inspiration before sourcing new art. Full naming/auto-triage rule for new item art: `scripts/items/CLAUDE.md`.
 
 `SpriteFrames` built in `_setup_animations()` — no `.tres` files needed.
 

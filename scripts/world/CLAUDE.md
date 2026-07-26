@@ -238,7 +238,7 @@ match d["src"]:
 ```
 
 ## Gold (special-rooms-economy-design.md §2, session 7a)
-Gold piles are ordinary floor items of `Item.Type.GOLD` whose `gold_value` IS the pile size, built by `_make_gold_item(amount)` (name "Gold", icon `Misc/CoinGold.png`). Three sources:
+Gold piles are ordinary floor items of `Item.Type.GOLD` whose `gold_value` IS the pile size, built by `_make_gold_item(amount)` (name "Gold", icon `misc/coin_gold.png`). Three sources:
 - **Floor scatter** — `_spawn_gold_piles()` (see spawn list above, `_pop_rng`).
 - **Enemy drops** — `maybe_drop_enemy_gold(enemy)`: 30% chance (`Rng.chance`, gameplay stream — kill-time randomness, same split as `_roll_boss_loot_item()`) of `Rng.range_i(1,4) + floor/2` gold at the death tile. Called from `Enemy.die()` (the single chokepoint every death site ends with, same reasoning as `embedded_items`); no-ops for bosses.
 - **Boss kill** — `drop_boss_loot()` additionally places a guaranteed `20 + 5 × floor` pile alongside the potion.
@@ -271,7 +271,7 @@ on_player_reached_stairs() → GameState.advance_floor() → _load_floor()
 `TileType.WATER` (=5) is fully rendered and implemented. Stepping into water: costs 2 turns (difficult terrain, same as mud) AND extinguishes burning (`burning_turns = 0`, logged in cyan). Both `player.gd _try_move()` and `_execute_queued_path()` handle this.
 
 ## Empty bottle mechanic
-Drinking any POTION adds an `Empty Bottle` (TOOL type, `sprites/items/Materials/BottleSmall.png`) to inventory via `potion_drunk` signal → `GameState.add_item()`. **Fill is manual**: use the bottle from quickbar/inventory (enters tool mode via `player_tool_primed`), then LMB or RMB on an adjacent WATER tile → `Bottle of Water` (TOOL, BottleMedium sprite); adjacent MUD → `Bottle of Mud` (TOOL, BottleSmall sprite). Neither is FOOD-typed or contributes to long rest food value. Fill costs 1 turn. `PlayerThrowTool.try_fill_bottle(bottle, target)` (`scripts/entities/player_throw_tool.gd`) checks adjacency and tile type. **Nat-1 roll on fill**: rolling 1 on a d20 shatters the bottle (consumed, no fill). LMB tool routing checks item name before dispatching: "Empty Bottle" → `_throw_tool.try_fill_bottle()`; other tools → `_actions.interact_action()` (`scripts/entities/player_actions.gd`).
+Drinking any POTION adds an `Empty Bottle` (TOOL type, `sprites/items/materials/bottle/small.png`) to inventory via `potion_drunk` signal → `GameState.add_item()`. **Fill is manual**: use the bottle from quickbar/inventory (enters tool mode via `player_tool_primed`), then LMB or RMB on an adjacent WATER tile → `Bottle of Water` (TOOL, medium sprite); adjacent MUD → `Bottle of Mud` (TOOL, small sprite). Neither is FOOD-typed or contributes to long rest food value. Fill costs 1 turn. `PlayerThrowTool.try_fill_bottle(bottle, target)` (`scripts/entities/player_throw_tool.gd`) checks adjacency and tile type. **Nat-1 roll on fill**: rolling 1 on a d20 shatters the bottle (consumed, no fill). LMB tool routing checks item name before dispatching: "Empty Bottle" → `_throw_tool.try_fill_bottle()`; other tools → `_actions.interact_action()` (`scripts/entities/player_actions.gd`).
 
 ## Throw mechanic
 Right-click food item in HUD quickbar → `GameState.player_throw_primed.emit(item)` → player enters throw mode. Left-click target tile → `_do_throw(pos)`. Rotten Meat + Fire Trap = Cooked Meat (see "Floor items" above). Throwing any other item onto a trap tile activates it instead of just dropping — see "Traps" above's `throw_item_onto_trap()`. Esc cancels.

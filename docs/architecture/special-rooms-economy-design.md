@@ -388,7 +388,7 @@ slot teaching nothing), while a heal-on-entry tile means new tile-effect machine
 `TileType`. The middle path costs almost nothing: `_spawn_garden_items(rect)` places 1–2
 **Healing Herb** floor items on grass tiles inside the rect. Healing Herb is one new `ITEM_POOL`-
 style entry (FOOD type, `food_value: 25`, `heal_amount: 4`, `gold_value: 10`, an icon from
-`sprites/items/Sprites trial/Food/`), added to `ITEM_POOL` with `fmin`/`fmax` set so it *only*
+`sprites/items/food/`), added to `ITEM_POOL` with `fmin`/`fmax` set so it *only*
 spawns via gardens (or given `fmin 99` and referenced directly by the garden spawner — pick at
 implementation time), and mirrored in `debug_panel.ALL_ITEMS` per the sync rule. It plugs
 straight into the existing long-rest food economy and potion-style eat-to-heal path — zero new

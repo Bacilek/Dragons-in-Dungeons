@@ -92,7 +92,7 @@ func make_empty_bottle() -> Item:
 	var b := Item.new()
 	b.item_name = "Empty Bottle"
 	b.item_type = Item.Type.TOOL
-	b.icon_path = "res://sprites/items/Materials/BottleSmall.png"
+	b.icon_path = "res://sprites/items/materials/bottle/small.png"
 	b.description = "An empty glass bottle. Fill it from water or mud."
 	return b
 
@@ -121,13 +121,13 @@ func try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 		return
 	if tile_t == DungeonData.TileType.WATER:
 		bottle.item_name = "Bottle of Water"
-		bottle.icon_path = "res://sprites/items/Materials/BottleMedium.png"
+		bottle.icon_path = "res://sprites/items/materials/bottle/medium.png"
 		bottle.description = "A bottle of dungeon water."
 		AudioManager.play("bottle_fill")
 		GameState.game_log("[color=cyan]You fill the bottle with water.[/color]")
 	else:
 		bottle.item_name = "Bottle of Mud"
-		bottle.icon_path = "res://sprites/items/Materials/BottleSmall.png"
+		bottle.icon_path = "res://sprites/items/materials/bottle/small.png"
 		bottle.description = "A bottle of foul mud. Maybe useful for something."
 		AudioManager.play("bottle_fill")
 		GameState.game_log("[color=gray]You fill the bottle with mud.[/color]")

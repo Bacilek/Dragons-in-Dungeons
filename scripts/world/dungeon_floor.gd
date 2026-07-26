@@ -247,8 +247,8 @@ func _load_floor() -> void:
 	GameState.player_grid_pos = _data.player_start
 	GameState.current_stairs_pos = _data.stairs_pos
 
-	if ResourceLoader.exists(DungeonFloorData.ITEMS_PATH + "Misc/KeyIron.png"):
-		_lock_icon_tex = load(DungeonFloorData.ITEMS_PATH + "Misc/KeyIron.png")
+	if ResourceLoader.exists(DungeonFloorData.ITEMS_PATH + "misc/key_iron.png"):
+		_lock_icon_tex = load(DungeonFloorData.ITEMS_PATH + "misc/key_iron.png")
 	# Seeded floor population (SEEDED_FLOOR_POPULATION.md §2). The call order below AND
 	# the number of _pop_rng draws inside each function are load-bearing for
 	# reproducibility — reordering or inserting a draw changes everything downstream.
@@ -1530,7 +1530,7 @@ func cook_rotten_meat(trap_pos: Vector2i) -> Item:
 	cooked.item_name = "Cooked Meat"
 	cooked.item_type = Item.Type.FOOD
 	cooked.food_value = 75
-	cooked.icon_path = "res://sprites/items/Food/MeatCooked.png"
+	cooked.icon_path = "res://sprites/items/food/meat_cooked.png"
 	cooked.description = "Roasted over a fire trap."
 	return cooked
 
@@ -2124,7 +2124,7 @@ func _make_gold_item(amount: int) -> Item:
 	item.item_type = Item.Type.GOLD
 	item.gold_value = maxi(1, amount)
 	item.description = "A pile of gold coins."
-	item.icon_path = DungeonFloorData.ITEMS_PATH + "Misc/CoinGold.png"
+	item.icon_path = DungeonFloorData.ITEMS_PATH + "misc/coin_gold.png"
 	return item
 
 # Floor scatter: 1-2 gold piles on random walkable tiles. Same candidate-picking pattern as
@@ -2392,8 +2392,8 @@ func remove_floor_item(pos: Vector2i) -> void:
 	_floor_items.erase(pos)
 
 const BOSS_LOOT_POOL: Array = [
-	{"name": "Strength Potion","type": 2, "icon": "Potions/Mana/ManaPotionMedium.png",     "src": "items", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)", "gold": 80},
-	{"name": "Health Potion",  "type": 2, "icon": "Potions/Health/HealthPotionMedium.png",  "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 2d4+CON HP", "heal_dice": 2, "heal_sides": 4, "gold": 30},
+	{"name": "Strength Potion","type": 2, "icon": "potions/mana/medium.png",     "src": "items", "bonus_dmg": 2, "heal": 0,   "str_bonus": 2, "fmin": 3, "fmax": 10, "desc": "+2 ATK (permanent this run)", "gold": 80},
+	{"name": "Health Potion",  "type": 2, "icon": "potions/health/medium.png",  "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Restores 2d4+CON HP", "heal_dice": 2, "heal_sides": 4, "gold": 30},
 ]
 
 func _roll_boss_loot_item() -> Item:

@@ -455,7 +455,7 @@ func _give_starting_items() -> void:
 	ration.item_name = "Ration"
 	ration.item_type = Item.Type.FOOD
 	ration.food_value = 50
-	ration.icon_path = "res://sprites/items/Food/MeatCooked.png"
+	ration.icon_path = "res://sprites/items/food/meat_cooked.png"
 	ration.description = "Required for a long rest."
 	ration.quantity = 3
 	add_item(ration)
@@ -463,7 +463,7 @@ func _give_starting_items() -> void:
 	var tools := Item.new()
 	tools.item_name = "Thief Tools"
 	tools.item_type = Item.Type.TOOL
-	tools.icon_path = "res://sprites/items/Misc/KeyIron.png"
+	tools.icon_path = "res://sprites/items/misc/key_iron.png"
 	tools.description = "Left-click to use, then click an adjacent revealed trap to disarm. Consumed on failure."
 	tools.quantity = 3
 	add_item(tools)
@@ -676,7 +676,7 @@ func _give_ranger_starting_items() -> void:
 	var bow := Item.new()
 	bow.item_name = "Short Bow"
 	bow.item_type = Item.Type.WEAPON
-	bow.icon_path = "res://sprites/items/Weapons/BowArrow.png"
+	bow.icon_path = "res://sprites/items/weapons/bow_arrow.png"
 	bow.description = "Ranged, DEX-based. Normal range 4, long range = FOV (DISADV). Requires Arrows."
 	bow.is_ranged = true
 	bow.range = 4
@@ -745,7 +745,7 @@ func _give_monk_starting_items() -> void:
 	ud.ability_id = "unarmored_defense_monk"
 	ud.ability_name = "Unarmored Defense"
 	ud.description = "Passive: AC = 10 + DEX + WIS while wearing no armor."
-	ud.icon_path = "res://sprites/items/Misc/KeyIron.png"
+	ud.icon_path = "res://sprites/items/misc/key_iron.png"
 	ud.uses_remaining = 0
 	ud.uses_max = 0
 	ud.is_passive = true
@@ -755,7 +755,7 @@ func _give_monk_starting_items() -> void:
 	ma.ability_id = "martial_arts"
 	ma.ability_name = "Martial Arts"
 	ma.description = "Passive: Unarmed strikes use DEX + 1d6. After a main-action unarmed strike, make a free bonus-action unarmed strike. Die scales at levels 5/11/17."
-	ma.icon_path = "res://sprites/items/Misc/KeyIron.png"
+	ma.icon_path = "res://sprites/items/misc/key_iron.png"
 	ma.uses_remaining = 0
 	ma.uses_max = 0
 	ma.is_passive = true

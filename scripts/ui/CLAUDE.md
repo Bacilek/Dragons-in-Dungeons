@@ -35,7 +35,7 @@ Any `TextureRect` that shows an icon at a small fixed size (status icons, small 
 ## HUD (`hud.gd`)
 Connects to `GameState` signals only — never poll `GameState` in `_process()`.
 
-**Gold counter**: a small coin icon (`TextureRect`, `Misc/CoinGold.png`, `ignore_texture_size = true` per the rule above) + gold-tinted amount Label (`_gold_label`) in `$StatsPanel` next to the hit-dice label, wired to `GameState.gold_changed` (`_on_gold_changed(new_amount)`). Session-7a minimal UI — visual polish deferred.
+**Gold counter**: a small coin icon (`TextureRect`, `misc/coin_gold.png`, `ignore_texture_size = true` per the rule above) + gold-tinted amount Label (`_gold_label`) in `$StatsPanel` next to the hit-dice label, wired to `GameState.gold_changed` (`_on_gold_changed(new_amount)`). Session-7a minimal UI — visual polish deferred.
 
 **ActionBar (bottom quickbar/ability bar) scale**: `scenes/ui/hud.tscn`'s `ActionBar` panel and its 9 `ItemSlotN` buttons + Wait/Search/Interact buttons are sized 1.5× the original layout (`ActionBar` height 90→135, slot size 76→114px, pitch 80→120px). Item/ability icons use `Button.icon` + `expand_icon = true` so they auto-scale with the button — no separate icon-size code to touch. The per-slot quantity badge (`_slot_qty_labels`) and ability use-count badge (`_slot_use_labels`) offsets/font sizes in `hud.gd` scale alongside (`-32/-18/11pt` → `-48/-27/16pt`). `_bar_mode_label` offsets are pinned to `ActionBar`'s new top (`-135`), not the old `-90`. Each slot also carries a static top-left `_slot_num_labels` badge showing its 1-9 hotkey (slot index `i` → `KEY_(i+1)`, matches `player.gd`'s `_use_quickbar_slot`/`_use_ability_slot` dispatch) — created once in `_ready()`, never toggled, visible in both item and ability bar mode.
 
