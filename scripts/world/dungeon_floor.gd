@@ -99,17 +99,17 @@ func _on_debug_jump_floor(_n: int) -> void:
 func _setup_tileset() -> void:
 	var tile_set := TileSet.new()
 	tile_set.tile_size = Vector2i(TILE_SIZE, TILE_SIZE)
-	_add_tile_source(tile_set, SOURCE_FLOOR,  TILE_SPRITES_PATH + "floor_1.png")
-	_add_tile_source(tile_set, SOURCE_WALL,   TILE_SPRITES_PATH + "wall_mid.png")
+	_add_tile_source(tile_set, SOURCE_FLOOR,  TILE_SPRITES_PATH + "floor/1.png")
+	_add_tile_source(tile_set, SOURCE_WALL,   TILE_SPRITES_PATH + "wall/mid.png")
 	_add_tile_source(tile_set, SOURCE_STAIRS, TILE_SPRITES_PATH + "floor_stairs.png")
 	# New tile types — extract from atlas sheets or use solid-color fallbacks
 	_add_tile_source_or_color(tile_set, SOURCE_CHASM, TILE_SPRITES_PATH + "hole.png", Color(0.06, 0.04, 0.08))
-	_add_tile_from_atlas(tile_set, SOURCE_WATER, "res://sprites/tiles/WaterRockDirt.png", 32, 0, Color(0.10, 0.30, 0.72))
-	_add_tile_from_atlas(tile_set, SOURCE_MUD,   "res://sprites/tiles/WaterRockDirt.png",  0, 0, Color(0.30, 0.18, 0.08))
-	_add_tile_from_atlas(tile_set, SOURCE_GRASS,         "res://sprites/tiles/Grass.png", 368, 176, Color(0.10, 0.42, 0.10))
+	_add_tile_from_atlas(tile_set, SOURCE_WATER, "res://sprites/tiles/water_rock_dirt.png", 32, 0, Color(0.10, 0.30, 0.72))
+	_add_tile_from_atlas(tile_set, SOURCE_MUD,   "res://sprites/tiles/water_rock_dirt.png",  0, 0, Color(0.30, 0.18, 0.08))
+	_add_tile_from_atlas(tile_set, SOURCE_GRASS,         "res://sprites/tiles/grass.png", 368, 176, Color(0.10, 0.42, 0.10))
 	_add_tile_source_or_color(tile_set, SOURCE_DOOR_CLOSED,    DungeonFloorData.OBJECTS_PATH + "doors/leaf_closed.png", Color(0.5, 0.3, 0.1))
 	_add_tile_source_or_color(tile_set, SOURCE_DOOR_OPEN,      DungeonFloorData.OBJECTS_PATH + "doors/leaf_open.png",   Color(0.3, 0.2, 0.05))
-	_add_tile_from_atlas(tile_set, SOURCE_TRAMPLED_GRASS, "res://sprites/tiles/Grass.png", 352, 192, Color(0.38, 0.30, 0.10))
+	_add_tile_from_atlas(tile_set, SOURCE_TRAMPLED_GRASS, "res://sprites/tiles/grass.png", 352, 192, Color(0.38, 0.30, 0.10))
 	tilemap.tile_set = tile_set
 	_grass_layer = TileMapLayer.new()
 	_grass_layer.tile_set = tile_set
