@@ -74,10 +74,10 @@ floors:
 | 4 | + masked_orc, skeleton (drops none) | 0.29 | 1.14 | 2.40 |
 | 5 | (drops orc_warrior) + wogol | 0.31 | 1.25 | 2.75 |
 | 6 | (drops goblin_warrior, orc_shaman) + imp | 0.38 | 1.50 | 3.10 |
-| 7 | (drops masked_orc, skeleton, zombie, goblin_archer) + chort | 0.43 | 1.71 | 3.45 |
+| 7 | (drops masked_orc, skeleton, zombie, goblin_archer) + quasit | 0.43 | 1.71 | 3.45 |
 | 8 | (drops wogol) + pumpkin_dude, ogre | 1.00 | 4.00 | 3.80 |
 | 9 | (drops imp) | 1.13 | 4.50 | 4.15 |
-| 10 | (drops imp, stays: chort, pumpkin_dude, ogre) | 1.17 | 4.67 | 4.50 |
+| 10 | (drops imp, stays: quasit, pumpkin_dude, ogre) | 1.17 | 4.67 | 4.50 |
 
 Floors 1–7 track reasonably close to today's implied average; floors 8–10 (where Ogre's CR 2 enters
 the pool) land a bit under today's naive count-based average, which is *intended* — those floors are
@@ -126,7 +126,7 @@ Key properties:
   iteration as budget drains, so the exact combination is never fixed even for the same floor number
   across different seeds).
 - **No forced minimum count.** A floor whose eligible band happens to be all relatively expensive
-  entries (e.g. floor 8: wogol/imp/chort/pumpkin_dude/ogre) may legitimately spawn just 2–3 enemies
+  entries (e.g. floor 8: wogol/imp/quasit/pumpkin_dude/ogre) may legitimately spawn just 2–3 enemies
   instead of today's flat 3–5 — this is the "1 Ogre vs. 4 goblins" tradeoff CR was introduced for,
   per `enemy-stat-block-design.md` §3.
 - **`safety_cap`** exists purely to bound worst-case spawn count if a future low-CR entry (e.g. a

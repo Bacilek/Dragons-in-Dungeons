@@ -341,7 +341,7 @@ const ENEMY_POOL: Array = [
 	 "invisibility": {"cooldown": 5, "duration": 100},
 	 "multiattack": [{"name": "Sting", "count": 1, "dmg_min": 4, "dmg_max": 9, "damage_type": "Piercing",
 	                  "extra": {"dmg_min": 2, "dmg_max": 12, "damage_type": "Poison"}}]},
-	{"enemy_id": "chort",         "display_name": "Chort",       "sprite": "chort",       "idle_frames": 4, "run_frames": 4, "floor_min": 7, "floor_max": 10, "hp": 16, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 8, "armor": 2, "ac": 14, "exp": 20, "resist": ["Fire"],
+	{"enemy_id": "quasit",        "display_name": "Quasit",      "sprite": "quasit",      "idle_frames": 4, "run_frames": 4, "floor_min": 7, "floor_max": 10, "hp": 16, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 8, "armor": 2, "ac": 14, "exp": 20, "resist": ["Fire"],
 	 "cr": 0.5, "creature_type": "Fiend"},
 	{"enemy_id": "pumpkin_dude",  "display_name": "Pumpkin Dude","sprite": "pumpkin_dude","idle_frames": 4, "run_frames": 4, "floor_min": 8, "floor_max": 10, "hp": 20, "hp_per_floor": 4, "dmg_min": 5, "dmg_max": 9, "armor": 2, "ac": 12, "exp": 25,
 	 "cr": 1, "creature_type": "Plant"},
