@@ -1142,7 +1142,11 @@ func _spawn_boss() -> void:
 	var boss: Enemy = enemy_scene.instantiate() as Enemy
 	boss.configure(boss_data)
 	boss.is_boss = true
-	boss.initial_behavior = Enemy.Behavior.CHASING
+	var behavior_roll: int = _pop_rng.randi() % 3
+	match behavior_roll:
+		0: boss.initial_behavior = Enemy.Behavior.SLEEPING
+		1: boss.initial_behavior = Enemy.Behavior.STATIONARY
+		2: boss.initial_behavior = Enemy.Behavior.ROAMING
 
 	# Place at room center, shift 1 tile up if center == stairs
 	var center: Vector2i = Vector2i(
