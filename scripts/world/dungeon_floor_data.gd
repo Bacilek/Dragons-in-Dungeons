@@ -41,20 +41,21 @@ const ITEM_POOL: Array = [
 	# long-rest fuel total; heal_amount is the one exception a FOOD item gets — see game_state.gd
 	# use_item()'s FOOD branch.
 	{"name": "Healing Herb",   "type": 4, "icon": "food/salad_flower_purple.png",           "src": "items", "bonus_dmg": 0, "heal": 4, "food_value": 25, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A fragrant garden herb. Eating it heals 4 HP and also counts as long-rest fuel.", "gold": 10},
-	{"name": "Short Bow",      "type": 0, "icon": "weapons/bow_arrow.png",                 "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 6,  "desc": "Ranged, DEX-based. Normal range 4, long range = FOV (DISADV). Requires Arrows.", "is_ranged": true, "range": 4, "dmg_type": "Piercing", "category": "Simple", "die_min": 1, "die_max": 6, "mastery": "Vex", "ammo": "Arrow", "gold": 50},
-	{"name": "Heavy Crossbow", "type": 0, "icon": "weapons/bow_arrow_gold.png",             "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 5, "fmax": 10, "desc": "Ranged, DEX-based. Normal range 4, long range = FOV (DISADV). Heavy (DEX 13+), two-handed. Requires Bolts.", "is_ranged": true, "range": 4, "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 10, "mastery": "Push", "ammo": "Bolt", "heavy": true, "two_handed": true, "gold": 120},
-	{"name": "Longbow",       "type": 0, "icon": "weapons/bow.png",                      "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 5, "fmax": 10, "desc": "Ranged, DEX-based. Normal range 5, long range = FOV (DISADV). Heavy (DEX 13+), two-handed. Requires Arrows.", "is_ranged": true, "range": 5, "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 8, "mastery": "Slow", "ammo": "Arrow", "heavy": true, "two_handed": true},
-	{"name": "Rapier",         "type": 0, "icon": "weapon_duel_sword.png",               "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Melee. Finesse: uses STR or DEX, whichever is higher.", "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 8, "mastery": "Vex", "finesse": true},
-	{"name": "Greatsword",     "type": 0, "icon": "weapon_knight_sword.png",            "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "Melee. Heavy, two-handed. Graze: a miss still deals damage equal to your STR modifier.", "dmg_type": "Slashing", "category": "Martial", "die_min": 2, "die_max": 12, "mastery": "Graze", "heavy": true, "two_handed": true},
-	{"name": "Glaive",         "type": 0, "icon": "weapon_spear.png",                   "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "Melee. Heavy, two-handed, Reach (+1 tile). Graze: a miss still deals damage equal to your STR modifier.", "dmg_type": "Slashing", "category": "Martial", "die_min": 1, "die_max": 10, "mastery": "Graze", "heavy": true, "two_handed": true, "reach": true},
-	{"name": "Maul",           "type": 0, "icon": "weapon_big_hammer.png",             "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "Melee. Heavy, two-handed. Topple: on a hit, target rolls a CON save or is knocked Prone, skipping its next turn.", "dmg_type": "Bludgeoning", "category": "Martial", "die_min": 2, "die_max": 12, "mastery": "Topple", "heavy": true, "two_handed": true},
-	{"name": "Quarterstaff",   "type": 0, "icon": "weapon_green_magic_staff.png",     "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Melee. Simple, Versatile (1d8): click Main Hand to grip two-handed. Topple: on a hit, target rolls a CON save or is knocked Prone, skipping its next turn.", "dmg_type": "Bludgeoning", "category": "Simple", "die_min": 1, "die_max": 6, "vmin": 1, "vmax": 8, "mastery": "Topple", "versatile": true},
-	{"name": "Spear",          "type": 0, "icon": "weapon_spear.png",                 "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Melee. Simple, Versatile (1d8): click Main Hand to grip two-handed. Thrown (3/FOV): RMB then LMB a tile — uses your melee attack modifier. Sap: on a hit, target has Disadvantage on its next attack next turn. 5 uses before it breaks.", "dmg_type": "Piercing", "category": "Simple", "die_min": 1, "die_max": 6, "vmin": 1, "vmax": 8, "mastery": "Sap", "versatile": true, "thrown": true, "range": 3, "uses_max": 5},
-	{"name": "Handaxe",        "type": 0, "icon": "weapon_throwing_axe.png",        "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Melee. Simple, Light: pair with another Light weapon in the Off-hand to attack with both (off-hand swing skips your ability modifier unless it's negative). Thrown (3/FOV): RMB then LMB a tile — uses your melee attack modifier. Vex: on a hit, gain Advantage on your next attack this round against that enemy. 5 uses before it breaks.", "dmg_type": "Slashing", "category": "Simple", "die_min": 1, "die_max": 6, "mastery": "Vex", "light": true, "thrown": true, "range": 3, "uses_max": 5},
-	{"name": "Dagger",         "type": 0, "icon": "weapon_knife.png",              "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Melee. Simple, Finesse, Light: pair with another Light weapon in the Off-hand to attack with both (off-hand swing skips your ability modifier unless it's negative). Thrown (3/FOV): RMB then LMB a tile — uses your melee attack modifier. Nick: while dual-wielding Light weapons, make one further attack this turn identical to the Off-hand swing (max 3 attacks total). 5 uses before it breaks.", "dmg_type": "Piercing", "category": "Simple", "die_min": 1, "die_max": 4, "mastery": "Nick", "finesse": true, "light": true, "thrown": true, "range": 3, "uses_max": 5},
-	{"name": "Torch",          "type": 0, "icon": "weapon_torch.png",             "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Melee. Simple. Can be equipped in Main Hand or Off-hand (like a Shield — never fires a bonus Off-hand attack). Click while equipped to light it: burns for 100 turns (even unequipped, in a stack, on the floor, or embedded in an enemy), granting +1 FOV while equipped and a radius-2 light wherever it's lying/embedded. While lit and wielded in Main Hand, melee attacks also deal +1d4 Fire damage. Thrown (3/FOV): RMB then LMB a tile — 1d4 Bludgeoning, +1d4 Fire if lit. 3 uses before it breaks. Burns out permanently into a Burnt Torch.", "dmg_type": "Bludgeoning", "category": "Simple", "die_min": 1, "die_max": 4, "torch": true, "thrown": true, "range": 3, "uses_max": 3},
+	{"name": "Short Bow",      "type": 0, "icon": "weapons/bow_arrow.png",                 "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 6,  "desc": "Ranged, DEX-based. Normal range 4, long range 16 (DISADV). Requires Arrows.", "is_ranged": true, "range": 4, "long_range": 16, "dmg_type": "Piercing", "category": "Simple", "die_min": 1, "die_max": 6, "mastery": "Vex", "ammo": "Arrow", "gold": 50},
+	{"name": "Heavy Crossbow", "type": 0, "icon": "weapons/bow_arrow_gold.png",             "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 5, "fmax": 10, "desc": "Ranged, DEX-based. Normal range 4, long range 16 (DISADV). Heavy (DEX 13+), two-handed. Requires Bolts.", "is_ranged": true, "range": 4, "long_range": 16, "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 10, "mastery": "Push", "ammo": "Bolt", "heavy": true, "two_handed": true, "gold": 120},
+	{"name": "Longbow",       "type": 0, "icon": "weapons/bow.png",                      "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 5, "fmax": 10, "desc": "Ranged, DEX-based. Normal range 5, long range 20 (DISADV). Heavy (DEX 13+), two-handed. Requires Arrows.", "is_ranged": true, "range": 5, "long_range": 20, "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 8, "mastery": "Slow", "ammo": "Arrow", "heavy": true, "two_handed": true, "gold": 50},
+	{"name": "Rapier",         "type": 0, "icon": "weapon_duel_sword.png",               "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "", "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 8, "mastery": "Vex", "finesse": true, "gold": 25},
+	{"name": "Greatsword",     "type": 0, "icon": "weapon_knight_sword.png",            "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "", "dmg_type": "Slashing", "category": "Martial", "die_min": 2, "die_max": 12, "mastery": "Graze", "heavy": true, "two_handed": true, "gold": 50},
+	{"name": "Glaive",         "type": 0, "icon": "weapon_spear.png",                   "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "", "dmg_type": "Slashing", "category": "Martial", "die_min": 1, "die_max": 10, "mastery": "Graze", "heavy": true, "two_handed": true, "reach": true, "gold": 20},
+	{"name": "Maul",           "type": 0, "icon": "weapon_big_hammer.png",             "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "", "dmg_type": "Bludgeoning", "category": "Martial", "die_min": 2, "die_max": 12, "mastery": "Topple", "heavy": true, "two_handed": true, "gold": 10},
+	{"name": "Quarterstaff",   "type": 0, "icon": "weapon_green_magic_staff.png",     "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "", "dmg_type": "Bludgeoning", "category": "Simple", "die_min": 1, "die_max": 6, "vmin": 1, "vmax": 8, "mastery": "Topple", "versatile": true, "silver": 2},
+	{"name": "Spear",          "type": 0, "icon": "weapon_spear.png",                 "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "", "dmg_type": "Piercing", "category": "Simple", "die_min": 1, "die_max": 6, "vmin": 1, "vmax": 8, "mastery": "Sap", "versatile": true, "thrown": true, "range": 3, "long_range": 12, "uses_max": 5, "gold": 1},
+	{"name": "Handaxe",        "type": 0, "icon": "weapon_throwing_axe.png",        "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "", "dmg_type": "Slashing", "category": "Simple", "die_min": 1, "die_max": 6, "mastery": "Vex", "light": true, "thrown": true, "range": 3, "long_range": 12, "uses_max": 5, "gold": 5},
+	{"name": "Dagger",         "type": 0, "icon": "weapon_knife.png",              "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "", "dmg_type": "Piercing", "category": "Simple", "die_min": 1, "die_max": 4, "mastery": "Nick", "finesse": true, "light": true, "thrown": true, "range": 3, "long_range": 12, "uses_max": 5, "gold": 2},
+	{"name": "Javelin",        "type": 0, "icon": "weapon_spear.png",              "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "", "dmg_type": "Piercing", "category": "Simple", "die_min": 1, "die_max": 6, "mastery": "Slow", "thrown": true, "range": 3, "long_range": 12, "uses_max": 5, "silver": 5},
+	{"name": "Torch",          "type": 0, "icon": "weapon_torch.png",             "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Click while equipped to light it — burns 100 turns, granting +1 FOV and (in Main Hand) +1d4 Fire on hit. A lit Torch lying on the ground or embedded in an enemy also casts a radius-2 light. Can be equipped in either hand like a Shield. Burns out permanently into a Burnt Torch.", "dmg_type": "Bludgeoning", "category": "Simple", "die_min": 1, "die_max": 4, "torch": true, "thrown": true, "range": 3, "long_range": 12, "uses_max": 3, "gold": 10},
 	{"name": "Arrow",          "type": 7, "icon": "ammo/arrow.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Short Bow and Longbow.", "qty": 6, "gold": 1},
-	{"name": "Bolt",           "type": 7, "icon": "ammo/arrow_gold.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Heavy Crossbow.", "qty": 6},
+	{"name": "Bolt",           "type": 7, "icon": "ammo/arrow_gold.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Heavy Crossbow.", "qty": 6, "gold": 1},
 	{"name": "Thief Tools",    "type": 7, "icon": "misc/key_iron.png",                    "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Disarm traps, lock doors. Consumed on failure.", "qty": 2, "gold": 25},
 	{"name": "Shield",         "type": 1, "icon": "shields/wood.png",                "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Off-hand. +2 AC. Requires shield proficiency; can't be worn with a two-handed Main Hand weapon, and blocks spellcasting while equipped. Equip/unequip takes 1 turn.", "bonus_ac": 2, "is_shield": true, "gold": 40},
 	# Body armor (Item.armor_category — see Item.gd, GameState.can_equip_armor()/ARMOR_CHANGE_TURNS
@@ -341,8 +342,44 @@ const ENEMY_POOL: Array = [
 	 "invisibility": {"cooldown": 5, "duration": 100},
 	 "multiattack": [{"name": "Sting", "count": 1, "dmg_min": 4, "dmg_max": 9, "damage_type": "Piercing",
 	                  "extra": {"dmg_min": 2, "dmg_max": 12, "damage_type": "Poison"}}]},
-	{"enemy_id": "quasit",        "display_name": "Quasit",      "sprite": "quasit",      "idle_frames": 4, "run_frames": 4, "floor_min": 7, "floor_max": 10, "hp": 16, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 8, "armor": 2, "ac": 14, "exp": 20, "resist": ["Fire"],
-	 "cr": 0.5, "creature_type": "Fiend"},
+	# Quasit — Tiny Fiend (Demon), Chaotic Evil, CR 1. AC 13 (natural armor). STR 5 (-3) DEX 17 (+3)
+	# CON 10 (+0) INT 7 (-2) WIS 10 (+0) CHA 10 (+0). Speed 30ft -> {"moves": 4, "per": 3}. Superior
+	# darkvision -> "senses": {"sight_bonus": 2}. Passive Perception 10.
+	# Rend: +5 to hit (DEX+prof), reach 1, 1d4+3 Slashing (dmg_min/dmg_max 4/7). The
+	# real text also inflicts the Poisoned condition until the start of Quasit's next turn — this
+	# engine has no mechanical Poisoned CONDITION today (only a same-named but different "poison"
+	# DoT status, see GameState.apply_player_status()), so Rend is damage-only for now; the
+	# condition effect is a documented, deferred follow-up (owner is authoring the conditions
+	# system in a future update), not an oversight.
+	# Scare (pool "scare": {"range","save_dc"}, enemy.gd's _execute_cast_scare()): ranged (2 tiles),
+	# WIS save DC 10, 1/life (real text is "1/Day" — enemies don't rest, see legendary-resistance
+	# precedent). On a fail the target is meant to become Frightened — same deferred-condition gap
+	# as Rend above, flavor-logged only until the conditions system lands.
+	# Invisibility: identical mechanism to Imp's own (pool "invisibility": {"cooldown","duration"}).
+	# Shape Shift: same trait as Imp, but its own form list (pool "shape_shift_forms") — Bat
+	# (flying), Centipede, Toad, all keeping Quasit's own 4/3 speed (pool "shape_shift_speed",
+	# overriding Imp's slower hardcoded default) since none of them are meant to be slower than its
+	# true form; Toad additionally swims freely (ignores Water's difficult-terrain slow while
+	# shifted — enemy.gd's _move_step()). Only the look and movement/terrain adaptation change per
+	# form, never stats or attacks — same "cosmetic + movement only" rule as Imp's own forms. No
+	# art authored yet for any of the three forms (asset debt, same precedent as Imp's own Raven —
+	# falls back to leaving the true Quasit sprite showing).
+	{"enemy_id": "quasit",        "display_name": "Quasit",      "sprite": "quasit",      "idle_frames": 4, "run_frames": 4, "floor_min": 7, "floor_max": 10, "hp": 25, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 7, "armor": 0, "ac": 13, "exp": 20,
+	 "cr": 1, "creature_type": "Fiend",
+	 "mods": {"str": -3, "dex": 3, "con": 0, "int": -2, "wis": 0, "cha": 0},
+	 "senses": {"sight_bonus": 2},
+	 "passive_perception": 10,
+	 "attack_profile": {"attack_stat": "dex"},
+	 "speed": {"moves": 4, "per": 3},
+	 "damage_resistances": ["Cold", "Fire", "Lightning"],
+	 "damage_immunities": ["Poison"],
+	 "condition_immunities": ["poisoned"],
+	 "traits": [{"id": "magic_resistance"}, {"id": "shape_shift"}],
+	 "shape_shift_forms": ["bat", "centipede", "toad"],
+	 "shape_shift_speed": {"moves": 4, "per": 3},
+	 "invisibility": {"cooldown": 5, "duration": 100},
+	 "scare": {"range": 2, "save_dc": 10},
+	 "multiattack": [{"name": "Rend", "count": 1, "dmg_min": 4, "dmg_max": 7, "damage_type": "Slashing"}]},
 	{"enemy_id": "pumpkin_dude",  "display_name": "Pumpkin Dude","sprite": "pumpkin_dude","idle_frames": 4, "run_frames": 4, "floor_min": 8, "floor_max": 10, "hp": 20, "hp_per_floor": 4, "dmg_min": 5, "dmg_max": 9, "armor": 2, "ac": 12, "exp": 25,
 	 "cr": 1, "creature_type": "Plant"},
 	# Goblin Archer — same base stat block as Goblin Warrior above (Small Fey, CE, CR 1/4, HP 10,
@@ -403,4 +440,56 @@ const ENEMY_POOL: Array = [
 		"icon": "weapon_spear.png", "drop_die_min": 2, "drop_die_max": 8, "weapon_category": "Simple",
 		"is_finesse": false, "is_light": false, "weapon_mastery": "", "drop_uses_max": 5, "random_uses": true},
 	 "unarmed_fallback": {"name": "Fists", "dmg_min": 5, "dmg_max": 5, "damage_type": "Bludgeoning", "attack_stat": "str"}},
+	# Spider — Large Beast, unaligned, CR 1, proficiency +2. HP 26, AC 14 (natural armor).
+	# STR 14 (+2) DEX 16 (+3) CON 12 (+1) INT 2 (-4) WIS 11 (+0) CHA 4 (-3). Speed 30ft (default,
+	# no "speed" key needed).
+	# "Large" size: 2x2 footprint (Entity.size), same mechanism as Ogre above — see
+	# scripts/entities/CLAUDE.md's "Multi-tile footprint (Large enemies)".
+	# Sprite: reuses the existing sliced Spider/{idle,run}.png sheet (32x32 frames, scale 0.5, 6
+	# frames each) already authored for Imp's Shape Shift trait — see "sprite_frame_size"/
+	# "sprite_scale" below and Enemy._setup_animations()'s no-variant sheet-loading branch.
+	# Darkvision: +1 to the default enemy notice/LOS radius (senses.sight_bonus).
+	# Passive Perception = 10 + WIS mod (0) = 10.
+	# Spider Climb (trait "ignore_terrain_slow"): "can go through difficult surfaces without being
+	# slowed" — Enemy._move_step() skips the generic Water/Mud "slowed" status application whenever
+	# this trait is present (every other enemy still gets slowed by difficult terrain).
+	# Web Walker / Web Sense (trait "web_walker"): "ignores movement restrictions caused by
+	# webbing and knows the location of any creature in contact with the same web" — implemented as
+	# the second half: Enemy._can_see_entity() never loses track of a target currently Restrained by
+	# this spider's own Web (below), regardless of distance/LOS. The "ignores its own web" half is a
+	# no-op in practice (nothing else here ever walks into a web), documented for completeness.
+	# Bite: +5 to hit (DEX+prof — attack_profile.attack_stat), reach 1, 1d8+3 Piercing AND 2d6
+	# Poison on the SAME hit (multiattack "extra", same one-hit-two-damage-types convention as
+	# Imp's Sting).
+	# Web (pool "web": {"cooldown","range","save_dc"}) — a ranged, non-damage, SAVE-based restraint
+	# ability, Player-only (see Stats.web_restrained/web_escape_dc and player.gd's
+	# _attempt_web_escape()): while already aware of the target (CHASING/SEARCHING — never on a
+	# fresh notice, per the owner's own framing "won't web just because it exists, only once it
+	# already knows about the hero"), not yet adjacent, off its 10-turn cooldown, the target isn't
+	# already stuck in an earlier web, and nothing blocks the shot (has_clear_shot — "can only spit
+	# it if nothing/nobody is standing in the way"), Web is picked over closing the distance the
+	# instant the target is in range — the SAME "ranged option beats melee approach" priority slot
+	# Imp's Invisibility already occupies (see Enemy._decide_action()). On a failed DEX save (rolled
+	# the identical d20+DEX mod+proficiency-if-trained shape as the player's own DEX save vs a
+	# friendly-fire Fireball), the target is Restrained (ALL movement blocked — see
+	# player.gd._try_move()'s guard) until a STR check vs the same DC breaks free
+	# (player.gd._attempt_web_escape()) — the D&D alternate escape route (rather than needing to
+	# deal 5+ slashing/fire damage to the web structure itself, which this engine has no
+	# attack-a-structure system to support yet; documented simplification, not an oversight). The
+	# web structure itself (DungeonFloor.spawn_web(), AC 10 / HP 5 / vulnerable to Fire / immune to
+	# Poison and Psychic per the real spell's text) is currently pure flavor data — nothing can
+	# actually attack it directly today, only the STR-check escape route above ever removes it.
+	{"enemy_id": "spider", "display_name": "Spider", "sprite": "spider",
+	 "sprite_frame_size": {"w": 32, "h": 32}, "sprite_scale": 0.5, "idle_frames": 6, "run_frames": 6,
+	 "floor_min": 4, "floor_max": 8, "hp": 26, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 11, "armor": 0, "ac": 14, "exp": 22,
+	 "cr": 1, "creature_type": "Beast",
+	 "mods": {"str": 2, "dex": 3, "con": 1, "int": -4, "wis": 0, "cha": -3},
+	 "senses": {"sight_bonus": 1},
+	 "passive_perception": 10,
+	 "attack_profile": {"attack_stat": "dex"},
+	 "size": {"w": 2, "h": 2},
+	 "traits": [{"id": "ignore_terrain_slow"}, {"id": "web_walker"}],
+	 "multiattack": [{"name": "Bite", "count": 1, "dmg_min": 4, "dmg_max": 11, "damage_type": "Piercing",
+	                  "extra": {"dmg_min": 2, "dmg_max": 12, "damage_type": "Poison"}}],
+	 "web": {"cooldown": 10, "range": 6, "save_dc": 13}},
 ]

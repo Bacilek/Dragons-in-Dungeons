@@ -87,10 +87,98 @@ behavior refactor — decide/execute split, `attack_profile`, targeting — this
 | `"speed_ground"` / `"speed_flying"` | both `{"moves","per"}` | Imp-only pair: `_tick_speed_gate()` picks `"speed_flying"` while CHASING/SEARCHING (pursuing) and `"speed_ground"` otherwise, instead of a single flat `"speed"`. Requires BOTH keys to be present — an entry with only one, or neither, falls back to the legacy single `"speed"` key (or the `{1,1}` default) unaffected. |
 | `"extra"` (nested inside a `"multiattack"` sub-entry) | `{"dmg_min","dmg_max","damage_type"}` | A second, independent typed damage instance dealt on the SAME hit as its parent sub-entry (one attack roll, two damage numbers/floaters/log segments) — Imp's Sting (1d6+3 Piercing weapon dmg + 2d6 Poison venom). Mirrors the player-side Judgement Day/Fireball-friendly-fire "one hit, multiple damage types" convention. `_attack_player()` gives it its own `edmg:` tooltip segment; `_attack_companion()` folds it into the one flat damage number instead (Companion has no per-type tooltip system at all, pre-existing simplification). |
 | `"invisibility"` | `{"cooldown","duration"}` | Imp-only. While pursuing (CHASING/SEARCHING) and not yet adjacent, with the cooldown ready and not already invisible, `_decide_action()` returns a one-shot `"cast_invisibility"` intent (costs the turn) instead of closing distance. See "Invisibility" below — shared mechanism with the player-castable level-2 spell of the same name. |
+| `"web"` | `{"cooldown","range","save_dc"}` | Spider-only, Player-only target. Ranged, non-damage, SAVE-based restraint — see the "Spider" section below for the full mechanism. |
+| `"scare"` | `{"range","save_dc"}` | Quasit-only, Player-only target. Ranged, non-damage, WIS-SAVE-based fear effect, 1/life (no `"cooldown"` — see the "Quasit" section below for the full mechanism, including the deferred Frightened-condition gap). |
 
-**Traits `"magic_resistance"` / `"shape_shift"`** (both Imp-only today, presence-only like `"aggressive"`):
+**Traits `"magic_resistance"` / `"shape_shift"`** (presence-only like `"aggressive"`; `magic_resistance` is Imp/Quasit today, `shape_shift` is generalized — any entry can opt in with its own form list):
 - **`magic_resistance`**: Advantage on saving throws against spells — `Enemy.resist_check_detailed()` gained a `magical: bool = false` param; when true AND this trait is present, the d20 is rolled with Advantage (max of two rolls). Threaded through every SAVE-resolution spell's enemy-facing call in `spell_effects.gd` (Ray of Frost, Toll the Dead, Mind Sliver's own save, Thunderclap, Fireball) — **not** weapon-mastery saves (Push/Topple/Grip of the Forest/Branching Strike), which aren't spells and never pass `magical=true`.
-- **`shape_shift`**: while CHASING and unseen by the player THIS turn (out of FOV, or the enemy is Invisible — `_tick_shape_shift()`'s `unseen` check), 50% chance per eligible turn to secretly transform into a random small-critter form (`Enemy.SHAPE_SHIFT_FORMS = ["rat","raven","spider"]`, tracked in `_shifted_form`) — no turn cost, and a further 50% chance to already be shape-shifted at spawn (`_ready()`). Reverts to the true form instantly on taking any actual damage (`take_typed_damage()`'s revert check — an immune 0-damage hit does NOT revert it). **Visually wired for Rat and Spider** — every `_shifted_form` change (spawn roll, `_tick_shape_shift()`'s mid-chase roll, or the damage-revert back to `""`) calls `Enemy._refresh_shape_shift_visual()`, which swaps `$AnimatedSprite2D.sprite_frames` to the `Enemy.SHAPE_SHIFT_SPRITES[form]` entry (Rat: reuses `sprites/characters/Rat/<Gray|Brown|White>/{idle,run}.png`, same random-recolor convention as Giant Rat's own `sprite_variants`; Spider: `sprites/characters/Spider/{idle,run}.png`, sliced from the single `Cave Spider Spritesheet.png` — row 0 = idle, row 1 = run, 32×32 frames, the attack/hurt/death rows in that sheet are unused) and reverting rebuilds the true Imp sprite via the normal `_setup_animations()` path. **Raven has no entry yet** (no sprite asset exists) — `_refresh_shape_shift_visual()` no-ops for it, leaving whichever sprite was already showing, so a Raven "shift" is still mechanics-only asset debt. The one real mechanical effect regardless of visual: while shape-shifted, `_tick_speed_gate()` forces the shared mundane `{"moves":2,"per":3}` ground speed regardless of the true form's own `"speed_ground"`/`"speed_flying"` pair (none of the three animals can fly).
+- **`shape_shift`**: while CHASING and unseen by the player THIS turn (out of FOV, or the enemy is Invisible — `_tick_shape_shift()`'s `unseen` check), 50% chance per eligible turn to secretly transform into a random small-critter form — no turn cost, and a further 50% chance to already be shape-shifted at spawn (`_ready()`). **Form list is per-entry**: `Enemy._shape_shift_forms()` reads the pool's own `"shape_shift_forms"` array if authored, else falls back to `Enemy.SHAPE_SHIFT_FORMS = ["rat","raven","spider"]` (Imp's original set) — Quasit authors its own `["bat","centipede","toad"]` (see "Quasit" section below). Tracked in `_shifted_form`. Reverts to the true form instantly on taking any actual damage (`take_typed_damage()`'s revert check — an immune 0-damage hit does NOT revert it). **Visually wired for Rat and Spider** — every `_shifted_form` change (spawn roll, `_tick_shape_shift()`'s mid-chase roll, or the damage-revert back to `""`) calls `Enemy._refresh_shape_shift_visual()`, which swaps `$AnimatedSprite2D.sprite_frames` to the `Enemy.SHAPE_SHIFT_SPRITES[form]` entry (Rat: reuses `sprites/characters/Rat/<Gray|Brown|White>/{idle,run}.png`, same random-recolor convention as Giant Rat's own `sprite_variants`; Spider: `sprites/characters/Spider/{idle,run}.png`, sliced from the single `Cave Spider Spritesheet.png` — row 0 = idle, row 1 = run, 32×32 frames, the attack/hurt/death rows in that sheet are unused) and reverting rebuilds the true form's sprite via the normal `_setup_animations()` path. **A form with no `SHAPE_SHIFT_SPRITES` entry** (Raven; Quasit's Bat/Centipede/Toad — no art authored for any of them yet) — `_refresh_shape_shift_visual()` no-ops, leaving whichever sprite was already showing, so those "shifts" are still mechanics-only asset debt. **Speed while shifted** is also per-entry: `_tick_speed_gate()` uses pool `"shape_shift_speed"` if authored, else falls back to Imp's original hardcoded mundane `{"moves":2,"per":3}` ground speed (regardless of the true form's own `"speed_ground"`/`"speed_flying"` pair — none of Imp's three animals can fly). Quasit instead authors `"shape_shift_speed": {"moves":4,"per":3}` (its own normal speed) since none of its forms are meant to be slower than its true form.
+
+## Spider
+
+`dungeon_floor_data.gd`'s `spider` entry — Large Beast, CR 1, HP 26, AC 14, a 2x2 footprint (same
+mechanism as Ogre, see "Multi-tile footprint" below), Bite (1d8+3 Piercing + 2d6 Poison on the same
+hit, `"extra"` — same convention as Imp's Sting) plus two authored traits and a bespoke ranged
+ability:
+
+- **`"ignore_terrain_slow"`** (Spider Climb — "can go through difficult surfaces without being
+  slowed"): `Enemy._move_step()`'s generic Water/Mud → `apply_status("slowed", 1)` call is skipped
+  outright whenever this trait is present — every other enemy still gets slowed by difficult
+  terrain, only an enemy that opts into this trait is exempt.
+- **`"web_walker"`** (Web Walker / Web Sense — "ignores movement restrictions caused by webbing and
+  knows the location of any creature in contact with the same web"): implemented as the half that
+  actually matters for a single spider — `Enemy._can_see_entity()` short-circuits to `true` for a
+  target currently Restrained by `Stats.web_restrained`, regardless of distance/LOS, mirroring the
+  Invisibility short-circuit just in the opposite direction (never-lost instead of never-seen). The
+  "ignores its own web" half is a documented no-op (nothing in this engine ever makes an enemy walk
+  into a web).
+- **Web ability** (pool `"web": {"cooldown","range","save_dc"}`, `Enemy._decide_action()`/
+  `_execute_cast_web()`): a ranged, non-damage, SAVE-based restraint, Player-only (the only entity
+  with a Restrained/escape mechanic today). Priority-wise it sits in the exact same slot Imp's
+  Invisibility occupies — while already aware of the target (`CHASING`/`SEARCHING`, **never** on a
+  fresh notice, matching the direct owner's own framing: a Spider that hasn't noticed the hero yet
+  never webs blind), not yet adjacent, the target isn't already stuck in an earlier web, off its
+  10-turn cooldown, in range, and nothing blocks the shot (`DungeonFloor.has_clear_shot()`, same
+  obstruction gate every other ranged ability/thrown-weapon check already uses — "can only spit
+  it if nobody/nothing stands in the way"), Web is picked over closing the distance. On cast: a DEX
+  saving throw rolled the identical `d20 + DEX mod + (proficiency if Stats.check_prof_dex)` shape
+  the player's own DEX save vs a friendly-fire Fireball already uses (`spell_effects.gd`'s
+  `cast_leveled_at_area()`). Failure sets `Stats.web_restrained = true` (+ `Stats.web_escape_dc`)
+  and calls `DungeonFloor.spawn_web(target.grid_pos)` — a lightweight destructible-terrain dict
+  (`_webs`, same shape as `_barrels`, AC 10 / HP 5 / vulnerable to Fire / immune to Poison and
+  Psychic per the real spell's text, **no art yet** — `WEB_TEX_PATH` guarded exactly like
+  `BARREL_TEX_PATH`, mechanically wired but visually a no-op until a sprite is authored). Restrained
+  blocks ALL player movement: `player.gd._try_move()` redirects every directional key press into
+  `_attempt_web_escape()` instead (a STR check vs `web_escape_dc` — the D&D-alternate escape route,
+  since this engine has no attack-a-structure system to support the "deal 5+ slashing/fire damage to
+  the web" route; documented simplification, not an oversight). Success clears
+  `web_restrained`/destroys the web at the player's current tile (guaranteed still underfoot, since
+  Restrained blocks movement entirely); failure just costs the turn.
+- **Sprite**: reuses the same sliced `Spider/{idle,run}.png` sheet (32×32 frames, scale 0.5, 6
+  frames each) already authored for Imp's Shape Shift form above — `Enemy._setup_animations()`
+  gained a `_type.has("sprite_frame_size")` branch (no `sprite_variants` needed) that calls
+  `_setup_sheet_animations([])`, and `_setup_sheet_animations()` itself now handles an empty
+  `variants` array by skipping the per-color subfolder entirely (same branch
+  `_refresh_shape_shift_visual()` already used for this exact asset) — a reusable path for any
+  future sheet-sliced enemy with no cosmetic recolor.
+
+## Quasit
+
+`dungeon_floor_data.gd`'s `quasit` entry (art/identity renamed from the earlier "Chort" sprite —
+see root `CLAUDE.md`'s Sprite Assets section) — Tiny Fiend, CE, CR 1, HP 25, AC 13 (natural
+armor), STR 5/DEX 17/CON 10/INT 7/WIS 10/CHA 10, superior darkvision (`"senses": {"sight_bonus":
+2}`), resist Cold/Fire/Lightning, immune Poison damage and the poisoned condition, Rend (1d4+3
+Slashing, `"multiattack"`), Magic Resistance (shared trait with Imp, see above), Invisibility
+(identical mechanism to Imp's own, same pool key), and two more mechanisms:
+
+- **Shape Shift, Quasit's own form list**: reuses Imp's `"shape_shift"` trait but authors
+  `"shape_shift_forms": ["bat","centipede","toad"]` (`Enemy._shape_shift_forms()` — see the
+  `"traits"` row above) instead of Imp's rat/raven/spider, and `"shape_shift_speed":
+  {"moves":4,"per":3}` so none of its forms are slower than its own true-form speed (Imp's forms
+  deliberately downgrade to a shared mundane ground speed since none of them can fly; Quasit's
+  Bat/Centipede/Toad don't need that penalty). **Toad additionally swims freely**: `Enemy.
+  _move_step()`'s generic Water/Mud → `apply_status("slowed", 1)` call now also skips WATER
+  specifically (not Mud) whenever `_shifted_form == "toad"`, alongside the pre-existing
+  `"ignore_terrain_slow"` trait check (Spider Climb) — a narrower, form-scoped exemption rather
+  than a blanket trait, since only the Toad form is meant to ignore water, not Quasit's true form
+  or its other two forms. No art authored yet for Bat/Centipede/Toad (asset debt, same precedent
+  as Imp's own unwired Raven) — `_refresh_shape_shift_visual()` no-ops for all three, leaving the
+  true Quasit sprite showing.
+- **Scare ability** (pool `"scare": {"range","save_dc"}`, `Enemy._decide_action()`/
+  `_execute_cast_scare()`): a ranged, non-damage, WIS-SAVE-based fear effect, Player-only, 1/life
+  (the real stat block is "1/Day" — enemies don't rest, same "N/day = N/life" precedent as
+  Legendary Resistance — tracked via a plain `_scare_used: bool` flag rather than a cooldown
+  counter). Same decision priority/gating shape as Spider's Web above: while already aware of the
+  target (`CHASING`/`SEARCHING`, never on a fresh notice), not yet adjacent, in range (default 2
+  tiles), and nothing blocks the shot (`DungeonFloor.has_clear_shot()`), Scare is picked over
+  closing the distance. On cast: a WIS saving throw, `d20 + WIS mod + (proficiency if
+  Stats.check_prof_wis)` vs the pool's `"save_dc"` (10) — same roll shape as Web's own DEX save,
+  just WIS instead. **The real effect on a failed save (Frightened, repeating the save at the end
+  of each of the target's turns) is NOT implemented** — this engine has no mechanical Frightened
+  condition today (nor a true Poisoned condition — see Rend's own comment in `dungeon_floor_data.
+  gd`, same gap), so a failed save only logs the flavor text ("frozen with fear"/"hold your
+  nerve") via the same `save:` tooltip meta format as every other resist check. Documented,
+  deliberate gap pending a future conditions-system pass — not an oversight.
 
 ## Multi-tile footprint (Large enemies)
 
@@ -242,13 +330,14 @@ triggers (`"triggers"` key is unread — no flee/enrage-on-ally-death behavior),
 its own future design doc). CR-budgeted floor spawning **is** implemented — see the `"cr"` schema
 row above and `scripts/world/CLAUDE.md`'s "Spawning" section.
 
-**Ranged distance scaling convention (still settling)**: converting a D&D 2024 distance (feet,
-5 ft/square) into tiles is not necessarily one universal divisor. What's decided so far: shooting
-ranges (ranged weapons' `Item.range`, and an `"abilities"` pool entry's `range`/`long_range` — see
-the table above) divide by **20** (Shortbow's 80/320 ft → 4/16 tiles, not 8/32) — steeper than a
-straight D&D-ratio conversion because our grid only grants **1 tile of movement per turn** (no
-D&D-style 30 ft move-per-round budget), so anything looser would dwarf how far a target can
-actually close distance in a reasonable number of turns and make ranged combat trivially safe.
+**Ranged distance scaling convention**: converting a D&D 2024 distance (feet, 5 ft/square) into
+tiles is not necessarily one universal divisor. What's decided so far: shooting ranges (ranged
+weapons' `Item.range`/`Item.long_range` — now a real fixed field, see `scripts/items/CLAUDE.md`'s
+"Ranged weapons (current)" — and an `"abilities"` pool entry's `range`/`long_range` — see the table
+above) divide by **20** (Shortbow's 80/320 ft → 4/16 tiles, not 8/32) — steeper than a straight
+D&D-ratio conversion because our grid only grants **1 tile of movement per turn** (no D&D-style
+30 ft move-per-round budget), so anything looser would dwarf how far a target can actually close
+distance in a reasonable number of turns and make ranged combat trivially safe.
 Spell `range_tiles` (`scripts/items/CLAUDE.md`'s spellcasting-data section, currently dividing by
 10 — e.g. Fire Bolt's 120 ft → 12 tiles) is **not locked in** — the same 1-tile-per-turn argument
 may end up pulling spell ranges down to /20 too; re-check with the user before assuming /10 is
@@ -317,7 +406,7 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 
 ### Advantage / Disadvantage
 - **ADV**: attacking a SLEEPING/STATIONARY/ROAMING enemy (unaware defender — see "Stealth & Surprise Attacks" below); attacking an enemy whose `door_ambush == true` (consumed one-shot after check)
-- **DISADV**: ranged attack at Chebyshev distance 1 (melee range); melee with a `is_heavy` weapon when STR < 13; ranged with a `is_heavy` weapon when DEX < 13; ranged shot beyond the weapon's normal range but within FOV (`player.gd._ranged_shot_disadvantage()` — every ranged weapon's "long range" is the player's live FOV, not a per-weapon field, see `scripts/items/CLAUDE.md`); a Thrown weapon (Spear/Handaxe/Dagger) thrown at Chebyshev distance 1, and a thrown weapon's own long-throw equivalent, both applied in `PlayerThrowTool._throw_weapon()` (`scripts/entities/player_throw_tool.gd`). **Exemption**: the "melee-range" DISADV (ranged AND thrown) is skipped outright when the target is unaware (`SLEEPING`/`STATIONARY`/`ROAMING`) — 5e RAW exempts an incapacitated nearby creature from this "distracted by a hostile at melee range" penalty, and this engine's closest equivalent is an unaware enemy; without the exemption a point-blank surprise shot/throw always cancelled its own surprise-attack ADV back to a flat roll (`PlayerRanged.ranged_attack()`, `PlayerThrowTool._throw_weapon()`).
+- **DISADV**: ranged attack at Chebyshev distance 1 (melee range); melee with a `is_heavy` weapon when STR < 13; ranged with a `is_heavy` weapon when DEX < 13; ranged shot beyond the weapon's normal range but within its own fixed `Item.long_range` (`PlayerRanged.ranged_shot_disadvantage()` — see `scripts/items/CLAUDE.md`'s "Ranged weapons (current)"); a Thrown weapon (Spear/Handaxe/Dagger/Torch) thrown at Chebyshev distance 1, and a thrown weapon's own long-throw equivalent (same `Item.long_range` mechanism), both applied in `PlayerThrowTool._throw_weapon()` (`scripts/entities/player_throw_tool.gd`). **Exemption**: the "melee-range" DISADV (ranged AND thrown) is skipped outright when the target is unaware (`SLEEPING`/`STATIONARY`/`ROAMING`) — 5e RAW exempts an incapacitated nearby creature from this "distracted by a hostile at melee range" penalty, and this engine's closest equivalent is an unaware enemy; without the exemption a point-blank surprise shot/throw always cancelled its own surprise-attack ADV back to a flat roll (`PlayerRanged.ranged_attack()`, `PlayerThrowTool._throw_weapon()`).
 - ADV + DISADV cancel → 1d20
 - Yellow "!" floats above enemy on ADV surprise attacks
 - Enemy attack log lines (`enemy.gd._attack_player()`) never name the specific talent/ability that granted ADV/DISADV — that context lives only in the `ehit` tooltip roll breakdown, not the log line.

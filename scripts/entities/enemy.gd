@@ -16,7 +16,7 @@ const SPRITE_FOLDER: Dictionary = {
 	"big_demon": "BigDemon", "necromancer": "Necromancer", "goblin": "Goblin",
 	"orc_warrior": "OrcWarrior", "orc_shaman": "OrcShaman", "masked_orc": "MaskedOrc",
 	"skelet": "Skeleton", "tiny_zombie": "Zombie", "wogol": "Wogol", "imp": "Imp",
-	"chort": "Chort", "pumpkin_dude": "PumpkinDude", "ogre": "Ogre", "rat": "Rat",
+	"quasit": "Quasit", "pumpkin_dude": "PumpkinDude", "ogre": "Ogre", "rat": "Rat", "spider": "Spider",
 }
 
 var _dungeon_floor: Node
@@ -49,8 +49,10 @@ var _thrown_weapon_lodged_item: Item = null    # the actual Item to place on the
 var _thrown_weapon_lodged_chance: float = 0.5  # per-enemy drop chance (pool "thrown_weapon"'s "drop_chance", default 0.5 matches Goblin Minion's original hardcoded rate)
 var _invis_turns: int = 0                # Invisibility ability (Imp) — turns remaining; hides sprite (visible=false) + skipped by DungeonFloor.get_targetable_enemy_at()
 var _invis_cooldown_remaining: int = 0   # turns until Invisibility can be cast again (pool "invisibility" -> "cooldown")
-const SHAPE_SHIFT_FORMS: PackedStringArray = ["rat", "raven", "spider"]
-var _shifted_form: String = ""  # Shape Shift trait (Imp) — "" = true form; else one of SHAPE_SHIFT_FORMS. Reverts on any damage taken (take_typed_damage()), swaps the visible sprite via _refresh_shape_shift_visual().
+var _web_cooldown_remaining: int = 0     # turns until Web can be cast again (Spider, pool "web" -> "cooldown")
+var _scare_used: bool = false            # Quasit's Scare — real stat block is "1/Day"; enemies never rest, so this is a one-shot per-life flag (same "N/day = N/life" precedent as legendary_resistances_remaining)
+const SHAPE_SHIFT_FORMS: PackedStringArray = ["rat", "raven", "spider"]  # default form list for the "shape_shift" trait — Imp's own set. An entry can override with its own pool "shape_shift_forms" array (Quasit: bat/centipede/toad) via _shape_shift_forms() below.
+var _shifted_form: String = ""  # Shape Shift trait (Imp/Quasit) — "" = true form; else one of this enemy's shape_shift_forms(). Reverts on any damage taken (take_typed_damage()), swaps the visible sprite via _refresh_shape_shift_visual().
 # Visual sprite config for shape-shifted forms (SHAPE_SHIFT_FORMS keys missing here — currently
 # just "raven", no art yet — fall back to leaving whatever sprite is already showing untouched,
 # i.e. the true Imp form stays visible; asset debt only, not a missing feature). "variants" empty
@@ -119,9 +121,10 @@ func _ready() -> void:
 	behavior = initial_behavior
 	if behavior == Behavior.SLEEPING:
 		_start_zzz()
-	# Shape Shift (Imp): 50% chance to already be shape-shifted into a random form at spawn.
+	# Shape Shift (Imp/Quasit): 50% chance to already be shape-shifted into a random form at spawn.
 	if _has_trait("shape_shift") and Rng.chance(0.5):
-		_shifted_form = SHAPE_SHIFT_FORMS[Rng.range_i(0, SHAPE_SHIFT_FORMS.size() - 1)]
+		var forms: Array = _shape_shift_forms()
+		_shifted_form = String(forms[Rng.range_i(0, forms.size() - 1)])
 		_refresh_shape_shift_visual()
 
 func _apply_stats() -> void:
@@ -286,6 +289,12 @@ func _tick_invisibility() -> void:
 func is_hidden_from_player() -> bool:
 	return _invis_turns > 0
 
+# Web ability cooldown (Spider, pool "web"): ticks down every real turn regardless of whether
+# Web is currently ready — same one-line shape as _invis_cooldown_remaining above.
+func _tick_web_cooldown() -> void:
+	if _web_cooldown_remaining > 0:
+		_web_cooldown_remaining -= 1
+
 func _end_invisibility() -> void:
 	_invis_turns = 0
 	visible = _dungeon_floor.is_tile_visible(grid_pos) if _dungeon_floor != null else true
@@ -304,7 +313,8 @@ func _tick_shape_shift() -> void:
 		return
 	var unseen: bool = is_hidden_from_player() or not _dungeon_floor.is_tile_visible(grid_pos)
 	if unseen and Rng.chance(0.5):
-		_shifted_form = SHAPE_SHIFT_FORMS[Rng.range_i(0, SHAPE_SHIFT_FORMS.size() - 1)]
+		var forms: Array = _shape_shift_forms()
+		_shifted_form = String(forms[Rng.range_i(0, forms.size() - 1)])
 		_refresh_shape_shift_visual()
 
 # Movement-speed scaling (§ "Ranged distance scaling convention"'s sibling rule — see
@@ -324,9 +334,12 @@ func _tick_shape_shift() -> void:
 func _tick_speed_gate() -> void:
 	var sp: Dictionary = _type.get("speed", {})
 	if _shifted_form != "":
-		# Shape Shift (Imp): all three animal forms share the same mundane ground speed regardless
-		# of the true form's own speed_ground/speed_flying pair — none of them can fly.
-		sp = {"moves": 2, "per": 3}
+		# Shape Shift: while shifted, speed comes from pool "shape_shift_speed" if authored,
+		# else falls back to Imp's original hardcoded mundane-critter speed. Imp's three animal
+		# forms are all slower than its own true-form flight (none of them can fly) — Quasit's own
+		# forms (bat/centipede/toad) instead keep its normal 4/3 speed via an explicit override,
+		# since none of them are meant to be slower than its true form.
+		sp = _type.get("shape_shift_speed", {"moves": 2, "per": 3})
 	elif _type.has("speed_ground") and _type.has("speed_flying"):
 		sp = _type["speed_flying"] if behavior in [Behavior.CHASING, Behavior.SEARCHING] else _type["speed_ground"]
 	var moves: int = int(sp.get("moves", 1))
@@ -343,6 +356,14 @@ func _has_trait(id: String) -> bool:
 		if tr.get("id", "") == id:
 			return true
 	return false
+
+# Which random-form list the "shape_shift" trait picks from — an entry's own pool
+# "shape_shift_forms" array (Quasit: bat/centipede/toad) if authored, else the shared
+# SHAPE_SHIFT_FORMS default (Imp: rat/raven/spider). Returning a plain Array (not
+# PackedStringArray) since pool data is untyped GDScript literals.
+func _shape_shift_forms() -> Array:
+	var forms: Array = _type.get("shape_shift_forms", [])
+	return forms if not forms.is_empty() else Array(SHAPE_SHIFT_FORMS)
 
 # "advantage_bonus" trait (Goblin Warrior/Archer): whenever this enemy's OWN attack roll lands
 # with net Advantage, its damage gets one extra die (pool `{"id": "advantage_bonus", "sides": N}`,
@@ -512,6 +533,14 @@ func _setup_animations() -> void:
 	if not variants.is_empty():
 		_setup_sheet_animations(variants)
 		return
+	# A sheet-sliced enemy with no cosmetic color variant at all (Spider — one fixed idle.png/
+	# run.png sheet, no Rat-style Gray/Brown/White subfolder) still needs the sheet-slicing path,
+	# just without a variant subfolder — same "sprite_frame_size present" signal + empty-variants
+	# branch _refresh_shape_shift_visual() already uses for this exact art asset (Imp's Shape Shift
+	# reuses the same Spider sheet cosmetically; this is the real Spider enemy's own setup).
+	if _type.has("sprite_frame_size"):
+		_setup_sheet_animations([])
+		return
 	var prefix: String = _type.get("sprite", "orc_warrior")
 	var idle_n: int    = _type.get("idle_frames", 4)
 	var run_n: int     = _type.get("run_frames", 4)
@@ -544,8 +573,12 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 func _setup_sheet_animations(variants: Array) -> void:
 	var prefix: String = _type.get("sprite", "rat")
 	var folder: String = SPRITE_FOLDER.get(prefix, prefix)
-	var variant: String = String(variants[randi() % variants.size()])
-	var sheet_path_fmt: String = "%s%s/%s/%%s.png" % [SPRITES_PATH, folder, variant.to_lower()]
+	var sheet_path_fmt: String
+	if variants.is_empty():
+		sheet_path_fmt = "%s%s/%%s.png" % [SPRITES_PATH, folder]
+	else:
+		var variant: String = String(variants[randi() % variants.size()])
+		sheet_path_fmt = "%s%s/%s/%%s.png" % [SPRITES_PATH, folder, variant.to_lower()]
 	var frame_size: Dictionary = _type.get("sprite_frame_size", {})
 	var fw: int = int(frame_size.get("w", 64))
 	var fh: int = int(frame_size.get("h", 64))
@@ -736,6 +769,12 @@ func _can_see_entity(e: Node) -> bool:
 	# vanished, searches briefly, then gives up").
 	if e is Player and GameState.player_stats.invisibility_turns > 0:
 		return false
+	# Web Walker (Spider trait "web_walker"): "knows the location of any creature in contact with
+	# the same web" — a target currently Restrained by THIS spider's Web is never lost track of,
+	# regardless of distance/LOS (mirrors the invisibility short-circuit above, just the opposite
+	# direction: always-seen instead of never-seen).
+	if _has_trait("web_walker") and e is Player and GameState.player_stats.web_restrained:
+		return true
 	var r: int = _sight_range()
 	return _dist_sq_to(e) <= r * r and _dungeon_floor.has_line_of_sight(nearest_occupied_tile(e.grid_pos), e.grid_pos)
 
@@ -795,6 +834,7 @@ func decide_turn() -> Dictionary:
 	_tick_regeneration()
 	_tick_speed_gate()
 	_tick_invisibility()
+	_tick_web_cooldown()
 	_tick_shape_shift()
 	if prone_turns > 0:
 		prone_turns -= 1
@@ -887,6 +927,35 @@ func _decide_action() -> Dictionary:
 	if not invis_cfg.is_empty() and _invis_turns <= 0 and _invis_cooldown_remaining <= 0 \
 			and behavior in [Behavior.CHASING, Behavior.SEARCHING] and _chebyshev_to(target) > 1:
 		return {"type": "cast_invisibility", "config": invis_cfg}
+
+	# Spider — Web (pool "web": {"cooldown","range","save_dc"}): a ranged, non-damage, SAVE-based
+	# restraint ability, Player-only (the only entity with a Restrained/escape mechanic — see
+	# Stats.web_restrained). Priority is identical to Invisibility above: while already aware of the
+	# target (CHASING/SEARCHING — never on a fresh notice), not yet adjacent, off cooldown, and the
+	# target isn't already stuck in an earlier web, cast it instead of closing distance the instant
+	# it's in range AND nothing blocks the shot (has_clear_shot, matching every other ranged
+	# ability's own obstruction check). "Already knows about the hero" per the owner's own framing —
+	# a SLEEPING/STATIONARY/ROAMING spider that hasn't noticed anyone never webs blind.
+	var web_cfg: Dictionary = _type.get("web", {})
+	if not web_cfg.is_empty() and _web_cooldown_remaining <= 0 and target is Player \
+			and not GameState.player_stats.web_restrained and not _target_is_untouchable(target) \
+			and behavior in [Behavior.CHASING, Behavior.SEARCHING] and _chebyshev_to(target) > 1:
+		var web_range: int = int(web_cfg.get("range", 6))
+		if _chebyshev_to(target) <= web_range and _dungeon_floor.has_clear_shot(grid_pos, target.grid_pos):
+			return {"type": "cast_web", "target": target, "config": web_cfg}
+
+	# Quasit — Scare (pool "scare": {"range","save_dc"}): a ranged, non-damage, SAVE-based fear
+	# effect, 1/life (the real stat block is "1/Day" — enemies don't rest, same "N/day = N/life"
+	# precedent as Legendary Resistance, see legendary_resistances_remaining above). Same
+	# priority/gating shape as Web above: only while already pursuing (CHASING/SEARCHING), not yet
+	# adjacent, off its one-shot flag, in range, and nothing blocks the line.
+	var scare_cfg: Dictionary = _type.get("scare", {})
+	if not scare_cfg.is_empty() and not _scare_used and target is Player \
+			and not _target_is_untouchable(target) \
+			and behavior in [Behavior.CHASING, Behavior.SEARCHING] and _chebyshev_to(target) > 1:
+		var scare_range: int = int(scare_cfg.get("range", 2))
+		if _chebyshev_to(target) <= scare_range and _dungeon_floor.has_clear_shot(grid_pos, target.grid_pos):
+			return {"type": "cast_scare", "target": target, "config": scare_cfg}
 
 	# World Tree Grip of the Forest R2: rooted — no movement this turn, but can still attack if adjacent.
 	if rooted_turns > 0:
@@ -1003,6 +1072,12 @@ func _execute_action(intent: Dictionary) -> void:
 			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		"cast_invisibility":
 			_execute_cast_invisibility(intent["config"])
+			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
+		"cast_web":
+			_execute_cast_web(intent["target"], intent["config"])
+			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
+		"cast_scare":
+			_execute_cast_scare(intent["target"], intent["config"])
 			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		"act_toward":
 			# Aggressive (§ trait): while it can see its target, gets one extra movement step this
@@ -1351,6 +1426,57 @@ func _execute_cast_invisibility(cfg: Dictionary) -> void:
 	visible = false
 	GameState.game_log("[color=purple]%s fades from view.[/color]" % display_name)
 
+# Spider's Web ability (pool "web": {"cooldown","range","save_dc"}) — Player-only ranged restraint.
+# A DEX saving throw, not an attack roll: rolled the exact same way the player's own DEX save vs a
+# friendly-fire Fireball is (spell_effects.gd's cast_leveled_at_area()'s "pdc"/"pdex_mod"/"pprof"
+# block) — d20 + DEX mod + (proficiency, if Stats.check_prof_dex) vs the pool's "save_dc". Costs
+# the turn and starts the cooldown regardless of outcome. On a fail: Stats.web_restrained = true
+# (blocks ALL player movement — see player.gd's _try_move()/_attempt_web_escape()) and a Web
+# structure (DungeonFloor.spawn_web()) appears on the target's own tile, matching the real spell's
+# "web appears at the target's square" text.
+func _execute_cast_web(target: Node, cfg: Dictionary) -> void:
+	_web_cooldown_remaining = int(cfg.get("cooldown", 10))
+	var dc: int = int(cfg.get("save_dc", 13))
+	var s: Stats = target.stats
+	var dex_mod: int = s.dex_modifier()
+	var prof: int = s.proficiency_bonus if s.check_prof_dex else 0
+	var die: int = Rng.roll(20)
+	var total: int = die + dex_mod + prof
+	var passed: bool = total >= dc
+	var meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=DEX,pass=%d" % [
+		die, dex_mod, prof, total, dc, int(passed)]
+	if passed:
+		GameState.game_log("%s spits a web at you, but you [url=%s]dodge clear[/url]." % [display_name, meta])
+		return
+	GameState.game_log("%s spits a web at you — you're [url=%s]caught and restrained[/url]!" % [display_name, meta])
+	s.web_restrained = true
+	s.web_escape_dc = dc
+	GameState.player_status_changed.emit()
+	_dungeon_floor.spawn_web(target.grid_pos)
+
+# Quasit's Scare ability (pool "scare": {"range","save_dc"}) — Player-only ranged fear effect,
+# 1/life. A WIS saving throw, not an attack roll — same d20 + WIS mod + (proficiency, if
+# Stats.check_prof_wis) vs the pool's "save_dc" shape as Web's own DEX save above. Costs the turn
+# and is consumed regardless of outcome. On a fail the target is meant to become Frightened (real
+# text: repeats the save at the end of each of its turns) — that mechanical condition doesn't
+# exist in this engine yet (no "frightened" status/effect anywhere), so only the flavor log line
+# fires today; documented gap pending a future conditions-system pass, not an oversight.
+func _execute_cast_scare(target: Node, cfg: Dictionary) -> void:
+	_scare_used = true
+	var dc: int = int(cfg.get("save_dc", 10))
+	var s: Stats = target.stats
+	var wis_mod: int = s.wis_modifier()
+	var prof: int = s.proficiency_bonus if s.check_prof_wis else 0
+	var die: int = Rng.roll(20)
+	var total: int = die + wis_mod + prof
+	var passed: bool = total >= dc
+	var meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=WIS,pass=%d" % [
+		die, wis_mod, prof, total, dc, int(passed)]
+	if passed:
+		GameState.game_log("%s shrieks at you, but you [url=%s]hold your nerve[/url]." % [display_name, meta])
+		return
+	GameState.game_log("%s shrieks at you — you're [url=%s]frozen with fear[/url]!" % [display_name, meta])
+
 func _move_step(step: Vector2i, next_pos: Vector2i, provokes_oa: bool = true) -> void:
 	var prev_pos: Vector2i = grid_pos
 	if provokes_oa:
@@ -1371,7 +1497,14 @@ func _move_step(step: Vector2i, next_pos: Vector2i, provokes_oa: bool = true) ->
 	if _dungeon_floor.has_door_at(prev_pos):
 		_dungeon_floor.close_door(prev_pos)
 	var tile_type: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
-	if tile_type == DungeonData.TileType.WATER or tile_type == DungeonData.TileType.MUD:
+	# Spider Climb (trait "ignore_terrain_slow"): "can go through difficult surfaces without being
+	# slowed" — skips the generic Water/Mud slow application entirely, unlike every other enemy.
+	# Quasit's Toad form additionally ignores WATER specifically (swims freely) while shifted,
+	# without the blanket trait — real amphibian flavor, not a general terrain-ignore ability.
+	var ignore_slow: bool = _has_trait("ignore_terrain_slow") \
+			or (_shifted_form == "toad" and tile_type == DungeonData.TileType.WATER)
+	if (tile_type == DungeonData.TileType.WATER or tile_type == DungeonData.TileType.MUD) \
+			and not ignore_slow:
 		apply_status("slowed", 1)
 	if tile_type == DungeonData.TileType.WATER and stats.burning_turns > 0:
 		stats.burning_turns = 0
