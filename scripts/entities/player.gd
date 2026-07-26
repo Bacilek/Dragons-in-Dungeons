@@ -1257,6 +1257,10 @@ func _execute_queued_path() -> void:
 
 		var enemy_there: Enemy = _dungeon_floor.get_enemy_at(next)
 		if enemy_there != null:
+			if enemy_there.is_hidden_from_player():
+				# Invisible enemy blocking the path reads as a wall — stop here silently,
+				# same as _try_move()'s bump handling.
+				break
 			if Input.is_key_pressed(KEY_SHIFT) and GameState.equipped_ranged != null:
 				_ranged.ranged_attack(enemy_there)
 			else:
@@ -1434,6 +1438,11 @@ func _try_move(dir: Vector2i) -> void:
 	var target: Vector2i = grid_pos + dir
 
 	var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
+	if enemy != null and enemy.is_hidden_from_player():
+		# Invisible enemy's tile feels exactly like a wall bump: no move, no blind attack, no
+		# reveal via slash VFX/damage floater. Symmetric with is_walkable_for_enemy() always
+		# blocking an enemy from landing ON the (possibly invisible) player's tile.
+		return
 	if enemy != null:
 		# Frenzy/Limit Break armed: a directional bump into an adjacent enemy targets it, same
 		# as a normal melee attack — mouse click-to-target (player.gd's click handler) still

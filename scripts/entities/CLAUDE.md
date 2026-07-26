@@ -173,13 +173,19 @@ underlying mechanism, described once here.
   pattern as `witch_bolt_just_cast`. The enemy side's equivalent is simpler: `Enemy._attack_target()`
   checks `_invis_turns > 0` and calls `_end_invisibility()` before dispatching the attack.
 - **Not invincible, just unseen**: an invisible creature can still be hit by AoE spells
-  (Fireball/Thunderclap — these never target by click, so they're unaffected either way) or by
-  bumping into it (walking into its tile — `_try_move()`'s WASD bump-attack path deliberately keeps
-  calling `DungeonFloor.get_enemy_at()` directly, unfiltered). What it blocks is every DIRECT
-  click-based target resolution — `DungeonFloor.get_targetable_enemy_at()` (returns `null` for an
-  Invisible enemy) is the chokepoint every click-to-chase, Frenzy/Limit Break click, Grip of the
-  Forest hook click, spell Ctrl/LMB click, and thrown-weapon click now goes through instead of the
-  raw `get_enemy_at()`.
+  (Fireball/Thunderclap — these never target by click, so they're unaffected either way), but NOT
+  by bumping into it — walking (WASD or a queued click-path) into an invisible enemy's tile reads
+  as a wall bump: `_try_move()` and the queued-path loop in `player.gd` both check
+  `Enemy.is_hidden_from_player()` on the raw `DungeonFloor.get_enemy_at()` result and, if hidden,
+  silently stop there (no move, no attack, no turn spent, no slash VFX/damage floater to give away
+  the tile) instead of falling into the normal bump-attack. This mirrors `is_walkable_for_enemy()`
+  always blocking an enemy from landing ON the (possibly invisible) player's tile — invisibility is
+  symmetric now: neither side can attack-by-bumping into a tile they can't see is occupied. Every
+  DIRECT click-based target resolution was already blocked before this: `DungeonFloor.
+  get_targetable_enemy_at()` (returns `null` for an Invisible enemy) is the chokepoint every
+  click-to-chase, Frenzy/Limit Break click, Grip of the Forest hook click, spell Ctrl/LMB click, and
+  thrown-weapon click goes through instead of the raw `get_enemy_at()`. Net effect: an Invisible
+  enemy can now only be damaged by AoE.
 - **Enemies losing track of an invisible player**: `Enemy._can_see_entity()` returns `false`
   outright for a target with `GameState.player_stats.invisibility_turns > 0`, regardless of
   distance/LOS — per direct owner design, an unaware pursuer doesn't "try" to track it, it's simply
