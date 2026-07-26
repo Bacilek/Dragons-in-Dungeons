@@ -268,7 +268,21 @@ on_player_reached_stairs() → GameState.advance_floor() → _load_floor()
 ---
 
 ## Water terrain
-`TileType.WATER` (=5) is fully rendered and implemented. Stepping into water: costs 2 turns (difficult terrain, same as mud) AND extinguishes burning (`burning_turns = 0`, logged in cyan). Both `player.gd _try_move()` and `_execute_queued_path()` handle this.
+`TileType.WATER` (=5) is fully rendered and implemented (atlas sample point in `_setup_tileset()`
+was fixed from `(32,0)` — a brown dirt-blob edge pixel that was silently rendering as plain floor
+— to `(64,16)`, a clean interior tile of the actual blue water blob in `water_rock_dirt.png`).
+Stepping into water: costs 2 turns (difficult terrain, same as mud) AND extinguishes burning
+(`burning_turns = 0`, logged in cyan). Both `player.gd _try_move()` and `_execute_queued_path()`
+handle this for the player; `Enemy._move_step()` mirrors it for enemies (currently dead in
+practice since nothing sets `Enemy.stats.burning_turns` yet — see `scripts/entities/CLAUDE.md`'s
+"Status effects" — but wired so the interaction is correct the moment something does). **Nothing
+flammable can ignite while standing on water**: `ignite_flammable(pos)` refuses outright (returns
+`false`, no barrel/door catches fire) when `pos` is a WATER tile — purely defensive today since
+barrels/doors never spawn on water anyway, but keeps the rule centralized at the one chokepoint
+rather than relying on that spawn-placement accident. A thrown **lit** Torch landing on a WATER
+tile (`PlayerThrowTool._throw_weapon()`'s no-enemy-target landing branch) is doused instead of
+igniting anything — `torch_lit = false`, logged in cyan — rather than calling `ignite_flammable()`
+at all.
 
 ## Empty bottle mechanic
 Drinking any POTION adds an `Empty Bottle` (TOOL type, `sprites/items/materials/bottle/small.png`) to inventory via `potion_drunk` signal → `GameState.add_item()`. **Fill is manual**: use the bottle from quickbar/inventory (enters tool mode via `player_tool_primed`), then LMB or RMB on an adjacent WATER tile → `Bottle of Water` (TOOL, medium sprite); adjacent MUD → `Bottle of Mud` (TOOL, small sprite). Neither is FOOD-typed or contributes to long rest food value. Fill costs 1 turn. `PlayerThrowTool.try_fill_bottle(bottle, target)` (`scripts/entities/player_throw_tool.gd`) checks adjacency and tile type. **Nat-1 roll on fill**: rolling 1 on a d20 shatters the bottle (consumed, no fill). LMB tool routing checks item name before dispatching: "Empty Bottle" → `_throw_tool.try_fill_bottle()`; other tools → `_actions.interact_action()` (`scripts/entities/player_actions.gd`).

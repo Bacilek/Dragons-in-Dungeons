@@ -1368,6 +1368,9 @@ func _move_step(step: Vector2i, next_pos: Vector2i, provokes_oa: bool = true) ->
 	var tile_type: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
 	if tile_type == DungeonData.TileType.WATER or tile_type == DungeonData.TileType.MUD:
 		apply_status("slowed", 1)
+	if tile_type == DungeonData.TileType.WATER and stats.burning_turns > 0:
+		stats.burning_turns = 0
+		GameState.game_log("[color=cyan]The water extinguishes %s's flames![/color]" % display_name)
 	if tile_type == DungeonData.TileType.GRASS:
 		_dungeon_floor.destroy_grass(grid_pos)
 	var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)

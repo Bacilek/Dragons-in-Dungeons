@@ -361,6 +361,14 @@ GameState.player_status_changed.emit()
 | Bleeding | red | Spike Trap (5t) | damage/turn |
 | Slowed | brown | Bear Trap (20t), mud, water | movement costs 2 turns |
 
+**Water extinguishes burning**: stepping onto (or ending a move on) a WATER tile zeroes
+`burning_turns` to 0 — `player.gd`'s `_try_move()`/`_execute_queued_path()` for the player,
+`Enemy._move_step()` for enemies (see `scripts/world/CLAUDE.md`'s "Water terrain"). No current
+call site ever sets `Enemy.stats.burning_turns` above 0 (burning is still a reserved/no-op status
+for enemies per the `"condition_immunities"` schema row above), so the enemy side of this is inert
+today — added so the interaction is already correct once a burning-enemy source exists, without
+needing a second pass through every water-tile-entry call site.
+
 **Status-tray display vs. the underlying `slowed_turns` counter**: `slowed_turns` is shared by Bear
 Trap's real 20-turn debuff AND every Mud/Water step (`apply_player_status("slowed", maxi(1,
 slowed_turns))`, `player.gd`'s `_try_move()`/`_execute_queued_path()`) — both still drive the

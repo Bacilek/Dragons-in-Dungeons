@@ -104,7 +104,7 @@ func _setup_tileset() -> void:
 	_add_tile_source(tile_set, SOURCE_STAIRS, TILE_SPRITES_PATH + "floor_stairs.png")
 	# New tile types — extract from atlas sheets or use solid-color fallbacks
 	_add_tile_source_or_color(tile_set, SOURCE_CHASM, TILE_SPRITES_PATH + "hole.png", Color(0.06, 0.04, 0.08))
-	_add_tile_from_atlas(tile_set, SOURCE_WATER, "res://sprites/tiles/water_rock_dirt.png", 32, 0, Color(0.10, 0.30, 0.72))
+	_add_tile_from_atlas(tile_set, SOURCE_WATER, "res://sprites/tiles/water_rock_dirt.png", 64, 16, Color(0.10, 0.30, 0.72))
 	_add_tile_from_atlas(tile_set, SOURCE_MUD,   "res://sprites/tiles/water_rock_dirt.png",  0, 0, Color(0.30, 0.18, 0.08))
 	_add_tile_from_atlas(tile_set, SOURCE_GRASS,         "res://sprites/tiles/grass.png", 368, 176, Color(0.10, 0.42, 0.10))
 	_add_tile_source_or_color(tile_set, SOURCE_DOOR_CLOSED,    DungeonFloorData.OBJECTS_PATH + "doors/leaf_closed.png", Color(0.5, 0.3, 0.1))
@@ -1906,6 +1906,8 @@ func has_barrel_at(pos: Vector2i) -> bool:
 # Dungeon's Terrain.FLAMABLE flag, which covers ordinary doors alongside grass/barrels but excludes
 # locked/crystal doors. No-ops (returns false) if the tile has neither, or is already burning.
 func ignite_flammable(pos: Vector2i) -> bool:
+	if get_tile_type(pos) == DungeonData.TileType.WATER:
+		return false
 	if _barrels.has(pos) and not _barrels[pos]["burning"]:
 		_barrels[pos]["burning"] = true
 		_barrels[pos]["burn_turns"] = FLAMMABLE_BURN_TURNS

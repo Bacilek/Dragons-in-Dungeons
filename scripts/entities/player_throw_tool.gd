@@ -199,7 +199,11 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	if enemy == null:
 		GameState.game_log("[color=gray]You throw [b]%s[/b] — it lands on the ground.[/color]" % weapon.item_name)
 		if weapon.is_torch and weapon.torch_lit:
-			player._dungeon_floor.ignite_flammable(pos)
+			if player._dungeon_floor.get_tile_type(pos) == DungeonData.TileType.WATER:
+				weapon.torch_lit = false
+				GameState.game_log("[color=cyan]The water douses the torch![/color]")
+			else:
+				player._dungeon_floor.ignite_flammable(pos)
 		GameState.remove_item(weapon)
 		player._dungeon_floor.place_item_on_floor(pos, weapon)
 		player._dungeon_floor.update_fog(player.grid_pos)
