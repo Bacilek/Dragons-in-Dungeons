@@ -107,8 +107,8 @@ func _setup_tileset() -> void:
 	_add_tile_from_atlas(tile_set, SOURCE_WATER, "res://sprites/tiles/WaterRockDirt.png", 32, 0, Color(0.10, 0.30, 0.72))
 	_add_tile_from_atlas(tile_set, SOURCE_MUD,   "res://sprites/tiles/WaterRockDirt.png",  0, 0, Color(0.30, 0.18, 0.08))
 	_add_tile_from_atlas(tile_set, SOURCE_GRASS,         "res://sprites/tiles/Grass.png", 368, 176, Color(0.10, 0.42, 0.10))
-	_add_tile_source_or_color(tile_set, SOURCE_DOOR_CLOSED,    DungeonFloorData.OBJECTS_PATH + "doors_leaf_closed.png", Color(0.5, 0.3, 0.1))
-	_add_tile_source_or_color(tile_set, SOURCE_DOOR_OPEN,      DungeonFloorData.OBJECTS_PATH + "doors_leaf_open.png",   Color(0.3, 0.2, 0.05))
+	_add_tile_source_or_color(tile_set, SOURCE_DOOR_CLOSED,    DungeonFloorData.OBJECTS_PATH + "doors/leaf_closed.png", Color(0.5, 0.3, 0.1))
+	_add_tile_source_or_color(tile_set, SOURCE_DOOR_OPEN,      DungeonFloorData.OBJECTS_PATH + "doors/leaf_open.png",   Color(0.3, 0.2, 0.05))
 	_add_tile_from_atlas(tile_set, SOURCE_TRAMPLED_GRASS, "res://sprites/tiles/Grass.png", 352, 192, Color(0.38, 0.30, 0.10))
 	tilemap.tile_set = tile_set
 	_grass_layer = TileMapLayer.new()
@@ -1724,10 +1724,10 @@ func _spawn_doors() -> void:
 	# Place doors with 65% probability, max 2 per room is handled by room perimeter size
 	var tex_closed: Texture2D = null
 	var tex_open: Texture2D = null
-	if ResourceLoader.exists(DungeonFloorData.OBJECTS_PATH + "doors_leaf_closed.png"):
-		tex_closed = load(DungeonFloorData.OBJECTS_PATH + "doors_leaf_closed.png")
-	if ResourceLoader.exists(DungeonFloorData.OBJECTS_PATH + "doors_leaf_open.png"):
-		tex_open = load(DungeonFloorData.OBJECTS_PATH + "doors_leaf_open.png")
+	if ResourceLoader.exists(DungeonFloorData.OBJECTS_PATH + "doors/leaf_closed.png"):
+		tex_closed = load(DungeonFloorData.OBJECTS_PATH + "doors/leaf_closed.png")
+	if ResourceLoader.exists(DungeonFloorData.OBJECTS_PATH + "doors/leaf_open.png"):
+		tex_open = load(DungeonFloorData.OBJECTS_PATH + "doors/leaf_open.png")
 
 	for pos: Vector2i in door_candidates:
 		if _pop_rng.randf() > 0.65:

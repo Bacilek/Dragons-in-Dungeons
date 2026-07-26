@@ -340,11 +340,12 @@ Shift+click enemy or floor tile → fires ranged weapon if `equipped_ranged` exi
 ```gdscript
 DungeonFloorData.WEAPONS_PATH = "res://sprites/weapons/"
 DungeonFloorData.ITEMS_PATH   = "res://sprites/items/"           # subfolders: food/, potions/health/, potions/mana/, misc/, materials/, shields/, weapons/, etc. — all snake_case
-DungeonFloorData.OBJECTS_PATH = "res://sprites/objects/"
+DungeonFloorData.OBJECTS_PATH = "res://sprites/objects/"  # crate.png, doors/leaf_closed.png, doors/leaf_open.png live; everything else unreferenced, under _unused/ (same convention as sprites/items/ below)
 ```
 (`debug_panel.gd` keeps its own local `WEAPONS_PATH`/`ITEMS_PATH` constants — unrelated duplicates used only for its Give Item icon lookups, not part of this refactor.)
 
-**Item sprite naming convention (auto-triage rule):** every file under `sprites/items/` is
+**Item sprite naming convention (auto-triage rule):** applies identically to `sprites/objects/`
+(props/doors/etc., routed through `OBJECTS_PATH` the same way). Every file under `sprites/items/` is
 snake_case, one folder per category. When an item has multiple material/size tiers of the
 *same* sprite (e.g. a shield in wood/iron/gold, a potion in small/medium), group them into
 their own subfolder and name each file only by its variant — `shields/wood.png`,
