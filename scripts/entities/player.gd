@@ -284,6 +284,12 @@ func _on_turn_started() -> void:
 	if not came_from_revert:
 		_scarred_warrior.tick_bloodied_regen()
 
+	# Animal Form: per-step switch transition (GameState.start_animal_form_switch(), 1 real turn
+	# per cycle step), ticked once per real turn only. Refresh fog if it just completed — Eagle's
+	# FOV bonus may have changed.
+	if not came_from_revert and GameState._tick_animal_form_transition() and _dungeon_floor != null:
+		_dungeon_floor.update_fog(grid_pos)
+
 	# Ironwood Bark R2/R3: mutually exclusive per turn — both ranks read the SAME pre-turn
 	# temp HP snapshot, so R2's refresh this tick cannot also trigger R3 this same tick.
 	_ironwood_bark_bonus_pending = 0
@@ -412,6 +418,24 @@ func _on_turn_started() -> void:
 			_dungeon_floor.show_damage(position, status_dmg, true)
 		GameState.player_status_changed.emit()
 
+	# Difficult terrain status-tray flag: recomputed live from the CURRENT tile every turn-start
+	# (moved or waited, real or reverted) instead of riding Stats.slowed_turns' decaying counter —
+	# see GameState.player_on_difficult_terrain's comment for why.
+	if _dungeon_floor != null:
+		var _dt_tile: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
+		var _dt_difficult: bool = _dt_tile == DungeonData.TileType.WATER or _dt_tile == DungeonData.TileType.MUD
+		if _dt_difficult:
+			var _dt_ns_rank: int = GameState.get_talent_rank("expanded_forms")
+			var _dt_sleeper_on: bool = GameState.wild_heart_sleeper_active and _dt_ns_rank >= 1
+			var _dt_ns_form: String = GameState.active_sleeper_form
+			var _dt_panther_bypass: bool = _dt_sleeper_on and _dt_ns_form == "Panther" and _dt_tile == DungeonData.TileType.MUD
+			var _dt_salmon_bypass: bool = _dt_sleeper_on and _dt_ns_form == "Salmon" and _dt_tile == DungeonData.TileType.WATER
+			var _dt_trailblazer_bypass: bool = GameState.get_talent_rank("trailblazer") >= 1
+			_dt_difficult = not _dt_panther_bypass and not _dt_salmon_bypass and not _dt_trailblazer_bypass
+		if _dt_difficult != GameState.player_on_difficult_terrain:
+			GameState.player_on_difficult_terrain = _dt_difficult
+			GameState.player_status_changed.emit()
+
 # Witch Bolt's per-turn jolt fires at the END of the player's turn (TurnManager.player_turn_ending,
 # right before enemies act), not the start of the next one — matches the user-facing framing "the
 # bolt strikes at the end of your turn". `witch_bolt_just_cast` skips the very first firing (the
@@ -486,7 +510,10 @@ func _resolve_stealth_check() -> void:
 	var die1: int = r1["value"]
 	var lucky1: bool = r1["lucky"]
 	for e: Enemy in observers:
-		var obs_net: int = base_adv + (1 if e.behavior == Enemy.Behavior.SLEEPING else 0) - base_disadv
+		# SLEEPING is easiest to sneak past (+1 ADV); STATIONARY/ROAMING is awake and actually
+		# looking around, so it's harder than baseline (-1, a plain DISADV term) now that it no
+		# longer has a free LOS-based auto-notice of its own (see _decide_action()).
+		var obs_net: int = base_adv + (1 if e.behavior == Enemy.Behavior.SLEEPING else -1) - base_disadv
 		var die: int = die1
 		var die2: int = die1
 		var lucky2: bool = false
@@ -517,29 +544,29 @@ func _update_invisibility_visual() -> void:
 	$AnimatedSprite2D.modulate.a = 0.4 if stats.invisibility_turns > 0 else 1.0
 
 func _setup_animations() -> void:
-	var char_name: String
 	var char_folder: String
 	match GameState.player_stats.character_class:
-		Stats.CharacterClass.RANGER:  char_name = "elf_m";    char_folder = "Ranger"
-		Stats.CharacterClass.WIZARD:  char_name = "wizzard_m"; char_folder = "Wizard"
-		Stats.CharacterClass.MONK:    char_name = "dwarf_m";  char_folder = "Monk"
-		_:                            char_name = "knight_m"; char_folder = "Barbarian"   # BARBARIAN default
-	var base: String = KNIGHT_PATH + char_folder + "/" + char_name + "_"
+		Stats.CharacterClass.RANGER:  char_folder = "Ranger"
+		Stats.CharacterClass.WIZARD:  char_folder = "Wizard"
+		Stats.CharacterClass.MONK:    char_folder = "Monk"
+		_:                            char_folder = "Barbarian"   # BARBARIAN default
+	var base: String = KNIGHT_PATH + char_folder + "/"
 	var frames := SpriteFrames.new()
-	_add_anim(frames, "idle", base + "idle_anim_f%d.png", 4, true,  8.0)
-	_add_anim(frames, "run",  base + "run_anim_f%d.png",  4, false, 16.0)
-	_add_anim(frames, "hit",  base + "hit_anim_f%d.png",  1, false, 8.0)
+	_add_anim(frames, "idle", base + "idle_%d.png", 4, true,  8.0)
+	_add_anim(frames, "run",  base + "run_%d.png",  4, false, 16.0)
+	_add_anim(frames, "hit",  base + "hit_%d.png",  1, false, 8.0)
 	$AnimatedSprite2D.sprite_frames = frames
 	$AnimatedSprite2D.offset = Vector2(0, -11)
 	$AnimatedSprite2D.play("idle")
 
+# Filenames are 1-indexed (idle_1.png, idle_2.png, ...), not 0-indexed.
 func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 			   count: int, loop: bool, fps: float) -> void:
 	frames.add_animation(anim_name)
 	frames.set_animation_loop(anim_name, loop)
 	frames.set_animation_speed(anim_name, fps)
 	for i: int in count:
-		frames.add_frame(anim_name, load(path_fmt % i))
+		frames.add_frame(anim_name, load(path_fmt % (i + 1)))
 
 # Cardinal + diagonal movement via per-frame key sampling so two held cardinals = diagonal
 func _process(_delta: float) -> void:
@@ -618,6 +645,17 @@ func _update_hover_indicator() -> void:
 	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
 	var enemy: Enemy = _dungeon_floor.get_targetable_enemy_at(tile)
 	if enemy == null or not is_instance_valid(enemy):
+		_hover_indicator.visible = false
+		return
+	# Blind-firing into an unseen tile must still work (see click handlers below), but the icon
+	# itself would give away a hidden enemy's exact position — only show it when at least one of
+	# the enemy's occupied tiles is actually in the player's current FOV.
+	var enemy_seen: bool = false
+	for occ_tile: Vector2i in enemy.occupied_tiles():
+		if _dungeon_floor.is_tile_visible(occ_tile):
+			enemy_seen = true
+			break
+	if not enemy_seen:
 		_hover_indicator.visible = false
 		return
 	# Priority mirrors the LMB click handler's own dispatch order: Ctrl+Special-slot spell wins
@@ -1583,6 +1621,9 @@ func _find_ability(ab_id: String) -> Ability:
 func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
+	# Captured BEFORE on_disturbed() wakes the enemy — has_advantage() reads pre-attack
+	# behavior/door_ambush state, which on_disturbed() immediately mutates away.
+	var was_surprised: bool = _vfx.has_advantage(enemy)
 	enemy.on_disturbed(grid_pos)
 	$AnimatedSprite2D.flip_h = dir.x < 0
 	$AnimatedSprite2D.play("hit")
@@ -1605,14 +1646,15 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Monk unarmed uses DEX; Finesse weapons use max(STR, DEX); everyone else uses STR for melee attack roll.
 	var attack_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
 	var total_hit_bonus: int = attack_mod + prof + weapon_bonus
-	# Advantage sources are counted; net ADV count vs DISADV count decides outcome.
-	# Two ADV sources + one DISADV = net +1 = ADV (house rule: count beats cancel).
+	# Advantage/Disadvantage sources are counted, but CombatMath.roll_with_adv_disadv() applies the
+	# standard 5e cancel rule: any ADV source together with any DISADV source is a flat roll — e.g.
+	# two ADV sources + one DISADV is still a flat roll, not ADV.
 	var adv_count: int = 0
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
 	adv_count += _ranger_talents.consume_bloodhound_fresh_adv(enemy)
 	var disadv_count: int = 0
-	if _vfx.has_advantage(enemy): adv_count += 1
+	if was_surprised: adv_count += 1
 	# Zealous Presence: Advantage on all attack rolls while buffed.
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	# Vex (Short Bow): ADV on the attack immediately following a Short-Bow hit on this same enemy.
@@ -1625,7 +1667,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
 	# Animal Form Wolf: ADV when enough enemies are in FOV — always active in Wolf form (no
 	# Rage required). Enhanced Forms lowers the threshold; R3 also counts 1 enemy + 1 friendly.
-	if GameState.natural_rager_form == "Wolf" and is_str_weapon and _dungeon_floor != null:
+	# active_rager_form is the LOCKED-IN form, not natural_rager_form (the preview for next rest).
+	if GameState.active_rager_form == "Wolf" and is_str_weapon and _dungeon_floor != null:
 		var enh_rank: int = GameState.get_talent_rank("enhanced_forms")
 		var wolf_threshold: int = [4, 4, 3, 2][mini(enh_rank, 3)]
 		var visible_enemies: int = _dungeon_floor.get_visible_enemies().size()
@@ -1902,6 +1945,9 @@ func _try_cleave(primary: Enemy, is_str_weapon: bool) -> void:
 	_resolve_cleave_attack(candidates[0], weapon)
 
 func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
+	# Captured before on_disturbed() wakes the enemy — a still-unaware secondary Cleave target
+	# gets its own surprise Advantage same as a primary target would.
+	var was_surprised: bool = _vfx.has_advantage(enemy)
 	enemy.on_disturbed(grid_pos)
 	var str_mod: int = stats.str_modifier()
 	var prof: int = CombatMath.weapon_prof_bonus(weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
@@ -1910,6 +1956,7 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
 	adv_count += _ranger_talents.consume_bloodhound_fresh_adv(enemy)
+	if was_surprised: adv_count += 1
 	var disadv_count: int = 0
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
@@ -2104,6 +2151,9 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 func resolve_opportunity_attack(enemy: Enemy) -> void:
 	if not is_instance_valid(enemy) or enemy.stats.is_dead():
 		return
+	# Captured before on_disturbed() wakes the enemy — a still-unaware enemy leaving threat range
+	# (e.g. a ROAMING enemy that wandered off obliviously) gets surprise Advantage on the OA too.
+	var was_surprised: bool = _vfx.has_advantage(enemy)
 	enemy.on_disturbed(grid_pos)
 	var weapon: Item = GameState.equipped_weapon
 	var is_unarmed: bool = weapon == null
@@ -2119,6 +2169,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
 	adv_count += _ranger_talents.consume_bloodhound_fresh_adv(enemy)
+	if was_surprised: adv_count += 1
 	var disadv_count: int = 0
 	if weapon != null and weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	if GameState.is_in_fog_cloud(grid_pos): disadv_count += 1
