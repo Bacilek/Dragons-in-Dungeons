@@ -163,6 +163,13 @@ var run_seed: int = 0
 var is_game_over: bool = false
 var inventory_open: bool = false
 var class_selected: bool = false
+# Custom character-creation Back-navigation state (scripts/ui/CLAUDE.md's "Custom character
+# creation: Back navigation + summary screen"). All three are transient onboarding-only state,
+# never serialized — cleared by reset_for_class_reselect().
+var pending_point_buy_scores: Dictionary = {}   # last-confirmed point_buy_select.gd scores, empty = none yet
+var pending_background_bonus: Dictionary = {}   # last-confirmed background_select.gd bonus dict, empty = none yet
+var pending_summary_return_scene: String = ""   # script path character_summary.gd's "Take me back" reopens
+var character_summary_open: bool = false        # blocks input while character_summary.gd is visible
 var invincible: bool = false
 var noclip: bool = false
 var god_mode: bool = false
@@ -265,8 +272,19 @@ var scroll_learn_spell_id: String = ""
 var scroll_learn_item: Item = null
 
 # ── Wild Heart Tier 2 state ───────────────────────────────────────────────────
-# Natural Rager: toggle between Bear/Eagle/Wolf; effects only apply while is_raging.
+# Animal Form: switch between Bear/Eagle/Wolf freely, any time — NOT rest-gated (that's Natural
+# Sleeper below, a different talent). natural_rager_form is the TARGET form just selected;
+# active_rager_form is what's actually granting effects right now. Each individual switch step
+# (one cycle press = one step to the adjacent form in the Bear→Eagle→Wolf→Bear cycle) takes
+# ANIMAL_FORM_SWITCH_TURNS (1) real turn to complete — rager_form_switch_turns_remaining counts
+# down each real turn (player.gd._on_turn_started()) via _tick_animal_form_transition(); reaching 0
+# snaps active_rager_form to natural_rager_form. Re-cycling mid-transition just retargets and
+# restarts the count — since there's no way to jump directly to the 3rd form in the cycle, going
+# e.g. Bear→Wolf costs 2 presses/turns (one per intermediate step), not one flat wait.
 var natural_rager_form: String = "Bear"
+var active_rager_form: String = "Bear"
+const ANIMAL_FORM_SWITCH_TURNS: int = 1
+var rager_form_switch_turns_remaining: int = 0
 # Natural Sleeper: toggle between Owl/Panther/Salmon; activates/locks in on a completed long rest.
 # natural_sleeper_form = chosen form (preview); active_sleeper_form = locked in at last long rest.
 var natural_sleeper_form: String = ""   # "" = no form chosen; locks in on long_rest()
@@ -284,6 +302,14 @@ var player_companion: Variant = null
 var pending_companion_restore: Dictionary = {}
 # AC bonus from Natural Sleeper R3 terrain — added in recalculate_stats().
 var terrain_ac_bonus: int = 0
+# True while the player's CURRENT tile is Mud/Water and not bypassed (Trailblazer R1, Natural
+# Sleeper Panther/Salmon) — recomputed live every player turn-start in player.gd._on_turn_started()
+# from grid_pos, deliberately NOT derived from Stats.slowed_turns' decaying counter (that field
+# also carries Bear Trap's real 20-turn debuff and gets ticked to 0 the instant a real turn passes,
+# which made the status-tray icon flicker for a single frame on each terrain step instead of
+# staying up the whole time the player stands in Mud/Water). Status-tray display only — the actual
+# "next move costs 2 turns" penalty still runs entirely off Stats.slowed_turns, unchanged.
+var player_on_difficult_terrain: bool = false
 # Psycho R1/R2 and Battlefield Expert R1's pending-Advantage windows — live here (not on
 # PlayerBaseTalents) so the HUD status tray can display them while only reading GameState, per
 # scripts/ui/CLAUDE.md's "HUD only reads GameState" convention. See scripts/entities/CLAUDE.md's
@@ -395,6 +421,8 @@ func start_new_run() -> void:
 	for key: String in equipment:
 		equipment[key] = null
 	natural_rager_form = "Bear"
+	active_rager_form = "Bear"
+	rager_form_switch_turns_remaining = 0
 	natural_sleeper_form = ""
 	active_sleeper_form = ""
 	wild_heart_sleeper_active = false
@@ -439,6 +467,54 @@ func _give_starting_items() -> void:
 	tools.description = "Left-click to use, then click an adjacent revealed trap to disarm. Consumed on failure."
 	tools.quantity = 3
 	add_item(tools)
+
+# Called by class_select.gd's _on_class_selected() every time a class is (re)confirmed — including
+# re-picking a DIFFERENT class after using the Custom flow's Back navigation. give_class_starting_
+# items() only ever grants gear once (guarded on equipment/ability-bar slot 0 being empty), so
+# without this wipe, going back to class_select and choosing a different class would silently keep
+# the OLD class's weapon/abilities/talents while apply_class_defaults() reset only the ability
+# scores. Safe to call even on a first-ever class pick (everything is already empty). The player
+# can never observe any of this mid-wipe — input is hard-gated on class_selected, which stays
+# false for the entire Custom flow now (see character_summary.gd).
+func reset_for_class_reselect() -> void:
+	player_stats = Stats.new()
+	player_quickbar.clear()
+	for _i: int in QUICKBAR_SIZE:
+		player_quickbar.append(null)
+	player_ability_bar.clear()
+	for _i: int in ABILITY_BAR_SIZE:
+		player_ability_bar.append(null)
+	player_inventory.clear()
+	for _i: int in INVENTORY_SIZE:
+		player_inventory.append(null)
+	for key: String in equipment:
+		equipment[key] = null
+	talent_points = {1: 0, 2: 0, 3: 0, 4: 0}
+	talent_investments = {}
+	_class_talents = []
+	tier2_unlocked = false
+	subclass_chosen = false
+	active_tier2_subclass = "Berserker"
+	hit_dice = 1
+	special_slot_spell_id = ""
+	pending_point_buy_scores = {}
+	pending_background_bonus = {}
+	_give_starting_items()
+
+# Wipes a Wizard's onboarding cantrip/starting-spell pick (known/prepared spells, their ability-bar
+# entries, and the Special slot) so cantrip_select.gd can be safely re-entered — either round 1's
+# own Back button returning to round 1, or character_summary.gd's "Take me back" re-opening the
+# whole picker from scratch — without leaving a stale first pick alongside the new one (choose_
+# cantrip()/choose_starting_spell() only ever APPEND to known_spells, they never replace). No-op-
+# safe to call on a fresh Wizard that hasn't picked anything yet.
+func reset_wizard_onboarding_picks() -> void:
+	if player_stats.caster == null:
+		return
+	for id: String in player_stats.caster.known_spells.duplicate():
+		_remove_ability_by_id("spell:" + id)
+	player_stats.caster.known_spells.clear()
+	player_stats.caster.prepared_spells.clear()
+	special_slot_spell_id = ""
 
 # Called by class_select.gd after player picks a class, replaces generic starting gear.
 func give_class_starting_items() -> void:
@@ -2073,13 +2149,15 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 	var final_amount: int = amount
 	if is_raging and not ignore_rage and is_physical:
 		final_amount = int(floor(float(amount) * 0.5))
-	# Animal Form Bear: always-active elemental DR (no Rage or talent rank required — see
-	# markdowns/wild_heart.md). Enhanced Forms R1 also covers magical damage; R2/R3 raise the %.
-	# BUGFIX: natural_rager_form defaults to "Bear" for every character (it's only ever changed by
-	# Wild Heart's own cycle_animal_form()), so without the subclass/unlock gate below this DR
-	# applied to ANY class's own Fire/Cold/etc. damage — including a Wizard's own Fireball catching
-	# themselves in the blast — even though they never touched Wild Heart at all.
-	if natural_rager_form == "Bear" and active_tier2_subclass == "Wild Heart" and tier2_unlocked and not ignore_rage:
+	# Animal Form Bear: elemental DR while Raging (Bear's effect is Rage-gated, unlike Eagle/Wolf
+	# which stay always-active — see markdowns/wild_heart.md). Enhanced Forms R1 also covers
+	# magical damage; R2/R3 raise the %. Checks active_rager_form (the form CURRENTLY active — see
+	# _tick_animal_form_transition()), not natural_rager_form (the target of an in-progress switch).
+	# BUGFIX: active_rager_form defaults to "Bear" for every character (it's only ever changed by
+	# Wild Heart's own cycle_animal_form()/_tick_animal_form_transition()), so without the subclass/
+	# unlock gate below this DR applied to ANY class's own Fire/Cold/etc. damage — including a Wizard's
+	# own Fireball catching themselves in the blast — even though they never touched Wild Heart at all.
+	if active_rager_form == "Bear" and active_tier2_subclass == "Wild Heart" and tier2_unlocked and is_raging and not ignore_rage:
 		var enh_rank: int = get_talent_rank("enhanced_forms")
 		var resisted: bool = damage_type in ELEMENTAL_TYPES or (enh_rank >= 1 and damage_type in MAGICAL_TYPES)
 		if resisted:
@@ -2485,12 +2563,15 @@ func _build_one_with_nature_description() -> String:
 
 func _build_natural_rager_description() -> String:
 	var rank: int = get_talent_rank("enhanced_forms")
-	var form: String = natural_rager_form
+	var form: String = natural_rager_form  # target form (what's being switched TO)
 	var lines: Array[String] = []
-	lines.append("[%s Form] — always active (no Rage required). Click to cycle forms." % form)
+	if active_rager_form != form:
+		lines.append("[%s Form] — shifting in %d turn%s. [color=gray]Active now: %s[/color]" % [form, rager_form_switch_turns_remaining, "s" if rager_form_switch_turns_remaining != 1 else "", active_rager_form])
+	else:
+		lines.append("[%s Form — active] Click to switch forms (%d turn%s per step)." % [form, ANIMAL_FORM_SWITCH_TURNS, "s" if ANIMAL_FORM_SWITCH_TURNS != 1 else ""])
 	match form:
 		"Bear":
-			lines.append("25% resistance to elemental damage (Fire/Cold/Lightning/Thunder/Acid/Poison).")
+			lines.append("While Raging: 25% resistance to elemental damage (Fire/Cold/Lightning/Thunder/Acid/Poison).")
 			if rank >= 1: lines.append("Enhanced Forms R1: resistance also covers magical damage (Radiant/Necrotic/Force).")
 			if rank >= 2: lines.append("Enhanced Forms R2: resistance increased to 33%.")
 			if rank >= 3: lines.append("Enhanced Forms R3: resistance increased to 50%.")
@@ -2785,7 +2866,10 @@ func _setup_wild_heart_tier2_talents() -> void:
 	# Animal Form (Bear/Eagle/Wolf) is a free, rank-independent activation ability — see
 	# markdowns/wild_heart.md — granted directly, not gated by talent investment.
 	_grant_tier2_base_ability("animal_form", "Animal Form", _build_natural_rager_description())
-	player_evades_opportunity_attacks = natural_rager_form == "Eagle"
+	# Active immediately at subclass grant — no 2-turn transition for the very first form.
+	active_rager_form = natural_rager_form
+	rager_form_switch_turns_remaining = 0
+	_apply_active_rager_form_effects()
 
 	var owtn_talent := Talent.new()
 	owtn_talent.talent_id = "wild_companion"
@@ -2831,6 +2915,42 @@ func _setup_wild_heart_tier2_talents() -> void:
 		{"description": "Each form: +2 AC while standing in its terrain."},
 	]
 	_class_talents.append(ns_talent)
+
+# Applies whichever form is currently ACTIVE (active_rager_form) to the always-on Eagle knobs.
+# Bear's own DR is checked live off active_rager_form in take_damage_raw() instead (also gated on
+# is_raging there); Wolf's ADV is checked live off active_rager_form in player.gd's attack roll.
+# Called after active_rager_form changes (_tick_animal_form_transition(), _setup_wild_heart_tier2_talents(),
+# from_dict() restore) and whenever Enhanced Forms rank changes what Eagle grants.
+func _apply_active_rager_form_effects() -> void:
+	player_evades_opportunity_attacks = active_rager_form == "Eagle"
+	var enh_rank: int = get_talent_rank("enhanced_forms")
+	fov_radius_bonus = 1 if (active_rager_form == "Eagle" and enh_rank >= 1) else 0
+
+# Kicks off (or restarts) the ANIMAL_FORM_SWITCH_TURNS-turn transition toward `form`. A no-op
+# (0 turns) if `form` is already active. Called from player_wild_heart.gd.cycle_animal_form()
+# once per cycle step — note `form` here is always the adjacent form in the Bear/Eagle/Wolf
+# cycle, never a direct jump, so reaching the 3rd form away takes 2 separate calls/turns.
+func start_animal_form_switch(form: String) -> void:
+	natural_rager_form = form
+	if form == active_rager_form:
+		rager_form_switch_turns_remaining = 0
+	else:
+		rager_form_switch_turns_remaining = ANIMAL_FORM_SWITCH_TURNS
+
+# Ticked once per REAL player turn (not on Eagle-style reverted/free-action turns) from
+# player.gd._on_turn_started(). Counts down rager_form_switch_turns_remaining; reaching 0 snaps
+# active_rager_form to whatever natural_rager_form currently targets. Returns true if the active
+# form just changed this tick (caller refreshes fog, since Eagle's FOV bonus may have shifted).
+func _tick_animal_form_transition() -> bool:
+	if rager_form_switch_turns_remaining <= 0:
+		return false
+	rager_form_switch_turns_remaining -= 1
+	if rager_form_switch_turns_remaining > 0:
+		return false
+	active_rager_form = natural_rager_form
+	_apply_active_rager_form_effects()
+	game_log("[color=orange]Animal Form: you shift into %s Form.[/color]" % active_rager_form)
+	return true
 
 func _setup_world_tree_tier2_talents() -> void:
 	var rage_bonus: int = player_stats.rage_bonus_damage
@@ -2971,6 +3091,8 @@ func to_dict() -> Dictionary:
 			"tier2_unlocked": tier2_unlocked,
 			"active_tier2_subclass": active_tier2_subclass,
 			"natural_rager_form": natural_rager_form,
+			"active_rager_form": active_rager_form,
+			"rager_form_switch_turns_remaining": rager_form_switch_turns_remaining,
 			"natural_sleeper_form": natural_sleeper_form,
 			"active_sleeper_form": active_sleeper_form,
 			"wild_heart_sleeper_active": wild_heart_sleeper_active,
@@ -3043,6 +3165,13 @@ func from_dict(d: Dictionary) -> void:
 		talent_points[t] = int(saved_points.get(str(t), saved_points.get(t, 0)))
 	# Wild Heart / Zealot state — restored AFTER the replay, which resets charge pools to max.
 	natural_rager_form = String(talents_d.get("natural_rager_form", "Bear"))
+	active_rager_form = String(talents_d.get("active_rager_form", natural_rager_form))
+	rager_form_switch_turns_remaining = int(talents_d.get("rager_form_switch_turns_remaining", 0))
+	# _setup_tier2_for_active_subclass() above ran _apply_active_rager_form_effects() against the
+	# still-default "Bear" active_rager_form (this save's actual value wasn't restored yet) — redo
+	# it now that active_rager_form holds the real saved form.
+	if active_tier2_subclass == "Wild Heart" and tier2_unlocked:
+		_apply_active_rager_form_effects()
 	natural_sleeper_form = String(talents_d.get("natural_sleeper_form", ""))
 	active_sleeper_form = String(talents_d.get("active_sleeper_form", ""))
 	wild_heart_sleeper_active = bool(talents_d.get("wild_heart_sleeper_active", false))

@@ -27,6 +27,7 @@ var _minus_btns: Dictionary = {}     # key -> Button
 var _plus_btns: Dictionary = {}      # key -> Button
 var _points_label: Label
 var _confirm_btn: Button
+var _back_btn: Button
 var _panel: Panel
 
 func _ready() -> void:
@@ -34,6 +35,12 @@ func _ready() -> void:
 	GameState.background_select_open = true
 	for key: String in ORDER:
 		_base_scores[key] = GameState.player_stats.get(_stat_field(key))
+	# Prefilled from the last-confirmed allocation if we're being re-opened via Back navigation
+	# (from race_select.gd, which resets player_stats' scores back to the pure post-point-buy
+	# baseline before reopening this screen — see race_select.gd's _on_back()). Empty means a
+	# fresh visit (from point_buy_select.gd), which starts unallocated as before.
+	if not GameState.pending_background_bonus.is_empty():
+		_bonus = GameState.pending_background_bonus.duplicate()
 	_build_ui()
 	_refresh()
 
@@ -72,6 +79,16 @@ func _build_ui() -> void:
 	title.position = Vector2(MARGIN, 14.0)
 	title.size = Vector2(PANEL_W - MARGIN * 2.0, 34.0)
 	_panel.add_child(title)
+
+	_back_btn = Button.new()
+	_back_btn.text = "← Back"
+	_back_btn.size = Vector2(90.0, 28.0)
+	_back_btn.position = Vector2(PANEL_W - MARGIN - 90.0, 16.0)
+	_back_btn.focus_mode = Control.FOCUS_NONE
+	_back_btn.add_theme_font_size_override("font_size", 13)
+	_style_btn(_back_btn, Color(0.14, 0.12, 0.10), Color(0.5, 0.45, 0.35))
+	_back_btn.pressed.connect(_on_back)
+	_panel.add_child(_back_btn)
 
 	var hint := Label.new()
 	hint.text = "Your background grants 3 ability score points — put them anywhere, no more than 2 into the same score."
@@ -200,8 +217,19 @@ func _on_confirm() -> void:
 	GameState.player_stats.apply_background_bonus(_bonus)
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 	GameState.background_select_open = false
+	GameState.pending_background_bonus = _bonus.duplicate()
 	var race_picker = load("res://scripts/ui/race_select.gd").new()
 	get_tree().root.call_deferred("add_child", race_picker)
+	queue_free()
+
+func _on_back() -> void:
+	# No undo needed here — apply_background_bonus() only ever runs from THIS screen's own
+	# Confirm above, never before it, so player_stats' scores are still the pure post-point-buy
+	# baseline whenever Back is pressed (unlike race_select.gd's Back, which must undo an
+	# already-applied bonus before reopening this screen).
+	GameState.background_select_open = false
+	var point_buy_picker = load("res://scripts/ui/point_buy_select.gd").new()
+	get_tree().root.call_deferred("add_child", point_buy_picker)
 	queue_free()
 
 func _style_btn(btn: Button, bg: Color, border: Color) -> void:

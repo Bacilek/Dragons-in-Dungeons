@@ -177,6 +177,25 @@ repopulates `known_spells`, and silently clears if the saved id is no longer kno
 
 **Status chokepoint**: `apply_player_status(type: String, turns: int) -> bool` — single entry point for all player status/debuff application. If Rager R1 is active and raging, applies a % chance to negate and returns false (caller skips log). On success: sets `player_stats.{type}_turns = maxi(existing, turns)` and emits `player_status_changed`. All trap, enemy, terrain, and rotten-meat callers must use this — never set `player_stats.{status}_turns` directly.
 
+**Custom character-creation Back navigation** (see `scripts/ui/CLAUDE.md`'s "Custom character
+creation: Back navigation + summary screen" for the full walkthrough): `class_selected` is no
+longer set `true` inside `class_select.gd` — it stays `false` for the entire Custom flow (player
+input is hard-gated on it) until `character_summary.gd`'s final "Yes" confirm. Supporting state,
+all transient/onboarding-only, never serialized: `pending_point_buy_scores`/
+`pending_background_bonus` (`Dictionary`, empty = "not yet confirmed this flow", written by
+`point_buy_select.gd`/`background_select.gd`'s own Confirm, read by that same screen's `_ready()`
+to prefill when re-opened via Back) and `pending_summary_return_scene` (script path string —
+which screen `character_summary.gd`'s "Take Me Back" reopens). `GameState.
+reset_for_class_reselect()` wipes equipment/ability-bar/quickbar/bag/talents/masteries and
+re-grants the generic starting items whenever `class_select.gd`'s confirm handler runs (including
+re-picking a DIFFERENT class after backing up to it) — without this, `give_class_starting_items()`'s
+own idempotency guard would silently no-op on the second call and leave the old class's gear
+equipped. `GameState.reset_wizard_onboarding_picks()` wipes a Wizard's `caster.known_spells`/
+`prepared_spells`, their ability-bar entries, and the Special slot — called by
+`cantrip_select.gd._ready()` (safe no-op if nothing granted yet) so re-picking a starting cantrip/
+spell via Back never leaves the old pick known alongside the new one (`choose_cantrip()`/
+`choose_starting_spell()` only ever append).
+
 **`choose_race()` re-emits `player_hp_changed`**: `apply_race_defaults()` can change `max_hp` (Dwarf's +1/level, including level 1 — see root `CLAUDE.md`'s "Race system"), so `choose_race()` emits `player_hp_changed(current_hp, max_hp)` itself after applying race defaults, rather than relying on whichever earlier signal the calling onboarding screen fired (both `character_select.gd`'s premade path and `point_buy_select.gd`'s confirm emit it with the PRE-race value, since race is chosen after).
 
 **Tier 2 unlock + subclass selection (boss-gated)**: Tier 2 does NOT unlock by level. Every boss kill emits `boss_defeated(boss_id)` (from `player.gd._finish_kill()` and `DungeonFloor.resolve_push()`'s chasm path); GameState's own `_on_boss_defeated()` ignores everything except `TIER2_GATING_BOSS_ID` ("big_demon", floor 5). On that kill: Barbarian (has subclasses) with `not subclass_chosen` emits `subclass_choice_required` — hud.gd spawns `scripts/ui/subclass_select.gd` (blocking, non-dismissable overlay showing all four subclasses); its confirm calls `choose_subclass(name)` which sets `active_tier2_subclass` + `subclass_chosen = true` and calls `unlock_tier2()`. Other classes (or an already-made choice) call `unlock_tier2()` directly. `unlock_tier2()` sets `tier2_unlocked` and runs `_setup_tier2_for_active_subclass()` (dispatches to the four `_setup_X_tier2_talents()` — all implemented). `choose_subclass()` is one-time: it no-ops once `subclass_chosen` is true. Levels 7–12 fill `talent_points[2]` unconditionally — points earned before the boss kill sit **pending** (the talent picker shows a pending badge) and become spendable the instant Tier 2 unlocks. If the player never kills the gating boss, Tier 2 points stay pending for the rest of the run — intentional, no special handling. If debug Jump-to-Floor skips floor 5, the God-Mode subclass arrows / debug panel unlock button remain the escape hatch.

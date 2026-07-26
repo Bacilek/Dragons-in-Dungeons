@@ -69,7 +69,11 @@ and a "Custom" card that hands off unchanged to the class/race/mastery flow. Als
 
 ### Point buy (ability score allocation)
 Custom-path onboarding order: **class select → point buy → background ASI → race select →
-mastery picker → game starts**. `point_buy_select.gd` is a one-time blocking overlay spawned
+mastery/cantrip picker → character summary → game starts**. Every step from point buy onward has a
+"← Back" button, and `GameState.class_selected` (input-gating) isn't set until the final summary
+screen's "Yes" — see `scripts/ui/CLAUDE.md`'s "Custom character creation: Back navigation +
+summary screen" and `scripts/autoloads/CLAUDE.md` for the full mechanism.
+`point_buy_select.gd` is a one-time blocking overlay spawned
 right after class selection, before the background picker (premade heroes bypass it entirely).
 D&D 2024 point-buy: all six scores start at 8, `-`/`+` per score within 8–15, 27-point budget,
 14/15 cost 2 points/step (others 1) — matches the standard 5e point-buy cost table exactly. No
@@ -188,7 +192,7 @@ Hunger has been removed. `Alt` opens a tabbed rest panel (`scripts/ui/short_rest
 
 ## Sprite Assets
 
-- `sprites/characters/<Character>/` — one subfolder per in-game character identity (folder named after the class/enemy/boss identity, e.g. `Barbarian/`, `Ranger/`, `Wizard/`, `Monk/` for the 4 player classes, `BigDemon/`, `Necromancer/`, `Goblin/` (shared by Goblin Minion/Warrior/Archer), `OrcWarrior/`, `OrcShaman/`, `MaskedOrc/`, `Skeleton/`, `Zombie/`, `Wogol/`, `Imp/`, `Chort/`, `PumpkinDude/`, `Ogre/` for enemies/bosses), files inside each folder keeping the `{character}_{anim}_f{n}.png` convention (e.g. `Barbarian/knight_m_idle_anim_f0.png`, `BigDemon/big_demon_idle_anim_f0.png`) — `Enemy.SPRITE_FOLDER` (`scripts/entities/enemy.gd`) maps a pool `"sprite"` prefix to its folder when the folder name diverges from the prefix (e.g. `"skelet"` → `Skeleton/`). Unused/unreferenced sprite sets (art with no in-game consumer, e.g. the game's unused female character variants) live in `sprites/characters/_unused/` rather than being deleted.
+- `sprites/characters/<Character>/` — one subfolder per in-game character identity (folder named after the class/enemy/boss identity, e.g. `Barbarian/`, `Ranger/`, `Wizard/`, `Monk/` for the 4 player classes, `BigDemon/`, `Necromancer/`, `Goblin/` (shared by Goblin Minion/Warrior/Archer), `OrcWarrior/`, `OrcShaman/`, `MaskedOrc/`, `Skeleton/`, `Zombie/`, `Wogol/`, `Imp/`, `Chort/`, `PumpkinDude/`, `Ogre/`, `Rat/` for enemies/bosses), files inside each folder using a simple, prefix-free `{state}_{n}.png` convention, 1-indexed (e.g. `Barbarian/idle_1.png`, `Barbarian/run_1.png`, `Barbarian/hit_1.png` — no character/class prefix and no `_anim_f` suffix, since the folder itself already identifies the character) — `Enemy.SPRITE_FOLDER` (`scripts/entities/enemy.gd`) maps a pool `"sprite"` id to its folder when the folder name diverges from that id (e.g. `"skelet"` → `Skeleton/`). Necromancer is a minor special case: one shared `anim_1.png`..`anim_4.png` set (its `idle_fmt`/`run_fmt` pool keys both point at the same files) since its idle and run animations reuse identical art. **`Rat/` is the one exception** to the flat per-frame-file convention: per-color subfolders (`gray/`, `brown/`, `white/`), each holding one multi-frame sprite **sheet** per animation state (lowercase `idle.png`/`run.png`/etc., no character/color prefix) instead of individually numbered frame files — sliced into `AtlasTexture` frames at runtime and picked randomly per spawn, see `scripts/entities/CLAUDE.md`'s "Sprite sheets + random color variant". Unused/unreferenced sprite sets (art with no in-game consumer, e.g. the game's unused female character variants) live in `sprites/characters/_unused/` rather than being deleted (kept in the old naming convention — not code-referenced, so left untouched).
 - `sprites/tiles/` — `floor_1.png`, `wall_mid.png` (**not** `wall_top_mid.png`), `floor_stairs.png`.
 - `sprites/objects/` — props, flasks, doors, etc.
 - `sprites/weapons/` — `weapon_anime_sword.png`, etc.

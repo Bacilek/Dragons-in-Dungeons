@@ -22,6 +22,7 @@ const LABELS: Dictionary = {
 }
 
 var _scores: Dictionary = {"str": 8, "dex": 8, "con": 8, "int": 8, "wis": 8, "cha": 8}
+var _back_btn: Button
 var _value_labels: Dictionary = {}   # key -> Label
 var _minus_btns: Dictionary = {}     # key -> Button
 var _plus_btns: Dictionary = {}      # key -> Button
@@ -34,6 +35,11 @@ var _panel: Panel
 func _ready() -> void:
 	layer = 22
 	GameState.point_buy_open = true
+	# Prefilled from the last-confirmed allocation if we're being re-opened via Back navigation
+	# (from background_select.gd) — empty means a fresh visit (from class_select.gd), which
+	# starts at the flat 8-across-the-board D&D 2024 baseline as before.
+	if not GameState.pending_point_buy_scores.is_empty():
+		_scores = GameState.pending_point_buy_scores.duplicate()
 	_build_ui()
 	_refresh()
 
@@ -63,6 +69,16 @@ func _build_ui() -> void:
 	title.position = Vector2(MARGIN, 14.0)
 	title.size = Vector2(PANEL_W - MARGIN * 2.0, 34.0)
 	_panel.add_child(title)
+
+	_back_btn = Button.new()
+	_back_btn.text = "← Back"
+	_back_btn.size = Vector2(90.0, 28.0)
+	_back_btn.position = Vector2(PANEL_W - MARGIN - 90.0, 16.0)
+	_back_btn.focus_mode = Control.FOCUS_NONE
+	_back_btn.add_theme_font_size_override("font_size", 13)
+	_style_btn(_back_btn, Color(0.14, 0.12, 0.10), Color(0.5, 0.45, 0.35))
+	_back_btn.pressed.connect(_on_back)
+	_panel.add_child(_back_btn)
 
 	var hint := Label.new()
 	hint.text = "Point buy — 27 points, scores range 8-15. 14 and 15 cost 2 points per step."
@@ -241,8 +257,15 @@ func _on_confirm() -> void:
 	GameState.player_stats.apply_point_buy_scores(_scores)
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 	GameState.point_buy_open = false
+	GameState.pending_point_buy_scores = _scores.duplicate()
 	var background_picker = load("res://scripts/ui/background_select.gd").new()
 	get_tree().root.call_deferred("add_child", background_picker)
+	queue_free()
+
+func _on_back() -> void:
+	GameState.point_buy_open = false
+	var class_picker = load("res://scripts/ui/class_select.gd").new()
+	get_tree().root.call_deferred("add_child", class_picker)
 	queue_free()
 
 func _style_btn(btn: Button, bg: Color, border: Color) -> void:

@@ -7,16 +7,16 @@ const SPRITES_PATH := "res://sprites/characters/"
 const FOV_RADIUS: int = 6
 
 # sprites/characters/ is organized one subfolder per in-game character identity (see
-# scripts/world/CLAUDE.md's "Sprite Assets" section) — a pool "sprite" prefix maps to its
-# containing folder here. Filenames keep their original prefix even where the folder name
-# differs (e.g. "skelet" files live under "Skeleton/") — only the folder was renamed to match
-# the enemy's display identity. Absent = prefix used verbatim as both folder and filename base
-# (the common case for every prefix that already matches its folder name 1:1).
+# scripts/world/CLAUDE.md's "Sprite Assets" section) — a pool "sprite" key (a stable id, not a
+# filename fragment) maps to its containing folder here. Filenames inside each folder are just
+# "idle_1.png".."idle_4.png"/"run_1.png".."run_4.png" (1-indexed) — no character prefix, since the
+# folder itself already identifies the character. Absent = "sprite" key used verbatim as the
+# folder name too (the common case for every key that already matches its folder name 1:1).
 const SPRITE_FOLDER: Dictionary = {
 	"big_demon": "BigDemon", "necromancer": "Necromancer", "goblin": "Goblin",
 	"orc_warrior": "OrcWarrior", "orc_shaman": "OrcShaman", "masked_orc": "MaskedOrc",
 	"skelet": "Skeleton", "tiny_zombie": "Zombie", "wogol": "Wogol", "imp": "Imp",
-	"chort": "Chort", "pumpkin_dude": "PumpkinDude", "ogre": "Ogre",
+	"chort": "Chort", "pumpkin_dude": "PumpkinDude", "ogre": "Ogre", "rat": "Rat",
 }
 
 var _dungeon_floor: Node
@@ -489,13 +489,17 @@ func die() -> void:
 	super.die()
 
 func _setup_animations() -> void:
+	var variants: Array = _type.get("sprite_variants", [])
+	if not variants.is_empty():
+		_setup_sheet_animations(variants)
+		return
 	var prefix: String = _type.get("sprite", "orc_warrior")
 	var idle_n: int    = _type.get("idle_frames", 4)
 	var run_n: int     = _type.get("run_frames", 4)
 	var folder: String = SPRITE_FOLDER.get(prefix, prefix)
 	var folder_path: String = SPRITES_PATH + folder + "/"
-	var idle_fmt: String = _type.get("idle_fmt", folder_path + prefix + "_idle_anim_f%d.png")
-	var run_fmt: String  = _type.get("run_fmt",  folder_path + prefix + "_run_anim_f%d.png")
+	var idle_fmt: String = _type.get("idle_fmt", folder_path + "idle_%d.png")
+	var run_fmt: String  = _type.get("run_fmt",  folder_path + "run_%d.png")
 	var frames := SpriteFrames.new()
 	_add_anim(frames, "idle", idle_fmt, idle_n, true,  8.0)
 	_add_anim(frames, "run",  run_fmt,  run_n, false, 16.0)
@@ -503,13 +507,51 @@ func _setup_animations() -> void:
 	$AnimatedSprite2D.offset = Vector2(0, -8)
 	$AnimatedSprite2D.play("idle")
 
+# Filenames are 1-indexed (idle_1.png, idle_2.png, ...), not 0-indexed.
 func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 			   count: int, loop: bool, fps: float) -> void:
 	frames.add_animation(anim_name)
 	frames.set_animation_loop(anim_name, loop)
 	frames.set_animation_speed(anim_name, fps)
 	for i: int in count:
-		frames.add_frame(anim_name, load(path_fmt % i))
+		frames.add_frame(anim_name, load(path_fmt % (i + 1)))
+
+# Cosmetic random-variant sprite sheets (Giant Rat's Gray/Brown/White recolors) — one PNG per
+# animation state holding all frames side-by-side, instead of Wogol-style one-file-per-frame.
+# Which variant renders never affects gameplay, so it's picked with plain global randi(), NOT
+# Rng — per scripts/autoloads/CLAUDE.md's "cosmetic jitter stays global" rule; drawing from the
+# seeded Rng/_pop_rng streams here would perturb every other system that depends on them for
+# reproducible runs.
+func _setup_sheet_animations(variants: Array) -> void:
+	var prefix: String = _type.get("sprite", "rat")
+	var folder: String = SPRITE_FOLDER.get(prefix, prefix)
+	var variant: String = String(variants[randi() % variants.size()])
+	var sheet_path_fmt: String = "%s%s/%s/%%s.png" % [SPRITES_PATH, folder, variant.to_lower()]
+	var frame_size: Dictionary = _type.get("sprite_frame_size", {})
+	var fw: int = int(frame_size.get("w", 64))
+	var fh: int = int(frame_size.get("h", 64))
+	var idle_n: int = _type.get("idle_frames", 6)
+	var run_n: int  = _type.get("run_frames", 6)
+	var frames := SpriteFrames.new()
+	_add_anim_sheet(frames, "idle", sheet_path_fmt % "idle", idle_n, fw, fh, true,  8.0)
+	_add_anim_sheet(frames, "run",  sheet_path_fmt % "run",  run_n, fw, fh, false, 16.0)
+	$AnimatedSprite2D.sprite_frames = frames
+	var offset: Dictionary = _type.get("sprite_offset", {})
+	$AnimatedSprite2D.offset = Vector2(float(offset.get("x", 0)), float(offset.get("y", -8)))
+	$AnimatedSprite2D.scale = Vector2.ONE * float(_type.get("sprite_scale", 1.0))
+	$AnimatedSprite2D.play("idle")
+
+func _add_anim_sheet(frames: SpriteFrames, anim_name: String, sheet_path: String,
+					  count: int, fw: int, fh: int, loop: bool, fps: float) -> void:
+	frames.add_animation(anim_name)
+	frames.set_animation_loop(anim_name, loop)
+	frames.set_animation_speed(anim_name, fps)
+	var tex: Texture2D = load(sheet_path)
+	for i: int in count:
+		var atlas := AtlasTexture.new()
+		atlas.atlas = tex
+		atlas.region = Rect2(i * fw, 0, fw, fh)
+		frames.add_frame(anim_name, atlas)
 
 func _setup_zzz() -> void:
 	_zzz_label = Label.new()
@@ -701,10 +743,22 @@ func decide_turn() -> Dictionary:
 	if prone_turns > 0:
 		prone_turns -= 1
 		return {"type": "idle_tick"}
-	if slowed_turns > 0:
+	# Slowed (Mud/Water): unlike prone/rooted, this is deliberately NOT a full-turn skip — an
+	# attack this turn is completely unaffected (per direct owner correction: "slow by nemělo mít
+	# nic společného s útokem"). It only ever shaves ONE step off whatever movement this turn would
+	# otherwise have — see the "slowed" param threaded into _act_toward()/_do_roam_walk() etc. below.
+	# A plain 1-move-per-turn enemy therefore still effectively "takes 2 rounds to move 1 tile"
+	# (1 - 1 = 0 this round), but a 2-move round (Aggressive's bonus step, or an above-baseline
+	# "speed" entry) only loses one of its two steps, not both — and an off-cycle round for a
+	# below-baseline "speed" entry (e.g. Zombie's 2/3) that already grants 0 movement credit is
+	# untouched by this (nothing left to reduce), matching "no difference on a round it wasn't
+	# going to move anyway".
+	var _slowed_this_turn: bool = slowed_turns > 0
+	if _slowed_this_turn:
 		slowed_turns -= 1
-		return {"type": "idle_tick"}
-	return _decide_action()
+	var _intent: Dictionary = _decide_action()
+	_intent["slowed"] = _slowed_this_turn
+	return _intent
 
 # Execution half — all tweens/animation/movement/attack/door-open side effects, run per-enemy in
 # TurnManager's existing sequential order (unchanged) once every enemy's decide_turn() has already
@@ -817,12 +871,28 @@ func _decide_action() -> Dictionary:
 			return {"type": "wait"}
 
 		Behavior.STATIONARY:
+			# vs the Player: no free LOS-based notice — same as SLEEPING, detection is owned
+			# entirely by the player-turn Stealth-vs-Passive-Perception check
+			# (Player._resolve_stealth_check()); only a true-adjacency backstop remains here.
+			# vs the Companion (no stealth-check equivalent exists for it): unchanged can_see wake.
+			if target is Player:
+				if _chebyshev_to(target) <= 1:
+					_notice_target(target.grid_pos)
+					return {"type": "notice"}
+				return {"type": "wait"}
 			if can_see:
 				_notice_target(target.grid_pos)
 				return {"type": "notice"}
 			return {"type": "wait"}
 
 		Behavior.ROAMING:
+			if target is Player:
+				if _chebyshev_to(target) <= 1:
+					_roam_path.clear()
+					_roam_target = Vector2i(-1, -1)
+					_notice_target(target.grid_pos)
+					return {"type": "notice"}
+				return {"type": "roam"}
 			if can_see:
 				_roam_path.clear()
 				_roam_target = Vector2i(-1, -1)
@@ -872,7 +942,7 @@ func _execute_action(intent: Dictionary) -> void:
 		"attack":
 			_attack_target(intent["target"])
 		"flee":
-			var fled: bool = await _flee_from(intent["target"])
+			var fled: bool = await _flee_from(intent["target"], intent.get("slowed", false))
 			if not fled and is_instance_valid(self) and not stats.is_dead():
 				# Cornered: couldn't step directly away (wall/occupied tile behind it) — turns and
 				# fights instead of idling in place, if whatever it's fleeing is in attack range.
@@ -889,7 +959,7 @@ func _execute_action(intent: Dictionary) -> void:
 			# Aggressive (§ trait): while it can see its target, gets one extra movement step this
 			# turn on top of whatever _moves_this_turn/speed already grants — Orc Warrior's trait.
 			var bonus_moves: int = 1 if (intent.get("can_see", false) and _has_trait("aggressive")) else 0
-			await _act_toward(intent["target"], bonus_moves)
+			await _act_toward(intent["target"], bonus_moves, intent.get("slowed", false))
 			if not is_instance_valid(self) or stats.is_dead():
 				return
 			# Reached last known position without spotting the target — enter search mode.
@@ -904,9 +974,14 @@ func _execute_action(intent: Dictionary) -> void:
 			_execute_ability(intent)
 			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		"roam":
-			await _do_roam_walk()
+			await _do_roam_walk(intent.get("slowed", false))
 		"search":
-			if _search_turns_remaining > 0:
+			if intent.get("slowed", false):
+				# Same "shave one step off this round's movement" rule as act_toward/roam — a
+				# search round only ever has 1 step of budget to begin with, so slowed just skips
+				# this round's step outright (still awaits real time, doesn't burn the countdown).
+				await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
+			elif _search_turns_remaining > 0:
 				_search_turns_remaining -= 1
 				if _search_path.is_empty() or grid_pos == _search_target:
 					_search_path = _bfs_to(_search_target)
@@ -1022,11 +1097,27 @@ func _footprint_walkable(top_left: Vector2i) -> bool:
 # movement budget (Orc Warrior's "aggressive" trait, or an above-baseline "speed" pool entry).
 # There is deliberately no post-loop attack check: an enemy that spends its entire budget closing
 # distance and ends the turn adjacent does NOT also get a free attack that same turn.
-func _act_toward(target: Node, bonus_moves: int = 0) -> void:
+# `slowed` (Mud/Water — see decide_turn()) shaves exactly ONE step off this turn's total MOVEMENT
+# budget — never the attack check itself, which still fires on every iteration regardless (an
+# already-adjacent enemy attacks immediately without spending any movement, slowed or not). A
+# plain 1-step turn's movement budget drops to 0 (no movement this round if not already adjacent —
+# same net "takes 2 rounds to move 1 tile" feel as before), while a 2-step turn (Aggressive's bonus
+# step, or an above-baseline "speed" entry) only loses one of its two steps of movement, not the
+# ability to close the last tile and swing. `move_budget` gates stepping only, never the
+# `_in_attack_range()` check at the top of the loop — reducing `total_steps` itself instead would
+# have silently skipped even the free "already adjacent, no movement needed" attack whenever slow
+# reduced it to 0.
+func _act_toward(target: Node, bonus_moves: int = 0, slowed: bool = false) -> void:
 	var total_steps: int = maxi(1, _moves_this_turn) + bonus_moves
+	var move_budget: int = total_steps - 1 if slowed else total_steps
 	for _i: int in total_steps:
 		if _in_attack_range(target):
 			_attack_target(target)
+			return
+		if _i >= move_budget:
+			# No movement budget left this round — still await real time (see entities/CLAUDE.md's
+			# "every decide/execute path must await something real") rather than resolving instantly.
+			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 			return
 		var moved: bool = await _act_toward_single_step(target)
 		if not is_instance_valid(self) or stats.is_dead():
@@ -1077,7 +1168,10 @@ func _pick_roam_target() -> Vector2i:
 			return c
 	return Vector2i(-1, -1)
 
-func _do_roam_walk() -> void:
+func _do_roam_walk(slowed: bool = false) -> void:
+	if slowed:
+		await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
+		return
 	if _roam_path.is_empty() or grid_pos == _roam_target:
 		_roam_target = _pick_roam_target()
 		if _roam_target == Vector2i(-1, -1):
@@ -1120,8 +1214,14 @@ func _do_random_step() -> void:
 # directly away doesn't path the long way around; it lashes out at whatever cornered it instead
 # (see the caller in _execute_action()'s "flee" case, which attacks if this returns false and the
 # target is in range — a trapped animal turning to fight, not idling in place).
-# Returns true if a step was actually taken (already awaited the move tween); false if stuck.
-func _flee_from(from_entity: Node) -> bool:
+# Returns true if a step was actually taken (already awaited the move tween); false if stuck
+# (or slowed — a slowed round has zero movement budget, same "shave the only step off" rule as
+# roam/act_toward/search, which naturally falls into the cornered-fight fallback in
+# _execute_action()'s "flee" case if the fleeing enemy is still in range of its attacker).
+func _flee_from(from_entity: Node, slowed: bool = false) -> bool:
+	if slowed:
+		await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
+		return false
 	var from_pos: Vector2i = from_entity.grid_pos if is_instance_valid(from_entity) else grid_pos
 	var dx: int = grid_pos.x - from_pos.x
 	var dy: int = grid_pos.y - from_pos.y
@@ -1387,8 +1487,18 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	var twin_fang_blocks_adv: bool = GameState.get_talent_rank("twin_fang") >= 3 \
 		and GameState.player_stats.hunters_mark_target == self
 	var fog_adv: bool = GameState.is_in_fog_cloud(_player.grid_pos) and not twin_fang_blocks_adv
+	# Pack Tactics (Giant Rat): Advantage whenever another awake ally is within 5 ft (1 tile) of
+	# the target. SLEEPING is the closest analogue this engine has to 5e's "incapacitated" — no
+	# other enemy status here (rooted/frozen/etc.) maps to a real incapacitating condition.
+	var pack_tactics_adv: bool = false
+	if _has_trait("pack_tactics") and _dungeon_floor != null:
+		for other: Enemy in _dungeon_floor.get_all_enemies():
+			if other != self and is_instance_valid(other) and other.behavior != Behavior.SLEEPING \
+					and other.min_dist_to(_player.grid_pos) <= 1:
+				pack_tactics_adv = true
+				break
 	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, _attack_bonus_for(sub), bw_penalty,
-		fog_adv, long_shot or GameState.is_in_fog_cloud(grid_pos) or terrain_disadv)
+		fog_adv or pack_tactics_adv, long_shot or GameState.is_in_fog_cloud(grid_pos) or terrain_disadv)
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]
@@ -1404,7 +1514,8 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	# as any other damage die (matches how a weapon's own dice would double on a crit).
 	var adv_bonus_sides: int = _advantage_bonus_sides()
 	var adv_bonus_roll: int = Rng.roll(adv_bonus_sides) if (adv_bonus_sides > 0 and r["adv"]) else 0
-	var dmg_roll: int = Rng.range_i(min_d, maxi(min_d, max_d)) + adv_bonus_roll
+	var roll_info: Dictionary = CombatMath.roll_flat_range(min_d, max_d)
+	var dmg_roll: int = roll_info["total"] + adv_bonus_roll
 	var dmg: int = dmg_roll * (2 if is_crit else 1)
 	if is_crit:
 		AudioManager.play("crit")
@@ -1420,7 +1531,8 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	# Rage's 50% DR (take_damage_raw()) was live for this hit whenever the player was raging AND
 	# dmg_type is one of the three physical types.
 	var rage_applied: int = 1 if GameState.is_raging else 0
-	var dmg_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,rage=%d,final=%d,advb=%d" % [dmg_roll, min_d, max_d, 1 if is_crit else 0, rage_applied, actual, adv_bonus_roll]
+	var dmg_meta: String = "edmg:sides=%d,flat=%d,die=%d,crit=%d,rage=%d,final=%d,advb=%d" % [
+		roll_info["sides"], roll_info["flat"], roll_info["die"], 1 if is_crit else 0, rage_applied, actual, adv_bonus_roll]
 	var god_suffix: String = " [color=gray](d20%+d=%d vs AC %d)[/color]" % [r["bonus"], r["roll"], r["target_ac"]] if GameState.god_mode else ""
 	# Second typed damage component on the SAME hit (Imp's Sting — Piercing weapon dmg + Poison
 	# venom, one attack roll, two independent damage instances/floaters/log segments) — pool
@@ -1432,12 +1544,14 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 		var extra_type: String = extra.get("damage_type", "Poison")
 		var e_min: int = int(extra.get("dmg_min", 0))
 		var e_max: int = int(extra.get("dmg_max", 0))
-		var e_roll: int = Rng.range_i(e_min, maxi(e_min, e_max))
+		var e_roll_info: Dictionary = CombatMath.roll_flat_range(e_min, e_max)
+		var e_roll: int = e_roll_info["total"]
 		var e_dmg: int = e_roll * (2 if is_crit else 1)
 		var e_actual: int = GameState.take_damage_raw(e_dmg, false, extra_type)
 		if _dungeon_floor != null and not invincible:
 			_dungeon_floor.show_damage(_player.position, e_actual, true, CombatMath.damage_type_color(extra_type), 1)
-		var extra_meta: String = "edmg:roll=%d,min=%d,max=%d,crit=%d,rage=0,final=%d,advb=0" % [e_roll, e_min, e_max, 1 if is_crit else 0, e_actual]
+		var extra_meta: String = "edmg:sides=%d,flat=%d,die=%d,crit=%d,rage=0,final=%d,advb=0" % [
+			e_roll_info["sides"], e_roll_info["flat"], e_roll_info["die"], 1 if is_crit else 0, e_actual]
 		extra_suffix = " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [extra_meta, e_actual, extra_type]
 	if is_crit:
 		GameState.game_log("%s[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg%s.%s%s" % [bracket_l, atk_label, hit_meta, dmg_meta, actual, extra_suffix, god_suffix, bracket_r])
@@ -1453,8 +1567,16 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 # already logs the hit/HP line and handles death, so only the miss line needs logging here.
 func _attack_companion(companion: Companion, sub: Dictionary = {}, long_shot: bool = false) -> void:
 	var atk_label: String = display_name if sub.get("name", "") == "" else "%s's %s" % [display_name, sub["name"]]
+	# Pack Tactics (Giant Rat) — see the matching comment in _attack_player() above.
+	var pack_tactics_adv: bool = false
+	if _has_trait("pack_tactics") and _dungeon_floor != null:
+		for other: Enemy in _dungeon_floor.get_all_enemies():
+			if other != self and is_instance_valid(other) and other.behavior != Behavior.SLEEPING \
+					and other.min_dist_to(companion.grid_pos) <= 1:
+				pack_tactics_adv = true
+				break
 	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, _attack_bonus_for(sub), 0,
-		GameState.is_in_fog_cloud(companion.grid_pos), long_shot or GameState.is_in_fog_cloud(grid_pos))
+		GameState.is_in_fog_cloud(companion.grid_pos) or pack_tactics_adv, long_shot or GameState.is_in_fog_cloud(grid_pos))
 	if not r["is_hit"]:
 		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [atk_label, companion.animal_name])
 		return

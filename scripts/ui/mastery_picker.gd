@@ -26,6 +26,13 @@ var _detail_name: Label
 var _detail_desc: RichTextLabel
 var _selected_id: String = ""
 var _panel: Panel
+var _back_btn: Button
+
+# Set true (before add_child) only when this picker is spawned as part of the Custom character-
+# creation flow (race_select.gd) — shows a Back button and, on Done/Esc, routes to
+# character_summary.gd instead of just closing. Left false for the long-rest reselect flow
+# (mastery_reselect_prompt.gd), which behaves exactly as before.
+var character_creation_mode: bool = false
 
 func _ready() -> void:
 	layer = 25
@@ -79,6 +86,17 @@ func _build_ui() -> void:
 	_style_btn(done_btn, Color(0.10, 0.22, 0.10), Color(0.28, 0.65, 0.28))
 	done_btn.pressed.connect(_close)
 	_panel.add_child(done_btn)
+
+	if character_creation_mode:
+		_back_btn = Button.new()
+		_back_btn.text = "← Back"
+		_back_btn.size = Vector2(90.0, 34.0)
+		_back_btn.position = Vector2(PANEL_W - 144.0 - 100.0, 14.0)
+		_back_btn.focus_mode = Control.FOCUS_NONE
+		_back_btn.add_theme_font_size_override("font_size", 13)
+		_style_btn(_back_btn, Color(0.14, 0.12, 0.10), Color(0.5, 0.45, 0.35))
+		_back_btn.pressed.connect(_on_back)
+		_panel.add_child(_back_btn)
 
 	var sep1 := HSeparator.new()
 	sep1.position = Vector2(12.0, 60.0)
@@ -211,6 +229,16 @@ func _refresh() -> void:
 
 func _close() -> void:
 	GameState.mastery_picker_open = false
+	if character_creation_mode:
+		GameState.pending_summary_return_scene = "res://scripts/ui/mastery_picker.gd"
+		var summary = load("res://scripts/ui/character_summary.gd").new()
+		get_tree().root.call_deferred("add_child", summary)
+	queue_free()
+
+func _on_back() -> void:
+	GameState.mastery_picker_open = false
+	var race_picker = load("res://scripts/ui/race_select.gd").new()
+	get_tree().root.call_deferred("add_child", race_picker)
 	queue_free()
 
 func _style_btn(btn: Button, bg: Color, border: Color) -> void:

@@ -42,7 +42,7 @@ Open `project.godot` in **Godot 4.6 (Mono build)** and press **F5**. No CLI buil
 
 ## Sprites
 
-- Characters: `sprites/characters/<Character>/` — one subfolder per in-game character identity (e.g. `Barbarian/knight_m_idle_anim_f0.png`, `BigDemon/big_demon_idle_anim_f0.png`), `{name}_{idle|run}_anim_f{n}.png` within each folder. Unused sprite sets live in `sprites/characters/_unused/`.  
+- Characters: `sprites/characters/<Character>/` — one subfolder per in-game character identity (e.g. `Barbarian/idle_1.png`, `BigDemon/idle_1.png`), simple `{idle|run|hit}_{n}.png` (1-indexed, no character prefix) within each folder. Unused sprite sets live in `sprites/characters/_unused/`.  
 - Tiles: `sprites/tiles/` — `floor_1.png`, `wall_mid.png`, `floor_stairs.png`, `hole.png`
 - Objects: `sprites/objects/` — doors, flasks, chests, coins
 - Weapons: `sprites/weapons/`

@@ -208,10 +208,14 @@ it immediately (e.g. a Spear — a thrown weapon with no other action once Equip
 throws on RMB, no menu); with 2+ entries, RMB spawns `scripts/ui/item_interaction_menu.gd`'s
 `ItemInteractionMenu` (a small transient stacked-button popup, not a blocking modal — dismiss by
 clicking elsewhere or Esc) anchored near the slot/cursor, and picking an entry dispatches it.
-**Food is entirely excluded** from this system (eating Food currently does nothing useful — see
-"Rations / long rest" below) — both `hud.gd` and `inventory_overlay.gd`'s RMB handlers special-case
-`item.item_type == Item.Type.FOOD` first and keep their pre-existing behavior verbatim (quickbar:
-unconditional throw; overlay: `GameState.use_item()`'s eat/fuel-message branch).
+**Food goes through the same system as everything else** and always resolves to Throw: eating Food
+currently does nothing useful (see "Rations / long rest" below), and `get_available_interactions()`
+never adds any other entry for `Item.Type.FOOD`, so it always comes back as the single-entry
+`["throw"]` list — RMB on a Food item (quickbar via `hud.gd`, or deep in the bag via
+`inventory_overlay.gd`) throws it immediately, no menu, exactly like a Spear or any other
+single-interaction item; the overlay case also closes itself first (`needs_world_targeting("throw",
+item)` is always true) so the player lands straight in "aim at the world" mode instead of resolving
+behind a still-open panel.
 
 `ItemInteractions.needs_world_targeting(id, item) -> bool` flags which resolved interactions arm a
 follow-up world click (`"throw"` and `"prime"` always — Thief Tools/Empty Bottle both target an

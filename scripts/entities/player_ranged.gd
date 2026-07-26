@@ -49,6 +49,11 @@ func ranged_attack(enemy: Enemy) -> void:
 			enemy = blocker
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
+	# Captured BEFORE on_disturbed() wakes the enemy — both has_advantage() and the melee-range
+	# DISADV exemption below read pre-attack behavior/door_ambush state, which on_disturbed()
+	# immediately mutates away.
+	var was_surprised: bool = player._vfx.has_advantage(enemy)
+	var target_was_unaware: bool = enemy.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
 	enemy.on_disturbed(player.grid_pos)
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = enemy.grid_pos.x < player.grid_pos.x
@@ -90,14 +95,15 @@ func ranged_attack(enemy: Enemy) -> void:
 	var dex_mod: int = player.stats.dex_modifier()
 	var prof: int = CombatMath.weapon_prof_bonus(weapon, player.stats.proficiency_bonus, player.stats.proficient_simple_weapons, player.stats.proficient_martial_weapons)
 	var weapon_bonus: int = (weapon.bonus_damage if weapon != null else 0) + prof
-	# Advantage / Disadvantage: sources are counted (house rule — net decides outcome, not
-	# a simple boolean OR/cancel). See player.gd._bump_attack() for the reference melee implementation.
+	# Advantage / Disadvantage: sources are counted, but CombatMath.roll_with_adv_disadv() applies
+	# the standard 5e cancel rule — any ADV source together with any DISADV source is a flat roll,
+	# not a net count. See player.gd._bump_attack() for the reference melee implementation.
 	var adv_count: int = 0
 	adv_count += player._base_talents.consume_psycho_or_battlefield_adv()
 	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
 	adv_count += player._ranger_talents.consume_bloodhound_fresh_adv(enemy)
 	var disadv_count: int = 0
-	if player._vfx.has_advantage(enemy): adv_count += 1
+	if was_surprised: adv_count += 1
 	if player.stats.zealous_presence_turns > 0: adv_count += 1
 	# Vex: if the flag targets this exact enemy, grant ADV and consume it on this attempt.
 	var vex_triggered: bool = player._vex_adv_target == enemy
@@ -105,7 +111,10 @@ func ranged_attack(enemy: Enemy) -> void:
 	# Disadvantage: ranged weapon fired at melee range (Chebyshev distance 1), Heavy weapon with
 	# DEX < 13, or a long-range shot (beyond the weapon's normal range but within FOV).
 	var near_tile: Vector2i = enemy.nearest_occupied_tile(player.grid_pos)
-	if enemy.min_dist_to(player.grid_pos) <= 1: disadv_count += 1
+	# EXCEPT against an unaware target (SLEEPING/STATIONARY/ROAMING) — see the identical exemption
+	# in PlayerThrowTool._throw_weapon() for the reasoning (5e RAW exempts an incapacitated nearby
+	# creature from this penalty; without it the surprise-attack Advantage always cancels back out).
+	if enemy.min_dist_to(player.grid_pos) <= 1 and not target_was_unaware: disadv_count += 1
 	if weapon != null and weapon.is_heavy and player.stats.dexterity < 13: disadv_count += 1
 	if ranged_shot_disadvantage(weapon, near_tile): disadv_count += 1
 	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1

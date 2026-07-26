@@ -418,18 +418,20 @@ static func fmt_ehit_tooltip(p: Dictionary) -> String:
 	return "\n".join(lines)
 
 static func fmt_edmg_tooltip(p: Dictionary) -> String:
-	var roll: int  = int(p.get("roll", "0"))
-	var dmin: int  = int(p.get("min", "0"))
-	var dmax: int  = int(p.get("max", "0"))
+	var sides: int = int(p.get("sides", "0"))
+	var flat: int  = int(p.get("flat", "0"))
+	var die: int   = int(p.get("die", "0"))
 	var crit: bool = p.get("crit", "0") == "1"
 	var rage: bool = p.get("rage", "0") == "1"
 	var adv_bonus: int = int(p.get("advb", "0"))
 	var final_dmg: int = int(p.get("final", "0"))
 	var lines: PackedStringArray = []
-	if dmax > 0:
-		lines.append("%d–%d = [color=yellow]%d[/color]" % [dmin, dmax, roll])
+	if sides > 1:
+		lines.append("1d%d = [color=yellow]%d[/color]" % [sides, die])
 	else:
-		lines.append("damage = [color=yellow]%d[/color]" % roll)
+		lines.append("damage = [color=yellow]%d[/color]" % die)
+	if flat != 0:
+		lines.append("[color=lightblue]%+d[/color]  (bonus)" % flat)
 	if adv_bonus > 0:
 		lines.append("[color=orange]+%d[/color]  (Advantage)" % adv_bonus)
 	if crit:

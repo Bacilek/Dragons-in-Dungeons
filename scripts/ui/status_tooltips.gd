@@ -9,6 +9,7 @@ const TITLES: Dictionary = {
 	"burning": "Burning",
 	"bleeding": "Bleeding",
 	"slowed": "Slowed",
+	"difficult_terrain": "Difficult Terrain",
 	"raging": "Raging",
 	"temp_hp": "Temporary HP",
 	"unarmored_defense": "Unarmored Defense",
@@ -27,6 +28,8 @@ static func get_text(id: String) -> String:
 			return "Taking 1 damage per turn."
 		"slowed":
 			return "Your next move costs 2 turns instead of 1."
+		"difficult_terrain":
+			return "Standing in Mud/Water. Moving costs 2 turns instead of 1."
 		"raging":
 			return "50% reduced Slashing/Piercing/Bludgeoning damage taken. Refreshed by attacking or being attacked."
 		"temp_hp":

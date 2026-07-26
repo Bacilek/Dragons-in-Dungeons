@@ -60,21 +60,23 @@ func find_free_adjacent() -> Vector2i:
 	return Vector2i(-1, -1)
 
 func cycle_animal_form(ab: Ability) -> void:
+	# Free to press any time, no rest required — one press steps to the next form in the
+	# Bear→Eagle→Wolf→Bear cycle, taking GameState.ANIMAL_FORM_SWITCH_TURNS (1) real turn to take
+	# effect (start_animal_form_switch()). Since you can't jump directly to the 3rd form, going
+	# e.g. Bear→Wolf takes 2 presses/turns (one per intermediate step). Re-pressing mid-transition
+	# just retargets and restarts the count.
 	var forms: PackedStringArray = ["Bear", "Eagle", "Wolf"]
 	var idx: int = forms.find(GameState.natural_rager_form)
-	GameState.natural_rager_form = forms[(idx + 1) % forms.size()]
-	# Eagle's "no Opportunity Attacks against you" is always-on while in Eagle form — no Rage
-	# or talent rank required, see markdowns/wild_heart.md.
-	GameState.player_evades_opportunity_attacks = GameState.natural_rager_form == "Eagle"
-	# Enhanced Forms R1: +1 FOV radius while in Eagle form.
-	var enh_rank: int = GameState.get_talent_rank("enhanced_forms")
-	GameState.fov_radius_bonus = 1 if (GameState.natural_rager_form == "Eagle" and enh_rank >= 1) else 0
-	if player._dungeon_floor != null:
-		player._dungeon_floor.update_fog(player.grid_pos)
+	var next_form: String = forms[(idx + 1) % forms.size()]
+	GameState.start_animal_form_switch(next_form)
 	ab.description = GameState._build_natural_rager_description()
 	ab.icon_path = GameState.talent_icon_path("animal_form", 0)
 	GameState.ability_bar_changed.emit()
-	GameState.game_log("[color=orange]Animal Form: switched to %s Form.[/color]" % GameState.natural_rager_form)
+	var t: int = GameState.rager_form_switch_turns_remaining
+	if t > 0:
+		GameState.game_log("[color=orange]Animal Form: shifting into %s Form (%d turn%s).[/color]" % [next_form, t, "s" if t != 1 else ""])
+	else:
+		GameState.game_log("[color=orange]Animal Form: switched to %s Form.[/color]" % next_form)
 
 func cycle_natural_sleeper_form(ab: Ability) -> void:
 	# "" is the initial state (never chosen), not part of the cycle.

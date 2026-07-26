@@ -87,7 +87,11 @@ reuse the existing qbar-tooltip pair (`_qbar_tooltip`/`_qbar_tooltip_rtl`) via
 `_on_status_tray_icon_hovered(id)`, which pulls description text from `status_tooltips.gd`
 (`StatusTooltips`, static-func-only helper mirroring `tooltip_formatters.gd`'s pattern — one
 `get_text(id)` case per effect id). Sources at launch: `poisoned`/`burning`/`bleeding`/`slowed`
-(`Stats.*_turns`), `raging` (`GameState.is_raging`), `temp_hp` (`Stats.temp_hp`),
+(`Stats.*_turns`), `difficult_terrain` (`GameState.player_on_difficult_terrain` — live "standing
+on Mud/Water right now" flag, recomputed every turn-start in `player.gd._on_turn_started()`
+instead of riding `slowed_turns`' decaying counter, which used to make the icon flicker for about
+a frame on every terrain step instead of staying lit the whole time the player stood on the tile;
+see `scripts/entities/CLAUDE.md`'s "Status effects" section), `raging` (`GameState.is_raging`), `temp_hp` (`Stats.temp_hp`),
 `unarmored_defense` (Barbarian/Monk with no armor equipped — reads the live AC formula),
 `tactician` (`GameState.battlefield_adv_pending`, Battlefield Expert R1's pending-Advantage
 window — see `scripts/entities/CLAUDE.md`'s Barbarian Tier 1 talents), `psycho_adv`
@@ -252,6 +256,38 @@ The **Custom** path only now (see `character_select.gd` above) — no longer spa
 `point_buy_select.gd` (below) and `queue_free()`s itself — point buy owns spawning race select,
 which in turn owns spawning the Mastery Picker, not this script. No longer has its own
 Continue-Saved-Run button (that moved to `character_select.gd`, the actual entry point).
+
+**Grid-of-square-tiles layout** (deliberate redesign — no AC/ability-scores/HP shown here anymore,
+that numeric detail was judged noisy for a first-screen pick): `TILE_SIZE = 170` square tiles laid
+out via manual position math (`GRID_COLUMNS = 6`, `TILE_GAP = 18`, row/col from `idx / GRID_COLUMNS`
+/ `idx % GRID_COLUMNS`) instead of the old single-row 4-wide layout — designed to keep scaling as
+more classes are added without ever needing a redesign. Each real class tile is a flat `Button`
+(not a `Panel` + separate click layer) showing only sprite icon, name, hit die, and a 1-2 line
+flavor `desc` — `CLASS_DATA` no longer carries an `hp`/stat-block field at all. A **Random** tile
+(`_build_random_card()`, purple `RANDOM_COLOR`, dice glyph in place of a sprite) sits right after
+the 4 real class tiles, before the locked ones — clicking it rolls `CLASS_DATA[randi() %
+CLASS_DATA.size()]` and calls the exact same `_on_class_selected()` a normal tile uses, so it still
+walks the entire point-buy/background/race/mastery Custom flow (per direct owner correction: it
+must NOT bypass those screens the way a premade hero on `character_select.gd` does — only the
+class choice itself is randomized). `LOCKED_CLASSES`
+(Bard/Cleric/Druid/Fighter/Paladin/Rogue/Sorcerer/Warlock — the rest of the 5e class list, not yet
+implemented) render as non-interactive silhouette tiles (`_build_locked_card()`: dark `Panel`,
+gray "?" glyph in place of a sprite, dimmed name, "Coming Soon" subtitle, `MOUSE_FILTER_IGNORE`)
+appended after Random in the same grid — purely cosmetic roster completeness, no selection
+path exists for them. Adding a real class: append to `CLASS_DATA` and remove its name from
+`LOCKED_CLASSES`.
+
+**Info tooltip ("i" badge)**: each real `CLASS_DATA` entry carries an `"info"` dict
+(`primary_ability`, `hit_die`, `check_profs`, `weapon_profs`, `armor_training`,
+`starting_equipment` — all plain display strings, not derived live from `Stats`, so keep them in
+sync by hand if a class's proficiencies change) rendered via a small round "i" `Button` in the
+tile's top-right corner (`_build_info_icon()`) using Godot's native `Control.tooltip_text` (plain
+`"\n"`-joined text, no custom popup) — hover to read, no click behavior. `starting_equipment` is
+intentionally blank (`_format_class_info_tooltip()` shows "TBD") for all 4 classes today — see
+`docs/TODO.md`'s "Fill in Starting Equipment" entry. This icon's `mouse_filter` is deliberately
+`STOP` (Godot's Control default), unlike every other decorative child on a tile (icon/name/hit-die/
+desc labels all use `MOUSE_FILTER_IGNORE` to let the click fall through to the card `Button`) — so
+tapping the badge can never accidentally select that class.
 
 ## Point buy select (`point_buy_select.gd`)
 CanvasLayer, layer = 22. One-time, mandatory ability-score allocation spawned by
@@ -459,6 +495,78 @@ Spellbook is open — addresses the original playtesting feedback that slot coun
 invisible outside `R`. Blue when slots remain, dimmed gray at 0. Wired to
 `GameState.spell_slots_changed` (consume/refill/level-up-grant/prepare-toggle),
 `player_leveled_up`, and `class_chosen`; empty string for every non-caster class.
+
+## Custom character creation: Back navigation + summary screen
+
+The full Custom-path chain — **class select → point buy → background ASI → race select →
+mastery/cantrip picker → character_summary.gd** — now supports going backward at every step, and
+ends on a final review/confirm screen instead of starting the run the instant the last picker
+closes. Key structural change: `GameState.class_selected` is **no longer set `true` inside
+class_select.gd** — it stays `false` for the ENTIRE Custom flow (player input is hard-gated on it
+in `player.gd`, so the player literally cannot touch the already-loaded floor 1 underneath no
+matter how much back-and-forth happens) and is only set at `character_summary.gd`'s final "Yes"
+confirm, which also re-emits `class_chosen` so `SaveManager`'s checkpoint-on-that-signal hook
+(previously a no-op the whole time, since it's gated on `class_selected`) finally fires.
+
+**Every screen after class_select gained a "← Back" button** (top-right corner, muted-gold style)
+that tears down the current overlay and spawns the previous one:
+`point_buy_select` → `class_select` → `background_select` → `point_buy_select` →
+`race_select` → `background_select` → (`mastery_picker` or `cantrip_select`, whichever this class
+uses) → `race_select`. `class_select.gd` itself has no Back (it's the first step).
+
+**Re-picking a class mid-flow**: `class_select.gd._on_class_selected()` now calls
+`GameState.reset_for_class_reselect()` (`scripts/autoloads/CLAUDE.md`) before applying the new
+class — wipes equipment/ability-bar/quickbar/bag/talents/masteries back to empty and re-grants the
+generic starting Ration/Thief-Tools, then re-derives everything from scratch. Without this,
+`give_class_starting_items()`'s own idempotency guard (`equipment.melee != null` check) would
+silently no-op on a second call, leaving the OLD class's gear/abilities equipped after picking a
+different one via Back.
+
+**Point buy / background prefill on Back**: `GameState.pending_point_buy_scores` /
+`pending_background_bonus` (both `Dictionary`, empty = "no confirmed allocation yet") are written
+by each screen's own Confirm and read by that screen's `_ready()` to restore the last-confirmed
+allocation when re-opened via Back — so bouncing back one step and returning doesn't force
+re-spending every point from scratch. `reset_for_class_reselect()` clears both (a fresh class pick
+always restarts allocation at the flat 8-baseline). **`race_select.gd`'s own Back button must undo
+an already-applied background bonus** before reopening `background_select.gd`: that screen snapshots
+its "pre-bonus" base scores from `GameState.player_stats`'s CURRENT scores at `_ready()`, and
+`apply_background_bonus()` is additive, not an overwrite — re-confirming on top of an
+already-applied bonus would double it. `race_select._on_back()` calls
+`player_stats.apply_point_buy_scores(pending_point_buy_scores)` first to reset to the pure
+post-point-buy baseline. `background_select.gd`'s OWN Back (→ point buy) needs no such undo, since
+`apply_background_bonus()` only ever runs from that screen's own Confirm, never before Back can be
+pressed. Race/mastery/cantrip picks have no analogous prefill (re-opening loses the prior pick) —
+race re-selection is cheap/idempotent (`apply_race_defaults()`), and masteries persist on
+`Stats.known_weapon_masteries` directly so re-opening the picker already shows them still selected.
+
+**Wizard's cantrip/starting-spell re-pick**: `GameState.reset_wizard_onboarding_picks()` wipes
+`caster.known_spells`/`prepared_spells`, their ability-bar entries, and the Special slot —
+`cantrip_select.gd._ready()` calls it unconditionally (safe no-op on a first-ever visit) so being
+re-opened via `character_summary.gd`'s "Take me back" doesn't leave the OLD pick known alongside a
+new one (`choose_cantrip()`/`choose_starting_spell()` only ever APPEND). Its own round-2 "← Back"
+button reuses this same wipe + the existing round-1↔round-2 rebuild-in-place pattern to return to
+round 1 with a clean slate; round-1's Back leaves straight for `race_select.gd` instead (nothing to
+undo yet).
+
+**`mastery_picker.gd`'s `character_creation_mode: bool`** (set on the instance before `add_child`,
+default `false`): when true, shows a "← Back" button (→ `race_select.gd`) and its Done/Esc `_close()`
+routes to `character_summary.gd` instead of just freeing the overlay. Left `false` (unchanged
+behavior) for the long-rest reselect flow (`mastery_reselect_prompt.gd`), which never sees a Back
+button or the summary screen.
+
+**`character_summary.gd`** (new file, `layer = 26`, `GameState.character_summary_open` input-gate
+flag, non-dismissible like every other onboarding screen): the actual final step. Shows a portrait
+(same per-class sprite path table as `class_select.gd`'s `CLASS_DATA`), class + race (+ sub-race/
+ancestry) headline, hit die/HP/AC line, all six ability scores + modifiers, known weapon masteries
+(if `mastery_cap() > 0`), and known cantrips/prepared spells (if `player_stats.caster != null`) —
+everything read live off `GameState.player_stats`, no separate draft/snapshot object. Two buttons:
+**"Yes, I'm Ready!"** → `class_selected = true` + re-emits `class_chosen` (see above), then frees
+itself — the run genuinely begins here. **"Take Me Back"** → reads
+`GameState.pending_summary_return_scene` (a script path string, set by whichever of
+`mastery_picker.gd`/`cantrip_select.gd`/`race_select.gd` was this character's actual last
+class-specific step — `race_select.gd` itself sets it directly when neither a mastery cap nor
+Wizard cantrips apply, e.g. Monk) and reopens that screen fresh (setting
+`character_creation_mode = true` again if it's the mastery picker).
 
 ## Mastery picker (`mastery_picker.gd`)
 CanvasLayer, layer = 25. Modeled directly on the talent picker (dim overlay + centered bordered

@@ -32,7 +32,7 @@ func _ready() -> void:
 	# Programmatic sprite — use wizard sprite (green tint) as placeholder
 	_sprite = Sprite2D.new()
 	var tex: Texture2D = null
-	var candidate_path: String = "res://sprites/characters/Wizard/wizzard_m_idle_anim_f0.png"
+	var candidate_path: String = "res://sprites/characters/Wizard/idle_1.png"
 	if ResourceLoader.exists(candidate_path):
 		tex = load(candidate_path) as Texture2D
 	if tex == null:

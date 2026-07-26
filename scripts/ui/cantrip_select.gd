@@ -22,10 +22,17 @@ const STARTING_SPELL_IDS: Array[String] = ["magic_missile", "shield"]
 var _panel: Panel
 var _round: int = 1
 var _candidates: Array[String] = []
+var _back_btn: Button
 
 func _ready() -> void:
 	layer = 25
 	GameState.cantrip_picker_open = true
+	# Wipes any previous cantrip/starting-spell pick from an earlier pass through this screen —
+	# covers both being re-opened fresh via character_summary.gd's "Take me back" and this
+	# instance's own round-2-back-to-round-1 rebuild (see _on_back()). No-op on a truly first-ever
+	# visit (nothing granted yet). Without this, re-picking here would leave the OLD pick known
+	# alongside the new one, since choose_cantrip()/choose_starting_spell() only ever append.
+	GameState.reset_wizard_onboarding_picks()
 	_candidates = SpellDb.STARTER_CANTRIP_IDS.duplicate()
 	_build_ui()
 
@@ -55,6 +62,25 @@ func _build_ui() -> void:
 	title.position = Vector2(MARGIN, 14.0)
 	title.size = Vector2(PANEL_W - MARGIN * 2.0, 34.0)
 	_panel.add_child(title)
+
+	_back_btn = Button.new()
+	_back_btn.text = "← Back"
+	_back_btn.size = Vector2(90.0, 28.0)
+	_back_btn.position = Vector2(PANEL_W - MARGIN - 90.0, 16.0)
+	_back_btn.focus_mode = Control.FOCUS_NONE
+	_back_btn.add_theme_font_size_override("font_size", 13)
+	var back_normal := StyleBoxFlat.new()
+	back_normal.bg_color = Color(0.14, 0.12, 0.10)
+	back_normal.set_border_width_all(1)
+	back_normal.border_color = Color(0.5, 0.45, 0.35)
+	back_normal.set_corner_radius_all(3)
+	_back_btn.add_theme_stylebox_override("normal", back_normal)
+	var back_hover := StyleBoxFlat.new()
+	back_hover.bg_color = Color(0.14, 0.12, 0.10).lightened(0.12)
+	back_hover.set_corner_radius_all(3)
+	_back_btn.add_theme_stylebox_override("hover", back_hover)
+	_back_btn.pressed.connect(_on_back)
+	_panel.add_child(_back_btn)
 
 	var hint := Label.new()
 	hint.text = "This choice is permanent."
@@ -137,6 +163,28 @@ func _on_chosen(spell_id: String) -> void:
 		return
 	GameState.choose_starting_spell(spell_id)
 	GameState.cantrip_picker_open = false
+	GameState.pending_summary_return_scene = "res://scripts/ui/cantrip_select.gd"
+	var summary = load("res://scripts/ui/character_summary.gd").new()
+	get_tree().root.call_deferred("add_child", summary)
+	queue_free()
+
+func _on_back() -> void:
+	if _round == 2:
+		# Undo round 1's cantrip pick before letting the player redo it — same queue_free/rebuild
+		# pattern _on_chosen() already uses for the forward round-1-to-round-2 transition.
+		GameState.reset_wizard_onboarding_picks()
+		_round = 1
+		_candidates = SpellDb.STARTER_CANTRIP_IDS.duplicate()
+		for child: Node in get_children():
+			if child is CanvasItem:
+				(child as CanvasItem).visible = false
+			child.queue_free()
+		_panel = null
+		_build_ui()
+		return
+	GameState.cantrip_picker_open = false
+	var race_picker = load("res://scripts/ui/race_select.gd").new()
+	get_tree().root.call_deferred("add_child", race_picker)
 	queue_free()
 
 func _unhandled_input(event: InputEvent) -> void:

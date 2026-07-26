@@ -54,6 +54,7 @@ var _card_btns: Dictionary = {}      # race id → Button
 var _sub_rows: Dictionary = {}       # race id → Control (sub-choice row, hidden until selected)
 var _sub_btns: Dictionary = {}       # race id → Array[Button]
 var _confirm_btn: Button
+var _back_btn: Button
 var _panel: Panel
 
 func _ready() -> void:
@@ -87,6 +88,16 @@ func _build_ui() -> void:
 	title.position = Vector2(MARGIN, 14.0)
 	title.size = Vector2(PANEL_W - MARGIN * 2.0, 34.0)
 	_panel.add_child(title)
+
+	_back_btn = Button.new()
+	_back_btn.text = "← Back"
+	_back_btn.size = Vector2(90.0, 28.0)
+	_back_btn.position = Vector2(PANEL_W - MARGIN - 90.0, 16.0)
+	_back_btn.focus_mode = Control.FOCUS_NONE
+	_back_btn.add_theme_font_size_override("font_size", 13)
+	_style_btn(_back_btn, Color(0.14, 0.12, 0.10), Color(0.5, 0.45, 0.35))
+	_back_btn.pressed.connect(_on_back)
+	_panel.add_child(_back_btn)
 
 	var hint := Label.new()
 	hint.text = "This choice is permanent."
@@ -242,10 +253,31 @@ func _on_confirm() -> void:
 	GameState.choose_race(race, variant, prof_ability)
 	if GameState.player_stats.mastery_cap() > 0:
 		var picker = load("res://scripts/ui/mastery_picker.gd").new()
+		picker.character_creation_mode = true
 		get_tree().root.call_deferred("add_child", picker)
 	elif GameState.player_stats.character_class == Stats.CharacterClass.WIZARD:
 		var cantrip_picker = load("res://scripts/ui/cantrip_select.gd").new()
 		get_tree().root.call_deferred("add_child", cantrip_picker)
+	else:
+		# No mastery/cantrip step for this class (e.g. Monk) — race select is the last
+		# class-specific onboarding screen, so go straight to the final summary/confirm.
+		GameState.pending_summary_return_scene = "res://scripts/ui/race_select.gd"
+		var summary = load("res://scripts/ui/character_summary.gd").new()
+		get_tree().root.call_deferred("add_child", summary)
+	queue_free()
+
+func _on_back() -> void:
+	GameState.race_picker_open = false
+	# Undo any already-applied background bonus before reopening background_select.gd — it reads
+	# player_stats' CURRENT scores as its "post-point-buy baseline" snapshot, which must not
+	# already include a previously-confirmed bonus (apply_background_bonus() is additive, not an
+	# overwrite — re-confirming on top of itself would double the bonus). Resetting to the
+	# pure point-buy result here is safe/idempotent even if background was never confirmed yet.
+	if not GameState.pending_point_buy_scores.is_empty():
+		GameState.player_stats.apply_point_buy_scores(GameState.pending_point_buy_scores)
+		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
+	var background_picker = load("res://scripts/ui/background_select.gd").new()
+	get_tree().root.call_deferred("add_child", background_picker)
 	queue_free()
 
 func _race_enum(race_id: String) -> Stats.CharacterRace:

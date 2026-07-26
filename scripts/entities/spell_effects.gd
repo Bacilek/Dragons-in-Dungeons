@@ -38,6 +38,9 @@ static func _cantrip_tier(character_level: int) -> int:
 static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
+	# Captured BEFORE on_disturbed() wakes the target — has_advantage() reads pre-attack
+	# behavior/door_ambush state, which on_disturbed() immediately mutates away.
+	var was_surprised: bool = player._vfx.has_advantage(target)
 	target.on_disturbed(player.grid_pos)
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
@@ -51,7 +54,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	var adv_count: int = 0
 	adv_count += player._base_talents.consume_psycho_or_battlefield_adv()
 	var disadv_count: int = 0
-	if player._vfx.has_advantage(target): adv_count += 1
+	if was_surprised: adv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1: disadv_count += 1
 	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
@@ -599,6 +602,9 @@ static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int,
 # damage roll against a second target, reusing the same log-line shape with the "leaps to" phrasing
 # instead of "cast ... at".
 static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Enemy, dtype: String, dungeon_floor: Node, is_leap: bool) -> Dictionary:
+	# Captured BEFORE on_disturbed() wakes the target — has_advantage() reads pre-attack
+	# behavior/door_ambush state, which on_disturbed() immediately mutates away.
+	var was_surprised: bool = player._vfx.has_advantage(target)
 	target.on_disturbed(player.grid_pos)
 	var stats: Stats = player.stats
 	var attack_bonus: int = _attack_bonus(stats)
@@ -607,7 +613,7 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	if not is_leap:
 		adv_count += player._base_talents.consume_psycho_or_battlefield_adv()
 	var disadv_count: int = 0
-	if player._vfx.has_advantage(target): adv_count += 1
+	if was_surprised: adv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1: disadv_count += 1
 	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1

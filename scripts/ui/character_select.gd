@@ -4,7 +4,10 @@ extends CanvasLayer
 # class_select.gd (hud.gd now spawns this one). Offers 5 side-by-side options: 4 premade
 # characters (fixed class + race + weapon masteries, spawn straight into the dungeon on
 # click) and a 5th "Custom" option that hands off to the existing class_select.gd ->
-# race_select.gd -> mastery_picker.gd chain unchanged.
+# race_select.gd -> mastery_picker.gd chain unchanged. (The "Random" option lives one step
+# further in, on class_select.gd's own class grid — see that file — since randomizing
+# should still walk through the full Custom point-buy/background/race/mastery flow, not
+# bypass it like a premade hero does.)
 
 const CARD_W: int = 260
 const CARD_H: int = 460
@@ -22,7 +25,7 @@ const PREMADE: Array = [
 		"prof":    -1,
 		"masteries": ["Cleave", "Graze"],
 		"scores":  {"str": 16, "dex": 14, "con": 16, "int": 8, "wis": 10, "cha": 10},
-		"sprite":  CHAR_PATH + "Barbarian/knight_m_idle_anim_f0.png",
+		"sprite":  CHAR_PATH + "Barbarian/idle_1.png",
 		"subtitle": "Orc Barbarian",
 		"desc":    "A raging orc warrior.\nMasteries: Cleave, Graze.",
 		"color":   Color(0.90, 0.60, 0.20),
@@ -35,7 +38,7 @@ const PREMADE: Array = [
 		"prof":    -1,
 		"masteries": ["Slow", "Nick"],
 		"scores":  {"str": 8, "dex": 16, "con": 14, "int": 10, "wis": 16, "cha": 10},
-		"sprite":  CHAR_PATH + "Ranger/elf_m_idle_anim_f0.png",
+		"sprite":  CHAR_PATH + "Ranger/idle_1.png",
 		"subtitle": "Wood Elf Ranger",
 		"desc":    "A swift hunter of the wilds.\nMasteries: Slow, Nick.",
 		"color":   Color(0.50, 0.85, 0.50),
@@ -48,7 +51,7 @@ const PREMADE: Array = [
 		"prof":    -1,
 		"masteries": [],
 		"scores":  {"str": 10, "dex": 16, "con": 16, "int": 10, "wis": 14, "cha": 8},
-		"sprite":  CHAR_PATH + "Monk/dwarf_m_idle_anim_f0.png",
+		"sprite":  CHAR_PATH + "Monk/idle_1.png",
 		"subtitle": "White Dragonborn Monk",
 		"desc":    "A martial artist with\ncold-resistant scales.",
 		"color":   Color(0.60, 0.90, 1.00),
@@ -63,7 +66,7 @@ const PREMADE: Array = [
 		"scores":  {"str": 8, "dex": 14, "con": 16, "int": 16, "wis": 10, "cha": 10},
 		"cantrip": "fire_bolt",
 		"spell1":  "magic_missile",
-		"sprite":  CHAR_PATH + "Wizard/wizzard_m_idle_anim_f0.png",
+		"sprite":  CHAR_PATH + "Wizard/idle_1.png",
 		"subtitle": "Halfling Wizard",
 		"desc":    "Frail but brilliant,\nlucky in a pinch.",
 		"color":   Color(0.50, 0.65, 1.00),

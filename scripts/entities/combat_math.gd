@@ -25,19 +25,20 @@ static func halfling_reroll(die: int) -> Dictionary:
 static func wrap_halfling_luck(text: String, lucky: bool) -> String:
 	return "[color=#2e8b3d]☘ %s[/color]" % text if lucky else text
 
-# ADV/DISADV house rule: sources are counted (adv_count, disadv_count); net = adv_count -
-# disadv_count decides the outcome (>0 ADV, <0 DISADV, ==0 normal). die2 is ALWAYS rolled
-# independently when ADV/DISADV is active — nat 1 on die1 does NOT skip it. Each d20 individually
-# goes through halfling_reroll() (a Halfling attacking with Advantage can get BOTH dice rerolled
-# if both come up 1).
+# ADV/DISADV: standard 5e rule, not a net-count house rule — any ADV source together with any
+# DISADV source always cancels to a flat roll, regardless of how many sources are on each side
+# (adv_count=2, disadv_count=1 is still a flat roll, NOT Advantage). Only a pure adv_count>0/
+# disadv_count==0 (or the mirror) actually rolls two dice. die2 is ALWAYS rolled independently
+# when ADV/DISADV is active — nat 1 on die1 does NOT skip it. Each d20 individually goes through
+# halfling_reroll() (a Halfling attacking with Advantage can get BOTH dice rerolled if both come
+# up 1).
 # Returns {die1, die2, die, adv, disadv, lucky1, lucky2, lucky} — die1/die2 are the (post-reroll)
 # rolls, die is the resolved value (max for ADV, min for DISADV, die1 otherwise), adv/disadv are
 # the resolved booleans, lucky1/lucky2 flag which die (if any) was Halfling-rerolled, lucky is
 # their OR (convenience for callers that don't care which die).
 static func roll_with_adv_disadv(adv_count: int, disadv_count: int) -> Dictionary:
-	var net: int = adv_count - disadv_count
-	var adv: bool = net > 0
-	var disadv: bool = net < 0
+	var adv: bool = adv_count > 0 and disadv_count == 0
+	var disadv: bool = disadv_count > 0 and adv_count == 0
 	var r1: Dictionary = halfling_reroll(Rng.roll(20))
 	var die1: int = r1["value"]
 	var lucky1: bool = r1["lucky"]
@@ -179,6 +180,21 @@ static func damage_type_color(dtype: String) -> Color:
 		"Necrotic": return Color(0.55, 0.2, 0.6)
 		"Force": return Color(0.85, 0.6, 1.0)
 		_: return Color(1.0, 0.9, 0.3)
+
+# Enemy attacks are authored as a flat dmg_min/dmg_max range, not real dice notation — the old
+# damage tooltip showed the raw "min-max = roll" span verbatim, which read as meaningless noise
+# ("4-9=6") instead of an actual rolled die + bonus the way every player-side damage source
+# already displays. Decomposes that same range into an explicit "1dS + flat" shape and rolls it
+# as a real die — same uniform distribution over [min, max] as the old Rng.range_i() call, just
+# rolled/displayed as a genuine die face + flat bonus instead of an opaque span. Permanent fix —
+# every enemy-attack damage tooltip (edmg) must go through this, never a bare min-max display.
+static func roll_flat_range(min_d: int, max_d: int) -> Dictionary:
+	var lo: int = min_d
+	var hi: int = maxi(min_d, max_d)
+	var sides: int = maxi(1, hi - lo + 1)
+	var flat: int = lo - 1
+	var die: int = Rng.roll(sides)
+	return {"sides": sides, "flat": flat, "die": die, "total": die + flat}
 
 # Appends an "and died" suffix to an attack's own hit/damage log line when that hit was lethal —
 # folds the kill into one chat message instead of a separate "X dies." line (Player._finish_kill()

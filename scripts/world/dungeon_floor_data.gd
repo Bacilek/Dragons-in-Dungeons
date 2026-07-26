@@ -104,8 +104,8 @@ const BOSS_POOL: Array = [
 	 "cr": 5, "creature_type": "Fiend", "legendary_resistances": 3},
 	{"boss_id": "necromancer", "display_name": "Necromancer", "sprite": "necromancer", "idle_frames": 4, "run_frames": 4, "floor": 10, "hp": 120, "hp_per_floor": 0, "dmg_min": 10, "dmg_max": 18, "armor": 4, "ac": 13, "exp": 200,
 	 "cr": 8, "creature_type": "Humanoid",
-	 "idle_fmt": "res://sprites/characters/Necromancer/necromancer_anim_f%d.png",
-	 "run_fmt":  "res://sprites/characters/Necromancer/necromancer_anim_f%d.png"},
+	 "idle_fmt": "res://sprites/characters/Necromancer/anim_%d.png",
+	 "run_fmt":  "res://sprites/characters/Necromancer/anim_%d.png"},
 ]
 
 const ENEMY_POOL: Array = [
@@ -152,6 +152,27 @@ const ENEMY_POOL: Array = [
 	 "multiattack": [{"name": "Dagger", "count": 1, "dmg_min": 3, "dmg_max": 6, "damage_type": "Piercing"}],
 	 "thrown_weapon": {"name": "Dagger", "dmg_min": 3, "dmg_max": 6, "damage_type": "Piercing", "range": 4, "flee_only": true},
 	 "unarmed_fallback": {"name": "Fists", "dmg_min": 1, "dmg_max": 1, "damage_type": "Bludgeoning", "attack_stat": "str"}},
+	# Giant Rat — Small Beast, unaligned, CR 1/8, proficiency +2. HP 7, AC 13.
+	# STR 7 (-2) DEX 16 (+3) CON 11 (+0) INT 2 (-4) WIS 10 (+0) CHA 4 (-3). Speed 1 (default/30ft).
+	# Darkvision: +1 to the default enemy notice/LOS radius. Passive Perception 10 (10 + WIS mod).
+	# Bite: +5 to hit (DEX+prof, finesse — attack_profile.attack_stat), 1d4+3 Piercing.
+	# Pack Tactics: Advantage on this attack whenever another awake ally is within 5 ft of the
+	# target — see the traits dispatch in enemy.gd's _attack_player()/_attack_companion().
+	# Visual: random Gray/Brown/White sprite variant per spawn, sliced from a sprite sheet — see
+	# enemy.gd's _setup_sheet_animations(). Idle/Run only; the art's Attack/Hurt/Dead/Sniff/Stand/
+	# Walk sheets go unused, same as every other enemy's un-wired animation states (see CLAUDE.md).
+	{"enemy_id": "giant_rat", "display_name": "Giant Rat", "sprite": "rat",
+	 "sprite_variants": ["Gray", "Brown", "White"], "idle_frames": 6, "run_frames": 6,
+	 "sprite_frame_size": {"w": 64, "h": 64}, "sprite_scale": 0.35,
+	 "floor_min": 1, "floor_max": 2, "hp": 7, "hp_per_floor": 1, "dmg_min": 4, "dmg_max": 7,
+	 "armor": 0, "ac": 13, "exp": 3,
+	 "cr": 0.125, "creature_type": "Beast",
+	 "mods": {"str": -2, "dex": 3, "con": 0, "int": -4, "wis": 0, "cha": -3},
+	 "senses": {"sight_bonus": 1},
+	 "passive_perception": 10,
+	 "attack_profile": {"attack_stat": "dex"},
+	 "traits": [{"id": "pack_tactics"}],
+	 "multiattack": [{"name": "Bite", "count": 1, "dmg_min": 4, "dmg_max": 7, "damage_type": "Piercing"}]},
 	# Orc Warrior — Medium Humanoid (Orc), CR 1/2, proficiency +2. HP 15, AC 13.
 	# STR 16 (+3) DEX 12 (+1) CON 16 (+3) INT 7 (-2) WIS 11 (+0) CHA 10 (+0). Speed 1 (default).
 	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 6 -> 7 here).
@@ -353,7 +374,7 @@ const ENEMY_POOL: Array = [
 	# all 4, and its own attack range/sight/LOS are measured from whichever occupied tile is
 	# closest. Spawn placement requires the WHOLE 2x2 block to be free — see
 	# DungeonFloor._spawn_enemies()'s footprint guard — so it can never land in a 1-wide corridor.
-	# Its sprite (ogre_idle_anim_f0-3/ogre_run_anim_f0-3, already dropped into sprites/characters/Ogre/,
+	# Its sprite (idle_1-4/run_1-4, already dropped into sprites/characters/Ogre/,
 	# 32x36px vs. e.g. Orc Warrior's 16x23px) is sized to match the 2x2 footprint.
 	# Darkvision: +1 to the default enemy notice/LOS radius (senses.sight_bonus).
 	# Passive Perception = 10 + WIS mod (-2) = 8.

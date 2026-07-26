@@ -94,10 +94,10 @@ var _popup_cha_label: Label = null
 var _ac_label: Label = null
 
 const CLASS_PORTRAIT: Dictionary = {
-	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/Barbarian/knight_m_idle_anim_f0.png",
-	Stats.CharacterClass.RANGER:    "res://sprites/characters/Ranger/elf_m_idle_anim_f0.png",
-	Stats.CharacterClass.WIZARD:    "res://sprites/characters/Wizard/wizzard_m_idle_anim_f0.png",
-	Stats.CharacterClass.MONK:      "res://sprites/characters/Monk/dwarf_m_idle_anim_f0.png",
+	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/Barbarian/idle_1.png",
+	Stats.CharacterClass.RANGER:    "res://sprites/characters/Ranger/idle_1.png",
+	Stats.CharacterClass.WIZARD:    "res://sprites/characters/Wizard/idle_1.png",
+	Stats.CharacterClass.MONK:      "res://sprites/characters/Monk/idle_1.png",
 }
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -429,6 +429,8 @@ func _update_status_icons() -> void:
 		entries.append({"id": "bleeding", "icon_path": "res://icons/status/bleeding.png", "fallback_color": Color(0.80, 0.0, 0.0)})
 	if s.slowed_turns > 0:
 		entries.append({"id": "slowed", "icon_path": "res://icons/status/slowed.png", "fallback_color": Color(0.55, 0.35, 0.10)})
+	if GameState.player_on_difficult_terrain:
+		entries.append({"id": "difficult_terrain", "icon_path": "res://icons/status/slowed.png", "fallback_color": Color(0.55, 0.35, 0.10)})
 	if GameState.is_raging:
 		entries.append({"id": "raging", "icon_path": GameState.talent_icon_path("rage", 3), "fallback_color": Color(0.85, 0.15, 0.05)})
 	if s.temp_hp > 0:
@@ -460,7 +462,7 @@ func _on_status_tray_icon_hovered(id: String) -> void:
 	_qbar_tooltip.visible = true
 
 func _on_class_chosen(cls: Stats.CharacterClass) -> void:
-	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/Barbarian/knight_m_idle_anim_f0.png")
+	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/Barbarian/idle_1.png")
 	portrait.texture_normal = load(path)
 	_update_hit_dice_label()
 
