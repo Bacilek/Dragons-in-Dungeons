@@ -180,7 +180,7 @@ var god_mode: bool = false
 # fires, no stillness ADV) — the default, untouched classification.
 var stealth_check_skip: bool = false        # true: this action was an attack/spell — no check at all
 var stealth_check_stillness: bool = false   # true: this action was combat-free & movement-free — ADV on the check
-var debug_show_stealth_checks: bool = false # debug-only: log EVERY stealth check (pass or fail), not just detections — never changes the roll/outcome, visibility only
+var debug_show_all_checks: bool = false # debug-only: log EVERY resist/save-style check (pass or fail) — Stealth-vs-PP, Undead Fortitude, etc. — not just real events, never changes the roll/outcome, visibility only
 var hit_dice: int = 1
 var short_rests_remaining: int = 2
 var max_short_rests: int = 2

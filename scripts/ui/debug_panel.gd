@@ -195,11 +195,12 @@ func _build_main_panel() -> void:
 	AudioManager.mute_changed.connect(_on_mute_changed)
 	_on_mute_changed(AudioManager.is_muted)
 
-	# Stealth Reveal (stealth-and-surprise-attacks-design.md §3.6): logs EVERY per-turn stealth
-	# check, pass or fail — normally only a real detection prints anything. Visibility only, never
-	# changes the roll/outcome.
+	# All Checks (stealth-and-surprise-attacks-design.md §3.6, extended to every resist/save-style
+	# check): logs EVERY such check, pass or fail — Stealth-vs-Passive-Perception, Undead
+	# Fortitude, etc. — normally only a real event (detection, trait triggering) prints anything.
+	# Visibility only, never changes the roll/outcome.
 	_stealth_check = CheckBox.new()
-	_stealth_check.text = "Show Stealth Checks"
+	_stealth_check.text = "All Checks"
 	_stealth_check.position = Vector2(6.0, 358.0)
 	_stealth_check.size = Vector2(PANEL_W - 12.0, 30.0)
 	_stealth_check.add_theme_font_size_override("font_size", 12)
@@ -609,7 +610,7 @@ func _on_god_mode_toggled(pressed: bool) -> void:
 		"gold" if pressed else "gray", "ON — all-knowing, untouchable" if pressed else "OFF"])
 
 func _on_stealth_check_toggled(pressed: bool) -> void:
-	GameState.debug_show_stealth_checks = pressed
+	GameState.debug_show_all_checks = pressed
 
 func _on_jump_pressed() -> void:
 	_floor_sub.visible = not _floor_sub.visible

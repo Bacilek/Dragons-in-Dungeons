@@ -330,6 +330,8 @@ Every main attack path (`player.gd._bump_attack()`/`_resolve_cleave_attack()`/`_
 
 **Enemy resist/immune/vuln**: `Enemy.damage_resistances`/`damage_immunities`/`damage_vulnerabilities: Array[String]` (populated from `"damage_resistances"`/`"damage_immunities"`/`"damage_vulnerabilities"` pool keys — `"resist"`/`"vuln"` still work as a fallback for the first/third, e.g. Skeleton resists Piercing/is vulnerable to Bludgeoning, Imp/Chort resist Fire). `Enemy.take_typed_damage(amount, damage_type) -> {actual, mul}` applies ×0 (immune) / ×2.0 (vuln) / ×0.5 (resist), **priority in that order, no stacking** (a type in two lists is an authoring error) — BEFORE `Stats.take_damage()`'s flat floor-at-1 clamp. Single chokepoint every attack site calls instead of `enemy.stats.take_damage()` directly. Also hooks the `"regeneration"`/`"undead_fortitude"` traits (see `scripts/entities/CLAUDE.md`'s "Enemy D&D stat-block schema"). Separate from the player's own per-type DR in `GameState.take_damage_raw()` (Rage/Bear-form) — that system is unchanged.
 
+**Undead Fortitude's own check-visibility**: a would-be-lethal, non-Radiant, non-crit hit against an enemy with the `"undead_fortitude"` trait rolls a CON save (DC `dc_base` + damage dealt) via `resist_check_detailed()` — a pass drops it to 1 HP and always logs (`"<Enemy>'s [url=save:...]Undead Fortitude[/url] keeps it standing!"`, hover shows the die/mod/DC breakdown via `TooltipFormatters.fmt_save_tooltip()`). A **fail** is silent by default (the enemy just dies normally) unless `GameState.debug_show_all_checks` is on, in which case it also prints a gray `"<Enemy>'s Undead Fortitude check fails."` line with the same `save:` tooltip — same "silent unless a real event, debug flag reveals every roll" pattern as the Stealth-vs-Passive-Perception check above (both now share the one `debug_show_all_checks` flag/"All Checks" F3 checkbox, renamed from the Stealth-only `debug_show_stealth_checks` once it grew a second consumer).
+
 **Per-die tooltip breakdown**: `CombatMath.encode_damage_instance(inst)` packs the instance into a `dmg:` meta string with a `rolls=` field (pipe-joined individual die results) and `sides=`/`dtype=`/`rmul=` (the resist/vuln multiplier actually applied) alongside the existing `bonus=`/`crit=`/`final=` fields. `TooltipFormatters.fmt_dmg_tooltip()` renders a `"NdS: r1 + r2 + ... = total"` line when `rolls=` is present (falls back to the old single `"1d%d"` line for the handful of call sites not migrated — Frenzy, thrown weapons, enemy-attacks-player — so nothing broke), a `"÷ 2 (Resistance)"`/`"× 2 (Vulnerability)"` line when `rmul != 1.0`, and appends the damage type to the final line.
 
 **Multiplication always happens last**: a critical hit doubles the FULL summed total (dice + flat mods) of EACH instance independently, never a partial subtotal computed before some sources are added in.
@@ -488,10 +490,11 @@ Expert's side-step).
   CHASING, sets `last_known_target_pos`, AND sets `just_noticed`/shows the "?" marker — see
   "Notice freeze" below) + a log line (`"<Enemy> [url=stealth:...]notices[/url] you!"`, `stealth:`
   meta, `TooltipFormatters.fmt_stealth_tooltip()`). **Silent on a non-detection** by default — no
-  floater, no log spam for walking past sleepers. `GameState.debug_show_stealth_checks` (F3 debug
-  panel checkbox, "Show Stealth Checks") makes every roll — pass or fail — print a gray log line
-  with the same tooltip; toggling it never changes the roll or its outcome, visibility only.
-  `GameState.god_mode` appends a gray `(Stealth X vs PP Y)` suffix to either log line.
+  floater, no log spam for walking past sleepers. `GameState.debug_show_all_checks` (F3 debug
+  panel checkbox, "All Checks" — same flag also covers Undead Fortitude, see `Enemy.
+  take_typed_damage()`'s "Traits" section below) makes every roll — pass or fail — print a gray
+  log line with the same tooltip; toggling it never changes the roll or its outcome, visibility
+  only. `GameState.god_mode` appends a gray `(Stealth X vs PP Y)` suffix to either log line.
 - **Wake-on-attacked**: `Enemy.on_disturbed(source_pos)` — if `SLEEPING`/`STATIONARY`/`ROAMING`,
   wakes + records `last_known_target_pos`, **without** the notice freeze below (being struck is a
   much bigger tell than merely being spotted — the enemy can retaliate on its very next turn).

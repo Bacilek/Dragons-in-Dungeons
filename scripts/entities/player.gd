@@ -590,7 +590,7 @@ func _resolve_stealth_check() -> void:
 		if noticed:
 			e._notice_target(grid_pos)
 			GameState.game_log("[color=tomato]%s[/color] [url=%s]notices[/url] you!%s" % [e.display_name, stealth_meta, god_suffix])
-		elif GameState.debug_show_stealth_checks:
+		elif GameState.debug_show_all_checks:
 			GameState.game_log("[color=gray][url=%s]Player vs %s: stealth check (not noticed)[/url]%s[/color]" % [stealth_meta, e.display_name, god_suffix])
 
 # Purely cosmetic — the actual "can't be seen" mechanic is Enemy._can_see_entity()'s invisibility

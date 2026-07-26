@@ -210,10 +210,15 @@ func take_typed_damage(amount: int, damage_type: String, is_crit: bool = false) 
 			if tr.get("id", "") != "undead_fortitude":
 				continue
 			var dc: int = int(tr.get("dc_base", 5)) + effective
-			if resist_check_detailed(dc, true)["pass"]:
+			var save: Dictionary = resist_check_detailed(dc, true)
+			var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+				save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
+			if save["pass"]:
 				_undead_fortitude_used = true
 				effective = stats.current_hp - 1
-				GameState.game_log("[color=gray]%s's Undead Fortitude keeps it standing![/color]" % display_name)
+				GameState.game_log("[color=gray]%s's [url=%s]Undead Fortitude[/url] keeps it standing![/color]" % [display_name, save_meta])
+			elif GameState.debug_show_all_checks:
+				GameState.game_log("[color=gray][url=%s]%s's Undead Fortitude check fails.[/url][/color]" % [save_meta, display_name])
 			break
 	var actual: int = stats.take_damage(effective)
 	# Shape Shift (Imp): any actual damage taken (an immune hit deals 0 and returned earlier above,
