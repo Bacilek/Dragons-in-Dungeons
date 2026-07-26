@@ -691,7 +691,7 @@ func _give_ranger_starting_items() -> void:
 	var arrows := Item.new()
 	arrows.item_name = "Arrow"
 	arrows.item_type = Item.Type.TOOL
-	arrows.icon_path = "res://sprites/weapons/weapon_arrow.png"
+	arrows.icon_path = "res://sprites/items/ammo/arrow.png"
 	arrows.description = "Ammunition for the Short Bow and Longbow."
 	arrows.quantity = 20
 	add_item(arrows)
