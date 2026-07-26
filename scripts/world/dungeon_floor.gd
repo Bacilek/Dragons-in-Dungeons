@@ -2003,7 +2003,7 @@ func _spawn_items() -> void:
 				continue
 			if pos == _data.player_start or pos == _data.stairs_pos:
 				continue
-			if _traps.has(pos) or _doors.has(pos):
+			if _traps.has(pos) or _doors.has(pos) or _barrels.has(pos):
 				continue
 			candidates.append(pos)
 	RngUtil.shuffle(candidates, _pop_rng)
@@ -2028,7 +2028,7 @@ func _spawn_pending_chasm_items() -> void:
 				continue
 			if pos == _data.player_start or pos == _data.stairs_pos:
 				continue
-			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos):
+			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos) or _barrels.has(pos):
 				continue
 			candidates.append(pos)
 	if candidates.is_empty():
@@ -2066,7 +2066,7 @@ func _spawn_gold_piles() -> void:
 				continue
 			if pos == _data.player_start or pos == _data.stairs_pos:
 				continue
-			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos):
+			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos) or _barrels.has(pos):
 				continue
 			candidates.append(pos)
 	if candidates.is_empty():
@@ -2117,7 +2117,7 @@ func _spawn_treasure(rect: Rect2i) -> void:
 				continue
 			if pos == _data.player_start or pos == _data.stairs_pos:
 				continue
-			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos):
+			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos) or _barrels.has(pos):
 				continue
 			candidates.append(pos)
 	if candidates.is_empty():
@@ -2271,7 +2271,7 @@ func _spawn_locked_doors() -> void:
 						continue
 					if rp == _data.stairs_pos or rp == _data.player_start:
 						continue
-					if _traps.has(rp) or _floor_items.has(rp) or _doors.has(rp):
+					if _traps.has(rp) or _floor_items.has(rp) or _doors.has(rp) or _barrels.has(rp):
 						continue
 					reward_candidates.append(rp)
 
