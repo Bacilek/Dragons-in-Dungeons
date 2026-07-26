@@ -54,17 +54,32 @@ func _process_enemies() -> void:
 	if valid.is_empty():
 		_end_turn()
 		return
-	_remaining_enemies = valid.size()
+	# Decide-then-execute split (see Enemy.decide_turn()/execute_turn()): every enemy's decision is
+	# made FIRST, back-to-back, against the identical pre-round world state, before any of them
+	# actually moves/attacks/opens a door — so the round reads as simultaneous rather than as a
+	# strict sequence where an earlier enemy's move can change what a later enemy is able to see
+	# and act on THIS SAME round (e.g. a melee enemy opening a door mid-round granting a ranged
+	# enemy behind it same-round line-of-sight to shoot through).
+	var pending: Array = []
 	for e in valid:
-		_run_single_enemy(e)
+		if not is_instance_valid(e):
+			continue
+		pending.append([e, e.decide_turn()])
+	_remaining_enemies = pending.size()
+	if _remaining_enemies == 0:
+		_end_turn()
+		return
+	for pair: Array in pending:
+		_run_single_enemy(pair[0], pair[1])
 
 func reset() -> void:
 	_remaining_enemies = 0
 	phase = Phase.WAITING_FOR_INPUT
 	player_turn_started.emit()
 
-func _run_single_enemy(enemy: Node) -> void:
-	await enemy.take_turn()
+func _run_single_enemy(enemy: Node, intent: Dictionary) -> void:
+	if is_instance_valid(enemy) and not enemy.stats.is_dead():
+		await enemy.execute_turn(intent)
 	if _remaining_enemies <= 0:
 		return
 	_remaining_enemies -= 1

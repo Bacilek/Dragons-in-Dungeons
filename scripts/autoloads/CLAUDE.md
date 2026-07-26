@@ -193,6 +193,17 @@ repopulates `known_spells`, and silently clears if the saved id is no longer kno
 
 **`GameState.end_concentration(reason_log: String = "")`**: the single chokepoint for ending whatever the player is currently concentrating on — clears `concentration_spell_id` AND that spell's own duration/target fields (not just the id), so switching to a different concentration spell can never leave a stale spell still ticking. Called by `_check_concentration_break()` on a failed CON check, and by every concentration-granting cast site (Blade Ward/Witch Bolt/Expeditious Retreat/Fog Cloud in `spell_effects.gd`) whenever `concentration_spell_id` is already set to a DIFFERENT spell. See `scripts/entities/CLAUDE.md`'s "Concentration (generic mechanism)" section.
 
+**BUGFIX — combat-transient state survived death into the next character**: `is_raging` (and
+`rage_turns_remaining`, `berserker_frenzy_used`/`berserker_turns_since_frenzy`,
+`masochist_ac_bonus`, `scarred_warrior_limit_break_used`, `bruiser_revive_used_this_floor`,
+`player_was_hit_this_turn`/`player_attacked_this_turn`/`enemy_noticed_player_this_turn`,
+`fov_radius_bonus`, `psycho_adv_pending`, `battlefield_adv_pending`/`battlefield_adv_expire_turns`,
+`fog_cloud_pos`/`fog_cloud_radius`) all live directly on `GameState`, not on `Stats` — so replacing
+`player_stats` with a fresh `Stats.new()` in `start_new_run()` (death → "New Run" restart) never
+touched them, and e.g. Rage would still show as active in the status tray for a brand-new
+character that never activated it. `start_new_run()` now explicitly resets all of these alongside
+the pre-existing Wild Heart/terrain resets.
+
 **Rage DR**: `take_damage_raw(amount, ignore_rage, damage_type: String) -> int` — returns actual damage after DR. Physical types ("Slashing"/"Piercing"/"Bludgeoning") are always reduced 50% while raging (baked-in baseline, no longer talent-gated — see `scripts/entities/CLAUDE.md`'s Barbarian class section). Scarred Warrior's Born in Blood talent applies an additional Bloodied-based modifier afterward. All callers must pass `damage_type`; missing/empty type bypasses DR. **`invincible` still sets `player_was_hit_this_turn`**: the function's `invincible` branch returns 0 without touching HP, but (if the hit was physical) still flips `player_was_hit_this_turn` — every caller (currently only `enemy.gd._attack_player()`, which now always calls this function rather than short-circuiting to 0 itself) is only ever invoked on a connecting hit, so this is safe and keeps turn-based triggers keyed off that flag (e.g. Battlefield Expert R3's free Side Step — `scripts/entities/CLAUDE.md`) working in God Mode instead of silently never firing.
 
 ### Equipment slots
@@ -280,7 +291,16 @@ fire at the end of a turn rather than the start of the next one.
 ### Turn sequence
 1. Player key → `begin_player_action()` → phase = RESOLVING_PLAYER
 2. Action + tween → `on_player_action_complete()` → `player_turn_ending` fires
-3. `_process_enemies()` awaits each enemy's `take_turn()` sequentially
+3. `_process_enemies()` — **decide-then-execute, batched**: calls `decide_turn() -> Dictionary` on
+   EVERY registered enemy/companion first, back-to-back, against the identical pre-round world
+   state (no movement/attacks/door-opens have happened yet this round) — THEN awaits each one's
+   `execute_turn(intent)` sequentially, same order as before. This is what makes the round read as
+   simultaneous rather than strictly ordered: an earlier enemy's move (e.g. opening a door) can no
+   longer change what a later enemy in the same round was able to see/decide, since that later
+   enemy's decision was already locked in. `Enemy`/`Companion.take_turn()` still exists as a thin
+   `await execute_turn(decide_turn())` wrapper for any other caller. See `scripts/entities/CLAUDE.md`'s
+   "Enemy behavior states" section for `decide_turn()`'s exact contract (reads state + mutates only
+   this entity's own fields — never the world).
 4. Phase = WAITING_FOR_INPUT → `player_turn_started` signal fires
 
 Each turn: `Stats.tick_status()` deals status damage. Hunger has been removed — see "Rest system" above.

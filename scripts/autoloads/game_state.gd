@@ -399,6 +399,24 @@ func start_new_run() -> void:
 	player_companion = null
 	pending_companion_restore = {}
 	terrain_ac_bonus = 0
+	# Combat/turn-transient state that otherwise survives death into the next character (was never
+	# cleared here — e.g. Rage staying "active" in the status tray for a brand-new run/character).
+	is_raging = false
+	rage_turns_remaining = 0
+	berserker_frenzy_used = false
+	berserker_turns_since_frenzy = 0
+	masochist_ac_bonus = 0
+	scarred_warrior_limit_break_used = false
+	bruiser_revive_used_this_floor = false
+	player_was_hit_this_turn = false
+	player_attacked_this_turn = false
+	enemy_noticed_player_this_turn = false
+	fov_radius_bonus = 0
+	psycho_adv_pending = false
+	battlefield_adv_pending = false
+	battlefield_adv_expire_turns = 0
+	fog_cloud_pos = Vector2i(-1, -1)
+	fog_cloud_radius = 0
 	_give_starting_items()
 
 func _give_starting_items() -> void:

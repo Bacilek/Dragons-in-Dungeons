@@ -83,29 +83,44 @@ func _on_companion_die() -> void:
 	queue_free()
 
 func take_turn() -> void:
+	await execute_turn(decide_turn())
+
+# Decide/execute split (mirrors Enemy.decide_turn()/execute_turn() — see turn_manager.gd's
+# round-simultaneity comment): decide_turn() only reads state and this companion's own fields
+# (oa_used_this_round, zealous_presence_turns), never the world — so every registered entity's
+# decision is locked in against the same pre-round state before anyone actually moves/attacks.
+func decide_turn() -> Dictionary:
 	oa_used_this_round = false
 	if not is_instance_valid(self) or stats == null or stats.current_hp <= 0:
-		return
+		return {"type": "dead"}
 	# Zealous Presence: buff decrements at the start of this entity's own turn.
 	if stats.zealous_presence_turns > 0:
 		stats.zealous_presence_turns -= 1
-	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 	if _dungeon_floor == null:
-		return
-
+		return {"type": "wait"}
 	var nearest: Enemy = _find_nearest_visible_enemy()
 	if nearest != null:
 		var diff: Vector2i = nearest.grid_pos - grid_pos
 		if maxi(absi(diff.x), absi(diff.y)) <= 1:
-			_attack_enemy(nearest)
-			return
-		_move_step_toward(nearest.grid_pos)
-	else:
-		var player_diff: Vector2i = GameState.player_grid_pos - grid_pos
-		var player_dist: int = maxi(absi(player_diff.x), absi(player_diff.y))
-		if player_dist > FOLLOW_DISTANCE:
-			_move_step_toward(GameState.player_grid_pos)
-		# else: already close — idle this turn
+			return {"type": "attack", "target": nearest}
+		return {"type": "move", "target_pos": nearest.grid_pos}
+	var player_diff: Vector2i = GameState.player_grid_pos - grid_pos
+	var player_dist: int = maxi(absi(player_diff.x), absi(player_diff.y))
+	if player_dist > FOLLOW_DISTANCE:
+		return {"type": "move", "target_pos": GameState.player_grid_pos}
+	return {"type": "wait"}  # already close — idle this turn
+
+func execute_turn(intent: Dictionary) -> void:
+	if intent.get("type", "wait") == "dead":
+		return
+	await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
+	if _dungeon_floor == null:
+		return
+	match intent.get("type", "wait"):
+		"attack":
+			_attack_enemy(intent["target"])
+		"move":
+			_move_step_toward(intent["target_pos"])
 
 func _find_nearest_visible_enemy() -> Enemy:
 	if _dungeon_floor == null:

@@ -363,7 +363,7 @@ func _pick_ready_ability(target: Node) -> Dictionary:
 	var abilities: Array = _type.get("abilities", [])
 	if abilities.is_empty() or _chebyshev_to(target) <= 1:
 		return {}
-	if _dungeon_floor == null or not _dungeon_floor.has_ranged_los(grid_pos, target.grid_pos):
+	if _dungeon_floor == null or not _dungeon_floor.has_clear_shot(grid_pos, target.grid_pos):
 		return {}
 	for ab: Dictionary in abilities:
 		var id: String = ab.get("id", "")
@@ -663,10 +663,21 @@ func _select_target(candidates: Array) -> Node:
 	return nearest
 
 func take_turn() -> void:
+	await execute_turn(decide_turn())
+
+# Decision half of the round-simultaneity split (see TurnManager._process_enemies()): reads state
+# and picks an intent WITHOUT performing any world-mutating side effect (no movement, no door
+# opens, no attacks) — every enemy's decide_turn() runs back-to-back, against the exact same
+# pre-round world state, before ANY enemy's execute_turn() runs. This is what stops e.g. a melee
+# enemy opening a door from granting a ranged enemy behind it same-round LOS to shoot through —
+# the ranged enemy's decision was already locked in while the door was still closed. Still mutates
+# this enemy's OWN internal fields (behavior/FSM/search state, per-turn ticks) exactly as before —
+# only cross-entity/world mutation is deferred to execute_turn().
+func decide_turn() -> Dictionary:
 	oa_used_this_round = false
 	door_ambush = false  # lifetime = exactly one round ("the round it came through the door")
 	if _dungeon_floor == null:
-		return
+		return {"type": "wait"}
 	_tick_abilities()
 	_tick_regeneration()
 	_tick_speed_gate()
@@ -674,14 +685,19 @@ func take_turn() -> void:
 	_tick_shape_shift()
 	if prone_turns > 0:
 		prone_turns -= 1
-		await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
-		return
+		return {"type": "idle_tick"}
 	if slowed_turns > 0:
 		slowed_turns -= 1
+		return {"type": "idle_tick"}
+	return _decide_action()
+
+# Execution half — all tweens/animation/movement/attack/door-open side effects, run per-enemy in
+# TurnManager's existing sequential order (unchanged) once every enemy's decide_turn() has already
+# run.
+func execute_turn(intent: Dictionary) -> void:
+	if intent.get("type", "wait") == "idle_tick":
 		await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		return
-
-	var intent: Dictionary = _decide_action()
 	await _execute_action(intent)
 
 # Pure(ish) decision step — reads state, mutates only internal FSM/target-memory fields (not
@@ -713,7 +729,7 @@ func _decide_action() -> Dictionary:
 				var flee_target: Node = escape_from if is_instance_valid(escape_from) else target
 				var throw_range_flee: int = int(flee_wpn.get("range", 4))
 				var dist_flee: int = _chebyshev_to(flee_target)
-				if dist_flee >= 2 and dist_flee <= throw_range_flee and _dungeon_floor.has_ranged_los(grid_pos, flee_target.grid_pos):
+				if dist_flee >= 2 and dist_flee <= throw_range_flee and _dungeon_floor.has_clear_shot(grid_pos, flee_target.grid_pos):
 					return {"type": "throw_weapon", "target": flee_target, "weapon": flee_wpn}
 			# Escape just wore off with no throw (adjacent, or out of throw range/LOS) — fall
 			# through to the normal decision logic below (chase/attack) instead of fleeing again.
@@ -736,7 +752,7 @@ func _decide_action() -> Dictionary:
 			and behavior in [Behavior.CHASING, Behavior.SEARCHING] and not _target_is_untouchable(target):
 		var throw_range: int = int(thrown_wpn.get("range", 4))
 		var dist: int = _chebyshev_to(target)
-		if dist >= 2 and dist <= throw_range and _dungeon_floor.has_ranged_los(grid_pos, target.grid_pos):
+		if dist >= 2 and dist <= throw_range and _dungeon_floor.has_clear_shot(grid_pos, target.grid_pos):
 			return {"type": "throw_weapon", "target": target, "weapon": thrown_wpn}
 
 	# Imp — Invisibility (pool "invisibility"): while pursuing (CHASING/SEARCHING) and not yet
@@ -912,7 +928,7 @@ func _in_attack_range(target: Node) -> bool:
 	match profile.get("kind", "melee"):
 		"ranged":
 			var rng: int = profile.get("range", 4)
-			return _chebyshev_to(target) <= rng and _dungeon_floor.has_ranged_los(nearest_occupied_tile(target.grid_pos), target.grid_pos)
+			return _chebyshev_to(target) <= rng and _dungeon_floor.has_clear_shot(nearest_occupied_tile(target.grid_pos), target.grid_pos)
 		_:
 			return _chebyshev_to(target) == 1
 
@@ -985,6 +1001,12 @@ func _execute_ability(intent: Dictionary) -> void:
 func _footprint_walkable(top_left: Vector2i) -> bool:
 	return _dungeon_floor.is_area_walkable_for_enemy(top_left, size, self)
 
+# Each iteration either attacks (if already in range going into it) or spends one step of
+# movement. A plain enemy (total_steps == 1) therefore either attacks OR moves, never both — the
+# in-range check only re-fires on a LATER iteration, which only exists for an enemy with spare
+# movement budget (Orc Warrior's "aggressive" trait, or an above-baseline "speed" pool entry).
+# There is deliberately no post-loop attack check: an enemy that spends its entire budget closing
+# distance and ends the turn adjacent does NOT also get a free attack that same turn.
 func _act_toward(target: Node, bonus_moves: int = 0) -> void:
 	var total_steps: int = maxi(1, _moves_this_turn) + bonus_moves
 	for _i: int in total_steps:
@@ -996,8 +1018,6 @@ func _act_toward(target: Node, bonus_moves: int = 0) -> void:
 			return
 		if not moved:
 			return
-	if _in_attack_range(target):
-		_attack_target(target)
 
 # One greedy-then-BFS movement step toward `target`'s last-known/current position. Returns true if
 # a step was actually taken (already awaited the move tween); false if stuck this turn (already

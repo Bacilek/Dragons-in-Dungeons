@@ -776,6 +776,42 @@ func has_ranged_los(from: Vector2i, to: Vector2i) -> bool:
 				return false
 	return true
 
+# Walks the same Bresenham ray as has_ranged_los() but checks for a living body occupying an
+# INTERMEDIATE tile (endpoints excluded — the shooter's own tile and the intended target's tile
+# never count as "blocking"). Returns the first Enemy/Player/Companion found, or null if the ray
+# is clear. Used to answer "would a projectile actually reach `to`, or does something in the way
+# intercept it first" — a separate question from has_ranged_los()'s terrain/door check.
+func get_blocking_body_on_line(from: Vector2i, to: Vector2i) -> Node:
+	var x: int = from.x; var y: int = from.y
+	var dx: int = abs(to.x - x); var dy: int = abs(to.y - y)
+	var sx: int = 1 if x < to.x else -1
+	var sy: int = 1 if y < to.y else -1
+	var err: int = dx - dy
+	while x != to.x or y != to.y:
+		var e2: int = 2 * err
+		if e2 > -dy: err -= dy; x += sx
+		if e2 < dx:  err += dx; y += sy
+		if x == to.x and y == to.y: break
+		var pos := Vector2i(x, y)
+		var blocker: Enemy = get_enemy_at(pos)
+		if blocker != null:
+			return blocker
+		if _player != null and is_instance_valid(_player) and _player.grid_pos == pos:
+			return _player
+		var comp: Variant = GameState.player_companion
+		if comp != null and is_instance_valid(comp) and comp.grid_pos == pos:
+			return comp
+	return null
+
+# Terrain/door LOS AND "nothing living stands in the way" — the gate every RANGED ATTACK decision
+# (as opposed to mere sight/awareness, which still uses has_ranged_los/has_line_of_sight alone)
+# should check before actually taking a shot. A blocked shot is not simply refused for the player
+# (see PlayerRanged.ranged_attack(), which redirects to whichever body is actually in the way)
+# but IS what makes an enemy's own ranged attack_profile/ability/thrown-weapon logic treat the
+# target as "not in range" so it falls back to approaching instead of firing through an ally.
+func has_clear_shot(from: Vector2i, to: Vector2i) -> bool:
+	return has_ranged_los(from, to) and get_blocking_body_on_line(from, to) == null
+
 func has_line_of_sight(from: Vector2i, to: Vector2i) -> bool:
 	var x: int = from.x
 	var y: int = from.y

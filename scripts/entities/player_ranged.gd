@@ -41,6 +41,12 @@ func is_in_ranged_range(enemy: Enemy) -> bool:
 		and player._dungeon_floor.has_ranged_los(player.grid_pos, near)
 
 func ranged_attack(enemy: Enemy) -> void:
+	# If another enemy stands between the player and the intended target, the shot hits THAT
+	# enemy instead — a projectile can't fly through a blocking body to reach whoever was clicked.
+	if player._dungeon_floor != null:
+		var blocker: Node = player._dungeon_floor.get_blocking_body_on_line(player.grid_pos, enemy.nearest_occupied_tile(player.grid_pos))
+		if blocker is Enemy and blocker != enemy:
+			enemy = blocker
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	enemy.on_disturbed(player.grid_pos)
