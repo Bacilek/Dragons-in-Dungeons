@@ -383,6 +383,7 @@ func _start_drag(slot: Control) -> void:
 	_drag_icon = TextureRect.new()
 	_drag_icon.custom_minimum_size = Vector2(SLOT_SIZE, SLOT_SIZE)
 	_drag_icon.size = Vector2(SLOT_SIZE, SLOT_SIZE)
+	_drag_icon.ignore_texture_size = true  # REQUIRED — spell icon PNGs are huge, see scripts/ui/CLAUDE.md
 	_drag_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_drag_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_drag_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -464,9 +465,6 @@ func _right_click(slot: Control) -> void:
 	else:
 		var item: Item = _slot_item(slot)
 		if item == null:
-			return
-		if item.item_type == Item.Type.FOOD:
-			GameState.use_item(item)  # unchanged existing behavior — Food is excluded from the menu
 			return
 		var interactions: Array[String] = ItemInteractions.get_available_interactions(item)
 		if interactions.size() == 1:
