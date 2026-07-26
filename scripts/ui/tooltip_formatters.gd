@@ -359,6 +359,8 @@ static func fmt_stealth_tooltip(p: Dictionary) -> String:
 	var prof: int  = int(p.get("prof", "0"))
 	var total: int = int(p.get("total", "0"))
 	var epp: int   = int(p.get("epp", "0"))
+	var basepp: int = int(p.get("basepp", str(epp)))
+	var distbonus: int = int(p.get("distbonus", "0"))
 	var adv_net: int = int(p.get("adv", "0"))
 	var passed: bool = p.get("pass", "0") == "1"
 	var lucky1: bool = p.get("lucky1", "0") == "1"
@@ -379,6 +381,8 @@ static func fmt_stealth_tooltip(p: Dictionary) -> String:
 	if prof != 0:
 		lines.append("[color=lightblue]+%d[/color]  (Proficiency, DEX check)" % prof)
 	lines.append("─────────────────")
+	if distbonus > 0:
+		lines.append("Passive Perception %d [color=orange]+%d[/color]  (proximity)  =  %d" % [basepp, distbonus, epp])
 	var result: String = "[color=red]NOTICED[/color]" if not passed else "[color=green]hidden[/color]"
 	lines.append("= [color=yellow]%d[/color] vs Passive Perception %d  →  %s" % [total, epp, result])
 	return "\n".join(lines)

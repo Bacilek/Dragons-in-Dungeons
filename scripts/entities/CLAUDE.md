@@ -452,12 +452,19 @@ Expert's side-step).
   one is actually looking around and is harder than baseline, not a free pass. A second d20 is
   only rolled for an observer whose own net ADV/DISADV differs from 0 (max of two rolls if net >
   0, min of two if net < 0), so two observers in the same turn (one asleep, one awake-unaware) can
-  net different outcomes from what reads as "the same roll". Enemy notices iff `stealth_total <
-  enemy.passive_perception` (ties favor the player — stays hidden). **`STATIONARY`/`ROAMING` have
-  no other detection path against the Player** — `_decide_action()`'s own `can_see` branch for
-  those two states is gated on `target is Player` (see below): vs the Player it's this check
-  alone (plus a true-adjacency backstop, matching `SLEEPING`); vs the Companion (no stealth-check
-  equivalent exists for it) it's unchanged, immediate `can_see` → notice.
+  net different outcomes from what reads as "the same roll". **Distance-to-DC bonus**: each
+  observer's effective passive perception is bumped by `max(0, observer.sight_range() -
+  observer.min_dist_to(player))` (Chebyshev; `Enemy.sight_range()` is the public wrapper around
+  the same per-enemy `_sight_range()`, darkvision bonus included, that already gates its FOV)
+  **before** the compare — the closer you are relative to that observer's own max sight range, the
+  harder the check gets, capping out (not auto-succeeding) at true adjacency — this is what
+  replaced the old flat true-adjacency auto-notice (see "Enemy behavior states" below). Enemy
+  notices iff `stealth_total < effective_pp` (ties favor the player — stays hidden).
+  **`STATIONARY`/`ROAMING` have no other detection path against the Player** — `_decide_action()`'s
+  own `can_see` branch for those two states is gated on `target is Player` (see below): vs the
+  Player it's this check alone (no adjacency backstop anymore — the distance-to-DC bonus already
+  covers it, same as `SLEEPING`); vs the Companion (no stealth-check equivalent exists for it) it's
+  unchanged, immediate `can_see` → notice, adjacency backstop included.
 - **`Enemy.passive_perception`**: static DC, see the schema table's `"passive_perception"` row
   above for the authored-vs-derived rule.
 - **On detection**: `enemy._notice_target(player.grid_pos)` (wakes SLEEPING/STATIONARY/ROAMING →
@@ -486,8 +493,9 @@ Expert's side-step).
   no "?" freeze, hit or miss.
 - **Notice freeze — the golden "?"** (Shattered Pixel Dungeon-style): every transition from
   unaware (SLEEPING/STATIONARY/ROAMING) to CHASING that happens via *noticing* rather than *being
-  attacked* — the stealth-check detection above and both true-adjacency backstops (SLEEPING's, and
-  STATIONARY/ROAMING's vs. the Player, see below) — all go through the shared
+  attacked* — the stealth-check detection above (including at true adjacency vs. the Player, now
+  folded into that same check via its distance-to-DC bonus, see below) and the Companion's own
+  true-adjacency backstop for SLEEPING — all go through the shared
   `Enemy._notice_target(pos)` helper — sets `just_noticed = true` and shows a golden `"?"` label
   (`_notice_label`, `_show_notice_mark()`/`_hide_notice_mark()`, same per-enemy-child-Label pattern
   as `_zzz_label`). `_decide_action()` checks `just_noticed` first, before anything else: if set,
@@ -499,14 +507,14 @@ Expert's side-step).
   actually moves/attacks/etc.) — so the "?" is visible for exactly the one round between noticing
   and acting (it can still visually span two of the *player's* own turns, since it appears mid-
   round-N and only clears during round N+1's enemy phase — that's expected timing, not a second
-  freeze round). **`STATIONARY`/`ROAMING` vs. the Player have no LOS-based auto-notice anymore** —
-  same as SLEEPING, they rely purely on the stealth-check roll above; their true-adjacency backstop
-  (Chebyshev ≤ 1 in `_decide_action()`, gated on `target is Player`) is the same final catch-all
-  SLEEPING has always had ("player stayed hidden vs. the stealth roll but is standing right next to
-  it on ITS turn"), now shared by all three unaware states instead of just SLEEPING. **Vs. the
-  Companion** (no stealth-check equivalent exists for it), STATIONARY/ROAMING keep their original,
-  unchanged immediate `can_see` → `_notice_target()` wake — this asymmetry is intentional, not a
-  gap: removing the Companion's only detection path would make those enemies never react to it.
+  freeze round). **`SLEEPING`/`STATIONARY`/`ROAMING` vs. the Player have no LOS-based OR
+  adjacency-based auto-notice anymore** — all three rely purely on the stealth-check roll above,
+  whose distance-to-DC bonus already makes true adjacency (Chebyshev ≤ 1) an extremely hard (not
+  automatic) check rather than a hard-coded free notice; `_decide_action()`'s `target is Player`
+  branches for all three states simply `return {"type": "wait"}` now. **Vs. the Companion** (no
+  stealth-check equivalent exists for it), all three keep their original, unchanged immediate
+  `can_see`-or-adjacency → `_notice_target()` wake — this asymmetry is intentional, not a gap:
+  removing the Companion's only detection path would make those enemies never react to it.
 
 **Part B — Surprise-attack Advantage**: `PlayerVfx.has_advantage(enemy)` (`player.gd:1196`,
 `player_ranged.gd`'s ranged call site) returns true iff the defender is unaware at the moment of
@@ -539,8 +547,8 @@ one-shot on read by `has_advantage()`.
 ## Enemy behavior states
 `SLEEPING → STATIONARY → ROAMING → CHASING → SEARCHING`
 
-**SLEEPING**: shows zzz label. No LOS-based wake of its own anymore — see "Stealth & Surprise Attacks" below. Only free-wake tier: true adjacency (Chebyshev ≤ 1) in `_decide_action()` — now routes through `_notice_target()` (golden "?", one-round freeze) instead of attacking immediately.
-**ROAMING**: waypoint BFS. `_pick_roam_target()` shuffles `DungeonFloor.get_room_centers()`, picks tile at Chebyshev ≥ 4. Follows `_roam_path: Array[Vector2i]` via `_bfs_to()`. Falls back to `_do_random_step()` if blocked. Spotting the target (`can_see`) also routes through `_notice_target()` — a one-round freeze before it starts actually chasing.
+**SLEEPING**: shows zzz label. Vs. the Player: no free wake of any kind anymore (neither LOS- nor adjacency-based) — detection is entirely the Stealth-vs-Passive-Perception check's job, see "Stealth & Surprise Attacks" below. Vs. the Companion: true adjacency (Chebyshev ≤ 1) in `_decide_action()` still routes through `_notice_target()` (golden "?", one-round freeze) instead of attacking immediately.
+**ROAMING**: waypoint BFS. `_pick_roam_target()` shuffles `DungeonFloor.get_room_centers()`, picks tile at Chebyshev ≥ 4. Follows `_roam_path: Array[Vector2i]` via `_bfs_to()`. Falls back to `_do_random_step()` if blocked. Vs. the Player: no free wake, same as SLEEPING above. Vs. the Companion: spotting it (`can_see`) still routes through `_notice_target()` — a one-round freeze before it starts actually chasing.
 **CHASING**: follows the selected target directly. Opens doors (sets `door_ambush = true` when stepping onto a door tile it had no prior LOS to the player from — see "Stealth & Surprise Attacks" below). Records `_search_heading` (direction toward target) each turn target is visible.
 **SEARCHING**: entered when a CHASING enemy reaches `last_known_target_pos` without LOS. Searches for 7 turns in `_search_heading` direction (BFS to `_search_target = last_known_pos + heading * 5`). If the target is spotted → CHASING. After 7 turns → ROAMING. Fields: `_search_heading: Vector2i`, `_search_turns_remaining: int`, `_search_target: Vector2i`, `_search_path: Array[Vector2i]`.
 

@@ -524,13 +524,22 @@ func _resolve_stealth_check() -> void:
 			lucky2 = r2["lucky"]
 			die = maxi(die1, die2) if obs_net > 0 else mini(die1, die2)
 		var total: int = die + dex_mod + prof
+		# Distance-to-DC bonus: the closer you are relative to THIS enemy's own sight range
+		# (darkvision etc. included), the harder you are to miss — +1 DC per tile closer than its
+		# FOV edge, capped at 0 for anything at or beyond max sight range. Chebyshev, matching
+		# every other adjacency/range check in this file. Replaces the old flat true-adjacency
+		# auto-notice (see enemy.gd's SLEEPING/STATIONARY/ROAMING vs-Player branches) — standing
+		# next to an unaware enemy is now just a very hard check, not an automatic notice.
+		var e_sight_range: int = e.sight_range()
+		var e_dist: int = e.min_dist_to(grid_pos)
+		var dist_bonus: int = maxi(0, e_sight_range - e_dist)
 		# Bloodhound R2: the Marked target is easier for the player specifically to sneak up on.
-		var effective_pp: int = e.passive_perception
+		var effective_pp: int = e.passive_perception + dist_bonus
 		if e == s.hunters_mark_target and GameState.get_talent_rank("bloodhound") >= 2:
 			effective_pp -= BLOODHOUND_R2_PP_DEBUFF
 		var noticed: bool = total < effective_pp
-		var stealth_meta: String = "stealth:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,total=%d,epp=%d,adv=%d,pass=%d,lucky1=%d,lucky2=%d" % [
-			die, die1, die2, dex_mod, prof, total, effective_pp,
+		var stealth_meta: String = "stealth:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,total=%d,epp=%d,basepp=%d,distbonus=%d,adv=%d,pass=%d,lucky1=%d,lucky2=%d" % [
+			die, die1, die2, dex_mod, prof, total, effective_pp, e.passive_perception, dist_bonus,
 			signi(obs_net), 0 if noticed else 1, 1 if lucky1 else 0, 1 if lucky2 else 0]
 		var god_suffix: String = " [color=gray](Stealth %d vs PP %d)[/color]" % [total, e.passive_perception] if GameState.god_mode else ""
 		if noticed:

@@ -89,7 +89,7 @@ var _search_path: Array[Vector2i] = []
 var _zzz_label: Label
 var _zzz_tween: Tween
 
-var just_noticed: bool = false  # set the instant an unaware enemy detects the player (stealth-check notice or SLEEPING's true-adjacency backstop) — consumed by the very next _decide_action(), which skips movement/attack that round (shows _notice_label instead) so a freshly-noticed enemy can't also act the same round it noticed. NOT set on the "wake-on-attacked" path (on_disturbed's default via_attack), which still wakes+acts immediately, unchanged.
+var just_noticed: bool = false  # set the instant an unaware enemy detects the player (stealth-check notice — including at true adjacency, now just a very-high-DC roll rather than an auto-notice — or, vs the Companion only, the true-adjacency backstop) — consumed by the very next _decide_action(), which skips movement/attack that round (shows _notice_label instead) so a freshly-noticed enemy can't also act the same round it noticed. NOT set on the "wake-on-attacked" path (on_disturbed's default via_attack), which still wakes+acts immediately, unchanged.
 var _notice_label: Label
 
 func configure(type_data: Dictionary) -> void:
@@ -636,6 +636,11 @@ func on_disturbed(source_pos: Vector2i) -> void:
 func can_see(target: Node) -> bool:
 	return _can_see_entity(target)
 
+# Public wrapper — player.gd's stealth check uses this enemy's own sight range (darkvision etc.)
+# to scale its distance-to-DC bonus (see _resolve_stealth_check()'s "closer = harder to hide" rule).
+func sight_range() -> int:
+	return _sight_range()
+
 # Threat range in tiles for Opportunity Attacks. Flat 1 for all current enemies (pool key
 # "reach", default 1) — a future reach enemy (whip skeleton, tentacle boss) is a one-line pool entry.
 func melee_reach() -> int:
@@ -860,25 +865,23 @@ func _decide_action() -> Dictionary:
 
 	match behavior:
 		Behavior.SLEEPING:
-			# LOS-based deterministic wake is gone — replaced by the player-turn Stealth-vs-
-			# Passive-Perception check (player.gd._resolve_stealth_check()). This is only the
-			# free-wake backstop at true adjacency (stealth-and-surprise-attacks-design.md §3.4):
-			# lingering adjacent without ever having been noticed still wakes it, but — same as
-			# every other notice path — it only notices this round (golden "?"), acting next round.
+			# vs the Player: no free adjacency auto-notice anymore — the Stealth-vs-Passive-
+			# Perception check's distance-to-DC bonus (player.gd._resolve_stealth_check()) already
+			# makes standing adjacent an extremely hard (not automatic) check to fail.
+			# vs the Companion (no stealth-check equivalent exists for it): true-adjacency
+			# backstop remains, same as before.
+			if target is Player:
+				return {"type": "wait"}
 			if _chebyshev_to(target) <= 1:
 				_notice_target(target.grid_pos)
 				return {"type": "notice"}
 			return {"type": "wait"}
 
 		Behavior.STATIONARY:
-			# vs the Player: no free LOS-based notice — same as SLEEPING, detection is owned
-			# entirely by the player-turn Stealth-vs-Passive-Perception check
-			# (Player._resolve_stealth_check()); only a true-adjacency backstop remains here.
+			# vs the Player: no free LOS-based notice, and no adjacency backstop either — same
+			# reasoning as SLEEPING above, the stealth check's distance bonus already covers it.
 			# vs the Companion (no stealth-check equivalent exists for it): unchanged can_see wake.
 			if target is Player:
-				if _chebyshev_to(target) <= 1:
-					_notice_target(target.grid_pos)
-					return {"type": "notice"}
 				return {"type": "wait"}
 			if can_see:
 				_notice_target(target.grid_pos)
@@ -887,11 +890,6 @@ func _decide_action() -> Dictionary:
 
 		Behavior.ROAMING:
 			if target is Player:
-				if _chebyshev_to(target) <= 1:
-					_roam_path.clear()
-					_roam_target = Vector2i(-1, -1)
-					_notice_target(target.grid_pos)
-					return {"type": "notice"}
 				return {"type": "roam"}
 			if can_see:
 				_roam_path.clear()
