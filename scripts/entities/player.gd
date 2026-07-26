@@ -43,6 +43,15 @@ var _throw_item: Item = null
 var _tool_item: Item = null
 var _rest_interrupt_shown: bool = false
 
+# Multi-turn action interrupt baseline (short rest / armor change / scroll learn): snapshot of
+# {Enemy: grid_pos at the moment the action began}. A merely-visible unaware enemy that was
+# already accounted for when the player consciously started the action (and hasn't moved since)
+# no longer interrupts it — only a genuinely NEW arrival, an already-tracked enemy that moved, or
+# any currently-hunting (CHASING/SEARCHING) enemy does. Matches SPD's "you knew about that
+# sleeper" tolerance instead of any-enemy-in-FOV being an auto-interrupt.
+var _interrupt_baseline: Dictionary = {}
+var _interrupt_baseline_set: bool = false
+
 # FOV snapshots for advantage (surprise attack) detection
 var _fov_prev_turn: Array[Enemy] = []  # visible enemies at START of previous player turn
 var _fov_this_turn: Array[Enemy] = []  # visible enemies at START of current player turn
@@ -311,6 +320,20 @@ func _on_turn_started() -> void:
 		_fov_prev_turn = _fov_this_turn
 		_fov_this_turn = _dungeon_floor.get_visible_enemies()
 
+	# Interrupt-baseline bookkeeping: captured once, the first turn any of the three multi-turn
+	# actions below is active; cleared the instant none of them are (so the NEXT such action starts
+	# its own fresh baseline). See the field comment above for the tolerance rule this backs.
+	var _interrupt_action_active: bool = GameState.short_rest_active or GameState.armor_change_active or GameState.scroll_learn_active
+	if _interrupt_action_active:
+		if not _interrupt_baseline_set:
+			_interrupt_baseline.clear()
+			for e: Enemy in _fov_this_turn:
+				_interrupt_baseline[e] = e.grid_pos
+			_interrupt_baseline_set = true
+	else:
+		_interrupt_baseline_set = false
+		_interrupt_baseline.clear()
+
 	# Tick rage duration. Baseline: lasts 1 turn, refreshed to 1 turn by attacking (hit or miss)
 	# or being attacked (hit or miss) last turn (Masochist Monster R3 can further override expiry
 	# — see below). Gated on real turns only — a reverted/free-action turn (Frenzy, Battlefield
@@ -348,7 +371,7 @@ func _on_turn_started() -> void:
 	if GameState.short_rest_active:
 		if GameState.short_rest_open:
 			return  # Panel open — freeze until player clicks Continue/Abort
-		if not _fov_this_turn.is_empty() and not _rest_interrupt_shown:
+		if _rest_interrupted() and not _rest_interrupt_shown:
 			_rest_interrupt_shown = true
 			GameState.short_rest_open = true
 			var panel_script = load("res://scripts/ui/rest_interrupt_panel.gd")
@@ -389,7 +412,7 @@ func _on_turn_started() -> void:
 	# auto-wait/interrupt shape as scroll-learning below (no Continue/Abort prompt — nothing's
 	# physically moved yet, just re-issue the equip/unequip once it's safe again).
 	if GameState.armor_change_active:
-		if not _fov_this_turn.is_empty():
+		if _rest_interrupted():
 			GameState.cancel_armor_change(true)
 			return
 		GameState.armor_change_turns_remaining -= 1
@@ -399,11 +422,11 @@ func _on_turn_started() -> void:
 		return
 
 	# Scroll-learning in progress — player waits in place, same auto-wait/interrupt shape as a
-	# short rest but its own independent flag (not a rest). Any enemy entering FOV interrupts the
+	# short rest but its own independent flag (not a rest). _rest_interrupted() interrupts the
 	# studying outright (no Continue/Abort prompt — nothing's been consumed yet, just re-issue the
 	# RMB Learn command once it's safe again).
 	if GameState.scroll_learn_active:
-		if not _fov_this_turn.is_empty():
+		if _rest_interrupted():
 			GameState.cancel_scroll_learn(true)
 			return
 		GameState.scroll_learn_turns_remaining -= 1
@@ -461,6 +484,25 @@ func _on_turn_ending() -> void:
 		if stats.concentration_spell_id == "witch_bolt":
 			stats.concentration_spell_id = ""
 		GameState.game_log("[color=gray]Witch Bolt fades.[/color]")
+
+# Whether a multi-turn action (short rest / armor change / scroll learn) should be interrupted
+# THIS turn — see _interrupt_baseline's field comment. An enemy that was already visible and
+# unaware when the action began, and hasn't moved since, is tolerated; a currently-hunting
+# (CHASING/SEARCHING) enemy always interrupts (whether baseline or freshly noticed — a freshly
+# noticed one flips to CHASING via _notice_target() the same turn _resolve_stealth_check() catches
+# it, so this naturally covers "the sleeper woke up" too, no separate behavior-change tracking
+# needed).
+func _rest_interrupted() -> bool:
+	for e: Enemy in _fov_this_turn:
+		if not is_instance_valid(e) or e.stats.is_dead():
+			continue
+		if e.behavior in [Enemy.Behavior.CHASING, Enemy.Behavior.SEARCHING]:
+			return true
+		if not _interrupt_baseline.has(e):
+			return true
+		if e.grid_pos != _interrupt_baseline[e]:
+			return true
+	return false
 
 # Stealth check vs Passive Perception (docs/architecture/stealth-and-surprise-attacks-design.md
 # §3): rolled once per REAL player turn (this fires from player_turn_ending, exactly once per

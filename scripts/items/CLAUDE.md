@@ -308,8 +308,9 @@ normal instant swap; neither item is physically moved yet (mirrors `begin_scroll
 consumption until it finishes" precedent) — the slot swap happens in `complete_armor_change()`.
 Ticked in `player.gd._on_turn_started()` exactly like scroll-learning: one real turn per tick,
 auto-waiting (`PlayerActions.do_rest_wait_turn()`) until `armor_change_turns_remaining` hits 0, and
-**interrupted outright** (no Continue/Abort prompt — nothing's changed yet) the instant an enemy
-enters FOV (`GameState.cancel_armor_change(true)`). While `GameState.armor_change_active`, no
+**interrupted outright** (no Continue/Abort prompt — nothing's changed yet) per `Player._rest_interrupted()`'s
+tolerance rule (`scripts/entities/CLAUDE.md`'s "Multi-turn action interrupts" section) —
+`GameState.cancel_armor_change(true)`. While `GameState.armor_change_active`, no
 second equip/unequip/swap can start (`equip()`/`unequip()`/`move_item()` all early-return). Ending
 Mage Armor on real armor landing (see "Mage Armor" in `scripts/entities/CLAUDE.md`) is checked
 inside `complete_armor_change()`, at the moment the swap actually resolves.
@@ -473,8 +474,9 @@ takes 10 turns) — `GameState.scroll_learn_active`/`scroll_learn_turns_remainin
 `player.gd._on_turn_started()` right after the short-rest block, same auto-wait shape as a rest
 (`PlayerActions.do_rest_wait_turn()` every real turn until the counter hits 0) but its own
 independent flag, not a rest. **Interrupted outright** (no Continue/Abort prompt, unlike
-short/long rest) the instant any enemy is in FOV at a turn boundary — `GameState.
-cancel_scroll_learn(true)` — since nothing has been consumed yet, the player just re-issues Learn
-once it's safe. On completion, `GameState.complete_scroll_learn()` calls `learn_spell(spell_id)`
+short/long rest) per `Player._rest_interrupted()`'s tolerance rule (`scripts/entities/CLAUDE.md`'s
+"Multi-turn action interrupts" section) — `GameState.cancel_scroll_learn(true)` — since nothing
+has been consumed yet, the player just re-issues Learn once it's safe. On completion,
+`GameState.complete_scroll_learn()` calls `learn_spell(spell_id)`
 (which logs "You add X to your spellbook.") then `remove_item()` on the scroll — the scroll is
 only ever destroyed on a successful finish, never on an interrupt.

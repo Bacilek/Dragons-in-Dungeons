@@ -544,6 +544,34 @@ above); only a genuine door-camping ambush does. Expires unconditionally at the 
 enemy's own next `take_turn()` (lifetime = exactly the round it happened) and is also consumed
 one-shot on read by `has_advantage()`.
 
+## Multi-turn action interrupts (short rest / armor change / scroll learn)
+
+`Player._rest_interrupted()` (`scripts/entities/player.gd`) is the single interrupt check shared
+by all three multi-turn player actions (`GameState.short_rest_active`, `armor_change_active`,
+`scroll_learn_active` — see `scripts/autoloads/CLAUDE.md` and `scripts/items/CLAUDE.md`'s "Body
+armor"/"Scroll of &lt;Spell&gt;" sections), called every real turn from `_on_turn_started()`
+alongside each action's own countdown. **Not** a flat "any enemy in FOV" check (that used to
+interrupt on a sleeper you'd already knowingly walked past to start resting) — it tolerates an
+enemy you were already aware of when the action began, matching SPD's "you knew that sleeper was
+there" feel:
+
+- **`_interrupt_baseline: Dictionary`** (`Enemy` node → `grid_pos`) snapshots every enemy visible
+  (`_fov_this_turn`) the first turn any of the three actions is active (`_interrupt_baseline_set`
+  gates the one-time capture; both are cleared the instant none of the three actions are active,
+  so the next one starts a fresh baseline). Captured right after `_fov_this_turn` is refreshed in
+  `_on_turn_started()`, before any of the three action blocks run.
+- **`_rest_interrupted()`** returns true iff any currently-visible enemy either: is currently
+  `CHASING`/`SEARCHING` (an active hunter always interrupts, whether it was already hunting at
+  baseline or just noticed — a fresh notice flips behavior to `CHASING` the same turn
+  `_resolve_stealth_check()` catches it, so this alone covers "the sleeper woke up" with no
+  separate behavior-change tracking needed); OR isn't in `_interrupt_baseline` at all (a genuinely
+  new arrival since the action started); OR IS in the baseline but its `grid_pos` has changed
+  (a `ROAMING` enemy that wandered since, even while still nominally unaware). A `SLEEPING`/
+  `STATIONARY` enemy that was already visible and hasn't moved never interrupts on its own.
+- Short rest additionally gates on `not _rest_interrupt_shown` (shows `rest_interrupt_panel.gd`
+  once, not spam every tick); armor change / scroll learn have no such prompt (interrupt outright,
+  no state consumed yet, see their own docs) — both compare identically via `_rest_interrupted()`.
+
 ## Enemy behavior states
 `SLEEPING → STATIONARY → ROAMING → CHASING → SEARCHING`
 
