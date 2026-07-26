@@ -553,10 +553,13 @@ func _resolve_stealth_check() -> void:
 	var die1: int = r1["value"]
 	var lucky1: bool = r1["lucky"]
 	for e: Enemy in observers:
-		# SLEEPING is easiest to sneak past (+1 ADV); STATIONARY/ROAMING is awake and actually
-		# looking around, so it's harder than baseline (-1, a plain DISADV term) now that it no
-		# longer has a free LOS-based auto-notice of its own (see _decide_action()).
-		var obs_net: int = base_adv + (1 if e.behavior == Enemy.Behavior.SLEEPING else -1) - base_disadv
+		# Baseline is a NORMAL roll (no ADV/DISADV) against an awake-but-unaware observer
+		# (STATIONARY/ROAMING) — ADV only ever comes from an explicit source (SLEEPING's own +1,
+		# stillness, Zealous Presence), DISADV only from an explicit source (stealth-disadvantage
+		# armor). SLEEPING is easier to sneak past than baseline (+1 ADV); STATIONARY/ROAMING gets
+		# no penalty of its own anymore — distance-to-DC (below) is what makes an awake observer
+		# harder to sneak past up close, not a flat DISADV term.
+		var obs_net: int = base_adv + (1 if e.behavior == Enemy.Behavior.SLEEPING else 0) - base_disadv
 		var die: int = die1
 		var die2: int = die1
 		var lucky2: bool = false

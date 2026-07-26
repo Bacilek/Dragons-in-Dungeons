@@ -444,15 +444,18 @@ Expert's side-step).
   still fires — it doesn't gate whether the check happens, only its ADV input.
 - **Roll**: `d20 (Halfling-reroll-aware) + DEX mod + (proficiency_bonus if check_prof_dex)`.
   Rolled **once**, reused against every qualifying observer (5e group-stealth style) — but
-  ADV/DISADV is evaluated **per observer**: a base ADV count (stillness bonus + Zealous Presence)
-  minus a base DISADV count (`GameState.player_has_stealth_disadvantage()` — the equipped body
-  armor's `Item.stealth_disadvantage` flag, see `scripts/items/CLAUDE.md`'s "Body armor"), **plus
-  +1 ADV if that specific observer is `SLEEPING`, or -1 (a plain DISADV term) if it's
-  `STATIONARY`/`ROAMING`** — a sleeping guard is the easiest to sneak past, an awake-but-unaware
-  one is actually looking around and is harder than baseline, not a free pass. A second d20 is
-  only rolled for an observer whose own net ADV/DISADV differs from 0 (max of two rolls if net >
-  0, min of two if net < 0), so two observers in the same turn (one asleep, one awake-unaware) can
-  net different outcomes from what reads as "the same roll". **Distance-to-DC bonus**: each
+  ADV/DISADV is evaluated **per observer**, and the baseline (no other modifier active) against an
+  awake-but-unaware observer (`STATIONARY`/`ROAMING`) is a **plain, un-modified roll** — ADV only
+  ever comes from an explicit source (stillness bonus, Zealous Presence, or `SLEEPING`'s own +1 —
+  a sleeping guard is easier to sneak past than baseline), DISADV only from an explicit source
+  (`GameState.player_has_stealth_disadvantage()` — the equipped body armor's
+  `Item.stealth_disadvantage` flag, see `scripts/items/CLAUDE.md`'s "Body armor"). `STATIONARY`/
+  `ROAMING` no longer carries its own flat DISADV term — the distance-to-DC bonus below is what
+  makes an awake, nearby observer hard to sneak past, not a baked-in disadvantage on the roll
+  itself. A second d20 is only rolled for an observer whose own net ADV/DISADV differs from 0 (max
+  of two rolls if net > 0, min of two if net < 0), so two observers in the same turn (one asleep,
+  one on stillness-ADV) can net different outcomes from what reads as "the same roll".
+  **Distance-to-DC bonus**: each
   observer's effective passive perception is bumped by `max(0, observer.sight_range() -
   observer.min_dist_to(player))` (Chebyshev; `Enemy.sight_range()` is the public wrapper around
   the same per-enemy `_sight_range()`, darkvision bonus included, that already gates its FOV)
