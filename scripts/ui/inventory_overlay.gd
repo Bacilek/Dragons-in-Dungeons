@@ -512,8 +512,9 @@ func _on_slot_hover(slot: Control) -> void:
 			text += "\n[color=#c9a227][font_size=11][right]%s[/right][/font_size][/color]" % price_str
 	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
 	_inv_tooltip_rtl.text = text
-	_inv_tooltip_rtl.size = Vector2(172.0, 0)
-	_inv_tooltip.size = Vector2(180.0, 60)
+	var tw: float = 210.0 if item.item_type == Item.Type.WEAPON else 172.0
+	_inv_tooltip_rtl.size = Vector2(tw, 0)
+	_inv_tooltip.size = Vector2(tw + 8.0, 60)
 	_inv_tooltip.visible = true
 
 func _show_special_slot_tooltip() -> void:

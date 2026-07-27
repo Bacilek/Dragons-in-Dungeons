@@ -13,7 +13,8 @@ extends RefCounted
 # per-caller-positioned (Uses:), so they stay outside this weapon-only builder.
 
 const KEYWORD_GLOSSARY: Dictionary = {
-	"heavy": "Heavy weapon.\nMelee: requires STR 13+.\nRanged: requires DEX 13+.\nAttacking without enough\nStrength/Dexterity imposes\nDisadvantage.",
+	"heavy_str": "Heavy weapon.\nRequires STR 13+.\nAttacking without enough\nStrength imposes\nDisadvantage.",
+	"heavy_dex": "Heavy weapon.\nRequires DEX 13+.\nAttacking without enough\nDexterity imposes\nDisadvantage.",
 	"two_handed": "Two-handed weapon.\nOccupies Main Hand.\nOff-hand cannot be used\nwhile equipped.",
 	"cleave": "Mastery: Cleave.\nIf 2+ enemies are within\nmelee reach, this attack\nalso strikes the one closest\nto your primary target —\nwith its own attack roll\nand damage roll.",
 	"simple": "Simple weapon.\nEasy to use — most\ncharacters are proficient.\nRed text means your class\nlacks this proficiency: you\ncan still attack with it,\nbut lose your proficiency\nbonus on the attack roll.",
@@ -66,17 +67,19 @@ static func build(item: Item) -> String:
 	lines.append(header)
 
 	# Requirements — everything the character might not meet, red if unmet, white if met.
-	# Comma-joined onto one line (unlike Properties, which are one-per-line).
+	# Comma-joined onto one line (unlike Properties, which are one-per-line). Heavy shows as the
+	# bare word "Heavy" here (not "STR 13+"/"DEX 13+") — the exact stat/threshold only shows on
+	# hover, via the glossary popup.
 	var reqs: Array[String] = []
 	if not item.weapon_category.is_empty():
 		var cat_ok: bool = is_category_proficient(item.weapon_category, stats)
 		reqs.append("[color=%s][url=keyword:%s]%s[/url][/color]" % [
 			"white" if cat_ok else "red", item.weapon_category.to_lower(), item.weapon_category])
 	if item.is_heavy:
-		var stat_name: String = "DEX" if item.is_ranged else "STR"
 		var score: int = stats.dexterity if item.is_ranged else stats.strength
-		reqs.append("[color=%s][url=keyword:heavy]%s 13+[/url][/color]" % [
-			"white" if score >= 13 else "red", stat_name])
+		var heavy_key: String = "heavy_dex" if item.is_ranged else "heavy_str"
+		reqs.append("[color=%s][url=keyword:%s]Heavy[/url][/color]" % [
+			"white" if score >= 13 else "red", heavy_key])
 	if not reqs.is_empty():
 		lines.append(", ".join(reqs))
 
@@ -98,9 +101,9 @@ static func build(item: Item) -> String:
 		var long_r: int = item.long_range if item.long_range > 0 else item.range
 		lines.append("%d/%d" % [item.range, long_r])
 
-	# Properties — alphabetical, one per line. Ammo is the one property with a value in
-	# parens per spec; Versatile keeps its own (die/grip) detail since it's genuinely extra
-	# info with nowhere else to live.
+	# Properties — alphabetical, one per line. Ammo(<name>) and Versatile(1dN) are the two
+	# properties with a value baked into the tag itself. Heavy lives in Requirements above, not
+	# here.
 	var props: Array[Dictionary] = []
 	if not item.ammo_item_name.is_empty():
 		props.append({"key": "Ammo", "text": "[url=keyword:ammo]Ammo(%s)[/url]" % item.ammo_item_name})
@@ -115,8 +118,7 @@ static func build(item: Item) -> String:
 	if item.is_two_handed:
 		props.append({"key": "Two-handed", "text": "[url=keyword:two_handed]Two-handed[/url]"})
 	if item.is_versatile:
-		var grip: String = "two" if item.is_two_handed else "one"
-		props.append({"key": "Versatile", "text": "[url=keyword:versatile]Versatile (1d%d %s-handed)[/url]" % [item.versatile_die_max, grip]})
+		props.append({"key": "Versatile", "text": "[url=keyword:versatile]Versatile(1d%d)[/url]" % item.versatile_die_max})
 	props.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["key"] < b["key"])
 	for p: Dictionary in props:
 		lines.append(p["text"])

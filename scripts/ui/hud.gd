@@ -981,8 +981,10 @@ func _on_qbar_slot_hover(idx: int) -> void:
 				text += "\n[color=#c9a227][font_size=11][right]%s[/right][/font_size][/color]" % price_str
 	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
 	_qbar_tooltip_rtl.text = text
-	_qbar_tooltip_rtl.size = Vector2(172.0, 0)
-	_qbar_tooltip.size = Vector2(180.0, 60)
+	var is_weapon_tooltip: bool = not _ability_bar_mode and (item_or_ability as Item) != null and (item_or_ability as Item).item_type == Item.Type.WEAPON
+	var qtw: float = 210.0 if is_weapon_tooltip else 172.0
+	_qbar_tooltip_rtl.size = Vector2(qtw, 0)
+	_qbar_tooltip.size = Vector2(qtw + 8.0, 60)
 	_qbar_tooltip.visible = true
 
 func _on_qbar_slot_hover_end() -> void:
