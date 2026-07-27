@@ -2310,39 +2310,21 @@ func toggle_mastery(mastery_name: String) -> bool:
 # long-rest hub (mastery_reselect_prompt.gd) — "changeable only at a long rest" per direct owner
 # request. An unattuned magic item can still be equipped/carried; it just doesn't contribute its
 # bonus_ac/bonus_damage — see _item_bonus_active(), used by recalculate_stats().
-const MAX_ATTUNED_ITEMS: int = 3
+# Pure gating logic lives in AttunementRules (scripts/items/attunement_rules.gd) — these stay as
+# delegators under their original names since attunement_picker.gd already calls several directly.
+const MAX_ATTUNED_ITEMS: int = AttunementRules.MAX_ATTUNED_ITEMS
 
-# Every item currently requiring attunement, across quickbar + bag + every equipment slot —
-# whether or not it's actually attuned yet (the attunement picker needs to list both states).
 func attunable_items() -> Array[Item]:
-	var out: Array[Item] = []
-	for it: Variant in player_quickbar:
-		if it is Item and (it as Item).requires_attunement:
-			out.append(it as Item)
-	for it: Variant in player_inventory:
-		if it is Item and (it as Item).requires_attunement:
-			out.append(it as Item)
-	for slot_name: String in equipment:
-		var it: Item = equipment[slot_name] as Item
-		if it != null and it.requires_attunement:
-			out.append(it)
-	return out
+	return AttunementRules.attunable_items(player_quickbar, player_inventory, equipment)
 
 func attuned_count() -> int:
-	var count: int = 0
-	for it: Item in attunable_items():
-		if it.is_attuned:
-			count += 1
-	return count
+	return AttunementRules.attuned_count(attunable_items())
 
 func can_attune(item: Item) -> bool:
-	return item != null and item.requires_attunement and not item.is_attuned \
-		and attuned_count() < MAX_ATTUNED_ITEMS
+	return AttunementRules.can_attune(item, attuned_count())
 
-# A non-magic item (requires_attunement == false) always contributes its bonuses — unaffected
-# by this system. A magic item only contributes once attuned.
 func _item_bonus_active(item: Item) -> bool:
-	return item != null and (not item.requires_attunement or item.is_attuned)
+	return AttunementRules.item_bonus_active(item)
 
 func attune_item(item: Item) -> bool:
 	if not can_attune(item):

@@ -352,8 +352,10 @@ unrelated and unchanged.
 `Item.requires_attunement`/`is_attuned` — a magic item can be equipped/carried completely freely
 (no gate on `equip()`, no separate equipment slot) but only contributes its `bonus_ac`/
 `bonus_damage` once it's one of the player's `GameState.MAX_ATTUNED_ITEMS` (3) currently attuned
-items — `GameState._item_bonus_active(item) -> bool` (`not requires_attunement or is_attuned`) is
-the single chokepoint `recalculate_stats()` checks before folding either bonus in, so an unattuned
+items — `GameState._item_bonus_active(item) -> bool` (`not requires_attunement or is_attuned`,
+delegating to `AttunementRules.item_bonus_active()` — `scripts/items/attunement_rules.gd`, which
+also holds `MAX_ATTUNED_ITEMS`/`attunable_items()`/`attuned_count()`/`can_attune()`'s actual logic)
+is the single chokepoint `recalculate_stats()` checks before folding either bonus in, so an unattuned
 magic weapon/armor still occupies its slot and still shows in every UI exactly like a mundane
 item, it just doesn't grant its numbers yet. **No concrete magic items ship with this pass** —
 every current `ITEM_POOL`/`WEAPON_POOL` entry still has `requires_attunement == false` (the

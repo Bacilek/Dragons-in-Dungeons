@@ -33,6 +33,13 @@ concern, not a game-state concern, even though the extraction started from `game
 every call site, because `player_throw_tool.gd` already calls `GameState._split_one_unit(weapon)`
 directly.
 
+Fifth piece: `scripts/items/attunement_rules.gd` (`AttunementRules`) holds the attunement-gating
+logic (`MAX_ATTUNED_ITEMS`, `attunable_items()`, `attuned_count()`, `can_attune()`,
+`item_bonus_active()` — see `scripts/items/CLAUDE.md`'s "Attunement") — filed under `scripts/items`
+like `ItemStackSplit`, same reasoning (it's fundamentally about `Item.requires_attunement`/
+`is_attuned`, not `GameState`-specific). `GameState`'s versions of these keep their exact original
+names since `scripts/ui/attunement_picker.gd` calls several directly.
+
 More subsystems will move out the same way over time — this is an incremental, ongoing
 decomposition, not a one-shot finished refactor. (Stateful, turn-tick-coupled subsystems like
 armor-change's own countdown or scroll-learning are intentionally NOT extracted this way — their
