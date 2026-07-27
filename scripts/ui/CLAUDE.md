@@ -198,6 +198,24 @@ re-show itself.
 
 ---
 
+## Blacksmith panel (`blacksmith_panel.gd`)
+CanvasLayer, layer = 25. Modeled on `attunement_picker.gd`'s conventions (dim overlay + centered
+bordered `Panel`, `focus_mode = FOCUS_NONE` everywhere). Only ever reachable by bumping/RMB-
+interacting the Blacksmith prop tile (`scripts/world/CLAUDE.md`'s "Blacksmith prop" —
+`PlayerActions.open_blacksmith_panel()`), never a hotkey. Sets `GameState.blacksmith_panel_open =
+true` on open (blocks all player input, threaded through the same OR-chains every other overlay
+flag lives in) → `false` on close.
+
+Shows: owned Mold count (scans quickbar+bag for an item named "Mold"), `GameState.gold` vs the
+flat `BLACKSMITH_GOLD_COST` (50) craft cost, and a "Forge Weapon" button disabled unless the
+player has ≥1 Mold **and** enough gold (mirrors `short_rest_panel.gd`'s affordability-disable
+pattern). On confirm: `GameState.spend_gold()` + `GameState.consume_one()` on the Mold, then
+`WeaponForge.generate_random_weapon()` (`scripts/items/CLAUDE.md`'s "WeaponForge" section) →
+`GameState.add_item()` (goes to the first empty quickbar/bag slot, **not** auto-equipped) — the
+result is immediately shown via a reveal `RichTextLabel` built from the existing
+`WeaponTooltip.build(item)`, no new tooltip-formatting code needed. Esc or the Close button
+dismisses without side effects.
+
 ## Debug panel (`debug_panel.gd`)
 F3 toggle. CanvasLayer, layer = 25.
 Features: **God Mode** (checkbox — activates invincible + noclip + see_all + exposes enemy rolls/HP in chat log), **All Checks** (checkbox — `GameState.debug_show_all_checks`, logs every per-turn Stealth-vs-Passive-Perception roll AND every Undead Fortitude save, pass or fail, instead of only real events (detections / trait triggers); visibility only, never changes the roll — see `scripts/entities/CLAUDE.md`'s "Stealth & Surprise Attacks" and its "Undead Fortitude's own check-visibility" note), Invincible, Noclip, Jump to Floor, Give Item, **Spawn Enemy** (sub-panel listing all `DungeonFloorData.ENEMY_POOL` + `BOSS_POOL`, spawns adjacent to player via `dungeon_floor.debug_spawn_enemy()`), **Level Up** (`GameState.debug_level_up()`), **Give 100 Gold** (`GameState.add_gold(100)`), **Give Spell...** (sub-panel listing every `SpellDb.CANTRIP_IDS + LEVELED_SPELL_IDS` entry — icon, name, `SpellDb.ordinal(level)` badge, description, "Give" button; `_on_give_spell()` calls `GameState.choose_cantrip()` for a level-0 spell or `learn_spell()` + `set_spell_prepared(id, true)` for a leveled one, both idempotent/cap-safe — for testing any spell without playing through level-ups, no quantity control since spells are boolean known/prepared, not stackable), See All, **Enhance Item (Slot 1)** (`GameState.enhance_quickbar_slot1_item()` — +1 per press to whatever sits in item-quickbar slot 1: weapon → `bonus_damage`, Armor/Shield → `bonus_ac`, everything else a no-op; not added to the Give Item pool on purpose — see `scripts/items/CLAUDE.md`'s "Enhance debug tool"), **Mute** (bottom of the main panel, below Give Spell — calls `AudioManager.toggle_mute()`, label swaps 🔊/🔇 in sync with `AudioManager.mute_changed`, same signal the HUD's own top-right `MuteButton` listens to; added as a more-discoverable second entry point since that corner button is easy to miss).

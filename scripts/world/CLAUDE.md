@@ -171,6 +171,30 @@ checks `GameState.player_stats.burning_turns > 0` only (enemies don't carry a bu
 — see `scripts/entities/CLAUDE.md`'s "Status effects" table). Covers e.g. a player who caught fire
 from a Fire Trap walking next to a barrel.
 
+## Blacksmith prop (`_blacksmiths: Dictionary[Vector2i, Dictionary]`)
+Value keys: `sprite: Sprite2D`. Same dict-of-tile convention as `_barrels`/`_traps`/`_doors`, but no
+burn/state of its own — a solid, impassable landmark tile (blocked in `is_walkable()`/
+`is_walkable_for_enemy()`/`is_walkable_for_companion()`, same treatment as `_barrels`) placed by
+`_spawn_blacksmith(rect)` (`BlacksmithRoom` content, guaranteed on floor 4 — see
+`scripts/dungeon/CLAUDE.md`). Reuses `crate.png` with a distinct tint (`BLACKSMITH_TINT`) as a
+placeholder — no dedicated anvil/blacksmith art exists yet. `has_blacksmith_at(pos) -> bool`.
+
+**Interaction**: bump-to-open (`player.gd._try_move()` intercepts a move into a blacksmith tile
+before the walkability check and calls `PlayerActions.open_blacksmith_panel()` instead of blocking
+pointlessly) and RMB (`PlayerActions.interact_action()`'s Priority 1.5, same exact-tile-vs-
+scan-8-neighbors split as the trap/door priorities). Both open `scripts/ui/blacksmith_panel.gd` —
+see `scripts/ui/CLAUDE.md` and `scripts/items/CLAUDE.md`'s "WeaponForge" section for what it does.
+
+## Mold (guaranteed once-per-run placement)
+`DungeonFloor._spawn_mold()`, called right after `_spawn_special_rooms()` in `_load_floor()`:
+no-ops unless `GameState.current_floor == GameState.mold_target_floor` (rolled once via
+`Rng.range_i(1,4)` at run start, see `scripts/autoloads/CLAUDE.md`) and `not GameState.
+mold_spawned`. Places one `ITEM_POOL` "Mold" item (looked up by name, sentinel `fmin`/`fmax = 99`
+keeps it out of the generic floor-loot roll — same pattern as Healing Herb) on a random walkable
+tile via `_build_floor_item()`, then sets `mold_spawned = true`. Guarantees exactly one Mold —
+and therefore one Blacksmith craft opportunity — per run at this pass; adding Mold to the regular
+floor-loot pool for extra copies is a documented, not-yet-done follow-up.
+
 ## Spider Web (`_webs: Dictionary[Vector2i, Dictionary]`)
 Value keys: `sprite: Sprite2D, hp: int, ac: int`. A lightweight destructible-terrain dict, same
 shape/convention as `_barrels` above but with no burn-tick timer — a web only ever goes away via
@@ -241,9 +265,11 @@ _spawn_barrels()        # 1-3 flammable obstacle props/floor on plain FLOOR tile
 _spawn_locked_doors()   # locks 1 door/floor that doesn't block spawn→stairs; places 2-3 rewards inside
 _spawn_pending_chasm_items()  # drains GameState.pending_chasm_items (ammo that fell into a chasm on the PREVIOUS floor) onto random walkable tiles of this floor; called after _spawn_locked_doors(), before _setup_fog()
 _spawn_gold_piles()     # 1-2 Type.GOLD piles of randi_range(5,10)+floor gold on random walkable tiles; appended after _spawn_pending_chasm_items() so every pre-existing _pop_rng draw keeps its position
-_spawn_special_rooms()  # dispatcher: matches _data.room_metadata's type_id ("shop"/"treasure"/"garden"/"secret") — the ONE place a type_id string is matched. "treasure"/"garden" are live (_spawn_treasure()/_spawn_garden_items(), sessions 7c/7d); "shop"/"secret" remain stubs (pass) pending sessions 7e/7f. LAST in the spawn order; consumes extra _pop_rng draws only on floors that actually rolled a Treasure/Garden room
+_spawn_special_rooms()  # dispatcher: matches _data.room_metadata's type_id ("shop"/"treasure"/"garden"/"secret"/"blacksmith") — the ONE place a type_id string is matched. "treasure"/"garden"/"blacksmith" are live (_spawn_treasure()/_spawn_garden_items()/_spawn_blacksmith()); "shop"/"secret" remain stubs (pass) pending sessions 7e/7f. LAST in the spawn order; consumes extra _pop_rng draws only on floors that actually rolled a Treasure/Garden/Blacksmith room
 _spawn_treasure(rect)   # session 7c: 3 guaranteed ITEM_POOL rolls + 1 gold pile (15-25 + 2×floor) inside rect; locks the room's one connecting door (manual lock, no AudioManager at gen time — mirrors _spawn_locked_doors()); floor >= 4 also gets 1-2 non-wall TRAP_POOL traps via the shared _place_floor_trap() helper. No-ops if rect is empty (BSP-fallback floor) or the room has no candidate tiles
 _spawn_garden_items(rect)  # session 7d: 1-2 "Healing Herb" ITEM_POOL entries (looked up by name, fmin/fmax=99 sentinel keeps it out of every generic filter) on the GRASS tiles GardenRoom.paint() already carved. No-ops if rect is empty
+_spawn_blacksmith(rect) # one impassable prop tile (see "Blacksmith prop" below) guaranteed on floor 4's BlacksmithRoom. No-ops if rect is empty
+_spawn_mold()           # guaranteed once-per-run Mold placement (see "Mold" below), called right after _spawn_special_rooms()
 ```
 **Seeded population (`_pop_rng`)**: all `_spawn_*()` randomness draws from `_pop_rng`, a `RandomNumberGenerator` re-created in `_load_floor()` with seed `run_seed ^ (current_floor * POPULATION_SEED_MIX)` — same run seed + floor always produces the identical population, which Phase-A save reloads depend on. Shuffles use `RngUtil.shuffle(arr, _pop_rng)`. **The spawn call order and the number of draws inside each function are load-bearing for reproducibility** — this is about determinism given fixed inputs, not a frozen draw *count*; every population feature added so far (this one included) legitimately changes how many draws happen. `_pop_rng` is load-time only — runtime rolls (trap triggers, boss loot at kill time, `resolve_push()` damage) use the `Rng` autoload's gameplay stream instead; never mix the two.
 

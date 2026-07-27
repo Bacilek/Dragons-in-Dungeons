@@ -109,10 +109,12 @@ no per-weapon hand-written tooltip text:
    no parens.
 2. **Requirements** — one comma-joined line of everything the wielder might not meet, each
    individually red if unmet / white (not colored red) if met: `weapon_category` (Simple/Martial
-   proficiency) and, for a Heavy weapon, `STR 13+` (melee) or `DEX 13+` (ranged). Both link to a
-   glossary popup like every other keyword. (Heavy's STR/DEX requirement lives ONLY here, not
-   also as a Properties tag — direct owner decision, since Requirements already names the exact
-   stat and threshold.)
+   proficiency) and, for a Heavy weapon, the bare word `Heavy` — **not** `"STR 13+"`/`"DEX 13+"`
+   text (direct owner correction: showing the number/stat inline was rejected — the requirement
+   line should just name the property, "Heavy," and the exact stat+threshold only surfaces on
+   hover). Both link to a glossary popup like every other keyword; Heavy resolves to one of two
+   keys, `heavy_str` (melee) or `heavy_dex` (ranged), chosen by `item.is_ranged`, so the popup body
+   itself names the specific stat this weapon needs instead of a stat-agnostic generic blurb.
 3. **Damage + type** — `1dN[+bonus] [color=gray]Type[/color]`, from `damage_die_max`/`bonus_damage`/
    `damage_type`. (No current weapon has more than one damage-type instance; a future one would be
    `+`-joined here — `build()`'s own comment marks where.)
@@ -120,11 +122,15 @@ no per-weapon hand-written tooltip text:
    "Ranged weapons (current)" below for what `long_range` actually is. Melee/thrown weapons never
    get this line (their own reach/throw distance shows via the Reach/Thrown Properties tags
    instead).
-5. **Properties** — alphabetical, one per line, each a hoverable keyword: `Ammo(<ammo type>)`,
-   `Finesse`, `Light`, `Reach`, `Thrown`, `Two-handed`, `Versatile (1dN two/one-handed)`. Ammo is
-   the one property with a value baked into the tag itself; Versatile keeps its own die/grip detail
-   since that's genuinely extra info with no other line to live on. Thrown is now a bare tag (no
-   inline range numbers — see "Thrown weapons" below for where that number actually lives).
+5. **Properties** — alphabetical, one per line, each a single-token hoverable keyword (never wraps
+   — a direct owner requirement; only the trailing free-form `item.description` line, appended by
+   the caller after this whole block, is ever allowed to wrap): `Ammo(<ammo type>)`, `Finesse`,
+   `Light`, `Reach`, `Thrown`, `Two-handed`, `Versatile(1dN)`. `Ammo(...)` is the one property with
+   a value baked into the tag itself; `Versatile(1dN)` is the other — its `1dN` is always the die
+   of the *other* (currently inactive) grip, since the active grip's own die already shows on the
+   Damage line above (no grip-name text alongside it anymore, unlike the original
+   `"Versatile (1dN two/one-handed)"` format). Thrown is a bare tag (no inline range numbers — see
+   "Thrown weapons" below for where that number actually lives).
 
 Everything below Properties (`item.description` as gray "additional info", `Uses: X/Y` durability,
 Attunement, the gold-price line — `WeaponTooltip.format_price(item)` (`"Xg Ysp"`/`"Xg"`/`"Ysp"`,
@@ -612,3 +618,68 @@ has been consumed yet, the player just re-issues Learn once it's safe. On comple
 `GameState.complete_scroll_learn()` calls `learn_spell(spell_id)`
 (which logs "You add X to your spellbook.") then `remove_item()` on the scroll — the scroll is
 only ever destroyed on a successful finish, never on an interrupt.
+
+## WeaponForge (Blacksmith random-weapon crafting)
+
+`scripts/items/weapon_forge.gd`, `WeaponForge extends RefCounted`, static-func-only (same shape as
+`WeaponTooltip`). `WeaponForge.generate_random_weapon() -> Item` is the only entry point — pure
+data construction, no new combat/attack code needed anywhere (every field it sets is already
+interpreted correctly by existing `Item`-reading code). Called by `scripts/ui/blacksmith_panel.gd`
+on a successful forge; see `scripts/world/CLAUDE.md`'s "Blacksmith prop" and `scripts/ui/CLAUDE.md`'s
+"Blacksmith panel" for the room/UI this feeds.
+
+Generation order (each step's output can gate a later one):
+1. **Damage die** — `Rng.pick()` of `[(1,4),(1,6),(1,8),(1,10),(1,12),(2,12)]`, the exact shapes
+   every real weapon in the game already uses (`(2,12)` approximates 2d6 like Greatsword/Maul).
+2. **Requirements (1-2, no replacement)** — `Rng.range_i(1,2)` count, drawn from
+   `["Heavy","Two-handed","Martial","Ammo"]`. `Martial`/absence sets `weapon_category`
+   (`"Martial"`/`"Simple"`). **`Ammo` is what makes the weapon ranged**: `is_ranged = true`,
+   `ammo_item_name = Rng.pick(["Arrow","Bolt"])`, `range = Rng.range_i(3,5)`,
+   `long_range = range * 4`. Not drawing `Ammo` means a plain melee weapon that never touches
+   ammo at all. `Martial` and `Ammo` are independent — a ranged weapon can absolutely also roll
+   Martial (both requirements can be drawn together, e.g. mirroring the Heavy Crossbow's real
+   Martial+Ammo shape).
+3. **Properties (exactly 3, no replacement)** — pool `["Finesse","Reach","Thrown","Versatile"]`
+   (4 items — always excludes exactly 1). Deliberately excludes `Light` and `Two-handed` (no
+   dual-wield/off-hand complexity for a crafted weapon). `Finesse` → `is_finesse = true` (this is
+   the whole "primary stat" story — `max(STR,DEX)` via the existing `CombatMath.
+   finesse_modifier()` if rolled, else pure STR/DEX per whatever `is_ranged` already decided; no
+   per-class stat table, no WIS/INT/CHA weapon-damage plumbing — none exists in this codebase and
+   none was added). `Thrown` → `is_thrown = true`, `uses_max = Rng.range_i(3,6)`,
+   `uses_remaining = uses_max`; if the weapon is already `is_ranged` (its range was rolled in step
+   2), Thrown **reuses that same `range`/`long_range`** instead of re-rolling (the two mechanics
+   share one field pair, so a Ranged+Thrown result never collides/overwrites) — otherwise Thrown
+   rolls its own `range = Rng.range_i(2,4)`. `Versatile` → second random die pair into
+   `versatile_die_min/max`; if the weapon is also `is_ranged`, this property is a "dead" cosmetic
+   (the grip-toggle click only lives on the Main Hand *melee* equip slot — see "Versatile weapons"
+   above), same accepted class as a mismatched mastery below.
+4. **Weapon mastery** — `Rng.pick(Stats.ALL_WEAPON_MASTERIES)`, always assigned. Masteries are
+   generic (gated on `weapon.weapon_mastery == "X" and stats.knows_mastery("X")` at each trigger
+   site, never on item name — see "Weapon masteries" above), so a mismatched roll (e.g. `Sap` on a
+   non-thrown result) simply never fires — intentional chaos, not a bug.
+5. **Damage type** — weighted: 70% Physical (Slashing/Piercing/Bludgeoning, uniform), 25%
+   Elemental (Fire/Cold/Acid/Poison/Thunder/Lightning, uniform), 5% Magical (Force/Necrotic/
+   Psychic/Radiant, uniform) — `_random_damage_type()`, a manual `Rng.roll(100)` threshold check
+   (named constants, easy to retune).
+6. **Icon** — `_pick_icon(item)`, a priority-ordered heuristic reusing existing weapon sprites
+   based on the rolled shape (`is_ranged`/`is_two_handed`+`is_heavy`/`is_versatile`/`is_thrown` →
+   Short Bow/Crossbow/Maul/Quarterstaff/Handaxe-shaped art, default Rapier-shaped) — no "unknown
+   weapon" icon exists anywhere in this codebase, so reusing real art is the established pattern.
+7. **Name** — `_random_name()`: `Rng.range_i(5,8)` random lowercase letters, capitalized (e.g.
+   `"Xqlvt"`) — deliberately absurdist, no naming table. Mastery still shows separately in parens
+   via `WeaponTooltip.build()`'s existing name line regardless of the base name.
+8. `gold_value = GOLD_VALUE` (10), `silver_value = 0` — fixed, not random. Distinct from the
+   Blacksmith's own 50g craft *cost* (`blacksmith_panel.gd`'s `BLACKSMITH_GOLD_COST`) — two
+   unrelated numbers.
+
+**No new `Item` fields** — every field `generate_random_weapon()` touches already exists and is
+already covered by `Item.to_dict()`/`from_dict()`, so a crafted weapon round-trips through
+save/load for free.
+
+## Mold
+New `ITEM_POOL`/`debug_panel.ALL_ITEMS` entry, `Type.TOOL`, icon placeholder-reused from
+`Materials/plate/iron.png` (no dedicated art exists). Sentinel `fmin`/`fmax = 99` (same convention
+as Healing Herb) keeps it out of every generic floor-loot roll — its only spawn path is
+`DungeonFloor._spawn_mold()`'s guaranteed once-per-run placement on `GameState.mold_target_floor`
+(`scripts/world/CLAUDE.md`, `scripts/autoloads/CLAUDE.md`). Consumed 1-per-craft by
+`blacksmith_panel.gd`.

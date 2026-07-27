@@ -185,6 +185,13 @@ var hit_dice: int = 1
 var short_rests_remaining: int = 2
 var max_short_rests: int = 2
 var gold: int = 0   # the wallet — plain int counter, earned via add_gold(), spent via spend_gold()
+# Blacksmith crafting (scripts/items/CLAUDE.md's "WeaponForge" section). mold_target_floor is
+# rolled once at run start (Rng, gameplay stream) uniform across floors 1-4 — DungeonFloor.
+# _spawn_mold() guarantees exactly one Mold on that floor; mold_spawned prevents it re-spawning
+# on floor reload/save-load.
+var mold_target_floor: int = 1
+var mold_spawned: bool = false
+var blacksmith_panel_open: bool = false     # blocks ALL player input while blacksmith_panel.gd is visible
 var short_rest_open: bool = false
 var talent_picker_open: bool = false
 var mastery_picker_open: bool = false
@@ -369,6 +376,9 @@ func _ready() -> void:
 func start_new_run() -> void:
 	run_seed = randi()
 	Rng.reseed(run_seed)  # gameplay RNG stream — same seed → same run (rng.gd)
+	mold_target_floor = Rng.range_i(1, 4)
+	mold_spawned = false
+	blacksmith_panel_open = false
 	current_floor = 1
 	is_game_over = false
 	inventory_open = false
@@ -3140,6 +3150,8 @@ func to_dict() -> Dictionary:
 		"rng_state": str(Rng.get_state()),
 		"current_floor": current_floor,
 		"gold": gold,
+		"mold_target_floor": mold_target_floor,
+		"mold_spawned": mold_spawned,
 		"special_slot_spell_id": special_slot_spell_id,
 		"player_stats": player_stats.to_dict(),
 		"talents": {
@@ -3189,6 +3201,8 @@ func from_dict(d: Dictionary) -> void:
 		Rng.reseed(run_seed)
 	current_floor = int(d.get("current_floor", 1))
 	gold = int(d.get("gold", 0))  # old saves predating the gold economy load as 0
+	mold_target_floor = int(d.get("mold_target_floor", 1))
+	mold_spawned = bool(d.get("mold_spawned", false))
 	var stats_d: Dictionary = d.get("player_stats", {})
 	var talents_d: Dictionary = d.get("talents", {})
 	var inv_d: Dictionary = d.get("inventory", {})

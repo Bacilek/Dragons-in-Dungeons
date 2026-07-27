@@ -15,6 +15,13 @@ func open_short_rest() -> void:
 	var panel_script = load("res://scripts/ui/short_rest_panel.gd")
 	player.get_tree().root.add_child(panel_script.new())
 
+func open_blacksmith_panel() -> void:
+	if GameState.blacksmith_panel_open:
+		return
+	GameState.blacksmith_panel_open = true
+	var panel_script = load("res://scripts/ui/blacksmith_panel.gd")
+	player.get_tree().root.add_child(panel_script.new())
+
 func open_talent_picker() -> void:
 	if GameState._class_talents.is_empty():
 		return
@@ -193,6 +200,19 @@ func interact_action(can_lock: bool = true, target: Vector2i = Vector2i(-1, -1))
 		var trap: Dictionary = player._dungeon_floor.get_trap_at(pos)
 		if not trap.is_empty() and trap.get("revealed", false):
 			player._thief_tools.attempt_disarm(pos)
+			return
+	# Priority 1.5: Blacksmith prop (same exact-tile-vs-scan-8-neighbors split as trap/door)
+	var blacksmith_tiles: Array[Vector2i] = []
+	if target != Vector2i(-1, -1):
+		var bdiff: Vector2i = target - player.grid_pos
+		if abs(bdiff.x) <= 1 and abs(bdiff.y) <= 1:
+			blacksmith_tiles.append(target)
+	else:
+		for d: Vector2i in dirs8:
+			blacksmith_tiles.append(player.grid_pos + d)
+	for pos: Vector2i in blacksmith_tiles:
+		if player._dungeon_floor.has_blacksmith_at(pos):
+			open_blacksmith_panel()
 			return
 	# Priority 2: door
 	# When called from RMB (target provided), only interact with that exact tile if adjacent.

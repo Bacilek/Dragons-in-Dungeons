@@ -57,6 +57,10 @@ const ITEM_POOL: Array = [
 	{"name": "Arrow",          "type": 7, "icon": "ammo/arrow.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Short Bow and Longbow.", "qty": 6, "gold": 1},
 	{"name": "Bolt",           "type": 7, "icon": "ammo/arrow_gold.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Heavy Crossbow.", "qty": 6, "gold": 1},
 	{"name": "Thief Tools",    "type": 7, "icon": "misc/key_iron.png",                    "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Disarm traps, lock doors. Consumed on failure.", "qty": 2, "gold": 25},
+	# Mold: Blacksmith crafting material (scripts/items/CLAUDE.md's "WeaponForge" section). Sentinel
+	# fmin/fmax=99 keeps it out of every generic floor-loot roll — its only spawn path is
+	# DungeonFloor._spawn_mold()'s guaranteed once-per-run placement (scripts/world/CLAUDE.md).
+	{"name": "Mold",           "type": 7, "icon": "Materials/plate/iron.png",           "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A strange mold. A Blacksmith could forge it into a weapon — for a price."},
 	{"name": "Shield",         "type": 1, "icon": "shields/wood.png",                "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Off-hand. +2 AC. Requires shield proficiency; can't be worn with a two-handed Main Hand weapon, and blocks spellcasting while equipped. Equip/unequip takes 1 turn.", "bonus_ac": 2, "is_shield": true, "gold": 40},
 	# Body armor (Item.armor_category — see Item.gd, GameState.can_equip_armor()/ARMOR_CHANGE_TURNS
 	# and Stats.recalc_ac()). No dedicated armor sprites exist yet — every entry placeholder-reuses

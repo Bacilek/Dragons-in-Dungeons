@@ -634,7 +634,7 @@ func _process(_delta: float) -> void:
 	_update_spell_aoe_preview()
 	if GameState.is_game_over or GameState.inventory_open or GameState.short_rest_open \
 			or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
-			or GameState.background_select_open \
+			or GameState.background_select_open or GameState.blacksmith_panel_open \
 			or not GameState.class_selected:
 		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
@@ -698,7 +698,8 @@ func _update_hover_indicator() -> void:
 	if _hover_indicator == null or _dungeon_floor == null:
 		return
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing \
-			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over:
+			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over \
+			or GameState.blacksmith_panel_open:
 		_hover_indicator.visible = false
 		return
 	var world_mouse: Vector2 = get_global_mouse_position()
@@ -763,7 +764,8 @@ func _update_spell_aoe_preview() -> void:
 	if _dungeon_floor == null:
 		return
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing \
-			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over:
+			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over \
+			or GameState.blacksmith_panel_open:
 		_dungeon_floor.hide_aoe_preview()
 		return
 	var spell: Spell = _spellcasting.get_armed_spell()
@@ -850,7 +852,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active \
 			or GameState.talent_picker_open or GameState.mastery_picker_open \
 			or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
-			or GameState.background_select_open \
+			or GameState.background_select_open or GameState.blacksmith_panel_open \
 			or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open):
 		return
 	if event is InputEventKey:
@@ -862,7 +864,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			if not GameState.short_rest_open and not GameState.mastery_picker_open \
 					and not GameState.subclass_picker_open and not GameState.race_picker_open \
 					and not GameState.point_buy_open and not GameState.background_select_open \
-					and not GameState.cantrip_picker_open \
+					and not GameState.cantrip_picker_open and not GameState.blacksmith_panel_open \
 					and not GameState.spell_learn_picker_open and not GameState.spellbook_open:
 				GameState.inventory_toggle.emit()
 			return
@@ -872,7 +874,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					and not GameState.short_rest_active and not GameState.talent_picker_open \
 					and not GameState.mastery_picker_open and not GameState.subclass_picker_open \
 					and not GameState.race_picker_open and not GameState.point_buy_open \
-					and not GameState.background_select_open \
+					and not GameState.background_select_open and not GameState.blacksmith_panel_open \
 					and not GameState.cantrip_picker_open and not GameState.spell_learn_picker_open \
 					and not GameState.spellbook_open:
 				_actions.open_talent_picker()
@@ -885,7 +887,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					and not GameState.short_rest_active and not GameState.talent_picker_open \
 					and not GameState.mastery_picker_open and not GameState.subclass_picker_open \
 					and not GameState.race_picker_open and not GameState.point_buy_open \
-					and not GameState.background_select_open \
+					and not GameState.background_select_open and not GameState.blacksmith_panel_open \
 					and not GameState.cantrip_picker_open and not GameState.spell_learn_picker_open \
 					and not GameState.spellbook_open:
 				var picker = load("res://scripts/ui/spellbook_overlay.gd").new()
@@ -895,7 +897,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active \
 				or GameState.talent_picker_open or GameState.mastery_picker_open \
 				or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
-				or GameState.background_select_open \
+				or GameState.background_select_open or GameState.blacksmith_panel_open \
 				or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
@@ -985,7 +987,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_pending_click_tile = Vector2i(-1, -1)
 				if _lmb_panning or pending == Vector2i(-1, -1) or _dungeon_floor == null:
 					return
-				if GameState.short_rest_active or GameState.short_rest_open:
+				if GameState.short_rest_active or GameState.short_rest_open or GameState.blacksmith_panel_open:
 					return
 				# BUGFIX: this Ctrl+special-slot check must run BEFORE the "pending == grid_pos"
 				# no-op-move guard below — a SELF-target spell (Mage Armor) in the Special slot is
@@ -1063,7 +1065,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 		_click_start_screen_pos = mb.position
 
-		if GameState.short_rest_active or GameState.short_rest_open:
+		if GameState.short_rest_active or GameState.short_rest_open or GameState.blacksmith_panel_open:
 			return
 
 		# Cantrip targeting mode
@@ -1537,6 +1539,11 @@ func _try_move(dir: Vector2i) -> void:
 	else:
 		# Natural Sleeper Owl R1: allow movement into CHASM tiles
 		var _owl_override: bool = _sleeper_on and _ns_form == "Owl" and _target_tile == DungeonData.TileType.CHASM
+		# Blacksmith prop: bump-to-open instead of blocking pointlessly against the (impassable)
+		# tile — mirrors door auto-open-on-step-in ergonomics.
+		if _dungeon_floor.has_blacksmith_at(target):
+			_actions.open_blacksmith_panel()
+			return
 		# Door handling — locked doors distinguish dungeon-generated vs player-set
 		if _dungeon_floor.has_door_at(target) and not _dungeon_floor.is_door_open(target):
 			if _dungeon_floor.is_door_locked(target):

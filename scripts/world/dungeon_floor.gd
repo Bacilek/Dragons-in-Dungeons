@@ -44,6 +44,15 @@ const BARREL_COUNT_MAX: int = 3
 const FLAMMABLE_BURN_TURNS: int = 3
 const FIRE_TINT := Color(1.0, 0.5, 0.25)
 
+# Blacksmith prop (BlacksmithRoom, always floor 4 — see scripts/dungeon/CLAUDE.md). Same
+# dict-of-tile convention as _barrels/_traps/_doors, but no burn/interaction state of its own —
+# just a solid, impassable landmark tile the player bumps/RMB-interacts with to open
+# blacksmith_panel.gd. No dedicated art exists yet — reuses crate.png with a distinct tint,
+# same "no art yet" placeholder precedent as several weapons/armor entries.
+var _blacksmiths: Dictionary = {}   # Vector2i → {sprite: Sprite2D}
+const BLACKSMITH_TEX_PATH: String = DungeonFloorData.OBJECTS_PATH + "crate.png"
+const BLACKSMITH_TINT := Color(0.85, 0.55, 0.35)
+
 # Spider's Web ability (see scripts/entities/CLAUDE.md's "Spider" entry) — a lightweight
 # destructible-terrain dict, same shape/convention as _barrels above but with no burn-tick timer
 # (a web only ever goes away via Player._attempt_web_escape()'s successful STR check, never on its
@@ -274,6 +283,7 @@ func _load_floor() -> void:
 	_spawn_pending_chasm_items()
 	_spawn_gold_piles()
 	_spawn_special_rooms()
+	_spawn_mold()
 	_restore_companion_from_save()
 	_setup_fog()
 	_see_all_active = false
@@ -343,12 +353,16 @@ func is_walkable(pos: Vector2i) -> bool:
 		return false
 	if _barrels.has(pos):
 		return false
+	if _blacksmiths.has(pos):
+		return false
 	return _data.is_walkable(pos)
 
 func is_walkable_for_enemy(pos: Vector2i, excluding: Enemy = null) -> bool:
 	if not _data.is_walkable(pos):
 		return false
 	if _barrels.has(pos):
+		return false
+	if _blacksmiths.has(pos):
 		return false
 	if _doors.has(pos):
 		# Closed doors block normal movement (enemy handles opening separately)
@@ -966,6 +980,8 @@ func is_walkable_for_companion(pos: Vector2i) -> bool:
 	if not _data.is_walkable(pos):
 		return false
 	if _barrels.has(pos):
+		return false
+	if _blacksmiths.has(pos):
 		return false
 	if _doors.has(pos) and not _doors[pos]["is_open"]:
 		return false
@@ -2217,6 +2233,8 @@ func _spawn_special_rooms() -> void:
 				_spawn_garden_items(meta["rect"])
 			"secret":
 				pass  # _spawn_secret_room(meta["rect"]) — session 7f
+			"blacksmith":
+				_spawn_blacksmith(meta["rect"])
 
 # TreasureRoom content (special-rooms-economy-design.md §4.2, session 7c): 3 guaranteed
 # ITEM_POOL rolls + 1 guaranteed gold pile, guarded by locking the room's one connecting door
@@ -2318,6 +2336,78 @@ func _spawn_garden_items(rect: Rect2i) -> void:
 	var count: int = mini(_pop_rng.randi_range(1, 2), candidates.size())
 	for i: int in count:
 		_build_floor_item(candidates[i], herb)
+
+# BlacksmithRoom content: a single impassable prop tile the player bumps/RMB-interacts with to
+# open blacksmith_panel.gd (scripts/ui/CLAUDE.md). No-op if rect is empty (BSP-fallback floor,
+# same guard every other special-room population function uses) or the room has no candidate tile.
+func _spawn_blacksmith(rect: Rect2i) -> void:
+	if rect == Rect2i():
+		return
+	var candidates: Array[Vector2i] = []
+	for y: int in range(rect.position.y, rect.position.y + rect.size.y):
+		for x: int in range(rect.position.x, rect.position.x + rect.size.x):
+			var pos := Vector2i(x, y)
+			if _data.get_tile(x, y) != DungeonData.TileType.FLOOR:
+				continue
+			if pos == _data.player_start or pos == _data.stairs_pos:
+				continue
+			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos) or _barrels.has(pos):
+				continue
+			candidates.append(pos)
+	if candidates.is_empty():
+		return
+	RngUtil.shuffle(candidates, _pop_rng)
+	var pos: Vector2i = candidates[0]
+	var tex: Texture2D = null
+	if ResourceLoader.exists(BLACKSMITH_TEX_PATH):
+		tex = load(BLACKSMITH_TEX_PATH)
+	var sprite := Sprite2D.new()
+	sprite.texture = tex
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.modulate = BLACKSMITH_TINT
+	sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+	sprite.z_index = 1
+	if tex != null:
+		var ts: Vector2 = tex.get_size()
+		sprite.scale = Vector2(float(TILE_SIZE) / ts.x, float(TILE_SIZE) / ts.y)
+	entities.add_child(sprite)
+	_blacksmiths[pos] = {"sprite": sprite}
+
+func has_blacksmith_at(pos: Vector2i) -> bool:
+	return _blacksmiths.has(pos)
+
+# Mold (Blacksmith crafting material): guaranteed exactly once per run, on GameState.
+# mold_target_floor (rolled once at run start, uniform across floors 1-4 — see
+# scripts/autoloads/CLAUDE.md). No-op on every other floor, and once mold_spawned flips true.
+# Sentinel fmin/fmax=99 on the ITEM_POOL entry (same convention as Healing Herb) keeps it out of
+# every generic floor-loot roll — this is its only spawn path.
+func _spawn_mold() -> void:
+	if GameState.current_floor != GameState.mold_target_floor or GameState.mold_spawned:
+		return
+	var mold: Dictionary = {}
+	for entry: Dictionary in DungeonFloorData.ITEM_POOL:
+		if entry["name"] == "Mold":
+			mold = entry
+			break
+	if mold.is_empty():
+		return
+	var candidates: Array[Vector2i] = []
+	for y: int in _data.height:
+		for x: int in _data.width:
+			var pos := Vector2i(x, y)
+			var tile: DungeonData.TileType = _data.get_tile(x, y)
+			if tile != DungeonData.TileType.FLOOR and tile != DungeonData.TileType.MUD:
+				continue
+			if pos == _data.player_start or pos == _data.stairs_pos:
+				continue
+			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos) or _barrels.has(pos) or _blacksmiths.has(pos):
+				continue
+			candidates.append(pos)
+	if candidates.is_empty():
+		return
+	RngUtil.shuffle(candidates, _pop_rng)
+	_build_floor_item(candidates[0], mold)
+	GameState.mold_spawned = true
 
 # Enemy gold drop: 30% chance on any non-boss enemy death (bosses drop a guaranteed pile in
 # drop_boss_loot() instead). Kill-time randomness → gameplay Rng stream, same load-time-vs-runtime

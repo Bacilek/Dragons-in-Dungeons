@@ -63,6 +63,11 @@ static func plan(floor_num: int, feeling: String, rng: RandomNumberGenerator) ->
 			for _i: int in entry.get("max_per_floor", 1):
 				if rng.randf() < entry["chance"]:  # one draw per eligible slot
 					specials.append(entry["script"].new())
+	# Blacksmith: guaranteed exactly once, only on floor 4 — deliberately NOT a ROOM_POOL entry
+	# (a chance=1.0 entry would still burn one rng.randf() per seed for no benefit; mirrors how
+	# the boss room is special-cased entirely outside ROOM_POOL). Consumes zero extra rng calls.
+	if floor_num == 4:
+		specials.append(BlacksmithRoom.new())
 
 	var rooms: Array = []
 	rooms.append(EntranceRoom.new())
