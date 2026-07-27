@@ -20,6 +20,19 @@ alias (`= EquipRequirements.ARMOR_CHANGE_TURNS`) since `ArmorTooltip.build()` re
 same "no external call site needs to change" bar as the icon extraction. The log-emitting wrappers
 (`log_shield_equip_blocked()`/`log_armor_equip_blocked()`) stayed on `GameState` since they need
 its `combat_message` signal, which a pure static-func class deliberately doesn't have access to.
+Third piece: `talent_tiers.gd` (`TalentTiers`) holds `TIER_LEVEL_RANGES` +
+`tier_for_level(lv)`/`tier_unlocked(tier, tier2_unlocked, tier3_selected_class, character_level)`
+— `GameState.tier_for_level()`/`tier_unlocked()` are 1-line delegators, `GameState.
+TIER_LEVEL_RANGES` a const alias. Fourth piece: `scripts/items/item_stack_split.gd`
+(`ItemStackSplit`) holds the durability-stack-splitting logic (see `scripts/items/CLAUDE.md`'s
+"Mixed-durability stacking") — filed under `scripts/items` instead of `scripts/autoloads` since it
+operates purely on an `Item` with zero `GameState` state involved, so it's thematically an item
+concern, not a game-state concern, even though the extraction started from `game_state.gd`.
+`GameState._should_split_for_equip()`/`_split_one_unit()` stay as delegators under their original
+(underscore-prefixed) names rather than being renamed to `ItemStackSplit.split_one_unit(item)` at
+every call site, because `player_throw_tool.gd` already calls `GameState._split_one_unit(weapon)`
+directly.
+
 More subsystems will move out the same way over time — this is an incremental, ongoing
 decomposition, not a one-shot finished refactor. (Stateful, turn-tick-coupled subsystems like
 armor-change's own countdown or scroll-learning are intentionally NOT extracted this way — their

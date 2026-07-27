@@ -136,8 +136,8 @@ var talent_points_available: int:
 		for t: int in talent_points:
 			total += talent_points[t]
 		return total
-# Level → talent-point tier schedule. Levels outside every range (21+) grant nothing.
-const TIER_LEVEL_RANGES: Dictionary = {1: [1, 6], 2: [7, 12], 3: [13, 17], 4: [18, 20]}
+# Tier/level schedule + gating logic lives in TalentTiers (scripts/autoloads/talent_tiers.gd).
+const TIER_LEVEL_RANGES: Dictionary = TalentTiers.TIER_LEVEL_RANGES
 var talent_investments: Dictionary = {}   # talent_id → current_rank (int)
 var _class_talents: Array[Talent] = []    # all talents for current class, populated on class select
 # Tier 2 unlocks when the gating boss (TIER2_GATING_BOSS_ID, the floor-5 boss) is defeated —
@@ -1343,20 +1343,11 @@ func gain_exp(amount: int) -> void:
 
 ## Which tier's pool a level-up at `lv` feeds. 0 = no talent point (level 21+).
 func tier_for_level(lv: int) -> int:
-	for tier: int in TIER_LEVEL_RANGES:
-		var r: Array = TIER_LEVEL_RANGES[tier]
-		if lv >= r[0] and lv <= r[1]:
-			return tier
-	return 0
+	return TalentTiers.tier_for_level(lv)
 
 ## Whether talents of `tier` can currently be invested in. Points accumulate while locked.
 func tier_unlocked(tier: int) -> bool:
-	match tier:
-		1: return true
-		2: return tier2_unlocked
-		3: return tier3_selected_class != -1 and player_stats.character_level >= 13
-		4: return player_stats.character_level >= 18
-		_: return false
+	return TalentTiers.tier_unlocked(tier, tier2_unlocked, tier3_selected_class, player_stats.character_level)
 
 # The Tier 2 gate. Fires on every boss kill; only TIER2_GATING_BOSS_ID matters. Classes with
 # subclasses (Barbarian) get the one-time subclass overlay; other classes unlock directly.
@@ -1614,37 +1605,14 @@ func _auto_unequip_offhand() -> void:
 	equipment["hand2"] = null
 	_add_to_bags_silent(hand2)
 
-# A stacked thrown weapon (quantity > 1, units may carry different durability — see add_item())
-# only ever equips a single unit: split one off instead of moving the whole stack into a slot,
-# so the rest keep sitting in the bag with their own durability untouched. Shared by equip(),
-# move_item()'s drag-to-equipment-slot path, and PlayerThrowTool._throw_weapon().
+# Pure stack-splitting logic lives in ItemStackSplit (scripts/items/item_stack_split.gd) — these
+# stay as 1-line delegators (not renamed) since player_throw_tool.gd already calls
+# GameState._split_one_unit(weapon) directly.
 func _should_split_for_equip(item: Item) -> bool:
-	return item.quantity > 1 and item.item_type == Item.Type.WEAPON and item.uses_max > 0
+	return ItemStackSplit.should_split_for_equip(item)
 
-# Splits the most-damaged unit (lowest uses_remaining — the one "on top" of the stack) off into
-# its own single-quantity Item, leaving the rest of the stack behind with their own durability.
 func _split_one_unit(item: Item) -> Item:
-	var unit: Item = item.duplicate()
-	unit.quantity = 1
-	unit.stack_uses = []
-	if item.uses_max > 0:
-		var stack: Array = item.get_stack_uses()
-		stack.sort()
-		var taken: int = int(stack[0])
-		stack.remove_at(0)
-		unit.uses_remaining = taken
-		var remaining: Array[int] = []
-		for v: Variant in stack:
-			remaining.append(int(v))
-		if remaining.size() > 1:
-			item.stack_uses = remaining
-		else:
-			var empty: Array[int] = []
-			item.stack_uses = empty
-		if not remaining.is_empty():
-			item.uses_remaining = remaining[0]
-	item.quantity -= 1
-	return unit
+	return ItemStackSplit.split_one_unit(item)
 
 func unequip(slot_name: String) -> void:
 	if not equipment.has(slot_name):
