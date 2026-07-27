@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b2ltsrjj2tohd"
-path="res://.godot/imported/Morgenstern.png-e637f9581ecabb20893664e907848a38.ctex"
+path="res://.godot/imported/iron.png-2b5e3249073dbb61e9b141db1b8263b2.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/weapons/morgenstern/iron.png"
-dest_files=["res://.godot/imported/Morgenstern.png-e637f9581ecabb20893664e907848a38.ctex"]
+dest_files=["res://.godot/imported/iron.png-2b5e3249073dbb61e9b141db1b8263b2.ctex"]
 
 [params]
 

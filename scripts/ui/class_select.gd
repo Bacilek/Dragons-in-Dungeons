@@ -3,7 +3,7 @@ extends CanvasLayer
 const TILE_SIZE: int = 170
 const TILE_GAP: int = 18
 const GRID_COLUMNS: int = 6
-const CHAR_PATH := "res://sprites/characters/"
+const CHAR_PATH := "res://sprites/characters/classes/"
 
 const CLASS_DATA: Array = [
 	{
@@ -330,16 +330,32 @@ func _build_locked_card(class_name_str: String, pos: Vector2) -> void:
 	card.add_theme_stylebox_override("panel", sbox)
 	add_child(card)
 
-	var silhouette := Label.new()
-	silhouette.text = "?"
-	silhouette.add_theme_font_size_override("font_size", 40)
-	silhouette.add_theme_color_override("font_color", Color(0.30, 0.30, 0.32))
-	silhouette.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	silhouette.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	silhouette.position = Vector2(float(TILE_SIZE) / 2.0 - 32.0, 8.0)
-	silhouette.size = Vector2(64.0, 68.0)
-	silhouette.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(silhouette)
+	# A locked class with art already sourced (folder matches class_name_str, see root CLAUDE.md's
+	# Sprite Assets naming convention) shows a dimmed portrait instead of the "?" glyph — still
+	# non-interactive/"Coming Soon", just reads as "art ready, mechanics aren't" rather than fully
+	# empty. Falls back to "?" for any locked class with no folder yet (currently Paladin, Sorcerer).
+	var sprite_path: String = CHAR_PATH + class_name_str + "/idle_1.png"
+	if ResourceLoader.exists(sprite_path):
+		var portrait := TextureRect.new()
+		portrait.texture = load(sprite_path)
+		portrait.ignore_texture_size = true
+		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		portrait.position = Vector2(float(TILE_SIZE) / 2.0 - 32.0, 8.0)
+		portrait.size = Vector2(64.0, 68.0)
+		portrait.modulate = Color(0.55, 0.55, 0.55, 0.85)
+		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(portrait)
+	else:
+		var silhouette := Label.new()
+		silhouette.text = "?"
+		silhouette.add_theme_font_size_override("font_size", 40)
+		silhouette.add_theme_color_override("font_color", Color(0.30, 0.30, 0.32))
+		silhouette.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		silhouette.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		silhouette.position = Vector2(float(TILE_SIZE) / 2.0 - 32.0, 8.0)
+		silhouette.size = Vector2(64.0, 68.0)
+		silhouette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(silhouette)
 
 	var name_lbl := Label.new()
 	name_lbl.text = class_name_str

@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bt1x460tq8laq"
-path="res://.godot/imported/coin_anim_f2.png-0a2243f53256faabdbd8a16dd4a651c8.ctex"
+path="res://.godot/imported/f2.png-c8e0cb2c74d07e2e21aa5e7a373b649d.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/objects/_unused/coin/f2.png"
-dest_files=["res://.godot/imported/coin_anim_f2.png-0a2243f53256faabdbd8a16dd4a651c8.ctex"]
+dest_files=["res://.godot/imported/f2.png-c8e0cb2c74d07e2e21aa5e7a373b649d.ctex"]
 
 [params]
 

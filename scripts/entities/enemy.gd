@@ -3,11 +3,11 @@ extends Entity
 
 enum Behavior { SLEEPING, STATIONARY, ROAMING, CHASING, SEARCHING }
 
-const SPRITES_PATH := "res://sprites/characters/"
+const SPRITES_PATH := "res://sprites/characters/enemies/"
 const FOV_RADIUS: int = 6
 
-# sprites/characters/ is organized one subfolder per in-game character identity (see
-# scripts/world/CLAUDE.md's "Sprite Assets" section) — a pool "sprite" key (a stable id, not a
+# sprites/characters/enemies/ is organized one subfolder per in-game enemy/boss identity (see
+# root CLAUDE.md's "Sprite Assets" section) — a pool "sprite" key (a stable id, not a
 # filename fragment) maps to its containing folder here. Filenames inside each folder are just
 # "idle_1.png".."idle_4.png"/"run_1.png".."run_4.png" (1-indexed) — no character prefix, since the
 # folder itself already identifies the character. Absent = "sprite" key used verbatim as the

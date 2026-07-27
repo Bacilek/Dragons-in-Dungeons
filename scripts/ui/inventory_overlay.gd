@@ -14,25 +14,6 @@ var _inv_tooltip: Panel           = null
 var _inv_tooltip_rtl: RichTextLabel = null
 var _inv_glossary_popup: Panel = null
 var _inv_glossary_rtl: RichTextLabel = null
-const KEYWORD_GLOSSARY: Dictionary = {
-	"heavy": "Heavy weapon.\nMelee: requires STR 13+.\nRanged: requires DEX 13+.\nAttacking without enough\nStrength/Dexterity imposes\nDisadvantage.",
-	"two_handed": "Two-handed weapon.\nOccupies Main Hand.\nOff-hand cannot be used\nwhile equipped.",
-	"cleave": "Mastery: Cleave.\nIf 2+ enemies are within\nmelee reach, this attack\nalso strikes the one closest\nto your primary target —\nwith its own attack roll\nand damage roll.",
-	"simple": "Simple weapon.\nEasy to use — most\ncharacters are proficient.\nRed text means your class\nlacks this proficiency: you\ncan still attack with it,\nbut lose your proficiency\nbonus on the attack roll.",
-	"martial": "Martial weapon.\nRequires training — only\nsome classes are proficient.\nRed text means your class\nlacks this proficiency: you\ncan still attack with it,\nbut lose your proficiency\nbonus on the attack roll.",
-	"vex": "Mastery: Vex.\nOn a hit, gain Advantage\non your next attack this\nround against the same\ntarget (any attack type).",
-	"push": "Mastery: Push.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ DEX) or is shoved 1 tile\ndirectly away from you.\nHitting a wall deals 1d4\nBludgeoning instead of\nmoving; falling into a\nchasm removes it (loot,\nif any, appears a floor\ndown).",
-	"finesse": "Finesse weapon.\nUse either STR or DEX\n(whichever is higher) for\nboth the attack roll and\nthe damage roll.",
-	"light": "Light weapon.\nPair another Light weapon\nin the Off-hand to attack\nwith both. The Off-hand\nswing skips your ability\nmodifier on damage, unless\nit's negative.",
-	"graze": "Mastery: Graze.\nOn a miss, still deal\ndamage equal to the\nability modifier used\nfor the attack (min 0).",
-	"reach": "Reach weapon.\n+1 tile melee range —\ncan attack (and chase-\nattack) from 2 tiles away\ninstead of 1.",
-	"topple": "Mastery: Topple.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ STR) or is knocked Prone,\nskipping its entire next turn.",
-	"versatile": "Versatile weapon.\nClick the Main Hand slot\nto switch grip: one-handed\nuses the die shown, two-\nhanded uses the die listed\nhere instead.",
-	"thrown": "Thrown weapon.\nRight-click to prime a\nthrow, then left-click a\ntarget tile — uses your\nmelee attack modifier.\nNormal range shown; beyond\nit (still within FOV) rolls\nwith Disadvantage. Has\nlimited uses before it\nbreaks.",
-	"sap": "Mastery: Sap.\nOn a hit, the target has\nDisadvantage on its very\nnext attack, next turn.",
-	"nick": "Mastery: Nick.\nWhile dual-wielding two\nLight weapons, make one\nfurther attack this turn —\nsame rules as the Off-hand\nswing (max 3 attacks total).",
-	"slow": "Mastery: Slow.\nOn a hit, the target is\nSlowed — its next turn is\nskipped entirely, same as\nstepping into mud/water."
-}
 
 # Tooltip freeze state (Ctrl to freeze, enabling keyword link hover)
 var _tooltip_frozen: bool = false
@@ -489,15 +470,10 @@ func _dispatch_item_interaction(item: Item, id: String) -> void:
 				df.update_fog(GameState.player_grid_pos)
 		"learn":
 			GameState.begin_scroll_learn(item)
+		"drop":
+			GameState.drop_item(item)
 		_:
 			GameState.use_item(item)  # read / drink / prime
-
-func _is_weapon_category_proficient(category: String) -> bool:
-	var s: Stats = GameState.player_stats
-	match category:
-		"Simple":  return s.proficient_simple_weapons
-		"Martial": return s.proficient_martial_weapons
-		_: return true
 
 func _on_slot_hover(slot: Control) -> void:
 	if _tooltip_frozen:
@@ -511,49 +487,16 @@ func _on_slot_hover(slot: Control) -> void:
 	if item == null:
 		_inv_tooltip.visible = false
 		return
-	var text: String = "[b]%s[/b]" % item.item_name
+	var text: String = ""
 	if item.item_type == Item.Type.WEAPON:
-		if not item.weapon_mastery.is_empty():
-			text += " [url=keyword:%s](%s)[/url]" % [item.weapon_mastery.to_lower(), item.weapon_mastery]
-		var die_max: int = item.damage_die_max if item.damage_die_max > 0 else 0
-		var die_str: String = "1d%d" % die_max if die_max > 0 else ""
-		var bonus_str: String = "+%d" % item.bonus_damage if item.bonus_damage > 0 else ""
-		var sep: String = " " if not die_str.is_empty() and not bonus_str.is_empty() else ""
-		var type_str: String = " [color=gray]%s[/color]" % item.damage_type if not item.damage_type.is_empty() else ""
-		if not die_str.is_empty() or not bonus_str.is_empty():
-			text += "\n%s%s%s%s" % [die_str, sep, bonus_str, type_str]
-		if not item.weapon_category.is_empty():
-			var cat_color: String = "white" if _is_weapon_category_proficient(item.weapon_category) else "red"
-			text += "\n[color=%s][url=keyword:%s]%s[/url][/color]" % [cat_color, item.weapon_category.to_lower(), item.weapon_category]
-		if item.is_ranged:
-			text += "\nrange: %d tiles [color=gray](long: FOV, DISADV)[/color]" % item.range
-			if not item.ammo_item_name.is_empty():
-				text += "\n[color=gray]Requires: %s[/color]" % item.ammo_item_name
-		else:
-			text += "\nrange: %d tile%s" % [2 if item.is_reach else 1, "s" if item.is_reach else ""]
-		var props: Array[String] = []
-		if item.is_two_handed:
-			props.append("[url=keyword:two_handed]Two-handed[/url]")
-		if item.is_heavy:
-			props.append("[url=keyword:heavy]Heavy[/url]")
-		if item.is_finesse:
-			props.append("[url=keyword:finesse]Finesse[/url]")
-		if item.is_light:
-			props.append("[url=keyword:light]Light[/url]")
-		if item.is_reach:
-			props.append("[url=keyword:reach]Reach[/url]")
-		if item.is_versatile:
-			var grip_str: String = "two" if item.is_two_handed else "one"
-			props.append("[url=keyword:versatile]Versatile (1d%d %s-handed)[/url]" % [item.versatile_die_max, grip_str])
-		if item.is_thrown:
-			props.append("[url=keyword:thrown]Thrown (%d/FOV)[/url]" % item.range)
-		if not props.is_empty():
-			text += "\n%s" % ", ".join(props)
-	elif item.item_type == Item.Type.POTION or item.item_type == Item.Type.FOOD:
-		if item.heal_dice_count > 0:
-			text += "\n%dd%d+CON HP" % [item.heal_dice_count, item.heal_dice_sides]
-		elif item.heal_amount > 0:
-			text += "\n+%d HP" % item.heal_amount
+		text = WeaponTooltip.build(item)
+	else:
+		text = "[b]%s[/b]" % item.item_name
+		if item.item_type == Item.Type.POTION or item.item_type == Item.Type.FOOD:
+			if item.heal_dice_count > 0:
+				text += "\n%dd%d+CON HP" % [item.heal_dice_count, item.heal_dice_sides]
+			elif item.heal_amount > 0:
+				text += "\n+%d HP" % item.heal_amount
 	if not item.description.is_empty():
 		text += "\n[color=gray]%s[/color]" % item.description
 	if item.requires_attunement:
@@ -563,6 +506,10 @@ func _on_slot_hover(slot: Control) -> void:
 			text += "\n[color=#4aa3ff]Requires Attunement[/color] [color=gray](set during a Long Rest)[/color]"
 	if item.item_type == Item.Type.WEAPON and item.is_thrown:
 		text += "\n[color=#999][font_size=11][right]Uses: %d/%d[/right][/font_size][/color]" % [item.uses_remaining, item.uses_max]
+	if item.item_type == Item.Type.WEAPON:
+		var price_str: String = WeaponTooltip.format_price(item)
+		if not price_str.is_empty():
+			text += "\n[color=#c9a227][font_size=11][right]%s[/right][/font_size][/color]" % price_str
 	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
 	_inv_tooltip_rtl.text = text
 	_inv_tooltip_rtl.size = Vector2(172.0, 0)
@@ -596,8 +543,8 @@ func _on_inv_meta_hover_started(meta: Variant) -> void:
 	var m: String = str(meta)
 	if m.begins_with("keyword:") and _inv_glossary_popup != null:
 		var kw: String = m.substr(8)
-		if KEYWORD_GLOSSARY.has(kw):
-			_inv_glossary_rtl.text = KEYWORD_GLOSSARY[kw]
+		if WeaponTooltip.KEYWORD_GLOSSARY.has(kw):
+			_inv_glossary_rtl.text = WeaponTooltip.KEYWORD_GLOSSARY[kw]
 			_inv_glossary_rtl.size = Vector2(160.0, 0)
 			_inv_glossary_popup.size = Vector2(168.0, 60)
 			_inv_glossary_popup.visible = true

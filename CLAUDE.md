@@ -193,7 +193,65 @@ Hunger has been removed. `Alt` opens a tabbed rest panel (`scripts/ui/short_rest
 
 ## Sprite Assets
 
-- `sprites/characters/<Character>/` — one subfolder per in-game character identity (folder named after the class/enemy/boss identity, e.g. `Barbarian/`, `Ranger/`, `Wizard/`, `Monk/` for the 4 player classes, `BigDemon/`, `Necromancer/`, `Goblin/` (shared by Goblin Minion/Warrior/Archer), `OrcWarrior/`, `OrcShaman/`, `MaskedOrc/`, `Skeleton/`, `Zombie/`, `Wogol/`, `Imp/`, `Quasit/`, `PumpkinDude/`, `Ogre/`, `Rat/` for enemies/bosses), files inside each folder using a simple, prefix-free `{state}_{n}.png` convention, 1-indexed (e.g. `Barbarian/idle_1.png`, `Barbarian/run_1.png`, `Barbarian/hit_1.png` — no character/class prefix and no `_anim_f` suffix, since the folder itself already identifies the character) — `Enemy.SPRITE_FOLDER` (`scripts/entities/enemy.gd`) maps a pool `"sprite"` id to its folder when the folder name diverges from that id (e.g. `"skelet"` → `Skeleton/`). Necromancer is a minor special case: one shared `anim_1.png`..`anim_4.png` set (its `idle_fmt`/`run_fmt` pool keys both point at the same files) since its idle and run animations reuse identical art. **`Rat/` is the one exception** to the flat per-frame-file convention: per-color subfolders (`gray/`, `brown/`, `white/`), each holding one multi-frame sprite **sheet** per animation state (lowercase `idle.png`/`run.png`/etc., no character/color prefix) instead of individually numbered frame files — sliced into `AtlasTexture` frames at runtime and picked randomly per spawn, see `scripts/entities/CLAUDE.md`'s "Sprite sheets + random color variant". Unused/unreferenced sprite sets (art with no in-game consumer, e.g. the game's unused female character variants) live in `sprites/characters/_unused/` rather than being deleted (kept in the old naming convention — not code-referenced, so left untouched).
+- `sprites/characters/` — split into three top-level category folders, each holding one
+  subfolder per character identity (folder named after the identity itself), files inside each
+  folder using a simple, prefix-free `{state}_{n}.png` convention, 1-indexed (e.g.
+  `classes/Barbarian/idle_1.png`, `classes/Barbarian/run_1.png`, `classes/Barbarian/hit_1.png` — no
+  character/class prefix and no `_anim_f` suffix, since the folder itself already identifies the
+  character):
+  - **`classes/`** — every player class, implemented or not: `Barbarian/`, `Ranger/`, `Wizard/`,
+    `Monk/` (the 4 real, selectable classes — `Player.KNIGHT_PATH`/`character_select.gd`'s/
+    `class_select.gd`'s/`character_summary.gd`'s own `CHAR_PATH` all point here) plus
+    `Bard/`, `Cleric/`, `Druid/`, `Fighter/`, `Rogue/`, `Warlock/` (locked/not-yet-implemented
+    classes with sourced art but no gameplay — see "Locked-class art" below). Paladin/Sorcerer have
+    no folder yet.
+  - **`enemies/`** — every enemy/boss identity: `BigDemon/`, `Necromancer/`, `Goblin/` (shared by
+    Goblin Minion/Warrior/Archer), `OrcWarrior/`, `OrcShaman/`, `MaskedOrc/`, `Skeleton/`, `Zombie/`,
+    `Wogol/`, `Imp/`, `Quasit/`, `PumpkinDude/`, `Ogre/`, `Rat/`, `Spider/` — `Enemy.SPRITES_PATH`
+    (`scripts/entities/enemy.gd`) points here; `Enemy.SPRITE_FOLDER` maps a pool `"sprite"` id to
+    its folder when the folder name diverges from that id (e.g. `"skelet"` → `Skeleton/`). Also
+    holds **`Bear/`** (Wild Heart's Companion R3 animal, not an enemy stat block yet — grouped here
+    as "creature," not a class or NPC, since a real Bear `ENEMY_POOL` entry is the natural future
+    consumer of the same folder; see `Companion`'s sprite lookup in `scripts/entities/CLAUDE.md`).
+    Necromancer is a minor special case: one shared `anim_1.png`..`anim_4.png` set (its
+    `idle_fmt`/`run_fmt` pool keys both point at the same files) since its idle and run animations
+    reuse identical art. **`Rat/` is the one exception** to the flat per-frame-file convention:
+    per-color subfolders (`gray/`, `brown/`, `white/`), each holding one multi-frame sprite
+    **sheet** per animation state (lowercase `idle.png`/`run.png`/etc., no character/color prefix)
+    instead of individually numbered frame files — sliced into `AtlasTexture` frames at runtime and
+    picked randomly per spawn, see `scripts/entities/CLAUDE.md`'s "Sprite sheets + random color
+    variant".
+  - **`npcs/`** — reserved, currently empty (no NPC art has been sourced yet; nothing references
+    this path today). Add NPC identities here the same way once art exists — don't invent a
+    parallel convention.
+  - **`_unused/`** stays a single flat top-level folder (not split into the three categories above)
+    — art with no in-game consumer (the game's unused female character variants, the pre-swap
+    `Ranger/` set — now `_unused/Ranger/` — and everything else already there) lives here untouched,
+    in its own pre-existing naming convention, rather than being deleted or reorganized to match.
+  **Barbarian/Ranger art swap**: both got new `idle`/`run` sets this session (Barbarian: Superdark's
+  "Blacksmith"; Ranger: promoted from the former `to_be_ranger/` staging folder — the pre-swap
+  Ranger set is archived at `_unused/Ranger/`, not deleted). Neither new set shipped a `hit_1.png`
+  (both source packs only had idle/walk frames), so each folder's `hit_1.png` is a **carried-over
+  placeholder** from the character's own previous art (Barbarian's via `git checkout` of the
+  pre-swap file, Ranger's copied straight from `_unused/Ranger/hit_1.png`) that visibly mismatches
+  the new idle/run look. `Player._setup_animations()` (`scripts/entities/player.gd`) no longer
+  loads it for these two classes: `has_real_hit_art` gates on `char_folder in ["Wizard", "Monk"]`
+  — Barbarian/Ranger's `"hit"` animation plays a static `idle_1.png` frame instead (attacking just
+  holds the idle pose, no swing frame) until a real matching hit frame is sourced, at which point
+  flip that class back into `has_real_hit_art` and drop the `hit_1.png` placeholder file.
+  **Locked-class art (sourced, not yet implemented classes)**: `classes/Bard/`, `Cleric/`, `Druid/`,
+  `Fighter/`, `Rogue/`, `Warlock/` each hold a real `idle_1..4.png`/`run_1..4.png` set now (sourced
+  from Superdark's CC0 16×16 packs, same style/size as the base 0x72 tileset), read by
+  `scripts/ui/class_select.gd`'s `_build_locked_card()` to show a dimmed portrait instead of a "?"
+  glyph on that class's still-locked tile. None of these six are wired into
+  `Stats.CharacterClass`/`_setup_animations()`'s match statement or any gameplay path — the art
+  exists, the class mechanics don't, same "Coming Soon" status as before. **Paladin/Sorcerer still
+  have no folder/art** and keep the plain "?" fallback. Three of the six (`Warlock/`, `Cleric/`,
+  `Druid/`) only had a single shared 4-frame "idle+walk" animation in the sourced pack (no separate
+  walk cycle) — their `idle_N.png`/`run_N.png` are therefore byte-identical duplicates of the same 4
+  frames, not two distinct animations; re-export a real run cycle later if that becomes worth doing.
+  None of the six have a `hit_N.png` — harmless today since nothing loads one for a non-implemented
+  class.
 - `sprites/tiles/` — `floor/1.png`, `wall/mid.png` (**not** `wall/top_mid.png`, which sits unused in `_unused/`), `floor_stairs.png`, `hole.png`, `water_rock_dirt.png`, `grass.png`. Same snake_case + `_unused/` convention as `sprites/items/` above; numbered/variant tile sets (`floor/`, `wall/`) grouped into their own subfolder, one-off tiles kept flat.
 - `sprites/objects/` — props (crate, doors/, etc.), same snake_case + `_unused/` convention as `sprites/items/` above.
 - `sprites/weapons/` — `weapon_anime_sword.png`, etc.; unused weapon sprites live flat in `sprites/weapons/_unused/` (same convention as `sprites/items/` above — no tier grouping here since these are distinct weapon models, not material variants of one item).

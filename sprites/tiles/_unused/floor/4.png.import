@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://vcquxhss7j4i"
-path="res://.godot/imported/floor_4.png-f19b9ad343ca3b2f25723228b7bf08a6.ctex"
+path="res://.godot/imported/4.png-47b9739fb738218e12d074d152cd99e2.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/tiles/_unused/floor/4.png"
-dest_files=["res://.godot/imported/floor_4.png-f19b9ad343ca3b2f25723228b7bf08a6.ctex"]
+dest_files=["res://.godot/imported/4.png-47b9739fb738218e12d074d152cd99e2.ctex"]
 
 [params]
 

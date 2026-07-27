@@ -11,7 +11,7 @@ extends CanvasLayer
 
 const PANEL_W: float = 720.0
 const MARGIN: float = 24.0
-const CHAR_PATH := "res://sprites/characters/"
+const CHAR_PATH := "res://sprites/characters/classes/"
 
 const CLASS_SPRITE: Dictionary = {
 	Stats.CharacterClass.BARBARIAN: CHAR_PATH + "Barbarian/idle_1.png",

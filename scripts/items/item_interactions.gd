@@ -14,6 +14,7 @@ const LABELS := {
 	"drink": "Drink",
 	"prime": "Prime",
 	"throw": "Throw",
+	"drop": "Drop",
 }
 
 static func get_available_interactions(item: Item) -> Array[String]:
@@ -29,6 +30,7 @@ static func get_available_interactions(item: Item) -> Array[String]:
 	if item.item_type == Item.Type.TOOL:
 		out.append("prime")
 	out.append("throw")
+	out.append("drop")
 	return out
 
 # True when resolving this interaction arms a follow-up world click (throw target tile, tool

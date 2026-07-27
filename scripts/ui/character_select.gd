@@ -12,7 +12,7 @@ extends CanvasLayer
 const CARD_W: int = 260
 const CARD_H: int = 460
 const CARD_GAP: int = 20
-const CHAR_PATH := "res://sprites/characters/"
+const CHAR_PATH := "res://sprites/characters/classes/"
 
 var _continue_btn: Button = null
 

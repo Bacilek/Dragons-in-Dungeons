@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://qsfx8tpe0euh"
-path="res://.godot/imported/ui_heart_full.png-5f37d40481065711fe98b75d71a18026.ctex"
+path="res://.godot/imported/full.png-ff84ef81a8cc8c9fbb13d654453dad8a.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/objects/_unused/ui_heart/full.png"
-dest_files=["res://.godot/imported/ui_heart_full.png-5f37d40481065711fe98b75d71a18026.ctex"]
+dest_files=["res://.godot/imported/full.png-ff84ef81a8cc8c9fbb13d654453dad8a.ctex"]
 
 [params]
 

@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://02t6nrt8nfvh"
-path="res://.godot/imported/button_blue_up.png-cde23847c550bf6b2a9f941df3dc619d.ctex"
+path="res://.godot/imported/blue_up.png-ed7b49ddbf6b6d7cb67b5cd17d5b2941.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/objects/_unused/button/blue_up.png"
-dest_files=["res://.godot/imported/button_blue_up.png-cde23847c550bf6b2a9f941df3dc619d.ctex"]
+dest_files=["res://.godot/imported/blue_up.png-ed7b49ddbf6b6d7cb67b5cd17d5b2941.ctex"]
 
 [params]
 

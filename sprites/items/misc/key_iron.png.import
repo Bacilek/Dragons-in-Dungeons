@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bhg52i7g3acmg"
-path="res://.godot/imported/KeyIron.png-fa76deaee9ad7c560fbf481457091287.ctex"
+path="res://.godot/imported/key_iron.png-b02f3a6d720fd03344af9a57ef888270.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/misc/key_iron.png"
-dest_files=["res://.godot/imported/KeyIron.png-fa76deaee9ad7c560fbf481457091287.ctex"]
+source_file="res://sprites/items/Misc/key_iron.png"
+dest_files=["res://.godot/imported/key_iron.png-b02f3a6d720fd03344af9a57ef888270.ctex"]
 
 [params]
 

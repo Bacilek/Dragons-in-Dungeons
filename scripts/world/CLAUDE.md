@@ -171,6 +171,29 @@ checks `GameState.player_stats.burning_turns > 0` only (enemies don't carry a bu
 — see `scripts/entities/CLAUDE.md`'s "Status effects" table). Covers e.g. a player who caught fire
 from a Fire Trap walking next to a barrel.
 
+## Spider Web (`_webs: Dictionary[Vector2i, Dictionary]`)
+Value keys: `sprite: Sprite2D, hp: int, ac: int`. A lightweight destructible-terrain dict, same
+shape/convention as `_barrels` above but with no burn-tick timer — a web only ever goes away via
+`Player._attempt_web_escape()`'s successful STR check, never on its own. Never pre-seeded at
+generation time (unlike Barrels/Traps) — placed only by `Enemy._execute_cast_web()` the instant a
+Spider's Web ability lands (DEX save failed), always at the restrained target's OWN tile, matching
+the real spell's "web appears at the target's square" text. See `scripts/entities/CLAUDE.md`'s
+"Spider" section for the full ability/condition mechanism (the Restrained condition itself lives on
+`Stats.web_restrained`/`web_escape_dc`, not here).
+
+```gdscript
+dungeon_floor.spawn_web(pos: Vector2i)     # no-op if pos already has a web
+dungeon_floor.destroy_web(pos: Vector2i)   # frees the sprite, erases the dict entry
+dungeon_floor.has_web_at(pos: Vector2i) -> bool
+```
+
+`ac`/`hp` (10 / 5, matching the real spell's stat block, vulnerable to Fire / immune to Poison and
+Psychic per its text) are currently pure flavor data — this engine has no attack-a-structure system
+yet, so nothing can actually deal damage to a web directly; the STR-check escape route in
+`player.gd` is the only thing that ever removes one today. **No art yet** — `WEB_TEX_PATH` is
+guarded with `ResourceLoader.exists()` exactly like `BARREL_TEX_PATH` above, so `spawn_web()` is
+fully wired mechanically but renders no visible sprite until one is authored.
+
 ## Doors (`_doors: Dictionary[Vector2i, Dictionary]`)
 Value keys: `is_open: bool, locked: bool, sprite: Sprite2D, tex_open, tex_closed, lock_icon?: Sprite2D, burning?: bool, burn_turns?: int` — the last two only present once `ignite_flammable()` has set a door alight, see "Barrels + flammable props" above.
 

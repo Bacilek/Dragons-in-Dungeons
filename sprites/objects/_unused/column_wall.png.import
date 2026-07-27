@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://7uiajsylrxe6"
-path="res://.godot/imported/column_wall.png-dbdab297a0c578243a3e9e6e4de97f25.ctex"
+path="res://.godot/imported/column_wall.png-e1acf17678548b45978d68c8efbaa4b3.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/objects/_unused/column_wall.png"
-dest_files=["res://.godot/imported/column_wall.png-dbdab297a0c578243a3e9e6e4de97f25.ctex"]
+dest_files=["res://.godot/imported/column_wall.png-e1acf17678548b45978d68c8efbaa4b3.ctex"]
 
 [params]
 

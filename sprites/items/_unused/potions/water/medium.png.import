@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cx5xhkduu5dgn"
-path="res://.godot/imported/PotionWaterMedium.png-0eb4af4f957c0e77b0e7a38e8e95ff19.ctex"
+path="res://.godot/imported/medium.png-18c28ea56a812ca086311a854deea449.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/potions/water/medium.png"
-dest_files=["res://.godot/imported/PotionWaterMedium.png-0eb4af4f957c0e77b0e7a38e8e95ff19.ctex"]
+dest_files=["res://.godot/imported/medium.png-18c28ea56a812ca086311a854deea449.ctex"]
 
 [params]
 

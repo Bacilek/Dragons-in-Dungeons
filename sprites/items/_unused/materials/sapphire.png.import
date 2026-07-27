@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cotw303vqb13k"
-path="res://.godot/imported/Sapphire.png-f9424b7fcabcf78a2ad4e027555ff96c.ctex"
+path="res://.godot/imported/sapphire.png-191aa4384442f4a64f8f4e5b57333e64.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/materials/sapphire.png"
-dest_files=["res://.godot/imported/Sapphire.png-f9424b7fcabcf78a2ad4e027555ff96c.ctex"]
+dest_files=["res://.godot/imported/sapphire.png-191aa4384442f4a64f8f4e5b57333e64.ctex"]
 
 [params]
 

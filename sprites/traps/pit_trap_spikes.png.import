@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ce8hhgchvyrlt"
-path="res://.godot/imported/Pit_Trap_Spikes.png-6b7064dca45c974238d3a49d0fb94f97.ctex"
+uid="uid://usc7nqo75qp"
+path="res://.godot/imported/pit_trap_spikes.png-6aa372095d26ffe249ef5f63f56666e4.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/traps/pit_trap_spikes.png"
-dest_files=["res://.godot/imported/Pit_Trap_Spikes.png-6b7064dca45c974238d3a49d0fb94f97.ctex"]
+dest_files=["res://.godot/imported/pit_trap_spikes.png-6aa372095d26ffe249ef5f63f56666e4.ctex"]
 
 [params]
 

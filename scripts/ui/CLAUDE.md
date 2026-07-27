@@ -106,7 +106,17 @@ specifically so this tray can read them without a live `Player` node reference �
 reads GameState" above. `torch` (`GameState.lit_torch_item() != null` — icon is that Torch's own `icon_path`, orange
 fallback tint; tooltip text (`status_tooltips.gd`'s `"torch"` case) is dynamic, showing
 `torch_turns_remaining` and whether the Fire-damage bonus applies (Main Hand only) — see
-`scripts/items/CLAUDE.md`'s "Torch"). No `icons/status/` art exists yet — every entry currently renders as a
+`scripts/items/CLAUDE.md`'s "Torch"), `weapon_mastery` (always-on passive, shown whenever
+`Stats.mastery_cap() > 0` — i.e. a martial class, currently Barbarian/Ranger — AND
+`Stats.known_weapon_masteries.size() > 0`; no dedicated art yet, `res://icons/status/
+weapon_mastery.png` placeholder + bronze fallback tint, real icon still TBD). Hover tooltip
+(`status_tooltips.gd`'s `"weapon_mastery"` case) is dynamic, listing the currently known masteries
+by name — live off `Stats.known_weapon_masteries`, so it always matches whatever the Mastery
+Picker last set. Refreshed via `GameState.known_masteries_changed` (fired by `toggle_mastery()`
+and the premade-hero setup path) in addition to the tray's usual chokepoints, so it updates
+immediately on a new game, a fresh mastery pick, a level-up cap increase, and a long-rest
+reselect — no separate wiring needed since all of those already end in a `toggle_mastery()` call
+or that same signal. No `icons/status/` art exists yet — every entry currently renders as a
 tinted placeholder square until real icons are supplied (`unarmored_defense`/`tactician`/
 `psycho_adv`/`concentration` already reuse existing talent/spell icons, so those render properly
 today). Open questions resolved: hover-only tooltip, shared tooltip panel, grow-panel layout.
@@ -210,7 +220,9 @@ Slot type enforced via `_fits_slot()`: Main Hand (`"melee"`) rejects ranged item
 
 **Versatile grip toggle**: clicking the Main Hand slot without dragging (press+release inside the same slot, detected in `_finish_drag()` when `dest == null` but the release point is still inside `_drag_src_ctrl`) calls `GameState.toggle_versatile_grip()` if the equipped item's `is_versatile == true` (currently Quarterstaff and Spear — see `scripts/items/CLAUDE.md`'s "Versatile weapons"). `_refresh()` gives the Main Hand slot's `StyleBoxFlat` a gold border + thicker width while gripped two-handed (`main_hand.is_versatile and main_hand.is_two_handed`), gray/thin otherwise.
 
-**Thrown weapon durability**: item tooltips (both here and `hud.gd`'s quickbar tooltip) show a right-aligned `Uses: X/Y` line for any `Item.Type.WEAPON` with `is_thrown == true` (currently only the Spear — see `scripts/items/CLAUDE.md`'s "Thrown weapons"), placed just above the existing "Ctrl: inspect" hint.
+**Thrown weapon durability**: item tooltips (both here and `hud.gd`'s quickbar tooltip) show a right-aligned `Uses: X/Y` line for any `Item.Type.WEAPON` with `is_thrown == true` (Spear/Handaxe/Dagger/Torch — see `scripts/items/CLAUDE.md`'s "Thrown weapons"), placed just above the existing "Ctrl: inspect" hint.
+
+**Weapon tooltip body**: both this overlay's `_on_slot_hover()` and `hud.gd`'s `_on_qbar_slot_hover()` build a `Item.Type.WEAPON` tooltip's whole header-through-Properties block via the single shared `WeaponTooltip.build(item)` (`scripts/items/CLAUDE.md`'s "Unified weapon tooltip format") — never duplicate that logic locally again; only description/Uses/Attunement/price/Ctrl-hint are still appended per-caller since those apply to every item type, not just weapons.
 Quickbar: 9 slots (indices 0–8). Bag: 24 slots.
 
 **RMB item-interaction menu / LMB-equip**: see `scripts/items/CLAUDE.md`'s "Item interaction menu
@@ -271,10 +283,14 @@ walks the entire point-buy/background/race/mastery Custom flow (per direct owner
 must NOT bypass those screens the way a premade hero on `character_select.gd` does — only the
 class choice itself is randomized). `LOCKED_CLASSES`
 (Bard/Cleric/Druid/Fighter/Paladin/Rogue/Sorcerer/Warlock — the rest of the 5e class list, not yet
-implemented) render as non-interactive silhouette tiles (`_build_locked_card()`: dark `Panel`,
-gray "?" glyph in place of a sprite, dimmed name, "Coming Soon" subtitle, `MOUSE_FILTER_IGNORE`)
-appended after Random in the same grid — purely cosmetic roster completeness, no selection
-path exists for them. Adding a real class: append to `CLASS_DATA` and remove its name from
+implemented) render as non-interactive tiles (`_build_locked_card()`: dark `Panel`, dimmed name,
+"Coming Soon" subtitle, `MOUSE_FILTER_IGNORE`) appended after Random in the same grid — purely
+cosmetic roster completeness, no selection path exists for them. **Portrait**: `_build_locked_card()`
+checks `res://sprites/characters/classes/<class_name>/idle_1.png` and shows a dimmed
+(`Color(0.55,0.55,0.55,0.85)`) `TextureRect` portrait when it exists (Bard/Cleric/Druid/Fighter/
+Rogue/Warlock all have art now — see root `CLAUDE.md`'s "Locked-class art") instead of the gray "?"
+glyph fallback (still used for Paladin/Sorcerer, which have no folder yet) — purely visual, doesn't
+make the tile interactive. Adding a real class: append to `CLASS_DATA` and remove its name from
 `LOCKED_CLASSES`.
 
 **Info tooltip ("i" badge)**: each real `CLASS_DATA` entry carries an `"info"` dict

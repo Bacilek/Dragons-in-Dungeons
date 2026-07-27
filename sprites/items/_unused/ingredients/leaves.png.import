@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ccw8ydpa8fv5g"
-path="res://.godot/imported/Leaves.png-165dce5d4facf8e8e60a188eecd175b9.ctex"
+path="res://.godot/imported/leaves.png-bd43abe6d81377d99ba9fc9310185c73.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/ingredients/leaves.png"
-dest_files=["res://.godot/imported/Leaves.png-165dce5d4facf8e8e60a188eecd175b9.ctex"]
+dest_files=["res://.godot/imported/leaves.png-bd43abe6d81377d99ba9fc9310185c73.ctex"]
 
 [params]
 

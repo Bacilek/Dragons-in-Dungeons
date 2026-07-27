@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b6nhvex8a2cin"
-path="res://.godot/imported/ShovelGold.png-2f651e6116e1e41541095dd8d10f1a13.ctex"
+path="res://.godot/imported/gold.png-1b807854d35ed4ce8dbac58f59d4c9b6.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/tools/shovel/gold.png"
-dest_files=["res://.godot/imported/ShovelGold.png-2f651e6116e1e41541095dd8d10f1a13.ctex"]
+dest_files=["res://.godot/imported/gold.png-1b807854d35ed4ce8dbac58f59d4c9b6.ctex"]
 
 [params]
 

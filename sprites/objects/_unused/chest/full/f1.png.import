@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://boedpqsovo844"
-path="res://.godot/imported/chest_full_open_anim_f1.png-40e6c60dc1f9e86e5a28443c43e1520b.ctex"
+path="res://.godot/imported/f1.png-83220e0784118e54c71ae56d8d81ea23.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/objects/_unused/chest/full/f1.png"
-dest_files=["res://.godot/imported/chest_full_open_anim_f1.png-40e6c60dc1f9e86e5a28443c43e1520b.ctex"]
+dest_files=["res://.godot/imported/f1.png-83220e0784118e54c71ae56d8d81ea23.ctex"]
 
 [params]
 

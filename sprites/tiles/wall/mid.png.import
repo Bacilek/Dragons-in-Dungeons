@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bfr4d0v3g2ppi"
-path="res://.godot/imported/wall_mid.png-f69648b7180c36f7ea598e3ea2a9fc6a.ctex"
+path="res://.godot/imported/mid.png-f8b576224dc0f2924270f143edc59fda.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/tiles/wall/mid.png"
-dest_files=["res://.godot/imported/wall_mid.png-f69648b7180c36f7ea598e3ea2a9fc6a.ctex"]
+dest_files=["res://.godot/imported/mid.png-f8b576224dc0f2924270f143edc59fda.ctex"]
 
 [params]
 

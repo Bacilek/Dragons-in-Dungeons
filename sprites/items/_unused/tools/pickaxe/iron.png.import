@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://30qmd234c1c5"
-path="res://.godot/imported/Pickaxe.png-c5e6d1e3f9a70ea2f39cfe25ec80dc4f.ctex"
+path="res://.godot/imported/iron.png-72fffffb98ff1dcb7409220ac1c3f1e9.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/tools/pickaxe/iron.png"
-dest_files=["res://.godot/imported/Pickaxe.png-c5e6d1e3f9a70ea2f39cfe25ec80dc4f.ctex"]
+dest_files=["res://.godot/imported/iron.png-72fffffb98ff1dcb7409220ac1c3f1e9.ctex"]
 
 [params]
 

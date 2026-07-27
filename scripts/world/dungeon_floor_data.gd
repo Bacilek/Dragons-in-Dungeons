@@ -105,8 +105,8 @@ const BOSS_POOL: Array = [
 	 "cr": 5, "creature_type": "Fiend", "legendary_resistances": 3},
 	{"boss_id": "necromancer", "display_name": "Necromancer", "sprite": "necromancer", "idle_frames": 4, "run_frames": 4, "floor": 10, "hp": 120, "hp_per_floor": 0, "dmg_min": 10, "dmg_max": 18, "armor": 4, "ac": 13, "exp": 200,
 	 "cr": 8, "creature_type": "Humanoid",
-	 "idle_fmt": "res://sprites/characters/Necromancer/anim_%d.png",
-	 "run_fmt":  "res://sprites/characters/Necromancer/anim_%d.png"},
+	 "idle_fmt": "res://sprites/characters/enemies/Necromancer/anim_%d.png",
+	 "run_fmt":  "res://sprites/characters/enemies/Necromancer/anim_%d.png"},
 ]
 
 const ENEMY_POOL: Array = [
@@ -412,7 +412,7 @@ const ENEMY_POOL: Array = [
 	# all 4, and its own attack range/sight/LOS are measured from whichever occupied tile is
 	# closest. Spawn placement requires the WHOLE 2x2 block to be free — see
 	# DungeonFloor._spawn_enemies()'s footprint guard — so it can never land in a 1-wide corridor.
-	# Its sprite (idle_1-4/run_1-4, already dropped into sprites/characters/Ogre/,
+	# Its sprite (idle_1-4/run_1-4, already dropped into sprites/characters/enemies/Ogre/,
 	# 32x36px vs. e.g. Orc Warrior's 16x23px) is sized to match the 2x2 footprint.
 	# Darkvision: +1 to the default enemy notice/LOS radius (senses.sight_bonus).
 	# Passive Perception = 10 + WIS mod (-2) = 8.

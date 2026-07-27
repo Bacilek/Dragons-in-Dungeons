@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cary6gtcnivjf"
-path="res://.godot/imported/weapon_machete.png-d2831079eaa99f95685d2c8c88ebc4fc.ctex"
+path="res://.godot/imported/weapon_machete.png-ca5280d3301109324c168be1f2a9928b.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/weapons/_unused/weapon_machete.png"
-dest_files=["res://.godot/imported/weapon_machete.png-d2831079eaa99f95685d2c8c88ebc4fc.ctex"]
+dest_files=["res://.godot/imported/weapon_machete.png-ca5280d3301109324c168be1f2a9928b.ctex"]
 
 [params]
 

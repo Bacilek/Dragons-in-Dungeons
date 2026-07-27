@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ilyxx72yketr"
-path="res://.godot/imported/OreRuby.png-d9b450b04046f3a4e31874ee908abb70.ctex"
+path="res://.godot/imported/ruby.png-7efd97f91f6d67bf103bfb63c8598eb8.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/materials/ore/ruby.png"
-dest_files=["res://.godot/imported/OreRuby.png-d9b450b04046f3a4e31874ee908abb70.ctex"]
+dest_files=["res://.godot/imported/ruby.png-7efd97f91f6d67bf103bfb63c8598eb8.ctex"]
 
 [params]
 

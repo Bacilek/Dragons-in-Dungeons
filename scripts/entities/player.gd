@@ -1,7 +1,7 @@
 class_name Player
 extends Entity
 
-const KNIGHT_PATH := "res://sprites/characters/"
+const KNIGHT_PATH := "res://sprites/characters/classes/"
 # Bloodhound R2: how much easier the Hunter's Mark target is to sneak past (Passive Perception
 # effectively lowered by this much, vs the player only) — tunable, see markdowns/ranger_base.md.
 const BLOODHOUND_R2_PP_DEBUFF: int = 2
@@ -609,7 +609,12 @@ func _setup_animations() -> void:
 	var frames := SpriteFrames.new()
 	_add_anim(frames, "idle", base + "idle_%d.png", 4, true,  8.0)
 	_add_anim(frames, "run",  base + "run_%d.png",  4, false, 16.0)
-	_add_anim(frames, "hit",  base + "hit_%d.png",  1, false, 8.0)
+	# Barbarian/Ranger's hit_1.png is a carried-over placeholder from their pre-swap art (the
+	# sourced idle/run packs shipped no matching hit frame) — it visibly mismatches the new
+	# idle/run sprites, so until real art exists these two classes play a static idle frame
+	# instead (no swing animation) rather than flashing the wrong-looking sprite.
+	var has_real_hit_art: bool = char_folder in ["Wizard", "Monk"]
+	_add_anim(frames, "hit",  base + (("hit" if has_real_hit_art else "idle") + "_%d.png"), 1, false, 8.0)
 	$AnimatedSprite2D.sprite_frames = frames
 	$AnimatedSprite2D.offset = Vector2(0, -11)
 	$AnimatedSprite2D.play("idle")

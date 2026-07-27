@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bceuijgw3b7em"
-path="res://.godot/imported/Shield1.png-3a9aa15b230c68991d69a385e2473578.ctex"
+path="res://.godot/imported/wood.png-ec0c1492f3de995d4369680e2a843162.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/shields/wood.png"
-dest_files=["res://.godot/imported/Shield1.png-3a9aa15b230c68991d69a385e2473578.ctex"]
+source_file="res://sprites/items/Shields/wood.png"
+dest_files=["res://.godot/imported/wood.png-ec0c1492f3de995d4369680e2a843162.ctex"]
 
 [params]
 

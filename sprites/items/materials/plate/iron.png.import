@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ddq555eimdvjv"
-path="res://.godot/imported/PlateIron.png-3cd159691b7569b3e1874d21a152e882.ctex"
+path="res://.godot/imported/iron.png-3dae1e1d91d047b0d7e11568e0b25f4f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/materials/plate/iron.png"
-dest_files=["res://.godot/imported/PlateIron.png-3cd159691b7569b3e1874d21a152e882.ctex"]
+source_file="res://sprites/items/Materials/plate/iron.png"
+dest_files=["res://.godot/imported/iron.png-3dae1e1d91d047b0d7e11568e0b25f4f.ctex"]
 
 [params]
 

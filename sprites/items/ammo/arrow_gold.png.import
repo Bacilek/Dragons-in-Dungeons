@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bsy2drhl8pq7p"
-path="res://.godot/imported/ArrowGold.png-830f36e2453e759bcac147ba298693fe.ctex"
+path="res://.godot/imported/arrow_gold.png-d846d780a212aeec0cc64a8324191fad.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/ammo/arrow_gold.png"
-dest_files=["res://.godot/imported/ArrowGold.png-830f36e2453e759bcac147ba298693fe.ctex"]
+dest_files=["res://.godot/imported/arrow_gold.png-d846d780a212aeec0cc64a8324191fad.ctex"]
 
 [params]
 

@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b81ch86jefj4n"
-path="res://.godot/imported/floor_spikes_anim_f2.png-eb454d84ad66c4d248e9c1158cc965ef.ctex"
+path="res://.godot/imported/f2.png-68d7247ac6a3b4456688fdd8dc49a904.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/tiles/_unused/floor_spikes/f2.png"
-dest_files=["res://.godot/imported/floor_spikes_anim_f2.png-eb454d84ad66c4d248e9c1158cc965ef.ctex"]
+dest_files=["res://.godot/imported/f2.png-68d7247ac6a3b4456688fdd8dc49a904.ctex"]
 
 [params]
 

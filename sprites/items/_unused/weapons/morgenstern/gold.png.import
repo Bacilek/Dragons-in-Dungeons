@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://djlbgnn2bpngt"
-path="res://.godot/imported/MorgensternGold.png-dcaf7be01a2aab19bc3a6a58fc679223.ctex"
+path="res://.godot/imported/gold.png-9276b68bcef38a555a960d705ef11cd7.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/weapons/morgenstern/gold.png"
-dest_files=["res://.godot/imported/MorgensternGold.png-dcaf7be01a2aab19bc3a6a58fc679223.ctex"]
+dest_files=["res://.godot/imported/gold.png-9276b68bcef38a555a960d705ef11cd7.ctex"]
 
 [params]
 

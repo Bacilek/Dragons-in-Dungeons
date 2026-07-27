@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://sdlm21x5y2ig"
-path="res://.godot/imported/RingSapphireGold.png-1ef473a687c5c0235c8b0e2d3b8682b2.ctex"
+path="res://.godot/imported/sapphire_gold.png-e23b4266378af2b5c436635f8b7fe3d1.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/accessories/ring/sapphire_gold.png"
-dest_files=["res://.godot/imported/RingSapphireGold.png-1ef473a687c5c0235c8b0e2d3b8682b2.ctex"]
+dest_files=["res://.godot/imported/sapphire_gold.png-e23b4266378af2b5c436635f8b7fe3d1.ctex"]
 
 [params]
 

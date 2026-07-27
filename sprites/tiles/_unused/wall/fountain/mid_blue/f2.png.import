@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://5tgr4o5f4xth"
-path="res://.godot/imported/wall_fountain_mid_blue_anim_f2.png-6422e50d89af23f5004be28fae357311.ctex"
+path="res://.godot/imported/f2.png-4bfd2bf8bbb68229d63a02a33845ed20.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/tiles/_unused/wall/fountain/mid_blue/f2.png"
-dest_files=["res://.godot/imported/wall_fountain_mid_blue_anim_f2.png-6422e50d89af23f5004be28fae357311.ctex"]
+dest_files=["res://.godot/imported/f2.png-4bfd2bf8bbb68229d63a02a33845ed20.ctex"]
 
 [params]
 

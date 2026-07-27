@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://duepedjhykkf1"
-path="res://.godot/imported/weapon_baton_with_spikes.png-8df8fb1dba74bea318e04db6622d4154.ctex"
+path="res://.godot/imported/weapon_baton_with_spikes.png-1c5da83330ad7ba1cd2f7823d4fd7f66.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/weapons/_unused/weapon_baton_with_spikes.png"
-dest_files=["res://.godot/imported/weapon_baton_with_spikes.png-8df8fb1dba74bea318e04db6622d4154.ctex"]
+dest_files=["res://.godot/imported/weapon_baton_with_spikes.png-1c5da83330ad7ba1cd2f7823d4fd7f66.ctex"]
 
 [params]
 

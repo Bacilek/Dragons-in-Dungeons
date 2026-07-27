@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bjegpq8gtungm"
-path="res://.godot/imported/weapon_saw_sword.png-308f056d29369b99ff29712364ad1e19.ctex"
+path="res://.godot/imported/weapon_saw_sword.png-1107a5ec1540585b733784efb2d7e41e.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/weapons/_unused/weapon_saw_sword.png"
-dest_files=["res://.godot/imported/weapon_saw_sword.png-308f056d29369b99ff29712364ad1e19.ctex"]
+dest_files=["res://.godot/imported/weapon_saw_sword.png-1107a5ec1540585b733784efb2d7e41e.ctex"]
 
 [params]
 

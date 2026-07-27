@@ -20,6 +20,7 @@ const TITLES: Dictionary = {
 	"prone": "Prone",
 	"restrained": "Restrained",
 	"incapacitated": "Incapacitated",
+	"weapon_mastery": "Weapon Masteries",
 }
 
 static func get_text(id: String) -> String:
@@ -64,6 +65,9 @@ static func get_text(id: String) -> String:
 			return "Speed 0. Attacks against you have Advantage, your own attacks have Disadvantage, and you have Disadvantage on DEX checks. Attempt a STR check each turn (movement key) to break free."
 		"incapacitated":
 			return "Can't take actions — movement, attacks, and ability/spell use are all blocked. Breaks Concentration immediately."
+		"weapon_mastery":
+			var known: Array[String] = GameState.player_stats.known_weapon_masteries
+			return "Currently known: %s" % ", ".join(known)
 		_:
 			return ""
 

@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://drxdsdk2t01ut"
-path="res://.godot/imported/weapon_cleaver.png-b1250800662f70a5c5b4621383e884fa.ctex"
+path="res://.godot/imported/weapon_cleaver.png-e31bd1ca7b2b7b2fbe78726a5fea289b.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/weapons/_unused/weapon_cleaver.png"
-dest_files=["res://.godot/imported/weapon_cleaver.png-b1250800662f70a5c5b4621383e884fa.ctex"]
+dest_files=["res://.godot/imported/weapon_cleaver.png-e31bd1ca7b2b7b2fbe78726a5fea289b.ctex"]
 
 [params]
 

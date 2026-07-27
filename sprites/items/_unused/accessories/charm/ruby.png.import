@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://qpdfohsfpusx"
-path="res://.godot/imported/CharmRuby.png-da4770503ac150c65d637b41c4211994.ctex"
+path="res://.godot/imported/ruby.png-63fc3d178281cbf8daa516fe0c03577f.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/accessories/charm/ruby.png"
-dest_files=["res://.godot/imported/CharmRuby.png-da4770503ac150c65d637b41c4211994.ctex"]
+dest_files=["res://.godot/imported/ruby.png-63fc3d178281cbf8daa516fe0c03577f.ctex"]
 
 [params]
 

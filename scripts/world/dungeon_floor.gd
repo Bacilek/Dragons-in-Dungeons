@@ -44,6 +44,17 @@ const BARREL_COUNT_MAX: int = 3
 const FLAMMABLE_BURN_TURNS: int = 3
 const FIRE_TINT := Color(1.0, 0.5, 0.25)
 
+# Spider's Web ability (see scripts/entities/CLAUDE.md's "Spider" entry) — a lightweight
+# destructible-terrain dict, same shape/convention as _barrels above but with no burn-tick timer
+# (a web only ever goes away via Player._attempt_web_escape()'s successful STR check, never on its
+# own). Vector2i → {sprite: Sprite2D, hp: int, ac: int}. No dedicated art exists yet
+# (ResourceLoader.exists guards it exactly like BARREL_TEX_PATH above) — mechanically fully wired,
+# visually a no-op until a web sprite is authored.
+var _webs: Dictionary = {}
+const WEB_TEX_PATH: String = DungeonFloorData.OBJECTS_PATH + "web.png"
+const WEB_HP: int = 5
+const WEB_AC: int = 10
+
 var _floor_items: Dictionary = {}
 var _floor_item_sprites: Dictionary = {}
 var _blood_decals: Array[Sprite2D] = []
@@ -1897,6 +1908,39 @@ func _place_barrel(pos: Vector2i, tex: Texture2D) -> void:
 func has_barrel_at(pos: Vector2i) -> bool:
 	return _barrels.has(pos)
 
+# ── Spider Web (see scripts/entities/CLAUDE.md's "Spider" entry) ───────────────
+# Placed at the target's own tile the instant its DEX save vs the Web ability fails
+# (Enemy._execute_cast_web()) — never pre-seeded at generation time like Barrels/Traps. No-op if a
+# web already occupies pos (can't happen in practice: a restrained target is never re-targeted,
+# see the "already web_restrained" skip in Enemy._decide_action()).
+func spawn_web(pos: Vector2i) -> void:
+	if _webs.has(pos):
+		return
+	var tex: Texture2D = null
+	if ResourceLoader.exists(WEB_TEX_PATH):
+		tex = load(WEB_TEX_PATH)
+	var sprite := Sprite2D.new()
+	sprite.texture = tex
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+	sprite.z_index = 1
+	if tex != null:
+		var ts: Vector2 = tex.get_size()
+		sprite.scale = Vector2(float(TILE_SIZE) / ts.x, float(TILE_SIZE) / ts.y)
+	entities.add_child(sprite)
+	_webs[pos] = {"sprite": sprite, "hp": WEB_HP, "ac": WEB_AC}
+
+func destroy_web(pos: Vector2i) -> void:
+	if not _webs.has(pos):
+		return
+	var sp: Sprite2D = _webs[pos]["sprite"]
+	if is_instance_valid(sp):
+		sp.queue_free()
+	_webs.erase(pos)
+
+func has_web_at(pos: Vector2i) -> bool:
+	return _webs.has(pos)
+
 # ── Flammable props (Barrels + Doors) ──────────────────────────────────────────
 
 # Generic ignition entry point — the single chokepoint every fire source calls (Fire Bolt/
@@ -2007,6 +2051,7 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.heal_amount = d["heal"]
 	item.food_value = d.get("food_value", 0)
 	item.gold_value = d.get("gold", 0)
+	item.silver_value = d.get("silver", 0)
 	item.heal_dice_count = d.get("heal_dice", 0)
 	item.heal_dice_sides = d.get("heal_sides", 0)
 	item.damage_type = d.get("dmg_type", "")
@@ -2037,6 +2082,7 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 	item.str_bonus = d.get("str_bonus", 0)
 	item.is_ranged = d.get("is_ranged", false)
 	item.range = d.get("range", 0)
+	item.long_range = d.get("long_range", 0)
 	item.consumes_on_ranged = d.get("consumes", false)
 	item.quantity = d.get("qty", 1)
 	item.taught_spell_id = d.get("taught_spell", "")
@@ -2407,6 +2453,7 @@ func _roll_boss_loot_item() -> Item:
 	item.heal_amount = d["heal"]
 	item.food_value = d.get("food_value", 0)
 	item.gold_value = d.get("gold", 0)
+	item.silver_value = d.get("silver", 0)
 	item.heal_dice_count = d.get("heal_dice", 0)
 	item.heal_dice_sides = d.get("heal_sides", 0)
 	item.str_bonus = d.get("str_bonus", 0)

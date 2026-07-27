@@ -75,10 +75,10 @@ var _popup_cha_label: Label = null
 var _ac_label: Label = null
 
 const CLASS_PORTRAIT: Dictionary = {
-	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/Barbarian/idle_1.png",
-	Stats.CharacterClass.RANGER:    "res://sprites/characters/Ranger/idle_1.png",
-	Stats.CharacterClass.WIZARD:    "res://sprites/characters/Wizard/idle_1.png",
-	Stats.CharacterClass.MONK:      "res://sprites/characters/Monk/idle_1.png",
+	Stats.CharacterClass.BARBARIAN: "res://sprites/characters/classes/Barbarian/idle_1.png",
+	Stats.CharacterClass.RANGER:    "res://sprites/characters/classes/Ranger/idle_1.png",
+	Stats.CharacterClass.WIZARD:    "res://sprites/characters/classes/Wizard/idle_1.png",
+	Stats.CharacterClass.MONK:      "res://sprites/characters/classes/Monk/idle_1.png",
 }
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -162,6 +162,7 @@ func _ready() -> void:
 	TurnManager.player_turn_started.connect(_compass.update_display)
 	TurnManager.player_turn_started.connect(_hunters_mark_indicator.update_display)
 	TurnManager.player_turn_started.connect(_update_status_icons)
+	GameState.known_masteries_changed.connect(_update_status_icons)
 	portrait.pressed.connect(_on_portrait_pressed)
 	portrait.focus_mode      = Control.FOCUS_NONE
 	wait_button.focus_mode   = Control.FOCUS_NONE
@@ -437,6 +438,8 @@ func _update_status_icons() -> void:
 	var _lit_torch: Item = GameState.lit_torch_item()
 	if _lit_torch != null:
 		entries.append({"id": "torch", "icon_path": _lit_torch.icon_path, "fallback_color": Color(1.0, 0.55, 0.1)})
+	if s.mastery_cap() > 0 and s.known_weapon_masteries.size() > 0:
+		entries.append({"id": "weapon_mastery", "icon_path": "res://icons/status/weapon_mastery.png", "fallback_color": Color(0.80, 0.65, 0.20)})
 	_status_tray.refresh(entries)
 
 func _on_status_tray_icon_hovered(id: String) -> void:
@@ -451,7 +454,7 @@ func _on_status_tray_icon_hovered(id: String) -> void:
 	_qbar_tooltip.visible = true
 
 func _on_class_chosen(cls: Stats.CharacterClass) -> void:
-	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/Barbarian/idle_1.png")
+	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/classes/Barbarian/idle_1.png")
 	portrait.texture_normal = load(path)
 	_update_hit_dice_label()
 

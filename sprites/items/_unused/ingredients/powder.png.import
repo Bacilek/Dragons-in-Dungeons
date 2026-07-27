@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dxcaq2akndb3y"
-path="res://.godot/imported/Powder.png-df6524618c0e8af8551e91ff9f757375.ctex"
+path="res://.godot/imported/powder.png-e16d0d1eccfae793de572ed17d63a55d.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/ingredients/powder.png"
-dest_files=["res://.godot/imported/Powder.png-df6524618c0e8af8551e91ff9f757375.ctex"]
+dest_files=["res://.godot/imported/powder.png-e16d0d1eccfae793de572ed17d63a55d.ctex"]
 
 [params]
 

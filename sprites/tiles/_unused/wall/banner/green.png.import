@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bm4k4g0t0jtqb"
-path="res://.godot/imported/wall_banner_green.png-db0f4786af77bae8be4d2914235ee49a.ctex"
+path="res://.godot/imported/green.png-d06a953a14f33a46d54ad28ba69c9ced.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/tiles/_unused/wall/banner/green.png"
-dest_files=["res://.godot/imported/wall_banner_green.png-db0f4786af77bae8be4d2914235ee49a.ctex"]
+dest_files=["res://.godot/imported/green.png-d06a953a14f33a46d54ad28ba69c9ced.ctex"]
 
 [params]
 

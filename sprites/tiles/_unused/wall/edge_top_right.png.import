@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://f63x1s4ammkl"
-path="res://.godot/imported/wall_edge_top_right.png-3db119c42233f3a5f1aa1443ba0bcd72.ctex"
+path="res://.godot/imported/edge_top_right.png-d16137a37826d95e5ec0947f3cf21650.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/tiles/_unused/wall/edge_top_right.png"
-dest_files=["res://.godot/imported/wall_edge_top_right.png-3db119c42233f3a5f1aa1443ba0bcd72.ctex"]
+dest_files=["res://.godot/imported/edge_top_right.png-d16137a37826d95e5ec0947f3cf21650.ctex"]
 
 [params]
 

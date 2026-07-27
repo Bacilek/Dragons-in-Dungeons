@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bq5mx86gxak4u"
-path="res://.godot/imported/chest_mimic_open_anim_f2.png-fcbeff882881cd7a1e16dabd3c3b3df3.ctex"
+path="res://.godot/imported/f2.png-a33b43acd6425218848acaa4d10f628b.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/objects/_unused/chest/mimic/f2.png"
-dest_files=["res://.godot/imported/chest_mimic_open_anim_f2.png-fcbeff882881cd7a1e16dabd3c3b3df3.ctex"]
+dest_files=["res://.godot/imported/f2.png-a33b43acd6425218848acaa4d10f628b.ctex"]
 
 [params]
 

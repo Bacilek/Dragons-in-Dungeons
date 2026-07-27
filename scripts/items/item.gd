@@ -22,11 +22,24 @@ enum ArmorCategory { NONE, LIGHT, MEDIUM, HEAVY }
 # Base shop price in gold (0 = unpriced / not for sale). For Type.GOLD items, the pile size —
 # picked up into GameState.gold, never into the inventory (see PlayerActions.check_pickup()).
 @export var gold_value: int = 0
+# Sub-gold price remainder in silver pieces (0-9; 10 sp = 1 gp, always normalized into gold_value
+# at authoring time — e.g. 25sp is never written as silver_value=25, it's gold_value=2,
+# silver_value=5). Display-only today (WeaponTooltip.format_price()) — GameState.gold is still a
+# flat whole-gold int with no shop/spend path that reads this; it exists purely so a cheap item
+# (Quarterstaff 2sp, Javelin 5sp) can show its real 5e price instead of rounding to "0g" / no price
+# line at all.
+@export var silver_value: int = 0
 @export var str_bonus: int = 0
 @export var floor_min: int = 1
 @export var floor_max: int = 10
 @export var is_ranged: bool = false
 @export var range: int = 0
+# Ranged weapons only: fixed long-range distance (5e's own convention — long range is always 4×
+# normal range for every ranged weapon in this game's roster). Beyond `range` but within
+# `long_range`, a shot still works but rolls with Disadvantage; beyond `long_range` it can't be
+# taken at all. 0 = not set — PlayerRanged.is_ranged_target_in_range() falls back to the player's
+# live FOV radius for any (hypothetical, none exist today) ranged item that doesn't set this.
+@export var long_range: int = 0
 @export var consumes_on_ranged: bool = false
 @export var is_two_handed: bool = false
 @export var is_heavy_armor: bool = false  # ends Barbarian Rage immediately on equip
@@ -89,15 +102,13 @@ enum ArmorCategory { NONE, LIGHT, MEDIUM, HEAVY }
 @export var weapon_category: String = ""
 # Name of the Item this ranged weapon consumes as ammo per shot (e.g. "Arrow"). "" = no named
 # ammo required (falls back to consumes_on_ranged on the weapon's own stack, e.g. the legacy
-# Throwing-Dagger pattern, or infinite ammo). Long range for ranged weapons is NOT a per-item
-# field — it's always the player's live FOV (DungeonFloor.FOV_RADIUS), only the "normal" range
-# (`range` above) differs per weapon; see player.gd._is_ranged_target_in_range().
+# Throwing-Dagger pattern, or infinite ammo).
 @export var ammo_item_name: String = ""
 # Thrown: can be primed via RMB (same UX as quickbar food throw) then thrown at a tile with LMB.
 # Uses the wielder's MELEE attack modifier (STR, or max(STR,DEX) if is_finesse) even though it's
 # thrown — not a separate ranged stat. `range` (above) is the thrown weapon's normal range; beyond
-# that but within the player's live FOV the throw still works but rolls with Disadvantage — same
-# normal/FOV-long-range convention as ranged weapons (see PlayerRanged.is_ranged_target_in_range()).
+# that but within `long_range` the throw still works but rolls with Disadvantage — same
+# normal/long-range convention as ranged weapons (see PlayerRanged.is_ranged_target_in_range()).
 @export var is_thrown: bool = false
 # Thrown weapons only: durability. uses_remaining starts at uses_max and decrements by 1 per throw
 # (0 on a natural-20 critical hit, 2 on a natural-1 critical fumble). Reaching 0 breaks the weapon
@@ -171,11 +182,13 @@ func to_dict() -> Dictionary:
 		"heal_amount": heal_amount,
 		"food_value": food_value,
 		"gold_value": gold_value,
+		"silver_value": silver_value,
 		"str_bonus": str_bonus,
 		"floor_min": floor_min,
 		"floor_max": floor_max,
 		"is_ranged": is_ranged,
 		"range": range,
+		"long_range": long_range,
 		"consumes_on_ranged": consumes_on_ranged,
 		"is_two_handed": is_two_handed,
 		"is_heavy_armor": is_heavy_armor,
@@ -227,11 +240,13 @@ static func from_dict(d: Dictionary) -> Item:
 	it.heal_amount = int(d.get("heal_amount", 0))
 	it.food_value = int(d.get("food_value", 0))
 	it.gold_value = int(d.get("gold_value", 0))
+	it.silver_value = int(d.get("silver_value", 0))
 	it.str_bonus = int(d.get("str_bonus", 0))
 	it.floor_min = int(d.get("floor_min", 1))
 	it.floor_max = int(d.get("floor_max", 10))
 	it.is_ranged = bool(d.get("is_ranged", false))
 	it.range = int(d.get("range", 0))
+	it.long_range = int(d.get("long_range", 0))
 	it.consumes_on_ranged = bool(d.get("consumes_on_ranged", false))
 	it.is_two_handed = bool(d.get("is_two_handed", false))
 	it.is_heavy_armor = bool(d.get("is_heavy_armor", false))

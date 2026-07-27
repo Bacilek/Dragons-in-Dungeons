@@ -29,10 +29,16 @@ func _ready() -> void:
 	is_friendly = true
 	z_index = 1
 
-	# Programmatic sprite — use wizard sprite (green tint) as placeholder
+	# Programmatic sprite — real per-animal art when it exists (currently only Bear,
+	# sprites/characters/enemies/Bear/ — animals live under enemies/, see root CLAUDE.md's Sprite
+	# Assets section), falling back to the wizard sprite (green tint) placeholder for any
+	# animal_name without dedicated art yet (Squirrel, Boar) — no code changes needed once their
+	# own folders show up, this just checks res://sprites/characters/enemies/<animal_name>/idle_1.png.
 	_sprite = Sprite2D.new()
 	var tex: Texture2D = null
-	var candidate_path: String = "res://sprites/characters/Wizard/idle_1.png"
+	var animal_path: String = "res://sprites/characters/enemies/%s/idle_1.png" % animal_name
+	var has_animal_art: bool = ResourceLoader.exists(animal_path)
+	var candidate_path: String = animal_path if has_animal_art else "res://sprites/characters/classes/Wizard/idle_1.png"
 	if ResourceLoader.exists(candidate_path):
 		tex = load(candidate_path) as Texture2D
 	if tex == null:
@@ -42,7 +48,9 @@ func _ready() -> void:
 	_sprite.texture = tex
 	_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_sprite.offset = Vector2(0, -8)
-	_sprite.modulate = Color(0.5, 1.2, 0.5)  # green tint = friendly
+	# Green tint marks the placeholder as "friendly, not yet a real sprite" — real animal art
+	# renders at its own natural colors instead.
+	_sprite.modulate = Color.WHITE if has_animal_art else Color(0.5, 1.2, 0.5)
 	add_child(_sprite)
 
 	var col := CollisionShape2D.new()

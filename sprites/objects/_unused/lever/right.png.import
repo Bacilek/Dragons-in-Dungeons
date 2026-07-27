@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bv0wsdkkypl7y"
-path="res://.godot/imported/lever_right.png-87de99129dad12d2bf55e7fc3848b99f.ctex"
+path="res://.godot/imported/right.png-83789213a4fdea29e8bd95b30d406f4d.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/objects/_unused/lever/right.png"
-dest_files=["res://.godot/imported/lever_right.png-87de99129dad12d2bf55e7fc3848b99f.ctex"]
+dest_files=["res://.godot/imported/right.png-83789213a4fdea29e8bd95b30d406f4d.ctex"]
 
 [params]
 

@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cotwcwn3y4m7"
-path="res://.godot/imported/KeyGold.png-170fc48dca37906d3050e653b77bb042.ctex"
+path="res://.godot/imported/key_gold.png-e343ba3049e83b4017f36afa5ed3d12d.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/misc/key_gold.png"
-dest_files=["res://.godot/imported/KeyGold.png-170fc48dca37906d3050e653b77bb042.ctex"]
+dest_files=["res://.godot/imported/key_gold.png-e343ba3049e83b4017f36afa5ed3d12d.ctex"]
 
 [params]
 

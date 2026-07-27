@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dw2lpvvqfejwq"
-path="res://.godot/imported/weapon_hammer.png-2086d2952ae78213fe16e3e626ffbd32.ctex"
+path="res://.godot/imported/weapon_hammer.png-aec96cab7c7955d0a90985045764a1d2.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/weapons/_unused/weapon_hammer.png"
-dest_files=["res://.godot/imported/weapon_hammer.png-2086d2952ae78213fe16e3e626ffbd32.ctex"]
+dest_files=["res://.godot/imported/weapon_hammer.png-aec96cab7c7955d0a90985045764a1d2.ctex"]
 
 [params]
 

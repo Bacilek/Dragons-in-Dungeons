@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://brhk54uek1ifs"
-path="res://.godot/imported/FlowerPink.png-de116bee731a3c82987e13485ec34aed.ctex"
+path="res://.godot/imported/flower_pink.png-450d3e7725646100ae4cb31522a24f66.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/items/_unused/ingredients/flower_pink.png"
-dest_files=["res://.godot/imported/FlowerPink.png-de116bee731a3c82987e13485ec34aed.ctex"]
+dest_files=["res://.godot/imported/flower_pink.png-450d3e7725646100ae4cb31522a24f66.ctex"]
 
 [params]
 

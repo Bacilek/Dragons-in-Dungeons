@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://vakp06l05hk4"
-path="res://.godot/imported/SaladFlowerPurple.png-4bea112bd5af8a58b4bfe531bf546721.ctex"
+path="res://.godot/imported/salad_flower_purple.png-a847642fa04ad3d750368a68842fb54b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/items/food/salad_flower_purple.png"
-dest_files=["res://.godot/imported/SaladFlowerPurple.png-4bea112bd5af8a58b4bfe531bf546721.ctex"]
+source_file="res://sprites/items/Food/salad_flower_purple.png"
+dest_files=["res://.godot/imported/salad_flower_purple.png-a847642fa04ad3d750368a68842fb54b.ctex"]
 
 [params]
 

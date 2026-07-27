@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c5a8qgeishuph"
-path="res://.godot/imported/weapon_katana.png-5534baef3e19e2e3f215c9043acdb9b5.ctex"
+path="res://.godot/imported/weapon_katana.png-996ac5e7b423c6f04ade2497e776a371.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://sprites/weapons/_unused/weapon_katana.png"
-dest_files=["res://.godot/imported/weapon_katana.png-5534baef3e19e2e3f215c9043acdb9b5.ctex"]
+dest_files=["res://.godot/imported/weapon_katana.png-996ac5e7b423c6f04ade2497e776a371.ctex"]
 
 [params]
 
