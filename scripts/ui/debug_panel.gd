@@ -1,7 +1,7 @@
 extends CanvasLayer
 
 const PANEL_W:    int = 280
-const PANEL_H:    int = 394
+const PANEL_H:    int = 430
 const FLOOR_SW:   int = 234
 const FLOOR_SH:   int = 96
 const ITEMS_SW:   int = 390
@@ -187,9 +187,17 @@ func _build_main_panel() -> void:
 	spells_btn.pressed.connect(_on_spells_pressed)
 	_main_panel.add_child(spells_btn)
 
+	# Enhance — +1/+2/+3... per press to whatever sits in item-quickbar slot 1 (weapon: +N to hit
+	# and damage; Armor/Shield: +N AC). See GameState.enhance_quickbar_slot1_item().
+	var enhance_btn := _make_btn("Enhance Item (Slot 1)", Color(0.90, 0.65, 0.20))
+	enhance_btn.position = Vector2(6.0, 322.0)
+	enhance_btn.size = Vector2(PANEL_W - 12.0, 30.0)
+	enhance_btn.pressed.connect(_on_enhance_pressed)
+	_main_panel.add_child(enhance_btn)
+
 	# Mute — mirrors the HUD's top-right MuteButton (scenes/ui/hud.tscn), just easier to find.
 	_mute_btn = _make_btn("", Color(0.55, 0.75, 1.0))
-	_mute_btn.position = Vector2(6.0, 322.0)
+	_mute_btn.position = Vector2(6.0, 358.0)
 	_mute_btn.size = Vector2(PANEL_W - 12.0, 30.0)
 	_mute_btn.pressed.connect(_on_mute_pressed)
 	_main_panel.add_child(_mute_btn)
@@ -202,7 +210,7 @@ func _build_main_panel() -> void:
 	# Visibility only, never changes the roll/outcome.
 	_stealth_check = CheckBox.new()
 	_stealth_check.text = "All Checks"
-	_stealth_check.position = Vector2(6.0, 358.0)
+	_stealth_check.position = Vector2(6.0, 394.0)
 	_stealth_check.size = Vector2(PANEL_W - 12.0, 30.0)
 	_stealth_check.add_theme_font_size_override("font_size", 12)
 	_stealth_check.add_theme_color_override("font_color", Color(0.65, 0.85, 1.0))
@@ -703,6 +711,9 @@ func _on_spawn_enemy(type_data: Dictionary) -> void:
 func _on_give_gold_pressed() -> void:
 	GameState.add_gold(100)
 	GameState.game_log("[color=gold][DEBUG] +100 gold (now %d).[/color]" % GameState.gold)
+
+func _on_enhance_pressed() -> void:
+	GameState.enhance_quickbar_slot1_item()
 
 func _on_mute_pressed() -> void:
 	AudioManager.toggle_mute()

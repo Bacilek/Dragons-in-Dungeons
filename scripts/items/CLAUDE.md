@@ -35,6 +35,7 @@ TOOL   = 7
 | `silver_value` | int | sub-gold price remainder in silver pieces (0-9; 10 sp = 1 gp, always normalized at authoring time — e.g. a 2sp item is `gold_value=0, silver_value=2`, never `silver_value=20`). Set via the `"silver"` pool key, same read sites as `gold_value`. Display-only — `WeaponTooltip.format_price()` is the only consumer (`scripts/items/CLAUDE.md`'s "Unified weapon tooltip format"), no shop/spend path reads it |
 | `bonus_damage` | int | weapon hit bonus |
 | `bonus_ac` | int | armor AC bonus |
+| `enhancement_level` | int | Debug-only "Enhance" button counter (F3 → Enhance Item on Slot 1) — how many +1 presses have been applied, purely so the display name can show `"+N"`. See "Enhance debug tool" below |
 | `str_bonus` | int | ability score bonus |
 | `is_ranged` | bool | if true → routes to `"ranged"` equipment slot |
 | `range` | int | max range in tiles (ranged weapons only) |
@@ -373,6 +374,27 @@ equipment slot) and its own dedicated row styling in `attunement_picker.gd`. Ite
 Attunement (set during a Long Rest)"` line right after the item's description whenever
 `requires_attunement` is true — the only place a plain unattuned magic item visibly differs from a
 mundane one.
+
+## Enhance debug tool (F3 → "Enhance Item (Slot 1)")
+
+`GameState.enhance_quickbar_slot1_item()` — a debug-only "+1 weapon/armor" concept, deliberately
+**not** a lootable `ITEM_POOL` variant (direct owner request: this button takes an item the player
+already has and enhances it in place, it doesn't author new rare drops). Each press bumps whatever
+sits in item-quickbar slot 1 (index 0): a `Item.Type.WEAPON` gets `bonus_damage += 1` (already the
+single field that flows into BOTH the attack roll and the weapon's own physical damage instance at
+every player attack site — see root `CLAUDE.md`'s combat-roll table and the "damage stacking" rule
+above — and is already named "weapon +N"/"Weapon enhancement" in the hit/dmg hover tooltips, so a
++N weapon's bonus is visible on hover with zero new tooltip plumbing); an `Item.Type.ARMOR` item
+(covers both real body armor AND the Shield, `Item.is_shield`, since Shield is also `Type.ARMOR`)
+gets `bonus_ac += 1` (already folded in generically by `GameState.recalculate_stats()`'s
+per-equipment-slot loop). Any other item type logs "can't be enhanced" and is a no-op. **Only ever
+touches the weapon's own base physical damage instance** — a secondary same-hit damage instance
+with its own distinct type (Torch's Fire, Hunter's Mark's Force, Judgement Day's Radiant) is a
+separate `CombatMath.build_damage_instance()` call that never reads `bonus_damage`, so enhancing a
+weapon never inflates those. `Item.enhancement_level` (int, persisted) is a display-only counter —
+`item_name` is rewritten to `"<base name> +N"` on every press (`GameState._enhancement_base_name()`
+strips a prior `" +N"` suffix first, so repeated presses read `+1` → `+2` → `+3` instead of
+stacking suffixes).
 
 ## Shields
 `Item.is_shield` (currently one item, "Shield" — flat `bonus_ac = 2`, `res://sprites/items/shields/wood.png`) is an `Item.Type.ARMOR` item that `GameState.equip()` routes to `"hand2"` (Off-hand) instead of `"armor"` — the only ARMOR-type item that doesn't land in the Armor slot. Its `bonus_ac` flows into AC through `recalculate_stats()`'s existing generic per-slot loop (see root `CLAUDE.md`'s combat-roll table) — no special-cased AC code needed. Gated by `Stats.proficient_shields` (`scripts/entities/CLAUDE.md`'s "Weapon proficiency flags" — Barbarian/Ranger only) via `GameState.can_equip_shield(item) -> bool`, checked at every entry point that can place a Shield into `"hand2"`: `equip()`, `move_item()` (drag), and `inventory_overlay.gd._fits_slot()` (drag preview gate). Lacking proficiency, or having a two-handed Main Hand weapon equipped, blocks equipping outright (unlike weapon proficiency, which just drops a bonus) — `GameState.log_shield_equip_blocked(item)` logs which reason applied. A two-handed Main Hand weapon (via `equip()`/`move_item()`'s existing `_auto_unequip_offhand()`, or `toggle_versatile_grip()` switching to a two-handed grip) auto-kicks an equipped Shield back to the bag, same as it would any other Off-hand item. **Blocks all spellcasting while equipped** — `PlayerSpellcasting._shield_blocks_casting()` gates the top of `begin_cast()`, `cast_direct()`, and `on_scroll_primed()` (`scripts/entities/player_spellcasting.gd`). **Equip/unequip costs 1 turn** (the one exception to "equip is always a free action" — see `scripts/autoloads/CLAUDE.md`'s Equipment slots section): `equip()`/`unequip()`/`move_item()` each wrap the mutation in `TurnManager.begin_player_action()`/`on_player_action_complete()` when a Shield is entering or leaving `"hand2"` (including being displaced by a different item dragged into an occupied slot) AND `TurnManager.phase == WAITING_FOR_INPUT` (guards against double-costing if ever called outside a normal player turn). **Ends Mage Armor**: equipping a Shield clears `Stats.mage_armor_active` exactly like equipping real Armor does — 5e RAW counts a shield as worn armor for this purpose even though it lives in `"hand2"`, not `"armor"` — checked independently in both `equip()` and `move_item()` (see `scripts/entities/CLAUDE.md`'s "Mage Armor").

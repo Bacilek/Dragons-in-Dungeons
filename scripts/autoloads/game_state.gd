@@ -2098,6 +2098,38 @@ func _remove_from_bags(item: Item) -> void:
 			player_inventory[i] = null
 			return
 
+# Debug-only "Enhance" button (F3 → Enhance Item on Slot 1): +1 per press to whatever sits in
+# item-quickbar slot 1 (index 0). Weapon → bonus_damage (already flows into both the attack roll
+# AND the damage roll at every player attack site, and is already shown by name in the hit/dmg
+# hover tooltips — "weapon +N"/"Weapon enhancement" — so no new tooltip plumbing was needed).
+# Armor/Shield (both Item.Type.ARMOR) → bonus_ac (already folded in generically by
+# recalculate_stats()'s per-equipment-slot loop). Not wired into the floor-loot/debug item-giver
+# pools per direct owner request — this is purely a "take an item I already have and enhance it"
+# tool, not a new lootable item variant.
+func enhance_quickbar_slot1_item() -> void:
+	var item: Item = player_quickbar[0] if player_quickbar.size() > 0 else null
+	if item == null:
+		game_log("[color=gray]No item in quickbar slot 1 to enhance.[/color]")
+		return
+	if item.item_type == Item.Type.WEAPON:
+		item.enhancement_level += 1
+		item.bonus_damage += 1
+	elif item.item_type == Item.Type.ARMOR:
+		item.enhancement_level += 1
+		item.bonus_ac += 1
+	else:
+		game_log("[color=gray]%s can't be enhanced — only weapons, armor, and shields can.[/color]" % item.get_display_name())
+		return
+	item.item_name = "%s +%d" % [_enhancement_base_name(item.item_name), item.enhancement_level]
+	game_log("[color=cyan]%s[/color] is now [b]+%d[/b]!" % [item.item_name, item.enhancement_level])
+	inventory_changed.emit()
+
+func _enhancement_base_name(current_name: String) -> String:
+	var plus_idx: int = current_name.rfind(" +")
+	if plus_idx != -1 and current_name.substr(plus_idx + 2).is_valid_int():
+		return current_name.substr(0, plus_idx)
+	return current_name
+
 func _add_to_bags_silent(item: Item) -> void:
 	for i: int in QUICKBAR_SIZE:
 		if player_quickbar[i] == null:

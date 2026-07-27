@@ -16,6 +16,11 @@ enum ArmorCategory { NONE, LIGHT, MEDIUM, HEAVY }
 @export var icon_path: String = ""
 @export var bonus_damage: int = 0
 @export var bonus_ac: int = 0
+# Debug-panel "Enhance" button only (F3 → Enhance +N Item on Slot 1) — display-only counter of how
+# many +1 steps have been applied so the name can show "+N" without needing to remember a base
+# name string. The actual mechanical bonus is folded straight into bonus_damage (weapon)/bonus_ac
+# (armor/shield) each press, which are already wired into every attack/damage/AC calculation.
+@export var enhancement_level: int = 0
 @export var heal_amount: int = 0
 # FOOD items only: value sacrificed toward GameState.LONG_REST_FOOD_COST at a long rest.
 @export var food_value: int = 0
@@ -179,6 +184,7 @@ func to_dict() -> Dictionary:
 		"icon_path": icon_path,
 		"bonus_damage": bonus_damage,
 		"bonus_ac": bonus_ac,
+		"enhancement_level": enhancement_level,
 		"heal_amount": heal_amount,
 		"food_value": food_value,
 		"gold_value": gold_value,
@@ -237,6 +243,7 @@ static func from_dict(d: Dictionary) -> Item:
 	it.icon_path = String(d.get("icon_path", ""))
 	it.bonus_damage = int(d.get("bonus_damage", 0))
 	it.bonus_ac = int(d.get("bonus_ac", 0))
+	it.enhancement_level = int(d.get("enhancement_level", 0))
 	it.heal_amount = int(d.get("heal_amount", 0))
 	it.food_value = int(d.get("food_value", 0))
 	it.gold_value = int(d.get("gold_value", 0))
