@@ -971,6 +971,8 @@ func _on_qbar_slot_hover(idx: int) -> void:
 			return
 		if item.item_type == Item.Type.WEAPON:
 			text = WeaponTooltip.build(item)
+		elif ArmorTooltip.is_armor_item(item):
+			text = ArmorTooltip.build(item)
 		else:
 			text = "[b]%s[/b]" % item.item_name
 		if not item.description.is_empty():
@@ -991,7 +993,8 @@ func _on_qbar_slot_hover(idx: int) -> void:
 				text += "\n[color=#c9a227][font_size=11][right]%s[/right][/font_size][/color]" % price_str
 	text += "\n[color=#555][font_size=9][left]Ctrl: inspect[/left][/font_size][/color]"
 	_qbar_tooltip_rtl.text = text
-	var is_weapon_tooltip: bool = not _ability_bar_mode and (item_or_ability as Item) != null and (item_or_ability as Item).item_type == Item.Type.WEAPON
+	var hover_item: Item = item_or_ability as Item if not _ability_bar_mode else null
+	var is_weapon_tooltip: bool = hover_item != null and (hover_item.item_type == Item.Type.WEAPON or ArmorTooltip.is_armor_item(hover_item))
 	var qtw: float = 210.0 if is_weapon_tooltip else 172.0
 	_qbar_tooltip_rtl.size = Vector2(qtw, 0)
 	_qbar_tooltip.size = Vector2(qtw + 8.0, 60)

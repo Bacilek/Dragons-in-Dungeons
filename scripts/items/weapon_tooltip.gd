@@ -44,6 +44,7 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"prone": "Prone (condition).\nMelee attacks against you\nhave Advantage, ranged have\nDisadvantage. Can't move\nuntil you stand up (costs\nthe turn).",
 	"restrained": "Restrained (condition).\nSpeed 0. Attacks against\nyou have Advantage, your\nown attacks and DEX checks\nhave Disadvantage.",
 	"incapacitated": "Incapacitated (condition).\nCan't take actions —\nmovement, attacks, ability/\nspell use all blocked.\nBreaks Concentration.",
+	"stealth_disadv": "Stealth Disadvantage.\nWhile worn, adds a\nDisadvantage source to the\nStealth-vs-Passive-\nPerception check that\ndecides whether an enemy\nnotices you.",
 }
 
 # "" = unpriced (both gold_value and silver_value are 0) — caller should skip the price line

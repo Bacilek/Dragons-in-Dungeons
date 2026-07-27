@@ -445,6 +445,34 @@ vs-Passive-Perception check (`Player._resolve_stealth_check()`) alongside the ex
 same as every other roll in this codebase. See `scripts/entities/CLAUDE.md`'s "Stealth & Surprise
 Attacks".
 
+## Unified armor tooltip format
+
+`ArmorTooltip.build(item) -> String` (`scripts/items/armor_tooltip.gd`, `ArmorTooltip extends
+RefCounted`, static-func-only — mirrors `WeaponTooltip`'s shape) is the single shared builder for
+both body armor (`Item.armor_category != NONE`) and the Shield (`Item.is_shield`), used identically
+by `hud.gd`'s quickbar hover and `inventory_overlay.gd`'s bag/equipment hover.
+`ArmorTooltip.is_armor_item(item) -> bool` is the gate both callers check (after the
+`Item.Type.WEAPON` branch) before calling `build()` instead of falling through to the bare-name
+default. Fixed line order, generated purely from `Item` fields:
+
+1. **`[b]Name[/b]`** — always bold, no mastery-style parenthetical (armor has no mastery system).
+2. **Type** — `"Light Armor"`/`"Medium Armor"`/`"Heavy Armor"` (from `armor_category`) or
+   `"Shield"` (`is_shield`).
+3. **`AC: N`** — body armor shows `base_ac`, plus `" + DEX"` (unlimited, Light) or
+   `" + DEX (max +N)"` (`dex_cap > 0`, Medium) or nothing at all (`dex_cap == 0`, Heavy). Shield
+   shows `"AC: +N"` off `bonus_ac` instead (a flat bonus, not a base).
+4. **`Disadvantage on Stealth`** (orange, hoverable `stealth_disadv` glossary keyword,
+   `WeaponTooltip.KEYWORD_GLOSSARY` — glossary is the one shared mechanism, not weapon-specific) —
+   only when `stealth_disadvantage` is true.
+5. **`Don/Doff: N turn(s)`** (gray) — `GameState.ARMOR_CHANGE_TURNS[armor_category]` for body armor
+   (5/10/15 for Light/Medium/Heavy), always `1` for a Shield (its own fixed equip-cost rule, see
+   "Shields" above) — the real-turns-not-free-action cost from "Body armor" above, made visible on
+   hover instead of only discoverable by actually equipping.
+
+Description, Attunement, price, and the "Ctrl: inspect" hint are appended by the caller AFTER this
+block, unchanged from the weapon-tooltip split (`scripts/items/CLAUDE.md`'s "Unified weapon
+tooltip format" above) — those lines are generic across every item type, not armor-specific.
+
 ## Dual-wielding
 When Main Hand (`"melee"`) and Off-hand (`"hand2"`) both hold a Light melee weapon (currently only the **Handaxe** — the first and so far only Light weapon), every melee attack also swings the Off-hand weapon at the same target: a fully independent d20 roll + damage roll, fired regardless of whether the primary Main Hand attack hit or missed (same "always fires" pattern as Cleave). Implemented in `player.gd._try_offhand_attack()` / `_resolve_offhand_attack()`, called from both the hit and miss paths of `_bump_attack()` right after `_try_cleave()`. Gated on `is_str_weapon` (Main Hand must be an equipped melee weapon, not unarmed/ranged) — Monk unarmed and ranged weapons never trigger it.
 
