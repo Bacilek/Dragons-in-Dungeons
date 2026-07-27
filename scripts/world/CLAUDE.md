@@ -178,6 +178,9 @@ burn/state of its own — a solid, impassable landmark tile (blocked in `is_walk
 `_spawn_blacksmith(rect)` (`BlacksmithRoom` content, guaranteed on floor 4 — see
 `scripts/dungeon/CLAUDE.md`). Reuses `crate.png` with a distinct tint (`BLACKSMITH_TINT`) as a
 placeholder — no dedicated anvil/blacksmith art exists yet. `has_blacksmith_at(pos) -> bool`.
+`_load_floor()`'s floor-unload cleanup block frees the sprite and clears `_blacksmiths` alongside
+`_traps`/`_doors`/`_barrels`/`_floor_items` (previously missing — a stale entry would leak the
+sprite and keep blocking that tile as impassable on a freshly regenerated floor).
 
 **Interaction**: bump-to-open (`player.gd._try_move()` intercepts a move into a blacksmith tile
 before the walkability check and calls `PlayerActions.open_blacksmith_panel()` instead of blocking
@@ -256,20 +259,33 @@ dungeon_floor.cook_rotten_meat(trap_pos: Vector2i) -> Item  # erases Fire Trap, 
 ---
 
 ## Spawning
+Order matters — every terrain PROP (trap/door/barrel/floor item/blacksmith) is placed **before**
+`_spawn_enemies()` runs, and `_spawn_enemies()`'s candidate filter excludes every tile already
+claimed by `_traps`/`_doors`/`_barrels`/`_floor_items`/`_blacksmiths` on top of its existing
+start-room/boss-room/player_start/stairs_pos exclusions. This is why the call order below puts
+enemies near the end, not first — the old first-in-line ordering let an enemy claim a tile that a
+door/barrel/blacksmith placed moments later would then coexist on (an enemy standing in a doorway,
+or directly under the Blacksmith prop), since nothing downstream re-checked occupied enemy tiles.
+Props themselves already cross-check each other correctly in their existing relative order
+(barrels/blacksmith both skip `_doors`/`_traps`/`_floor_items` tiles; blacksmith also skips
+`_barrels`) — the only missing direction was enemies vs. everything placed after them, fixed by
+moving `_spawn_enemies()` to run after all of it instead of adding one-off enemy-occupancy checks
+to every prop spawner.
 ```gdscript
-_spawn_enemies()        # pulls from DungeonFloorData.ENEMY_POOL filtered by floor range, then CR-budgeted (see below), registers with TurnManager. A Large-footprint entry (pool "size", scripts/entities/CLAUDE.md's "Multi-tile footprint") requires an entire free WxH block of eligible floor tiles (_footprint_fits()) — guarantees it never spawns in a 1-wide corridor; skips the slot outright if this floor's layout has no room for it
-_spawn_boss()           # floor % 5 == 0 → picks from DungeonFloorData.BOSS_POOL
-_spawn_items()          # 2-3 random items from DungeonFloorData.ITEM_POOL; calls _build_floor_item()
 _spawn_traps()          # places traps by type
+_spawn_doors()          # see "Doors" below
 _spawn_barrels()        # 1-3 flammable obstacle props/floor on plain FLOOR tiles, see "Barrels + flammable props" above; runs right after _spawn_doors()
+_spawn_items()          # 2-3 random items from DungeonFloorData.ITEM_POOL; calls _build_floor_item()
 _spawn_locked_doors()   # locks 1 door/floor that doesn't block spawn→stairs; places 2-3 rewards inside
-_spawn_pending_chasm_items()  # drains GameState.pending_chasm_items (ammo that fell into a chasm on the PREVIOUS floor) onto random walkable tiles of this floor; called after _spawn_locked_doors(), before _setup_fog()
-_spawn_gold_piles()     # 1-2 Type.GOLD piles of randi_range(5,10)+floor gold on random walkable tiles; appended after _spawn_pending_chasm_items() so every pre-existing _pop_rng draw keeps its position
-_spawn_special_rooms()  # dispatcher: matches _data.room_metadata's type_id ("shop"/"treasure"/"garden"/"secret"/"blacksmith") — the ONE place a type_id string is matched. "treasure"/"garden"/"blacksmith" are live (_spawn_treasure()/_spawn_garden_items()/_spawn_blacksmith()); "shop"/"secret" remain stubs (pass) pending sessions 7e/7f. LAST in the spawn order; consumes extra _pop_rng draws only on floors that actually rolled a Treasure/Garden/Blacksmith room
+_spawn_special_rooms()  # dispatcher: matches _data.room_metadata's type_id ("shop"/"treasure"/"garden"/"secret"/"blacksmith") — the ONE place a type_id string is matched. "treasure"/"garden"/"blacksmith" are live (_spawn_treasure()/_spawn_garden_items()/_spawn_blacksmith()); "shop"/"secret" remain stubs (pass) pending sessions 7e/7f
 _spawn_treasure(rect)   # session 7c: 3 guaranteed ITEM_POOL rolls + 1 gold pile (15-25 + 2×floor) inside rect; locks the room's one connecting door (manual lock, no AudioManager at gen time — mirrors _spawn_locked_doors()); floor >= 4 also gets 1-2 non-wall TRAP_POOL traps via the shared _place_floor_trap() helper. No-ops if rect is empty (BSP-fallback floor) or the room has no candidate tiles
 _spawn_garden_items(rect)  # session 7d: 1-2 "Healing Herb" ITEM_POOL entries (looked up by name, fmin/fmax=99 sentinel keeps it out of every generic filter) on the GRASS tiles GardenRoom.paint() already carved. No-ops if rect is empty
 _spawn_blacksmith(rect) # one impassable prop tile (see "Blacksmith prop" below) guaranteed on floor 4's BlacksmithRoom. No-ops if rect is empty
 _spawn_mold()           # guaranteed once-per-run Mold placement (see "Mold" below), called right after _spawn_special_rooms()
+_spawn_enemies()        # pulls from DungeonFloorData.ENEMY_POOL filtered by floor range, then CR-budgeted (see below), registers with TurnManager. Candidate tiles exclude every trap/door/barrel/floor-item/blacksmith tile placed above (see note above) in addition to start-room/boss-room. A Large-footprint entry (pool "size", scripts/entities/CLAUDE.md's "Multi-tile footprint") requires an entire free WxH block of eligible floor tiles (_footprint_fits()) — guarantees it never spawns in a 1-wide corridor; skips the slot outright if this floor's layout has no room for it
+_spawn_boss()            # floor % 5 == 0 → picks from DungeonFloorData.BOSS_POOL; called from inside _spawn_enemies()
+_spawn_pending_chasm_items()  # drains GameState.pending_chasm_items (ammo that fell into a chasm on the PREVIOUS floor) onto random walkable tiles of this floor; runs after _spawn_enemies(), before _setup_fog()
+_spawn_gold_piles()     # 1-2 Type.GOLD piles of randi_range(5,10)+floor gold on random walkable tiles; appended after _spawn_pending_chasm_items() so every pre-existing _pop_rng draw keeps its position
 ```
 **Seeded population (`_pop_rng`)**: all `_spawn_*()` randomness draws from `_pop_rng`, a `RandomNumberGenerator` re-created in `_load_floor()` with seed `run_seed ^ (current_floor * POPULATION_SEED_MIX)` — same run seed + floor always produces the identical population, which Phase-A save reloads depend on. Shuffles use `RngUtil.shuffle(arr, _pop_rng)`. **The spawn call order and the number of draws inside each function are load-bearing for reproducibility** — this is about determinism given fixed inputs, not a frozen draw *count*; every population feature added so far (this one included) legitimately changes how many draws happen. `_pop_rng` is load-time only — runtime rolls (trap triggers, boss loot at kill time, `resolve_push()` damage) use the `Rng` autoload's gameplay stream instead; never mix the two.
 

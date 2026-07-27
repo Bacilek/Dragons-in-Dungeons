@@ -39,6 +39,12 @@ var _enemy_noticed_last_round: bool = false
 var _prev_dir: Vector2i = Vector2i.ZERO  # direction held in the previous WAITING_FOR_INPUT frame
 var _interrupted: bool = false           # set when enemy seen mid-hold; cleared only on key release
 
+# Hold-to-wait: holding Space repeats wait_action() once per real turn for as long as it's held
+# (mirrors the movement-hold-repeat mechanic above), stopping the instant an enemy becomes visible
+# (same interrupt-on-sight rule as movement) until the key is released and re-pressed.
+var _wait_held_active: bool = false      # a wait was already issued for the current WAITING_FOR_INPUT frame
+var _wait_interrupted: bool = false      # enemy seen mid-hold; blocks further repeats until key release
+
 var _throw_item: Item = null
 var _tool_item: Item = null
 var _rest_interrupt_shown: bool = false
@@ -639,9 +645,12 @@ func _process(_delta: float) -> void:
 		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
 		_interrupted = false
+		_wait_held_active = false
+		_wait_interrupted = false
 		return
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 		_last_move_dir = Vector2i.ZERO
+		_wait_held_active = false
 		return
 	var dx: int = 0
 	var dy: int = 0
@@ -654,6 +663,11 @@ func _process(_delta: float) -> void:
 		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
 		_interrupted = false
+		if Input.is_physical_key_pressed(KEY_SPACE):
+			_handle_space_hold()
+		else:
+			_wait_held_active = false
+			_wait_interrupted = false
 		return
 	if _prev_dir == Vector2i.ZERO:
 		_interrupted = false
@@ -679,6 +693,20 @@ func _process(_delta: float) -> void:
 		_tool_item = null
 		GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 	_try_move(dir)
+
+# Holding Space repeats a single wait_action() per real turn for as long as it's held down —
+# called from _process() only while no movement key is held (dir == Vector2i.ZERO).
+func _handle_space_hold() -> void:
+	if _wait_interrupted:
+		# Key still physically held after interrupt — block until finger lifted
+		return
+	if not GameState.noclip and not _fov_this_turn.is_empty():
+		_wait_interrupted = true
+		return
+	if _wait_held_active:
+		return
+	_wait_held_active = true
+	_actions.wait_action()
 
 func _ensure_hover_indicator() -> void:
 	if _hover_indicator != null and is_instance_valid(_hover_indicator):

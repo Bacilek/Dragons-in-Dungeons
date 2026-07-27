@@ -149,9 +149,11 @@ func ranged_attack(enemy: Enemy) -> void:
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
 			GameState.screen_shake.emit(2.5)
-		# A miss against a still-alive enemy leaves the arrow lodged in it — no floor pickup at
-		# all, same as a non-lethal hit (see PlayerAmmo.resolve_ammo_landing()'s doc comment).
-		# Only a killing shot still rolls the existing 50% corpse-drop via _finish_kill().
+		# A miss falls to the ground at the target's tile with the same 50% chance as a killing
+		# shot's corpse-drop (_finish_kill()) — a non-lethal HIT still leaves the arrow lodged
+		# with no pickup at all (see PlayerAmmo.resolve_ammo_landing()'s doc comment).
+		if ammo_item != null and Rng.chance(0.5):
+			player._ammo.resolve_ammo_landing(ammo_item, near_tile)
 		if player._dungeon_floor != null:
 			player._dungeon_floor.update_fog(player.grid_pos)
 		player._handle_post_attack_turn()

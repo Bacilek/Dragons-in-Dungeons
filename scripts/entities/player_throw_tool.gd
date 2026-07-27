@@ -177,11 +177,12 @@ func try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 #
 # Landing (mirrors the ranged-ammo landing model, scripts/items/CLAUDE.md's "Ammo items", but
 # with a thrown weapon's own rules): no target tile → lands on the ground at the thrown tile, no
-# use lost. A miss OR a non-lethal hit against an enemy → embeds in the enemy (Enemy.embedded_items)
-# instead of landing anywhere (-1 use, -2 on a nat-1 fumble, 0 on a nat-20 crit) — dropped later at
-# 100% chance whenever that enemy eventually dies, from ANY cause, via Enemy.die()'s override. If
-# durability hits 0 on this throw the weapon shatters instead of landing/embedding (see
-# _consume_throw_use()).
+# use lost. A MISS against an enemy → falls to the ground at the enemy's tile (100% chance, does
+# NOT embed) — same durability loss as before (-1 use, -2 on a nat-1 fumble). A non-lethal HIT
+# still embeds in the enemy (Enemy.embedded_items) instead of landing anywhere (-1 use, 0 on a
+# nat-20 crit) — dropped later at 100% chance whenever that enemy eventually dies, from ANY cause,
+# via Enemy.die()'s override. If durability hits 0 on this throw the weapon shatters instead of
+# landing/embedding (see _consume_throw_use()).
 func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	# Throwing from a stack (quantity > 1, units may carry different durability — see
 	# GameState.add_item()) only ever throws a single unit: split the most-damaged one off
@@ -290,7 +291,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 			GameState.screen_shake.emit(2.5)
 		if not _consume_throw_use(weapon, 2 if is_nat_one else 1):
 			GameState.remove_item(weapon)
-			enemy.embedded_items.append(weapon)
+			player._dungeon_floor.place_item_on_floor(pos, weapon)
 		player._dungeon_floor.update_fog(player.grid_pos)
 		player._handle_post_attack_turn()
 		return

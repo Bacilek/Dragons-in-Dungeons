@@ -50,10 +50,11 @@ static func generate_random_weapon() -> Item:
 		item.range = Rng.range_i(3, 5)
 		item.long_range = item.range * 4
 
-	# 3. Properties (exactly 3, no replacement, from a 4-item pool)
+	# 3. Properties (1-2, no replacement, from a 4-item pool)
+	var prop_count: int = Rng.range_i(1, 2)
 	var prop_pool: Array[String] = PROPERTY_POOL.duplicate()
 	Rng.shuffle(prop_pool)
-	var properties: Array[String] = prop_pool.slice(0, 3)
+	var properties: Array[String] = prop_pool.slice(0, prop_count)
 
 	if "Finesse" in properties:
 		item.is_finesse = true

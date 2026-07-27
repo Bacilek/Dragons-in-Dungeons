@@ -211,6 +211,12 @@ func _load_floor() -> void:
 			bsp.queue_free()
 	_barrels.clear()
 
+	for pos: Vector2i in _blacksmiths:
+		var ksp: Sprite2D = _blacksmiths[pos].get("sprite")
+		if ksp != null and is_instance_valid(ksp):
+			ksp.queue_free()
+	_blacksmiths.clear()
+
 	for pos: Vector2i in _floor_item_sprites:
 		var sn: Sprite2D = _floor_item_sprites[pos]
 		if is_instance_valid(sn):
@@ -274,16 +280,16 @@ func _load_floor() -> void:
 	# reproducibility — reordering or inserting a draw changes everything downstream.
 	_pop_rng = RandomNumberGenerator.new()
 	_pop_rng.seed = GameState.run_seed ^ (GameState.current_floor * POPULATION_SEED_MIX)
-	_spawn_enemies()
 	_spawn_traps()
 	_spawn_doors()
 	_spawn_barrels()
 	_spawn_items()
 	_spawn_locked_doors()
-	_spawn_pending_chasm_items()
-	_spawn_gold_piles()
 	_spawn_special_rooms()
 	_spawn_mold()
+	_spawn_enemies()
+	_spawn_pending_chasm_items()
+	_spawn_gold_piles()
 	_restore_companion_from_save()
 	_setup_fog()
 	_see_all_active = false
@@ -1050,6 +1056,8 @@ func _spawn_enemies() -> void:
 						continue  # keep starting room safe
 					if is_boss_floor and _data.boss_room.has_point(pos):
 						continue  # reserve boss room for the boss
+					if _traps.has(pos) or _doors.has(pos) or _barrels.has(pos) or _floor_items.has(pos) or _blacksmiths.has(pos):
+						continue  # tile already claimed by a trap/door/barrel/item/prop
 					candidates.append(pos)
 	RngUtil.shuffle(candidates, _pop_rng)
 

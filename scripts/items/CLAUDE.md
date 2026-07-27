@@ -639,8 +639,9 @@ Generation order (each step's output can gate a later one):
    ammo at all. `Martial` and `Ammo` are independent — a ranged weapon can absolutely also roll
    Martial (both requirements can be drawn together, e.g. mirroring the Heavy Crossbow's real
    Martial+Ammo shape).
-3. **Properties (exactly 3, no replacement)** — pool `["Finesse","Reach","Thrown","Versatile"]`
-   (4 items — always excludes exactly 1). Deliberately excludes `Light` and `Two-handed` (no
+3. **Properties (1-2, no replacement)** — pool `["Finesse","Reach","Thrown","Versatile"]`
+   (4 items — `Rng.range_i(1,2)` picks how many, so a crafted weapon usually has 2-3 excluded, not
+   always just 1). Deliberately excludes `Light` and `Two-handed` (no
    dual-wield/off-hand complexity for a crafted weapon). `Finesse` → `is_finesse = true` (this is
    the whole "primary stat" story — `max(STR,DEX)` via the existing `CombatMath.
    finesse_modifier()` if rolled, else pure STR/DEX per whatever `is_ranged` already decided; no
