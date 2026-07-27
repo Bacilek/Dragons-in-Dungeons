@@ -487,9 +487,20 @@ call (moved or waited, real or reverted) purely from the CURRENT tile at `grid_p
 Trailblazer R1 / Natural Sleeper Panther-Salmon bypass checks `_try_move()` already runs — so it
 reads as "am I standing in Mud/Water right now", never as a decaying counter, and can't flicker.
 `hud.gd._update_status_icons()` shows it as its own `"difficult_terrain"` status-tray entry
-(`StatusTooltips`'s `"Difficult Terrain"` title/description) alongside — not instead of — the
-existing `slowed_turns > 0` `"slowed"` entry, so a genuine Bear Trap debuff picked up while also
-standing in Mud/Water still shows both icons distinctly.
+(`StatusTooltips`'s `"Difficult Terrain"` title/description). **`"slowed"` is suppressed whenever
+`player_on_difficult_terrain` is already true** (`s.slowed_turns > 0 and not GameState.
+player_on_difficult_terrain`) — the two entries render with the identical icon/color, so showing
+both is an indistinguishable duplicate rather than "two distinct debuffs". This also fixed a real
+flicker: re-stepping into Mud/Water while already standing in it re-applies `slowed_turns` (real
+gameplay effect, drives the 2-turn move cost) via `GameState.apply_player_status()`, which used to
+unconditionally emit `player_status_changed` — for one rendered frame both entries were active at
+once, at the exact moment `player_on_difficult_terrain` was already `true` from the previous tile.
+`apply_player_status()` itself was also tightened to only emit when a counter-based status'
+value actually increases (harmless general cleanup, not what fixed the visible bug — the tray
+suppression above is what does). A genuine Bear Trap debuff picked up while also standing in
+Mud/Water now shows only the `difficult_terrain` icon while both are active (not two overlapping
+copies of the same-looking icon) — once the player leaves the terrain, `slowed_turns` alone
+(still ticking down from the trap) takes over showing the `"slowed"` icon.
 
 ## Conditions (Poisoned / Prone / Restrained / Incapacitated)
 Four real 5e-style conditions, bidirectional (player via `Stats`, enemy via `Enemy`'s own fields —
@@ -1453,37 +1464,36 @@ codebase only has a Wizard caster, so `class_list` stays `["WIZARD"]` like every
   `shape_size: 2`, range 12 tiles, **Concentration**, up to 100 turns): the fourth concentration
   spell, `"fog_cloud"`. Unlike Blade Ward/Witch Bolt (a self-buff / a live Enemy reference), the
   cloud is a bare **position + radius** — `GameState.fog_cloud_pos: Vector2i`/
-  `fog_cloud_radius: int` (`(-1,-1)` = none active), since it needs to Blind whoever is standing
-  in it, player or enemy, not a single caster/target pair. `SpellEffects._resolve_fog_cloud()`
-  (dispatched from `cast_leveled_at_tile()`, intercepting before the generic `shape == "sphere"`
-  damage path so it never routes into `_resolve_sphere_aoe()`) sets `stats.concentration_spell_id
-  = "fog_cloud"`, `stats.fog_cloud_turns = 100`, `GameState.fog_cloud_pos = center`,
-  `fog_cloud_radius = spell.shape_size` — no damage, no save roll. `GameState.
-  is_in_fog_cloud(pos) -> bool` (Euclidean disc, same distance check `_resolve_sphere_aoe()`/
-  `show_aoe_preview()` use) is the single query every ADV/DISADV chokepoint reads:
-  - **Attacks against a Blinded creature have Advantage**: `PlayerVfx.has_advantage(enemy)`
-    (`scripts/entities/player_vfx.gd`) gained an `is_in_fog_cloud(enemy.grid_pos)` branch — since
-    this one function already backs ADV at all 6 player attack-roll sites (melee/cleave/
-    offhand/OA/ranged/spell cantrip — see "Combat rolls" above), this single edit covers "player
-    attacks a blinded enemy" everywhere for free. Symmetrically, `Enemy._resolve_attack_roll()`
-    gained `extra_adv`/`extra_disadv` params (defaults `false`, so every pre-existing call site is
-    unaffected); `_attack_player()`/`_attack_companion()` pass `is_in_fog_cloud(target.grid_pos)`
-    as `extra_adv` — an enemy attacking a Blinded player/companion also gets Advantage.
-  - **A Blinded creature's own attacks have Disadvantage**: the player's own
-    `is_in_fog_cloud(grid_pos)` check was added inline to the `disadv_count` block at all 8 player
-    attack-roll sites that build one (`player.gd`'s `_bump_attack()`/`_resolve_cleave_attack()`/
-    `_resolve_offhand_attack()`/`resolve_opportunity_attack()`, `PlayerRanged.ranged_attack()`,
-    both `spell_effects.gd` attack-roll resolvers — cantrip `cast_spell()` and leveled
-    `_resolve_spell_attack_bolt()`, and `PlayerThrowTool._throw_weapon()`) — no shared
-    disadvantage chokepoint exists the way `has_advantage()` covers ADV, so each site got its own
-    one-line addition. Symmetrically, `Enemy._resolve_attack_roll()`'s `extra_disadv` param is fed
-    `is_in_fog_cloud(grid_pos)` (the ATTACKING enemy's own position) from both `_attack_player()`
-    and `_attack_companion()` — a Blinded enemy's own attacks also suffer Disadvantage.
+  `fog_cloud_radius: int` (`(-1,-1)` = none active), since it needs to make whoever is standing in
+  it Heavily Obscured, player or enemy, not a single caster/target pair. `SpellEffects.
+  _resolve_fog_cloud()` (dispatched from `cast_leveled_at_tile()`, intercepting before the generic
+  `shape == "sphere"` damage path so it never routes into `_resolve_sphere_aoe()`) sets `stats.
+  concentration_spell_id = "fog_cloud"`, `stats.fog_cloud_turns = 100`, `GameState.fog_cloud_pos =
+  center`, `fog_cloud_radius = spell.shape_size` — no damage, no save roll.
+
+  **Heavily Obscured / Blinded** (generic conditions, not Fog-Cloud-specific — see "Conditions"
+  above): `GameState.is_heavily_obscured(pos) -> bool` (today just `is_in_fog_cloud(pos)` — a
+  future obscurement source would extend this one function instead of every caller checking
+  multiple zones by hand) grants `GameState.is_blinded(pos) -> bool` to whoever stands there,
+  purely positional/symmetric (player or enemy). Three effects, all keyed off `is_blinded()`:
+  - **Attacks against a Blinded creature have Advantage / its own attacks have Disadvantage**:
+    `PlayerVfx.has_advantage(enemy)` (ADV, backs all player attack-roll sites for free) and a
+    `disadv_count`/`has_disadvantage_condition()`-style inline check at every player attack-roll
+    site (DISADV) cover the player's half; `Enemy._resolve_attack_roll()`'s `extra_adv`/
+    `extra_disadv` params, fed `is_blinded(target.grid_pos)`/`is_blinded(grid_pos)` from
+    `_attack_player()`/`_attack_companion()`, cover the enemy's half symmetrically.
+  - **Vision collapses to 1 tile while Blinded, ignoring every bonus including darkvision**:
+    `GameState.effective_fov_radius(pos) -> int` is the single chokepoint both `DungeonFloor.
+    update_fog()` (real fog-of-war) and `get_visible_enemies()` (targeting/Cleave-candidate
+    search) call instead of computing the `FOV_RADIUS + fov_radius_bonus + darkvision_bonus + ...`
+    formula themselves — returns a flat `1` whenever `is_blinded(pos)`, so a player standing in
+    Fog Cloud genuinely can't see or target past an adjacent tile, and the fog-of-war itself
+    shrinks to match (not just a combat-roll penalty with the map still fully visible).
   - **NOT implemented** (documented simplification, matching Mind Sliver's "no separate turn-
     expiry timer" precedent): "automatically fails checks that require sight" — there's no single
     concrete mechanic in this codebase that maps onto "a sight check" the way ADV/DISADV on attack
-    rolls does, so this clause of the Blinded condition is a no-op. "Ends early if a strong wind
-    disperses it" — no such spell/ability exists yet to trigger it.
+    rolls does, so this clause is still a no-op. "Ends early if a strong wind disperses it" — no
+    such spell/ability exists yet to trigger it.
   Duration ticks in `_on_turn_started()` like Blade Ward, but ALSO calls `GameState.
   clear_fog_cloud()` at 0 (unlike Blade Ward/Witch Bolt, which have nothing beyond their own Stats
   field to clear). **Explicitly cleared on floor descent** (`GameState.advance_floor()`) — unlike
@@ -1491,11 +1501,13 @@ codebase only has a Wizard caster, so `class_list` stays `["WIZARD"]` like every
   invalidate themselves when the floor reloads, a bare position has nothing that would otherwise
   stop it from silently blinding whoever stands at those same coordinates on the next floor.
   **Visual**: `DungeonFloor._update_fog_cloud_visual()` (`scripts/world/dungeon_floor.gd`, called
-  every `update_fog()`) tints the cloud's tiles with a persistent gray overlay — pooled `Sprite2D`s
-  + shared 1×1 white texture, same convention as the Light glow (see `scripts/world/CLAUDE.md`).
-  Not LOS-filtered (a raw disc, matching `is_in_fog_cloud()`'s own check exactly) and does NOT
-  affect FOV/visibility (no shadowcast union into `_visible_tiles`, unlike Light) — it's a status
-  zone, not a light source.
+  every `update_fog()`) tints the cloud's tiles with a persistent **dark** overlay (`Color(0.10,
+  0.10, 0.13, 0.80)` — deliberately dark, not a light haze, to read as genuinely Heavily Obscured
+  rather than cosmetic mist) — pooled `Sprite2D`s + shared 1×1 white texture, same convention as
+  the Light glow (see `scripts/world/CLAUDE.md`). Not LOS-filtered (a raw disc, matching
+  `is_in_fog_cloud()`'s own check exactly) and does NOT itself union into `_visible_tiles` the way
+  Light does — the FOV-shrink effect above happens entirely through `effective_fov_radius()`
+  capping the shadowcast radius, not through a separate visibility union.
 
 ## Monk class
 Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: STR + DEX. Weapon proficiency: intended to be simple weapons + martial weapons with the light property, but `Stats.proficient_simple_weapons`/`proficient_martial_weapons` are not yet set in `apply_class_defaults()` for Monk (TODO — currently only wired up for Barbarian). No armor training (any armor → DISADV on STR/DEX checks/saves + DISADV on attacks; TODO: enforce). Starting abilities (slot 0–1 of ability bar):

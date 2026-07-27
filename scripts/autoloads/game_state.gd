@@ -1101,6 +1101,35 @@ func clear_fog_cloud() -> void:
 	fog_cloud_pos = Vector2i(-1, -1)
 	fog_cloud_radius = 0
 
+## Heavily Obscured (5e terrain concept — distinct from the Blinded CONDITION it grants below):
+## Fog Cloud is the only source of Heavily Obscured terrain today; a future source (e.g. a
+## Darkness spell) would extend this function rather than every call site checking multiple
+## zones by hand.
+func is_heavily_obscured(pos: Vector2i) -> bool:
+	return is_in_fog_cloud(pos)
+
+## Blinded condition: standing in a Heavily Obscured tile grants it to WHOEVER is standing there —
+## player or enemy, symmetric, since it's purely positional. Effects (5e text): can't see (auto-
+## fails sight-based checks — not modeled, this engine has none), attack rolls against you have
+## ADV, your own attack rolls have DISADV (both wired at every attack-roll call site — see
+## scripts/entities/CLAUDE.md's "Conditions" section), and see effective_fov_radius() below for
+## the "can only see 1 tile" effect. This is the canonical name every ADV/DISADV combat call site
+## should use going forward — `is_in_fog_cloud()` above stays as the lower-level positional check
+## (still used by the spell's own visual/duration plumbing, where "fog cloud specifically" is the
+## more precise concept).
+func is_blinded(pos: Vector2i) -> bool:
+	return is_heavily_obscured(pos)
+
+## Single source of truth for the player's own FOV radius — used by both DungeonFloor.update_fog()
+## (actual fog-of-war) and DungeonFloor.get_visible_enemies() (targeting/Cleave-candidate search),
+## so the two can never drift out of sync. Blinded (5e RAW: "can't see") collapses vision to a flat
+## 1-tile radius regardless of every other bonus, INCLUDING darkvision — a blinded creature is
+## blind, darkvision doesn't help.
+func effective_fov_radius(pos: Vector2i) -> int:
+	if is_blinded(pos):
+		return 1
+	return DungeonFloor.FOV_RADIUS + fov_radius_bonus + player_stats.darkvision_bonus + (1 if has_lit_torch_equipped() else 0)
+
 ## Grants a subclass's free, rank-independent Tier 2 activation ability (Frenzy, Limit Break,
 ## Animal Form, Zealot Strike) directly at subclass selection — NOT gated by any talent rank.
 ## No-op if already present (idempotent — safe to call from every _setup_X_tier2_talents()).
@@ -2293,25 +2322,64 @@ func end_concentration(reason_log: String = "") -> void:
 
 
 func apply_player_status(type: String, turns: int) -> bool:
+	# Only emit when a counter-based status' value actually increases — re-applying (e.g. every
+	# Mud/Water step re-calling "slowed" with maxi()) is otherwise a same-value no-op that still
+	# unconditionally emitted, which could flash a duplicate identical-looking status-tray icon
+	# for one frame when player_on_difficult_terrain (recomputed separately, see its own comment)
+	# was already true from the previous tile — see scripts/entities/CLAUDE.md's status-tray note.
+	var _changed: bool = true
 	match type:
-		"poison":   player_stats.poison_turns  = maxi(player_stats.poison_turns, turns)
-		"burning":  player_stats.burning_turns = maxi(player_stats.burning_turns, turns)
-		"bleeding": player_stats.bleeding_turns = maxi(player_stats.bleeding_turns, turns)
-		"slowed":   player_stats.slowed_turns  = maxi(player_stats.slowed_turns, turns)
+		"poison":
+			_changed = turns > player_stats.poison_turns
+			player_stats.poison_turns = maxi(player_stats.poison_turns, turns)
+		"burning":
+			_changed = turns > player_stats.burning_turns
+			player_stats.burning_turns = maxi(player_stats.burning_turns, turns)
+		"bleeding":
+			_changed = turns > player_stats.bleeding_turns
+			player_stats.bleeding_turns = maxi(player_stats.bleeding_turns, turns)
+		"slowed":
+			_changed = turns > player_stats.slowed_turns
+			player_stats.slowed_turns = maxi(player_stats.slowed_turns, turns)
 		# Poisoned CONDITION (DISADV on attacks/checks — Stats.has_disadvantage_condition()) —
 		# deliberately separate from "poison" above (the pre-existing damage-over-time counter).
-		"poisoned_condition": player_stats.poisoned_condition_turns = maxi(player_stats.poisoned_condition_turns, turns)
+		"poisoned_condition":
+			_changed = turns > player_stats.poisoned_condition_turns
+			player_stats.poisoned_condition_turns = maxi(player_stats.poisoned_condition_turns, turns)
 		# Prone — not turn-counted (see Stats.prone's own comment); "turns" is ignored, stays
 		# Prone until Player._try_move()'s stand-up redirect fires.
-		"prone": player_stats.prone = true
+		"prone":
+			_changed = not player_stats.prone
+			player_stats.prone = true
 		# Incapacitated — also breaks Concentration immediately (5e: "can't concentrate on
 		# anything" — same chokepoint the CON-check break path already uses).
 		"incapacitated":
+			_changed = turns > player_stats.incapacitated_turns
 			player_stats.incapacitated_turns = maxi(player_stats.incapacitated_turns, turns)
 			if player_stats.concentration_spell_id != "":
 				end_concentration("You lose concentration!")
-	player_status_changed.emit()
+	if _changed:
+		player_status_changed.emit()
 	return true
+
+# Frightened — a dedicated setter rather than a apply_player_status() match case, since it needs
+# to store a live Enemy SOURCE reference alongside the turn count (5e: DISADV on checks/attacks
+# only while that specific source is in sight, and "can't approach" only applies relative to it) —
+# see Stats.frightened_source/frightened_turns' own comment. Re-applying while already frightened
+# by the SAME source just refreshes the duration (maxi); a DIFFERENT source overwrites outright
+# (5e doesn't stack multiple Frightened sources — the newer fear replaces the old).
+func apply_player_frightened(source: Enemy, turns: int) -> void:
+	if player_stats.frightened_source == source:
+		player_stats.frightened_turns = maxi(player_stats.frightened_turns, turns)
+	else:
+		player_stats.frightened_source = source
+		player_stats.frightened_turns = turns
+	player_status_changed.emit()
+
+func clear_player_frightened() -> void:
+	player_stats.frightened_source = null
+	player_stats.frightened_turns = 0
+	player_status_changed.emit()
 
 
 func _apply_monk_level_features(level: int) -> void:

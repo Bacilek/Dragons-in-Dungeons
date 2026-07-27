@@ -409,7 +409,13 @@ func _update_status_icons() -> void:
 		entries.append({"id": "burning", "icon_path": "res://icons/status/burning.png", "fallback_color": Color(1.00, 0.45, 0.10)})
 	if s.bleeding_turns > 0:
 		entries.append({"id": "bleeding", "icon_path": "res://icons/status/bleeding.png", "fallback_color": Color(0.80, 0.0, 0.0)})
-	if s.slowed_turns > 0:
+	# Skip "slowed" whenever difficult_terrain already covers it — they render with the identical
+	# icon/color, so showing both is an indistinguishable duplicate, not two "distinct" debuffs.
+	# Re-stepping into Mud/Water while already standing in it re-applies slowed_turns (real gameplay
+	# effect, drives the 2-turn move cost) at a moment player_on_difficult_terrain is already true,
+	# which used to flash a second identical icon for a frame — see scripts/entities/CLAUDE.md's
+	# status-tray note.
+	if s.slowed_turns > 0 and not GameState.player_on_difficult_terrain:
 		entries.append({"id": "slowed", "icon_path": "res://icons/status/slowed.png", "fallback_color": Color(0.55, 0.35, 0.10)})
 	if s.poisoned_condition_turns > 0:
 		entries.append({"id": "poisoned_condition", "icon_path": "res://icons/status/poisoned_condition.png", "fallback_color": Color(0.10, 0.55, 0.20)})

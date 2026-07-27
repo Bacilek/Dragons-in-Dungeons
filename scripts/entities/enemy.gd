@@ -1693,7 +1693,7 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	# Twin Fang R3: the Marked target can never gain Advantage on attacks against the Ranger.
 	var twin_fang_blocks_adv: bool = GameState.get_talent_rank("twin_fang") >= 3 \
 		and GameState.player_stats.hunters_mark_target == self
-	var fog_adv: bool = GameState.is_in_fog_cloud(_player.grid_pos) and not twin_fang_blocks_adv
+	var fog_adv: bool = GameState.is_blinded(_player.grid_pos) and not twin_fang_blocks_adv
 	# Pack Tactics (Giant Rat): Advantage whenever another awake ally is within 5 ft (1 tile) of
 	# the target. SLEEPING is the closest analogue this engine has to 5e's "incapacitated" — no
 	# other enemy status here (rooted/frozen/etc.) maps to a real incapacitating condition.
@@ -1717,7 +1717,7 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 		fog_adv or pack_tactics_adv or condition_adv,
 		# poisoned_condition_turns here is THIS enemy's own Poisoned condition (DISADV on its own
 		# attack) — separate from target_prone/target_restrained above, which are the PLAYER's.
-		long_shot or GameState.is_in_fog_cloud(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0)
+		long_shot or GameState.is_blinded(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0)
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]
@@ -1805,8 +1805,8 @@ func _attack_companion(companion: Companion, sub: Dictionary = {}, long_shot: bo
 				pack_tactics_adv = true
 				break
 	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, _attack_bonus_for(sub), 0,
-		GameState.is_in_fog_cloud(companion.grid_pos) or pack_tactics_adv,
-		long_shot or GameState.is_in_fog_cloud(grid_pos) or poisoned_condition_turns > 0)
+		GameState.is_blinded(companion.grid_pos) or pack_tactics_adv,
+		long_shot or GameState.is_blinded(grid_pos) or poisoned_condition_turns > 0)
 	if not r["is_hit"]:
 		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [atk_label, companion.animal_name])
 		return

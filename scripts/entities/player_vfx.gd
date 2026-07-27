@@ -22,8 +22,8 @@ func has_advantage(enemy: Enemy) -> bool:
 	if enemy.door_ambush:
 		enemy.door_ambush = false
 		return true
-	# Fog Cloud (Blinded): attack rolls against a Blinded creature have Advantage.
-	if GameState.is_in_fog_cloud(enemy.grid_pos):
+	# Blinded condition: attack rolls against a Blinded creature have Advantage.
+	if GameState.is_blinded(enemy.grid_pos):
 		return true
 	# Incapacitated condition: "every attack against it is a Surprise Attack" (5e — an
 	# incapacitated creature can't react to danger). Reuses this same mechanism rather than a

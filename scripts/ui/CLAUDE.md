@@ -90,8 +90,11 @@ reuse the existing qbar-tooltip pair (`_qbar_tooltip`/`_qbar_tooltip_rtl`) via
 (`Stats.*_turns`), `difficult_terrain` (`GameState.player_on_difficult_terrain` — live "standing
 on Mud/Water right now" flag, recomputed every turn-start in `player.gd._on_turn_started()`
 instead of riding `slowed_turns`' decaying counter, which used to make the icon flicker for about
-a frame on every terrain step instead of staying lit the whole time the player stood on the tile;
-see `scripts/entities/CLAUDE.md`'s "Status effects" section), `raging` (`GameState.is_raging`), `temp_hp` (`Stats.temp_hp`),
+a frame on every terrain step instead of staying lit the whole time the player stood on the tile —
+`_update_status_icons()` also skips the separate `"slowed"` entry entirely whenever
+`difficult_terrain` is already showing, since the two render with the identical icon/color and
+re-stepping into Mud/Water while already standing in it would otherwise flash both at once for a
+frame; see `scripts/entities/CLAUDE.md`'s "Status effects" section), `raging` (`GameState.is_raging`), `temp_hp` (`Stats.temp_hp`),
 `unarmored_defense` (Barbarian/Monk with no armor equipped — reads the live AC formula),
 `tactician` (`GameState.battlefield_adv_pending`, Battlefield Expert R1's pending-Advantage
 window — see `scripts/entities/CLAUDE.md`'s Barbarian Tier 1 talents), `psycho_adv`

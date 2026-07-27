@@ -226,6 +226,18 @@ var poisoned_condition_turns: int = 0
 var prone: bool = false                # persists until stood up (Player._try_move()'s redirect), not turn-counted
 var incapacitated_turns: int = 0
 
+# Frightened — unlike the three above, tied to a SPECIFIC source creature (5e: "DISADV on checks/
+# attacks while the source is in sight" + "can't willingly move closer to it"), not a bare turn
+# counter, so it doesn't fit apply_player_status()'s generic (type, turns) shape — set via the
+# dedicated GameState.apply_player_frightened(source, turns)/clear_player_frightened(). A live
+# Enemy reference, same "NOT serialized, mid-floor-only" precedent as hunters_mark_target/
+# witch_bolt_target — simply ends silently on save/load. `frightened_turns` is the outer 5e "1
+# minute" cap (~10 real turns here); ends earlier on a successful repeated WIS save, ticked
+# alongside it in Player._on_turn_started() rather than Stats.tick_status() (which only deals
+# damage, never rolls a check).
+var frightened_source: Enemy = null
+var frightened_turns: int = 0
+
 # True while any condition that imposes a blanket DISADV on attack rolls/ability checks is active
 # (5e: Poisoned, Prone [attacks only], Restrained). Multiple conditions never stack disadvantage
 # (5e has no "double disadvantage") — every attack/check call site adds at most 1 to its

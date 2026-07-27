@@ -117,7 +117,7 @@ func ranged_attack(enemy: Enemy) -> void:
 	if enemy.min_dist_to(player.grid_pos) <= 1 and not target_was_unaware: disadv_count += 1
 	if weapon != null and weapon.is_heavy and player.stats.dexterity < 13: disadv_count += 1
 	if ranged_shot_disadvantage(weapon, near_tile): disadv_count += 1
-	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
+	if GameState.is_blinded(player.grid_pos): disadv_count += 1
 	if player.stats.has_disadvantage_condition(): disadv_count += 1
 	if enemy.prone: disadv_count += 1  # Prone: ranged attacks against it have DISADV
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)

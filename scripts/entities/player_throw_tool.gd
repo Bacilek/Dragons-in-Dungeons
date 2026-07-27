@@ -260,7 +260,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	# and a sleeping/unaware enemy is the closest equivalent this engine has; without this
 	# exemption the surprise-attack Advantage from has_advantage() always cancels right back out.
 	if maxi(absi(d.x), absi(d.y)) <= 1 and not target_was_unaware: disadv_count += 1
-	if GameState.is_in_fog_cloud(player.grid_pos): disadv_count += 1
+	if GameState.is_blinded(player.grid_pos): disadv_count += 1
 	if stats.has_disadvantage_condition(): disadv_count += 1
 	if enemy.prone: disadv_count += 1  # Prone: ranged/thrown attacks against it have DISADV
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)

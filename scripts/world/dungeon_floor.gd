@@ -422,7 +422,7 @@ func update_fog(player_pos: Vector2i) -> void:
 	_fov_player_pos = player_pos
 	var stairs_was_known: bool = _explored.get(_data.stairs_pos, false)
 
-	_visible_tiles = _compute_shadowcast(player_pos, FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus + (1 if GameState.has_lit_torch_equipped() else 0))
+	_visible_tiles = _compute_shadowcast(player_pos, GameState.effective_fov_radius(player_pos))
 
 	# Light cantrip: ends the instant the lit object is no longer on its floor tile (picked up, or
 	# otherwise removed) — checked every fog recompute, same cadence the light itself refreshes.
@@ -658,7 +658,7 @@ func _update_fog_cloud_visual() -> void:
 		spr.texture = _fog_cloud_tex
 		spr.centered = false
 		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
-		spr.modulate = Color(0.75, 0.75, 0.8, 0.45)
+		spr.modulate = Color(0.10, 0.10, 0.13, 0.80)  # Heavily Obscured — dark, not a light haze (see GameState.is_heavily_obscured())
 		spr.z_index = 2
 		add_child(spr)
 		_fog_cloud_sprites.append(spr)
@@ -1022,7 +1022,7 @@ func get_visible_enemies() -> Array[Enemy]:
 	var result: Array[Enemy] = []
 	if _player == null:
 		return result
-	var eff_radius: int = FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus + (1 if GameState.has_lit_torch_equipped() else 0)
+	var eff_radius: int = GameState.effective_fov_radius(_player.grid_pos)
 	var r2: int = eff_radius * eff_radius
 	for e: Enemy in _enemies:
 		if not is_instance_valid(e):
