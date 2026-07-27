@@ -2,6 +2,18 @@
 
 Core singletons — loaded at engine start, affect the entire game. Files: `rng.gd`, `game_state.gd`, `turn_manager.gd`, `audio_manager.gd`, `save_manager.gd`. (`Rng` is registered FIRST in project.godot — `GameState._ready()` → `start_new_run()` calls `Rng.reseed()`, so it must already exist.)
 
+`game_state.gd` (3300+ lines) is mid-refactor into smaller pieces, same "extract a static-func
+`RefCounted` helper" pattern `scripts/items/CLAUDE.md`'s `WeaponTooltip`/`ArmorTooltip` already
+established — pulled out purely to make the file more readable, no behavior change. `talent_icons.gd`
+(`TalentIcons`, not an autoload — just a plain class, `class_name`-addressable like `WeaponTooltip`)
+is the first piece: every icon lookup table (`TALENT_ICON_FLAT`/`TALENT_ICON_FOLDER`/
+`RANGER_TALENT_ICON_FLAT`/`WILD_HEART_FORM_ICON`/`WILD_HEART_SLEEPER_ICON`/
+`WILD_HEART_COMPANION_ICON`) plus the resolution logic, called via `TalentIcons.resolve(id, rank,
+current_rager_form, current_sleeper_form)`. `GameState.talent_icon_path(id, rank)` is now a
+1-line delegator to it — every other file already only ever called that function, never the dicts
+directly, so no other call site anywhere needed to change. More subsystems will move out the same
+way over time — this is an incremental, ongoing decomposition, not a one-shot finished refactor.
+
 ## Maintenance rule
 When you add signals, state fields, or change turn flow here, **immediately update this file and root `CLAUDE.md`** to reflect the change — without waiting to be asked.
 

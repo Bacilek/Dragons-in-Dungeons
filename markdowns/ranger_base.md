@@ -133,7 +133,7 @@ neither — a pre-existing gap fixed alongside this feature, since every Ranger 
 otherwise show as "not proficient" in tooltips).
 
 ## Icons
-No Ranger icon art exists yet (`GameState.RANGER_TALENT_ICON_FLAT`, resolving under
+No Ranger icon art exists yet (`TalentIcons.RANGER_TALENT_ICON_FLAT`, resolving under
 `res://icons/classes/ranger/...`) — every Ranger ability/talent renders via the existing
 `ResourceLoader.exists()` fallback (name-text instead of an icon), same asset-debt precedent as
 the Imp's shape-shift forms. Not a blocker.
