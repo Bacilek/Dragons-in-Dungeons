@@ -504,13 +504,13 @@ func _on_slot_hover(slot: Control) -> void:
 			text += "\n[color=#4aa3ff]Attuned[/color]"
 		else:
 			text += "\n[color=#4aa3ff]Requires Attunement[/color] [color=gray](set during a Long Rest)[/color]"
+	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
 	if item.item_type == Item.Type.WEAPON and item.is_thrown:
-		text += "\n[color=#999][font_size=11][right]Uses: %d/%d[/right][/font_size][/color]" % [item.uses_remaining, item.uses_max]
+		text += "\n[color=#999][font_size=11][left]Uses: %d/%d[/left][/font_size][/color]" % [item.uses_remaining, item.uses_max]
 	if item.item_type == Item.Type.WEAPON:
 		var price_str: String = WeaponTooltip.format_price(item)
 		if not price_str.is_empty():
 			text += "\n[color=#c9a227][font_size=11][right]%s[/right][/font_size][/color]" % price_str
-	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
 	_inv_tooltip_rtl.text = text
 	var tw: float = 210.0 if item.item_type == Item.Type.WEAPON else 172.0
 	_inv_tooltip_rtl.size = Vector2(tw, 0)

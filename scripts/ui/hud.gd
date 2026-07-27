@@ -970,16 +970,16 @@ func _on_qbar_slot_hover(idx: int) -> void:
 				text += "\n[color=#4aa3ff]Attuned[/color]"
 			else:
 				text += "\n[color=#4aa3ff]Requires Attunement[/color] [color=gray](set during a Long Rest)[/color]"
+	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
 	if not _ability_bar_mode:
 		var thrown_item := item_or_ability as Item
 		if thrown_item != null and thrown_item.item_type == Item.Type.WEAPON and thrown_item.is_thrown:
-			text += "\n[color=#999][font_size=11][right]Uses: %d/%d[/right][/font_size][/color]" % [thrown_item.uses_remaining, thrown_item.uses_max]
+			text += "\n[color=#999][font_size=11][left]Uses: %d/%d[/left][/font_size][/color]" % [thrown_item.uses_remaining, thrown_item.uses_max]
 		var priced_item := item_or_ability as Item
 		if priced_item != null and priced_item.item_type == Item.Type.WEAPON:
 			var price_str: String = WeaponTooltip.format_price(priced_item)
 			if not price_str.is_empty():
 				text += "\n[color=#c9a227][font_size=11][right]%s[/right][/font_size][/color]" % price_str
-	text += "\n[color=#555][font_size=9][right]Ctrl: inspect[/right][/font_size][/color]"
 	_qbar_tooltip_rtl.text = text
 	var is_weapon_tooltip: bool = not _ability_bar_mode and (item_or_ability as Item) != null and (item_or_ability as Item).item_type == Item.Type.WEAPON
 	var qtw: float = 210.0 if is_weapon_tooltip else 172.0
