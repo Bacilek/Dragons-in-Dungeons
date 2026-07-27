@@ -255,6 +255,28 @@ func _on_turn_started() -> void:
 			if stats.invisibility_turns <= 0:
 				GameState.game_log("[color=gray]You fade back into view.[/color]")
 				_update_invisibility_visual()
+		# Frightened: repeats the WIS save once per real turn (5e: "at the end of each of its
+		# turns" — ticked at turn START here instead, same cadence as every other duration in
+		# this block; no other timing hook exists for a single-slot condition). A pass ends it
+		# early; a fail just ticks toward the outer "1 minute" cap (frightened_turns). LOS to
+		# the source is NOT required for the repeat save itself, only for the ADV/DISADV-while-
+		# frightened effect (see _frightened_active()) — 5e lets you keep shaking off fear even
+		# once the source is out of sight.
+		if stats.frightened_turns > 0 and stats.frightened_source != null:
+			if not is_instance_valid(stats.frightened_source) or stats.frightened_source.stats.is_dead():
+				GameState.clear_player_frightened()
+			else:
+				var fr_wis_mod: int = stats.wis_modifier()
+				var fr_prof: int = stats.proficiency_bonus if stats.check_prof_wis else 0
+				var fr_die: int = Rng.roll(20)
+				var fr_total: int = fr_die + fr_wis_mod + fr_prof
+				if fr_total >= stats.frightened_save_dc:
+					GameState.game_log("[color=lime]You shake off your fear of %s![/color]" % stats.frightened_source.display_name)
+					GameState.clear_player_frightened()
+				else:
+					stats.frightened_turns -= 1
+					if stats.frightened_turns <= 0:
+						GameState.clear_player_frightened()
 		# Torch: 100-turn duration per lit torch, ticked once per real turn — regardless of
 		# where it currently is (equipped, quickbar/bag, floor, or embedded in an enemy). Equipped
 		# slots + quickbar/bag are swept here (GameState-only data); floor items and enemy-embedded
@@ -1328,6 +1350,10 @@ func _execute_queued_path() -> void:
 				_queued_path.clear()
 				break
 
+		if _frightened_blocks_move_to(next):
+			_queued_path.clear()
+			break
+
 		var is_stairs: bool = _dungeon_floor.get_tile_type(next) == DungeonData.TileType.STAIRS_DOWN
 		var prev_p: Vector2i = grid_pos
 
@@ -1466,6 +1492,32 @@ func _play_footstep_sound() -> void:
 		_:
 			AudioManager.play("step_floor")
 
+# Frightened: DISADV on attacks/checks while the source is in sight (5e text — NOT unconditional
+# like Poisoned/Prone/Restrained, hence its own helper rather than folding into
+# Stats.has_disadvantage_condition()). Needs `_dungeon_floor` for the LOS check, so it lives here
+# rather than on Stats; called from every attack-roll/check site alongside
+# `has_disadvantage_condition()`.
+func _frightened_active() -> bool:
+	var src: Enemy = stats.frightened_source
+	if src == null or not is_instance_valid(src) or src.stats.is_dead() or _dungeon_floor == null:
+		return false
+	return _dungeon_floor.has_line_of_sight(grid_pos, src.grid_pos)
+
+# Frightened's "can't willingly move closer to the source of fear" — true when stepping onto
+# `next_pos` would strictly decrease the (squared) distance to the fear source. Forced movement
+# (Push, a chasm shove, a future teleport) never calls this — only the two voluntary-movement
+# entry points below (_try_move()'s single bump-step, the queued-path executor's per-step loop) do.
+func _frightened_blocks_move_to(next_pos: Vector2i) -> bool:
+	var src: Enemy = stats.frightened_source
+	if src == null or not is_instance_valid(src) or src.stats.is_dead():
+		return false
+	var cur_d2: int = (grid_pos - src.grid_pos).length_squared()
+	var new_d2: int = (next_pos - src.grid_pos).length_squared()
+	if new_d2 < cur_d2:
+		GameState.game_log("[color=gray]You're too frightened of %s to move closer![/color]" % src.display_name)
+		return true
+	return false
+
 func _try_move(dir: Vector2i) -> void:
 	if _dungeon_floor == null:
 		return
@@ -1590,6 +1642,9 @@ func _try_move(dir: Vector2i) -> void:
 		if not _dungeon_floor.is_walkable(target) and not _owl_override:
 			return
 
+	if _frightened_blocks_move_to(target):
+		return
+
 	var is_stairs: bool = _dungeon_floor.get_tile_type(target) == DungeonData.TileType.STAIRS_DOWN
 
 	var prev_pos: Vector2i = grid_pos
@@ -1682,7 +1737,7 @@ func _attempt_web_escape() -> void:
 	var prof: int = stats.proficiency_bonus if stats.check_prof_str else 0
 	# Poisoned (DISADV on ALL checks, including this STR check — Restrained's own DEX-check
 	# clause doesn't apply here since this is STR).
-	var has_disadv: bool = stats.poisoned_condition_turns > 0
+	var has_disadv: bool = stats.poisoned_condition_turns > 0 or _frightened_active()
 	var die1: int = Rng.roll(20)
 	var die2: int = Rng.roll(20) if has_disadv else die1
 	var die: int = mini(die1, die2) if has_disadv else die1
@@ -1844,6 +1899,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Poisoned / Prone / Restrained condition — DISADV on your own attack rolls (5e: none of
 	# these three stack disadvantage with each other, hence the single combined helper).
 	if stats.has_disadvantage_condition(): disadv_count += 1
+	if _frightened_active(): disadv_count += 1
 	# Animal Form Wolf: ADV when enough enemies are in FOV — always active in Wolf form (no
 	# Rage required). Enhanced Forms lowers the threshold; R3 also counts 1 enemy + 1 friendly.
 	# active_rager_form is the LOCKED-IN form, not natural_rager_form (the preview for next rest).
@@ -2147,6 +2203,7 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	# Poisoned / Prone / Restrained condition — DISADV on your own attack rolls (5e: none of
 	# these three stack disadvantage with each other, hence the single combined helper).
 	if stats.has_disadvantage_condition(): disadv_count += 1
+	if _frightened_active(): disadv_count += 1
 	# Vex (Short Bow): future-proofing — a weapon could carry both Cleave and Vex.
 	var vex_triggered: bool = _vex_adv_target == enemy
 	if vex_triggered: adv_count += 1
@@ -2246,6 +2303,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	# Poisoned / Prone / Restrained condition — DISADV on your own attack rolls (5e: none of
 	# these three stack disadvantage with each other, hence the single combined helper).
 	if stats.has_disadvantage_condition(): disadv_count += 1
+	if _frightened_active(): disadv_count += 1
 	var vex_triggered: bool = _vex_adv_target == enemy
 	if vex_triggered: adv_count += 1
 	if vex_triggered:
@@ -2370,6 +2428,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	# Poisoned / Prone / Restrained condition — DISADV on your own attack rolls (5e: none of
 	# these three stack disadvantage with each other, hence the single combined helper).
 	if stats.has_disadvantage_condition(): disadv_count += 1
+	if _frightened_active(): disadv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]

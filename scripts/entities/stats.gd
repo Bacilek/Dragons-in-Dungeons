@@ -237,6 +237,7 @@ var incapacitated_turns: int = 0
 # damage, never rolls a check).
 var frightened_source: Enemy = null
 var frightened_turns: int = 0
+var frightened_save_dc: int = 10  # the WIS save DC the repeated end-of-turn check rolls against (stashed here same as web_escape_dc, rather than hardcoding Scare's own DC)
 
 # True while any condition that imposes a blanket DISADV on attack rolls/ability checks is active
 # (5e: Poisoned, Prone [attacks only], Restrained). Multiple conditions never stack disadvantage

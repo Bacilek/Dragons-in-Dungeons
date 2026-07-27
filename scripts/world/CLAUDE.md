@@ -32,7 +32,7 @@ dungeon_floor.is_walkable_for_companion(pos: Vector2i) -> bool  # walkable + not
 ```
 
 ## FOV
-`FOV_RADIUS = 5`. Algorithm: recursive shadowcasting (`_compute_shadowcast`, 8 octants, Roguebasin multiplier tables). Result stored in `_visible_tiles: Dictionary`. Both `_compute_shadowcast()` call sites' radius formula is `FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus + (1 if GameState.has_lit_torch_equipped() else 0)` — the last term is a lit Torch equipped in either hand (`scripts/items/CLAUDE.md`'s "Torch"), computed live rather than folded into `fov_radius_bonus` so it can't drift out of sync with equip/light/burnout state.
+`FOV_RADIUS = 5`. Algorithm: recursive shadowcasting (`_compute_shadowcast`, 8 octants, Roguebasin multiplier tables). Result stored in `_visible_tiles: Dictionary`. Both `update_fog()`'s own `_compute_shadowcast()` call and `get_visible_enemies()`'s radius check go through `GameState.effective_fov_radius(pos) -> int` — normally `FOV_RADIUS + fov_radius_bonus + player_stats.darkvision_bonus + (1 if has_lit_torch_equipped() else 0)` (the last term is a lit Torch equipped in either hand, `scripts/items/CLAUDE.md`'s "Torch", computed live so it can't drift out of sync with equip/light/burnout state), but flattens to `1` — ignoring every bonus, darkvision included — whenever `GameState.is_blinded(pos)` (see `scripts/entities/CLAUDE.md`'s "Conditions"/"Fog Cloud" sections). A single shared function so the two call sites can never compute a different radius from each other.
 
 **Torch light bubble (floor/embedded, separate from the equipped FOV bonus above)**:
 `update_fog()` also unions `_compute_torch_light_tiles()` into `_visible_tiles` and paints it via
@@ -72,14 +72,19 @@ end condition — recast, rest, floor descent) is connected in `_ready()` to for
 away instead of waiting for the player's next move. See `scripts/entities/CLAUDE.md`'s "Wizard
 spellcasting" section for the spell itself.
 
-## Fog Cloud spell zone
+## Fog Cloud spell zone (Heavily Obscured terrain)
 `_update_fog_cloud_visual()` (called every `update_fog()`, alongside the Light glow) tints
-`GameState.fog_cloud_pos`/`fog_cloud_radius`'s tiles with a persistent gray overlay — pooled
-`Sprite2D`s + shared 1×1 white texture, same convention as `_update_light_source_glow()`. A raw
-Euclidean disc, not LOS-filtered, and does NOT union into `_visible_tiles`/FOV (it's a status
-zone, not a light source — unlike Light, standing near it doesn't reveal more map). See
-`scripts/entities/CLAUDE.md`'s "More 1st-level non-damage spells" section for the Blinded
-ADV/DISADV mechanics `GameState.is_in_fog_cloud()` actually drives.
+`GameState.fog_cloud_pos`/`fog_cloud_radius`'s tiles with a persistent **dark** overlay
+(`Color(0.10, 0.10, 0.13, 0.80)` — deliberately dark, not a light haze, since the tile is
+Heavily Obscured) — pooled `Sprite2D`s + shared 1×1 white texture, same convention as
+`_update_light_source_glow()`. A raw Euclidean disc, not LOS-filtered. Doesn't itself union into
+`_visible_tiles` the way Light does — the FOV shrink below happens through the shadowcast radius
+instead, not a separate visibility union. See `scripts/entities/CLAUDE.md`'s "Conditions"/"Fog
+Cloud" sections for the full mechanic: `GameState.is_heavily_obscured(pos)`/`is_blinded(pos)` are
+the canonical queries every ADV/DISADV combat site reads (Fog Cloud is currently the only source
+of Heavily Obscured terrain), and `GameState.effective_fov_radius(pos)` — read by this file's own
+`update_fog()`/`get_visible_enemies()` — collapses to a flat `1` for a Blinded player regardless
+of every other FOV bonus, including darkvision.
 
 ## AoE targeting preview
 `show_aoe_preview(center: Vector2i, radius: int)` / `show_cone_preview(origin: Vector2i, aim: Vector2i, length: int)` / `hide_aoe_preview()` — a small pooled-`Sprite2D` purple tint (1×1 white texture tinted via `modulate`, `z_index = 2`, same layer as the fog sprite — Node2D-world convention, not a Control), both funneling into a shared `_paint_aoe_preview_tiles(key, tiles)` helper. Sphere: every tile within `radius` (Euclidean, no LOS filtering — see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why) of `center`. Cone (Burning Hands): `SpellEffects.cone_tiles(origin, aim, length, self)` — the same LOS-gated 90°-arc tile-gather the actual cast resolver uses, so the preview always matches the real blast exactly (see `scripts/entities/CLAUDE.md`'s "More 1st-level spells"). Driven every frame by `player.gd._update_spell_aoe_preview()` while a sphere- or cone-shaped spell is armed for targeting. Each rebuild is cache-keyed on its own params so repeated calls with the same hovered tile are near-free.

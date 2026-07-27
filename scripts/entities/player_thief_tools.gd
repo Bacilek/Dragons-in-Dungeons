@@ -37,7 +37,7 @@ func attempt_disarm(trap_pos: Vector2i) -> void:
 	# same as CombatMath.roll_with_adv_disadv() elsewhere — this check predates that helper and
 	# rolls its own d20s by hand (for the Halfling reroll plumbing), so the cancel is inlined here
 	# instead of going through it.
-	var has_disadv: bool = s.poisoned_condition_turns > 0 or s.web_restrained
+	var has_disadv: bool = s.poisoned_condition_turns > 0 or s.web_restrained or player._frightened_active()
 	if has_adv and has_disadv:
 		has_adv = false
 		has_disadv = false

@@ -181,12 +181,10 @@ Slashing, `"multiattack"`), Magic Resistance (shared trait with Imp, see above),
   tiles), and nothing blocks the shot (`DungeonFloor.has_clear_shot()`), Scare is picked over
   closing the distance. On cast: a WIS saving throw, `d20 + WIS mod + (proficiency if
   Stats.check_prof_wis)` vs the pool's `"save_dc"` (10) — same roll shape as Web's own DEX save,
-  just WIS instead. **The real effect on a failed save (Frightened, repeating the save at the end
-  of each of the target's turns) is NOT implemented** — this engine has no mechanical Frightened
-  condition today (nor a true Poisoned condition — see Rend's own comment in `dungeon_floor_data.
-  gd`, same gap), so a failed save only logs the flavor text ("frozen with fear"/"hold your
-  nerve") via the same `save:` tooltip meta format as every other resist check. Documented,
-  deliberate gap pending a future conditions-system pass — not an oversight.
+  just WIS instead — logged via the same `save:` tooltip meta format as every other resist check
+  ("frozen with fear"/"hold your nerve"). On a failed save, applies the real Frightened condition
+  (`GameState.apply_player_frightened(self, SCARE_FRIGHTENED_TURNS, dc)`, `SCARE_FRIGHTENED_TURNS
+  = 10`) — see "Conditions" above for the full mechanic.
 
 ## Multi-tile footprint (Large enemies)
 
@@ -502,12 +500,14 @@ Mud/Water now shows only the `difficult_terrain` icon while both are active (not
 copies of the same-looking icon) — once the player leaves the terrain, `slowed_turns` alone
 (still ticking down from the trap) takes over showing the `"slowed"` icon.
 
-## Conditions (Poisoned / Prone / Restrained / Incapacitated)
-Four real 5e-style conditions, bidirectional (player via `Stats`, enemy via `Enemy`'s own fields —
-same "duplicate implementation, not a unified refactor" convention the DoT statuses above already
-use). Each is deliberately kept SEPARATE from any same-named damage-over-time status — a source
-that inflicts one doesn't have to inflict the other (Rend inflicts only the Poisoned condition, a
-Poison Potion inflicts only the DoT).
+## Conditions (Poisoned / Prone / Restrained / Incapacitated / Blinded / Frightened)
+Six real 5e-style conditions. The first four are bidirectional (player via `Stats`, enemy via
+`Enemy`'s own fields — same "duplicate implementation, not a unified refactor" convention the DoT
+statuses above already use) and deliberately kept SEPARATE from any same-named damage-over-time
+status — a source that inflicts one doesn't have to inflict the other (Rend inflicts only the
+Poisoned condition, a Poison Potion inflicts only the DoT). Blinded is purely positional/symmetric
+(see "Fog Cloud" below). Frightened is player-only today (its only source, Quasit's Scare, only
+ever targets the player).
 
 | Condition | Player field | Enemy field | Effect |
 |---|---|---|---|
@@ -515,12 +515,14 @@ Poison Potion inflicts only the DoT).
 | Prone | `Stats.prone` (not turn-counted) | `Enemy.prone` (not turn-counted) | Melee attacks against the prone creature get ADV, ranged attacks get DISADV (threaded via an `is_ranged: bool` param on `Enemy._attack_player()`/`_attack_companion()`, and a `spell.range_tiles` check for player-cast spells). Can't move — any direction key press instead stands up (ends the condition), costing the turn without moving. An enemy auto-stands at the very top of its own `decide_turn()` instead, consuming ONE point of that turn's movement budget (`_moves_this_turn -= 1`) rather than the whole turn, then falls straight through to its normal decision logic — an enemy with spare movement budget (Aggressive's bonus step, an above-baseline `"speed"` entry) can still close distance and/or attack the same turn it stands. |
 | Restrained | `Stats.web_restrained` (persists until the web is destroyed — Spider's Web is still its only source, see "Spider" below) | *(no enemy-side trigger exists yet — infra would mirror the player's, not built until something needs it)* | Speed 0 (already blocked movement pre-conditions-system). ADV on attacks against the restrained creature (any kind, melee or ranged — unlike Prone's kind-split). DISADV on the restrained creature's own attacks (folds into the same `has_disadvantage_condition()`/`poisoned_condition_turns>0` DISADV pool) and DEX checks specifically (`PlayerThiefTools.attempt_disarm()`, the only player-side DEX check today). |
 | Incapacitated | `Stats.incapacitated_turns` | `Enemy.incapacitated_turns` | "Can't take actions" — blocks player movement/bump-attack (`player.gd._try_move()`) and ability/spell activation (`_use_ability_slot()`); **partial coverage** — mouse-click attacks and item/tool use aren't gated (no current trigger source exists for either side, so this wasn't exhaustively wired; extend these two gates if a future ability actually inflicts it). Breaks Concentration immediately (`GameState.apply_player_status()`'s `"incapacitated"` case calls `end_concentration()`). On the enemy side: skips its entire turn (`decide_turn()`'s very first check, same shape Prone used to have before this rework) AND makes every player attack against it a Surprise Attack (`PlayerVfx.has_advantage()`), since "every attack against it is a Surprise Attack" is 5e's own Incapacitated text and this engine's Surprise Attack mechanism already IS exactly that (flat +1 ADV). |
+| Blinded | `GameState.is_blinded(pos)` (positional, no Stats field — see "Fog Cloud" below) | same query, symmetric | ADV on attacks against a Blinded creature, DISADV on its own attacks (both sides, player and enemy). Vision collapses to a flat 1-tile radius (`GameState.effective_fov_radius()`), overriding every other bonus including darkvision. "Auto-fails sight-based checks" is NOT implemented (no concrete "sight check" mechanic exists in this engine to gate). |
+| Frightened | `Stats.frightened_source: Enemy`/`frightened_turns`/`frightened_save_dc` (live ref, NOT serialized — same precedent as `hunters_mark_target`/`witch_bolt_target`) | *(no enemy-side trigger — only Quasit's Scare inflicts it, and Scare only ever targets the player)* | DISADV on attacks/checks ONLY while the source is in LOS (`Player._frightened_active()` — NOT unconditional like the other three, hence its own helper rather than folding into `has_disadvantage_condition()`). Can't willingly move closer to the source via voluntary movement (`Player._frightened_blocks_move_to()`, checked in both `_try_move()` and the queued-path executor — forced movement like Push/a chasm shove is unaffected since it never calls either). Repeats a WIS save once per real turn (`Player._on_turn_started()`, vs `frightened_save_dc`) — success ends it early, a fail ticks toward the outer ~10-turn "1 minute" cap. Auto-clears if the source dies (`Enemy.die()`). |
 
-**Apply a condition** (mirrors the DoT-status shape above): `GameState.apply_player_status("poisoned_condition"|"prone"|"incapacitated", turns)` (player) or `Enemy.apply_status("prone"|"poisoned_condition"|"incapacitated", turns)` (enemy) — Restrained has no generic apply path since Web sets `web_restrained`/`web_escape_dc` directly (a persistent flag + escape DC, not a turn counter, so it doesn't fit the shared `turns` shape). `"turns"` is ignored for Prone (bool, not counted).
+**Apply a condition** (mirrors the DoT-status shape above): `GameState.apply_player_status("poisoned_condition"|"prone"|"incapacitated", turns)` (player) or `Enemy.apply_status("prone"|"poisoned_condition"|"incapacitated", turns)` (enemy) — Restrained has no generic apply path since Web sets `web_restrained`/`web_escape_dc` directly (a persistent flag + escape DC, not a turn counter, so it doesn't fit the shared `turns` shape); Frightened has its own dedicated `GameState.apply_player_frightened(source, turns, save_dc)`/`clear_player_frightened()` (needs a live source reference the generic shape can't carry) and Blinded has no apply path at all (purely derived from position, see `is_heavily_obscured()`/`is_blinded()`). `"turns"` is ignored for Prone (bool, not counted).
 
 **On-hit condition via `"multiattack"`**: a sub-entry's optional `"status"`/`"status_turns"` keys (mirrors the pre-existing `"abilities"` array's own `ab.has("status")` shape) apply generically on a landed hit — `Enemy._attack_player()`'s tail, after the Orc Shaman poison hardcode. First user: Quasit's Rend (`"status": "poisoned_condition", "status_turns": 1`) — see `scripts/world/CLAUDE.md`'s Quasit entry / `dungeon_floor_data.gd`.
 
-**Not implemented**: Frightened (Quasit's Scare still only flavor-logs a failed save — see the "Quasit" section below) and any enemy-side Restrained trigger. Both are documented gaps, not oversights.
+**Glossary**: `WeaponTooltip.KEYWORD_GLOSSARY` (`scripts/items/weapon_tooltip.gd`) carries a `[url=keyword:X]`-linkable entry for every condition here plus `"heavily_obscured"` — despite the class name, this is the game's one general keyword glossary, not weapon-mastery-only (see that file's own header comment).
 
 ---
 

@@ -2368,12 +2368,13 @@ func apply_player_status(type: String, turns: int) -> bool:
 # see Stats.frightened_source/frightened_turns' own comment. Re-applying while already frightened
 # by the SAME source just refreshes the duration (maxi); a DIFFERENT source overwrites outright
 # (5e doesn't stack multiple Frightened sources — the newer fear replaces the old).
-func apply_player_frightened(source: Enemy, turns: int) -> void:
+func apply_player_frightened(source: Enemy, turns: int, save_dc: int = 10) -> void:
 	if player_stats.frightened_source == source:
 		player_stats.frightened_turns = maxi(player_stats.frightened_turns, turns)
 	else:
 		player_stats.frightened_source = source
 		player_stats.frightened_turns = turns
+	player_stats.frightened_save_dc = save_dc
 	player_status_changed.emit()
 
 func clear_player_frightened() -> void:

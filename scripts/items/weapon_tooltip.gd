@@ -12,6 +12,11 @@ extends RefCounted
 # either generic across every item type (description, Attunement, Ctrl hint) or already
 # per-caller-positioned (Uses:), so they stay outside this weapon-only builder.
 
+# The single shared [url=keyword:X] glossary for hud.gd/inventory_overlay.gd's Ctrl-freeze popup
+# (scripts/ui/CLAUDE.md's "Ctrl-freeze tooltip") — grown beyond weapon-only keywords to also cover
+# general D&D condition/terrain terms (Heavily Obscured, Blinded, Frightened, Poisoned/Prone/
+# Restrained/Incapacitated — see scripts/entities/CLAUDE.md's "Conditions" section) since this is
+# the game's one glossary mechanism, not something weapon-specific.
 const KEYWORD_GLOSSARY: Dictionary = {
 	"heavy_str": "Heavy weapon.\nRequires STR 13+.\nAttacking without enough\nStrength imposes\nDisadvantage.",
 	"heavy_dex": "Heavy weapon.\nRequires DEX 13+.\nAttacking without enough\nDexterity imposes\nDisadvantage.",
@@ -25,13 +30,20 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"light": "Light weapon.\nPair another Light weapon\nin the Off-hand to attack\nwith both. The Off-hand\nswing skips your ability\nmodifier on damage, unless\nit's negative.",
 	"graze": "Mastery: Graze.\nOn a miss, still deal\ndamage equal to the\nability modifier used\nfor the attack (min 0).",
 	"reach": "Reach weapon.\n+1 tile melee range —\ncan attack (and chase-\nattack) from 2 tiles away\ninstead of 1.",
-	"topple": "Mastery: Topple.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ STR) or is knocked Prone,\nskipping its entire next turn.",
+	"topple": "Mastery: Topple.\nOn a hit, the target rolls\na CON save (DC 8 + Prof\n+ STR) or is knocked Prone\n(see the Prone keyword).",
 	"versatile": "Versatile weapon.\nClick the Main Hand slot\nto switch grip: one-handed\nuses the die shown, two-\nhanded uses the die listed\nhere instead.",
 	"thrown": "Thrown weapon.\nRight-click to prime a\nthrow, then left-click a\ntarget tile — uses your\nmelee attack modifier.\nNormal range is the weapon's\nown range; beyond it (still\nwithin the long range shown\nin its tooltip) rolls with\nDisadvantage. Has limited\nuses before it breaks.",
 	"sap": "Mastery: Sap.\nOn a hit, the target has\nDisadvantage on its very\nnext attack, next turn.",
 	"nick": "Mastery: Nick.\nWhile dual-wielding two\nLight weapons, make one\nfurther attack this turn —\nsame rules as the Off-hand\nswing (max 3 attacks total).",
-	"slow": "Mastery: Slow.\nOn a hit, the target is\nSlowed — its next turn is\nskipped entirely, same as\nstepping into mud/water.",
+	"slow": "Mastery: Slow.\nOn a hit, the target is\nSlowed — its next move\ncosts an extra turn, same\nas stepping into mud/water.",
 	"ammo": "Ammo.\nThis weapon consumes one\nunit of the named ammo\nitem per shot.",
+	"heavily_obscured": "Heavily Obscured terrain.\nAnyone standing in it —\nplayer or enemy — is\nBlinded (see the Blinded\nkeyword). Fog Cloud is the\nonly source today.",
+	"blinded": "Blinded (condition).\nCan't see — automatically\nfails checks requiring\nsight. Attacks against you\nhave Advantage, your own\nattacks have Disadvantage.\nVision collapses to 1 tile,\neven with darkvision.",
+	"frightened": "Frightened (condition).\nDisadvantage on checks and\nattacks while the source of\nfear is in sight. Can't\nwillingly move closer to it\n(forced movement is fine).\nRepeats a WIS save each\nturn to end early.",
+	"poisoned_condition": "Poisoned (condition).\nDisadvantage on attack\nrolls and ability checks.\nSeparate from the green\nPoisoned damage-over-time\nstatus.",
+	"prone": "Prone (condition).\nMelee attacks against you\nhave Advantage, ranged have\nDisadvantage. Can't move\nuntil you stand up (costs\nthe turn).",
+	"restrained": "Restrained (condition).\nSpeed 0. Attacks against\nyou have Advantage, your\nown attacks and DEX checks\nhave Disadvantage.",
+	"incapacitated": "Incapacitated (condition).\nCan't take actions —\nmovement, attacks, ability/\nspell use all blocked.\nBreaks Concentration.",
 }
 
 # "" = unpriced (both gold_value and silver_value are 0) — caller should skip the price line

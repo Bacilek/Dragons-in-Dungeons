@@ -262,6 +262,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	if maxi(absi(d.x), absi(d.y)) <= 1 and not target_was_unaware: disadv_count += 1
 	if GameState.is_blinded(player.grid_pos): disadv_count += 1
 	if stats.has_disadvantage_condition(): disadv_count += 1
+	if player._frightened_active(): disadv_count += 1
 	if enemy.prone: disadv_count += 1  # Prone: ranged/thrown attacks against it have DISADV
 	var r := CombatMath.roll_with_adv_disadv(adv_count, disadv_count)
 	var die1: int = r["die1"]

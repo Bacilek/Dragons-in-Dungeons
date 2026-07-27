@@ -21,6 +21,8 @@ const TITLES: Dictionary = {
 	"restrained": "Restrained",
 	"incapacitated": "Incapacitated",
 	"weapon_mastery": "Weapon Masteries",
+	"blinded": "Blinded",
+	"frightened": "Frightened",
 }
 
 static func get_text(id: String) -> String:
@@ -68,6 +70,12 @@ static func get_text(id: String) -> String:
 		"weapon_mastery":
 			var known: Array[String] = GameState.player_stats.known_weapon_masteries
 			return "Currently known: %s" % ", ".join(known)
+		"blinded":
+			return "You're Heavily Obscured. Can't see past 1 tile (darkvision doesn't help). Attacks against you have Advantage, your own attacks have Disadvantage."
+		"frightened":
+			var src: Enemy = GameState.player_stats.frightened_source
+			var src_name: String = src.display_name if src != null and is_instance_valid(src) else "the source"
+			return "Disadvantage on attacks and checks while %s is in sight. Can't willingly move closer to it. Repeats a WIS save each turn to end early." % src_name
 		_:
 			return ""
 

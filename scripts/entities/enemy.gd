@@ -5,6 +5,7 @@ enum Behavior { SLEEPING, STATIONARY, ROAMING, CHASING, SEARCHING }
 
 const SPRITES_PATH := "res://sprites/characters/enemies/"
 const FOV_RADIUS: int = 5
+const SCARE_FRIGHTENED_TURNS: int = 10  # Quasit's Scare — 5e's "1 minute" duration cap, expressed as ~10 real turns (repeated WIS saves usually end it well before this — see Player._on_turn_started())
 
 # sprites/characters/enemies/ is organized one subfolder per in-game enemy/boss identity (see
 # root CLAUDE.md's "Sprite Assets" section) — a pool "sprite" key (a stable id, not a
@@ -531,6 +532,12 @@ func die() -> void:
 	# Bloodhound R3: if this was the Hunter's Mark target, re-mark the nearest visible enemy for free.
 	if _dungeon_floor != null and _dungeon_floor._player != null:
 		_dungeon_floor._player._ranger_talents.try_bloodhound_remark(self)
+	# Frightened: if this enemy was the fear source, the condition would otherwise sit inert
+	# (DISADV/can't-approach both already no-op once the source is invalid) until its own timer
+	# or repeat-save clears it — cleared immediately instead, for a status tray that doesn't keep
+	# showing "Frightened" of something already dead.
+	if GameState.player_stats.frightened_source == self:
+		GameState.clear_player_frightened()
 	super.die()
 
 func _setup_animations() -> void:
@@ -1479,10 +1486,10 @@ func _execute_cast_web(target: Node, cfg: Dictionary) -> void:
 # Quasit's Scare ability (pool "scare": {"range","save_dc"}) — Player-only ranged fear effect,
 # 1/life. A WIS saving throw, not an attack roll — same d20 + WIS mod + (proficiency, if
 # Stats.check_prof_wis) vs the pool's "save_dc" shape as Web's own DEX save above. Costs the turn
-# and is consumed regardless of outcome. On a fail the target is meant to become Frightened (real
-# text: repeats the save at the end of each of its turns) — that mechanical condition doesn't
-# exist in this engine yet (no "frightened" status/effect anywhere), so only the flavor log line
-# fires today; documented gap pending a future conditions-system pass, not an oversight.
+# and is consumed regardless of outcome. On a fail the target becomes Frightened of THIS Quasit
+# (GameState.apply_player_frightened(self, FRIGHTENED_TURNS, dc)) — see scripts/entities/
+# CLAUDE.md's "Conditions" section for the full Frightened mechanic (DISADV on attacks/checks
+# while this Quasit is in sight, can't willingly move closer to it, repeats the save each turn).
 func _execute_cast_scare(target: Node, cfg: Dictionary) -> void:
 	_scare_used = true
 	var dc: int = int(cfg.get("save_dc", 10))
@@ -1498,6 +1505,7 @@ func _execute_cast_scare(target: Node, cfg: Dictionary) -> void:
 		GameState.game_log("%s shrieks at you, but you [url=%s]hold your nerve[/url]." % [display_name, meta])
 		return
 	GameState.game_log("%s shrieks at you — you're [url=%s]frozen with fear[/url]!" % [display_name, meta])
+	GameState.apply_player_frightened(self, SCARE_FRIGHTENED_TURNS, dc)
 
 func _move_step(step: Vector2i, next_pos: Vector2i, provokes_oa: bool = true) -> void:
 	var prev_pos: Vector2i = grid_pos
