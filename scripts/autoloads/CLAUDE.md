@@ -11,8 +11,22 @@ is the first piece: every icon lookup table (`TALENT_ICON_FLAT`/`TALENT_ICON_FOL
 `WILD_HEART_COMPANION_ICON`) plus the resolution logic, called via `TalentIcons.resolve(id, rank,
 current_rager_form, current_sleeper_form)`. `GameState.talent_icon_path(id, rank)` is now a
 1-line delegator to it — every other file already only ever called that function, never the dicts
-directly, so no other call site anywhere needed to change. More subsystems will move out the same
-way over time — this is an incremental, ongoing decomposition, not a one-shot finished refactor.
+directly, so no other call site anywhere needed to change. Second piece: `equip_requirements.gd`
+(`EquipRequirements`) holds the pure equip-gating checks — `can_equip_shield(item, stats,
+equipment)`, `can_equip_armor(item, stats)`, `armor_change_turns(new_item, old_item)`, and the
+`ARMOR_CHANGE_TURNS` table itself. `GameState.can_equip_shield()`/`can_equip_armor()`/
+`_armor_change_turns()` are 1-line delegators; `GameState.ARMOR_CHANGE_TURNS` is kept as a const
+alias (`= EquipRequirements.ARMOR_CHANGE_TURNS`) since `ArmorTooltip.build()` reads it directly —
+same "no external call site needs to change" bar as the icon extraction. The log-emitting wrappers
+(`log_shield_equip_blocked()`/`log_armor_equip_blocked()`) stayed on `GameState` since they need
+its `combat_message` signal, which a pure static-func class deliberately doesn't have access to.
+More subsystems will move out the same way over time — this is an incremental, ongoing
+decomposition, not a one-shot finished refactor. (Stateful, turn-tick-coupled subsystems like
+armor-change's own countdown or scroll-learning are intentionally NOT extracted this way — their
+fields are read directly by other files, e.g. `player.gd`'s turn ticker, so pulling them out would
+mean either breaking that direct-field-access convention or adding a pass-through property for
+every field, which trades a smaller file for more boilerplate. Only worth it if a future pass
+converts those call sites too — not attempted yet.)
 
 ## Maintenance rule
 When you add signals, state fields, or change turn flow here, **immediately update this file and root `CLAUDE.md`** to reflect the change — without waiting to be asked.

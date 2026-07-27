@@ -1436,17 +1436,10 @@ func debug_level_up() -> void:
 
 # ── Equipment ─────────────────────────────────────────────────────────────────
 
-# Shield gate: Item.is_shield requires Stats.proficient_shields, and can't coexist with a
-# two-handed Main Hand weapon. Returns true for any non-shield item (no-op gate).
+# Pure gating logic lives in EquipRequirements (scripts/autoloads/equip_requirements.gd) — this is
+# just a 1-line delegator, same pattern as talent_icon_path()/TalentIcons.
 func can_equip_shield(item: Item) -> bool:
-	if not item.is_shield:
-		return true
-	if not player_stats.proficient_shields:
-		return false
-	var main_hand: Item = equipment.get("melee") as Item
-	if main_hand != null and main_hand.is_two_handed:
-		return false
-	return true
+	return EquipRequirements.can_equip_shield(item, player_stats, equipment)
 
 func log_shield_equip_blocked(item: Item) -> void:
 	if not player_stats.proficient_shields:
@@ -1455,25 +1448,8 @@ func log_shield_equip_blocked(item: Item) -> void:
 		combat_message.emit("[color=red]Cannot equip a Shield while wielding a two-handed weapon.[/color]")
 
 # ── Body armor (Item.Type.ARMOR, is_shield == false) ───────────────────────────
-# Gate: armor_category requires the matching Stats.proficient_*_armor flag, and str_requirement
-# (Heavy armor only) blocks equipping below that STR score. Returns true for any non-body-armor
-# item (Shield, or any other item type — no-op gate, mirrors can_equip_shield()'s own shape).
 func can_equip_armor(item: Item) -> bool:
-	if item == null or item.item_type != Item.Type.ARMOR or item.is_shield:
-		return true
-	match item.armor_category:
-		Item.ArmorCategory.LIGHT:
-			if not player_stats.proficient_light_armor:
-				return false
-		Item.ArmorCategory.MEDIUM:
-			if not player_stats.proficient_medium_armor:
-				return false
-		Item.ArmorCategory.HEAVY:
-			if not player_stats.proficient_heavy_armor:
-				return false
-	if item.str_requirement > 0 and player_stats.strength < item.str_requirement:
-		return false
-	return true
+	return EquipRequirements.can_equip_armor(item, player_stats)
 
 ## Whether the currently-equipped body armor imposes Disadvantage on the Stealth-vs-Passive-
 ## Perception check (Item.stealth_disadvantage — Studded Leather/Scale Mail/Half Plate/Ring
@@ -1495,24 +1471,12 @@ func log_armor_equip_blocked(item: Item) -> void:
 	else:
 		combat_message.emit("[color=red]You aren't strong enough to wear %s (requires %d STR).[/color]" % [item.item_name, item.str_requirement])
 
-# Turns required to equip/unequip/swap body armor — keyed by the HEAVIEST armor_category involved
-# (putting on, taking off, or swapping between two pieces all cost the same as their own worst
-# category — see markdowns/ranger_base.md-style direct owner spec). NONE (unarmored/clothing-tier,
-# no current ITEM_POOL entry) is 1 turn, same as a free equip effectively costing "an action".
-const ARMOR_CHANGE_TURNS: Dictionary = {
-	Item.ArmorCategory.NONE: 1,
-	Item.ArmorCategory.LIGHT: 5,
-	Item.ArmorCategory.MEDIUM: 10,
-	Item.ArmorCategory.HEAVY: 15,
-}
+# Alias so GameState.ARMOR_CHANGE_TURNS keeps working for existing external readers
+# (e.g. ArmorTooltip.build()) without change — the real table lives on EquipRequirements now.
+const ARMOR_CHANGE_TURNS: Dictionary = EquipRequirements.ARMOR_CHANGE_TURNS
 
 func _armor_change_turns(new_item: Item, old_item: Item) -> int:
-	var worst: int = int(Item.ArmorCategory.NONE)
-	if new_item != null:
-		worst = maxi(worst, int(new_item.armor_category))
-	if old_item != null:
-		worst = maxi(worst, int(old_item.armor_category))
-	return ARMOR_CHANGE_TURNS.get(worst, 1)
+	return EquipRequirements.armor_change_turns(new_item, old_item)
 
 func _has_bag_space() -> bool:
 	for i: int in QUICKBAR_SIZE:
