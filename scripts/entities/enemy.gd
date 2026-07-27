@@ -4,7 +4,7 @@ extends Entity
 enum Behavior { SLEEPING, STATIONARY, ROAMING, CHASING, SEARCHING }
 
 const SPRITES_PATH := "res://sprites/characters/enemies/"
-const FOV_RADIUS: int = 6
+const FOV_RADIUS: int = 5
 
 # sprites/characters/enemies/ is organized one subfolder per in-game enemy/boss identity (see
 # root CLAUDE.md's "Sprite Assets" section) — a pool "sprite" key (a stable id, not a

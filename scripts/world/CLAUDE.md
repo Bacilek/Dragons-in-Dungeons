@@ -32,7 +32,7 @@ dungeon_floor.is_walkable_for_companion(pos: Vector2i) -> bool  # walkable + not
 ```
 
 ## FOV
-`FOV_RADIUS = 7`. Algorithm: recursive shadowcasting (`_compute_shadowcast`, 8 octants, Roguebasin multiplier tables). Result stored in `_visible_tiles: Dictionary`. Both `_compute_shadowcast()` call sites' radius formula is `FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus + (1 if GameState.has_lit_torch_equipped() else 0)` — the last term is a lit Torch equipped in either hand (`scripts/items/CLAUDE.md`'s "Torch"), computed live rather than folded into `fov_radius_bonus` so it can't drift out of sync with equip/light/burnout state.
+`FOV_RADIUS = 5`. Algorithm: recursive shadowcasting (`_compute_shadowcast`, 8 octants, Roguebasin multiplier tables). Result stored in `_visible_tiles: Dictionary`. Both `_compute_shadowcast()` call sites' radius formula is `FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus + (1 if GameState.has_lit_torch_equipped() else 0)` — the last term is a lit Torch equipped in either hand (`scripts/items/CLAUDE.md`'s "Torch"), computed live rather than folded into `fov_radius_bonus` so it can't drift out of sync with equip/light/burnout state.
 
 **Torch light bubble (floor/embedded, separate from the equipped FOV bonus above)**:
 `update_fog()` also unions `_compute_torch_light_tiles()` into `_visible_tiles` and paints it via

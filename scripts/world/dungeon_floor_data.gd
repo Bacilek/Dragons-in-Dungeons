@@ -113,7 +113,7 @@ const ENEMY_POOL: Array = [
 	# Goblin Minion — Small Fey, CN, CR 1/8. HP 2d6 (avg 7), AC 12 (natural armor).
 	# STR 8 (-1) DEX 15 (+2) CON 10 (+0) INT 10 (+0) WIS 8 (-1) CHA 8 (-1). Speed 1 (default).
 	# Skills: Stealth +6 — flavor only, no mechanical consumer yet (see Goblin Warrior's note above).
-	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 6 -> 7 here).
+	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 5 -> 6 here).
 	# Nimble Escape: after being hit by a melee attack, its next action(s) become fleeing the
 	# attacker for a random 1-5 turns instead of acting normally, never provoking an Opportunity
 	# Attack while doing so — Enemy.escape_turns/on_melee_hit()/_flee_from().
@@ -176,7 +176,7 @@ const ENEMY_POOL: Array = [
 	 "multiattack": [{"name": "Bite", "count": 1, "dmg_min": 4, "dmg_max": 7, "damage_type": "Piercing"}]},
 	# Orc Warrior — Medium Humanoid (Orc), CR 1/2, proficiency +2. HP 15, AC 13.
 	# STR 16 (+3) DEX 12 (+1) CON 16 (+3) INT 7 (-2) WIS 11 (+0) CHA 10 (+0). Speed 1 (default).
-	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 6 -> 7 here).
+	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 5 -> 6 here).
 	# Passive Perception = 10 + WIS mod = 10.
 	# Greataxe: +5 to hit (STR+prof — the default melee attack_stat, no "attack_profile" override
 	# needed), reach 1, 1d12+3 Slashing — single-entry multiattack sub-attack for the real damage
@@ -239,7 +239,7 @@ const ENEMY_POOL: Array = [
 	 "cr": 0.25, "creature_type": "Humanoid"},
 	# Skeleton — Medium Undead, CR 1/4, proficiency +2. HP 13, AC 14 (natural armor).
 	# STR 10 (+0) DEX 14 (+2) CON 15 (+2) INT 6 (-2) WIS 8 (-1) CHA 3 (-4). Speed 1 (default).
-	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 6 -> 7 here).
+	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 5 -> 6 here).
 	# Passive Perception = 10 + WIS mod = 9.
 	# Shortsword: +4 to hit (DEX+prof), reach 1, 1d6+2 Piercing — encoded as a single-entry
 	# multiattack sub-attack so the hit gets a real Piercing damage type instead of the top-level
@@ -267,7 +267,7 @@ const ENEMY_POOL: Array = [
 	# Speed 20 ft (below the 30 ft baseline) -> "speed": {"moves": 2, "per": 3}: skips its movement
 	# roughly 1 turn in 3 (Enemy._tick_speed_gate(), see scripts/entities/CLAUDE.md's "Movement
 	# speed scaling" note — still attacks if already adjacent on a no-move turn, same shape as
-	# rooted_turns). Darkvision: +1 to the default enemy notice/LOS radius (FOV_RADIUS 6 -> 7).
+	# rooted_turns). Darkvision: +1 to the default enemy notice/LOS radius (FOV_RADIUS 5 -> 6).
 	# Passive Perception = 10 + WIS mod = 8.
 	# Undead Fortitude (dc_base 5): on a would-be-lethal hit, CON check vs 5 + damage taken to stay
 	# at 1 HP instead — EXCEPT a Radiant killing blow or a critical hit, which the generic trait
