@@ -834,14 +834,18 @@ func get_blocking_body_on_line(from: Vector2i, to: Vector2i) -> Node:
 			return comp
 	return null
 
-# Terrain/door LOS AND "nothing living stands in the way" — the gate every RANGED ATTACK decision
-# (as opposed to mere sight/awareness, which still uses has_ranged_los/has_line_of_sight alone)
-# should check before actually taking a shot. A blocked shot is not simply refused for the player
-# (see PlayerRanged.ranged_attack(), which redirects to whichever body is actually in the way)
-# but IS what makes an enemy's own ranged attack_profile/ability/thrown-weapon logic treat the
-# target as "not in range" so it falls back to approaching instead of firing through an ally.
+# Terrain/door/grass LOS AND "nothing living stands in the way" — the gate every RANGED ATTACK
+# decision should check before actually taking a shot. A blocked shot is not simply refused for
+# the player (see PlayerRanged.ranged_attack(), which redirects to whichever body is actually in
+# the way, and uses the permissive has_ranged_los() directly — a player can still blind-fire
+# through grass they can't fully see through) but IS what makes an enemy's own ranged
+# attack_profile/ability/thrown-weapon logic treat the target as "not in range" so it falls back
+# to approaching instead of firing at someone it can't actually see (deliberately uses
+# has_line_of_sight(), NOT has_ranged_los() — an aware/CHASING enemy tracking a target's last-seen
+# position must not be able to keep shooting at it the instant grass breaks actual sight, even
+# though has_ranged_los() alone would still call that a "clear" shot).
 func has_clear_shot(from: Vector2i, to: Vector2i) -> bool:
-	return has_ranged_los(from, to) and get_blocking_body_on_line(from, to) == null
+	return has_line_of_sight(from, to) and get_blocking_body_on_line(from, to) == null
 
 func has_line_of_sight(from: Vector2i, to: Vector2i) -> bool:
 	var x: int = from.x

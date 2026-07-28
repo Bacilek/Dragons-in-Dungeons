@@ -771,6 +771,14 @@ func _refresh_ability_bar() -> void:
 					# Frenzied Killer R3: visible countdown until Frenzy auto-refreshes.
 					use_lbl.text = "%dt" % frenzy_cooldown_turns
 					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
+				elif ab.ability_id == "hunters_mark":
+					# Uses live on Stats.hunters_mark_uses_remaining, not the Ability itself
+					# (uses_max stays 0/0, same free-base-ability convention as Rage — see
+					# game_state.gd's _give_ranger_starting_items()) — checked before the generic
+					# uses_max == 0 branch below, which would otherwise blank this out.
+					var hm_remaining: int = GameState.player_stats.hunters_mark_uses_remaining
+					use_lbl.text = "%d/%d" % [hm_remaining, Stats.HUNTERS_MARK_USES_MAX]
+					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if hm_remaining > 0 else Color(0.5, 0.5, 0.5))
 				elif ab.uses_max == 0:
 					# Passive / infinite uses.
 					use_lbl.text = ""

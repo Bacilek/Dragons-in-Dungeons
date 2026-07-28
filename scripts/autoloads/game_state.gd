@@ -103,6 +103,10 @@ var gold: int = 0   # the wallet — plain int counter, earned via add_gold(), s
 # on floor reload/save-load.
 var mold_target_floor: int = 1
 var mold_spawned: bool = false
+# Snapshot of the just-finished character creation (class/scores/race/masteries/known spells) —
+# see snapshot_character_creation()/retry_same_character() below. Survives start_new_run() (which
+# never touches it) so death's "Try Again" can rebuild the same character on a fresh run/seed.
+var character_creation_snapshot: Dictionary = {}
 var blacksmith_panel_open: bool = false     # blocks ALL player input while blacksmith_panel.gd is visible
 var short_rest_open: bool = false
 var talent_picker_open: bool = false
@@ -372,6 +376,68 @@ func start_new_run() -> void:
 	fog_cloud_radius = 0
 	_give_starting_items()
 
+# Captures exactly what's needed to rebuild this same character (class, final ability scores,
+# race, weapon masteries, known Wizard spells) fresh at level 1 with starting gear — called once,
+# right when character creation actually completes (character_select.gd's premade pick, or
+# character_summary.gd's final "Yes" confirm on the Custom path). Deliberately NOT a to_dict()
+# snapshot of the whole run — it must survive stripped back down to a brand-new run_seed/floor 1
+# on retry_same_character(), not replay this playthrough's progress.
+func snapshot_character_creation() -> void:
+	var d: Dictionary = {}
+	d["character_class"] = int(player_stats.character_class)
+	d["scores"] = {
+		"str": player_stats.strength, "dex": player_stats.dexterity, "con": player_stats.constitution,
+		"int": player_stats.intelligence, "wis": player_stats.wisdom, "cha": player_stats.charisma,
+	}
+	d["race"] = int(player_stats.character_race)
+	d["race_variant"] = player_stats.race_variant
+	d["race_prof_ability"] = player_stats.race_prof_ability
+	d["masteries"] = player_stats.known_weapon_masteries.duplicate()
+	if player_stats.caster != null:
+		d["known_spells"] = player_stats.caster.known_spells.duplicate()
+		d["special_slot_spell_id"] = special_slot_spell_id
+	character_creation_snapshot = d
+
+# "Try Again" after death: same class/race/scores/masteries/spells, fresh level-1 run (new seed,
+# floor 1, starting items) — skips the whole character-creation UI chain. Falls back to a plain
+# start_new_run() (character select screen) if no snapshot was ever captured.
+func retry_same_character() -> bool:
+	if character_creation_snapshot.is_empty():
+		start_new_run()
+		return false
+	var d: Dictionary = character_creation_snapshot
+	start_new_run()
+	player_stats.character_class = int(d.get("character_class", Stats.CharacterClass.BARBARIAN)) as Stats.CharacterClass
+	player_stats.apply_class_defaults()
+	var scores: Dictionary = d.get("scores", {})
+	if not scores.is_empty():
+		player_stats.apply_point_buy_scores(scores)
+	give_class_starting_items()
+	choose_race(int(d.get("race", Stats.CharacterRace.HUMAN)) as Stats.CharacterRace, int(d.get("race_variant", 0)), int(d.get("race_prof_ability", -1)))
+	var masteries: Array = d.get("masteries", [])
+	if not masteries.is_empty():
+		player_stats.known_weapon_masteries.clear()
+		for m: Variant in masteries:
+			player_stats.known_weapon_masteries.append(String(m))
+		known_masteries_changed.emit()
+	if player_stats.caster != null:
+		for sid: Variant in d.get("known_spells", []):
+			var spell_id: String = String(sid)
+			var spell: Spell = SpellDb.get_spell(spell_id)
+			if spell == null:
+				continue
+			if spell.level == 0:
+				choose_cantrip(spell_id, true)
+			else:
+				choose_starting_spell(spell_id, true)
+		var special: String = String(d.get("special_slot_spell_id", ""))
+		if special != "" and player_stats.caster.known_spells.has(special):
+			set_special_slot(special)
+	class_selected = true
+	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
+	class_chosen.emit(player_stats.character_class)
+	return true
+
 func _give_starting_items() -> void:
 	var ration := Item.new()
 	ration.item_name = "Ration"
@@ -389,6 +455,16 @@ func _give_starting_items() -> void:
 	tools.description = "Left-click to use, then click an adjacent revealed trap to disarm. Consumed on failure."
 	tools.quantity = 3
 	add_item(tools)
+
+	var potion := Item.new()
+	potion.item_name = "Health Potion"
+	potion.item_type = Item.Type.POTION
+	potion.icon_path = "res://sprites/items/potions/health/medium.png"
+	potion.description = "Restores 2d4+CON HP"
+	potion.heal_dice_count = 2
+	potion.heal_dice_sides = 4
+	potion.quantity = 3
+	add_item(potion)
 
 # Called by class_select.gd's _on_class_selected() every time a class is (re)confirmed — including
 # re-picking a DIFFERENT class after using the Custom flow's Back navigation. give_class_starting_
@@ -482,7 +558,7 @@ func give_race_starting_items() -> void:
 # in character_select.gd). `silent` skips the log line for save/load replay (game_state.gd
 # from_dict()), mirroring how talent replay never re-logs old investments. Also auto-assigns the
 # picked cantrip into the Special quick-cast slot (owner-requested — always available via
-# Ctrl+click immediately, no separate Spellbook trip needed) — safe to do unconditionally since
+# Alt+click immediately, no separate Spellbook trip needed) — safe to do unconditionally since
 # this function only ever runs once per character (the old "2 cantrips" round 2 was repurposed
 # into choose_starting_spell()'s level-1 spell pick, see above).
 func choose_cantrip(spell_id: String, silent: bool = false) -> void:
@@ -526,6 +602,31 @@ func _give_wizard_starting_items() -> void:
 	if player_stats.caster.slot_pool != null:
 		player_stats.caster.slot_pool.remaining = player_stats.caster.slot_pool.max_slots().duplicate()
 		spell_slots_changed.emit()
+
+	# Wizard starts with an already-lit Torch in the Off-hand (owner-requested) — same Item
+	# shape as the floor-loot Torch (DungeonFloorData.ITEM_POOL), just pre-lit at creation
+	# instead of needing a click-to-light.
+	var torch := Item.new()
+	torch.item_name = "Torch"
+	torch.item_type = Item.Type.WEAPON
+	torch.icon_path = DungeonFloorData.WEAPONS_PATH + "weapon_torch.png"
+	torch.description = "Click while equipped to light it — burns 100 turns, granting +1 FOV and (in Main Hand) +1d4 Fire on hit. A lit Torch lying on the ground or embedded in an enemy also casts a radius-2 light. Can be equipped in either hand like a Shield. Burns out permanently into a Burnt Torch."
+	torch.damage_die_min = 1
+	torch.damage_die_max = 4
+	torch.damage_type = "Bludgeoning"
+	torch.weapon_category = "Simple"
+	torch.is_torch = true
+	torch.is_thrown = true
+	torch.range = 3
+	torch.long_range = 12
+	torch.uses_max = 3
+	torch.uses_remaining = 3
+	torch.gold_value = 10
+	torch.torch_lit = true
+	torch.torch_turns_remaining = 100
+	equipment["hand2"] = torch
+	recalculate_stats()
+	equipment_changed.emit()
 
 ## Wizard's one-time starting level-1 spell pick (cantrip_select.gd's round 2, or a premade
 ## hero's fixed "spell1" key in character_select.gd) — learns AND prepares it in one call, since
@@ -938,7 +1039,7 @@ func swap_ability_slots(a: int, b: int) -> bool:
 
 ## Special quick-cast slot: a single spell (cantrip or leveled) assigned from inside the Spellbook
 ## overlay's own drop target, displayed read-only in the Inventory overlay next to Ranged, and cast
-## with Ctrl+click in player.gd — independent of the ability bar and of prepared_spells (a third,
+## with Alt+click in player.gd — independent of the ability bar and of prepared_spells (a third,
 ## lightweight home for a spell reference, not an Item-shaped equipment slot).
 signal special_slot_changed()
 var special_slot_spell_id: String = ""
@@ -1163,13 +1264,13 @@ func long_rest() -> void:
 	player_stats.relentless_endurance_used = false
 	player_stats.heroic_inspiration_available = true
 	# Natural Sleeper activates/locks in on long rest only (not short rest, not floor descent).
+	# Form is no longer player-chosen — a random one is rolled every long rest (owner request:
+	# simplify/ease the game by removing the manual cycling step).
 	wild_heart_sleeper_active = get_talent_rank("expanded_forms") >= 1
-	active_sleeper_form = natural_sleeper_form
 	if wild_heart_sleeper_active:
-		if active_sleeper_form != "":
-			game_log("[color=cyan]Natural Sleeper: you wake — %s Form is active.[/color]" % active_sleeper_form)
-		else:
-			game_log("[color=gray]Natural Sleeper: no form chosen — press the ability to select one.[/color]")
+		natural_sleeper_form = Rng.pick(["Owl", "Panther", "Salmon"])
+		active_sleeper_form = natural_sleeper_form
+		game_log("[color=cyan]Natural Sleeper: you wake — %s Form is active.[/color]" % active_sleeper_form)
 	if player_companion != null and is_instance_valid(player_companion):
 		player_companion.heal_to_max()
 		game_log("[color=lime]%s rests and recovers fully.[/color]" % player_companion.animal_name)
@@ -2550,22 +2651,13 @@ func _build_natural_rager_description() -> String:
 
 func _build_natural_sleeper_description() -> String:
 	var rank: int = get_talent_rank("expanded_forms")
-	var form: String = natural_sleeper_form  # chosen form (preview for next rest)
+	var form: String = natural_sleeper_form
 	var lines: Array[String] = []
-	# No form chosen yet
+	# No form rolled yet (no long rest taken since gaining this talent)
 	if form == "":
-		lines.append("[No form chosen] — press to select Owl / Panther / Salmon.")
-		if not wild_heart_sleeper_active:
-			lines.append("[color=gray](Long rest to activate chosen form.)[/color]")
+		lines.append("[No form yet] — a random form (Owl/Panther/Salmon) is rolled on your next long rest.")
 		return "\n".join(lines)
-	# Form chosen — show header and per-form rank effects
-	if wild_heart_sleeper_active and active_sleeper_form != form:
-		var active_label: String = active_sleeper_form if active_sleeper_form != "" else "none"
-		lines.append("[%s Form] — activates next long rest. [color=gray]Active now: %s[/color]" % [form, active_label])
-	elif wild_heart_sleeper_active:
-		lines.append("[%s Form — active] Press to choose next long rest's form." % form)
-	else:
-		lines.append("[%s Form] — will activate on your next long rest. Press to cycle." % form)
+	lines.append("[%s Form — active] A new random form is rolled every long rest." % form)
 	match form:
 		"Owl":
 			if rank >= 1: lines.append("R1: Pass through chasms freely.")

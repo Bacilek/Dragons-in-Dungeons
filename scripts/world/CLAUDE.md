@@ -19,7 +19,7 @@ dungeon_floor.is_explored(pos: Vector2i) -> bool            # fog-of-war explore
 dungeon_floor.has_line_of_sight(p1, p2) -> bool             # Bresenham — enemy AI + search_around
 dungeon_floor.has_ranged_los(p1, p2) -> bool                # blocks WALL/VOID and closed doors (not GRASS, unlike has_line_of_sight) — TERRAIN only, ignores bodies standing in the way
 dungeon_floor.get_blocking_body_on_line(p1, p2) -> Node     # first Enemy/Player/Companion on an INTERMEDIATE tile of the p1→p2 ray (endpoints excluded), or null
-dungeon_floor.has_clear_shot(p1, p2) -> bool                # has_ranged_los(p1,p2) AND no blocking body — the gate enemy-side ranged attacks/abilities/thrown weapons check (see scripts/entities/CLAUDE.md's "Attack profiles")
+dungeon_floor.has_clear_shot(p1, p2) -> bool                # has_line_of_sight(p1,p2) (blocks GRASS too, unlike has_ranged_los) AND no blocking body — the gate enemy-side ranged attacks/abilities/thrown weapons check (see scripts/entities/CLAUDE.md's "Attack profiles")
 dungeon_floor.get_room_centers() -> Array[Vector2i]         # for enemy roam targets
 dungeon_floor.get_visible_enemies() -> Array[Enemy]         # enemies in current FOV
 dungeon_floor.get_all_enemies() -> Array[Enemy]             # all enemies (for companion targeting)

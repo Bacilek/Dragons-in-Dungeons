@@ -47,7 +47,7 @@ func begin_cast(spell_id: String) -> void:
 			# same "arm then confirm" flow every other spell uses. Prevents an accidental
 			# hotkey/ability-bar press from instantly burning a slot on a buff the player didn't
 			# mean to cast yet. Also resolvable via a quick double-press of the same hotkey/slot
-			# (see player.gd._use_ability_slot()) or Ctrl+click from the Special slot.
+			# (see player.gd._use_ability_slot()) or Alt+click from the Special slot.
 			_armed_spell_id = spell_id
 			spell_targeting_active = true
 			GameState.game_log("[color=lime]%s (touch) — click anywhere to cast on yourself, or press the slot again. [Esc] to cancel.[/color]" % spell.spell_name)
@@ -132,10 +132,10 @@ func _effective_range(spell: Spell) -> int:
 		return DungeonFloor.FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus
 	return spell.range_tiles
 
-## Direct one-motion cast for the Special quick-cast slot (Ctrl+click in player.gd, mirroring
+## Direct one-motion cast for the Special quick-cast slot (Alt+click in player.gd, mirroring
 ## Shift+ranged's single-motion resolve — no separate arm-then-click step like the ability-bar's
 ## begin_cast()/try_cast_at() pair). SELF-target spells (Shield, and touch buffs like Mage Armor)
-## ignore `clicked` entirely and self-cast immediately — Ctrl+click is always "target myself",
+## ignore `clicked` entirely and self-cast immediately — Alt+click is always "target myself",
 ## regardless of range_tiles, unlike begin_cast()'s own SELF branch which arms touch spells for a
 ## follow-up click instead.
 func cast_direct(spell_id: String, clicked: Vector2i) -> void:

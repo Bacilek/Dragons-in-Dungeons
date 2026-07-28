@@ -778,7 +778,7 @@ if that step lands it adjacent.
 ### Attack profiles (ranged enemies)
 Pool entries may set `"attack_profile": {"kind": "ranged", "range": N, "projectile": "..."}` (absent = implicit melee, zero change for existing entries). `Enemy._in_attack_range(target)` reads `_type.get("attack_profile", {})`: melee requires Chebyshev == 1; ranged requires Chebyshev ≤ `range` AND `_dungeon_floor.has_clear_shot()`. `_act_toward()` calls `_attack_target()` once in range, otherwise steps toward the target exactly like melee (reuses the same BFS/greedy stepping — approaching until in range, not until adjacent).
 
-**No shooting through a blocking body**: `DungeonFloor.has_clear_shot(from, to)` (`scripts/world/CLAUDE.md`) is `has_ranged_los()` (terrain/doors) **plus** `get_blocking_body_on_line()==null` (no Enemy/Player/Companion on an intermediate tile of the ray). Every enemy-side "can I take this shot" check — `_in_attack_range()`'s ranged branch, `_pick_ready_ability()` (the generic ranged-ability dispatch), and both `"thrown_weapon"` range checks (opener + flee-only parting shot) — uses `has_clear_shot()` instead of the bare terrain check, so an enemy whose own ally (or the player's companion) stands between it and its target treats the shot as "not in range" and falls back to approaching instead of firing through the blocker. The **player's** own ranged shot is handled the opposite way — see `PlayerRanged.ranged_attack()` below: it's never simply refused, it redirects to whichever body is actually in the way. A generic ranged-ability dispatch (cooldown/uses_max/recharge, damage+optional status) now exists — see "Enemy D&D stat-block schema" above's `"abilities"` row — for a caster-style enemy that picks between melee approach and a ranged ability; a true multi-spell caster archetype (choosing between several abilities by trigger condition) still doesn't exist beyond that single-generic-shape dispatch. Reference pool entry for plain ranged attack_profile: `"Goblin Archer"` (`enemy_id: "goblin_archer"`, `DungeonFloorData.ENEMY_POOL`).
+**No shooting through a blocking body — or through grass it can't see through**: `DungeonFloor.has_clear_shot(from, to)` (`scripts/world/CLAUDE.md`) is `has_line_of_sight()` (terrain/doors/**GRASS**) **plus** `get_blocking_body_on_line()==null` (no Enemy/Player/Companion on an intermediate tile of the ray). Deliberately uses the stricter `has_line_of_sight()`, not the permissive `has_ranged_los()` the player's own ranged/spell targeting uses — an aware/CHASING enemy tracking a target's last-seen position must lose its shot the instant grass actually breaks sight, not keep sniping through foliage it can't see into (bugfix: an Orc Warrior was throwing its Javelin at a player hidden behind grass it had no LOS to). Every enemy-side "can I take this shot" check — `_in_attack_range()`'s ranged branch, `_pick_ready_ability()` (the generic ranged-ability dispatch), and both `"thrown_weapon"` range checks (opener + flee-only parting shot) — uses `has_clear_shot()` instead of the bare terrain check, so an enemy whose own ally (or the player's companion) stands between it and its target treats the shot as "not in range" and falls back to approaching instead of firing through the blocker. The **player's** own ranged shot is handled the opposite way — see `PlayerRanged.ranged_attack()` below: it's never simply refused, it redirects to whichever body is actually in the way. A generic ranged-ability dispatch (cooldown/uses_max/recharge, damage+optional status) now exists — see "Enemy D&D stat-block schema" above's `"abilities"` row — for a caster-style enemy that picks between melee approach and a ranged ability; a true multi-spell caster archetype (choosing between several abilities by trigger condition) still doesn't exist beyond that single-generic-shape dispatch. Reference pool entry for plain ranged attack_profile: `"Goblin Archer"` (`enemy_id: "goblin_archer"`, `DungeonFloorData.ENEMY_POOL`).
 
 ### Shared attack resolver
 `Enemy._resolve_attack_roll(target_ac: int, attack_bonus_override: int = -1, roll_penalty: int = 0) -> Dictionary` is the one d20-vs-AC roll (Reckless Attack ADV/flat bonus, Grip of the Forest R3 disadvantage, crit-on-nat-20, Blade Ward's `roll_penalty`) shared by every enemy attack — melee or ranged, vs player or vs companion. `_attack_player()` and `_attack_companion()` both call it, then handle their own damage application/logging (player routes through `take_damage_raw` for rage DR/poison/Retaliation; companion calls `Companion.take_damage_from_enemy()`, which has no such hooks — those are player-only systems). `_attack_player()` is the only caller that ever passes a nonzero `roll_penalty` (Blade Ward, player-only buff) — subtracted from the roll AFTER ADV/DISADV resolves, before the AC comparison; never reduces a natural-20 crit.
@@ -844,10 +844,10 @@ Tier 1 (levels 1–6): earns 5 talent points, spent across 3 talents — Psycho,
 - `GameState.apply_player_status(type, turns) -> bool` — single chokepoint for all player status/debuff application. All trap, enemy, terrain, and rotten-meat status calls use this function.
 
 **Wild Heart Tier 2 talents** (**experimental** — balance changes expected):
-- State vars on GameState: `natural_rager_form: String = "Bear"` (the TARGET Animal Form just selected), `active_rager_form: String = "Bear"` (the form actually granting effects right now), `ANIMAL_FORM_SWITCH_TURNS: int = 1` (const), `rager_form_switch_turns_remaining: int` (counts down to 0, at which point `active_rager_form` snaps to `natural_rager_form`), `natural_sleeper_form: String = "Owl"` (preview — chosen form for next rest, unrelated talent, see below), `active_sleeper_form: String = "Owl"` (locked in at floor descent), `wild_heart_sleeper_active: bool`, `player_evades_opportunity_attacks: bool`, `fov_radius_bonus: int`, `player_companion: Variant`, `terrain_ac_bonus: int`. (Internal var names keep their pre-rework identifiers — only ability/talent ids and display names changed.)
+- State vars on GameState: `natural_rager_form: String = "Bear"` (the TARGET Animal Form just selected), `active_rager_form: String = "Bear"` (the form actually granting effects right now), `ANIMAL_FORM_SWITCH_TURNS: int = 1` (const), `rager_form_switch_turns_remaining: int` (counts down to 0, at which point `active_rager_form` snaps to `natural_rager_form`), `natural_sleeper_form: String = "Owl"` (last-rolled form, unrelated talent, see below), `active_sleeper_form: String = "Owl"` (both randomly re-rolled together on every long rest — not locked in at floor descent), `wild_heart_sleeper_active: bool`, `player_evades_opportunity_attacks: bool`, `fov_radius_bonus: int`, `player_companion: Variant`, `terrain_ac_bonus: int`. (Internal var names keep their pre-rework identifiers — only ability/talent ids and display names changed.)
 - **Animal Form** (ability_id `"animal_form"`, free base ability — no talent rank required): Toggle ability cycles Bear/Eagle/Wolf (`player_wild_heart.gd.cycle_animal_form()`) **freely, any time — NOT rest-gated** (that's the unrelated Natural Sleeper talent below — Animal Form and Natural Sleeper look similar but work on entirely different timers, don't conflate them). There's no way to pick a form directly — each press steps to the next form in the Bear→Eagle→Wolf→Bear cycle (`GameState.start_animal_form_switch(form)`, `form` always the adjacent one), which retargets `natural_rager_form` and (re)starts an `ANIMAL_FORM_SWITCH_TURNS` (1) real-turn countdown (`rager_form_switch_turns_remaining`) — so reaching the form 2 steps away (e.g. Bear→Wolf) costs 2 presses/turns, one per intermediate step, not a single flat wait. Re-pressing mid-transition just retargets and restarts the count. `GameState._tick_animal_form_transition()`, called once per REAL player turn (never on an Eagle-style reverted/free-action turn) from `player.gd._on_turn_started()`, decrements the counter; hitting 0 snaps `active_rager_form = natural_rager_form` and applies its effects. The currently active form keeps working throughout the wait — there's no "form-less" gap. `_apply_active_rager_form_effects()` is the single place that pushes `active_rager_form` into the always-on Eagle knobs (`player_evades_opportunity_attacks`, `fov_radius_bonus`) — called when a transition completes, at subclass grant (`_setup_wild_heart_tier2_talents()`, which activates the starting form immediately with no wait), and by `from_dict()` restore. Bear: **while Raging only** (Bear is the one form whose effect is Rage-gated — Eagle/Wolf stay always-on once active), 25% resistance to elemental damage (Fire/Cold/Lightning/Thunder/Acid/Poison), checked live against `active_rager_form` + `is_raging` in `take_damage_raw()`. Eagle: enemies never gain Opportunity Attacks against you. Wolf: ADV on STR attacks when 4+ enemies are visible (`_bump_attack()`, checks `active_rager_form`). `player.gd`'s turn-tick calls `_dungeon_floor.update_fog(grid_pos)` once a transition completes, since Eagle's FOV bonus may have just changed.
 - **Enhanced Forms** (`talent_id: "enhanced_forms"`, max 3): Upgrades the base 3 forms — refreshes Animal Form's description only, no separate ability. Bear: R1 also resists magical damage (Radiant/Necrotic/Force); R2 33% total; R3 50% total. Eagle: R1 +1 FOV radius (`GameState.fov_radius_bonus`, threaded into `DungeonFloor._compute_shadowcast()`/`get_visible_enemies()`); R2 ranged attacks against you get -2 to hit *(not yet wired into enemy ranged-attack resolution — flagged as a gap, see below)*; R3 ranged enemies get Disadvantage *(same gap)*. Wolf: threshold drops 4→3→2 enemies; R3 also grants ADV at 1 enemy + 1 friendly (companion) in FOV.
-- **Expanded Forms** (`talent_id: "expanded_forms"`, max 3): Toggle cycles Owl/Panther/Salmon (`cycle_natural_sleeper_form()`; simplified from the source spec's "random form per long rest" to player-chosen cycling, matching every other Wild Heart form toggle). **Form locking**: cycling mid-floor updates only `natural_sleeper_form` (preview); the effects use `active_sleeper_form`, which locks in ONLY on a completed long rest (`GameState.long_rest()`: `active_sleeper_form = natural_sleeper_form`) — not on short rest, not on floor descent. Terrain effects check `active_sleeper_form` in `_try_move()` and `_on_turn_started()`. Owl: chasm passthrough. Panther: mud not difficult. Salmon: water not difficult. R2: roll 2d6 THP at the **start of each real turn** while standing in form's terrain — THP replaces (not stacks) existing THP. R3: +2 AC (`GameState.terrain_ac_bonus` → `recalculate_stats()`; cleared between floors, updated on every move in `_try_move()`).
+- **Expanded Forms** (`talent_id: "expanded_forms"`, max 3): Passive ability slot, no activation — pressing it just logs a flavor line (`player.gd`'s `_use_ability_slot()`). Form is **randomly rolled every long rest** (`GameState.long_rest()`: `natural_sleeper_form = Rng.pick(["Owl","Panther","Salmon"]); active_sleeper_form = natural_sleeper_form` — matches the source spec's original "random form per long rest" design; the earlier player-chosen-cycling version, `PlayerWildHeart.cycle_natural_sleeper_form()`, was removed per direct owner request to simplify/ease the game). Not player-choosable, not on short rest, not on floor descent. Terrain effects check `active_sleeper_form` in `_try_move()` and `_on_turn_started()`. Owl: chasm passthrough. Panther: mud not difficult. Salmon: water not difficult. R2: roll 2d6 THP at the **start of each real turn** while standing in form's terrain — THP replaces (not stacks) existing THP. R3: +2 AC (`GameState.terrain_ac_bonus` → `recalculate_stats()`; cleared between floors, updated on every move in `_try_move()`).
 - **Wild Companion** (`talent_id: "wild_companion"`, max 3, ability_id `"wild_companion"`): Active ability (1 charge/rest). Summons animal companion at nearest free adjacent tile. R1=Squirrel(AC12,HP10,1d6), R2=Boar(AC14,HP20,2d6), R3=Bear(AC16,HP30,3d6). Re-activate while companion alive = dismiss+resummon. Charge restores on short rest OR long rest (`GameState.long_rest()` — NOT floor descent). Companion entity: `scripts/entities/companion.gd` — see "Companion" section above. `GameState.player_companion` = live reference or null.
 - **`_reverted_this_round: bool`** in player.gd — set to `true` before every `revert_to_waiting()` call (Eagle's own free-move mechanic was removed in this rework; the flag now only guards `_eagle_free_move_used`). `_on_turn_started()` reads and clears it; when true, skips resetting per-round caps. Ensures per-round caps survive `revert_to_waiting()` and only reset after enemies actually go.
 
@@ -879,13 +879,18 @@ Tier 1 (levels 1–6): earns 5 talent points, spent across 3 talents — Psycho,
 
 Level-1 baseline: **Hunter's Mark** (ability_id `"hunters_mark"`, granted directly at character
 creation like Rage, not talent-gated) — arm-then-click targeting (same UX as Grip of the Forest's
-hook mode), marks one enemy; every hit against it (any weapon) deals a second, independent +1d6
-Force damage instance. `Stats.hunters_mark_target`/`hunters_mark_fresh` (not serialized, same
-precedent as `witch_bolt_target`) + `Stats.hunters_mark_uses_remaining`/`HUNTERS_MARK_USES_MAX`
-(3, serialized, refilled in `long_rest()`) — a use is spent only when establishing a mark from
-none; retargeting an active mark is free. Direction to the marked target shows on-screen even
-outside FOV/LOS via `scripts/ui/hunters_mark_indicator.gd` (mirrors `compass.gd`'s pattern).
-Composition module: `scripts/entities/player_ranger_talents.gd` (`PlayerRangerTalents`,
+hook mode), marks one enemy; every hit against it — **any weapon, including Off-hand and Nick
+bonus attacks, unconditionally** — deals a second, independent +1d6 Force damage instance
+(`PlayerRangerTalents.hunters_mark_bonus_die()`; this used to require Twin Fang R1, see that
+talent's entry below for the now-dead rank). `Stats.hunters_mark_target`/`hunters_mark_fresh` (not
+serialized, same precedent as `witch_bolt_target`) + `Stats.hunters_mark_uses_remaining`/
+`HUNTERS_MARK_USES_MAX` (3, serialized, refilled in `long_rest()`) — a use is spent only when
+establishing a mark from none; retargeting an active mark is free. Shown as a `X/3` use-count
+badge on the ability bar slot (`hud.gd`'s `_refresh_ability_bar()`, same special-cased-`Ability`
+convention as Rage — `Stats.hunters_mark_uses_remaining` is read directly since the `Ability`
+resource's own `uses_remaining`/`uses_max` stay 0/0). Direction to the marked target shows
+on-screen even outside FOV/LOS via `scripts/ui/hunters_mark_indicator.gd` (mirrors `compass.gd`'s
+pattern). Composition module: `scripts/entities/player_ranger_talents.gd` (`PlayerRangerTalents`,
 `_ranger_talents`). Full spec: `markdowns/ranger_base.md`.
 
 **Starting gear** (`GameState._give_ranger_starting_items()`): two Daggers (Main Hand + Off-hand
@@ -910,13 +915,14 @@ ranged weapon to be useful):
   (2) against the player only, in `player.gd._resolve_stealth_check()`. R3: when the Marked target
   dies, `Enemy.die()` calls `PlayerRangerTalents.try_bloodhound_remark()` to re-mark the nearest
   visible enemy for free (no use spent).
-- **Twin Fang** (`talent_id: "twin_fang"`, max 3): R1 extends Hunter's Mark's bonus die to
-  Off-hand/Nick swings (`hunters_mark_bonus_die(enemy, is_primary)` — the turn's primary
-  melee/ranged/thrown attack always gets it regardless of rank). R2 keeps the Off-hand attack's
-  full ability modifier against the Marked target specifically (`_resolve_offhand_attack()`'s
-  `dmg_mod`, skipping the usual dual-wield penalty). R3: the Marked target can never gain
-  Advantage on its attacks against the player (`Enemy._attack_player()` suppresses the Fog-Cloud
-  ADV source when the attacker IS the mark — the only enemy-side ADV source that exists today).
+- **Twin Fang** (`talent_id: "twin_fang"`, max 3): R1 is a **dead rank** — Hunter's Mark's bonus
+  die extending to Off-hand/Nick swings used to be R1's effect; that's now baseline (see "Ranger
+  class" above / `docs/TODO.md`'s "Twin Fang R1 redesign") and no longer reads
+  `get_talent_rank("twin_fang")` at all. R2 keeps the Off-hand attack's full ability modifier
+  against the Marked target specifically (`_resolve_offhand_attack()`'s `dmg_mod`, skipping the
+  usual dual-wield penalty). R3: the Marked target can never gain Advantage on its attacks against
+  the player (`Enemy._attack_player()` suppresses the Fog-Cloud ADV source when the attacker IS
+  the mark — the only enemy-side ADV source that exists today).
 
 ## Wizard spellcasting (cantrips)
 
@@ -1145,10 +1151,10 @@ Fireball) is armed via `PlayerSpellcasting.begin_cast()` (the ability-bar arm-th
 `DungeonFloor.show_aoe_preview(hovered_tile, spell.shape_size)` /
 `hide_aoe_preview()`. `PlayerSpellcasting.get_armed_spell()` is the read-only accessor that lets
 `player.gd` see the armed spell's shape without touching the private `_armed_spell_id` field.
-**Ctrl+click Special-slot cast**: `cast_direct()` resolves in the same frame it's clicked, so it
+**Alt+click Special-slot cast**: `cast_direct()` resolves in the same frame it's clicked, so it
 never arms `spell_targeting_active` long enough for `get_armed_spell()` to see it — instead,
 `_update_spell_aoe_preview()` falls back to `GameState.special_slot_spell_id` (via
-`SpellDb.get_spell()`) whenever Ctrl is held and no spell is otherwise armed, so holding Ctrl and
+`SpellDb.get_spell()`) whenever Alt is held and no spell is otherwise armed, so holding Alt and
 hovering with a sphere spell in the Special slot previews it exactly like the ability-bar flow.
 `dungeon_floor.gd`'s implementation is a small pooled-`Sprite2D` overlay (1×1 white texture tinted
 `Color(0.65, 0.25, 0.85, 0.35)` via `modulate`, `z_index = 2` — same layer as the fog sprite,
@@ -1175,10 +1181,14 @@ impact point rather than stop at the first wall it can't directly see through.
 - **Starting spellbook**: `GameState._give_wizard_starting_items()` (called from
   `give_class_starting_items()`, same dispatch as `_give_barbarian_starting_items()`) only seeds
   the level-1 spell-slot pool — no spells are auto-known anymore (owner-requested: a starting
-  Wizard now picks exactly 1 cantrip and 1 level-1 spell, not 2+2). `scripts/ui/cantrip_select.gd`
+  Wizard now picks exactly 1 cantrip and 1 level-1 spell, not 2+2). The same function also equips
+  an already-**lit** Torch in the Off-hand (`torch_lit = true`, `torch_turns_remaining = 100`) —
+  every Wizard starts a run with +1 FOV and the Main-Hand Fire-on-hit bonus inactive (it's sitting
+  in Off-hand, not Main Hand) until it burns out or is manually moved — see
+  `scripts/items/CLAUDE.md`'s "Torch" section for the mechanic itself. `scripts/ui/cantrip_select.gd`
   (Custom path, spawned by `race_select.gd`) runs two "pick 1 of N" rounds: round 1 offers
   `SpellDb.STARTER_CANTRIP_IDS` (3) via `GameState.choose_cantrip()` — which also auto-assigns the
-  pick into the Special quick-cast slot (`set_special_slot()`) so it's immediately Ctrl+click-able
+  pick into the Special quick-cast slot (`set_special_slot()`) so it's immediately Alt+click-able
   — round 2 offers the fixed level-1 pair (Magic Missile, Shield) via
   `GameState.choose_starting_spell()`, which learns AND prepares it in one call (prepared cap is 1
   at level 1, so there's nothing else to contend with). Premade heroes bypass both pickers: `Jace`
@@ -1259,7 +1269,7 @@ impact point rather than stop at the first wall it can't directly see through.
   silent "31 rolled, only 25 landed" gap, the log line appends a gray `"(N before your own
   reductions)"` note whenever the landed amount differs from the post-save roll. **Guaranteed self-targeting**: `player.gd`'s
   spell-targeting click handler now resolves at `player.grid_pos` instead of the raw clicked tile
-  whenever **Ctrl** is held on the click — a deliberate, precision-proof way to center a sphere
+  whenever **Alt** is held on the click — a deliberate, precision-proof way to center a sphere
   AoE (or resolve a touch SELF spell, see Mage Armor above) on yourself without needing to click
   exactly on your own sprite (which sits under the camera-follow crosshair and can be fiddly to
   hit with a plain click, though a plain click on your own tile has always worked too).
@@ -1274,18 +1284,18 @@ impact point rather than stop at the first wall it can't directly see through.
   targeting exists** (only the caster's own tile is ever a valid touch target — a future
   ally-targetable touch spell would need `cast_leveled_self()`, or a new resolver, to accept a
   target other than `player`), so `try_cast_at()`'s `SELF` branch doesn't bother validating the
-  click position at all: ANY click (or Ctrl+click, or a same-slot double-press — see below)
+  click position at all: ANY click (or Alt+click, or a same-slot double-press — see below)
   confirms the cast on yourself, short-circuiting before the range/LOS check block entirely.
   Requiring the click to land pixel-perfectly on your own tile (an earlier iteration of this
   logic) was needless friction for a spell that can't target anything else anyway. Three ways to
   confirm the arm-then-cast:
   - **Any LMB click**, anywhere in the game world, while armed.
-  - **Ctrl+click from the Special quick-cast slot** — `cast_direct()` self-casts any SELF-target
+  - **Alt+click from the Special quick-cast slot** — `cast_direct()` self-casts any SELF-target
     spell immediately regardless of `range_tiles`, bypassing the arm step entirely. **Fixed
     footgun**: `player.gd`'s mouse-release handler used to check `pending == grid_pos` (the
-    "clicking where you already stand is a no-op move" guard) *before* the Ctrl+Special-slot
-    dispatch — since Ctrl+clicking a touch self-buff naturally means clicking your own tile, that
-    guard silently ate the cast every time. The Ctrl+Special-slot check now runs first.
+    "clicking where you already stand is a no-op move" guard) *before* the Alt+Special-slot
+    dispatch — since Alt+clicking a touch self-buff naturally means clicking your own tile, that
+    guard silently ate the cast every time. The Alt+Special-slot check now runs first.
   - **Double-press the same ability-bar/quickbar slot** within `Player.DOUBLE_TAP_WINDOW_SEC`
     (0.4s) — `_use_ability_slot()` tracks `_last_ability_slot_idx`/`_last_ability_slot_press_msec`;
     a second press of the same slot on a SELF-target spell cancels any pending arm state and calls
@@ -1309,18 +1319,22 @@ impact point rather than stop at the first wall it can't directly see through.
 - **Special quick-cast slot**: a single spell (cantrip or leveled), assigned from inside the
   Spellbook overlay (`GameState.special_slot_spell_id`/`set_special_slot()`/`clear_special_slot()`,
   see `scripts/autoloads/CLAUDE.md`), displayed read-only next to Ranged in the Inventory overlay
-  (`scripts/ui/CLAUDE.md`), cast with **Ctrl+click** — a direct, one-motion resolve mirroring
+  (`scripts/ui/CLAUDE.md`), cast with **Alt+click** — a direct, one-motion resolve mirroring
   Shift+Ranged rather than the ability bar's two-step arm-then-click. `PlayerSpellcasting.
   cast_direct(spell_id, clicked)` (`scripts/entities/player_spellcasting.gd`) is the dedicated
   entry point: SELF-target spells (Shield) ignore `clicked` and self-cast immediately (same branch
   `begin_cast()` uses); every other target kind sets `_armed_spell_id` directly and calls the
   existing `try_cast_at()` — reuses 100% of the normal cast's range/LOS/slot-consumption logic,
   no duplicated resolution code. Dispatched from `player.gd`'s mouse-release handler, as an `elif`
-  alongside the Shift+Ranged branch (`Input.is_key_pressed(KEY_CTRL) and GameState.
+  alongside the Shift+Ranged branch (`Input.is_key_pressed(KEY_ALT) and GameState.
   special_slot_spell_id != ""`).
+- **Ctrl+click (world)** is a separate, unrelated binding — instant Inspect on whatever's
+  clicked (tile/entity/item), the same info RMB Inspect shows. Takes priority over every other
+  LMB click mode (movement, attack, spell/tool targeting) and never costs a turn — see
+  `PlayerActions.do_inspect()`.
 - **Hover indicator over enemies** (`player.gd._update_hover_indicator()`): the small icon shown
   above a moused-over enemy reflects whichever action a click would actually perform, checked in
-  the same priority order as the click handler above — Ctrl-held (Special-slot spell icon, if one
+  the same priority order as the click handler above — Alt-held (Special-slot spell icon, if one
   is assigned) beats Shift-held (equipped ranged weapon icon) beats the default (equipped melee
   weapon icon). **Only shown when the enemy is actually in FOV** — gated on
   `DungeonFloor.is_tile_visible()` for at least one of the enemy's `occupied_tiles()` (not just

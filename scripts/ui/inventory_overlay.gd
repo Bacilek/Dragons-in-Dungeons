@@ -528,7 +528,7 @@ func _show_special_slot_tooltip() -> void:
 	if spell == null:
 		_inv_tooltip.visible = false
 		return
-	var text: String = "[b]%s[/b]\n[color=gray]%s[/color]\n[color=#888]Ctrl+click a target to cast. Right-click to clear.[/color]" % [spell.spell_name, spell.description]
+	var text: String = "[b]%s[/b]\n[color=gray]%s[/color]\n[color=#888]Alt+click a target to cast. Right-click to clear.[/color]" % [spell.spell_name, spell.description]
 	_inv_tooltip_rtl.text = text
 	_inv_tooltip_rtl.size = Vector2(172.0, 0)
 	_inv_tooltip.size = Vector2(180.0, 60)

@@ -211,10 +211,10 @@ newly-grown slots are immediately usable rather than empty until the next long r
 `known_spells.has(spell_id)`) / `clear_special_slot()` — a single spell reference independent of
 `player_ability_bar` and `prepared_spells`, assigned from inside the Spellbook overlay (see
 `scripts/ui/CLAUDE.md`), displayed read-only in the Inventory overlay next to Ranged, cast with
-Ctrl+click via `PlayerSpellcasting.cast_direct()` (see `scripts/entities/CLAUDE.md`'s "Wizard
+Alt+click via `PlayerSpellcasting.cast_direct()` (see `scripts/entities/CLAUDE.md`'s "Wizard
 leveled spells"). `choose_cantrip()` also calls this automatically on the character-creation
 cantrip pick (both the Custom `cantrip_select.gd` flow and premade Jace), so a fresh Wizard
-always starts with their cantrip already loaded into Ctrl+click. Persisted as a top-level `"special_slot_spell_id"` string in `to_dict()`/
+always starts with their cantrip already loaded into Alt+click. Persisted as a top-level `"special_slot_spell_id"` string in `to_dict()`/
 `from_dict()` (same pattern as `gold`); restored last in `from_dict()`, after `Stats.from_dict()`
 repopulates `known_spells`, and silently clears if the saved id is no longer known.
 
@@ -252,6 +252,26 @@ spell via Back never leaves the old pick known alongside the new one (`choose_ca
 **Tier scaffolding (Tiers 1–4)**: `TIER_LEVEL_RANGES = {1: [1,6], 2: [7,12], 3: [13,17], 4: [18,20]}` + `tier_for_level(lv) -> int` (returns 0 for level 21+, the only gap) drive point grants in `gain_exp()`. `tier_unlocked(tier) -> bool`: 1 = always; 2 = `tier2_unlocked`; 3 = `tier3_selected_class != -1` and level ≥ 13; 4 = level ≥ 18. `can_invest_talent()` gates on `tier_unlocked(t.tier)` plus `talent_points[t.tier] > 0` (with an extra explicit tier-2 lock guard). Tier 3/4 content is NOT implemented — only the accessor shape exists.
 
 **Debug subclass switching (God-Mode-only override, NOT the player path)**: `TIER2_SUBCLASSES: PackedStringArray = ["Berserker", "Scarred Warrior", "Wild Heart", "Zealot", "World Tree"]`. `debug_switch_subclass(direction: int)` — clears tier 2 investments + ability bar entries (including the outgoing subclass's free base ability via `TIER2_BASE_ABILITY_ID`) + `_class_talents` tier 2 entries, then re-runs `_setup_tier2_for_active_subclass()`. Called from talent_picker.gd's subclass arrow buttons (only visible in God Mode); it deliberately does NOT set `subclass_chosen`. Adding another subclass requires a new `match` case here plus its `_setup_X_tier2_talents()`, a `TIER2_BASE_ABILITY_ID` entry if it grants a free base ability, plus a card entry in `subclass_select.gd`'s `SUBCLASSES` const.
+
+**"Try Again" (death → same character, fresh run)**: `character_creation_snapshot: Dictionary`
+(empty = none captured) is written once by `snapshot_character_creation()` right when character
+creation actually finishes — `character_select.gd`'s premade-card click and
+`character_summary.gd`'s final "Yes, I'm Ready!" confirm both call it just before `queue_free()`.
+Captures only identity, not run progress: class, final ability scores (post point-buy +
+background, read straight off `player_stats` at that moment), race + variant + prof-ability,
+`known_weapon_masteries`, and (Wizard only) `caster.known_spells` + `special_slot_spell_id`.
+`retry_same_character() -> bool` (called by `scripts/ui/game_over.gd`'s "Try Again" button) replays
+those onto a brand-new `start_new_run()` (fresh seed, floor 1, starting items) via the exact same
+functions character creation itself uses (`apply_class_defaults()`, `apply_point_buy_scores()`,
+`give_class_starting_items()`, `choose_race()`, `choose_cantrip()`/`choose_starting_spell()` with
+`silent=true`), then sets `class_selected = true` and re-emits `class_chosen` — same finish-line
+shape as a normal character creation, so `SaveManager`'s `class_chosen` hook and
+`character_select.gd`'s own `class_selected`-already-true self-free both handle it for free
+without any special-casing. Falls back to a plain `start_new_run()` (full character-creation UI)
+if no snapshot was ever captured (returns `false`) — `game_over.gd` only shows the "Try Again"
+button when a snapshot exists, so this fallback is a defensive no-op in practice, not a real path.
+Deliberately NOT a `to_dict()`/`from_dict()` replay (that would drag in run progress — level,
+floor, inventory beyond starting gear, RNG stream — the opposite of what a fresh retry wants).
 
 **Rest system**: `advance_floor()` is floor bookkeeping ONLY (floor number, terrain AC reset) — it does not restore anything. `GameState.long_rest()` is the single chokepoint for every long-rest-gated resource: full HP heal, cleared status effects, `rage_uses_remaining`, `hunters_mark_uses_remaining` (Ranger, see `scripts/entities/CLAUDE.md`'s "Ranger class"), `hit_dice = character_level`, `short_rests_remaining = max_short_rests`, Natural Sleeper form lock-in, Zealot `zealot_blessed_charges`/`zealot_zp_charges`, companion heal, `_sync_ability_uses()` (One with Nature charge). Triggered explicitly by the player via the Alt-menu's Long Rest tab (`scripts/ui/short_rest_panel.gd`), never automatically. **Any new "per long rest" resource must be refilled in `long_rest()` and nowhere else** — `advance_floor()` must never regain restore logic. `GameState.total_food_value() -> int` sums `Item.food_value × quantity` across quickbar+bag; `can_long_rest() -> bool` (always true when `invincible`) gates the button; `_consume_food_value(amount)` spends cheapest-value FOOD items first, skipped entirely while `invincible` (so God Mode long rests cost nothing). `long_rest_pending: bool` tells the shared short-rest turn-countdown in `player.gd._on_turn_started()` to call `long_rest()` instead of the short-rest heal when the countdown reaches 0; `rest_interrupt_panel.gd`'s abort path also clears it. Level-up via `gain_exp()` only grants `+1 talent_points_available` and emits `player_leveled_up` — it does NOT reset resources or heal the player.
 

@@ -199,7 +199,7 @@ exist today) falls back to the player's live FOV radius as its cap, the old beha
 Heavy Crossbow and Longbow are both also `is_heavy=true` (DEX 13+ or Disadvantage) and `is_two_handed=true` (cosmetic for a ranged weapon — see root `CLAUDE.md`'s note that `is_two_handed` doesn't block the ranged slot).
 
 ## Ammo items
-`Item.ammo_item_name` on a ranged weapon names a separate stackable `Item` (`Item.Type.TOOL`, no combat stats of its own — currently **Arrow** for the Short Bow and Longbow, `sprites/items/ammo/arrow.png`, and **Bolt** for the Heavy Crossbow, `sprites/items/ammo/arrow_gold.png` — a distinct color tier reused as a stand-in bolt sprite since no dedicated bolt art exists yet) consumed 1-per-shot. The flying-projectile VFX during a ranged attack is separate and still uses `sprites/weapons/weapon_arrow.png` (`PlayerRanged.ARROW_SPRITE`) regardless of which ammo item was consumed. Found/looked-up by `item_name` match across the quickbar then bag (`PlayerAmmo.find_ammo_stack()`/`remove_ammo_stack()` in `scripts/entities/player_ammo.gd`) — a weapon with `ammo_item_name == ""` falls back to the legacy `consumes_on_ranged` pattern (decrements the weapon's own `quantity`, e.g. old Throwing Daggers) or fires with infinite ammo.
+`Item.ammo_item_name` on a ranged weapon names a separate stackable `Item` (`Item.Type.TOOL`, no combat stats of its own — currently **Arrow** for the Short Bow and Longbow, `sprites/items/ammo/arrow.png`, **Bolt** for the Heavy Crossbow, `sprites/items/ammo/arrow_gold.png` — a distinct color tier reused as a stand-in bolt sprite since no dedicated bolt art exists yet — and **Buckshot**, `sprites/items/misc/coin_gold.png` placeholder art, for future firearms (muskets etc.) — no gun weapon exists in `ITEM_POOL` yet, this is ammo-only infrastructure ahead of that) consumed 1-per-shot. The flying-projectile VFX during a ranged attack is separate and still uses `sprites/weapons/weapon_arrow.png` (`PlayerRanged.ARROW_SPRITE`) regardless of which ammo item was consumed. Found/looked-up by `item_name` match across the quickbar then bag (`PlayerAmmo.find_ammo_stack()`/`remove_ammo_stack()` in `scripts/entities/player_ammo.gd`) — a weapon with `ammo_item_name == ""` falls back to the legacy `consumes_on_ranged` pattern (decrements the weapon's own `quantity`, e.g. old Throwing Daggers) or fires with infinite ammo.
 
 **Landing resolution** (`PlayerAmmo.resolve_ammo_landing(ammo_item, impact_pos)`, generalized — not arrow-specific):
 - **WALL** tile impact → ammo destroyed, no pickup.
@@ -665,7 +665,7 @@ Generation order (each step's output can gate a later one):
 2. **Requirements (1-2, no replacement)** — `Rng.range_i(1,2)` count, drawn from
    `["Heavy","Two-handed","Martial","Ammo"]`. `Martial`/absence sets `weapon_category`
    (`"Martial"`/`"Simple"`). **`Ammo` is what makes the weapon ranged**: `is_ranged = true`,
-   `ammo_item_name = Rng.pick(["Arrow","Bolt"])`, `range = Rng.range_i(3,5)`,
+   `ammo_item_name = Rng.pick(["Arrow","Bolt","Buckshot"])`, `range = Rng.range_i(3,5)`,
    `long_range = range * 4`. Not drawing `Ammo` means a plain melee weapon that never touches
    ammo at all. `Martial` and `Ammo` are independent — a ranged weapon can absolutely also roll
    Martial (both requirements can be drawn together, e.g. mirroring the Heavy Crossbow's real
@@ -673,7 +673,12 @@ Generation order (each step's output can gate a later one):
 3. **Properties (1-2, no replacement)** — pool `["Finesse","Reach","Thrown","Versatile"]`
    (4 items — `Rng.range_i(1,2)` picks how many, so a crafted weapon usually has 2-3 excluded, not
    always just 1). Deliberately excludes `Light` and `Two-handed` (no
-   dual-wield/off-hand complexity for a crafted weapon). `Finesse` → `is_finesse = true` (this is
+   dual-wield/off-hand complexity for a crafted weapon). **A weapon that rolled `Ammo` (is_ranged)
+   can never also roll `Reach`** — Reach is a melee-only +1-tile-range concept that makes no sense
+   on a bow/crossbow-shaped result, so `Reach` is stripped from the property pool before the
+   count/pick happens whenever step 2 made the weapon ranged (`prop_count`'s own `Rng.range_i`
+   upper bound also drops to the shrunk pool's size so it never asks for 2 out of a 1-item pool).
+   `Finesse` → `is_finesse = true` (this is
    the whole "primary stat" story — `max(STR,DEX)` via the existing `CombatMath.
    finesse_modifier()` if rolled, else pure STR/DEX per whatever `is_ranged` already decided; no
    per-class stat table, no WIS/INT/CHA weapon-damage plumbing — none exists in this codebase and

@@ -392,6 +392,7 @@ func _on_premade_selected(data: Dictionary) -> void:
 	if not spell1.is_empty():
 		GameState.choose_starting_spell(spell1)
 
+	GameState.snapshot_character_creation()
 	queue_free()
 
 func _on_custom_selected() -> void:

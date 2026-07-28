@@ -769,10 +769,10 @@ func _update_hover_indicator() -> void:
 	if not enemy_seen:
 		_hover_indicator.visible = false
 		return
-	# Priority mirrors the LMB click handler's own dispatch order: Ctrl+Special-slot spell wins
+	# Priority mirrors the LMB click handler's own dispatch order: Alt+Special-slot spell wins
 	# over Shift+Ranged, which wins over the default melee weapon.
 	var icon_path: String = ""
-	if Input.is_key_pressed(KEY_CTRL) and GameState.special_slot_spell_id != "":
+	if Input.is_key_pressed(KEY_ALT) and GameState.special_slot_spell_id != "":
 		var spell: Spell = SpellDb.get_spell(GameState.special_slot_spell_id)
 		if spell != null:
 			icon_path = spell.icon_path
@@ -807,8 +807,8 @@ func _update_hover_indicator() -> void:
 # Dynamic purple tile-tint preview for sphere-shaped AoE spells (Fireball) while armed for
 # targeting — see dungeon_floor.gd's "AoE targeting preview" section. The ability-bar arm-then-
 # click flow (PlayerSpellcasting.begin_cast()) arms spell_targeting_active for this directly; the
-# Ctrl+click Special-slot one-motion cast never arms it (cast_direct() resolves the same frame it's
-# clicked), so while Ctrl is held with a sphere spell in the Special slot, preview that spell
+# Alt+click Special-slot one-motion cast never arms it (cast_direct() resolves the same frame it's
+# clicked), so while Alt is held with a sphere spell in the Special slot, preview that spell
 # instead — same tile-tint, just keyed off the held modifier instead of armed-targeting state.
 func _update_spell_aoe_preview() -> void:
 	if _dungeon_floor == null:
@@ -819,7 +819,7 @@ func _update_spell_aoe_preview() -> void:
 		_dungeon_floor.hide_aoe_preview()
 		return
 	var spell: Spell = _spellcasting.get_armed_spell()
-	if spell == null and Input.is_key_pressed(KEY_CTRL) and GameState.special_slot_spell_id != "":
+	if spell == null and Input.is_key_pressed(KEY_ALT) and GameState.special_slot_spell_id != "":
 		spell = SpellDb.get_spell(GameState.special_slot_spell_id)
 	if spell == null or spell.target_kind != Spell.TargetKind.TILE or (spell.shape != "sphere" and spell.shape != "cone"):
 		_dungeon_floor.hide_aoe_preview()
@@ -930,8 +930,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_actions.open_talent_picker()
 				get_viewport().set_input_as_handled()
 			return
-		# R key opens the Wizard Spellbook (docs/architecture/leveled-spells-and-slots-plan.md §5)
-		if key.physical_keycode == KEY_R:
+		# O key opens the Wizard Spellbook (docs/architecture/leveled-spells-and-slots-plan.md §5)
+		if key.physical_keycode == KEY_O:
 			if GameState.player_stats.caster != null \
 					and not GameState.inventory_open and not GameState.short_rest_open \
 					and not GameState.short_rest_active and not GameState.talent_picker_open \
@@ -998,7 +998,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				if _tool_item != null and _tool_item.item_name != "Thief Tools": _tool_item = null; GameState.game_log("[color=gray]Disarm cancelled.[/color]")
 				_try_move(Vector2i(1, 1))
 			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _actions.wait_action()
-			KEY_ALT: _actions.open_short_rest()
+			KEY_R: _actions.open_short_rest()
 			KEY_1: _use_quickbar_slot(0)
 			KEY_2: _use_quickbar_slot(1)
 			KEY_3: _use_quickbar_slot(2)
@@ -1039,11 +1039,11 @@ func _unhandled_input(event: InputEvent) -> void:
 					return
 				if GameState.short_rest_active or GameState.short_rest_open or GameState.blacksmith_panel_open:
 					return
-				# BUGFIX: this Ctrl+special-slot check must run BEFORE the "pending == grid_pos"
+				# BUGFIX: this Alt+special-slot check must run BEFORE the "pending == grid_pos"
 				# no-op-move guard below — a SELF-target spell (Mage Armor) in the Special slot is
-				# naturally Ctrl+clicked ON your own tile (the only valid target), which used to
+				# naturally Alt+clicked ON your own tile (the only valid target), which used to
 				# hit that guard's early return first and silently do nothing.
-				if Input.is_key_pressed(KEY_CTRL) and GameState.special_slot_spell_id != "":
+				if Input.is_key_pressed(KEY_ALT) and GameState.special_slot_spell_id != "":
 					if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 						return
 					_spellcasting.cast_direct(GameState.special_slot_spell_id, pending)
@@ -1115,17 +1115,27 @@ func _unhandled_input(event: InputEvent) -> void:
 
 		_click_start_screen_pos = mb.position
 
+		# Ctrl+click = Inspect the clicked tile/entity/item, regardless of what a plain click there
+		# would otherwise do (movement, attack, targeting mode, etc.) — takes priority over
+		# everything else below. Mirrors the RMB instant-Inspect gating (only while it's actually
+		# the player's turn to act).
+		if Input.is_key_pressed(KEY_CTRL):
+			_click_start_screen_pos = Vector2(-1.0, -1.0)
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
+				_actions.do_inspect(clicked)
+			return
+
 		if GameState.short_rest_active or GameState.short_rest_open or GameState.blacksmith_panel_open:
 			return
 
 		# Cantrip targeting mode
 		if _spellcasting.spell_targeting_active:
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
-				# Ctrl+click always resolves centered on the caster's own tile, regardless of the
+				# Alt+click always resolves centered on the caster's own tile, regardless of the
 				# exact pixel clicked — a guaranteed way to self-target a sphere AoE (Fireball) or
 				# a touch SELF spell (Mage Armor) without needing to click precisely on your own
 				# sprite, which sits under the camera-follow crosshair and can be fiddly to hit.
-				var cast_target: Vector2i = grid_pos if Input.is_key_pressed(KEY_CTRL) else clicked
+				var cast_target: Vector2i = grid_pos if Input.is_key_pressed(KEY_ALT) else clicked
 				_spellcasting.try_cast_at(cast_target)
 			else:
 				_spellcasting.cancel()
@@ -2365,8 +2375,8 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	if _dungeon_floor != null:
 		_dungeon_floor.show_damage(enemy.position, actual, false, CombatMath.damage_type_color(dmg_type))
 
-	# Hunter's Mark: Twin Fang R1 extends the bonus die to Off-hand/Nick swings — see
-	# hunters_mark_bonus_die()'s is_primary=false gate.
+	# Hunter's Mark: the bonus die applies to Off-hand/Nick swings too (baseline, not talent-gated
+	# — see hunters_mark_bonus_die()).
 	var hm_actual: int = 0
 	var hm_inst: Dictionary = {}
 	var hm_die: int = _ranger_talents.hunters_mark_bonus_die(enemy, false)
@@ -2594,7 +2604,7 @@ func _use_ability_slot(idx: int) -> void:
 		var spell: Spell = SpellDb.get_spell(spell_id)
 		if is_double_tap and spell != null and spell.target_kind == Spell.TargetKind.SELF:
 			# Second press within the window while armed (or already resolved) from the first —
-			# resolve straight onto yourself, same as Ctrl+click, no world click required at all.
+			# resolve straight onto yourself, same as Alt+click, no world click required at all.
 			_spellcasting.cancel()
 			_spellcasting.cast_direct(spell_id, grid_pos)
 			return
@@ -2609,7 +2619,8 @@ func _use_ability_slot(idx: int) -> void:
 		"animal_form":             _wild_heart.cycle_animal_form(ab)
 		"enhanced_forms":
 			GameState.game_log("[color=gray]%s is passive — upgrades Animal Form automatically.[/color]" % ab.ability_name)
-		"expanded_forms":         _wild_heart.cycle_natural_sleeper_form(ab)
+		"expanded_forms":
+			GameState.game_log("[color=gray]%s is passive — a random form is rolled every long rest.[/color]" % ab.ability_name)
 		"ironwood_bark":           GameState.game_log("[color=gray]Ironwood Bark is passive — triggers on Rage activation and while Raging.[/color]")
 		"grip_of_the_forest":      _activate_grip_of_the_forest()
 		"branching_strike":        GameState.game_log("[color=gray]Branching Strike is passive — reach and push apply automatically.[/color]")

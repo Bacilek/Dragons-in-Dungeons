@@ -26,7 +26,7 @@ var _prev_bar_mode_was_ability: bool = false
 const ACTION_BAR_HEIGHT: float = 140.0   # matches hud.tscn's ActionBar (offset_top = -135.0) + a small margin
 
 # Special quick-cast slot (assigned here, displayed read-only in inventory_overlay.gd next to
-# Ranged, cast with Ctrl+click in player.gd) — a fourth valid drop target alongside the 9
+# Ranged, cast with Alt+click in player.gd) — a fourth valid drop target alongside the 9
 # ability-bar slots, see _finish_drag().
 var _special_slot_box: Control
 
@@ -212,11 +212,11 @@ func _build_ui() -> void:
 
 	# ── Special quick-cast slot ─────────────────────────────────────────────────
 	# Assigned here (not in inventory_overlay.gd — that overlay and this one are mutually
-	# exclusive, see root CLAUDE.md's onboarding notes / player.gd's R-key guard), displayed
-	# read-only next to Ranged in the Inventory overlay, cast with Ctrl+click in player.gd.
+	# exclusive, see root CLAUDE.md's onboarding notes / player.gd's O-key guard), displayed
+	# read-only next to Ranged in the Inventory overlay, cast with Alt+click in player.gd.
 	var special_y: float = detail_y + 30.0 + 70.0 + 6.0 + 32.0 + 6.0
 	var special_label := Label.new()
-	special_label.text = "Special Slot — drag a spell here, Ctrl+click a target to cast it:"
+	special_label.text = "Special Slot — drag a spell here, Alt+click a target to cast it:"
 	special_label.add_theme_font_size_override("font_size", 12)
 	special_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
 	special_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

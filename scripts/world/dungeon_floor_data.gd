@@ -56,6 +56,7 @@ const ITEM_POOL: Array = [
 	{"name": "Torch",          "type": 0, "icon": "weapon_torch.png",             "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Click while equipped to light it — burns 100 turns, granting +1 FOV and (in Main Hand) +1d4 Fire on hit. A lit Torch lying on the ground or embedded in an enemy also casts a radius-2 light. Can be equipped in either hand like a Shield. Burns out permanently into a Burnt Torch.", "dmg_type": "Bludgeoning", "category": "Simple", "die_min": 1, "die_max": 4, "torch": true, "thrown": true, "range": 3, "long_range": 12, "uses_max": 3, "gold": 10},
 	{"name": "Arrow",          "type": 7, "icon": "ammo/arrow.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Short Bow and Longbow.", "qty": 6, "gold": 1},
 	{"name": "Bolt",           "type": 7, "icon": "ammo/arrow_gold.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Heavy Crossbow.", "qty": 6, "gold": 1},
+	{"name": "Buckshot",       "type": 7, "icon": "misc/coin_gold.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for muskets and other firearms.", "qty": 6, "gold": 1},
 	{"name": "Thief Tools",    "type": 7, "icon": "misc/key_iron.png",                    "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Disarm traps, lock doors. Consumed on failure.", "qty": 2, "gold": 25},
 	# Mold: Blacksmith crafting material (scripts/items/CLAUDE.md's "WeaponForge" section). Sentinel
 	# fmin/fmax=99 keeps it out of every generic floor-loot roll — its only spawn path is
@@ -450,9 +451,11 @@ const ENEMY_POOL: Array = [
 	# no "speed" key needed).
 	# "Large" size: 2x2 footprint (Entity.size), same mechanism as Ogre above — see
 	# scripts/entities/CLAUDE.md's "Multi-tile footprint (Large enemies)".
-	# Sprite: reuses the existing sliced Spider/{idle,run}.png sheet (32x32 frames, scale 0.5, 6
-	# frames each) already authored for Imp's Shape Shift trait — see "sprite_frame_size"/
-	# "sprite_scale" below and Enemy._setup_animations()'s no-variant sheet-loading branch.
+	# Sprite: reuses the existing sliced Spider/{idle,run}.png sheet (32x32 frames, scale 1.0 — full
+	# native frame size, so its render footprint actually fills its 2x2 tile area instead of looking
+	# tile-sized like a Small/Medium enemy, 6 frames each) already authored for Imp's Shape Shift
+	# trait — see "sprite_frame_size"/"sprite_scale" below and Enemy._setup_animations()'s
+	# no-variant sheet-loading branch.
 	# Darkvision: +1 to the default enemy notice/LOS radius (senses.sight_bonus).
 	# Passive Perception = 10 + WIS mod (0) = 10.
 	# Spider Climb (trait "ignore_terrain_slow"): "can go through difficult surfaces without being
@@ -485,7 +488,7 @@ const ENEMY_POOL: Array = [
 	# Poison and Psychic per the real spell's text) is currently pure flavor data — nothing can
 	# actually attack it directly today, only the STR-check escape route above ever removes it.
 	{"enemy_id": "spider", "display_name": "Spider", "sprite": "spider",
-	 "sprite_frame_size": {"w": 32, "h": 32}, "sprite_scale": 0.5, "idle_frames": 6, "run_frames": 6,
+	 "sprite_frame_size": {"w": 32, "h": 32}, "sprite_scale": 1.0, "idle_frames": 6, "run_frames": 6,
 	 "floor_min": 4, "floor_max": 8, "hp": 26, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 11, "armor": 0, "ac": 14, "exp": 22,
 	 "cr": 1, "creature_type": "Beast",
 	 "mods": {"str": 2, "dex": 3, "con": 1, "int": -4, "wis": 0, "cha": -3},

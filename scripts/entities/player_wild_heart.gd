@@ -77,18 +77,3 @@ func cycle_animal_form(ab: Ability) -> void:
 		GameState.game_log("[color=orange]Animal Form: shifting into %s Form (%d turn%s).[/color]" % [next_form, t, "s" if t != 1 else ""])
 	else:
 		GameState.game_log("[color=orange]Animal Form: switched to %s Form.[/color]" % next_form)
-
-func cycle_natural_sleeper_form(ab: Ability) -> void:
-	# "" is the initial state (never chosen), not part of the cycle.
-	# First press: find("") = -1 → (-1+1)%3 = 0 → "Owl". After that: Owl→Panther→Salmon→Owl.
-	var forms: PackedStringArray = ["Owl", "Panther", "Salmon"]
-	var idx: int = forms.find(GameState.natural_sleeper_form)
-	GameState.natural_sleeper_form = forms[(idx + 1) % forms.size()]
-	ab.description = GameState._build_natural_sleeper_description()
-	ab.icon_path = GameState.talent_icon_path("expanded_forms", 0)
-	GameState.ability_bar_changed.emit()
-	var chosen: String = GameState.natural_sleeper_form
-	if GameState.wild_heart_sleeper_active and GameState.active_sleeper_form != chosen:
-		GameState.game_log("[color=cyan]Natural Sleeper: %s Form chosen — activates next rest.[/color]" % chosen)
-	else:
-		GameState.game_log("[color=cyan]Natural Sleeper: switched to %s Form.[/color]" % chosen)

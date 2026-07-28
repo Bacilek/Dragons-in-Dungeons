@@ -237,6 +237,7 @@ func _on_confirm() -> void:
 	# was still false, so SaveManager's checkpoint-on-class_chosen hook was a no-op then — re-emit
 	# now that the character is actually finished so the run gets its very first checkpoint.
 	GameState.class_chosen.emit(GameState.player_stats.character_class)
+	GameState.snapshot_character_creation()
 	queue_free()
 
 func _on_back() -> void:

@@ -20,15 +20,20 @@ modules").
 - **Uses:** `Stats.hunters_mark_uses_remaining` (`Stats.HUNTERS_MARK_USES_MAX` = 3), refilled at
   `GameState.long_rest()`. A use is spent **only** when establishing a mark from having none —
   retargeting an already-active mark (clicking a different enemy while one is marked) is free,
-  mirroring 5e's "move Hunter's Mark for free" rule.
+  mirroring 5e's "move Hunter's Mark for free" rule. Shown as a `X/3` badge on the ability bar
+  slot (`hud.gd`'s `_refresh_ability_bar()`, same use-count-badge convention as Rage — a special
+  case reads `Stats.hunters_mark_uses_remaining` directly since the `Ability` resource's own
+  `uses_remaining`/`uses_max` stay 0/0 for this free base ability, same as Rage's own Ability).
 - **Effect:** every hit against `Stats.hunters_mark_target` (any weapon — melee, Off-hand, Nick,
   ranged, thrown) deals a second, independent **+1d6 Force** damage instance
   (`PlayerRangerTalents.hunters_mark_bonus_die()`), the same "one hit, two damage types" shape as
   Zealot's Judgement Day / the lit Torch's Fire bonus (`scripts/entities/CLAUDE.md`'s
   damage-stacking rule) — Force is a distinct type from the weapon's own, so it's never folded
-  into the same instance. The Off-hand/Nick swings only get the bonus once **Twin Fang R1** is
-  invested (see below) — the baseline ability alone only guarantees it on the turn's primary
-  attack (melee/ranged/thrown).
+  into the same instance. Applies to **every** hit against the mark unconditionally — Off-hand and
+  Nick included, no rank/talent gate — as part of the baseline ability. (This used to require
+  **Twin Fang R1**; that gate was removed so the full weapon-agnostic behavior works from level 1,
+  per direct owner request. R1 is now a dead rank until redesigned — see `docs/TODO.md`'s "Twin
+  Fang R1 redesign".)
 - **Tracking:** while a target is marked, `scripts/ui/hunters_mark_indicator.gd` shows its
   direction on-screen even outside FOV/LOS (mirrors `compass.gd`'s arrow-glyph pattern verbatim,
   visibility driven by "is a target currently marked" instead of a one-shot discovery flag).
@@ -100,8 +105,11 @@ nearest visible enemy.
 ## Talent — Twin Fang
 *Bow, blade, it makes no difference to the hunt.*
 
-**Rank 1:** Hunter's Mark's bonus damage also applies to your Off-hand and Nick bonus attacks
-against the mark (not just the turn's primary attack).
+**Rank 1:** ~~Hunter's Mark's bonus damage also applies to your Off-hand and Nick bonus attacks
+against the mark (not just the turn's primary attack).~~ **Dead rank** — this effect was made
+baseline (see "Hunter's Mark" above), not talent-gated anymore. R1 currently invests fine but has
+no mechanical effect; still shows its old description in the talent picker until redesigned. See
+`docs/TODO.md`'s "Twin Fang R1 redesign".
 
 **Rank 2:** Your Off-hand attack against the Marked target keeps its full ability modifier (skips
 the usual dual-wield "drop the mod unless negative" house rule) — only vs. the mark.
@@ -109,9 +117,8 @@ the usual dual-wield "drop the mod unless negative" house rule) — only vs. the
 **Rank 3:** The Marked target can never gain Advantage on attacks against you.
 
 **Implementation notes:**
-- R1: `hunters_mark_bonus_die(enemy, is_primary)` returns 0 for a non-primary swing unless
-  `get_talent_rank("twin_fang") >= 1` — the primary attack (melee/ranged/thrown) always gets the
-  bonus regardless of rank (that's the baseline ability itself, not this talent).
+- R1: dead rank (see above) — `hunters_mark_bonus_die(enemy, is_primary)` no longer reads
+  `get_talent_rank("twin_fang")` at all; every swing (primary or not) gets the bonus unconditionally.
 - R2: `player.gd._resolve_offhand_attack()`'s `dmg_mod` line checks
   `PlayerRangerTalents.twin_fang_r2_active(enemy)` before applying the usual `mini(attack_mod, 0)`
   clamp.

@@ -12,7 +12,7 @@ const DICE_SHAPES: Array = [
 
 const REQUIREMENT_POOL: Array[String] = ["Heavy", "Two-handed", "Martial", "Ammo"]
 const PROPERTY_POOL: Array[String] = ["Finesse", "Reach", "Thrown", "Versatile"]
-const AMMO_ITEMS: Array[String] = ["Arrow", "Bolt"]
+const AMMO_ITEMS: Array[String] = ["Arrow", "Bolt", "Buckshot"]
 
 const DAMAGE_TYPES_PHYSICAL: Array[String] = ["Slashing", "Piercing", "Bludgeoning"]
 const DAMAGE_TYPES_ELEMENTAL: Array[String] = ["Fire", "Cold", "Acid", "Poison", "Thunder", "Lightning"]
@@ -50,9 +50,13 @@ static func generate_random_weapon() -> Item:
 		item.range = Rng.range_i(3, 5)
 		item.long_range = item.range * 4
 
-	# 3. Properties (1-2, no replacement, from a 4-item pool)
-	var prop_count: int = Rng.range_i(1, 2)
+	# 3. Properties (1-2, no replacement, from a 4-item pool). A ranged (Ammo) weapon can never
+	# also roll Reach — Reach is a melee-only concept (grants +1 tile melee range) and doesn't
+	# make sense alongside a bow/crossbow-shaped result.
 	var prop_pool: Array[String] = PROPERTY_POOL.duplicate()
+	if item.is_ranged:
+		prop_pool.erase("Reach")
+	var prop_count: int = Rng.range_i(1, mini(2, prop_pool.size()))
 	Rng.shuffle(prop_pool)
 	var properties: Array[String] = prop_pool.slice(0, prop_count)
 

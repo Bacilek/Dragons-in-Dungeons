@@ -39,13 +39,12 @@ func commit_mark(enemy: Enemy) -> void:
 # Rolls Hunter's Mark's bonus Force damage die for a hit against the marked target — a SECOND,
 # independent damage instance (Judgement-Day pattern, scripts/entities/CLAUDE.md's damage-stacking
 # rule — Force is a distinct type from the weapon's own, so it never folds into the same instance).
-# `is_primary` = the swing that started this turn's attack (Main Hand melee/ranged/thrown); every
-# OTHER sub-attack (Off-hand, Nick) only gets the bonus once Twin Fang R1 is invested. Returns 0
-# (no bonus) if the target isn't marked or (for a non-primary swing) Twin Fang R1 isn't invested.
+# Applies to EVERY hit against the mark (Main Hand melee/ranged/thrown, Off-hand, and Nick) as part
+# of the baseline ability — `is_primary` is kept as a param (unused today) since Off-hand/Nick call
+# sites already pass it. Twin Fang R1 used to gate the Off-hand/Nick case; that's now baseline (see
+# docs/TODO.md — R1 is a dead rank until it's redesigned). Returns 0 only if the target isn't marked.
 func hunters_mark_bonus_die(enemy: Enemy, is_primary: bool) -> int:
 	if enemy == null or GameState.player_stats.hunters_mark_target != enemy:
-		return 0
-	if not is_primary and GameState.get_talent_rank("twin_fang") < 1:
 		return 0
 	return Rng.roll(6)
 
