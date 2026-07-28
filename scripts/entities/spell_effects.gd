@@ -48,6 +48,8 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	await sprite.animation_finished
 	sprite.play("idle")
 
+	var target_was_unaware: bool = target.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
+
 	var stats: Stats = player.stats
 	var attack_bonus: int = _attack_bonus(stats)
 
@@ -56,7 +58,11 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	var disadv_count: int = 0
 	if was_surprised: adv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
-	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1: disadv_count += 1
+	# Disadvantage: ranged spell attack at melee range (Chebyshev distance 1), EXCEPT against an
+	# unaware target — same exemption as PlayerRanged.ranged_attack()/PlayerThrowTool._throw_weapon()
+	# (5e RAW exempts an incapacitated-nearby creature from this penalty; without it, a surprise
+	# attack's ADV always cancelled back out against a target that hadn't noticed the caster).
+	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1 and not target_was_unaware: disadv_count += 1
 	if GameState.is_blinded(player.grid_pos): disadv_count += 1
 	if stats.has_disadvantage_condition(): disadv_count += 1
 	if player._frightened_active(): disadv_count += 1
@@ -612,6 +618,7 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	# Captured BEFORE on_disturbed() wakes the target — has_advantage() reads pre-attack
 	# behavior/door_ambush state, which on_disturbed() immediately mutates away.
 	var was_surprised: bool = player._vfx.has_advantage(target)
+	var target_was_unaware: bool = target.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
 	target.on_disturbed(player.grid_pos)
 	var stats: Stats = player.stats
 	var attack_bonus: int = _attack_bonus(stats)
@@ -622,7 +629,9 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	var disadv_count: int = 0
 	if was_surprised: adv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
-	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1: disadv_count += 1
+	# Disadvantage: ranged spell attack at melee range, EXCEPT against an unaware target — same
+	# exemption as cast_spell() above / PlayerRanged.ranged_attack().
+	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1 and not target_was_unaware: disadv_count += 1
 	if GameState.is_blinded(player.grid_pos): disadv_count += 1
 	if stats.has_disadvantage_condition(): disadv_count += 1
 	if player._frightened_active(): disadv_count += 1
