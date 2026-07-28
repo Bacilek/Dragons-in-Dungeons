@@ -186,6 +186,15 @@ func _on_player_died() -> void:
 	_path_executing = false
 
 func _on_class_chosen(_cls: Stats.CharacterClass) -> void:
+	# BUGFIX: reset_for_class_reselect() (Custom character-creation path) replaces
+	# GameState.player_stats with a brand-new Stats object rather than mutating the one
+	# `_ready()` cached into this node's own `stats` field — DungeonFloor._load_floor() (which
+	# would otherwise re-sync it) has already run once for floor 1 before class selection even
+	# starts, and doesn't run again until the player descends to floor 2. Without this re-sync,
+	# `stats` kept pointing at the stale pre-selection placeholder for the entire first floor —
+	# e.g. a fresh Wizard's `stats.caster` read null, so PlayerSpellcasting reported "no spell
+	# slot available" even though GameState.player_stats.caster.slot_pool was correctly seeded.
+	stats = GameState.player_stats
 	_setup_animations()
 
 func _on_player_hp_changed(_c: int, _m: int) -> void:

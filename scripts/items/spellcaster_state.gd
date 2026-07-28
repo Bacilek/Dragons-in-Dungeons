@@ -10,7 +10,11 @@ extends Resource
 @export var spellcasting_ability: String = "INT"   # "INT" / "WIS" / "CHA"
 @export var known_spells: Array[String] = []        # ALL known spells: cantrips (always castable)
                                                       # AND leveled spells (spellbook, subset prepared)
-@export var prepared_spells: Array[String] = []      # today's prepared leveled spells (never cantrips)
+@export var prepared_spells: Array[String] = []      # currently prepared/selected spells — BOTH
+                                                      # cantrips (capped by cantrip_max()) and leveled
+                                                      # spells (capped by prepared_max()); a spell can
+                                                      # be known (in known_spells) without being here,
+                                                      # e.g. learned past its kind's cap
 
 var slot_pool: StandardSlotPool = null               # null until the caster's class-defaults init grants one
 
@@ -44,6 +48,23 @@ func known_cantrip_count() -> int:
 	var count: int = 0
 	for sid: String in known_spells:
 		if is_cantrip(sid):
+			count += 1
+	return count
+
+# How many currently-prepared/selected entries in prepared_spells are cantrips vs leveled spells —
+# GameState.set_spell_prepared() checks the matching one against cantrip_max()/prepared_max()
+# before adding a new entry, since prepared_spells now holds BOTH kinds (see game_state.gd).
+func prepared_cantrip_count() -> int:
+	var count: int = 0
+	for sid: String in prepared_spells:
+		if is_cantrip(sid):
+			count += 1
+	return count
+
+func prepared_leveled_count() -> int:
+	var count: int = 0
+	for sid: String in prepared_spells:
+		if not is_cantrip(sid):
 			count += 1
 	return count
 

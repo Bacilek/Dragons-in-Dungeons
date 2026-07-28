@@ -469,16 +469,19 @@ columns computed from the available width) inside a `ScrollContainer` (vertical-
 holding more spells than fit in the visible area (e.g. many cantrips) scrolls instead of
 overflowing the panel.
 **Hover** a tile → the detail panel below shows its full description (same "browse and pick"
-hover-detail pattern as the Mastery Picker, not a `[url=]` tooltip). **Click** a tile → on a leveled
-spell, `GameState.set_spell_prepared(id, bool)` toggles prepared, hard-blocked at
-`SpellcasterState.prepared_max()` (clicking an unprepared spell at cap is a silent no-op, same feel
-as the Mastery Picker's cap block); on a cantrip the click is a no-op (`_process()`'s click-toggle
-branch checks `SpellDb.get_spell(id).level > 0` before calling `set_spell_prepared()`). **Bottom-
-right counter**: `"X / Y prepared"` on a leveled-spell tab (identical `RichTextLabel`/color
-convention to the Mastery Picker's `_counter_rtl` — gold under cap, gray at cap, red if ever over),
-or a static `"Always ready"` on the Cantrips tab. Both `GameState.set_spell_prepared()` and
-`place_spell_in_slot()` independently guard against ever adding a cantrip to `prepared_spells` —
-see `scripts/autoloads/CLAUDE.md`.
+hover-detail pattern as the Mastery Picker, not a `[url=]` tooltip). **Click** a tile → toggles
+prepared/selected via `GameState.set_spell_prepared(id, bool)` for either kind of spell (cantrip
+OR leveled) — hard-blocked at that kind's own cap (`SpellcasterState.cantrip_max()` for a cantrip,
+`prepared_max()` for a leveled spell; clicking an unprepared spell at cap is a silent no-op, same
+feel as the Mastery Picker's cap block). **Bottom-right counter**: `"X / Y prepared"` on BOTH the
+Cantrips tab and every leveled-spell tab now (identical `RichTextLabel`/color convention to the
+Mastery Picker's `_counter_rtl` — gold under cap, gray at cap, red if ever over) — a cantrip
+Learned past `cantrip_max()` (e.g. via scroll "Learn") sits known-but-unprepared until a slot frees
+up, same "known but not selected" shape a leveled spell already had past `prepared_max()`; no more
+static "Always ready" text. `GameState.set_spell_prepared()` and `place_spell_in_slot()` both check
+the clicked/dropped spell's own kind (`Spell.level == 0`) to pick which cap/count applies —
+`SpellcasterState.prepared_cantrip_count()`/`prepared_leveled_count()` — see
+`scripts/autoloads/CLAUDE.md` and `scripts/entities/CLAUDE.md`'s "Cantrip cap" note.
 
 **Special quick-cast slot** (assignment point — see `inventory_overlay.gd`'s "Special quick-cast
 slot" above for the read-only display): a small bordered box below the drag-and-drop hint text,

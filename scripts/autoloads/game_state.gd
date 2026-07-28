@@ -569,6 +569,8 @@ func choose_cantrip(spell_id: String, silent: bool = false) -> void:
 		return
 	if not player_stats.caster.known_spells.has(spell_id):
 		player_stats.caster.known_spells.append(spell_id)
+	if not player_stats.caster.prepared_spells.has(spell_id):
+		player_stats.caster.prepared_spells.append(spell_id)
 	add_ability(_build_spell_ability(spell_id))
 	set_special_slot(spell_id)
 	if not silent:
@@ -831,23 +833,23 @@ func learn_spell(spell_id: String) -> void:
 	var caster: SpellcasterState = player_stats.caster
 	var s: Spell = SpellDb.get_spell(spell_id)
 	if not caster.known_spells.has(spell_id):
-		if s != null and s.level == 0 and caster.known_cantrip_count() >= caster.cantrip_max(player_stats):
-			game_log("[color=gray]You already know the maximum number of cantrips.[/color]")
-			return
 		caster.known_spells.append(spell_id)
 	spell_learn_pending = false
 	spell_learn_choices.clear()
 	if s != null:
 		game_log("[color=lime]You add %s to your spellbook.[/color]" % s.spell_name)
-		if s.level == 0:
-			if _find_ability_by_id("spell:" + spell_id) == null:
-				add_ability(_build_spell_ability(spell_id))
-		else:
-			set_spell_prepared(spell_id, true)
+		# Learning past the cap (cantrip cap or leveled prepared_max) is allowed — the spell just
+		# sits known-but-unselected in the spellbook until the player frees up a slot and prepares
+		# it manually (Spellbook overlay), same "known but not selected" shape leveled spells
+		# already had. set_spell_prepared() silently no-ops past either cap.
+		set_spell_prepared(spell_id, true)
 
 ## Wizard-only "Learn" RMB scroll interaction (scripts/items/item_interactions.gd's "learn" id):
 ## true iff the player is a caster who doesn't already know the scroll's spell. Works on either
-## kind of scroll — scroll_spell_id (one-shot cast scrolls) or taught_spell_id.
+## kind of scroll — scroll_spell_id (one-shot cast scrolls) or taught_spell_id. Learning is never
+## blocked by the cantrip cap — a cantrip learned past the cap just sits known-but-unprepared in
+## the spellbook (same "known but not selected" shape a leveled spell already had past prepared_max),
+## see learn_spell()/set_spell_prepared().
 func can_learn_scroll_spell(item: Item) -> bool:
 	if player_stats == null or player_stats.caster == null:
 		return false
@@ -856,9 +858,6 @@ func can_learn_scroll_spell(item: Item) -> bool:
 		return false
 	var caster: SpellcasterState = player_stats.caster
 	if caster.known_spells.has(spell_id):
-		return false
-	var s: Spell = SpellDb.get_spell(spell_id)
-	if s != null and s.level == 0 and caster.known_cantrip_count() >= caster.cantrip_max(player_stats):
 		return false
 	return true
 
@@ -918,17 +917,21 @@ func _rebuild_spell_ability_bar() -> void:
 	if player_stats.caster == null:
 		return
 	var caster: SpellcasterState = player_stats.caster
+	# Backward-compat migration: an old save's prepared_spells predates cantrips ever entering it
+	# (they used to be forced onto the ability bar unconditionally, regardless of any cap) —
+	# treat any known-but-not-yet-prepared cantrip as newly prepared here, capped exactly like a
+	# fresh learn would be, so an old save's Wizard keeps their pre-existing cantrips selected
+	# without silently exceeding cantrip_max().
+	for sid: String in caster.known_spells:
+		if caster.is_cantrip(sid) and not caster.prepared_spells.has(sid):
+			set_spell_prepared(sid, true)
 	for i: int in ABILITY_BAR_SIZE:
 		var ab: Ability = player_ability_bar[i] as Ability
 		if ab == null or not ab.ability_id.begins_with("spell:"):
 			continue
 		var sid: String = ab.ability_id.trim_prefix("spell:")
-		var valid: bool = caster.prepared_spells.has(sid) or (caster.known_spells.has(sid) and caster.is_cantrip(sid))
-		if not valid:
+		if not caster.prepared_spells.has(sid):
 			player_ability_bar[i] = null
-	for sid: String in caster.known_spells:
-		if caster.is_cantrip(sid) and _find_ability_by_id("spell:" + sid) == null:
-			add_ability(_build_spell_ability(sid))
 	for sid: String in caster.prepared_spells:
 		if _find_ability_by_id("spell:" + sid) == null:
 			add_ability(_build_spell_ability(sid))
@@ -962,20 +965,28 @@ func _roll_spell_learn_choices() -> void:
 	spell_learn_choices = candidates.slice(0, mini(3, candidates.size()))
 	spell_learn_pending = true
 
-## Toggles whether a known leveled spell is prepared (§5.3) — the Spellbook overlay's click
-## handler. Adds/removes the matching ability-bar entry. Returns false (no-op) if the spell isn't
-## known, or if preparing would exceed SpellcasterState.prepared_max().
+## Toggles whether a known spell — cantrip OR leveled — is prepared/selected (§5.3). Adds/removes
+## the matching ability-bar entry. Returns false (no-op) if the spell isn't known, or if preparing
+## would exceed the relevant cap: SpellcasterState.cantrip_max() for a cantrip (a known-but-over-cap
+## cantrip — e.g. Learned from a scroll past the 3/4/5 known-cantrip cap — sits in known_spells but
+## never gets selected until the player frees a slot), SpellcasterState.prepared_max() for a leveled
+## spell (unchanged). D&D 2024 note: cantrips can normally only be swapped on a class level-up, not
+## selected/deselected freely at will — this Spellbook toggle is a deliberate simplification (direct
+## owner request) so a cantrip learned past the cap isn't otherwise permanently unusable.
 func set_spell_prepared(spell_id: String, prepared: bool) -> bool:
 	var caster: SpellcasterState = player_stats.caster
 	if caster == null or not caster.known_spells.has(spell_id):
 		return false
 	var spell_check: Spell = SpellDb.get_spell(spell_id)
-	if spell_check == null or spell_check.level == 0:
-		return false   # cantrips are always-ready; never enter prepared_spells
+	if spell_check == null:
+		return false
+	var is_cantrip: bool = spell_check.level == 0
+	var cap: int = caster.cantrip_max(player_stats) if is_cantrip else caster.prepared_max(player_stats)
 	if prepared:
 		if caster.prepared_spells.has(spell_id):
 			return true
-		if caster.prepared_spells.size() >= caster.prepared_max(player_stats):
+		var count: int = caster.prepared_cantrip_count() if is_cantrip else caster.prepared_leveled_count()
+		if count >= cap:
 			return false
 		caster.prepared_spells.append(spell_id)
 		add_ability(_build_spell_ability(spell_id))
@@ -1000,10 +1011,13 @@ func place_spell_in_slot(spell_id: String, index: int) -> bool:
 	var spell_check: Spell = SpellDb.get_spell(spell_id)
 	if spell_check == null:
 		return false
-	# Cantrips never enter prepared_spells (always-ready, no prep cap to enforce) — only a leveled
-	# spell needs the prepare-on-drop step.
-	if spell_check.level > 0 and not caster.prepared_spells.has(spell_id):
-		if caster.prepared_spells.size() >= caster.prepared_max(player_stats):
+	# Dropping a not-yet-prepared/selected spell (cantrip OR leveled) both selects it and places it
+	# in one motion — same per-kind cap as set_spell_prepared() above.
+	if not caster.prepared_spells.has(spell_id):
+		var is_cantrip: bool = spell_check.level == 0
+		var cap: int = caster.cantrip_max(player_stats) if is_cantrip else caster.prepared_max(player_stats)
+		var count: int = caster.prepared_cantrip_count() if is_cantrip else caster.prepared_leveled_count()
+		if count >= cap:
 			return false
 		caster.prepared_spells.append(spell_id)
 	var existing: Ability = _find_ability_by_id("spell:" + spell_id)

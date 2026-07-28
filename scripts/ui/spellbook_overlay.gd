@@ -319,17 +319,15 @@ func _refresh() -> void:
 		empty_lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
 		_row_container.add_child(empty_lbl)
 
-	if _selected_level == 0:
-		_counter_rtl.text = "[right][color=#88ccff]Always ready[/color][/right]"
-	else:
-		var cap: int = caster.prepared_max(GameState.player_stats)
-		var count: int = caster.prepared_spells.size()
-		var count_color: String = "#FFD700"
-		if count > cap:
-			count_color = "#e05050"
-		elif count >= cap:
-			count_color = "#888888"
-		_counter_rtl.text = "[right][color=%s]%d / %d prepared[/color][/right]" % [count_color, count, cap]
+	var is_cantrip_tab: bool = _selected_level == 0
+	var cap: int = caster.cantrip_max(GameState.player_stats) if is_cantrip_tab else caster.prepared_max(GameState.player_stats)
+	var count: int = caster.prepared_cantrip_count() if is_cantrip_tab else caster.prepared_leveled_count()
+	var count_color: String = "#FFD700"
+	if count > cap:
+		count_color = "#e05050"
+	elif count >= cap:
+		count_color = "#888888"
+	_counter_rtl.text = "[right][color=%s]%d / %d prepared[/color][/right]" % [count_color, count, cap]
 
 	# Special-slot box mirrors GameState.special_slot_spell_id.
 	if _special_slot_box != null:
@@ -348,10 +346,9 @@ func _build_row(spell_id: String) -> void:
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return
-	# Cantrips (level 0) are always-ready — never enter prepared_spells, but read as "prepared"
-	# for styling purposes since there's no meaningful unprepared state for them.
-	var is_cantrip: bool = spell.level == 0
-	var prepared: bool = is_cantrip or caster.prepared_spells.has(spell_id)
+	# Cantrips can now be known-but-unselected too (e.g. Learned from a scroll past the known-
+	# cantrip cap) — "prepared" reads the same prepared_spells array for both kinds.
+	var prepared: bool = caster.prepared_spells.has(spell_id)
 
 	var row := Button.new()
 	row.custom_minimum_size = Vector2(TILE_W, TILE_H)
@@ -471,7 +468,7 @@ func _process(_delta: float) -> void:
 			_finish_drag()
 		else:
 			var clicked_spell: Spell = SpellDb.get_spell(_drag_spell_id)
-			if clicked_spell != null and clicked_spell.level > 0:
+			if clicked_spell != null:
 				GameState.set_spell_prepared(_drag_spell_id, not GameState.player_stats.caster.prepared_spells.has(_drag_spell_id))
 				_refresh()
 		_drag_spell_id = ""

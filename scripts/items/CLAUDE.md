@@ -550,8 +550,12 @@ cast-resolution walkthroughs.
   not `GameState`, so a future enemy/companion caster can carry its own instance.
   `spellcasting_ability: String` ("INT"/"WIS"/"CHA"), `known_spells: Array[String]` (cantrips AND
   leveled spells — `is_cantrip(id)` distinguishes via `SpellDb.get_spell(id).level == 0`, not by
-  a separate array), `prepared_spells: Array[String]` (today's prepared leveled spells, never
-  cantrips), `slot_pool: StandardSlotPool`. `spell_attack_bonus(stats)` / `spell_save_dc(stats)`
+  a separate array), `prepared_spells: Array[String]` (currently prepared/selected spells — BOTH
+  cantrips, capped by `cantrip_max()`, and leveled spells, capped by `prepared_max()`; a spell can
+  be known without being prepared, e.g. learned past its kind's cap — see
+  `scripts/entities/CLAUDE.md`'s "Cantrip cap" note), `slot_pool: StandardSlotPool`.
+  `prepared_cantrip_count()`/`prepared_leveled_count()` split the one array by kind for cap checks.
+  `spell_attack_bonus(stats)` / `spell_save_dc(stats)`
   are computed **live, never cached** (`proficiency_bonus + ability_mod`,
   `8 + proficiency_bonus + ability_mod`) — mirrors `Stats.mastery_cap()`'s "recompute every time"
   convention, and deliberately does NOT derive from `character_class` (keeps a future multiclass

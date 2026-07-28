@@ -1205,23 +1205,29 @@ impact point rather than stop at the first wall it can't directly see through.
   line instead of blocking (see the plan doc §7's content-count caveat).
 - **Learning auto-slots the ability bar (owner request)**: `GameState.learn_spell(id)` — the single
   chokepoint for the level-up picker AND scroll-taught spells (see "Scrolls" below) — no longer
-  just appends to `known_spells`. A newly learned cantrip is immediately added to the ability bar
-  (`add_ability(_build_spell_ability(id))`, skipped if already present) gated only by
-  `SpellcasterState.cantrip_max(stats)` (see below — a cantrip beyond the cap is refused outright,
-  never learned, logs "You already know the maximum number of cantrips."); a newly learned leveled
-  spell auto-prepares via `set_spell_prepared(id, true)`, which itself silently no-ops past
-  `prepared_max()` (character level) — so learning past your prepared cap still adds the spell to
-  your spellbook, it just doesn't jump onto the bar until you free a prepared slot and prepare it
-  manually from the Spellbook overlay.
-- **Cantrip cap**: `SpellcasterState.cantrip_max(stats) -> int` — Wizard-only today (0 for every
-  other class, extend with a new `match` branch when another caster class ships): 3 known cantrips
-  at character level < 4, 4 at levels 4–9, 5 at level 10+. `known_cantrip_count()` counts
-  `known_spells` entries where `is_cantrip()` is true. Enforced at both learn sites:
-  `GameState.learn_spell()` (level-up growth pick — though `CLASS_SPELL_LISTS` never offers
-  cantrips there today, so this is a defensive guard — and scroll "Learn") and
-  `GameState.can_learn_scroll_spell()` (gates whether the RMB "Learn" menu option even appears on
-  a cantrip scroll once the cap is hit). The one-time character-creation starter pick
-  (`choose_cantrip()`) bypasses the cap entirely — it only ever grants 1 cantrip, always under it.
+  just appends to `known_spells`. A newly learned spell — cantrip OR leveled — auto-prepares via
+  `set_spell_prepared(id, true)`, which itself silently no-ops past that kind's own cap
+  (`cantrip_max()` for a cantrip, `prepared_max()` for a leveled spell) — so learning past the
+  relevant cap still adds the spell to your spellbook, it just doesn't jump onto the ability bar
+  until you free a slot and prepare it manually from the Spellbook overlay.
+- **Cantrip cap governs SELECTION, not learning**: `SpellcasterState.cantrip_max(stats) -> int` —
+  Wizard-only today (0 for every other class, extend with a new `match` branch when another
+  caster class ships): 3 known cantrips at character level < 4, 4 at levels 4–9, 5 at level 10+.
+  A Wizard can freely LEARN a cantrip beyond this cap (via scroll "Learn" or, hypothetically, a
+  future level-up growth pick) — it's added to `known_spells` unconditionally — but it only
+  becomes an actual usable ability-bar entry (added to `SpellcasterState.prepared_spells`, counted
+  by `prepared_cantrip_count()` against the same `cantrip_max()` cap) if there's room; otherwise
+  it just sits known-but-unselected in the spellbook, same "known but not selected" shape a
+  leveled spell already had past `prepared_max()`. `can_learn_scroll_spell()` only blocks Learn
+  when the spell is ALREADY known — the cap no longer hides the option. The Spellbook overlay's
+  Cantrips tab shows a real `"X / Y prepared"` counter (no more static "Always ready" text) and
+  clicking a cantrip tile toggles it prepared/unprepared exactly like a leveled spell — a
+  deliberate simplification of D&D 2024's real rule (cantrips can normally only be swapped on a
+  class level-up, not freely at will) per direct owner request, so a cantrip learned past the cap
+  isn't otherwise permanently unusable. The one-time character-creation starter pick
+  (`choose_cantrip()`) still bypasses any cap check entirely — it only ever grants 1 cantrip,
+  always under it, and marks it prepared directly. `SpellcasterState.known_cantrip_count()` (all
+  known cantrips, cap or no cap) is now unused by any cap check but kept as a general query.
 - **Scrolls**: `Item.taught_spell_id` (empty = not a spell scroll). `GameState.use_item()`'s
   SCROLL branch calls `learn_spell()` and consumes the scroll if the spell isn't already known.
   No scroll items use this teaching mechanism in any loot pool yet.
