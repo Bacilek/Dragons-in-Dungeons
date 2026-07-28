@@ -46,6 +46,7 @@ var mind_sliver_penalty_die: bool = false  # Mind Sliver cantrip — the next ch
 var embedded_items: Array[Item] = []  # thrown weapons stuck in a non-lethal hit (PlayerThrowTool._throw_weapon) — dropped at 100% chance wherever/whenever this enemy eventually dies, see die() override below
 var escape_turns: int = 0    # Nimble Escape trait (Goblin) — random 1-5 turns fleeing escape_from, set in on_melee_hit()
 var escape_from: Node = null  # entity being fled from; always is_instance_valid()-checked before use (may die/despawn mid-flee)
+var _hits_taken: int = 0     # incremented in take_typed_damage() on every instance of actual > 0 damage — lets on_melee_hit() below tell whether THIS melee hit is this enemy's first damage ever this life
 var _thrown_weapon_used: bool = false        # a one-shot thrown weapon (pool "thrown_weapon") — true once used; _attack_target() then dispatches to "unarmed_fallback" (a bare-handed Fist strike) instead of the normal multiattack — Goblin Minion's Dagger and Orc Warrior's Javelin both work this way
 var _thrown_weapon_lodged_target: Node = null  # who the thrown weapon was aimed at, for the delayed drop-on-death check in die()
 var _thrown_weapon_lodged_item: Item = null    # the actual Item to place on the floor if the drop chance succeeds
@@ -228,6 +229,8 @@ func take_typed_damage(amount: int, damage_type: String, is_crit: bool = false) 
 				GameState.game_log("[color=gray][url=%s]%s's Undead Fortitude check fails.[/url][/color]" % [save_meta, display_name])
 			break
 	var actual: int = stats.take_damage(effective)
+	if actual > 0:
+		_hits_taken += 1
 	# Shape Shift (Imp): any actual damage taken (an immune hit deals 0 and returned earlier above,
 	# so this never fires from those) reverts a shape-shifted enemy to its true form immediately.
 	if actual > 0 and _shifted_form != "":
@@ -259,8 +262,13 @@ func apply_status(condition: String, turns: int) -> bool:
 # player attack call sites (_bump_attack/_resolve_cleave_attack/_resolve_offhand_attack/
 # resolve_opportunity_attack in player.gd) — NOT ranged/thrown/spell hits, which aren't "a melee
 # attack" by the trait's own text.
+# ONLY triggers on this enemy's very first damage instance this life (_hits_taken == 1, already
+# incremented by the take_typed_damage() call this same hit made just before on_melee_hit() is
+# called) — direct owner request: if the goblin was already damaged before this melee swing (shot
+# by a ranged weapon, say), fleeing melee range is pointless since the player can just shoot it
+# while it runs, so a melee hit landed on an already-damaged goblin no longer triggers a flee.
 func on_melee_hit(attacker: Node) -> void:
-	if stats.is_dead() or not _has_trait("nimble_escape"):
+	if stats.is_dead() or not _has_trait("nimble_escape") or _hits_taken > 1:
 		return
 	escape_turns = Rng.range_i(1, 5)
 	escape_from = attacker
@@ -1185,17 +1193,24 @@ func _attack_target(target: Node) -> void:
 	if _invis_turns > 0:
 		_end_invisibility()
 		GameState.game_log("[color=purple]%s reappears![/color]" % display_name)
-	# Once a one-shot thrown weapon is used (Goblin Minion's Dagger, Orc Warrior's Javelin), every
-	# attack reverts to an unarmed Fist strike (pool "unarmed_fallback") instead of the normal
-	# multiattack — the weapon is gone, thrown at range earlier this fight.
+	# Once a one-shot thrown weapon is used, every attack reverts to an unarmed Fist strike (pool
+	# "unarmed_fallback") instead of the normal multiattack — but ONLY when the thrown weapon IS
+	# the enemy's own melee weapon (Goblin Minion's Dagger: thrown away = no more Dagger for melee
+	# either). An enemy whose thrown weapon is a SEPARATE item from its melee weapon (Orc Warrior:
+	# Javelin thrown at range, Greataxe still in hand) keeps using its normal multiattack once
+	# adjacent — throwing the Javelin away doesn't make the Greataxe disappear too. Distinguished by
+	# comparing the thrown weapon's name against the multiattack's own weapon name; same name = same
+	# weapon (Goblin), different name = a separate weapon (Orc) that was never lost.
 	var fallback: Dictionary = _type.get("unarmed_fallback", {})
-	if _thrown_weapon_used and not fallback.is_empty():
+	var thrown: Dictionary = _type.get("thrown_weapon", {})
+	var multi: Array = _type.get("multiattack", [])
+	var is_same_weapon: bool = not multi.is_empty() and thrown.get("name", "") == multi[0].get("name", "")
+	if _thrown_weapon_used and not fallback.is_empty() and is_same_weapon:
 		if target is Player:
 			_attack_player(target, fallback)
 		elif target is Companion:
 			_attack_companion(target, fallback)
 		return
-	var multi: Array = _type.get("multiattack", [])
 	if multi.is_empty():
 		if target is Player:
 			_attack_player(target)

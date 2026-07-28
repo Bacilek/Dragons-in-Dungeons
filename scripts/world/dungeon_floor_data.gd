@@ -190,9 +190,12 @@ const ENEMY_POOL: Array = [
 	# mechanism as Goblin Minion's Dagger above, just re-authored with Javelin/Fists numbers): +5 to
 	# hit (STR, same as the Greataxe — no "attack_stat" override needed), range 3, 1d6+3 Piercing,
 	# rolled with Disadvantage (reuses _attack_player()/_attack_companion()'s `long_shot` param).
-	# Whenever NOT yet adjacent, thrown once instead of closing to melee; once gone, every attack
-	# after this reverts to an unarmed Fist strike ("unarmed_fallback": flat 4 Bludgeoning — "1 +
-	# STR mod", Orc's STR mod is +3) — Enemy._attack_target()'s dispatch, same as Goblin's Fists.
+	# Whenever NOT yet adjacent, thrown once instead of closing to melee. Unlike Goblin's Dagger
+	# (thrown AND melee weapon in one — losing it means Fists forever), the Javelin is a SEPARATE
+	# weapon from the Greataxe: Enemy._attack_target() only falls back to "unarmed_fallback" when
+	# the thrown weapon's name matches the multiattack's own weapon name (same weapon lost), so
+	# once the Javelin is gone this Orc keeps swinging its Greataxe normally in melee — it never
+	# permanently goes bare-fisted the way a Goblin Minion does.
 	# Recovery: 50% chance (this pool entry's default "drop_chance", same as Goblin's Dagger) to
 	# find it wherever the target stands when this Orc eventually dies. "random_uses": true — the
 	# recovered Javelin is already partially worn down (a random 1 to "drop_uses_max" uses left),
@@ -429,8 +432,9 @@ const ENEMY_POOL: Array = [
 	# same as the Greatclub), range 3 tiles — reusing Orc Warrior's own Javelin range verbatim, the
 	# only precedent in this codebase for how far a thrown Javelin flies — 2d8+4 Piercing, rolled
 	# with Disadvantage (`long_shot` param). Whenever NOT yet adjacent, thrown once instead of
-	# closing to melee; once gone, every attack after this reverts to an unarmed Fist strike
-	# ("unarmed_fallback": flat 5 Bludgeoning — "1 + STR mod", Ogre's STR mod is +4).
+	# closing to melee. Same "separate weapon" rule as Orc Warrior's Javelin/Greataxe above ("Javelin"
+	# != "Greatclub" by name) — once the Javelin is gone this Ogre keeps swinging its Greatclub
+	# normally in melee, never permanently falling back to Fists.
 	# Recovery: 50% chance (default "drop_chance", same as Orc Warrior's Javelin) to find it
 	# wherever the target stands when this Ogre eventually dies; "random_uses": true — the
 	# recovered Javelin is already partially worn down, not pristine.
