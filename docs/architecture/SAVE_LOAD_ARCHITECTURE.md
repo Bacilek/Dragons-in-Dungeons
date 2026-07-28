@@ -1,5 +1,14 @@
 # Save/Load System Architecture
 
+**Implementation status: Phase A (§1-4, §7) is DONE** — versioned JSON save/load, atomic
+write+backup, floor-entry checkpoint autosave, full `to_dict()`/`from_dict()` for Stats/talents/
+inventory/rest, "Continue Saved Run" button, migration policy — see root `CLAUDE.md`'s SaveManager
+pointer and `scripts/autoloads/CLAUDE.md`, which are now authoritative for the shipped mechanism.
+The §6 Rng determinism retrofit is also DONE (see the status note inline in §6 below). **Still
+design-only**: §5 (Phase B mid-floor saves — enemy/door/trap/floor-item/fog state, save-between-turns
+constraint). This doc stays for that section plus the §3 seeded-floor-population prerequisite
+writeup (context/rationale, already implemented).
+
 No save system exists today (closing the game loses the run). This spec defines a permadeath-respecting, corruption-resistant, Phase-2-(multiplayer)-aware save system in phases, starting with a small MVP.
 
 ---

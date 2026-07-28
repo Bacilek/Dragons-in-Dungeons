@@ -1,6 +1,18 @@
 # Spellcasting System — Design Doc
 
-Status: **design only, nothing implemented.** This document specifies the framework a future
+**Implementation status: superseded for its core scope.** A narrower plan (Wizard cantrips +
+leveled spells with real 5e spell slots, prepared-count-by-level, a level-up spell-growth picker,
+scroll-taught spells, the R-key Spellbook overlay, Concentration for 4 spells, a Special
+quick-cast slot) shipped under its own now-deleted design doc — `scripts/entities/CLAUDE.md`'s
+"Wizard leveled spells (spell slots)" section is authoritative for what's live. **What THIS doc
+still covers and remains design-only**: BG3-style reactions (§8), enemy casters (§9), half-casters/
+Paladin-Ranger slot progression (§3, only Wizard's full-caster table shipped), pact magic/Warlock
+(§10.7 area), multiclassing (§10.8), sorcery points/metamagic/ki (§10.7), full spell lists beyond
+the 12 shipped, line/cube AoE shapes (only sphere+cone shipped), and upcast slot-level picker
+(always casts at cheapest slot today). Keep this doc for that remaining scope; do not treat its
+"nothing implemented" framing below as current.
+
+Status (as originally written, now partially stale — see note above): **design only, nothing implemented.** This document specifies the framework a future
 implementation session will follow. No code files ship with it.
 
 Scope: a full D&D 5.5e (2024) spellcasting framework for the game — spell data model, spell

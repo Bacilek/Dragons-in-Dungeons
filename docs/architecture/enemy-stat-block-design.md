@@ -5,9 +5,10 @@
 no per-ability custom code needed for a plain ranged-damage(+status) ability), `regeneration`/
 `undead_fortitude` traits (§11), and Legendary Resistance on `big_demon` (§15) are all live in
 `scripts/entities/enemy.gd` — see that file's CLAUDE.md "Enemy D&D stat-block schema" section for
-the authoring-facing field table. **Still design-only** (step 8/9, deliberately deferred): size/
-multi-tile occupancy (§8), reactions beyond Opportunity Attacks (§13), conditional triggers (§14),
-Legendary Actions (§15).
+the authoring-facing field table. **§8 (size/multi-tile occupancy) has since shipped too** — see
+`scripts/entities/CLAUDE.md`'s "Multi-tile footprint (Large enemies)" section (Ogre, 2×2) — this
+doc's §8 text is now historical. **Still design-only**: reactions beyond Opportunity Attacks (§13),
+conditional triggers (§14), Legendary Actions (§15).
 
 # Enemy Stat Block — Data Schema Design
 
