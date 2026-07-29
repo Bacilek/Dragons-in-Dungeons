@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dtu1fuxpvhisj"
-path="res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"
+uid="uid://deb6r1uo8d1rh"
+path="res://.godot/imported/expeditious_retreat.png-9246cfc7efd3e66364d60974078f46a8.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/pfp.png"
-dest_files=["res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"]
+source_file="res://icons/spells/1/expeditious_retreat.png"
+dest_files=["res://.godot/imported/expeditious_retreat.png-9246cfc7efd3e66364d60974078f46a8.ctex"]
 
 [params]
 

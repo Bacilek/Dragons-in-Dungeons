@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dtu1fuxpvhisj"
-path="res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"
+uid="uid://cf8sf5dsh0x3c"
+path="res://.godot/imported/false_life.png-d86897bb06f46a0fbbca86f670fae10c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/pfp.png"
-dest_files=["res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"]
+source_file="res://icons/spells/1/false_life.png"
+dest_files=["res://.godot/imported/false_life.png-d86897bb06f46a0fbbca86f670fae10c.ctex"]
 
 [params]
 

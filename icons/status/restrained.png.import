@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dtu1fuxpvhisj"
-path="res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"
+uid="uid://c8bpoq8fxravg"
+path="res://.godot/imported/restrained.png-76f8dd8d4c0467a3b84f58e48ab43162.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/pfp.png"
-dest_files=["res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"]
+source_file="res://icons/status/restrained.png"
+dest_files=["res://.godot/imported/restrained.png-76f8dd8d4c0467a3b84f58e48ab43162.ctex"]
 
 [params]
 

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dtu1fuxpvhisj"
-path="res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"
+uid="uid://0u4pmv735303"
+path="res://.godot/imported/weapon_mastery.png-92a24166ea494dab1b6fb34da20f71bb.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/pfp.png"
-dest_files=["res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"]
+source_file="res://icons/status/weapon_mastery.png"
+dest_files=["res://.godot/imported/weapon_mastery.png-92a24166ea494dab1b6fb34da20f71bb.ctex"]
 
 [params]
 

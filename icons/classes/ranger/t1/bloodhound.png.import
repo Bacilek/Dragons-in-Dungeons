@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dtu1fuxpvhisj"
-path="res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"
+uid="uid://n3ymwhh7trxd"
+path="res://.godot/imported/bloodhound.png-1fdea2a1d43be883c0a0fcb09cdc0805.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/pfp.png"
-dest_files=["res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"]
+source_file="res://icons/classes/ranger/t1/bloodhound.png"
+dest_files=["res://.godot/imported/bloodhound.png-1fdea2a1d43be883c0a0fcb09cdc0805.ctex"]
 
 [params]
 

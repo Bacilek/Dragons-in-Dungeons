@@ -13,7 +13,20 @@ const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp
 # above so the premade Jace's "cantrip": "fire_bolt" shortcut and existing save data stay valid.
 const STARTER_CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
 const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud", "invisibility"]
-const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
+# Ranger (half-caster, scripts/entities/CLAUDE.md's "Ranger class") draws from the same shared
+# `SpellDb` pool as Wizard, but ONLY the subset actually on Ranger's real 5e/5.5e (2024) spell
+# list — direct owner correction: don't just open every `LEVELED_SPELL_IDS` entry up to Ranger
+# "for consistency", each spell's actual RAW class list matters. Of these 12, only Fog Cloud is
+# genuinely Druid/Ranger/Sorcerer/Wizard; every arcane blast/utility spell here (Magic Missile,
+# Shield, Mage Armor, Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch Bolt, Expeditious
+# Retreat, False Life, Invisibility) is Sorcerer/Wizard(/Warlock) only on both rule sets — see each
+# spell's own `class_list` comment above. This makes Ranger's actual castable pool thin today
+# (a real content gap, not a bug — this codebase has zero nature-flavored spell content of its own
+# yet, e.g. Ensnaring Strike/Goodberry/Hunter's Mark-as-a-spell/Zephyr Strike from the real 2024
+# Ranger list). No cantrips for Ranger either way (`cantrip_max()` stays 0 for every non-Wizard
+# class, matching both rule sets — Rangers don't get cantrips).
+const RANGER_SPELL_IDS: Array[String] = ["fog_cloud"]
+const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS, "RANGER": RANGER_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
 ## Shared level-name formatter — "Cantrips" for level 0, "1st"/"2nd"/"3rd"/"Nth" otherwise.
 ## Reused by spellbook_overlay.gd's tab labels and debug_panel.gd's Give Spell level badge.
@@ -189,16 +202,17 @@ static func _magic_missile() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "magic_missile"
 	s.spell_name = "Magic Missile"
-	s.description = "3 darts of magical force strike unerringly — always hits, no attack roll. 1d4+1 Force each. Range: your full field of view."
+	s.description = "3 darts of magical force strike unerringly — always hits, no attack roll. 1d4+1 Force each. Range: 12 tiles. The darts seek their target: no line of sight needed (they'll find a target around a corner, through grass, past a closed door) — but only if a walkable path to them exists (a route a character could physically take, chasms aside — the darts fly over those). No path, no hit, no matter how close."
 	s.icon_path = "res://icons/spells/1/arcane_missiles.png"  # icon pack names this spell's art "arcane_missiles"
 	s.school = "Evocation"
 	s.level = 1
-	s.range_is_fov = true
+	s.range_tiles = 12
+	s.bypasses_los = true
 	s.target_kind = Spell.TargetKind.ENEMY
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.damage_type = "Force"
 	s.effect_id = "magic_missile"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WIZARD"]   # real 5e list: Sorcerer/Wizard — not Ranger
 	return s
 
 static func _shield() -> Spell:
@@ -213,7 +227,7 @@ static func _shield() -> Spell:
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "shield"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WIZARD"]   # real 5e list: Sorcerer/Wizard — not Ranger
 	return s
 
 static func _mage_armor() -> Spell:
@@ -228,7 +242,7 @@ static func _mage_armor() -> Spell:
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "mage_armor"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WIZARD"]   # real 5e list: Sorcerer/Wizard — not Ranger
 	return s
 
 static func _misty_step() -> Spell:
@@ -243,7 +257,7 @@ static func _misty_step() -> Spell:
 	s.target_kind = Spell.TargetKind.TILE
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "misty_step"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WIZARD"]   # real 5e list: Sorcerer/Warlock/Wizard — not Ranger
 	return s
 
 static func _fireball() -> Spell:
@@ -264,7 +278,7 @@ static func _fireball() -> Spell:
 	s.dice_count = 8
 	s.dice_sides = 6
 	s.damage_type = "Fire"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WIZARD"]   # real 5e list: Sorcerer/Wizard — not Ranger
 	return s
 
 static func _chromatic_orb() -> Spell:
@@ -282,7 +296,7 @@ static func _chromatic_orb() -> Spell:
 	s.dice_sides = 8
 	s.damage_type = ""   # rolled per-cast from SpellEffects.CHROMATIC_ORB_TYPES — see effect_id
 	s.effect_id = "chromatic_orb"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WIZARD"]   # real 5e/5.5e list: Sorcerer/Wizard — not Ranger
 	return s
 
 static func _burning_hands() -> Spell:
@@ -304,7 +318,7 @@ static func _burning_hands() -> Spell:
 	s.dice_sides = 6
 	s.damage_type = "Fire"
 	s.effect_id = "burning_hands"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WIZARD"]   # real 5e/5.5e list: Sorcerer/Wizard — not Ranger
 	return s
 
 static func _witch_bolt() -> Spell:
@@ -322,27 +336,30 @@ static func _witch_bolt() -> Spell:
 	s.dice_sides = 12
 	s.damage_type = "Lightning"
 	s.effect_id = "witch_bolt"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WIZARD"]   # real 5e/5.5e list: Sorcerer/Wizard — not Ranger
 	return s
 
 # ── More 1st-level non-damage spells (Expeditious Retreat, False Life, Fog Cloud) ────────────
-# 5e class list for these three is Sorcerer/Warlock/Wizard, Sorcerer/Wizard, and Druid/Ranger/
-# Sorcerer/Wizard respectively — this codebase only has a Wizard caster, so class_list stays
-# ["WIZARD"] like every other spell (see the note on LEVELED_SPELL_IDS/CLASS_SPELL_LISTS above).
+# Real 5e/5.5e class list for these three is Sorcerer/Warlock/Wizard, Sorcerer/Wizard, and
+# Druid/Ranger/Sorcerer/Wizard respectively — Fog Cloud is the ONE genuinely on the Ranger list
+# (both 2014 and 2024 rules); Expeditious Retreat/False Life stay Wizard-only, matching their real
+# lists (direct owner correction — Ranger's spell access must respect each spell's actual RAW class
+# list, not just "open everything up for consistency" — see LEVELED_SPELL_IDS/CLASS_SPELL_LISTS's
+# note above and scripts/entities/CLAUDE.md's "Ranger class").
 
 static func _expeditious_retreat() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "expeditious_retreat"
 	s.spell_name = "Expeditious Retreat"
 	s.description = "Free action, self, up to 100 turns (Concentration). Once per turn, your first move doesn't cost you your turn — you can still act (or move again) afterward."
-	s.icon_path = "res://icons/spells/1/expeditious_retreat.png"  # no art yet — renders blank until added
+	s.icon_path = "res://icons/spells/1/expeditious_retreat.png"
 	s.school = "Transmutation"
 	s.level = 1
 	s.range_tiles = 0
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "expeditious_retreat"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WIZARD"]   # real 5e/5.5e list: Sorcerer/Warlock/Wizard — not Ranger
 	return s
 
 static func _false_life() -> Spell:
@@ -350,7 +367,7 @@ static func _false_life() -> Spell:
 	s.spell_id = "false_life"
 	s.spell_name = "False Life"
 	s.description = "Action, self, instantaneous. Gain 2d4 + 4 Temporary HP."
-	s.icon_path = "res://icons/spells/1/false_life.png"  # no art yet — renders blank until added
+	s.icon_path = "res://icons/spells/1/false_life.png"
 	s.school = "Necromancy"
 	s.level = 1
 	s.range_tiles = 0
@@ -359,7 +376,7 @@ static func _false_life() -> Spell:
 	s.dice_count = 2
 	s.dice_sides = 4
 	s.effect_id = "false_life"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WIZARD"]   # real 5e/5.5e list: Sorcerer/Wizard — not Ranger
 	return s
 
 static func _fog_cloud() -> Spell:
@@ -367,7 +384,7 @@ static func _fog_cloud() -> Spell:
 	s.spell_id = "fog_cloud"
 	s.spell_name = "Fog Cloud"
 	s.description = "A 2-tile-radius sphere of fog fills the air at a point within 12 tiles, heavily obscuring it. Anyone standing inside — you or an enemy — is Blinded: attacks against them have Advantage, and their own attacks have Disadvantage. Lasts up to 100 turns (Concentration)."
-	s.icon_path = "res://icons/spells/1/fog_cloud.png"  # no art yet — renders blank until added
+	s.icon_path = "res://icons/spells/1/fog_cloud.png"
 	s.school = "Conjuration"
 	s.level = 1
 	s.range_tiles = 12
@@ -376,7 +393,7 @@ static func _fog_cloud() -> Spell:
 	s.shape_size = 2
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "fog_cloud"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WIZARD", "RANGER"]   # real 5e/5.5e list: Druid/Ranger/Sorcerer/Wizard
 	return s
 
 # Real 5e class list is Bard/Druid/Sorcerer/Warlock/Wizard — this codebase only has a Wizard
@@ -391,7 +408,7 @@ static func _invisibility() -> Spell:
 	s.spell_id = "invisibility"
 	s.spell_name = "Invisibility"
 	s.description = "Touch yourself and turn invisible for up to 100 turns. Enemies lose track of you as if you'd vanished (no attack, no attempt to find you — they head to your last known position and eventually give up). Ends early if you attack or cast a spell. You are NOT invincible — AoE spells and bumping into you still work."
-	s.icon_path = "res://icons/spells/2/invisibility.png"  # no art yet — renders blank until added
+	s.icon_path = "res://icons/spells/2/invisibility.png"
 	s.school = "Illusion"
 	s.level = 2
 	s.range_tiles = 1

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dtu1fuxpvhisj"
-path="res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"
+uid="uid://h8jgsg0m0wwp"
+path="res://.godot/imported/bleeding.png-c2a390b893408207f33649d95a455914.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/pfp.png"
-dest_files=["res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"]
+source_file="res://icons/status/bleeding.png"
+dest_files=["res://.godot/imported/bleeding.png-c2a390b893408207f33649d95a455914.ctex"]
 
 [params]
 

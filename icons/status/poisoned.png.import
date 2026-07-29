@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dtu1fuxpvhisj"
-path="res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"
+uid="uid://bptfy05x3vcie"
+path="res://.godot/imported/poisoned.png-4fdb8b939ee6d3df5c4505242ae798c5.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/pfp.png"
-dest_files=["res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"]
+source_file="res://icons/status/poisoned.png"
+dest_files=["res://.godot/imported/poisoned.png-4fdb8b939ee6d3df5c4505242ae798c5.ctex"]
 
 [params]
 

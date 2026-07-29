@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dtu1fuxpvhisj"
-path="res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"
+uid="uid://disphlnxqqpnk"
+path="res://.godot/imported/incapacitated.png-9712a5e324f155b8348a640baf88761b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/pfp.png"
-dest_files=["res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"]
+source_file="res://icons/status/incapacitated.png"
+dest_files=["res://.godot/imported/incapacitated.png-9712a5e324f155b8348a640baf88761b.ctex"]
 
 [params]
 

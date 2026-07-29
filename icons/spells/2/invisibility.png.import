@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dtu1fuxpvhisj"
-path="res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"
+uid="uid://sbhdm5tccwqs"
+path="res://.godot/imported/invisibility.png-807f78069cc50b46599ea1254607e6b3.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://icons/pfp.png"
-dest_files=["res://.godot/imported/pfp.png-e5358bc47082119547de9e6e27178023.ctex"]
+source_file="res://icons/spells/2/invisibility.png"
+dest_files=["res://.godot/imported/invisibility.png-807f78069cc50b46599ea1254607e6b3.ctex"]
 
 [params]
 

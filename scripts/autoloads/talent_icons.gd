@@ -48,9 +48,7 @@ const TALENT_ICON_FLAT: Dictionary = {
 }
 
 # Ranger talent/ability icons — separate dict + folder prefix since TALENT_ICON_FLAT above always
-# resolves under res://icons/classes/barbarian/. No art exists yet for any of these — resolve()
-# returns a path that fails ResourceLoader.exists(), which every icon-consuming UI already guards
-# (falls back to name-text), same asset-debt precedent as the Imp's shape-shift forms.
+# resolves under res://icons/classes/barbarian/.
 const RANGER_TALENT_ICON_FLAT: Dictionary = {
 	"hunters_mark": "t0/hunters_mark",
 	"trailblazer": "t1/trailblazer",
