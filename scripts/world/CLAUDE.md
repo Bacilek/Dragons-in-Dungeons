@@ -87,7 +87,9 @@ of Heavily Obscured terrain), and `GameState.effective_fov_radius(pos)` — read
 of every other FOV bonus, including darkvision.
 
 ## AoE targeting preview
-`show_aoe_preview(center: Vector2i, radius: int)` / `show_cone_preview(origin: Vector2i, aim: Vector2i, length: int)` / `hide_aoe_preview()` — a small pooled-`Sprite2D` purple tint (1×1 white texture tinted via `modulate`, `z_index = 2`, same layer as the fog sprite — Node2D-world convention, not a Control), both funneling into a shared `_paint_aoe_preview_tiles(key, tiles)` helper. Sphere: every tile within `radius` (Euclidean, no LOS filtering — see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why) of `center`. Cone (Burning Hands): `SpellEffects.cone_tiles(origin, aim, length, self)` — the same LOS-gated 90°-arc tile-gather the actual cast resolver uses, so the preview always matches the real blast exactly (see `scripts/entities/CLAUDE.md`'s "More 1st-level spells"). Driven every frame by `player.gd._update_spell_aoe_preview()` while a sphere- or cone-shaped spell is armed for targeting. Each rebuild is cache-keyed on its own params so repeated calls with the same hovered tile are near-free.
+`show_aoe_preview(center: Vector2i, radius: int)` / `show_cone_preview(origin: Vector2i, aim: Vector2i, length: int)` / `hide_aoe_preview()` — a small pooled-`Sprite2D` purple tint (1×1 white texture tinted via `modulate`, `z_index = 2`, same layer as the fog sprite — Node2D-world convention, not a Control), both funneling into a shared `_paint_aoe_preview_tiles(key, tiles, exact_target_tile)` helper. Sphere: every tile within `radius` (Euclidean, no LOS filtering — see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why) of `center`. Cone (Burning Hands): `SpellEffects.cone_tiles(origin, aim, length, self)` — the same LOS-gated 90°-arc tile-gather the actual cast resolver uses, so the preview always matches the real blast exactly (see `scripts/entities/CLAUDE.md`'s "More 1st-level spells"). Driven every frame by `player.gd._update_spell_aoe_preview()` while a sphere- or cone-shaped spell is armed for targeting. Each rebuild is cache-keyed on its own params so repeated calls with the same hovered tile are near-free. **`exact_target_tile`** (the sphere's `center` / the cone's `aim` tile — the one tile the player is precisely aiming at) tints **red** (`AOE_PREVIEW_ENEMY_TINT`) instead of the default purple (`AOE_PREVIEW_TINT`) whenever `get_targetable_enemy_at(exact_target_tile) != null` — a known, non-invisible enemy standing on the exact targeted tile reads as "to be hit"; every other footprint tile stays purple.
+
+**Blue "maximum reach" preview**: `show_spell_range_preview(center: Vector2i, radius: int)` / `hide_spell_range_preview()` — a second, independent pooled-`Sprite2D` overlay (`SPELL_RANGE_TINT`, a low-alpha blue, `z_index = 1` — one layer below the purple/red exact-footprint preview so the two compose correctly when both are visible), same cache-keyed convention. Shows a static disc around the caster covering every tile the currently-armed spell could conceivably hit, for **any** armed spell — not just AoE shapes; a plain single-target spell (Fire Bolt) gets one too. Driven from the same `player.gd._update_spell_aoe_preview()` call, computed per spell: cone (Burning Hands) → radius = `shape_size` (the cone's own length, since it always originates at the caster); sphere (Fireball) → radius = `range_tiles + shape_size` (the blast's center can land at the edge of range and still splash further out); everything else (single-target ENEMY/TILE spells) → radius = `range_tiles`.
 
 ---
 
@@ -193,6 +195,34 @@ pointlessly) and RMB (`PlayerActions.interact_action()`'s Priority 1.5, same exa
 scan-8-neighbors split as the trap/door priorities). Both open `scripts/ui/blacksmith_panel.gd` —
 see `scripts/ui/CLAUDE.md` and `scripts/items/CLAUDE.md`'s "WeaponForge" section for what it does.
 
+## Shopkeeper prop (`_shopkeepers: Dictionary[Vector2i, Dictionary]`)
+Value keys: `sprite: Sprite2D, stock: Array[Item]`. Same solid-impassable-landmark-tile treatment as
+`_blacksmiths` (blocked in `is_walkable()`/`is_walkable_for_enemy()`/`is_walkable_for_companion()`)
+placed by `_spawn_shop(rect)` (ShopRoom content, `scripts/dungeon/CLAUDE.md`). No dedicated NPC
+sprite exists yet (`sprites/characters/npcs/` is reserved but empty — root CLAUDE.md's Sprite
+Assets) — tries `SHOPKEEPER_TEX_PATH` (`res://sprites/characters/npcs/dwarf_m/idle_1.png`) first
+via `ResourceLoader.exists()`, falling back to the same `crate.png` placeholder Blacksmith uses,
+distinguished by its own `SHOPKEEPER_TINT`.
+
+**Stock generation**: filters `ITEM_POOL` to entries with `gold > 0` and floor/level eligibility
+(same `fmin`/`fmax`/`is_scroll_level_eligible()` gate `_spawn_items()` uses), shuffles on `_pop_rng`,
+takes 4-6 distinct entries (`SHOP_STOCK_MIN`/`SHOP_STOCK_MAX`), guarantees at least one FOOD entry
+(falls back to "Ration" by name if none of the random picks were food) — built via
+`_build_item_from_pool(d)` (the item-construction half of `_build_floor_item()`, factored out so
+shop stock can build real `Item`s without ever calling `place_item_on_floor()`). **Stock is
+overlay-only** — never laid on the floor, no restock, discarded when the floor unloads (not
+serialized, not regenerated on revisit).
+
+```gdscript
+dungeon_floor.has_shopkeeper_at(pos) -> bool
+dungeon_floor.get_shopkeeper_stock(pos) -> Array[Item]   # LIVE array — shop_panel.gd mutates it directly on Buy
+```
+
+**Interaction**: bump-to-open (`player.gd._try_move()`, same pre-walkability-check intercept as
+the Blacksmith prop) and RMB (`PlayerActions.interact_action()`'s Priority 1.6, same exact-tile-
+vs-scan-8-neighbors split). Both open `scripts/ui/shop_panel.gd` — see `scripts/ui/CLAUDE.md` and
+`scripts/autoloads/CLAUDE.md`'s gold economy section.
+
 ## Mold (guaranteed once-per-run placement)
 `DungeonFloor._spawn_mold()`, called right after `_spawn_special_rooms()` in `_load_floor()`:
 no-ops unless `GameState.current_floor == GameState.mold_target_floor` (rolled once via
@@ -245,6 +275,50 @@ dungeon_floor.unlock_door(pos)             # restores white tint, removes lock i
 **Player locking**: F key on adjacent CLOSED UNLOCKED door with Thief Tools → DC 10 DEX Sleight of Hand. Fail consumes Thief Tools.
 **Unlocking**: Player walks into locked door → auto-unlock (free). Or F on locked door → unlock+open (spends action).
 
+## Hidden doors (SecretRoom, session 7f)
+A hidden door is an ordinary `_doors` entry with `"hidden": true` — not a separate `TileType` or
+dict. Its walkability/LOS-blocking already fall out for free from the existing "closed door"
+checks every one of those functions already has (`is_walkable()`/`is_walkable_for_enemy()`/
+`is_walkable_for_companion()`'s `_doors.has(pos) and not is_open` branch, `_blocks_los()`/
+`_blocks_projectile()`'s identical check) — a hidden door is simply always `is_open == false`. The
+only things session 7f actually adds:
+
+- **`has_door_at(pos)`** returns `false` while `_doors[pos].get("hidden", false)` — the single
+  chokepoint every door-interaction path reads (bump-open in `player.gd`, F/RMB Priority 2 in
+  `PlayerActions.interact_action()`, enemy door-opening, `ignite_flammable()`,
+  `_spawn_locked_doors()`'s candidate scan) — so none of them ever notice a still-undiscovered
+  secret door. `search_around()` is the one place that reads the **raw** `_doors` dict directly,
+  bypassing this filter.
+- **Visual**: `_spawn_secret_room(rect)` swaps the door tile's `TileMapLayer` cell to
+  `SOURCE_WALL` (`tilemap.set_cell(pos, SOURCE_WALL, ATLAS_ORIGIN)`) and hides its `Sprite2D`
+  (`visible = false`) — same one-tile-mutation pattern `destroy_grass()` uses. `_data.grid` itself
+  is never touched (stays FLOOR) — walkability/LOS already come from the `_doors` dict, so this is
+  purely cosmetic, restored on reveal.
+- **`_spawn_secret_room(rect)`**: finds the room's one connecting door on its perimeter ring (same
+  `rect.grow(1)` scan `_spawn_treasure()`'s door-lock loop uses), marks it hidden, then spawns a
+  reward inside the room — 2-3 `ITEM_POOL` rolls (one biased to the **top half by `gold_value`**,
+  a rarity proxy — sorted copy of the eligible list, slice the first half, roll one from there)
+  plus a guaranteed `_pop_rng.randi_range(20, 30) + 2 * current_floor` gold pile — "strictly
+  better than a locked-door room" since finding it costs deliberate search turns. If
+  `_spawn_doors()`'s 65%-probabilistic roll missed this room's one junction (no door object
+  exists there at all), the whole reward is skipped outright — stricter than TreasureRoom's own
+  "loot still spawns, just undefended" degrade, since an unguarded top-tier reward is worse than
+  none.
+- **`_reveal_secret_door(pos)`**: called only from `search_around()`'s new second loop (over a
+  `_doors.keys()` snapshot, same radius+LOS gate the trap-reveal loop already uses). Un-hides the
+  sprite, restores the tilemap cell to `SOURCE_FLOOR`, logs
+  `"You discover a hidden door!"` directly — kept separate from the trap-count summary
+  `PlayerActions.search_action()` builds from `search_around()`'s returned int, so that call site
+  needed no changes.
+- **`ignite_flammable(pos)`**'s door branch gates on `not _doors[pos].get("hidden", false)` too —
+  a Fire Bolt hitting what looks like a plain wall can't accidentally ignite/out a secret door.
+- **`_spawn_locked_doors()`** skips a floor with a `"secret"` `room_metadata` entry (same
+  treatment as `"treasure"`) — it runs before `_spawn_special_rooms()`, so without this it could
+  lock-and-reward the SecretRoom's own sole door before `_spawn_secret_room()` hides it.
+
+No new interaction, no new key — Ctrl-search (`PlayerActions.search_action()` →
+`search_around()`) already existed for traps; this just gives it a second thing to find.
+
 ---
 
 ## Floor items (`_floor_items`, `_floor_item_sprites`)
@@ -282,10 +356,12 @@ _spawn_doors()          # see "Doors" below
 _spawn_barrels()        # 1-3 flammable obstacle props/floor on plain FLOOR tiles, see "Barrels + flammable props" above; runs right after _spawn_doors()
 _spawn_items()          # 2-3 random items from DungeonFloorData.ITEM_POOL; calls _build_floor_item()
 _spawn_locked_doors()   # locks 1 door/floor that doesn't block spawn→stairs; places 2-3 rewards inside
-_spawn_special_rooms()  # dispatcher: matches _data.room_metadata's type_id ("shop"/"treasure"/"garden"/"secret"/"blacksmith") — the ONE place a type_id string is matched. "treasure"/"garden"/"blacksmith" are live (_spawn_treasure()/_spawn_garden_items()/_spawn_blacksmith()); "shop"/"secret" remain stubs (pass) pending sessions 7e/7f
+_spawn_special_rooms()  # dispatcher: matches _data.room_metadata's type_id ("shop"/"treasure"/"garden"/"secret"/"blacksmith") — the ONE place a type_id string is matched. All five are live: _spawn_treasure()/_spawn_garden_items()/_spawn_blacksmith()/_spawn_shop()/_spawn_secret_room()
 _spawn_treasure(rect)   # session 7c: 3 guaranteed ITEM_POOL rolls + 1 gold pile (15-25 + 2×floor) inside rect; locks the room's one connecting door (manual lock, no AudioManager at gen time — mirrors _spawn_locked_doors()); floor >= 4 also gets 1-2 non-wall TRAP_POOL traps via the shared _place_floor_trap() helper. No-ops if rect is empty (BSP-fallback floor) or the room has no candidate tiles
 _spawn_garden_items(rect)  # session 7d: 1-2 "Healing Herb" ITEM_POOL entries (looked up by name, fmin/fmax=99 sentinel keeps it out of every generic filter) on the GRASS tiles GardenRoom.paint() already carved. No-ops if rect is empty
 _spawn_blacksmith(rect) # one impassable prop tile (see "Blacksmith prop" below) guaranteed on floor 4's BlacksmithRoom. No-ops if rect is empty
+_spawn_shop(rect)       # session 7e: one impassable shopkeeper prop tile + generated 4-6-item Buy/Sell stock (see "Shopkeeper prop" below). No-ops if rect is empty or the room has no candidate tile
+_spawn_secret_room(rect) # session 7f: hides the room's one connecting door + spawns a biased 2-3-item reward + gold pile (see "Hidden doors" below). No-ops if rect is empty or no door found on its perimeter
 _spawn_mold()           # guaranteed once-per-run Mold placement (see "Mold" below), called right after _spawn_special_rooms()
 _spawn_enemies()        # pulls from DungeonFloorData.ENEMY_POOL filtered by floor range, then CR-budgeted (see below), registers with TurnManager. Candidate tiles exclude every trap/door/barrel/floor-item/blacksmith tile placed above (see note above) in addition to start-room/boss-room. A Large-footprint entry (pool "size", scripts/entities/CLAUDE.md's "Multi-tile footprint") requires an entire free WxH block of eligible floor tiles (_footprint_fits()) — guarantees it never spawns in a 1-wide corridor; skips the slot outright if this floor's layout has no room for it
 _spawn_boss()            # floor % 5 == 0 → picks from DungeonFloorData.BOSS_POOL; called from inside _spawn_enemies()

@@ -813,12 +813,14 @@ func _update_hover_indicator() -> void:
 	_hover_indicator.global_position = enemy.global_position + Vector2(6, -14)
 	_hover_indicator.visible = true
 
-# Dynamic purple tile-tint preview for sphere-shaped AoE spells (Fireball) while armed for
-# targeting — see dungeon_floor.gd's "AoE targeting preview" section. The ability-bar arm-then-
+# Dynamic tile-tint preview while a spell is armed for targeting — see dungeon_floor.gd's "AoE
+# targeting preview" section. A blue "maximum reach" backdrop shows for ANY armed spell (single-
+# target or AoE); sphere/cone spells additionally get the exact purple/red footprint preview on
+# top (red instead of purple on a tile with a known, targetable enemy). The ability-bar arm-then-
 # click flow (PlayerSpellcasting.begin_cast()) arms spell_targeting_active for this directly; the
 # Alt+click Special-slot one-motion cast never arms it (cast_direct() resolves the same frame it's
-# clicked), so while Alt is held with a sphere spell in the Special slot, preview that spell
-# instead — same tile-tint, just keyed off the held modifier instead of armed-targeting state.
+# clicked), so while Alt is held with a spell in the Special slot, preview that spell instead —
+# same tile-tint, just keyed off the held modifier instead of armed-targeting state.
 func _update_spell_aoe_preview() -> void:
 	if _dungeon_floor == null:
 		return
@@ -826,11 +828,23 @@ func _update_spell_aoe_preview() -> void:
 			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over \
 			or GameState.blacksmith_panel_open:
 		_dungeon_floor.hide_aoe_preview()
+		_dungeon_floor.hide_spell_range_preview()
 		return
 	var spell: Spell = _spellcasting.get_armed_spell()
 	if spell == null and Input.is_key_pressed(KEY_ALT) and GameState.special_slot_spell_id != "":
 		spell = SpellDb.get_spell(GameState.special_slot_spell_id)
-	if spell == null or spell.target_kind != Spell.TargetKind.TILE or (spell.shape != "sphere" and spell.shape != "cone"):
+	if spell == null:
+		_dungeon_floor.hide_aoe_preview()
+		_dungeon_floor.hide_spell_range_preview()
+		return
+	# Blue "maximum reach" backdrop — every tile that could possibly be hit from here, shown for
+	# any armed spell (not just AoE shapes). Cone: reach = the cone's own length (its origin is
+	# always the caster). Sphere: reach = how far the blast's own center can be placed, plus the
+	# blast's own radius (the impact point can land at the edge of range and still splash further
+	# out). Everything else (single-target ENEMY/TILE spells): reach = the spell's plain range.
+	var range_radius: int = spell.shape_size if spell.shape == "cone" else (spell.range_tiles + spell.shape_size if spell.shape == "sphere" else spell.range_tiles)
+	_dungeon_floor.show_spell_range_preview(grid_pos, range_radius)
+	if spell.target_kind != Spell.TargetKind.TILE or (spell.shape != "sphere" and spell.shape != "cone"):
 		_dungeon_floor.hide_aoe_preview()
 		return
 	var world_mouse: Vector2 = get_global_mouse_position()

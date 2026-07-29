@@ -92,6 +92,16 @@ var _see_all_active: bool = false
 # Sphere-AoE spell-targeting preview (e.g. Fireball) — see "AoE targeting preview" below.
 var _aoe_preview_rects: Array[Sprite2D] = []
 var _aoe_preview_last_key: String = ""
+const AOE_PREVIEW_TINT := Color(0.65, 0.25, 0.85, 0.35)
+const AOE_PREVIEW_ENEMY_TINT := Color(0.9, 0.15, 0.15, 0.45)
+
+# Blue "maximum reach" preview — every tile that could possibly be hit by the currently-targeted
+# spell from the caster's own position (a wider, static backdrop behind the purple/red exact-
+# footprint preview above). See "AoE targeting preview" below.
+var _spell_range_rects: Array[Sprite2D] = []
+var _spell_range_last_key: String = ""
+var _spell_range_tex: ImageTexture
+const SPELL_RANGE_TINT := Color(0.25, 0.55, 0.95, 0.20)
 
 # Octant multiplier tables for recursive shadowcasting (8 octants, Roguebasin standard)
 # X = center.x + dx * _SC_XX[i] + j * _SC_XY[i]
@@ -496,16 +506,19 @@ func show_aoe_preview(center: Vector2i, radius: int) -> void:
 		for dx: int in range(-radius, radius + 1):
 			if dx * dx + dy * dy <= radius * radius:
 				tiles.append(center + Vector2i(dx, dy))
-	_paint_aoe_preview_tiles("sphere,%d,%d,%d" % [center.x, center.y, radius], tiles)
+	_paint_aoe_preview_tiles("sphere,%d,%d,%d" % [center.x, center.y, radius], tiles, center)
 
 # Cone-shaped spell preview (Burning Hands) — same pooled-Sprite2D tint as show_aoe_preview()
 # above, just fed the cone's tile set (SpellEffects.cone_tiles(), shared with the actual blast
 # resolver so the preview and the real footprint always agree) instead of a Euclidean disc.
 func show_cone_preview(origin: Vector2i, aim: Vector2i, length: int) -> void:
 	var key: String = "cone,%d,%d,%d,%d,%d" % [origin.x, origin.y, aim.x, aim.y, length]
-	_paint_aoe_preview_tiles(key, SpellEffects.cone_tiles(origin, aim, length, self))
+	_paint_aoe_preview_tiles(key, SpellEffects.cone_tiles(origin, aim, length, self), aim)
 
-func _paint_aoe_preview_tiles(key: String, tiles: Array[Vector2i]) -> void:
+# `exact_target_tile` is the one tile the player is precisely aiming at (a sphere's center, a
+# cone's hovered aim tile) — if a known (non-invisible) enemy stands there, that single tile tints
+# red ("to be hit") instead of the flat purple every other footprint tile gets.
+func _paint_aoe_preview_tiles(key: String, tiles: Array[Vector2i], exact_target_tile: Vector2i = Vector2i(-999999, -999999)) -> void:
 	if key == _aoe_preview_last_key:
 		return
 	_aoe_preview_last_key = key
@@ -518,17 +531,62 @@ func _paint_aoe_preview_tiles(key: String, tiles: Array[Vector2i]) -> void:
 		spr.texture = _aoe_preview_tex
 		spr.centered = false
 		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
-		spr.modulate = Color(0.65, 0.25, 0.85, 0.35)
+		spr.modulate = AOE_PREVIEW_TINT
 		spr.z_index = 2
 		add_child(spr)
 		_aoe_preview_rects.append(spr)
 	for i: int in _aoe_preview_rects.size():
 		var spr: Sprite2D = _aoe_preview_rects[i]
 		if i < tiles.size():
+			var t: Vector2i = tiles[i]
+			spr.position = Vector2(t.x * TILE_SIZE, t.y * TILE_SIZE)
+			spr.modulate = AOE_PREVIEW_ENEMY_TINT if (t == exact_target_tile and get_targetable_enemy_at(t) != null) else AOE_PREVIEW_TINT
+			spr.visible = true
+		else:
+			spr.visible = false
+
+# Blue "maximum reach" preview — every tile within `radius` of `center` (the caster) that the
+# currently-armed spell could conceivably hit, shown as a wide static backdrop while any spell is
+# armed for targeting (not just AoE shapes — single-target spells get one too). Independent pooled-
+# Sprite2D set from the purple/red exact-footprint preview above so both can render at once (this
+# one at a lower z-index so the exact footprint always reads on top of it).
+func show_spell_range_preview(center: Vector2i, radius: int) -> void:
+	var key: String = "range,%d,%d,%d" % [center.x, center.y, radius]
+	if key == _spell_range_last_key:
+		return
+	_spell_range_last_key = key
+	if _spell_range_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color(1, 1, 1, 1))
+		_spell_range_tex = ImageTexture.create_from_image(img)
+	var tiles: Array[Vector2i] = []
+	for dy: int in range(-radius, radius + 1):
+		for dx: int in range(-radius, radius + 1):
+			if dx * dx + dy * dy <= radius * radius:
+				tiles.append(center + Vector2i(dx, dy))
+	while _spell_range_rects.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _spell_range_tex
+		spr.centered = false
+		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
+		spr.modulate = SPELL_RANGE_TINT
+		spr.z_index = 1
+		add_child(spr)
+		_spell_range_rects.append(spr)
+	for i: int in _spell_range_rects.size():
+		var spr: Sprite2D = _spell_range_rects[i]
+		if i < tiles.size():
 			spr.position = Vector2(tiles[i].x * TILE_SIZE, tiles[i].y * TILE_SIZE)
 			spr.visible = true
 		else:
 			spr.visible = false
+
+func hide_spell_range_preview() -> void:
+	if _spell_range_last_key == "":
+		return
+	_spell_range_last_key = ""
+	for spr: Sprite2D in _spell_range_rects:
+		spr.visible = false
 
 # Light cantrip's visual glow — tints every tile actually reached by the light's own shadowcast
 # (lit_tiles, computed once in update_fog() and passed in here — same set that pushes back fog),
