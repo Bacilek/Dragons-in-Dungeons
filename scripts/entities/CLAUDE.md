@@ -246,6 +246,57 @@ re-rolling starting uses — see `scripts/autoloads/CLAUDE.md`).
   (`player.gd`'s `_try_move()` WASD-redirect into `_attempt_web_escape()`) is a separate mechanism
   from the walkability/grass/trap checks above and wasn't in scope for this pass.
 
+## Dwarf
+
+Composition child-node `player_dwarf.gd` (`PlayerDwarf`), instantiated as `_dwarf` in
+`player.gd._ready()` — same pattern as `PlayerDragonborn`. Two race features, on top of the
+pre-existing superior darkvision (+2) and Dwarven Toughness (+1 max HP/level, including level 1):
+
+- **Dwarven Resilience** (passive): `apply_race_defaults()`'s `DWARF` branch appends `"Poison"` to
+  `Stats.damage_resistances`. **Bugfix while wiring this in**: `Stats.damage_resistances` was set
+  by Dragonborn's own branch but never actually READ anywhere — `GameState.take_damage_raw()` now
+  applies a flat ×0.5 (floored) reduction whenever `damage_type in player_stats.damage_resistances`,
+  fixing Dragonborn's passive resistance too (previously a no-op). **Scope limit**: only covers
+  direct typed Poison damage (an enemy attack/ability with `damage_type == "Poison"`) — the
+  `"poison"` status-tick DoT (`Stats.tick_status()`) sums poison/burning/bleeding into one untyped
+  int before it ever reaches `take_damage_raw()`, so it can't resist by type today; a documented
+  simplification, not an oversight. **The "Advantage on checks to avoid or end the Poisoned
+  condition" half is deferred** — no save/check exists anywhere in this engine for gaining/ending
+  the Poisoned CONDITION (`poisoned_condition_turns` — Tripwire trap and Quasit's Rend both apply
+  it unconditionally, no roll) — direct owner decision: wire it in once a real mechanic that rolls
+  against Poisoned actually exists, rather than inventing a save just to hang Advantage on it.
+- **Stonecunning** (ability_id `"stonecunning"`, granted immediately at level 1): free action,
+  uses = `proficiency_bonus` (refilled on long rest, +1 CURRENT use the instant a level-up raises
+  `proficiency_bonus` — identical `give_race_starting_items()`/`_sync_ability_uses()`/`gain_exp()`
+  wiring as Breath Weapon, see "Dragonborn" above). Activating (`PlayerDwarf.
+  activate_stonecunning()`) sets `Stats.tremorsense_turns = 100`, ticked down once per real turn in
+  `player.gd._on_turn_started()` alongside every other 100-turn buff. While active: **Tremorsense**
+  — `DungeonFloor._update_tremor_markers()` (called every `update_fog()`, same pooled-`Sprite2D`
+  convention as `_update_burning_tiles_glow()`) shows a small pulsing red dot
+  (`_build_tremor_marker_texture()`, a procedurally-drawn 10px filled circle, no art asset) on
+  every living `Enemy` within `Stats.STONECUNNING_RANGE` (6 tiles, Chebyshev, a flat constant — NOT
+  fed through the `/20`/`/10` ranged-scaling divisors, since this is a sense, not an attack) that
+  is standing on the **exact same `DungeonData.TileType`** as the player right now (Floor-on-Floor,
+  Grass-on-Grass, etc. — a deliberate stricter reading than 5e's own looser "both touching the
+  ground" text, direct owner decision) and isn't already plainly visible this FOV update
+  (`_visible_tiles.has(enemy.grid_pos) and not enemy.is_hidden_from_player()` — no redundant ping
+  over an already-seen sprite). **Sight-independent**: the check never reads `_visible_tiles` or
+  `GameState.is_blinded()` for the SENSING half, so it works exactly the same whether the player
+  can see normally, is in a dark unlit room, or is standing inside a Fog Cloud (Heavily Obscured/
+  Blinded) — the dot only ever tells you SOMETHING living is there, never what. **No new targeting
+  code was needed**: `DungeonFloor.get_targetable_enemy_at()` was already FOV-independent (gated
+  only on `Enemy.is_hidden_from_player()`, i.e. Invisibility — see "Invisibility" below), so a
+  tremor-pinged enemy was already clickable/attackable before this feature; Tremorsense's entire
+  contribution is the dot that tells you WHERE to click in the first place. **ADV/DISADV when
+  fighting blind falls out for free from the existing Fog Cloud mechanism** — no new combat-roll
+  code was needed here either: `GameState.is_blinded(pos)` is already purely positional/symmetric
+  (see "Fog Cloud" below), so attacking a tremor-sensed target while both attacker and target are
+  in the SAME cloud already nets a normal roll (ADV-for-attacking-a-Blinded-target cancels
+  DISADV-for-being-Blinded-yourself), attacking one INSIDE the cloud from OUTSIDE it already nets
+  pure ADV (target Blinded, attacker isn't), and attacking OUT of the cloud at a target outside it
+  already nets pure DISADV (attacker Blinded, target isn't) — exactly the three cases the direct
+  owner described, all pre-existing behavior once Tremorsense makes the target visible at all.
+
 ## Multi-tile footprint (Large enemies)
 
 `Entity.size: Vector2i` (default `ONE`) gives an entity a real WxH footprint instead of a single

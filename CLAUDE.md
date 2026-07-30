@@ -109,7 +109,12 @@ the Mastery Picker on confirm. 6 races (Orc, Human, Halfling, Dwarf,
 Elf w/ 3 sub-races, Dragonborn) each with distinct traits — darkvision/FOV bonus, long-rest-gated
 charges (Orc Relentless Endurance, Human Heroic Inspiration), a d20-reroll mechanic (Human
 miss-reroll — still stubbed; Halfling nat-1-reroll — implemented, see below), Dwarf +1 HP/level
-(including level 1), Elf shorter rests + sub-race spell-like ability, Dragonborn ancestry-based
+(including level 1) + Dwarven Resilience (Poison damage resistance — see
+`scripts/entities/CLAUDE.md`'s "Dwarf" section; the "ADV on checks to avoid/end Poisoned" half is
+deferred, no such check exists yet) + Stonecunning (a free-action, proficiency-bonus-per-long-rest
+Tremorsense buff — senses any living creature within 6 tiles standing on the exact same terrain
+type, shown as a red tremor-ping dot, sight-independent), Elf shorter rests + sub-race spell-like
+ability, Dragonborn ancestry-based
 resistance + a matching-element Breath Weapon (Cone/Line AoE, arm-toggle-cancel targeting on the
 ability bar) plus a level-5 Draconic Flight buff (crosses chasms, no grass trample, no traps, fire
 immune) — see `scripts/entities/CLAUDE.md`'s "Dragonborn" section for the full mechanism. Still

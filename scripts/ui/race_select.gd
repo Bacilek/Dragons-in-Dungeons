@@ -33,7 +33,7 @@ const RACES: Array[Dictionary] = [
 	},
 	{
 		"id": "dwarf", "name": "Dwarf",
-		"blurb": "+1 max HP every level. Superior darkvision.",
+		"blurb": "+1 max HP every level. Poison resistance. Stonecunning: Tremorsense buff senses nearby creatures through walls/darkness. Superior darkvision.",
 	},
 	{
 		"id": "elf", "name": "Elf",

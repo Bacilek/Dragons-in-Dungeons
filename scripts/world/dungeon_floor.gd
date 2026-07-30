@@ -102,6 +102,8 @@ var _fog_cloud_sprites: Array[Sprite2D] = []  # Fog Cloud spell zone — see _up
 var _fog_cloud_tex: ImageTexture
 var _fire_glow_sprites: Array[Sprite2D] = []  # every currently-burning Barrel/Door/grass tile — see _update_burning_tiles_glow()
 var _fire_glow_tex: ImageTexture
+var _tremor_marker_sprites: Array[Sprite2D] = []  # Dwarf Stonecunning's tremorsense ping — see _update_tremor_markers()
+var _tremor_marker_tex: ImageTexture
 var _torch_fov_ring_sprites: Array[Sprite2D] = []  # equipped-lit-Torch's +1 FOV ring — see _update_torch_fov_ring_glow()
 var _torch_fov_ring_tex: ImageTexture
 var _darkvision_ring_sprites: Array[Sprite2D] = []  # darkvision's own FOV ring — see _update_darkvision_ring_glow()
@@ -590,6 +592,7 @@ func update_fog(player_pos: Vector2i) -> void:
 	_update_torch_light_glow(torch_tiles)
 	_update_fog_cloud_visual()
 	_update_burning_tiles_glow()
+	_update_tremor_markers(player_pos)
 
 	for y: int in _data.height:
 		for x: int in _data.width:
@@ -1088,6 +1091,72 @@ func _update_burning_tiles_glow() -> void:
 			spr.visible = true
 		else:
 			spr.visible = false
+
+## Dwarf Stonecunning's Tremorsense ping (scripts/entities/CLAUDE.md's "Dwarf" section). While
+## GameState.player_stats.tremorsense_turns > 0, every living Enemy within Stats.STONECUNNING_RANGE
+## (Chebyshev) standing on the EXACT SAME TileType as the player right now — and NOT already
+## normally visible this FOV update — gets a shaking red dot at its tile. Sight-independent by
+## design (works while Blinded/heavily obscured — this function never checks _visible_tiles or
+## is_blinded()), which is the whole point: it's a vibration sense, not eyesight. Only reveals
+## presence, never identity — same red dot regardless of which enemy it is. Rebuilt every
+## update_fog() call, same pooled-Sprite2D convention as _update_burning_tiles_glow() above.
+func _update_tremor_markers(player_pos: Vector2i) -> void:
+	var tiles: Array[Vector2i] = []
+	if GameState.player_stats.tremorsense_turns > 0:
+		var player_tile: DungeonData.TileType = get_tile_type(player_pos)
+		var range_t: int = Stats.STONECUNNING_RANGE
+		for enemy: Enemy in _enemies:
+			if not is_instance_valid(enemy) or enemy.stats.is_dead():
+				continue
+			if _visible_tiles.has(enemy.grid_pos) and not enemy.is_hidden_from_player():
+				continue  # already plainly visible this turn — no ping needed
+			var dist: int = maxi(absi(enemy.grid_pos.x - player_pos.x), absi(enemy.grid_pos.y - player_pos.y))
+			if dist > range_t:
+				continue
+			if get_tile_type(enemy.grid_pos) != player_tile:
+				continue
+			tiles.append(enemy.grid_pos)
+	if tiles.is_empty():
+		for spr: Sprite2D in _tremor_marker_sprites:
+			spr.visible = false
+		return
+	if _tremor_marker_tex == null:
+		_tremor_marker_tex = _build_tremor_marker_texture()
+	while _tremor_marker_sprites.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _tremor_marker_tex
+		spr.centered = true
+		spr.z_index = 4
+		add_child(spr)
+		_tremor_marker_sprites.append(spr)
+		# Continuous "trembling" pulse — created once per pooled sprite, loops forever regardless
+		# of which tile the sprite gets repositioned to on later refreshes.
+		var tw: Tween = create_tween()
+		tw.set_loops()
+		tw.tween_property(spr, "scale", Vector2(1.3, 1.3), 0.3).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(spr, "scale", Vector2(0.8, 0.8), 0.3).set_trans(Tween.TRANS_SINE)
+	for i: int in _tremor_marker_sprites.size():
+		var spr2: Sprite2D = _tremor_marker_sprites[i]
+		if i < tiles.size():
+			spr2.position = Vector2(tiles[i].x * TILE_SIZE + TILE_SIZE / 2, tiles[i].y * TILE_SIZE + TILE_SIZE / 2)
+			spr2.visible = true
+		else:
+			spr2.visible = false
+
+## Small filled red circle (10px diameter) — no art asset exists or is needed, procedurally drawn
+## once and cached, same "Image/ImageTexture, no dedicated asset" convention as the Tripwire rope
+## sprite (scripts/world/CLAUDE.md's "Tripwire trap").
+func _build_tremor_marker_texture() -> ImageTexture:
+	const D: int = 10
+	var img := Image.create(D, D, false, Image.FORMAT_RGBA8)
+	var r: float = float(D) / 2.0
+	for y: int in D:
+		for x: int in D:
+			var dx: float = float(x) - r + 0.5
+			var dy: float = float(y) - r + 0.5
+			if dx * dx + dy * dy <= r * r:
+				img.set_pixel(x, y, Color(1.0, 0.1, 0.1, 0.9))
+	return ImageTexture.create_from_image(img)
 
 func hide_aoe_preview() -> void:
 	if _aoe_preview_last_key == "":

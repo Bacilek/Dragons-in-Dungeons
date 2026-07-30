@@ -181,6 +181,15 @@ func breath_weapon_dice_count() -> int:
 	if character_level >= 17: n += 1
 	return n
 
+# Stonecunning (Dwarf only) — baseline level-1 ability, same granted-directly shape as Breath
+# Weapon above. Max uses = proficiency_bonus, refilled to max in GameState.long_rest(), bumped by
+# +1 CURRENT use the instant a level-up raises proficiency_bonus. Free action (does not cost a
+# turn), range STONECUNNING_RANGE (6 tiles, flat — not fed through the /20 or /10 ranged-scaling
+# divisors, since this is a sense, not an attack), grants Tremorsense for up to 100 turns.
+var stonecunning_uses_remaining: int = 0
+var tremorsense_turns: int = 0
+const STONECUNNING_RANGE: int = 6
+
 # Draconic Flight (Dragonborn only, unlocked at level 5) — up to 100 turns of "flight": crosses
 # CHASM tiles freely, never tramples GRASS, never triggers traps, and is immune to standing-on-fire
 # damage (see DungeonFloor.tick_fire_damage_for()'s Player branch). 1/long rest — draconic_flight_
@@ -507,6 +516,7 @@ func to_dict() -> Dictionary:
 		"hunters_mark_uses_remaining": hunters_mark_uses_remaining,
 		"breath_weapon_uses_remaining": breath_weapon_uses_remaining,
 		"draconic_flight_used": draconic_flight_used,
+		"stonecunning_uses_remaining": stonecunning_uses_remaining,
 		"temp_hp": temp_hp,
 		"poison_turns": poison_turns,
 		"burning_turns": burning_turns,
@@ -550,6 +560,7 @@ func from_dict(d: Dictionary) -> void:
 	hunters_mark_uses_remaining = int(d.get("hunters_mark_uses_remaining", 0))
 	breath_weapon_uses_remaining = int(d.get("breath_weapon_uses_remaining", 0))
 	draconic_flight_used = bool(d.get("draconic_flight_used", false))
+	stonecunning_uses_remaining = int(d.get("stonecunning_uses_remaining", 0))
 	temp_hp = int(d.get("temp_hp", 0))
 	poison_turns = int(d.get("poison_turns", 0))
 	burning_turns = int(d.get("burning_turns", 0))
@@ -806,6 +817,12 @@ func apply_race_defaults() -> void:
 			# been freshly reset first.
 			max_hp += 1
 			current_hp += 1
+			# Dwarven Resilience: Poison damage resistance. The "advantage on checks to avoid or
+			# end the Poisoned condition" half is deferred — no save/check exists anywhere in this
+			# engine for gaining/ending Poisoned yet (Tripwire trap / Quasit's Rend both apply it
+			# unconditionally), so there's nothing to grant Advantage on. Wire it in once such a
+			# check exists (direct owner decision — see scripts/entities/CLAUDE.md's "Dwarf" section).
+			damage_resistances.append("Poison")
 		CharacterRace.ELF:
 			darkvision_bonus = 1
 			check_prof_wis = true

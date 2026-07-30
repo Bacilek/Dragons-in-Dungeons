@@ -25,6 +25,7 @@ var _actions: PlayerActions
 var _ranged: PlayerRanged
 var _spellcasting: PlayerSpellcasting
 var _dragonborn: PlayerDragonborn
+var _dwarf: PlayerDwarf
 
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
@@ -153,6 +154,7 @@ func _ready() -> void:
 	_ranged = PlayerRanged.new(); _ranged.player = self; add_child(_ranged)
 	_spellcasting = PlayerSpellcasting.new(); _spellcasting.player = self; add_child(_spellcasting)
 	_dragonborn = PlayerDragonborn.new(); _dragonborn.player = self; add_child(_dragonborn)
+	_dwarf = PlayerDwarf.new(); _dwarf.player = self; add_child(_dwarf)
 
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
@@ -292,6 +294,14 @@ func _on_turn_started() -> void:
 			if stats.draconic_flight_turns <= 0:
 				GameState.game_log("[color=gray]You touch back down to the ground.[/color]")
 				GameState.player_status_changed.emit()
+		# Stonecunning's Tremorsense: 100-turn duration, ticked once per real turn (same pattern).
+		if stats.tremorsense_turns > 0:
+			stats.tremorsense_turns -= 1
+			if stats.tremorsense_turns <= 0:
+				GameState.game_log("[color=gray]The tremor-sense fades.[/color]")
+				GameState.player_status_changed.emit()
+				if _dungeon_floor != null:
+					_dungeon_floor.update_fog(grid_pos)
 		# Frightened: repeats the WIS save once per real turn (5e: "at the end of each of its
 		# turns" — ticked at turn START here instead, same cadence as every other duration in
 		# this block; no other timing hook exists for a single-slot condition). A pass ends it
@@ -2816,4 +2826,5 @@ func _use_ability_slot(idx: int) -> void:
 			GameState.game_log("[color=gray]%s is passive — upgrades Limit Break or triggers automatically.[/color]" % ab.ability_name)
 		"breath_weapon":           _dragonborn.activate_breath_weapon()
 		"draconic_flight":         _dragonborn.activate_draconic_flight()
+		"stonecunning":            _dwarf.activate_stonecunning()
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)

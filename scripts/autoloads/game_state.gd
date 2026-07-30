@@ -555,30 +555,49 @@ func choose_race(race: Stats.CharacterRace, variant: int = 0, prof_ability: int 
 # Called once by choose_race() at the actual race pick — grants full starting uses. Elf sub-race
 # spells are still deferred — see root CLAUDE.md's "Race system". Dragonborn grants Breath Weapon
 # immediately (level 1, full uses) and Draconic Flight once character_level >= 5 (see
-# scripts/entities/CLAUDE.md's "Dragonborn" section). Save-load replay uses
+# scripts/entities/CLAUDE.md's "Dragonborn" section); Dwarf grants Stonecunning immediately (level
+# 1, full uses — see that file's "Dwarf" section). Save-load replay uses
 # _restore_race_ability_bar() instead (below) — it must NOT re-run this uses-reset logic, since by
 # the time it runs Stats.from_dict() has already restored the true saved uses count.
 func give_race_starting_items() -> void:
-	if player_stats.character_race != Stats.CharacterRace.DRAGONBORN:
-		return
-	if _find_ability_by_id("breath_weapon") == null:
-		player_stats.breath_weapon_uses_remaining = player_stats.proficiency_bonus
-		add_ability(_build_breath_weapon_ability())
-	if player_stats.character_level >= 5 and _find_ability_by_id("draconic_flight") == null:
-		add_ability(_build_draconic_flight_ability())
+	match player_stats.character_race:
+		Stats.CharacterRace.DRAGONBORN:
+			if _find_ability_by_id("breath_weapon") == null:
+				player_stats.breath_weapon_uses_remaining = player_stats.proficiency_bonus
+				add_ability(_build_breath_weapon_ability())
+			if player_stats.character_level >= 5 and _find_ability_by_id("draconic_flight") == null:
+				add_ability(_build_draconic_flight_ability())
+		Stats.CharacterRace.DWARF:
+			if _find_ability_by_id("stonecunning") == null:
+				player_stats.stonecunning_uses_remaining = player_stats.proficiency_bonus
+				add_ability(_build_stonecunning_ability())
 
 # from_dict()-only counterpart to give_race_starting_items(): re-adds the race ability-bar
 # entries from ALREADY-restored Stats state (player_stats.from_dict() has run by the time this is
-# called) without resetting breath_weapon_uses_remaining/draconic_flight_used — _build_*_ability()
-# read those fields directly, and _sync_ability_uses() (called right after, in from_dict()'s own
-# tail) reconciles ab.uses_remaining/uses_max against them one more time regardless.
+# called) without resetting breath_weapon_uses_remaining/draconic_flight_used/
+# stonecunning_uses_remaining — _build_*_ability() read those fields directly, and
+# _sync_ability_uses() (called right after, in from_dict()'s own tail) reconciles
+# ab.uses_remaining/uses_max against them one more time regardless.
 func _restore_race_ability_bar() -> void:
-	if player_stats.character_race != Stats.CharacterRace.DRAGONBORN:
-		return
-	if _find_ability_by_id("breath_weapon") == null:
-		add_ability(_build_breath_weapon_ability())
-	if player_stats.character_level >= 5 and _find_ability_by_id("draconic_flight") == null:
-		add_ability(_build_draconic_flight_ability())
+	match player_stats.character_race:
+		Stats.CharacterRace.DRAGONBORN:
+			if _find_ability_by_id("breath_weapon") == null:
+				add_ability(_build_breath_weapon_ability())
+			if player_stats.character_level >= 5 and _find_ability_by_id("draconic_flight") == null:
+				add_ability(_build_draconic_flight_ability())
+		Stats.CharacterRace.DWARF:
+			if _find_ability_by_id("stonecunning") == null:
+				add_ability(_build_stonecunning_ability())
+
+func _build_stonecunning_ability() -> Ability:
+	var ab := Ability.new()
+	ab.ability_id = "stonecunning"
+	ab.ability_name = "Stonecunning"
+	ab.description = "Gain Tremorsense for up to 100 turns: sense any living creature within %d tiles standing on the same terrain type as you, even through walls/darkness/blindness — shown as a red tremor ping, not a clear sighting. Free action." % Stats.STONECUNNING_RANGE
+	ab.icon_path = ""
+	ab.uses_remaining = player_stats.stonecunning_uses_remaining
+	ab.uses_max = player_stats.proficiency_bonus
+	return ab
 
 func _build_breath_weapon_ability() -> Ability:
 	var ab := Ability.new()
@@ -1373,6 +1392,7 @@ func long_rest() -> void:
 	player_stats.hunters_mark_uses_remaining = Stats.HUNTERS_MARK_USES_MAX
 	player_stats.breath_weapon_uses_remaining = player_stats.proficiency_bonus
 	player_stats.draconic_flight_used = false
+	player_stats.stonecunning_uses_remaining = player_stats.proficiency_bonus
 	if player_stats.concentration_spell_id == "hunters_mark":
 		player_stats.concentration_spell_id = ""
 	player_stats.hunters_mark_turns = 0
@@ -1424,6 +1444,9 @@ func _sync_ability_uses() -> void:
 			ab.uses_remaining = 1  # always restore on long rest
 		elif ab.ability_id == "breath_weapon":
 			ab.uses_remaining = player_stats.breath_weapon_uses_remaining
+			ab.uses_max = player_stats.proficiency_bonus
+		elif ab.ability_id == "stonecunning":
+			ab.uses_remaining = player_stats.stonecunning_uses_remaining
 			ab.uses_max = player_stats.proficiency_bonus
 	ability_bar_changed.emit()
 
@@ -1585,6 +1608,14 @@ func gain_exp(amount: int) -> void:
 				_sync_ability_uses()
 			if old_level < 5 and player_stats.character_level >= 5:
 				give_race_starting_items()
+		# Stonecunning: same proficiency-bonus-crossing +1-current-use grant as Breath Weapon above.
+		if player_stats.character_race == Stats.CharacterRace.DWARF:
+			var new_prof_bonus_dw: int = player_stats.proficiency_bonus
+			if new_prof_bonus_dw > old_prof_bonus:
+				player_stats.stonecunning_uses_remaining = mini(
+					player_stats.stonecunning_uses_remaining + (new_prof_bonus_dw - old_prof_bonus),
+					new_prof_bonus_dw)
+				_sync_ability_uses()
 		AudioManager.play("level_up")
 		player_leveled_up.emit(player_stats.character_level)
 
@@ -2347,6 +2378,12 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 		var bib_delta: int = bib_rank * player_stats.rage_bonus_damage
 		final_amount += bib_delta if not player_stats.is_bloodied() else -bib_delta
 		final_amount = maxi(0, final_amount)
+	# Race damage resistance (Dragonborn's own ancestry type, Dwarven Resilience's Poison) — a flat
+	# 50% reduction, floored, same convention as Enemy.take_typed_damage()'s own resist multiplier.
+	# BUGFIX: Stats.damage_resistances was set by apply_race_defaults() but never actually read
+	# anywhere before this — a Dragonborn's own passive resistance silently did nothing.
+	if damage_type != "" and damage_type in player_stats.damage_resistances:
+		final_amount = int(floor(float(final_amount) * 0.5))
 	# DR can reduce damage to 0 — skip Stats.take_damage() which floors at 1.
 	if final_amount <= 0:
 		if is_physical and not ignore_rage:
