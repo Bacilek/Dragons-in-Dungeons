@@ -351,6 +351,14 @@ func _ready() -> void:
 	GameState.class_chosen.connect(func(_c) -> void: _update_spell_slots_label())
 	_update_spell_slots_label()
 
+	# If a class was already chosen before this HUD existed (e.g. "Try Again" retry — GameState.
+	# retry_same_character() emits class_chosen and reloads the scene in the same call, so a fresh
+	# HUD's class_chosen connection above always misses that emit), sync the class-driven UI
+	# (portrait, hit-dice label) from current state directly instead of waiting for a signal that
+	# already fired.
+	if GameState.class_selected:
+		_on_class_chosen(s.character_class)
+
 	# Inventory overlay — add as sibling CanvasLayer so it floats above HUD
 	var overlay_script = load("res://scripts/ui/inventory_overlay.gd")
 	_inventory_overlay_ref = overlay_script.new()
