@@ -578,11 +578,12 @@ func update_fog(player_pos: Vector2i) -> void:
 			_visible_tiles[pos] = true
 	_update_light_source_glow(lit_tiles)
 
-	# Torch: every lit Torch lying on the floor or embedded in a live enemy casts its own
-	# radius-2 light bubble — recomputed fresh every fog update (no persistent registry to keep
-	# in sync with throw/pickup/drop/die/burnout — see GameState.TORCH_LIGHT_RADIUS). An embedded
-	# torch's bubble is centered on its carrying enemy's CURRENT grid_pos, so it moves for free as
-	# the enemy moves, without any dedicated tracking.
+	# Torch: every lit Torch lying on the floor casts a radius-2 light bubble (GameState.
+	# TORCH_LIGHT_RADIUS); one embedded in a live enemy instead casts a smaller radius-1 bubble
+	# (GameState.TORCH_BURN_LIGHT_RADIUS) — both recomputed fresh every fog update (no persistent
+	# registry to keep in sync with throw/pickup/drop/die/burnout). An embedded torch's bubble is
+	# centered on its carrying enemy's CURRENT grid_pos, so it moves for free as the enemy moves,
+	# without any dedicated tracking.
 	var torch_tiles: Dictionary = _compute_torch_light_tiles()
 	for pos: Vector2i in torch_tiles:
 		_visible_tiles[pos] = true
@@ -664,7 +665,11 @@ func show_cone_preview(origin: Vector2i, aim: Vector2i, length: int) -> void:
 # tile the player is precisely aiming at. `allow_enemy_tint` (see show_aoe_preview()'s
 # `center_in_range` doc above) gates whether ANY tile in this footprint is allowed to tint red at
 # all — every tile still shows purple regardless, since the footprint preview itself is always
-# informative even when the exact aim point can't currently be cast at.
+# informative even when the exact aim point can't currently be cast at. **Also requires
+# `is_tile_visible(t)`** — an enemy standing in a Heavily Obscured tile (Fog Cloud) that the caster
+# can't actually see into (scripts/entities/CLAUDE.md's "Conditions"/"Fog Cloud") never tints red,
+# even though it's still a valid blind-cast target mechanically; that tile just stays plain purple
+# like any other footprint tile, so the preview never gives away an unseen enemy's exact position.
 func _paint_aoe_preview_tiles(key: String, tiles: Array[Vector2i], allow_enemy_tint: bool = true) -> void:
 	if key == _aoe_preview_last_key:
 		return
@@ -687,20 +692,22 @@ func _paint_aoe_preview_tiles(key: String, tiles: Array[Vector2i], allow_enemy_t
 		if i < tiles.size():
 			var t: Vector2i = tiles[i]
 			spr.position = Vector2(t.x * TILE_SIZE, t.y * TILE_SIZE)
-			spr.modulate = AOE_PREVIEW_ENEMY_TINT if (allow_enemy_tint and get_targetable_enemy_at(t) != null) else AOE_PREVIEW_TINT
+			spr.modulate = AOE_PREVIEW_ENEMY_TINT if (allow_enemy_tint and is_tile_visible(t) and get_targetable_enemy_at(t) != null) else AOE_PREVIEW_TINT
 			spr.visible = true
 		else:
 			spr.visible = false
 
 # Single-target ENEMY spell / Shift-hover ranged-weapon preview — no AoE shape, so there's no
 # purple footprint to paint; the hovered tile only ever shows anything at all (a red highlight)
-# when a known, targetable enemy actually stands there AND that tile is within `in_range` (default
+# when a known, targetable enemy actually stands there, that tile is currently visible (an enemy
+# hidden inside a Heavily Obscured Fog Cloud tile never highlights, even if hovered/known-about —
+# same reasoning as _paint_aoe_preview_tiles() above), AND that tile is within `in_range` (default
 # true — the exact attack/cast range, Chebyshev for spells or the weapon's own long-range check for
 # ranged, computed by the caller). An enemy standing beyond max range never tints red, regardless
 # of whether it happens to be visible/hovered — a shot/cast that can't actually reach it shouldn't
 # imply it would be hit.
 func show_single_target_preview(tile: Vector2i, in_range: bool = true) -> void:
-	if in_range and get_targetable_enemy_at(tile) != null:
+	if in_range and is_tile_visible(tile) and get_targetable_enemy_at(tile) != null:
 		_paint_aoe_preview_tiles("single,%d,%d" % [tile.x, tile.y], [tile])
 	else:
 		hide_aoe_preview()
@@ -905,11 +912,13 @@ func _update_darkvision_ring_glow(ring_tiles: Dictionary) -> void:
 			spr.visible = false
 
 # Torch: sweeps every lit-and-unburnt Torch currently lying on this floor's ground or embedded in
-# one of its live enemies, and unions a radius-2 shadowcast (GameState.TORCH_LIGHT_RADIUS) per
-# torch found into a single result dict — floor torches at their own tile, embedded torches at
-# their carrying enemy's CURRENT grid_pos (so the bubble moves with the enemy for free, no extra
-# tracking). Called fresh every update_fog() — no persistent state, so throw/pickup/drop/die/
-# burnout all "just work" without any dedicated cleanup code anywhere.
+# one of its live enemies, and unions a shadowcast per torch found into a single result dict —
+# floor torches get a radius-2 bubble (GameState.TORCH_LIGHT_RADIUS) at their own tile; embedded
+# torches get a SMALLER radius-1 bubble (GameState.TORCH_BURN_LIGHT_RADIUS) at their carrying
+# enemy's CURRENT grid_pos (so the bubble moves with the enemy for free, no extra tracking) — a
+# torch stuck in a moving, burning creature lights less than one just sitting on the ground.
+# Called fresh every update_fog() — no persistent state, so throw/pickup/drop/die/burnout all
+# "just work" without any dedicated cleanup code anywhere.
 func _compute_torch_light_tiles() -> Dictionary:
 	var result: Dictionary = {}
 	for pos: Vector2i in _floor_items.keys():
@@ -920,7 +929,7 @@ func _compute_torch_light_tiles() -> Dictionary:
 	for enemy: Enemy in get_all_enemies():
 		for it: Item in enemy.embedded_items:
 			if it.is_torch and it.torch_lit:
-				for lit_pos: Vector2i in _compute_shadowcast(enemy.grid_pos, GameState.TORCH_LIGHT_RADIUS):
+				for lit_pos: Vector2i in _compute_shadowcast(enemy.grid_pos, GameState.TORCH_BURN_LIGHT_RADIUS):
 					result[lit_pos] = true
 	return result
 
@@ -2818,6 +2827,10 @@ func tick_fire_damage_for(entity: Entity) -> void:
 		return
 	if entity is Player:
 		if GameState.player_stats.is_dead():
+			return
+		# Draconic Flight: airborne, immune to standing-on-fire damage (see root CLAUDE.md's
+		# "Race system" / scripts/entities/CLAUDE.md's "Dragonborn").
+		if GameState.player_stats.draconic_flight_turns > 0:
 			return
 		var inst: Dictionary = _roll_fire_damage_instance()
 		var actual: int = GameState.take_damage_raw(int(inst["subtotal"]), false, "Fire")

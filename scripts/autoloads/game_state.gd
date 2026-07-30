@@ -26,6 +26,8 @@ signal camera_recenter_requested
 signal debug_reveal_all
 signal debug_see_all(active: bool)
 signal crit_banner(text: String, color: Color)
+signal enemy_inspected(enemy: Enemy)  # RMB-inspect on an enemy — hud.gd spawns/refreshes the Enemy Info Panel
+signal enemy_inspect_closed           # RMB-inspect target lost/cleared/Esc — hud.gd hides the Enemy Info Panel
 signal screen_shake(strength: float)
 signal potion_drunk
 signal ability_bar_changed()
@@ -550,11 +552,54 @@ func choose_race(race: Stats.CharacterRace, variant: int = 0, prof_ability: int 
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 	race_chosen.emit(race)
 
-# Idempotency-guard pattern mirrors give_class_starting_items() — safe to call again on save
-# replay. No race currently grants starting gear/abilities (Elf sub-race spells and the
-# Dragonborn breath weapon are deferred — see docs/architecture/race-selection-design.md §8).
+# Called once by choose_race() at the actual race pick — grants full starting uses. Elf sub-race
+# spells are still deferred — see root CLAUDE.md's "Race system". Dragonborn grants Breath Weapon
+# immediately (level 1, full uses) and Draconic Flight once character_level >= 5 (see
+# scripts/entities/CLAUDE.md's "Dragonborn" section). Save-load replay uses
+# _restore_race_ability_bar() instead (below) — it must NOT re-run this uses-reset logic, since by
+# the time it runs Stats.from_dict() has already restored the true saved uses count.
 func give_race_starting_items() -> void:
-	pass
+	if player_stats.character_race != Stats.CharacterRace.DRAGONBORN:
+		return
+	if _find_ability_by_id("breath_weapon") == null:
+		player_stats.breath_weapon_uses_remaining = player_stats.proficiency_bonus
+		add_ability(_build_breath_weapon_ability())
+	if player_stats.character_level >= 5 and _find_ability_by_id("draconic_flight") == null:
+		add_ability(_build_draconic_flight_ability())
+
+# from_dict()-only counterpart to give_race_starting_items(): re-adds the race ability-bar
+# entries from ALREADY-restored Stats state (player_stats.from_dict() has run by the time this is
+# called) without resetting breath_weapon_uses_remaining/draconic_flight_used — _build_*_ability()
+# read those fields directly, and _sync_ability_uses() (called right after, in from_dict()'s own
+# tail) reconciles ab.uses_remaining/uses_max against them one more time regardless.
+func _restore_race_ability_bar() -> void:
+	if player_stats.character_race != Stats.CharacterRace.DRAGONBORN:
+		return
+	if _find_ability_by_id("breath_weapon") == null:
+		add_ability(_build_breath_weapon_ability())
+	if player_stats.character_level >= 5 and _find_ability_by_id("draconic_flight") == null:
+		add_ability(_build_draconic_flight_ability())
+
+func _build_breath_weapon_ability() -> Ability:
+	var ab := Ability.new()
+	ab.ability_id = "breath_weapon"
+	ab.ability_name = "Breath Weapon"
+	ab.description = "A %d-tile Cone or %d-tile Line dealing %s damage (DEX save for half). Click to arm (Cone), click again to switch to Line, once more to cancel — then click a direction to fire." % [
+		PlayerDragonborn.BREATH_CONE_LENGTH, PlayerDragonborn.BREATH_LINE_LENGTH, Stats.DRAGONBORN_DAMAGE_TYPE[clampi(player_stats.race_variant, 0, Stats.DRAGONBORN_DAMAGE_TYPE.size() - 1)]]
+	ab.icon_path = ""
+	ab.uses_remaining = player_stats.breath_weapon_uses_remaining
+	ab.uses_max = player_stats.proficiency_bonus
+	return ab
+
+func _build_draconic_flight_ability() -> Ability:
+	var ab := Ability.new()
+	ab.ability_id = "draconic_flight"
+	ab.ability_name = "Draconic Flight"
+	ab.description = "Take to the air for up to 100 turns: cross chasms, never trample grass, never trigger traps, and ignore standing-on-fire damage. Free action, 1/long rest."
+	ab.icon_path = ""
+	ab.uses_remaining = 0
+	ab.uses_max = 0
+	return ab
 
 # Wizard's one-time cantrip pick (cantrip_select.gd's round 1, or a premade hero's "cantrip" key
 # in character_select.gd). `silent` skips the log line for save/load replay (game_state.gd
@@ -614,17 +659,17 @@ func _give_wizard_starting_items() -> void:
 	torch.item_name = "Torch"
 	torch.item_type = Item.Type.WEAPON
 	torch.icon_path = DungeonFloorData.WEAPONS_PATH + "weapon_torch.png"
-	torch.description = "Click while equipped to light it — burns 100 turns, granting +1 FOV and (in Main Hand) +1d4 Fire on hit. A lit Torch lying on the ground or embedded in an enemy also casts a radius-2 light. Can be equipped in either hand like a Shield. Burns out permanently into a Burnt Torch."
+	torch.description = "Click while equipped to light it — burns 100 turns, granting +1 FOV and (in Main Hand) +2d4 Fire on hit. Thrown and lodged in an enemy, it sets them ablaze for 2d4 Fire each round until doused or they die, and casts a radius-1 glow around them; lying on the ground it casts a radius-2 glow instead. Can be equipped in either hand like a Shield. Burns out permanently into a Burnt Torch."
 	torch.damage_die_min = 1
 	torch.damage_die_max = 4
 	torch.damage_type = "Bludgeoning"
 	torch.weapon_category = "Simple"
 	torch.is_torch = true
 	torch.is_thrown = true
-	torch.range = 3
-	torch.long_range = 12
-	torch.uses_max = 3
-	torch.uses_remaining = 3
+	torch.range = 2
+	torch.long_range = 4
+	torch.uses_max = 1
+	torch.uses_remaining = 1
 	torch.gold_value = 10
 	torch.torch_lit = true
 	torch.torch_turns_remaining = 100
@@ -1103,6 +1148,7 @@ func swap_ability_slots(a: int, b: int) -> bool:
 ## lightweight home for a spell reference, not an Item-shaped equipment slot).
 signal special_slot_changed()
 var special_slot_spell_id: String = ""
+var quickbar_hover_thrown_item: Item = null  # transient, not serialized — set/cleared by hud.gd's quickbar slot hover, read by player.gd._update_ranged_range_preview() to show a thrown item's range preview without needing Shift/an equipped ranged weapon
 
 func set_special_slot(spell_id: String) -> bool:
 	var caster: SpellcasterState = player_stats.caster
@@ -1132,6 +1178,7 @@ const LIGHT_SOURCE_RADIUS: int = 4
 # embedded in an enemy (dungeon_floor.gd's DungeonFloor._compute_torch_light_tiles()) — separate
 # from the flat +1 FOV bonus an EQUIPPED lit torch grants (has_lit_torch_equipped()).
 const TORCH_LIGHT_RADIUS: int = 2
+const TORCH_BURN_LIGHT_RADIUS: int = 1  # a lit torch embedded in a creature (not lying on the floor) casts a smaller radius-1 glow around that creature — separate constant from TORCH_LIGHT_RADIUS since the floor-lying case keeps its own bigger radius-2 bubble
 var light_source_pos: Vector2i = Vector2i(-1, -1)
 var light_source_color: Color = Color.WHITE
 var light_source_item: Item = null
@@ -1324,6 +1371,8 @@ func long_rest() -> void:
 	player_status_changed.emit()
 	player_stats.rage_uses_remaining = player_stats.rage_uses_max
 	player_stats.hunters_mark_uses_remaining = Stats.HUNTERS_MARK_USES_MAX
+	player_stats.breath_weapon_uses_remaining = player_stats.proficiency_bonus
+	player_stats.draconic_flight_used = false
 	if player_stats.concentration_spell_id == "hunters_mark":
 		player_stats.concentration_spell_id = ""
 	player_stats.hunters_mark_turns = 0
@@ -1373,6 +1422,9 @@ func _sync_ability_uses() -> void:
 			ab.uses_max = player_stats.rage_uses_max
 		elif ab.ability_id == "wild_companion":
 			ab.uses_remaining = 1  # always restore on long rest
+		elif ab.ability_id == "breath_weapon":
+			ab.uses_remaining = player_stats.breath_weapon_uses_remaining
+			ab.uses_max = player_stats.proficiency_bonus
 	ability_bar_changed.emit()
 
 ## Whether an ability-bar entry can currently be activated — beyond the generic uses_remaining
@@ -1393,6 +1445,8 @@ func is_ability_usable(ab: Ability) -> bool:
 			return hit_dice > 0
 		"grip_of_the_forest":
 			return is_raging
+		"draconic_flight":
+			return player_stats.character_level >= 5 and not player_stats.draconic_flight_used
 	return true
 
 # Triggered on short rest completion. Heals companion (if alive) AND restores One with Nature charge.
@@ -1468,6 +1522,8 @@ func gain_exp(amount: int) -> void:
 	var old_rage_max: int = player_stats.rage_uses_max
 	var old_max_hit_dice: int = max_hit_dice()
 	var old_mastery_cap: int = player_stats.mastery_cap()
+	var old_prof_bonus: int = player_stats.proficiency_bonus
+	var old_level: int = player_stats.character_level
 	var old_slot_max: Dictionary = player_stats.caster.slot_pool.max_slots() if player_stats.caster != null and player_stats.caster.slot_pool != null else {}
 	var leveled_up := player_stats.gain_exp(amount)
 	player_exp_changed.emit(player_stats.experience, player_stats.exp_to_next(), player_stats.character_level)
@@ -1517,6 +1573,18 @@ func gain_exp(amount: int) -> void:
 			_roll_spell_learn_choices()
 		if player_stats.mastery_cap() > old_mastery_cap:
 			mastery_learn_pending = true
+		# Dragonborn Breath Weapon: a proficiency-bonus increase (levels 5/9/13/17) grants +1
+		# CURRENT use immediately, not just a higher cap (mirrors Rage's own grant-now treatment
+		# above). Draconic Flight unlocks the instant character_level reaches 5.
+		if player_stats.character_race == Stats.CharacterRace.DRAGONBORN:
+			var new_prof_bonus: int = player_stats.proficiency_bonus
+			if new_prof_bonus > old_prof_bonus:
+				player_stats.breath_weapon_uses_remaining = mini(
+					player_stats.breath_weapon_uses_remaining + (new_prof_bonus - old_prof_bonus),
+					new_prof_bonus)
+				_sync_ability_uses()
+			if old_level < 5 and player_stats.character_level >= 5:
+				give_race_starting_items()
 		AudioManager.play("level_up")
 		player_leveled_up.emit(player_stats.character_level)
 
@@ -3336,6 +3404,7 @@ func from_dict(d: Dictionary) -> void:
 	# 5. Stats LAST (restore-stats-last rule, doc §4.3), then derive AC/damage from equipment.
 	player_stats.from_dict(stats_d)
 	_rebuild_spell_ability_bar()
+	_restore_race_ability_bar()
 	# Restore the special quick-cast slot last — set_special_slot() validates against the just-
 	# restored known_spells and silently clears (returns false, leaves "" default) if the saved
 	# spell is no longer known (e.g. a respec edge case), never crashes on a stale id.

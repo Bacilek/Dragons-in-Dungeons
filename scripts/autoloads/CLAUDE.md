@@ -246,6 +246,13 @@ equipped. `GameState.reset_wizard_onboarding_picks()` wipes a Wizard's `caster.k
 spell via Back never leaves the old pick known alongside the new one (`choose_cantrip()`/
 `choose_starting_spell()` only ever append).
 
+**`give_race_starting_items()` / `_restore_race_ability_bar()`**: Dragonborn-only today (Breath
+Weapon at level 1, Draconic Flight at level 5) — see `scripts/entities/CLAUDE.md`'s "Dragonborn"
+section for the full mechanism. `give_race_starting_items()` is called once by `choose_race()` (sets
+starting uses); `from_dict()` calls the read-only `_restore_race_ability_bar()` counterpart instead
+(after `Stats.from_dict()` has already restored the real saved uses) so a save/load never resets
+`breath_weapon_uses_remaining` back to full.
+
 **`choose_race()` re-emits `player_hp_changed`**: `apply_race_defaults()` can change `max_hp` (Dwarf's +1/level, including level 1 — see root `CLAUDE.md`'s "Race system"), so `choose_race()` emits `player_hp_changed(current_hp, max_hp)` itself after applying race defaults, rather than relying on whichever earlier signal the calling onboarding screen fired (both `character_select.gd`'s premade path and `point_buy_select.gd`'s confirm emit it with the PRE-race value, since race is chosen after).
 
 **Tier 2 unlock + subclass selection (boss-gated)**: Tier 2 does NOT unlock by level. Every boss kill emits `boss_defeated(boss_id)` (from `player.gd._finish_kill()` and `DungeonFloor.resolve_push()`'s chasm path); GameState's own `_on_boss_defeated()` ignores everything except `TIER2_GATING_BOSS_ID` ("big_demon", floor 5). On that kill: Barbarian (has subclasses) with `not subclass_chosen` emits `subclass_choice_required` — hud.gd spawns `scripts/ui/subclass_select.gd` (blocking, non-dismissable overlay showing all four subclasses); its confirm calls `choose_subclass(name)` which sets `active_tier2_subclass` + `subclass_chosen = true` and calls `unlock_tier2()`. Other classes (or an already-made choice) call `unlock_tier2()` directly. `unlock_tier2()` sets `tier2_unlocked` and runs `_setup_tier2_for_active_subclass()` (dispatches to the four `_setup_X_tier2_talents()` — all implemented). `choose_subclass()` is one-time: it no-ops once `subclass_chosen` is true. Levels 7–12 fill `talent_points[2]` unconditionally — points earned before the boss kill sit **pending** (the talent picker shows a pending badge) and become spendable the instant Tier 2 unlocks. If the player never kills the gating boss, Tier 2 points stay pending for the rest of the run — intentional, no special handling. If debug Jump-to-Floor skips floor 5, the God-Mode subclass arrows / debug panel unlock button remain the escape hatch.

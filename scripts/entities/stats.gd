@@ -44,7 +44,7 @@ enum ElfSubrace { DROW, HIGH_ELF, WOOD_ELF }          # only meaningful when cha
 enum DragonbornAncestry { BLACK, BLUE, BRASS, BRONZE, COPPER, GOLD, GREEN, RED, SILVER, WHITE }
 
 const DRAGONBORN_DAMAGE_TYPE: Array[String] = [
-	"Acid", "Lightning", "Fire", "Fire", "Acid", "Fire", "Poison", "Fire", "Lightning", "Cold"
+	"Acid", "Lightning", "Fire", "Lightning", "Acid", "Fire", "Poison", "Fire", "Cold", "Cold"
 ]
 
 # Check proficiency flags — which ability checks the class rolls with proficiency bonus.
@@ -167,6 +167,27 @@ var rage_bonus_damage: int:
 		if character_level >= 9:  return 3
 		return 2
 
+# Dragonborn Breath Weapon uses (Dragonborn only) — baseline level-1 ability, granted directly
+# like Rage/Hunter's Mark above. Max uses = proficiency_bonus (5e 2024 rule); refilled to max in
+# GameState.long_rest(), and bumped by +1 CURRENT use the instant a level-up raises proficiency_bonus
+# (levels 5/9/13/17 — see GameState.gain_exp()). Damage dice scale separately via
+# breath_weapon_dice_count() below (1d10 base, +1d10 at levels 5/11/17 — 5e 2024's own progression).
+var breath_weapon_uses_remaining: int = 0
+
+func breath_weapon_dice_count() -> int:
+	var n: int = 1
+	if character_level >= 5:  n += 1
+	if character_level >= 11: n += 1
+	if character_level >= 17: n += 1
+	return n
+
+# Draconic Flight (Dragonborn only, unlocked at level 5) — up to 100 turns of "flight": crosses
+# CHASM tiles freely, never tramples GRASS, never triggers traps, and is immune to standing-on-fire
+# damage (see DungeonFloor.tick_fire_damage_for()'s Player branch). 1/long rest — draconic_flight_
+# used resets in GameState.long_rest(). Free action (does not cost a turn to activate).
+var draconic_flight_turns: int = 0
+var draconic_flight_used: bool = false
+
 # Hunter's Mark uses (Ranger only) — baseline level-1 ability, not talent-gated, same
 # "granted directly, resource-limited" shape as Rage. A use is spent only when establishing a
 # mark on a target from having none (retargeting an already-active mark is free — 5e "move
@@ -174,7 +195,7 @@ var rage_bonus_damage: int:
 # level (unlike Rage) — simple to start, tune later.
 var hunters_mark_uses_remaining: int = 0
 const HUNTERS_MARK_USES_MAX: int = 3
-const HUNTERS_MARK_RANGE: int = 9
+const HUNTERS_MARK_RANGE: int = 5
 const HUNTERS_MARK_DURATION: int = 100
 
 # The currently marked enemy (Hunter's Mark). Deliberately NOT serialized in to_dict()/from_dict()
@@ -484,6 +505,8 @@ func to_dict() -> Dictionary:
 		"base_max_damage": base_max_damage,
 		"rage_uses_remaining": rage_uses_remaining,
 		"hunters_mark_uses_remaining": hunters_mark_uses_remaining,
+		"breath_weapon_uses_remaining": breath_weapon_uses_remaining,
+		"draconic_flight_used": draconic_flight_used,
 		"temp_hp": temp_hp,
 		"poison_turns": poison_turns,
 		"burning_turns": burning_turns,
@@ -525,6 +548,8 @@ func from_dict(d: Dictionary) -> void:
 	base_max_damage = int(d.get("base_max_damage", base_max_damage))
 	rage_uses_remaining = int(d.get("rage_uses_remaining", 0))
 	hunters_mark_uses_remaining = int(d.get("hunters_mark_uses_remaining", 0))
+	breath_weapon_uses_remaining = int(d.get("breath_weapon_uses_remaining", 0))
+	draconic_flight_used = bool(d.get("draconic_flight_used", false))
 	temp_hp = int(d.get("temp_hp", 0))
 	poison_turns = int(d.get("poison_turns", 0))
 	burning_turns = int(d.get("burning_turns", 0))

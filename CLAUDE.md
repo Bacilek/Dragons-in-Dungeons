@@ -110,8 +110,11 @@ Elf w/ 3 sub-races, Dragonborn) each with distinct traits — darkvision/FOV bon
 charges (Orc Relentless Endurance, Human Heroic Inspiration), a d20-reroll mechanic (Human
 miss-reroll — still stubbed; Halfling nat-1-reroll — implemented, see below), Dwarf +1 HP/level
 (including level 1), Elf shorter rests + sub-race spell-like ability, Dragonborn ancestry-based
-resistance/breath type. Still deferred/stubbed: Human miss-reroll, Elf sub-race spell-like
-ability, Dragonborn breath weapon — these are cosmetic/flavor gaps, not blockers.
+resistance + a matching-element Breath Weapon (Cone/Line AoE, arm-toggle-cancel targeting on the
+ability bar) plus a level-5 Draconic Flight buff (crosses chasms, no grass trample, no traps, fire
+immune) — see `scripts/entities/CLAUDE.md`'s "Dragonborn" section for the full mechanism. Still
+deferred/stubbed: Human miss-reroll, Elf sub-race spell-like ability — these are cosmetic/flavor
+gaps, not blockers.
 **Halfling Lucky**: rolling a natural 1 on any player d20 roll (attack roll or the trap-disarm
 check) triggers an automatic, must-use reroll — `CombatMath.halfling_reroll(die)`
 (`scripts/entities/combat_math.gd`), baked into `CombatMath.roll_with_adv_disadv()` (the shared

@@ -5,7 +5,8 @@ extends CanvasLayer
 # before the Mastery Picker. Modeled directly on subclass_select.gd's conventions: dim overlay +
 # centered bordered Panel, focus_mode = FOCUS_NONE everywhere, blocks input via a GameState flag
 # (race_picker_open), NOT dismissible (no close button, Esc ignored) — the choice is permanent.
-# See docs/architecture/race-selection-design.md.
+# Implemented; design doc shipped and was deleted — root CLAUDE.md's "Race system" and
+# scripts/entities/CLAUDE.md's "Dragonborn" section are now authoritative.
 
 const PANEL_W: float = 1200.0
 const GRID_COLS: int = 3
@@ -42,7 +43,7 @@ const RACES: Array[Dictionary] = [
 	},
 	{
 		"id": "dragonborn", "name": "Dragonborn",
-		"blurb": "Choose an ancestry for elemental resistance. Darkvision.",
+		"blurb": "Choose an ancestry for elemental resistance + a Breath Weapon (Cone/Line, same damage type). Draconic Flight at level 5. Darkvision.",
 		"sub_kind": "ancestry",
 		"sub_options": ["Black", "Blue", "Brass", "Bronze", "Copper", "Gold", "Green", "Red", "Silver", "White"],
 	},

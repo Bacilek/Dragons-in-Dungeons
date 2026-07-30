@@ -24,6 +24,7 @@ var _vfx: PlayerVfx
 var _actions: PlayerActions
 var _ranged: PlayerRanged
 var _spellcasting: PlayerSpellcasting
+var _dragonborn: PlayerDragonborn
 
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
@@ -151,6 +152,7 @@ func _ready() -> void:
 	_actions = PlayerActions.new(); _actions.player = self; add_child(_actions)
 	_ranged = PlayerRanged.new(); _ranged.player = self; add_child(_ranged)
 	_spellcasting = PlayerSpellcasting.new(); _spellcasting.player = self; add_child(_spellcasting)
+	_dragonborn = PlayerDragonborn.new(); _dragonborn.player = self; add_child(_dragonborn)
 
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
@@ -284,6 +286,12 @@ func _on_turn_started() -> void:
 			if stats.invisibility_turns <= 0:
 				GameState.game_log("[color=gray]You fade back into view.[/color]")
 				_update_invisibility_visual()
+		# Draconic Flight: 100-turn duration, ticked once per real turn (same pattern above).
+		if stats.draconic_flight_turns > 0:
+			stats.draconic_flight_turns -= 1
+			if stats.draconic_flight_turns <= 0:
+				GameState.game_log("[color=gray]You touch back down to the ground.[/color]")
+				GameState.player_status_changed.emit()
 		# Frightened: repeats the WIS save once per real turn (5e: "at the end of each of its
 		# turns" — ticked at turn START here instead, same cadence as every other duration in
 		# this block; no other timing hook exists for a single-slot condition). A pass ends it
@@ -764,6 +772,7 @@ func _process(_delta: float) -> void:
 	if _spellcasting.spell_targeting_active:
 		_spellcasting.cancel()
 		GameState.game_log("[color=gray]Spell cancelled.[/color]")
+	_dragonborn.cancel_breath_weapon()
 	_try_move(dir)
 
 # Holding Space repeats a single wait_action() per real turn for as long as it's held down —
@@ -931,7 +940,18 @@ func _update_ranged_range_preview() -> bool:
 		return false
 	var spell_armed: bool = _spellcasting.get_armed_spell() != null \
 			or (Input.is_key_pressed(KEY_ALT) and GameState.special_slot_spell_id != "")
-	if spell_armed or not Input.is_key_pressed(KEY_SHIFT):
+	if spell_armed:
+		_dungeon_floor.hide_ranged_range_preview()
+		return false
+	# Quickbar hover: hovering a thrown item in the item bar (hud.gd) previews ITS range/
+	# long_range, same two-tone backdrop, no Shift/equipped-ranged-weapon needed — no world-tile
+	# enemy highlight though, since the mouse is over UI, not a game-world tile.
+	var hover_item: Item = GameState.quickbar_hover_thrown_item
+	if hover_item != null:
+		var hover_long_r: int = hover_item.long_range if hover_item.long_range > 0 else DungeonFloor.FOV_RADIUS
+		_dungeon_floor.show_ranged_range_preview(grid_pos, hover_item.range, hover_long_r)
+		return true
+	if not Input.is_key_pressed(KEY_SHIFT):
 		_dungeon_floor.hide_ranged_range_preview()
 		return false
 	var weapon: Item = GameState.equipped_ranged
@@ -1084,6 +1104,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _hunters_mark_mode_active:
 				_hunters_mark_mode_active = false
 				GameState.game_log("[color=gray]Hunter's Mark cancelled.[/color]")
+			_dragonborn.cancel_breath_weapon()
 			if _spellcasting.spell_targeting_active:
 				_spellcasting.cancel()
 				GameState.game_log("[color=gray]Spell cancelled.[/color]")
@@ -1299,6 +1320,15 @@ func _unhandled_input(event: InputEvent) -> void:
 						_execute_hook(target_enemy)
 			return
 
+		# Breath Weapon targeting mode (Dragonborn) — any click supplies a direction only, the
+		# clicked tile need not itself be in range (same convention as Burning Hands' cone).
+		if _dragonborn.breath_weapon_mode_active:
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				_dragonborn.resolve_breath_weapon(clicked)
+			else:
+				_dragonborn.cancel_breath_weapon()
+			return
+
 		# Frenzy targeting mode (Berserker) — melee only, must be adjacent.
 		if _berserker.frenzy_mode_active:
 			_berserker.frenzy_mode_active = false
@@ -1427,12 +1457,15 @@ func _execute_queued_path() -> void:
 				if _dungeon_floor.has_door_at(prev_c):
 					_dungeon_floor.close_door(prev_c)
 				_vfx.leave_blood_trail(prev_c)
-				if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
+				# Draconic Flight: never tramples grass, never triggers traps (root CLAUDE.md's
+				# "Race system" / scripts/entities/CLAUDE.md's "Dragonborn").
+				var _flying_c: bool = GameState.player_stats.draconic_flight_turns > 0
+				if not _flying_c and _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 					_dungeon_floor.destroy_grass(grid_pos)
 				_actions.check_pickup()
 				_play_footstep_sound()
 				var trap_c: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
-				if not trap_c.is_empty():
+				if not _flying_c and not trap_c.is_empty():
 					await _dungeon_floor.trigger_trap(grid_pos, self)
 					_target_enemy = null
 					break
@@ -1513,13 +1546,14 @@ func _execute_queued_path() -> void:
 			if _dungeon_floor.has_door_at(prev_p):
 				_dungeon_floor.close_door(prev_p)
 			_vfx.leave_blood_trail(prev_p)
-			if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
+			var _flying_p: bool = GameState.player_stats.draconic_flight_turns > 0
+			if not _flying_p and _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 				_dungeon_floor.destroy_grass(grid_pos)
 				_dungeon_floor.update_fog(grid_pos)
 			_actions.check_pickup()
 			_play_footstep_sound()
 			var trap_p: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
-			if not trap_p.is_empty():
+			if not _flying_p and not trap_p.is_empty():
 				await _dungeon_floor.trigger_trap(grid_pos, self)
 				_queued_path.clear()
 				break
@@ -1755,8 +1789,9 @@ func _try_move(dir: Vector2i) -> void:
 		if _dungeon_floor.get_tile_type(target) == DungeonData.TileType.VOID:
 			return
 	else:
-		# Natural Sleeper Owl R1: allow movement into CHASM tiles
-		var _owl_override: bool = _sleeper_on and _ns_form == "Owl" and _target_tile == DungeonData.TileType.CHASM
+		# Natural Sleeper Owl R1 / Draconic Flight: allow movement into CHASM tiles
+		var _owl_override: bool = (_sleeper_on and _ns_form == "Owl" and _target_tile == DungeonData.TileType.CHASM) \
+				or (GameState.player_stats.draconic_flight_turns > 0 and _target_tile == DungeonData.TileType.CHASM)
 		# Blacksmith prop: bump-to-open instead of blocking pointlessly against the (impassable)
 		# tile — mirrors door auto-open-on-step-in ergonomics.
 		if _dungeon_floor.has_blacksmith_at(target):
@@ -1806,14 +1841,16 @@ func _try_move(dir: Vector2i) -> void:
 			_dungeon_floor.close_door(prev_pos)
 		_vfx.leave_blood_trail(prev_pos)
 		# Destroy grass before fog update so our own tile doesn't block sight
-		if _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
+		var _flying: bool = GameState.player_stats.draconic_flight_turns > 0
+		if not _flying and _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 			_dungeon_floor.destroy_grass(grid_pos)
 		_dungeon_floor.update_fog(grid_pos)
-		_actions.passive_trap_check()
+		if not _flying:
+			_actions.passive_trap_check()
 		_actions.check_pickup()
 		_play_footstep_sound()
 		var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
-		if not trap.is_empty():
+		if not _flying and not trap.is_empty():
 			await _dungeon_floor.trigger_trap(grid_pos, self)  # push trap still awaits; others return instantly
 	if is_stairs:
 		TurnManager.on_player_action_complete()
@@ -2186,13 +2223,16 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			_dungeon_floor.show_damage(enemy.position, jd_actual, false, CombatMath.damage_type_color(jd_type), 1)
 
 	# Torch: while lit and wielded in Main Hand (the weapon _bump_attack always swings), a hit
-	# also deals a second, independent 1d4 Fire damage instance — see scripts/items/CLAUDE.md's
-	# damage-stacking rule (same "one hit, two damage types" shape as Judgement Day above).
+	# also deals a second, independent 2d4 + STR mod Fire damage instance — see
+	# scripts/items/CLAUDE.md's damage-stacking rule (same "one hit, two damage types" shape as
+	# Judgement Day above). Same dmg_mod as the primary Bludgeoning instance above — a Torch is
+	# never Finesse/unarmed, so this is always the plain STR modifier.
 	var torch_actual: int = 0
 	var torch_inst: Dictionary = {}
 	if weapon_item_ref != null and weapon_item_ref.is_torch and weapon_item_ref.torch_lit:
-		var torch_rolls: Array[int] = Rng.roll_dice(1, 4)
-		torch_inst = CombatMath.build_damage_instance(torch_rolls, 4, [], is_crit, "Fire")
+		var torch_rolls: Array[int] = Rng.roll_dice(2, 4)
+		var torch_flat_mods: Array = [{"name": "STR mod", "amount": dmg_mod, "color": "lightblue"}] if dmg_mod != 0 else []
+		torch_inst = CombatMath.build_damage_instance(torch_rolls, 4, torch_flat_mods, is_crit, "Fire")
 		var torch_result: Dictionary = enemy.take_typed_damage(torch_inst["subtotal"], "Fire", is_crit)
 		torch_inst["final"] = torch_result["actual"]
 		torch_inst["resist_mul"] = torch_result["mul"]
@@ -2774,4 +2814,6 @@ func _use_ability_slot(idx: int) -> void:
 		"limit_break":             _scarred_warrior.activate_limit_break()
 		"born_in_blood", "enough_is_enough", "bloodied_regen":
 			GameState.game_log("[color=gray]%s is passive — upgrades Limit Break or triggers automatically.[/color]" % ab.ability_name)
+		"breath_weapon":           _dragonborn.activate_breath_weapon()
+		"draconic_flight":         _dragonborn.activate_draconic_flight()
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
