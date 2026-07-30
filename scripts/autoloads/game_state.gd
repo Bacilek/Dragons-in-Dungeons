@@ -1418,7 +1418,10 @@ func hit_die_sides() -> int:
 		Stats.CharacterClass.RANGER:    return 10
 		Stats.CharacterClass.MONK:      return 8
 		Stats.CharacterClass.WIZARD:    return 6
-		_:                              return 8
+		Stats.CharacterClass.FIGHTER:   return 10
+		Stats.CharacterClass.PALADIN:   return 10
+		Stats.CharacterClass.SORCERER:  return 6
+		_:                              return 8  # Bard/Cleric/Druid/Rogue/Warlock: d8
 
 func check_player_death() -> void:
 	if player_stats.is_dead() and not is_game_over and not invincible:

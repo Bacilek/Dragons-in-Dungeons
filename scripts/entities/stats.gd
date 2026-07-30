@@ -1,7 +1,10 @@
 class_name Stats
 extends Resource
 
-enum CharacterClass { BARBARIAN, RANGER, WIZARD, MONK }
+enum CharacterClass {
+	BARBARIAN, RANGER, WIZARD, MONK,
+	BARD, CLERIC, DRUID, FIGHTER, PALADIN, ROGUE, SORCERER, WARLOCK
+}
 
 # Internal-only D&D-role categorization — never shown in any UI, purely a filter this codebase's
 # own authors use when deciding "should class X get spellcasting / which slot table / etc." Keyed
@@ -337,6 +340,14 @@ func hp_per_level_breakdown() -> Dictionary:
 		CharacterClass.RANGER:    avg = 6
 		CharacterClass.WIZARD:    avg = 4
 		CharacterClass.MONK:      avg = 5  # d8 avg = 5
+		CharacterClass.BARD:      avg = 5  # d8 avg = 5
+		CharacterClass.CLERIC:    avg = 5  # d8 avg = 5
+		CharacterClass.DRUID:     avg = 5  # d8 avg = 5
+		CharacterClass.FIGHTER:   avg = 6  # d10 avg = 6
+		CharacterClass.PALADIN:   avg = 6  # d10 avg = 6
+		CharacterClass.ROGUE:     avg = 5  # d8 avg = 5
+		CharacterClass.SORCERER:  avg = 4  # d6 avg = 4
+		CharacterClass.WARLOCK:   avg = 5  # d8 avg = 5
 		_:                        avg = 5
 	var con: int = con_modifier()
 	var dwarf: int = 1 if character_race == CharacterRace.DWARF else 0
@@ -535,6 +546,14 @@ func point_buy_hit_die_base() -> int:
 		CharacterClass.RANGER: return 10
 		CharacterClass.WIZARD: return 6
 		CharacterClass.MONK: return 8
+		CharacterClass.BARD: return 8
+		CharacterClass.CLERIC: return 8
+		CharacterClass.DRUID: return 8
+		CharacterClass.FIGHTER: return 10
+		CharacterClass.PALADIN: return 10
+		CharacterClass.ROGUE: return 8
+		CharacterClass.SORCERER: return 6
+		CharacterClass.WARLOCK: return 8
 	return 8
 
 # Overrides the six base ability scores with a player-allocated point-buy result, then
@@ -624,6 +643,93 @@ func apply_class_defaults() -> void:
 			rage_uses_remaining = 0               # Monk never rages (rage_uses_max computed = 0)
 			check_prof_str = true
 			check_prof_dex = true
+			# Weapon profs intentionally NOT set — real Monk proficiency is Simple + only the
+			# Martial weapons with the Light property, a finer grain than the flat
+			# proficient_simple_weapons/proficient_martial_weapons bools support (same
+			# pre-existing TODO noted in scripts/entities/CLAUDE.md's "Monk class" section).
+			# No armor training (any armor gives DISADV on STR/DEX checks/attacks — not enforced).
+		# ── Base D&D stat blocks only (root CLAUDE.md's "Locked-class art") — none of these 8
+		# are selectable in character creation or class_select.gd/character_select.gd yet, and
+		# none get starting items/abilities/spellcasting here. This just gives Stats a real,
+		# usable ability-score/HP/proficiency baseline for whenever each one is wired up for real.
+		CharacterClass.BARD:
+			charisma = 16; dexterity = 14; constitution = 12
+			wisdom = 10; intelligence = 10; strength = 8
+			max_hp = 8 + modifier(constitution)    # Bard HD d8
+			check_prof_dex = true
+			check_prof_cha = true
+			proficient_simple_weapons = true
+			proficient_light_armor = true
+		CharacterClass.CLERIC:
+			wisdom = 16; constitution = 14; charisma = 12
+			strength = 10; dexterity = 10; intelligence = 8
+			max_hp = 8 + modifier(constitution)    # Cleric HD d8
+			check_prof_wis = true
+			check_prof_cha = true
+			proficient_simple_weapons = true
+			proficient_shields = true
+			proficient_light_armor = true
+			proficient_medium_armor = true
+		CharacterClass.DRUID:
+			wisdom = 16; constitution = 14; dexterity = 12
+			intelligence = 10; strength = 10; charisma = 8
+			max_hp = 8 + modifier(constitution)    # Druid HD d8
+			check_prof_int = true
+			check_prof_wis = true
+			proficient_simple_weapons = true
+			proficient_shields = true
+			proficient_light_armor = true
+		CharacterClass.FIGHTER:
+			strength = 16; constitution = 14; dexterity = 12
+			wisdom = 10; intelligence = 10; charisma = 8
+			max_hp = 10 + modifier(constitution)   # Fighter HD d10
+			check_prof_str = true
+			check_prof_con = true
+			proficient_simple_weapons = true
+			proficient_martial_weapons = true
+			proficient_shields = true
+			proficient_light_armor = true
+			proficient_medium_armor = true
+			proficient_heavy_armor = true
+		CharacterClass.PALADIN:
+			strength = 16; charisma = 14; constitution = 12
+			wisdom = 10; dexterity = 10; intelligence = 8
+			max_hp = 10 + modifier(constitution)   # Paladin HD d10
+			check_prof_wis = true
+			check_prof_cha = true
+			proficient_simple_weapons = true
+			proficient_martial_weapons = true
+			proficient_shields = true
+			proficient_light_armor = true
+			proficient_medium_armor = true
+			proficient_heavy_armor = true
+		CharacterClass.ROGUE:
+			dexterity = 16; intelligence = 14; constitution = 12
+			wisdom = 10; charisma = 10; strength = 8
+			max_hp = 8 + modifier(constitution)    # Rogue HD d8
+			check_prof_dex = true
+			check_prof_int = true
+			proficient_simple_weapons = true
+			# proficient_martial_weapons intentionally NOT set — real Rogue proficiency is Simple
+			# + only the Martial weapons that are Finesse or Light, same finer-grain gap as Monk
+			# above (no per-property weapon-proficiency field exists yet).
+			proficient_light_armor = true
+		CharacterClass.SORCERER:
+			charisma = 16; constitution = 14; dexterity = 12
+			wisdom = 10; intelligence = 10; strength = 8
+			max_hp = 6 + modifier(constitution)    # Sorcerer HD d6
+			check_prof_con = true
+			check_prof_cha = true
+			proficient_simple_weapons = true
+			# No armor/shield proficiency at all — matches real 5e Sorcerer.
+		CharacterClass.WARLOCK:
+			charisma = 16; constitution = 14; dexterity = 12
+			wisdom = 10; intelligence = 10; strength = 8
+			max_hp = 8 + modifier(constitution)    # Warlock HD d8
+			check_prof_wis = true
+			check_prof_cha = true
+			proficient_simple_weapons = true
+			proficient_light_armor = true
 	current_hp = max_hp
 	# Barbarian and Monk start unarmored — apply unarmored defense formulas.
 	recalc_ac(false)

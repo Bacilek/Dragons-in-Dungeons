@@ -1685,3 +1685,31 @@ Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: ST
 **Monk level-up features** (applied in `GameState._apply_monk_level_features(level)`, called alongside `_apply_barbarian_level_features()` from `gain_exp()`):
 - **Level 4 — DEX +2**: `player_stats.dexterity += 2`, `recalculate_stats()` applied.
 - **Levels 5/11/17 — Martial Arts die upgrade**: updates `martial_arts` ability description; die is auto-computed by `Stats.martial_arts_die_sides`.
+
+## Locked classes — base D&D stat blocks only
+
+`Stats.CharacterClass` gained 8 new enum entries — `BARD`, `CLERIC`, `DRUID`, `FIGHTER`,
+`PALADIN`, `ROGUE`, `SORCERER`, `WARLOCK` — each with a real `apply_class_defaults()` branch
+(ability scores, HP via hit die + CON mod, `check_prof_*` flags, `proficient_simple_weapons`/
+`proficient_martial_weapons`, `proficient_shields`, `proficient_light_armor`/`medium`/`heavy`) plus
+matching `point_buy_hit_die_base()` and `hp_per_level_breakdown()` entries. **Not selectable or
+playable yet** — same "sourced art, no mechanics" status as their locked character-select tiles
+(root `CLAUDE.md`'s "Locked-class art"): no `class_select.gd`/`character_select.gd` wiring, no
+`give_class_starting_items()` branch, no spellcasting (`caster` stays `null` even for the
+FULL_CASTER/HALF_CASTER roles `Stats.CLASS_ROLE` already lists them under), no class-specific
+abilities (e.g. Bard's starting instrument tool proficiency isn't implemented). Two classes
+(`MONK`, already pre-existing; `ROGUE`, new) have a real 5e proficiency gap **left deliberately
+unfixed**: their true weapon proficiency is Simple + a property-restricted subset of Martial (Monk:
+Light property only; Rogue: Finesse or Light only) — `Stats` only has flat
+`proficient_simple_weapons`/`proficient_martial_weapons` bools, no per-weapon-property granularity,
+so both classes leave `proficient_martial_weapons = false` (a conservative default) with the
+restriction documented as a comment at the class's `apply_class_defaults()` branch instead. Six of
+the eight (Bard/Cleric/Druid/Fighter/Paladin/Warlock) have full Simple-or-Simple+Martial
+proficiency and needed no such carve-out. Stat-block source (given directly by the project owner,
+not derived from 5e SRD text verbatim): `check_prof_*`/weapon-and-armor proficiency columns are
+exact; the six ability scores themselves are this codebase's own invention, following the existing
+classes' established pattern (primary stat 16, a secondary support stat 14, a tertiary 12, two 10s,
+one dump stat 8) since only primary-ability/hit-die/proficiency data was specified, not a full
+ability array. `GameState.hit_die_sides()` (`scripts/autoloads/CLAUDE.md`) got matching explicit
+entries for `FIGHTER`/`PALADIN` (d10) and `SORCERER` (d6) — its old default branch already
+happened to return the right d8 for the other five.
