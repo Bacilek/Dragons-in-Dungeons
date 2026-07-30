@@ -759,6 +759,11 @@ func _process(_delta: float) -> void:
 	if _tool_item != null and _tool_item.item_name != "Thief Tools":
 		_tool_item = null
 		GameState.game_log("[color=gray]Disarm cancelled.[/color]")
+	# Moving cancels an armed spell/scroll cast — same as Esc (scripts/entities/CLAUDE.md's
+	# "Wizard leveled spells" targeting flow).
+	if _spellcasting.spell_targeting_active:
+		_spellcasting.cancel()
+		GameState.game_log("[color=gray]Spell cancelled.[/color]")
 	_try_move(dir)
 
 # Holding Space repeats a single wait_action() per real turn for as long as it's held down —
@@ -2734,6 +2739,15 @@ func _use_ability_slot(idx: int) -> void:
 			# resolve straight onto yourself, same as Alt+click, no world click required at all.
 			_spellcasting.cancel()
 			_spellcasting.cast_direct(spell_id, grid_pos)
+			return
+		# Pressing the same slot again while THIS spell is already armed cancels the cast — same
+		# as Esc. (SELF-touch spells never reach here: the double-tap branch above claims them.)
+		# Spell.spell_id compared, not the Resource itself — SpellDb.get_spell() builds a fresh
+		# instance every call, so two calls for the same id are never reference-equal.
+		var armed: Spell = _spellcasting.get_armed_spell()
+		if _spellcasting.spell_targeting_active and armed != null and armed.spell_id == spell_id:
+			_spellcasting.cancel()
+			GameState.game_log("[color=gray]Spell cancelled.[/color]")
 			return
 		_spellcasting.begin_cast(spell_id)
 		return

@@ -1431,8 +1431,17 @@ impact point rather than stop at the first wall it can't directly see through.
     (0.4s) — `_use_ability_slot()` tracks `_last_ability_slot_idx`/`_last_ability_slot_press_msec`;
     a second press of the same slot on a SELF-target spell cancels any pending arm state and calls
     `cast_direct()` directly, resolving on yourself with no mouse click needed at all. Only
-    SELF-target spells trigger this — a double-press on any other spell just re-arms normally
-    (`begin_cast()` is idempotent to call twice).
+    SELF-target spells trigger this.
+
+  **Cancelling an armed cast**: besides Esc, an armed spell/scroll cast (`spell_targeting_active`)
+  is now also cancelled by (1) **any WASD/arrow movement key press** — `player.gd`'s `_process()`
+  movement block cancels it right alongside the pre-existing Throw/Thief-Tools cancels, before
+  `_try_move(dir)` runs — and (2) **pressing the SAME ability-bar slot again** for a non-SELF
+  spell: `_use_ability_slot()` compares `PlayerSpellcasting.get_armed_spell().spell_id` (by id, not
+  Resource identity — `SpellDb.get_spell()` builds a fresh `Spell` instance every call) against the
+  freshly-pressed slot's spell id and calls `cancel()` if they match, regardless of the double-tap
+  timing window. (A SELF-target spell never reaches this branch — the double-tap-resolves case
+  above claims it first.)
   Sets `Stats.mage_armor_active`, which `recalc_ac()` reads: while true and
   no armor is equipped, AC becomes `13 + DEX` — but only as a fallback below Barbarian/Monk's own
   unarmored-defense formulas (those always win if the character has one). If the caster is
