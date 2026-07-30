@@ -20,6 +20,8 @@ dungeon_floor.has_line_of_sight(p1, p2) -> bool             # Bresenham — enem
 dungeon_floor.has_ranged_los(p1, p2) -> bool                # blocks WALL/VOID and closed doors (not GRASS, unlike has_line_of_sight) — TERRAIN only, ignores bodies standing in the way
 dungeon_floor.get_blocking_body_on_line(p1, p2) -> Node     # first Enemy/Player/Companion on an INTERMEDIATE tile of the p1→p2 ray (endpoints excluded), or null
 dungeon_floor.has_clear_shot(p1, p2) -> bool                # has_line_of_sight(p1,p2) (blocks GRASS too, unlike has_ranged_los) AND no blocking body — the gate enemy-side ranged attacks/abilities/thrown weapons check (see scripts/entities/CLAUDE.md's "Attack profiles")
+dungeon_floor.find_path(from, to) -> Array[Vector2i]        # click-to-move pathing — 8-dir BFS, requires `to` explored, closed doors passable (open on arrival)
+dungeon_floor.has_walkable_route_ignoring_chasms(from, to) -> bool  # Magic Missile's "seeking dart" targeting (Spell.bypasses_los) — same 8-dir BFS as find_path() but NOT gated on _explored, and CHASM tiles are passable (the one deliberate difference — see scripts/entities/CLAUDE.md's Magic Missile entry); still blocked by WALL/VOID/barrel/blacksmith/shopkeeper props
 dungeon_floor.get_room_centers() -> Array[Vector2i]         # for enemy roam targets
 dungeon_floor.get_visible_enemies() -> Array[Enemy]         # enemies in current FOV
 dungeon_floor.get_all_enemies() -> Array[Enemy]             # all enemies (for companion targeting)
@@ -87,7 +89,35 @@ of Heavily Obscured terrain), and `GameState.effective_fov_radius(pos)` — read
 of every other FOV bonus, including darkvision.
 
 ## AoE targeting preview
-`show_aoe_preview(center: Vector2i, radius: int)` / `show_cone_preview(origin: Vector2i, aim: Vector2i, length: int)` / `hide_aoe_preview()` — a small pooled-`Sprite2D` purple tint (1×1 white texture tinted via `modulate`, `z_index = 2`, same layer as the fog sprite — Node2D-world convention, not a Control), both funneling into a shared `_paint_aoe_preview_tiles(key, tiles, exact_target_tile)` helper. Sphere: every tile within `radius` (Euclidean, no LOS filtering — see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why) of `center`. Cone (Burning Hands): `SpellEffects.cone_tiles(origin, aim, length, self)` — the same LOS-gated 90°-arc tile-gather the actual cast resolver uses, so the preview always matches the real blast exactly (see `scripts/entities/CLAUDE.md`'s "More 1st-level spells"). Driven every frame by `player.gd._update_spell_aoe_preview()` while a sphere- or cone-shaped spell is armed for targeting. Each rebuild is cache-keyed on its own params so repeated calls with the same hovered tile are near-free. **`exact_target_tile`** (the sphere's `center` / the cone's `aim` tile — the one tile the player is precisely aiming at) tints **red** (`AOE_PREVIEW_ENEMY_TINT`) instead of the default purple (`AOE_PREVIEW_TINT`) whenever `get_targetable_enemy_at(exact_target_tile) != null` — a known, non-invisible enemy standing on the exact targeted tile reads as "to be hit"; every other footprint tile stays purple.
+**Grid-bounds clipping**: every disc-shaped preview below (blue max-reach backdrop, purple/red
+sphere footprint, two-tone ranged backdrop) is a raw Euclidean/Chebyshev disc computed from the
+caster's position with **no wall/LOS filtering by design** — but that also meant, unfiltered, a
+caster standing near the map's edge would paint tint tiles past `DungeonData.width`/`height`
+(VOID). **The blue max-reach backdrop (`show_spell_range_preview()`) uses Chebyshev, not
+Euclidean** — it must match `try_cast_at()`'s own range check exactly (`dist_cheb <=
+_effective_range(spell)`), or a diagonal tile at radius 1 (a touch spell like Mage Armor/Shocking
+Grasp) rendered as visually "out of range" despite being a perfectly valid, actually-castable
+target (bugfix — it used to share the sphere-footprint's Euclidean formula, which is correct only
+for that footprint since `_resolve_sphere_aoe()`'s actual blast really is a Euclidean circle, not
+the single-target range gate). The purple/red sphere footprint (`show_aoe_preview()`) and the Fog
+Cloud visual stay Euclidean on purpose — both mirror a real Euclidean-distance game mechanic
+(`_resolve_sphere_aoe()`, `is_heavily_obscured()`), not a Chebyshev range gate.
+`DungeonFloor._in_grid_bounds(pos) -> bool` is the one bounds check `show_aoe_preview()`,
+`show_spell_range_preview()`, and `show_ranged_range_preview()` each filter their generated tile
+list through — a coordinate check only (`x/y` within `0..width`/`0..height`), never a
+walkability/LOS filter, so it doesn't change the previews' own deliberate "ignores walls" shape,
+just stops them rendering off the actual level. `show_cone_preview()` needed no change — its tiles
+already come from `SpellEffects.cone_tiles()`, which per-tile-gates on `has_ranged_los()` and
+therefore already excludes VOID/out-of-bounds tiles for free (VOID blocks `has_ranged_los()`).
+`show_aoe_preview(center: Vector2i, radius: int)` / `show_cone_preview(origin: Vector2i, aim: Vector2i, length: int)` / `hide_aoe_preview()` — a small pooled-`Sprite2D` purple tint (1×1 white texture tinted via `modulate`, `z_index = 2`, same layer as the fog sprite — Node2D-world convention, not a Control), both funneling into a shared `_paint_aoe_preview_tiles(key, tiles)` helper. Sphere: every tile within `radius` (Euclidean, no LOS filtering — see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why) of `center`. Cone (Burning Hands): `SpellEffects.cone_tiles(origin, aim, length, self)` — the same LOS-gated 90°-arc tile-gather the actual cast resolver uses, so the preview always matches the real blast exactly (see `scripts/entities/CLAUDE.md`'s "More 1st-level spells"). Driven every frame by `player.gd._update_spell_aoe_preview()` while a sphere- or cone-shaped spell is armed for targeting. Each rebuild is cache-keyed on its own params so repeated calls with the same hovered tile are near-free. **Every** footprint tile with a known, non-invisible enemy standing on it (`get_targetable_enemy_at(t) != null`) tints **red** (`AOE_PREVIEW_ENEMY_TINT`) instead of the default purple (`AOE_PREVIEW_TINT`) — a splash spell (Burning Hands, Fireball) hitting several enemies shows all of them red at once, not just the single tile the player is precisely aiming at; every other footprint tile stays purple.
+
+**Single-target ENEMY spells** (Fire Bolt, Shocking Grasp, Ray of Frost, Toll the Dead, Mind Sliver, Chromatic Orb, Witch Bolt — anything with `Spell.target_kind == ENEMY`, no AoE shape at all): `show_single_target_preview(tile: Vector2i, in_range: bool = true)`, also driven every frame from `player.gd._update_spell_aoe_preview()`. There's no footprint to paint here, so it only ever shows anything when the hovered tile actually has a known, targetable enemy on it AND `in_range` is true — in that case it reuses the same single-tile `_paint_aoe_preview_tiles()` path, which tints red via the same generic enemy check above; an empty hovered tile, or one beyond max range, hides the preview outright rather than showing an empty purple square or implying an out-of-range enemy would be hit.
+
+**Enemies never tint red when outside the attack's actual max range** — a shared `in_range`/`center_in_range`/`allow_enemy_tint` gate threaded through every preview function above, computed by the caller (`player.gd`) as the same Chebyshev-distance-vs-spell-range check `try_cast_at()` itself enforces for spells (`PlayerSpellcasting._effective_range(spell)`), or `PlayerRanged.is_ranged_target_in_range()` for the Shift ranged preview. `show_single_target_preview()` hides outright when the hovered enemy is out of range; `show_aoe_preview()`'s `center_in_range` param (threaded into `_paint_aoe_preview_tiles()`'s `allow_enemy_tint`) still paints the purple splash footprint even when the aimed tile itself is out of range, but suppresses every red enemy tint in that footprint — **except** the one case that's supposed to still work: a splash spell aimed at the LAST tile actually within range (`center_in_range == true`) legitimately shows red for any enemy caught in the blast's natural overhang beyond that range circle, since the impact point itself is a valid cast target and the blast radius is centered on it, not gated per-tile. `show_cone_preview()` never gates on range at all — a cone is self-centered/direction-only (its own reach is a fixed length from the caster, see `try_cast_at()`'s cone exemption), so there's no "aim point out of range" concept for it. **A `Spell.bypasses_los` spell (Magic Missile) folds a real path check into this same `in_range` bool** — `player.gd._update_spell_aoe_preview()` additionally requires `DungeonFloor.has_walkable_route_ignoring_chasms(grid_pos, tile)` before allowing red, so the preview never lies about an enemy behind an unreachable wall/prop being hittable just because it's within the flat 12-tile range — see `scripts/entities/CLAUDE.md`'s Magic Missile entry.
+
+**Shift+hover ranged-weapon preview**: `show_ranged_range_preview(center: Vector2i, normal_radius: int, long_radius: int)` / `hide_ranged_range_preview()` — its own independent pooled-`Sprite2D` set (`_ranged_range_rects`, `z_index = 1`, same layer as the spell blue backdrop but a separate pool so both can exist without stepping on each other), driven every frame by `player.gd._update_ranged_range_preview()` while **Shift** is held, a ranged weapon is equipped, and no spell is currently armed for targeting. Two-tone, not flat: every tile within `normal_radius` (the weapon's `Item.range` — full accuracy) tints `RANGED_NORMAL_TINT` (light blue); every tile beyond that but within `long_radius` (`Item.long_range`, or the live FOV radius as a fallback for a weapon that doesn't set one — same fallback `PlayerRanged.is_ranged_target_in_range()` uses) tints `RANGED_LONG_TINT` (darker blue) — the same normal/long split that decides Disadvantage on the actual shot. The hovered tile's own red enemy highlight reuses `show_single_target_preview()` verbatim (shared with single-target spells, not a separate implementation) — so a targetable enemy under the cursor reads red exactly like it would for Fire Bolt, on top of whichever blue band that tile falls in.
+
+**FOV-bonus overlays are suppressed while any of the above previews is showing** — `DungeonFloor.fov_bonus_overlay_suppressed: bool` / `set_fov_bonus_overlay_suppressed(v: bool)`, toggled once per frame from `player.gd._process()` (`spell_preview_active or ranged_preview_active`, the bools `_update_spell_aoe_preview()`/`_update_ranged_range_preview()` now return). Without this, the Torch's warm-yellow light-bubble glow and darkvision's dim-gray FOV-ring glow (both painted by `update_fog()`, see "Torch light bubble"/"Darkvision"'s own sections) would visually blend with the preview's blue/purple/red — three colors stacked on one tile instead of a clean single tint, e.g. a ranged Shift-preview tile that also happened to sit in the darkvision ring. `_update_torch_light_glow()`/`_update_darkvision_ring_glow()` both check the flag first and force every one of their own pooled sprites invisible, regardless of their own tile set, whenever it's true. Turning suppression back off immediately calls `update_fog(_player.grid_pos)` once to restore the correct glow state (rather than waiting for the next real player action to naturally recompute it).
 
 **Blue "maximum reach" preview**: `show_spell_range_preview(center: Vector2i, radius: int)` / `hide_spell_range_preview()` — a second, independent pooled-`Sprite2D` overlay (`SPELL_RANGE_TINT`, a low-alpha blue, `z_index = 1` — one layer below the purple/red exact-footprint preview so the two compose correctly when both are visible), same cache-keyed convention. Shows a static disc around the caster covering every tile the currently-armed spell could conceivably hit, for **any** armed spell — not just AoE shapes; a plain single-target spell (Fire Bolt) gets one too. Driven from the same `player.gd._update_spell_aoe_preview()` call, computed per spell: cone (Burning Hands) → radius = `shape_size` (the cone's own length, since it always originates at the caster); sphere (Fireball) → radius = `range_tiles + shape_size` (the blast's center can land at the edge of range and still splash further out); everything else (single-target ENEMY/TILE spells) → radius = `range_tiles`.
 
@@ -137,12 +167,13 @@ Generalized from the old piston-trap-only `_push_entity`. Walks `entity` step-by
 ---
 
 ## Barrels + flammable props (`_barrels: Dictionary[Vector2i, Dictionary]`)
-Value keys: `sprite: Sprite2D, burning: bool, burn_turns: int`. A solid obstacle prop (1-3 per
-floor, `_spawn_barrels()`) that blocks movement — `is_walkable()`/`is_walkable_for_enemy()`/
-`is_walkable_for_companion()` all treat an unburnt barrel tile as blocked — until ignited, at
-which point it burns down and disappears. Modeled on Shattered Pixel Dungeon's Sewer-level Barrel
-(a `Terrain.FLAMABLE` tile, not its own entity/class, that resolves to an empty tile once its fire
-timer runs out). **Placement is confined to room interiors** — candidates are gathered per
+Value keys: `sprite: Sprite2D, burning: bool, material: String, ac: int, hp: int, max_hp: int`. A
+solid obstacle prop (1-3 per floor, `_spawn_barrels()`) that blocks movement —
+`is_walkable()`/`is_walkable_for_enemy()`/`is_walkable_for_companion()` all treat an unburnt
+barrel tile as blocked, **regardless of `burning`** — until it's actually destroyed (HP hits 0),
+at which point it disappears. Modeled on Shattered Pixel Dungeon's Sewer-level Barrel (a
+`Terrain.FLAMABLE` tile, not its own entity/class, that resolves to an empty tile once burnt down).
+**Placement is confined to room interiors** — candidates are gathered per
 `_data.rooms` rect (corridors are carved outside every room rect, so this alone keeps barrels out
 of them), with rect-corner tiles preferred over other room floor tiles (`RngUtil.shuffle`'d
 separately, corners first) so clustering 2-3 in one room's corners is the common case. Every
@@ -152,6 +183,14 @@ this floor) and skipped if placing it there would disconnect player_start from s
 barrel can never be the thing that blocks the only path.
 
 `dungeon_floor.has_barrel_at(pos) -> bool`
+
+**Material/AC/HP**: `MaterialTable.ac_for(material)` (`scripts/items/material_table.gd`, a generic
+material-name → AC lookup — Cloth/Paper/Rope 11, Crystal/Glass/Ice 13, Wood/Bone 15, Stone 17,
+Iron/Steel 19, Mithral 21, Adamantine 23) resolves each prop's `ac` from its `material` field at
+spawn time. Both Barrels (`BARREL_MATERIAL = "wood"`, `BARREL_MAX_HP = 5`) and Doors
+(`DOOR_MATERIAL = "wood"`, `DOOR_MAX_HP = 10`) are Wood. `ac` is stored for a future "attack a
+prop directly" system (still doesn't exist — see the Web's own `ac`/`hp` fields for the same
+not-yet-consumed precedent) — today only fire ever damages a prop, which never rolls to hit.
 
 **Ignition is generic** — `dungeon_floor.ignite_flammable(pos: Vector2i) -> bool` is the single
 chokepoint every fire source calls: a barrel OR an OPEN/CLOSED (not locked) door both count as
@@ -163,20 +202,87 @@ spellcasting"/"More 1st-level spells"), a thrown **lit** Torch landing on an emp
 (`player_throw_tool.gd._throw_weapon()`), and fire spreading from an adjacent burning entity (see
 below).
 
-**Burn timer**: `FLAMMABLE_BURN_TURNS = 3`. `_tick_burning_props()` (connected to
-`TurnManager.player_turn_ending`, same per-real-turn cadence status effects/Witch Bolt use)
-decrements every burning barrel's/door's counter; at 0, the prop is destroyed outright — sprite
-(+ a door's lock icon) freed, dict entry erased, `update_fog()` called once if anything burned
-this tick. A burnt door is **gone permanently** (unlike `close_door()`, which just re-closes it —
+**Burn damage (HP-based, not a flat turn timer)**: `tick_burning_props()` — called directly from
+`player.gd`'s `_on_turn_started()` (alongside `tick_torches()`), NOT via a `TurnManager` signal —
+rolls `DungeonFloor._roll_fire_tick_damage()` (2d4) once per burning prop each tick and subtracts
+it from that prop's own `hp` — a Barrel (5 HP) typically burns down in 1-2 ticks, a Door (10 HP)
+in 2-3, rather than always exactly 3 turns. At 0 HP the prop is destroyed outright — sprite (+ a
+door's lock icon) freed, dict entry erased, `update_fog()` called once if anything burned this
+tick. A burnt door is **gone permanently** (unlike `close_door()`, which just re-closes it —
 burning removes the door from `_doors` entirely, so the tile stays passable forever, matching
-SPD's door-burns-to-EMBERS terrain change). While burning, the sprite is tinted `FIRE_TINT`
-(orange) as the only visual cue — no separate flame sprite/animation exists yet.
+SPD's door-burns-to-EMBERS terrain change). While burning, the Barrel/Door's own sprite is tinted
+`FIRE_TINT` (orange). This is a round-level tick (props aren't turn-having entities), fired once at
+the start of the player's own turn — i.e. "the start of the round," not tied to any one creature's
+action.
+
+**Visual "this is on fire" indicator**: `_update_burning_tiles_glow()` (`DungeonFloor`, called
+every `update_fog()`, same pooled-`Sprite2D` convention as the Light/Fog-Cloud/Torch glows above) —
+a translucent red overlay over every currently-burning Barrel, Door, and burning GRASS tile
+(`_burning_grass`, see below). Grass has no sprite of its own to tint (a `TileMapLayer` cell can't
+be modulated per-instance the way a `Sprite2D` can), so this overlay is its only visual cue; for a
+Barrel/Door it layers on top of the existing `FIRE_TINT` sprite tint. Not suppressed by
+`fov_bonus_overlay_suppressed` (that flag is specifically for FOV-bonus rings — Torch/darkvision —
+clashing with a spell-targeting preview; this is a different kind of indicator, same as the Fog
+Cloud/Light glows, which also ignore that flag).
+
+**Standing on a burning prop burns the occupant — at the start of THAT creature's own turn, not a
+single global tick**: `DungeonFloor.is_tile_on_fire(pos)` / `tick_fire_damage_for(entity: Entity)`
+are called individually by each entity right at the top of ITS OWN turn —
+`Player._on_turn_started()`, `Enemy.decide_turn()`, `Companion.decide_turn()` — rather than being
+swept once for everyone from a single round-level tick (direct owner request: the damage should
+land "at the start of their own turn," not at whatever moment a global tick happens to fire
+relative to that entity). `tick_fire_damage_for()` checks `entity.occupied_tiles()` (footprint-
+aware — matches a Large enemy's multi-tile occupancy) against `is_tile_on_fire()` (true for a
+burning DOOR **or** a currently-burning GRASS tile, `_burning_grass` — see below), rolls its own
+independent 2d4 Fire hit via `_roll_fire_damage_instance()` (a real `CombatMath.
+build_damage_instance()`/`encode_damage_instance()` roundtrip — NOT the bare-int
+`_roll_fire_tick_damage()` a prop's own HP-loss roll uses, since this roll's number IS shown to the
+player: every displayed damage number needs a hoverable `dmg:` tooltip per root CLAUDE.md's
+chat-log-tooltip rule, reusing the existing generic `fmt_dmg_tooltip()` handler — no new
+formatter needed), and handles the normal floater/log line/kill path (an enemy killed this
+way grants half `exp_reward` via `GameState.gain_exp()`, same reduced-reward precedent as a trap
+kill; a killed Enemy's `decide_turn()` returns a harmless `{"type": "wait"}` immediately afterward
+— `TurnManager._run_single_enemy()` already guards on `not stats.is_dead()` before calling
+`execute_turn()`, so bailing out early here is safe). **Barrels can never trigger this** —
+`is_walkable()`'s unconditional `_barrels.has(pos)` block means nothing can ever stand on one,
+burning or not. **Ordering bugfix**: `player.gd._on_turn_started()` calls `tick_fire_damage_for(self)`
+**before** `tick_burning_props()` (below) — the latter can destroy the very door/finish the very
+grass tile the player is standing on this same tick (its own HP-loss roll, or a grass tile's
+one-round expiry), which would silently rob the player of their last tick of damage if checked
+afterward.
+
+**Grass burning is a real, spreadable, one-round state — not an instant conversion**:
+`DungeonFloor._burning_grass: Dictionary[Vector2i, bool]` (a GRASS tile mid-burn) +
+`ignite_grass(pos) -> bool` (starts it — no-ops if not GRASS or already burning) +
+`_tick_burning_grass(pre_tick_snapshot)` (converts every tile that was ALREADY in `_burning_grass`
+before this round's own spread step to `TRAMPLED_GRASS` via `destroy_grass()`). Grass deliberately
+has **no HP pool** (direct owner design, unlike Barrel/Door) — it's a one-round transient flag: a
+tile ignited THIS tick survives untouched into `_burning_grass` (added after the pre-tick snapshot
+was taken), so it gets one full round to burn its occupant and spread to its neighbors (see below)
+before the FOLLOWING round's `_tick_burning_grass()` call finally converts it. Every fire source
+that ignites a GRASS tile — Fire Bolt/Fireball/Burning Hands hitting a tile (`spell_effects.gd`), a
+thrown lit Torch landing on grass (`player_throw_tool.gd`), and prop-to-grass/grass-to-grass spread
+below — calls `ignite_grass()` instead of `destroy_grass()` directly; `destroy_grass()` itself is
+now only ever called from `_tick_burning_grass()`, plus the unrelated "walking tramples grass
+underfoot" call sites in `player.gd`/`enemy.gd` (movement, nothing to do with fire).
 
 **Fire spreads from a burning entity standing adjacent** (Chebyshev 1) to an unlit barrel/door —
-`_check_burning_ignition_sources()`, called at the end of every `_tick_burning_props()` tick,
-checks `GameState.player_stats.burning_turns > 0` only (enemies don't carry a burning status yet
-— see `scripts/entities/CLAUDE.md`'s "Status effects" table). Covers e.g. a player who caught fire
-from a Fire Trap walking next to a barrel.
+`_check_burning_ignition_sources()`, called at the end of every `tick_burning_props()` tick, checks
+`GameState.player_stats.burning_turns > 0` only (enemies don't carry a burning status yet — see
+`scripts/entities/CLAUDE.md`'s "Status effects" table). Covers e.g. a player who caught fire from a
+Fire Trap walking next to a barrel.
+
+**Fire also spreads between adjacent flammable PROPS/GRASS themselves, at the start of every
+round** (direct owner request, independent of the player-adjacency check above) —
+`_spread_fire_between_props()`, called right after it from the same `tick_burning_props()` tick,
+right before `_tick_burning_grass()` finalizes anything: any currently-burning Barrel or Door
+ignites a not-yet-burning Barrel/Door **or GRASS tile** within Chebyshev 1 (8 directions — same as
+before); any currently-burning GRASS tile spreads only along the **4 cardinal directions**
+(`GRASS_SPREAD_DIRS` — N/S/E/W only, direct owner request: "should spread in the four main
+directions," an orthogonal wildfire rather than a diagonal blob) to its own grass/barrel/door
+neighbors, via `ignite_grass()`/`ignite_flammable()`. This is what makes a lit patch of grass
+actually travel outward one ring per round instead of just vanishing on the spot. Web/pavučina
+isn't flammable yet (no `"burning"` field on `_webs`) — extend this function once it is.
 
 ## Blacksmith prop (`_blacksmiths: Dictionary[Vector2i, Dictionary]`)
 Value keys: `sprite: Sprite2D`. Same dict-of-tile convention as `_barrels`/`_traps`/`_doors`, but no
@@ -257,7 +363,7 @@ guarded with `ResourceLoader.exists()` exactly like `BARREL_TEX_PATH` above, so 
 fully wired mechanically but renders no visible sprite until one is authored.
 
 ## Doors (`_doors: Dictionary[Vector2i, Dictionary]`)
-Value keys: `is_open: bool, locked: bool, sprite: Sprite2D, tex_open, tex_closed, lock_icon?: Sprite2D, burning?: bool, burn_turns?: int` — the last two only present once `ignite_flammable()` has set a door alight, see "Barrels + flammable props" above.
+Value keys: `is_open: bool, locked: bool, sprite: Sprite2D, tex_open, tex_closed, material: String, ac: int, hp: int, max_hp: int, lock_icon?: Sprite2D, burning?: bool` — `material`/`ac`/`hp`/`max_hp` are set at spawn time (Wood, AC 15, 10 HP — see "Barrels + flammable props" above); `lock_icon`/`burning` only appear once locked/`ignite_flammable()` has set the door alight respectively.
 
 Auto-opens when an entity steps on the tile; auto-closes when entity leaves. Enemies open and walk through in the same turn. **Locked doors**: enemies cannot open (blocked); player auto-unlocks by walking through. Purple sprite tint + small key icon = locked.
 

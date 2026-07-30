@@ -37,12 +37,16 @@ var _enemies: Array[Enemy] = []
 var _companions: Array = []  # Array[Companion] — ally entities processed in enemy phase
 var _traps: Dictionary = {}         # Vector2i → {name, damage, msg, sprite_node, revealed, triggered, is_push}
 var _doors: Dictionary = {}         # Vector2i → {is_open: bool, sprite: Sprite2D}
-var _barrels: Dictionary = {}       # Vector2i → {sprite: Sprite2D, burning: bool, burn_turns: int} — see "Flammable props" below
+var _barrels: Dictionary = {}       # Vector2i → {sprite: Sprite2D, burning: bool, material: String, ac: int, hp: int, max_hp: int} — see "Flammable props" below
 const BARREL_TEX_PATH: String = DungeonFloorData.OBJECTS_PATH + "crate.png"
 const BARREL_COUNT_MIN: int = 1
 const BARREL_COUNT_MAX: int = 3
-const FLAMMABLE_BURN_TURNS: int = 3
+const BARREL_MATERIAL: String = "wood"
+const BARREL_MAX_HP: int = 5
+const DOOR_MATERIAL: String = "wood"
+const DOOR_MAX_HP: int = 10
 const FIRE_TINT := Color(1.0, 0.5, 0.25)
+var _burning_grass: Dictionary = {}  # Vector2i → true — GRASS tiles mid-burn, see "Grass" below (ignite_grass()/_tick_burning_grass())
 
 # Blacksmith prop (BlacksmithRoom, always floor 4 — see scripts/dungeon/CLAUDE.md). Same
 # dict-of-tile convention as _barrels/_traps/_doors, but no burn/interaction state of its own —
@@ -52,6 +56,17 @@ const FIRE_TINT := Color(1.0, 0.5, 0.25)
 var _blacksmiths: Dictionary = {}   # Vector2i → {sprite: Sprite2D}
 const BLACKSMITH_TEX_PATH: String = DungeonFloorData.OBJECTS_PATH + "crate.png"
 const BLACKSMITH_TINT := Color(0.85, 0.55, 0.35)
+
+var _shopkeepers: Dictionary = {}   # Vector2i → {sprite: Sprite2D, stock: Array[Item]}
+# No dedicated shopkeeper sprite exists in the live sprites/ tree yet (see root CLAUDE.md's
+# Sprite Assets — sprites/characters/npcs/ is reserved but empty). Try a future dwarf NPC sprite
+# first (ResourceLoader.exists() guard, same convention as BLACKSMITH_TEX_PATH), falling back to
+# the same crate.png placeholder Blacksmith uses, distinguished by its own tint.
+const SHOPKEEPER_TEX_PATH: String = "res://sprites/characters/npcs/dwarf_m/idle_1.png"
+const SHOPKEEPER_FALLBACK_TEX_PATH: String = DungeonFloorData.OBJECTS_PATH + "crate.png"
+const SHOPKEEPER_TINT := Color(0.4, 0.75, 0.95)
+const SHOP_STOCK_MIN: int = 4
+const SHOP_STOCK_MAX: int = 6
 
 # Spider's Web ability (see scripts/entities/CLAUDE.md's "Spider" entry) — a lightweight
 # destructible-terrain dict, same shape/convention as _barrels above but with no burn-tick timer
@@ -84,6 +99,12 @@ var _torch_glow_sprites: Array[Sprite2D] = []  # lit floor/embedded Torch glow �
 var _torch_glow_tex: ImageTexture
 var _fog_cloud_sprites: Array[Sprite2D] = []  # Fog Cloud spell zone — see _update_fog_cloud_visual()
 var _fog_cloud_tex: ImageTexture
+var _fire_glow_sprites: Array[Sprite2D] = []  # every currently-burning Barrel/Door/grass tile — see _update_burning_tiles_glow()
+var _fire_glow_tex: ImageTexture
+var _torch_fov_ring_sprites: Array[Sprite2D] = []  # equipped-lit-Torch's +1 FOV ring — see _update_torch_fov_ring_glow()
+var _torch_fov_ring_tex: ImageTexture
+var _darkvision_ring_sprites: Array[Sprite2D] = []  # darkvision's own FOV ring — see _update_darkvision_ring_glow()
+var _darkvision_ring_tex: ImageTexture
 var _explored: Dictionary = {}
 var _visible_tiles: Dictionary = {}  # Vector2i → true; current FOV set, reset each update_fog
 var _fov_player_pos: Vector2i = Vector2i(-1, -1)
@@ -103,6 +124,32 @@ var _spell_range_last_key: String = ""
 var _spell_range_tex: ImageTexture
 const SPELL_RANGE_TINT := Color(0.25, 0.55, 0.95, 0.20)
 
+var _ranged_range_rects: Array[Sprite2D] = []
+var _ranged_range_last_key: String = ""
+var _ranged_range_tex: ImageTexture
+const RANGED_NORMAL_TINT := Color(0.35, 0.65, 1.0, 0.20)
+const RANGED_LONG_TINT := Color(0.05, 0.15, 0.5, 0.28)
+
+# While any targeting preview (Shift ranged-range, or a spell's blue/purple/red preview) is on
+# screen, the torch glow (yellow) and darkvision ring (dark gray) FOV-bonus overlays are hidden
+# outright rather than left to visually blend with the preview's own colors — set by
+# player.gd's per-frame preview updates, read by _update_torch_light_glow()/
+# _update_darkvision_ring_glow() (both no-op to fully hidden while this is true, regardless of
+# their own tile set) and consumed here to force an immediate re-show once the preview ends.
+var fov_bonus_overlay_suppressed: bool = false
+
+func set_fov_bonus_overlay_suppressed(v: bool) -> void:
+	if v == fov_bonus_overlay_suppressed:
+		return
+	fov_bonus_overlay_suppressed = v
+	if v:
+		for spr: Sprite2D in _torch_glow_sprites:
+			spr.visible = false
+		for spr: Sprite2D in _darkvision_ring_sprites:
+			spr.visible = false
+	elif _player != null:
+		update_fog(_player.grid_pos)
+
 # Octant multiplier tables for recursive shadowcasting (8 octants, Roguebasin standard)
 # X = center.x + dx * _SC_XX[i] + j * _SC_XY[i]
 # Y = center.y + dx * _SC_YX[i] + j * _SC_YY[i]
@@ -120,8 +167,15 @@ func _ready() -> void:
 	# call — refresh immediately so the glow sprite/lit tiles disappear right away instead of
 	# lingering until the player's next move.
 	GameState.light_source_changed.connect(func() -> void: update_fog(_fov_player_pos))
+	# Equipping/unequipping/lighting a Torch (or anything else touching effective_fov_radius())
+	# is a free action (no turn cost — root CLAUDE.md's "Equip is always a free action") but fog
+	# otherwise only recomputes on the player's NEXT real action — refresh immediately so the FOV
+	# ring visibly grows/shrinks the instant gear changes, not a turn later.
+	GameState.equipment_changed.connect(func() -> void: update_fog(_fov_player_pos))
 	TurnManager.player_turn_started.connect(_resolve_pending_thrown_weapon_drops)
-	TurnManager.player_turn_ending.connect(_tick_burning_props)
+	# tick_burning_props()/tick_fire_damage_for() are called directly from player.gd's
+	# _on_turn_started() now (start-of-round timing, see their own doc comments below) — no signal
+	# connection needed here.
 
 func _on_debug_jump_floor(_n: int) -> void:
 	_load_floor()
@@ -226,6 +280,12 @@ func _load_floor() -> void:
 		if ksp != null and is_instance_valid(ksp):
 			ksp.queue_free()
 	_blacksmiths.clear()
+
+	for pos: Vector2i in _shopkeepers:
+		var ssp: Sprite2D = _shopkeepers[pos].get("sprite")
+		if ssp != null and is_instance_valid(ssp):
+			ssp.queue_free()
+	_shopkeepers.clear()
 
 	for pos: Vector2i in _floor_item_sprites:
 		var sn: Sprite2D = _floor_item_sprites[pos]
@@ -371,6 +431,8 @@ func is_walkable(pos: Vector2i) -> bool:
 		return false
 	if _blacksmiths.has(pos):
 		return false
+	if _shopkeepers.has(pos):
+		return false
 	return _data.is_walkable(pos)
 
 func is_walkable_for_enemy(pos: Vector2i, excluding: Enemy = null) -> bool:
@@ -379,6 +441,8 @@ func is_walkable_for_enemy(pos: Vector2i, excluding: Enemy = null) -> bool:
 	if _barrels.has(pos):
 		return false
 	if _blacksmiths.has(pos):
+		return false
+	if _shopkeepers.has(pos):
 		return false
 	if _doors.has(pos):
 		# Closed doors block normal movement (enemy handles opening separately)
@@ -432,19 +496,56 @@ func update_fog(player_pos: Vector2i) -> void:
 	_fov_player_pos = player_pos
 	var stairs_was_known: bool = _explored.get(_data.stairs_pos, false)
 
-	_visible_tiles = _compute_shadowcast(player_pos, GameState.effective_fov_radius(player_pos))
+	var full_fov_radius: int = GameState.effective_fov_radius(player_pos)
+	_visible_tiles = _compute_shadowcast(player_pos, full_fov_radius)
 
-	# Light cantrip: ends the instant the lit object is no longer on its floor tile (picked up, or
-	# otherwise removed) — checked every fog recompute, same cadence the light itself refreshes.
-	# Cleared directly (not via GameState.clear_light_source()) to avoid re-entering update_fog():
-	# that function's own emit is wired straight back to update_fog() (see _ready() below), and
-	# we're already mid-update here — this same call handles the resulting visual refresh below.
+	# Torch/darkvision FOV bonus rings — tinted overlays diffed against progressively larger
+	# shadowcasts, in the SAME order effective_fov_radius() sums them (base → torch → darkvision),
+	# so the torch's ring always sits closer to the player and darkvision's ring always sits
+	# beyond it, matching the real 5e stacking (a torch's light only reaches so far; darkvision
+	# sees further into the dark past it). Both empty outright when blinded — is_blinded() already
+	# zeroes every bonus term inside effective_fov_radius(), so there's no "extra" radius to ring.
+	var torch_ring_tiles: Dictionary = {}
+	var darkvision_ring_tiles: Dictionary = {}
+	if not GameState.is_blinded(player_pos):
+		var base_radius: int = DungeonFloor.FOV_RADIUS + GameState.fov_radius_bonus
+		var torch_bonus: int = 1 if GameState.has_lit_torch_equipped() else 0
+		var dark_bonus: int = GameState.player_stats.darkvision_bonus
+		var base_tiles: Dictionary = _compute_shadowcast(player_pos, base_radius)
+		var torch_tiles: Dictionary = _compute_shadowcast(player_pos, base_radius + torch_bonus) if torch_bonus > 0 else base_tiles
+		if torch_bonus > 0:
+			for pos: Vector2i in torch_tiles:
+				if not base_tiles.has(pos):
+					torch_ring_tiles[pos] = true
+		if dark_bonus > 0:
+			for pos: Vector2i in _visible_tiles:
+				if not torch_tiles.has(pos):
+					darkvision_ring_tiles[pos] = true
+	_update_torch_fov_ring_glow(torch_ring_tiles)
+	_update_darkvision_ring_glow(darkvision_ring_tiles)
+
+	# Light cantrip: ends the instant the lit thing is no longer there (item picked up, door
+	# burnt away, grass destroyed/trampled by fire, barrel burnt down) — checked every fog
+	# recompute, same cadence the light itself refreshes. Cleared directly (not via
+	# GameState.clear_light_source()) to avoid re-entering update_fog(): that function's own emit
+	# is wired straight back to update_fog() (see _ready() below), and we're already mid-update
+	# here — this same call handles the resulting visual refresh below.
 	if GameState.light_source_pos != Vector2i(-1, -1):
-		var still_there: bool = GameState.light_source_item != null \
-			and get_items_at(GameState.light_source_pos).has(GameState.light_source_item)
+		var still_there: bool
+		match GameState.light_source_kind:
+			"door":
+				still_there = has_door_at(GameState.light_source_pos)
+			"grass":
+				still_there = get_tile_type(GameState.light_source_pos) == DungeonData.TileType.GRASS
+			"barrel":
+				still_there = has_barrel_at(GameState.light_source_pos)
+			_:
+				still_there = GameState.light_source_item != null \
+					and get_items_at(GameState.light_source_pos).has(GameState.light_source_item)
 		if not still_there:
 			GameState.light_source_pos = Vector2i(-1, -1)
 			GameState.light_source_item = null
+			GameState.light_source_kind = "item"
 
 	# A real light source, not cosmetic — union its own shadowcast (walls still block it, same
 	# algorithm as the player's own FOV) into the visible-tiles set every time fog recomputes, so
@@ -468,6 +569,7 @@ func update_fog(player_pos: Vector2i) -> void:
 		_visible_tiles[pos] = true
 	_update_torch_light_glow(torch_tiles)
 	_update_fog_cloud_visual()
+	_update_burning_tiles_glow()
 
 	for y: int in _data.height:
 		for x: int in _data.width:
@@ -500,25 +602,51 @@ func update_fog(player_pos: Vector2i) -> void:
 # (a Node2D), not a CanvasLayer.
 var _aoe_preview_tex: ImageTexture
 
-func show_aoe_preview(center: Vector2i, radius: int) -> void:
+# `center_in_range` (default true): whether the impact point itself is a legally castable target
+# (Chebyshev distance vs the spell's own range — same check try_cast_at() enforces). When false,
+# the caster is aiming at a tile they couldn't actually cast at — footprint tiles still preview
+# (purple), but no enemy anywhere in the footprint tints red, since nothing in an invalid cast
+# actually gets hit. When true, every enemy in the footprint tints red regardless of its own
+# individual distance from the caster — a splash spell aimed at the LAST valid tile in range still
+# correctly reds out enemies caught in the overhang beyond that range circle, since the blast
+# radius is centered on a legitimately-reachable impact point.
+func show_aoe_preview(center: Vector2i, radius: int, center_in_range: bool = true) -> void:
 	var tiles: Array[Vector2i] = []
 	for dy: int in range(-radius, radius + 1):
 		for dx: int in range(-radius, radius + 1):
 			if dx * dx + dy * dy <= radius * radius:
-				tiles.append(center + Vector2i(dx, dy))
-	_paint_aoe_preview_tiles("sphere,%d,%d,%d" % [center.x, center.y, radius], tiles, center)
+				var t: Vector2i = center + Vector2i(dx, dy)
+				if _in_grid_bounds(t):
+					tiles.append(t)
+	_paint_aoe_preview_tiles("sphere,%d,%d,%d,%d" % [center.x, center.y, radius, int(center_in_range)], tiles, center_in_range)
+
+# Every tile-preview overlay (blue max-reach backdrop, purple/red sphere footprint, two-tone ranged
+# backdrop) is a raw Euclidean/Chebyshev disc computed from the caster's position with no wall/LOS
+# filtering by design (see this section's own doc comments on show_aoe_preview()/
+# show_spell_range_preview()) — but that also means, unfiltered, it would happily paint tiles past
+# the map's own edge (VOID, x/y outside `_data.width`/`_data.height`) for a caster standing near a
+# border. This is the one bounds check every such preview clips against — never a walkability/LOS
+# filter, just "is this coordinate part of the level at all".
+func _in_grid_bounds(pos: Vector2i) -> bool:
+	return pos.x >= 0 and pos.y >= 0 and pos.x < _data.width and pos.y < _data.height
 
 # Cone-shaped spell preview (Burning Hands) — same pooled-Sprite2D tint as show_aoe_preview()
 # above, just fed the cone's tile set (SpellEffects.cone_tiles(), shared with the actual blast
-# resolver so the preview and the real footprint always agree) instead of a Euclidean disc.
+# resolver so the preview and the real footprint always agree) instead of a Euclidean disc. A cone
+# is always self-centered and direction-only (see try_cast_at()'s own exemption), so there's no
+# "out of range aim point" concept here — every enemy caught in the cone always tints red.
 func show_cone_preview(origin: Vector2i, aim: Vector2i, length: int) -> void:
 	var key: String = "cone,%d,%d,%d,%d,%d" % [origin.x, origin.y, aim.x, aim.y, length]
-	_paint_aoe_preview_tiles(key, SpellEffects.cone_tiles(origin, aim, length, self), aim)
+	_paint_aoe_preview_tiles(key, SpellEffects.cone_tiles(origin, aim, length, self), true)
 
-# `exact_target_tile` is the one tile the player is precisely aiming at (a sphere's center, a
-# cone's hovered aim tile) — if a known (non-invisible) enemy stands there, that single tile tints
-# red ("to be hit") instead of the flat purple every other footprint tile gets.
-func _paint_aoe_preview_tiles(key: String, tiles: Array[Vector2i], exact_target_tile: Vector2i = Vector2i(-999999, -999999)) -> void:
+# Every tile in the footprint that has a known (non-invisible) enemy standing on it tints red
+# ("to be hit") instead of the flat purple every other footprint tile gets — a splash spell
+# (Burning Hands, Fireball) hitting several enemies shows all of them red, not just the one exact
+# tile the player is precisely aiming at. `allow_enemy_tint` (see show_aoe_preview()'s
+# `center_in_range` doc above) gates whether ANY tile in this footprint is allowed to tint red at
+# all — every tile still shows purple regardless, since the footprint preview itself is always
+# informative even when the exact aim point can't currently be cast at.
+func _paint_aoe_preview_tiles(key: String, tiles: Array[Vector2i], allow_enemy_tint: bool = true) -> void:
 	if key == _aoe_preview_last_key:
 		return
 	_aoe_preview_last_key = key
@@ -540,10 +668,23 @@ func _paint_aoe_preview_tiles(key: String, tiles: Array[Vector2i], exact_target_
 		if i < tiles.size():
 			var t: Vector2i = tiles[i]
 			spr.position = Vector2(t.x * TILE_SIZE, t.y * TILE_SIZE)
-			spr.modulate = AOE_PREVIEW_ENEMY_TINT if (t == exact_target_tile and get_targetable_enemy_at(t) != null) else AOE_PREVIEW_TINT
+			spr.modulate = AOE_PREVIEW_ENEMY_TINT if (allow_enemy_tint and get_targetable_enemy_at(t) != null) else AOE_PREVIEW_TINT
 			spr.visible = true
 		else:
 			spr.visible = false
+
+# Single-target ENEMY spell / Shift-hover ranged-weapon preview — no AoE shape, so there's no
+# purple footprint to paint; the hovered tile only ever shows anything at all (a red highlight)
+# when a known, targetable enemy actually stands there AND that tile is within `in_range` (default
+# true — the exact attack/cast range, Chebyshev for spells or the weapon's own long-range check for
+# ranged, computed by the caller). An enemy standing beyond max range never tints red, regardless
+# of whether it happens to be visible/hovered — a shot/cast that can't actually reach it shouldn't
+# imply it would be hit.
+func show_single_target_preview(tile: Vector2i, in_range: bool = true) -> void:
+	if in_range and get_targetable_enemy_at(tile) != null:
+		_paint_aoe_preview_tiles("single,%d,%d" % [tile.x, tile.y], [tile])
+	else:
+		hide_aoe_preview()
 
 # Blue "maximum reach" preview — every tile within `radius` of `center` (the caster) that the
 # currently-armed spell could conceivably hit, shown as a wide static backdrop while any spell is
@@ -562,8 +703,14 @@ func show_spell_range_preview(center: Vector2i, radius: int) -> void:
 	var tiles: Array[Vector2i] = []
 	for dy: int in range(-radius, radius + 1):
 		for dx: int in range(-radius, radius + 1):
-			if dx * dx + dy * dy <= radius * radius:
-				tiles.append(center + Vector2i(dx, dy))
+			# Chebyshev, not Euclidean — must match try_cast_at()'s own range check exactly (see
+			# player_spellcasting.gd's dist_cheb comment), or a diagonal tile at radius 1 (a touch
+			# spell like Mage Armor/Shocking Grasp) reads as "out of range" in this backdrop despite
+			# being a perfectly valid cast.
+			if maxi(absi(dx), absi(dy)) <= radius:
+				var t: Vector2i = center + Vector2i(dx, dy)
+				if _in_grid_bounds(t):
+					tiles.append(t)
 	while _spell_range_rects.size() < tiles.size():
 		var spr := Sprite2D.new()
 		spr.texture = _spell_range_tex
@@ -586,6 +733,60 @@ func hide_spell_range_preview() -> void:
 		return
 	_spell_range_last_key = ""
 	for spr: Sprite2D in _spell_range_rects:
+		spr.visible = false
+
+# Ranged-weapon targeting preview (Shift+hover) — two-tone reach backdrop, driven every frame from
+# player.gd's ranged-preview update while Shift is held and a ranged weapon is equipped, no spell
+# armed. Light blue = normal range (full accuracy); darker blue = the extra long-range band (shot
+# still possible but rolls with Disadvantage) — same normal/long split as
+# `PlayerRanged.is_ranged_target_in_range()`/`ranged_shot_disadvantage()`. The hovered enemy tile's
+# own red highlight is handled separately by `show_single_target_preview()` (shared with
+# single-target spells) — this function only paints the backdrop.
+func show_ranged_range_preview(center: Vector2i, normal_radius: int, long_radius: int) -> void:
+	var key: String = "ranged,%d,%d,%d,%d" % [center.x, center.y, normal_radius, long_radius]
+	if key == _ranged_range_last_key:
+		return
+	_ranged_range_last_key = key
+	if _ranged_range_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color(1, 1, 1, 1))
+		_ranged_range_tex = ImageTexture.create_from_image(img)
+	var tiles: Array[Vector2i] = []
+	var tints: Array[Color] = []
+	for dy: int in range(-long_radius, long_radius + 1):
+		for dx: int in range(-long_radius, long_radius + 1):
+			var dist_sq: int = dx * dx + dy * dy
+			var t: Vector2i = center + Vector2i(dx, dy)
+			if not _in_grid_bounds(t):
+				continue
+			if dist_sq <= normal_radius * normal_radius:
+				tiles.append(t)
+				tints.append(RANGED_NORMAL_TINT)
+			elif dist_sq <= long_radius * long_radius:
+				tiles.append(t)
+				tints.append(RANGED_LONG_TINT)
+	while _ranged_range_rects.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _ranged_range_tex
+		spr.centered = false
+		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
+		spr.z_index = 1
+		add_child(spr)
+		_ranged_range_rects.append(spr)
+	for i: int in _ranged_range_rects.size():
+		var spr: Sprite2D = _ranged_range_rects[i]
+		if i < tiles.size():
+			spr.position = Vector2(tiles[i].x * TILE_SIZE, tiles[i].y * TILE_SIZE)
+			spr.modulate = tints[i]
+			spr.visible = true
+		else:
+			spr.visible = false
+
+func hide_ranged_range_preview() -> void:
+	if _ranged_range_last_key == "":
+		return
+	_ranged_range_last_key = ""
+	for spr: Sprite2D in _ranged_range_rects:
 		spr.visible = false
 
 # Light cantrip's visual glow — tints every tile actually reached by the light's own shadowcast
@@ -621,6 +822,69 @@ func _update_light_source_glow(lit_tiles: Dictionary) -> void:
 		else:
 			spr.visible = false
 
+# Equipped-lit-Torch's own +1 FOV bonus ring (distinct from the floor/embedded Torch light bubble
+# below) — a faint, pale-yellow tint over just the outermost ring of tiles the torch itself grants,
+# so the extra visibility reads as a small noticeable bonus without overpowering the rest of FOV.
+func _update_torch_fov_ring_glow(ring_tiles: Dictionary) -> void:
+	if ring_tiles.is_empty():
+		for spr: Sprite2D in _torch_fov_ring_sprites:
+			spr.visible = false
+		return
+	if _torch_fov_ring_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color(1, 1, 1, 1))
+		_torch_fov_ring_tex = ImageTexture.create_from_image(img)
+	var tiles: Array = ring_tiles.keys()
+	while _torch_fov_ring_sprites.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _torch_fov_ring_tex
+		spr.centered = false
+		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
+		spr.z_index = 2
+		add_child(spr)
+		_torch_fov_ring_sprites.append(spr)
+	for i: int in _torch_fov_ring_sprites.size():
+		var spr: Sprite2D = _torch_fov_ring_sprites[i]
+		if i < tiles.size():
+			var pos: Vector2i = tiles[i]
+			spr.position = Vector2(pos.x * TILE_SIZE, pos.y * TILE_SIZE)
+			spr.modulate = Color(1.0, 0.95, 0.55, 0.16)
+			spr.visible = true
+		else:
+			spr.visible = false
+
+# Darkvision's own FOV bonus ring — the ring of tiles seen only because of darkvision (standard or
+# superior, same field just a bigger radius — see Stats.darkvision_bonus), always the OUTERMOST
+# ring (computed past the torch ring in update_fog(), never overlapping it). Tinted a dim, desaturated
+# gray rather than the torch's warm yellow — darkvision reads as monochrome/dusky sight, not light.
+func _update_darkvision_ring_glow(ring_tiles: Dictionary) -> void:
+	if ring_tiles.is_empty() or fov_bonus_overlay_suppressed:
+		for spr: Sprite2D in _darkvision_ring_sprites:
+			spr.visible = false
+		return
+	if _darkvision_ring_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color(1, 1, 1, 1))
+		_darkvision_ring_tex = ImageTexture.create_from_image(img)
+	var tiles: Array = ring_tiles.keys()
+	while _darkvision_ring_sprites.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _darkvision_ring_tex
+		spr.centered = false
+		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
+		spr.z_index = 2
+		add_child(spr)
+		_darkvision_ring_sprites.append(spr)
+	for i: int in _darkvision_ring_sprites.size():
+		var spr: Sprite2D = _darkvision_ring_sprites[i]
+		if i < tiles.size():
+			var pos: Vector2i = tiles[i]
+			spr.position = Vector2(pos.x * TILE_SIZE, pos.y * TILE_SIZE)
+			spr.modulate = Color(0.25, 0.27, 0.32, 0.38)
+			spr.visible = true
+		else:
+			spr.visible = false
+
 # Torch: sweeps every lit-and-unburnt Torch currently lying on this floor's ground or embedded in
 # one of its live enemies, and unions a radius-2 shadowcast (GameState.TORCH_LIGHT_RADIUS) per
 # torch found into a single result dict — floor torches at their own tile, embedded torches at
@@ -645,7 +909,7 @@ func _compute_torch_light_tiles() -> Dictionary:
 # color is) — same pooled-Sprite2D convention as _update_light_source_glow() above, just its own
 # sprite pool/texture so the two light sources' visuals never fight over the same nodes.
 func _update_torch_light_glow(lit_tiles: Dictionary) -> void:
-	if lit_tiles.is_empty():
+	if lit_tiles.is_empty() or fov_bonus_overlay_suppressed:
 		for spr: Sprite2D in _torch_glow_sprites:
 			spr.visible = false
 		return
@@ -676,6 +940,12 @@ func _update_torch_light_glow(lit_tiles: Dictionary) -> void:
 # Torch: ticks down torch_turns_remaining once per real turn for every lit Torch lying on this
 # floor's ground or embedded in one of its live enemies — the counterpart to player.gd's own
 # equipped/quickbar/bag sweep (see _on_turn_started()). Called from there once per real turn.
+# A lit Torch **embedded in an enemy** (thrown-and-landed, see scripts/items/CLAUDE.md's "Torch")
+# also burns them for a fresh 2d4 Fire hit every round it stays lodged and lit — same rate as a
+# creature standing on a burning door (tick_fire_damage_for() below), just applied through the
+# embedded weapon instead of the tile. A lit Torch merely lying on the floor does NOT
+# damage anything standing on its tile (unlike a burning door) — direct owner's ask was specifically
+# about an embedded torch continuing to burn whoever it's stuck in, not floor-dropped torches.
 func tick_torches() -> void:
 	for pos: Vector2i in _floor_items.keys():
 		for it: Item in _floor_items[pos]:
@@ -683,12 +953,33 @@ func tick_torches() -> void:
 				it.torch_turns_remaining -= 1
 				if it.torch_turns_remaining <= 0:
 					GameState.burn_out_torch(it)
-	for enemy: Enemy in get_all_enemies():
+	for enemy: Enemy in get_all_enemies().duplicate():
+		if not is_instance_valid(enemy):
+			continue
+		var still_burning: bool = false
 		for it: Item in enemy.embedded_items:
 			if it.is_torch and it.torch_lit:
 				it.torch_turns_remaining -= 1
 				if it.torch_turns_remaining <= 0:
 					GameState.burn_out_torch(it)
+				else:
+					still_burning = true
+		if still_burning and not enemy.stats.is_dead():
+			var inst: Dictionary = _roll_fire_damage_instance()
+			var result: Dictionary = enemy.take_typed_damage(int(inst["subtotal"]), "Fire")
+			var actual: int = result["actual"]
+			inst["final"] = actual
+			inst["resist_mul"] = result["mul"]
+			var dmg_meta: String = CombatMath.encode_damage_instance(inst)
+			enemy.update_hp_bar()
+			show_damage(enemy.position, actual, false, CombatMath.damage_type_color("Fire"))
+			var is_lethal: bool = enemy.stats.is_dead()
+			GameState.game_log("%s is scorched by the lodged torch for [url=%s][color=yellow]%d[/color][/url] Fire dmg.%s" % [
+				enemy.display_name, dmg_meta, actual, CombatMath.death_suffix(is_lethal)])
+			if is_lethal:
+				GameState.gain_exp(maxi(1, enemy.exp_reward / 2))
+				remove_enemy(enemy)
+				enemy.die()
 
 # Fog Cloud spell — a persistent gray tint over GameState.fog_cloud_pos/radius (a raw Euclidean
 # disc, same distance check as GameState.is_in_fog_cloud() and show_aoe_preview()'s own preview
@@ -724,6 +1015,48 @@ func _update_fog_cloud_visual() -> void:
 		var spr: Sprite2D = _fog_cloud_sprites[i]
 		if i < tiles.size():
 			spr.position = Vector2(tiles[i].x * TILE_SIZE, tiles[i].y * TILE_SIZE)
+			spr.visible = true
+		else:
+			spr.visible = false
+
+## Visual "this is on fire" indicator for every currently-burning tile — Barrels/Doors (which
+## already get their own sprite's FIRE_TINT modulate) AND burning GRASS (`_burning_grass`, which
+## has no sprite of its own to tint — a TileMapLayer cell can't be modulated per-instance the way
+## a Sprite2D can). A translucent red overlay, same pooled-Sprite2D convention as the Fog Cloud/
+## Light/Torch glows above, rebuilt every update_fog() call — needs no dedicated signal, just
+## naturally tracks whatever's burning right now (including a barrel/door/grass tile going out).
+func _update_burning_tiles_glow() -> void:
+	var tiles: Array[Vector2i] = []
+	for pos: Vector2i in _barrels.keys():
+		if _barrels[pos]["burning"]:
+			tiles.append(pos)
+	for pos: Vector2i in _doors.keys():
+		if _doors[pos].get("burning", false):
+			tiles.append(pos)
+	for pos: Vector2i in _burning_grass.keys():
+		tiles.append(pos)
+	if tiles.is_empty():
+		for spr: Sprite2D in _fire_glow_sprites:
+			spr.visible = false
+		return
+	if _fire_glow_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color(1, 1, 1, 1))
+		_fire_glow_tex = ImageTexture.create_from_image(img)
+	while _fire_glow_sprites.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _fire_glow_tex
+		spr.centered = false
+		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
+		spr.z_index = 2
+		add_child(spr)
+		_fire_glow_sprites.append(spr)
+	var tint := Color(1.0, 0.15, 0.05, 0.38)
+	for i: int in _fire_glow_sprites.size():
+		var spr: Sprite2D = _fire_glow_sprites[i]
+		if i < tiles.size():
+			spr.position = Vector2(tiles[i].x * TILE_SIZE, tiles[i].y * TILE_SIZE)
+			spr.modulate = tint
 			spr.visible = true
 		else:
 			spr.visible = false
@@ -968,6 +1301,46 @@ func find_path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 		cur = came_from[cur]
 	return path
 
+# Magic Missile's "seeking dart" targeting (Spell.bypasses_los, see spell.gd) — is there a route a
+# walking character could physically take from `from` to `to`, EXCEPT chasms don't block it here
+# (the missile flies over one; a character on foot couldn't) — direct owner spec, BG3-inspired.
+# Deliberately NOT gated on `_explored` (unlike find_path(), which is real click-to-move and
+# shouldn't path through unseen fog) — a spell target can be blind-cast at an unexplored tile, same
+# as every other spell/ranged attack in this codebase (see scripts/entities/CLAUDE.md's spellcasting
+# sections). 8-directional BFS, same shape as find_path() otherwise; `to` itself is always treated
+# as enterable (an enemy's own tile) even if `_is_walkable_ignoring_chasm()` would say no (matches
+# find_path()'s `or nxt == to` treatment of the destination tile).
+func has_walkable_route_ignoring_chasms(from: Vector2i, to: Vector2i) -> bool:
+	if from == to:
+		return true
+	var visited: Dictionary = {from: true}
+	var queue: Array[Vector2i] = [from]
+	var dirs: Array[Vector2i] = [Vector2i(0,-1), Vector2i(0,1), Vector2i(-1,0), Vector2i(1,0),
+		Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]
+	while not queue.is_empty():
+		var cur: Vector2i = queue.pop_front()
+		if cur == to:
+			return true
+		for d: Vector2i in dirs:
+			var nxt: Vector2i = cur + d
+			if visited.has(nxt):
+				continue
+			if nxt != to and not _is_walkable_ignoring_chasm(nxt):
+				continue
+			visited[nxt] = true
+			queue.append(nxt)
+	return false
+
+# WALL/VOID still block; every other tile type passes — CHASM included (the one deliberate
+# difference from `is_walkable()`/`_data.is_walkable()`), same reasoning as find_path()'s "closed
+# doors are passable" comment: a real physical obstacle (barrel/blacksmith/shopkeeper prop) still
+# blocks, since those are solid whether you're walking or the dart is flying past at head height.
+func _is_walkable_ignoring_chasm(pos: Vector2i) -> bool:
+	if _barrels.has(pos) or _blacksmiths.has(pos) or _shopkeepers.has(pos):
+		return false
+	var t: DungeonData.TileType = get_tile_type(pos)
+	return t != DungeonData.TileType.WALL and t != DungeonData.TileType.VOID
+
 func _bfs_reachable(from: Vector2i, to: Vector2i, exclude: Array) -> bool:
 	var visited: Dictionary = {}
 	var queue: Array = [from]
@@ -1050,6 +1423,8 @@ func is_walkable_for_companion(pos: Vector2i) -> bool:
 	if _barrels.has(pos):
 		return false
 	if _blacksmiths.has(pos):
+		return false
+	if _shopkeepers.has(pos):
 		return false
 	if _doors.has(pos) and not _doors[pos]["is_open"]:
 		return false
@@ -1495,6 +1870,18 @@ func reveal_trap(pos: Vector2i) -> bool:
 		sprite_node.modulate.a = 1.0
 	return true
 
+## SecretRoom hidden-door reveal (special-rooms-economy-design.md §4.4) — undoes _spawn_secret_room()'s
+## hide: un-hides the door's own Sprite2D (already built by _spawn_doors(), never removed, just
+## invisible), restores the tilemap cell from the WALL-lookalike back to FLOOR, and logs the find.
+## Only ever called from search_around()'s hidden-door loop.
+func _reveal_secret_door(pos: Vector2i) -> void:
+	_doors[pos]["hidden"] = false
+	var sp: Sprite2D = _doors[pos]["sprite"]
+	if is_instance_valid(sp):
+		sp.visible = true
+	tilemap.set_cell(pos, SOURCE_FLOOR, ATLAS_ORIGIN)
+	GameState.game_log("[color=yellow]You discover a hidden door![/color]")
+
 func disarm_trap(pos: Vector2i) -> void:
 	if not _traps.has(pos):
 		return
@@ -1642,6 +2029,19 @@ func search_around(pos: Vector2i, radius: int = 2) -> int:
 				continue
 			if reveal_trap(trap_pos):
 				found += 1
+	# SecretRoom hidden doors (special-rooms-economy-design.md §4.4): reads the raw _doors dict
+	# directly, bypassing has_door_at()'s hidden-filter — this loop is the ONE place a hidden door
+	# can ever be found. Logs its own line per door via _reveal_secret_door(); deliberately not
+	# folded into `found`/the trap-count summary PlayerActions.search_action() builds from it.
+	for door_pos: Vector2i in _doors.keys():
+		if not _doors[door_pos].get("hidden", false):
+			continue
+		var d: Vector2i = door_pos - pos
+		if absi(d.x) > radius or absi(d.y) > radius:
+			continue
+		if not has_line_of_sight(pos, door_pos):
+			continue
+		_reveal_secret_door(door_pos)
 	return found
 
 func get_unrevealed_traps() -> Array[Vector2i]:
@@ -1841,10 +2241,15 @@ func _spawn_doors() -> void:
 			var ts: Vector2 = tex_closed.get_size()
 			sprite.scale = Vector2(float(TILE_SIZE) / ts.x, float(TILE_SIZE) / ts.y)
 		entities.add_child(sprite)
-		_doors[pos] = {"is_open": false, "locked": false, "player_locked": false, "sprite": sprite, "tex_open": tex_open, "tex_closed": tex_closed}
+		_doors[pos] = {"is_open": false, "locked": false, "player_locked": false, "sprite": sprite, "tex_open": tex_open, "tex_closed": tex_closed,
+			"material": DOOR_MATERIAL, "ac": MaterialTable.ac_for(DOOR_MATERIAL), "hp": DOOR_MAX_HP, "max_hp": DOOR_MAX_HP}
 
+## Returns false for a still-hidden SecretRoom door (special-rooms-economy-design.md §4.4) —
+## every door-interaction path (bump-open, F/RMB priority, enemy pathing, ignite_flammable(),
+## _spawn_locked_doors()' candidate scan) reads THIS query, never the raw _doors dict, so a hidden
+## door stays invisible to all of them. Only search_around() reads _doors directly to find one.
 func has_door_at(pos: Vector2i) -> bool:
-	return _doors.has(pos)
+	return _doors.has(pos) and not _doors[pos].get("hidden", false)
 
 func is_door_open(pos: Vector2i) -> bool:
 	if not _doors.has(pos):
@@ -1989,7 +2394,8 @@ func _place_barrel(pos: Vector2i, tex: Texture2D) -> void:
 		var ts: Vector2 = tex.get_size()
 		sprite.scale = Vector2(float(TILE_SIZE) / ts.x, float(TILE_SIZE) / ts.y)
 	entities.add_child(sprite)
-	_barrels[pos] = {"sprite": sprite, "burning": false, "burn_turns": 0}
+	_barrels[pos] = {"sprite": sprite, "burning": false, "material": BARREL_MATERIAL,
+		"ac": MaterialTable.ac_for(BARREL_MATERIAL), "hp": BARREL_MAX_HP, "max_hp": BARREL_MAX_HP}
 
 func has_barrel_at(pos: Vector2i) -> bool:
 	return _barrels.has(pos)
@@ -2040,15 +2446,14 @@ func ignite_flammable(pos: Vector2i) -> bool:
 		return false
 	if _barrels.has(pos) and not _barrels[pos]["burning"]:
 		_barrels[pos]["burning"] = true
-		_barrels[pos]["burn_turns"] = FLAMMABLE_BURN_TURNS
 		var sp: Sprite2D = _barrels[pos]["sprite"]
 		if is_instance_valid(sp):
 			sp.modulate = FIRE_TINT
 		GameState.game_log("[color=orange]The barrel catches fire![/color]")
 		return true
-	if _doors.has(pos) and not _doors[pos]["locked"] and not _doors[pos].get("burning", false):
+	if _doors.has(pos) and not _doors[pos]["locked"] and not _doors[pos].get("burning", false) \
+			and not _doors[pos].get("hidden", false):
 		_doors[pos]["burning"] = true
-		_doors[pos]["burn_turns"] = FLAMMABLE_BURN_TURNS
 		var sp: Sprite2D = _doors[pos]["sprite"]
 		if is_instance_valid(sp):
 			sp.modulate = FIRE_TINT
@@ -2056,18 +2461,103 @@ func ignite_flammable(pos: Vector2i) -> bool:
 		return true
 	return false
 
-# Ticks every burning barrel/door once per real player turn (TurnManager.player_turn_ending —
-# same cadence status effects and Witch Bolt tick on). At 0 turns remaining, the prop is destroyed:
-# a barrel's sprite/entry is removed outright (tile becomes plain walkable floor again); a door's
-# sprite/lock-icon/entry is removed outright too (permanently gone, unlike close_door() — the tile
-# stays passable forever, matching SPD's door-burns-to-EMBERS behavior).
-func _tick_burning_props() -> void:
+## Rolls 2d4 — the fire damage rate for both a burning prop's own HP loss and a creature caught
+## standing on one, per direct owner design (both use the same die, just applied to different HP
+## pools). Two independent rolls per tick (see below), not one shared number.
+static func _roll_fire_tick_damage() -> int:
+	var rolls: Array[int] = Rng.roll_dice(2, 4)
+	var total: int = 0
+	for v: int in rolls:
+		total += v
+	return total
+
+## Same 2d4 roll as _roll_fire_tick_damage(), but packed into a real CombatMath damage instance
+## instead of a bare int — every damage number actually shown to the player in the chat log must
+## carry a hoverable per-die tooltip breakdown (root CLAUDE.md's chat-log-tooltip RULE: "every new
+## damage source must get a [url=kind:key=val,...] tag on the number... never log bare damage
+## numbers"). Only used by tick_fire_damage_for()/tick_torches() below, where the roll IS shown as
+## a number — the barrel/door's own HP-loss roll above never displays a number, so it stays on the
+## plain int helper.
+static func _roll_fire_damage_instance() -> Dictionary:
+	var rolls: Array[int] = Rng.roll_dice(2, 4)
+	return CombatMath.build_damage_instance(rolls, 4, [], false, "Fire")
+
+## Whether `pos` is a currently-burning DOOR or a currently-burning GRASS tile — both stay
+## walkable while on fire (Barrels remain a solid `is_walkable()` obstacle for their entire burn
+## regardless of `"burning"`, so nothing can ever stand on one). Public — Player/Enemy/Companion
+## each ask this about their own tile(s) at the start of their own turn, see
+## tick_fire_damage_for() below.
+func is_tile_on_fire(pos: Vector2i) -> bool:
+	return (_doors.has(pos) and _doors[pos].get("burning", false)) or _burning_grass.has(pos)
+
+## Deals a fresh, independent 2d4 Fire hit to `entity` if it's currently standing on a burning
+## door OR currently-burning grass tile — called from EACH entity's own turn-start
+## (Player._on_turn_started(), Enemy.decide_turn(), Companion.decide_turn()), not from a single
+## global per-round sweep, so the damage always lands precisely "at the start of that creature's
+## own turn" (direct owner request) rather than wherever a single round-level tick happens to sit
+## relative to whichever entity is standing there. Footprint-aware via occupied_tiles() (works for
+## a Large enemy's multi-tile occupancy same as a normal 1x1 entity).
+func tick_fire_damage_for(entity: Entity) -> void:
+	if entity == null or not is_instance_valid(entity):
+		return
+	var on_fire: bool = false
+	for t: Vector2i in entity.occupied_tiles():
+		if is_tile_on_fire(t):
+			on_fire = true
+			break
+	if not on_fire:
+		return
+	if entity is Player:
+		if GameState.player_stats.is_dead():
+			return
+		var inst: Dictionary = _roll_fire_damage_instance()
+		var actual: int = GameState.take_damage_raw(int(inst["subtotal"]), false, "Fire")
+		inst["final"] = actual
+		var dmg_meta: String = CombatMath.encode_damage_instance(inst)
+		show_damage(entity.position, actual, true, CombatMath.damage_type_color("Fire"))
+		GameState.game_log("[color=orange]You are burned by the flames for [url=%s][color=yellow]%d[/color][/url] Fire dmg.[/color]" % [dmg_meta, actual])
+		GameState.check_player_death()
+	elif entity is Enemy:
+		var e: Enemy = entity
+		if e.stats.is_dead():
+			return
+		var inst2: Dictionary = _roll_fire_damage_instance()
+		var result: Dictionary = e.take_typed_damage(int(inst2["subtotal"]), "Fire")
+		var actual2: int = result["actual"]
+		inst2["final"] = actual2
+		inst2["resist_mul"] = result["mul"]
+		var dmg_meta2: String = CombatMath.encode_damage_instance(inst2)
+		e.update_hp_bar()
+		show_damage(e.position, actual2, false, CombatMath.damage_type_color("Fire"))
+		var is_lethal: bool = e.stats.is_dead()
+		GameState.game_log("%s is burned by the flames for [url=%s][color=yellow]%d[/color][/url] Fire dmg.%s" % [
+			e.display_name, dmg_meta2, actual2, CombatMath.death_suffix(is_lethal)])
+		if is_lethal:
+			GameState.gain_exp(maxi(1, e.exp_reward / 2))
+			remove_enemy(e)
+			e.die()
+	elif entity is Companion:
+		entity.take_damage_from_enemy(int(_roll_fire_damage_instance()["subtotal"]))
+
+## Ticks every burning barrel/door's own HP loss AND fire propagation between adjacent flammable
+## props — called once per real player turn from player.gd's _on_turn_started() (the top of the
+## PLAYER's own turn, i.e. "the start of the round" for anything not tied to one specific entity's
+## own turn — see tick_fire_damage_for() above for the per-entity-turn-start damage instead. Each
+## burning prop takes 2d4 Fire damage off its own HP (5 for a Barrel, 10 for a Door — both Wood,
+## MaterialTable.ac_for("wood"), scripts/items/material_table.gd) instead of a flat fixed-turn
+## timer; at 0 HP it's destroyed: a barrel's sprite/entry is removed outright (tile becomes plain
+## walkable floor again); a door's sprite/lock-icon/entry is removed outright too (permanently
+## gone, unlike close_door() — the tile stays passable forever, matching SPD's
+## door-burns-to-EMBERS behavior). GRASS has no HP pool at all (direct owner design) — it just
+## gets exactly one round in `_burning_grass` (long enough to spread, see _spread_fire_between_
+## props()/ignite_grass()) before _tick_burning_grass() converts it to TRAMPLED_GRASS.
+func tick_burning_props() -> void:
 	var burnt_barrels: Array[Vector2i] = []
 	for pos: Vector2i in _barrels:
 		if not _barrels[pos]["burning"]:
 			continue
-		_barrels[pos]["burn_turns"] -= 1
-		if _barrels[pos]["burn_turns"] <= 0:
+		_barrels[pos]["hp"] -= _roll_fire_tick_damage()
+		if _barrels[pos]["hp"] <= 0:
 			burnt_barrels.append(pos)
 	for pos: Vector2i in burnt_barrels:
 		var sp: Sprite2D = _barrels[pos]["sprite"]
@@ -2080,8 +2570,8 @@ func _tick_burning_props() -> void:
 	for pos: Vector2i in _doors:
 		if not _doors[pos].get("burning", false):
 			continue
-		_doors[pos]["burn_turns"] -= 1
-		if _doors[pos]["burn_turns"] <= 0:
+		_doors[pos]["hp"] -= _roll_fire_tick_damage()
+		if _doors[pos]["hp"] <= 0:
 			burnt_doors.append(pos)
 	for pos: Vector2i in burnt_doors:
 		var sp: Sprite2D = _doors[pos]["sprite"]
@@ -2098,7 +2588,19 @@ func _tick_burning_props() -> void:
 		if _player != null:
 			update_fog(_player.grid_pos)
 
+	# Snapshot BEFORE spreading — these grass tiles have already had one full round to spread
+	# (ignited last round or earlier), so they finish burning at the end of THIS tick. Anything
+	# _spread_fire_between_props() ignites fresh below is added to _burning_grass after this
+	# snapshot was taken, so it survives untouched into next round's own spread step first.
+	# Dictionary.keys() returns a plain untyped Array — must be rebuilt into a typed one manually,
+	# a bare `= dict.keys()` assignment into an `Array[Vector2i]` var throws at runtime.
+	var grass_pre_tick: Array[Vector2i] = []
+	for k: Vector2i in _burning_grass.keys():
+		grass_pre_tick.append(k)
+
 	_check_burning_ignition_sources()
+	_spread_fire_between_props()
+	_tick_burning_grass(grass_pre_tick)
 
 # Fire spreads from a burning entity standing next to an unlit barrel/door — currently only the
 # player can carry burning_turns (see scripts/entities/CLAUDE.md's "Status effects" table; enemy
@@ -2119,6 +2621,51 @@ func _check_burning_ignition_sources() -> void:
 		if maxi(absi(pos.x - p.x), absi(pos.y - p.y)) <= 1:
 			ignite_flammable(pos)
 
+# Fire spreads between adjacent flammable PROPS themselves (direct owner request) — independent of
+# _check_burning_ignition_sources() above, which is about a burning ENTITY (the player) igniting
+# nearby props by proximity. Any currently-burning Barrel or Door ignites a not-yet-burning
+# Barrel/Door within Chebyshev 1 (8 directions) — the same as before. A currently-burning GRASS
+# tile (_burning_grass, see below) spreads only along the 4 CARDINAL directions (direct owner
+# request: "should spread in the four main directions" — an orthogonal wildfire, not a diagonal
+# blob) to its own grass/barrel/door neighbors. Runs once per real player turn, right after the
+# player-adjacency check above, so a spreading blaze catches everything flammable nearby before
+# the player even acts this round. Web/pavučina isn't flammable yet (no "burning" field on
+# `_webs`) — add it here once it is.
+const GRASS_SPREAD_DIRS: Array[Vector2i] = [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
+
+func _spread_fire_between_props() -> void:
+	var prop_sources: Array[Vector2i] = []
+	for pos: Vector2i in _barrels.keys():
+		if _barrels[pos]["burning"]:
+			prop_sources.append(pos)
+	for pos: Vector2i in _doors.keys():
+		if _doors[pos].get("burning", false):
+			prop_sources.append(pos)
+	var grass_sources: Array[Vector2i] = []
+	for k: Vector2i in _burning_grass.keys():
+		grass_sources.append(k)
+	if prop_sources.is_empty() and grass_sources.is_empty():
+		return
+	# Collect every neighbor tile first (de-duped) — ignite_flammable()/ignite_grass() mutate
+	# _barrels/_doors/_burning_grass, so mutating mid-scan of the burning-source lists would be
+	# unsafe/order-dependent.
+	var to_ignite: Dictionary = {}
+	for bpos: Vector2i in prop_sources:
+		for dy: int in range(-1, 2):
+			for dx: int in range(-1, 2):
+				if dx == 0 and dy == 0:
+					continue
+				to_ignite[bpos + Vector2i(dx, dy)] = true
+	for gpos: Vector2i in grass_sources:
+		for d: Vector2i in GRASS_SPREAD_DIRS:
+			to_ignite[gpos + d] = true
+	for npos: Vector2i in to_ignite.keys():
+		if get_tile_type(npos) == DungeonData.TileType.GRASS:
+			if ignite_grass(npos):
+				GameState.game_log("[color=orange]The grass catches fire from the nearby blaze![/color]")
+		else:
+			ignite_flammable(npos)
+
 # ── Grass ─────────────────────────────────────────────────────────────────────
 
 func destroy_grass(pos: Vector2i) -> void:
@@ -2126,10 +2673,48 @@ func destroy_grass(pos: Vector2i) -> void:
 		return
 	_data.grid[pos.y][pos.x] = DungeonData.TileType.TRAMPLED_GRASS
 	_grass_layer.set_cell(pos, SOURCE_TRAMPLED_GRASS, ATLAS_ORIGIN)
+	_burning_grass.erase(pos)
+
+## Starts a GRASS tile burning — unlike destroy_grass() (an instant, permanent conversion to
+## TRAMPLED_GRASS with no time window), this leaves the tile marked "on fire" in `_burning_grass`
+## for exactly one full round: long enough for tick_fire_damage_for() to burn whoever stands on it
+## and for _spread_fire_between_props() to see it as a source and spread to its 4 cardinal
+## neighbors, before _tick_burning_grass() finally converts it. Grass deliberately has NO HP pool
+## (direct owner design — it isn't a Barrel/Door with a damage pool, just a one-round transient
+## flag). No-ops (returns false) if the tile isn't GRASS or is already burning — every fire source
+## that ignites a GRASS tile (Fire Bolt/Fireball/Burning Hands in spell_effects.gd, a thrown lit
+## Torch, prop-to-grass and grass-to-grass spread above) should call this instead of destroy_grass()
+## directly; destroy_grass() itself is now only ever called from _tick_burning_grass() below (plus
+## the unrelated "walking tramples grass underfoot" call sites in player.gd/enemy.gd, which have
+## nothing to do with fire).
+func ignite_grass(pos: Vector2i) -> bool:
+	if _data.get_tile(pos.x, pos.y) != DungeonData.TileType.GRASS:
+		return false
+	if _burning_grass.has(pos):
+		return false
+	_burning_grass[pos] = true
+	return true
+
+## Finalizes every GRASS tile that was ALREADY burning before this round's own spread step —
+## converts it to TRAMPLED_GRASS via destroy_grass(). Called from tick_burning_props() AFTER
+## _spread_fire_between_props() runs, and only acts on a snapshot taken BEFORE that spread step —
+## a tile freshly ignited by this same tick's spread survives into _burning_grass untouched, so it
+## gets its own full round to spread before this same function catches up to it next tick. Without
+## this snapshot ordering, a newly-lit tile would be destroyed the instant it caught fire and could
+## never spread to a second tile at all.
+func _tick_burning_grass(pre_tick_snapshot: Array[Vector2i]) -> void:
+	for pos: Vector2i in pre_tick_snapshot:
+		if _burning_grass.has(pos):
+			destroy_grass(pos)
 
 # ── Items ─────────────────────────────────────────────────────────────────────
 
 func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
+	place_item_on_floor(pos, _build_item_from_pool(d))
+
+## Constructs an Item from an ITEM_POOL dict without placing it anywhere — shared by
+## _build_floor_item() (floor placement) and _spawn_shop() (shop stock, never touches the floor).
+func _build_item_from_pool(d: Dictionary) -> Item:
 	var item := Item.new()
 	item.item_name = d["name"]
 	item.item_type = d["type"] as Item.Type
@@ -2191,7 +2776,7 @@ func _build_floor_item(pos: Vector2i, d: Dictionary) -> void:
 			"items":   base_path = DungeonFloorData.ITEMS_PATH
 			_:         base_path = DungeonFloorData.OBJECTS_PATH
 		item.icon_path = base_path + d["icon"]
-	place_item_on_floor(pos, item)
+	return item
 
 func _spawn_items() -> void:
 	var eligible: Array = []
@@ -2296,13 +2881,13 @@ func _spawn_special_rooms() -> void:
 	for meta: Dictionary in _data.room_metadata:
 		match meta["type_id"]:
 			"shop":
-				pass  # _spawn_shop(meta["rect"]) — session 7e
+				_spawn_shop(meta["rect"])
 			"treasure":
 				_spawn_treasure(meta["rect"])
 			"garden":
 				_spawn_garden_items(meta["rect"])
 			"secret":
-				pass  # _spawn_secret_room(meta["rect"]) — session 7f
+				_spawn_secret_room(meta["rect"])
 			"blacksmith":
 				_spawn_blacksmith(meta["rect"])
 
@@ -2407,6 +2992,70 @@ func _spawn_garden_items(rect: Rect2i) -> void:
 	for i: int in count:
 		_build_floor_item(candidates[i], herb)
 
+# SecretRoom content (special-rooms-economy-design.md §4.4, session 7f): hides the room's one
+# connecting door (see has_door_at()/_reveal_secret_door() above) and spawns a reward that's
+# "strictly better than a locked-door room" — 2-3 ITEM_POOL rolls (one biased to the top half by
+# gold_value, a rarity proxy) plus a guaranteed larger gold pile. Same door-finding technique as
+# _spawn_treasure()'s lock loop just above. If _spawn_doors()' probabilistic 65%/candidate roll
+# missed this room's one junction, there's no door to hide — unlike TreasureRoom's own "loot still
+# spawns, just undefended" degrade, an unguarded top-tier reward is worse than none, so this skips
+# the whole reward outright rather than granting free loot.
+func _spawn_secret_room(rect: Rect2i) -> void:
+	if rect == Rect2i():
+		return
+	var door_pos: Vector2i = Vector2i(-1, -1)
+	for pos: Vector2i in _doors.keys():
+		if rect.grow(1).has_point(pos) and not rect.has_point(pos):
+			door_pos = pos
+			break
+	if door_pos == Vector2i(-1, -1):
+		return
+
+	_doors[door_pos]["hidden"] = true
+	var door_sprite: Sprite2D = _doors[door_pos]["sprite"]
+	if is_instance_valid(door_sprite):
+		door_sprite.visible = false
+	tilemap.set_cell(door_pos, SOURCE_WALL, ATLAS_ORIGIN)
+
+	var eligible: Array = []
+	for entry: Dictionary in DungeonFloorData.ITEM_POOL:
+		if GameState.current_floor >= entry["fmin"] and GameState.current_floor <= entry["fmax"] \
+				and DungeonFloorData.is_scroll_level_eligible(entry, GameState.player_stats.character_level):
+			eligible.append(entry)
+
+	var candidates: Array[Vector2i] = []
+	for y: int in range(rect.position.y, rect.position.y + rect.size.y):
+		for x: int in range(rect.position.x, rect.position.x + rect.size.x):
+			var pos := Vector2i(x, y)
+			if _data.get_tile(x, y) != DungeonData.TileType.FLOOR:
+				continue
+			if pos == _data.player_start or pos == _data.stairs_pos:
+				continue
+			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos) or _barrels.has(pos):
+				continue
+			candidates.append(pos)
+	if candidates.is_empty():
+		return
+	RngUtil.shuffle(candidates, _pop_rng)
+
+	var used: int = 0
+	if not eligible.is_empty() and used < candidates.size():
+		var by_value: Array = eligible.duplicate()
+		by_value.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.get("gold", 0) > b.get("gold", 0))
+		var top_half: Array = by_value.slice(0, maxi(1, by_value.size() / 2))
+		var biased: Dictionary = top_half[_pop_rng.randi_range(0, top_half.size() - 1)]
+		_build_floor_item(candidates[used], biased)
+		used += 1
+		var extra_count: int = mini(_pop_rng.randi_range(1, 2), candidates.size() - used)
+		for i: int in extra_count:
+			var d: Dictionary = eligible[_pop_rng.randi_range(0, eligible.size() - 1)]
+			_build_floor_item(candidates[used + i], d)
+		used += extra_count
+
+	if used < candidates.size():
+		var amount: int = _pop_rng.randi_range(20, 30) + 2 * GameState.current_floor
+		place_item_on_floor(candidates[used], _make_gold_item(amount))
+
 # BlacksmithRoom content: a single impassable prop tile the player bumps/RMB-interacts with to
 # open blacksmith_panel.gd (scripts/ui/CLAUDE.md). No-op if rect is empty (BSP-fallback floor,
 # same guard every other special-room population function uses) or the room has no candidate tile.
@@ -2445,6 +3094,85 @@ func _spawn_blacksmith(rect: Rect2i) -> void:
 
 func has_blacksmith_at(pos: Vector2i) -> bool:
 	return _blacksmiths.has(pos)
+
+# ShopRoom content (special-rooms-economy-design.md §4.1, session 7e): one impassable shopkeeper
+# prop tile (bump/RMB opens shop_panel.gd, same interaction shape as the Blacksmith prop) plus a
+# generated stock of 4-6 distinct ITEM_POOL entries. Stock is overlay-only — never placed on the
+# floor, never restocked, discarded when the floor unloads (no persistence). No-op if rect is
+# empty (BSP-fallback floor, same guard every other special-room population function uses) or the
+# room has no candidate tile.
+func _spawn_shop(rect: Rect2i) -> void:
+	if rect == Rect2i():
+		return
+	var candidates: Array[Vector2i] = []
+	for y: int in range(rect.position.y, rect.position.y + rect.size.y):
+		for x: int in range(rect.position.x, rect.position.x + rect.size.x):
+			var pos := Vector2i(x, y)
+			if _data.get_tile(x, y) != DungeonData.TileType.FLOOR:
+				continue
+			if pos == _data.player_start or pos == _data.stairs_pos:
+				continue
+			if _traps.has(pos) or _doors.has(pos) or _floor_items.has(pos) or _barrels.has(pos):
+				continue
+			candidates.append(pos)
+	if candidates.is_empty():
+		return
+	RngUtil.shuffle(candidates, _pop_rng)
+	var pos: Vector2i = candidates[0]
+
+	var tex: Texture2D = null
+	var tint: Color = SHOPKEEPER_TINT
+	if ResourceLoader.exists(SHOPKEEPER_TEX_PATH):
+		tex = load(SHOPKEEPER_TEX_PATH)
+	elif ResourceLoader.exists(SHOPKEEPER_FALLBACK_TEX_PATH):
+		tex = load(SHOPKEEPER_FALLBACK_TEX_PATH)
+	var sprite := Sprite2D.new()
+	sprite.texture = tex
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.modulate = tint
+	sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+	sprite.z_index = 1
+	if tex != null:
+		var ts: Vector2 = tex.get_size()
+		sprite.scale = Vector2(float(TILE_SIZE) / ts.x, float(TILE_SIZE) / ts.y)
+	entities.add_child(sprite)
+
+	var eligible: Array = []
+	for entry: Dictionary in DungeonFloorData.ITEM_POOL:
+		if entry.get("gold", 0) <= 0:
+			continue
+		if GameState.current_floor >= entry["fmin"] and GameState.current_floor <= entry["fmax"] \
+				and DungeonFloorData.is_scroll_level_eligible(entry, GameState.player_stats.character_level):
+			eligible.append(entry)
+	RngUtil.shuffle(eligible, _pop_rng)
+
+	var stock: Array[Item] = []
+	var have_food: bool = false
+	var ration_entry: Dictionary = {}
+	for entry: Dictionary in eligible:
+		if entry["name"] == "Ration":
+			ration_entry = entry
+		if stock.size() >= mini(SHOP_STOCK_MAX, eligible.size()):
+			break
+		stock.append(_build_item_from_pool(entry))
+		if entry.get("type") == Item.Type.FOOD:
+			have_food = true
+	if not have_food and not ration_entry.is_empty() and stock.size() < SHOP_STOCK_MAX:
+		stock.append(_build_item_from_pool(ration_entry))
+	while stock.size() < mini(SHOP_STOCK_MIN, eligible.size()):
+		stock.append(_build_item_from_pool(eligible[stock.size() % eligible.size()]))
+
+	_shopkeepers[pos] = {"sprite": sprite, "stock": stock}
+
+func has_shopkeeper_at(pos: Vector2i) -> bool:
+	return _shopkeepers.has(pos)
+
+## Returns the LIVE stock array for the shopkeeper at pos (not a copy) — shop_panel.gd removes
+## bought items from it directly. Empty array if there's no shopkeeper there.
+func get_shopkeeper_stock(pos: Vector2i) -> Array[Item]:
+	if not _shopkeepers.has(pos):
+		return []
+	return _shopkeepers[pos]["stock"]
 
 # Mold (Blacksmith crafting material): guaranteed exactly once per run, on GameState.
 # mold_target_floor (rolled once at run start, uniform across floors 1-4 — see
@@ -2517,9 +3245,11 @@ func _spawn_locked_doors() -> void:
 		return
 	# One gated-loot room per floor (special-rooms-economy-design.md §4.2, session 7c) — a
 	# TreasureRoom already IS that room, so skip the generic locked-door pass entirely rather
-	# than double up on gated loot.
+	# than double up on gated loot. Also skip on a SecretRoom (§4.4, session 7f): this pass runs
+	# BEFORE _spawn_special_rooms(), so without this it could lock-and-reward the SecretRoom's own
+	# sole connecting door before _spawn_secret_room() ever gets to hide it.
 	for meta: Dictionary in _data.room_metadata:
-		if meta["type_id"] == "treasure":
+		if meta["type_id"] == "treasure" or meta["type_id"] == "secret":
 			return
 	var eligible: Array = []
 	for entry: Dictionary in DungeonFloorData.ITEM_POOL:
