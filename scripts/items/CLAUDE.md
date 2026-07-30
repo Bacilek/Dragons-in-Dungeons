@@ -750,7 +750,10 @@ Generation order (each step's output can gate a later one):
 4. **Weapon mastery** — `Rng.pick(Stats.ALL_WEAPON_MASTERIES)`, always assigned. Masteries are
    generic (gated on `weapon.weapon_mastery == "X" and stats.knows_mastery("X")` at each trigger
    site, never on item name — see "Weapon masteries" above), so a mismatched roll (e.g. `Sap` on a
-   non-thrown result) simply never fires — intentional chaos, not a bug.
+   non-thrown result) simply never fires — intentional chaos, not a bug. **One exception**: `Slow`
+   is stripped from the mastery pool whenever the weapon isn't `is_ranged` — every real weapon
+   carrying Slow (Longbow) is ranged, so a melee-shaped crafted weapon can never roll it (mirrors
+   step 3's Reach-never-on-ranged exclusion, just the opposite direction).
 5. **Damage type** — weighted: 70% Physical (Slashing/Piercing/Bludgeoning, uniform), 25%
    Elemental (Fire/Cold/Acid/Poison/Thunder/Lightning, uniform), 5% Magical (Force/Necrotic/
    Psychic/Radiant, uniform) — `_random_damage_type()`, a manual `Rng.roll(100)` threshold check

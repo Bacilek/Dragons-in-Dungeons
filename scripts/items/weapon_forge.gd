@@ -83,8 +83,13 @@ static func generate_random_weapon() -> Item:
 		item.versatile_die_max = vdie[1]
 
 	# 4. Weapon mastery — always assigned; may be a "dead" mastery if the rolled shape doesn't
-	# match its trigger context (e.g. Sap on a non-thrown weapon). Intentional chaos.
-	item.weapon_mastery = Rng.pick(Stats.ALL_WEAPON_MASTERIES)
+	# match its trigger context (e.g. Sap on a non-thrown weapon). Intentional chaos. Exception:
+	# Slow is a ranged-only mastery (Longbow) in every real weapon in the game, so a melee result
+	# (not is_ranged) can never roll it.
+	var mastery_pool: Array[String] = Stats.ALL_WEAPON_MASTERIES.duplicate()
+	if not item.is_ranged:
+		mastery_pool.erase("Slow")
+	item.weapon_mastery = Rng.pick(mastery_pool)
 
 	# 5. Damage type — weighted: 70% Physical, 25% Elemental, 5% Magical.
 	item.damage_type = _random_damage_type()
