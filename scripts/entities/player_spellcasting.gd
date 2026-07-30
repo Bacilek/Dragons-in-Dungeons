@@ -18,6 +18,15 @@ var _armed_spell_id: String = ""
 var _casting_from_scroll: bool = false
 var _armed_scroll_item: Item = null
 
+# Magic Missile multi-target state — Spell.effect_id == "magic_missile" is intercepted before the
+# normal single-click ENEMY flow (begin_cast()/cast_direct()/on_scroll_primed()) and instead
+# collects exactly 3 dart picks (one click each, repeats allowed — see try_cast_at()'s _mm_active
+# branch and SpellEffects.cast_magic_missile()). Esc (cancel()) at any point during collection
+# refunds nothing because nothing was ever spent yet — the slot/turn are only consumed once all 3
+# darts are assigned. See scripts/entities/CLAUDE.md's Magic Missile entry.
+var _mm_active: bool = false
+var _mm_targets: Array[Dictionary] = []
+
 # A Shield (Item.is_shield) in the Off-hand blocks all spellcasting while equipped — 5e's
 # "shield blocks somatic components" rule, applied uniformly regardless of caster hand.
 func _shield_blocks_casting() -> bool:
@@ -36,6 +45,10 @@ func begin_cast(spell_id: String) -> void:
 		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
 			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
 			return
+	if spell.effect_id == "magic_missile":
+		_begin_multi_target(spell_id, false, null)
+		return
+
 	match spell.target_kind:
 		Spell.TargetKind.SELF:
 			if spell.range_tiles <= 0:
@@ -71,6 +84,9 @@ func on_scroll_primed(item: Item) -> void:
 		_consume_scroll(item)
 		await _cast_self(spell, true)
 		return
+	if spell.effect_id == "magic_missile":
+		_begin_multi_target(item.scroll_spell_id, true, item)
+		return
 	_armed_spell_id = item.scroll_spell_id
 	_armed_scroll_item = item
 	_casting_from_scroll = true
@@ -87,6 +103,8 @@ func cancel() -> void:
 	_armed_spell_id = ""
 	_casting_from_scroll = false
 	_armed_scroll_item = null
+	_mm_active = false
+	_mm_targets = []
 
 ## Currently armed spell while targeting is active, or null — lets player.gd's per-frame AoE
 ## preview (dungeon_floor.gd's show_aoe_preview()/hide_aoe_preview()) read the spell's shape
@@ -120,9 +138,11 @@ func _cast_self(spell: Spell, from_scroll: bool = false) -> void:
 # whose range exceeds the player's FOV radius simply can't reach further than they can currently
 # see, without a second redundant cap.
 ## Effective range in tiles for the range check below — spell.range_tiles normally, or the
-## caster's LIVE FOV radius when spell.range_is_fov is set (Magic Missile — some characters see
-## further than the base FOV_RADIUS, e.g. Wild Heart Eagle's +1, so this must be read live, never
-## a fixed constant).
+## caster's LIVE FOV radius when spell.range_is_fov is set (no current spell sets this — Magic
+## Missile used to, but was switched to a plain fixed 12-tile range + Spell.bypasses_los per direct
+## owner correction, see scripts/entities/CLAUDE.md's Magic Missile entry — kept as a general
+## mechanism for any future spell that wants "reach = however far you can currently see", e.g. Wild
+## Heart Eagle's +1 FOV radius).
 func _effective_range(spell: Spell) -> int:
 	if spell.range_is_fov:
 		# Matches dungeon_floor.gd's own live FOV radius formula exactly (update_fog()/
@@ -153,10 +173,17 @@ func cast_direct(spell_id: String, clicked: Vector2i) -> void:
 	if spell.target_kind == Spell.TargetKind.SELF:
 		_cast_self(spell)
 		return
+	if spell.effect_id == "magic_missile":
+		_begin_multi_target(spell_id, false, null)
+		_handle_multi_target_click(clicked)
+		return
 	_armed_spell_id = spell_id
 	try_cast_at(clicked)
 
 func try_cast_at(clicked: Vector2i) -> void:
+	if _mm_active:
+		_handle_multi_target_click(clicked)
+		return
 	var spell_id: String = _armed_spell_id
 	var from_scroll: bool = _casting_from_scroll
 	var scroll_item: Item = _armed_scroll_item
@@ -186,7 +213,13 @@ func try_cast_at(clicked: Vector2i) -> void:
 		if dist_cheb > eff_range:
 			GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % eff_range)
 			return
-		if not player._dungeon_floor.has_ranged_los(player.grid_pos, clicked):
+		if spell.bypasses_los:
+			# Magic Missile-style "seeking dart" — no LOS needed, but a real walkable path must
+			# exist (chasms aside, see DungeonFloor.has_walkable_route_ignoring_chasms()).
+			if not player._dungeon_floor.has_walkable_route_ignoring_chasms(player.grid_pos, clicked):
+				GameState.game_log("[color=gray]No path to the target.[/color]")
+				return
+		elif not player._dungeon_floor.has_ranged_los(player.grid_pos, clicked):
 			GameState.game_log("[color=gray]No clear line to target.[/color]")
 			return
 
@@ -224,12 +257,116 @@ func try_cast_at(clicked: Vector2i) -> void:
 		Spell.TargetKind.TILE:
 			await SpellEffects.cast_leveled_at_tile(player, spell, lvl, clicked, player._dungeon_floor, from_scroll)
 		Spell.TargetKind.ENEMY:
+			# Magic Missile (the only AUTO_HIT ENEMY-target leveled spell) is intercepted earlier
+			# via _begin_multi_target() before it ever reaches this dispatch — so every spell that
+			# actually resolves here is ATTACK_ROLL (Chromatic Orb/Witch Bolt).
 			var target: Enemy = player._dungeon_floor.get_targetable_enemy_at(clicked)
 			if target == null:
 				GameState.game_log("[color=gray]%s needs a target.[/color]" % spell.spell_name)
 			elif spell.resolution == Spell.Resolution.ATTACK_ROLL:
 				await SpellEffects.cast_leveled_attack_at_enemy(player, spell, lvl, target, player._dungeon_floor, from_scroll)
-			else:
-				await SpellEffects.cast_leveled_at_enemy(player, spell, lvl, target, player._dungeon_floor, from_scroll)
 		_:
 			pass
+
+# ── Magic Missile multi-target ("seeking darts", up to 3 independent picks) ──────────────────
+# Arms exactly like any other spell (spell_targeting_active stays true across all 3 clicks so
+# player.gd's existing dispatch keeps routing every click into try_cast_at(), which forwards here
+# whenever _mm_active is set) but doesn't resolve on the first click — collects one dart-target
+# per click (repeats allowed, focusing more than one dart onto the same target) until 3 are
+# gathered, then resolves the whole volley in a single turn/slot-consumption via
+# SpellEffects.cast_magic_missile(). Esc (cancel()) at any point clears _mm_active/_mm_targets
+# with nothing spent, since the slot/turn are only touched once all 3 picks are in.
+## Whether Magic Missile is currently mid-collection (some or none of its 3 dart picks made yet) —
+## lets player.gd's RMB handler special-case "undo last pick" over its normal RMB behavior.
+func is_collecting_multi_target() -> bool:
+	return _mm_active
+
+## RMB during dart collection — un-locks the most recent pick instead of cancelling the whole
+## cast (that's still Esc/cancel()'s job). No-op if nothing's been picked yet (RMB before any dart
+## is locked in has nothing to undo, and the mode is still active so a further LMB pick still
+## works normally).
+func undo_last_multi_target_pick() -> void:
+	if not _mm_active or _mm_targets.is_empty():
+		return
+	var removed: Dictionary = _mm_targets.pop_back()
+	var remaining: int = 3 - _mm_targets.size()
+	GameState.game_log("[color=gray]Un-locked the dart aimed at %s. Choose %d more target%s. [Esc] to cancel.[/color]" % [
+		removed.get("label", "that target"), remaining, "s" if remaining != 1 else ""])
+
+func _begin_multi_target(spell_id: String, from_scroll: bool, scroll_item: Item) -> void:
+	_armed_spell_id = spell_id
+	spell_targeting_active = true
+	_casting_from_scroll = from_scroll
+	_armed_scroll_item = scroll_item
+	_mm_active = true
+	_mm_targets = []
+	GameState.game_log("[color=lime]Magic Missile — choose up to 3 targets (1 dart each; click the same target again to focus more darts on it). Enemies, barrels, and doors are all valid. [Esc] to cancel.[/color]")
+
+## Resolves whatever's at `pos` into a dart-target descriptor, or `{}` if nothing valid is there.
+## Enemy first (matches every other spell's targeting priority), then the two destructible-prop
+## kinds that don't have HP/AC yet (scripts/entities/CLAUDE.md's Enemy stat-block schema) but are
+## still valid things to point a dart at per direct owner request — forward-compatible slot for
+## once that system exists.
+func _resolve_multi_target_at(pos: Vector2i) -> Dictionary:
+	var dungeon_floor: Node = player._dungeon_floor
+	var enemy: Enemy = dungeon_floor.get_targetable_enemy_at(pos)
+	if enemy != null:
+		return {"kind": "enemy", "enemy": enemy, "label": enemy.display_name}
+	if dungeon_floor.has_barrel_at(pos):
+		return {"kind": "barrel", "pos": pos, "label": "the barrel"}
+	if dungeon_floor.has_door_at(pos):
+		return {"kind": "door", "pos": pos, "label": "the door"}
+	return {}
+
+func _handle_multi_target_click(clicked: Vector2i) -> void:
+	var spell: Spell = SpellDb.get_spell(_armed_spell_id)
+	if spell == null or player._dungeon_floor == null:
+		cancel()
+		return
+
+	var d: Vector2i = clicked - player.grid_pos
+	var dist_cheb: int = maxi(absi(d.x), absi(d.y))
+	var eff_range: int = _effective_range(spell)
+	if dist_cheb > eff_range:
+		GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % eff_range)
+		return
+	if spell.bypasses_los:
+		if not player._dungeon_floor.has_walkable_route_ignoring_chasms(player.grid_pos, clicked):
+			GameState.game_log("[color=gray]No path to the target.[/color]")
+			return
+	elif not player._dungeon_floor.has_ranged_los(player.grid_pos, clicked):
+		GameState.game_log("[color=gray]No clear line to target.[/color]")
+		return
+
+	var desc: Dictionary = _resolve_multi_target_at(clicked)
+	if desc.is_empty():
+		GameState.game_log("[color=gray]Nothing to target there.[/color]")
+		return
+
+	_mm_targets.append(desc)
+	var remaining: int = 3 - _mm_targets.size()
+	if remaining > 0:
+		GameState.game_log("[color=lime]Dart %d locked onto %s. Choose %d more target%s (or click it again). [Esc] to cancel.[/color]" % [
+			_mm_targets.size(), desc["label"], remaining, "s" if remaining != 1 else ""])
+		return
+
+	var from_scroll: bool = _casting_from_scroll
+	var scroll_item: Item = _armed_scroll_item
+	var targets: Array[Dictionary] = _mm_targets
+	spell_targeting_active = false
+	_armed_spell_id = ""
+	_casting_from_scroll = false
+	_armed_scroll_item = null
+	_mm_active = false
+	_mm_targets = []
+
+	var lvl: int = spell.level
+	if not from_scroll and spell.level > 0:
+		lvl = _cast_level_for(spell)
+		if lvl == -1:
+			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
+			return
+	if from_scroll:
+		_consume_scroll(scroll_item)
+
+	await SpellEffects.cast_magic_missile(player, spell, lvl, targets, player._dungeon_floor, from_scroll)
