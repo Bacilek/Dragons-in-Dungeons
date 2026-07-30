@@ -22,8 +22,16 @@ func is_ranged_target_in_range(weapon: Item, target_pos: Vector2i) -> bool:
 	var long_r: int = weapon.long_range if weapon.long_range > 0 else DungeonFloor.FOV_RADIUS
 	if dist_sq > long_r * long_r:
 		return false
-	if dist_sq > weapon.range * weapon.range and not player._dungeon_floor.is_tile_visible(target_pos):
-		return false
+	if dist_sq > weapon.range * weapon.range:
+		# Being Blinded (Fog Cloud/Darkness) collapses effective_fov_radius() to 1, which would
+		# otherwise make is_tile_visible() false for any long shot regardless of terrain — falsely
+		# blocking the shot outright instead of just the Disadvantage ranged_attack() already
+		# applies for being Blinded. Fall back to a pure terrain LOS check in that case.
+		if GameState.is_blinded(player.grid_pos):
+			if not player._dungeon_floor.has_ranged_los(player.grid_pos, target_pos):
+				return false
+		elif not player._dungeon_floor.is_tile_visible(target_pos):
+			return false
 	return true
 
 func ranged_shot_disadvantage(weapon: Item, target_pos: Vector2i) -> bool:

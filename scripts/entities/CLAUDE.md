@@ -297,6 +297,111 @@ pre-existing superior darkvision (+2) and Dwarven Toughness (+1 max HP/level, in
   already nets pure DISADV (attacker Blinded, target isn't) — exactly the three cases the direct
   owner described, all pre-existing behavior once Tremorsense makes the target visible at all.
 
+## Elf
+
+3 traits, always on, plus the sub-race's own Elven Lineage. `Stats.apply_race_defaults()`'s ELF
+branch:
+
+- **Keen Senses** (passive): WIS check proficiency (`check_prof_wis = true` — shares the underlying
+  bool with Wizard's own INT+WIS class checks, harmless overlap since it's a flat flag).
+- **Fey Ancestry** (passive): ADV on checks to avoid/end the Charmed condition. **Deliberately
+  inert today** — no Charmed condition (or any check against one) exists anywhere in this engine
+  yet, same "granted but nothing to hook into" precedent as Dwarf's own Dwarven Resilience
+  ADV-vs-Poisoned-condition half (see "Dwarf" above). Wire in once a real Charmed source/check
+  exists rather than inventing one just to hang this on.
+- **Trance**: `GameState.long_rest_turns_needed()` halves `LONG_REST_TURNS` for an Elf — shorter
+  long rests, no other mechanical effect.
+- **Superior darkvision for Drow specifically**: `darkvision_bonus = 2 if race_variant ==
+  ElfSubrace.DROW else 1` — every other Elf sub-race gets the normal `1`.
+
+**Elven Lineage**: the chosen sub-race (`Stats.ElfSubrace` — DROW/HIGH_ELF/WOOD_ELF, picked at
+race select same as today) grants a passive/mechanical benefit immediately (character level 1) and
+one spell each at character level 3 and 5 — `GameState.gain_exp()`'s level-up block calls
+`_grant_elf_lineage_spell(_elf_lineage_spell_for(race_variant, threshold_level))` the instant
+either threshold is crossed (`old_level < N and character_level >= N`, same pattern as
+Dragonborn's Draconic Flight/Breath Weapon proficiency-bonus grants). A lineage spell is
+**always prepared** — granted straight onto the ability bar via `GameState._build_spell_ability()`
++ `add_ability()`, entirely outside the normal `known_spells`/`prepared_spells`/
+`SpellcasterState` bookkeeping, so it never counts against a caster's known-cantrip or
+prepared-spell cap (and exists even for a non-caster class, e.g. a Barbarian Elf) —
+`Stats.elf_lineage_spell_ids: Array[String]` is the list of spell ids granted this way, serialized
+in `to_dict()`/`from_dict()`; `GameState._restore_race_ability_bar()` re-adds their ability-bar
+entries on save/load replay.
+
+**Free cast economy**: each lineage spell gets exactly one free cast per long rest —
+`Stats.elf_lineage_free_cast_used: Dictionary` (spell_id → bool, cleared in `GameState.
+long_rest()`) + `Stats.is_lineage_free_cast_available(spell_id)`, checked BEFORE ever touching a
+real spell slot at every relevant chokepoint: `PlayerSpellcasting.begin_cast()`/`cast_direct()`'s
+slot-availability gate, `_cast_level_for()` (also guards a `null` `Stats.caster` — a non-caster
+class has no `SpellcasterState`/`slot_pool` at all, so the free use is the ONLY cast available to
+them), and `SpellEffects._consume_slot()` (now takes the `Spell`, not just a level int, so it can
+check the lineage-free-cast condition before falling through to `caster.slot_pool.consume()`).
+Beyond the free use, a further cast needs a real spell slot of the spell's own level (Wizard/
+Ranger only) — a non-caster simply has no further casts once the free one is spent, a documented
+simplification (same "narrow case, not the full system" precedent as Scroll of &lt;Spell&gt;
+casting for a non-caster).
+
+**Per sub-race** (`GameState._elf_lineage_spell_for(subrace, threshold_level)`):
+
+| Sub-race | Level 1 (immediate) | Level 3 spell | Level 5 spell |
+|---|---|---|---|
+| Drow | Superior darkvision (see above) | Faerie Fire | Darkness |
+| High Elf | Long-rest cantrip swap (below) | Detect Magic | Misty Step (reuses the existing Wizard/Ranger level-2 spell verbatim) |
+| Wood Elf | 35 ft speed (below) | Longstrider | Pass Without Trace |
+
+- **Faerie Fire** (`spell_db.gd`'s `_faerie_fire()`, level 1, TILE target, sphere shape_size 2,
+  SAVE/DEX, no damage): `SpellEffects._resolve_faerie_fire()` — every enemy within the sphere
+  (Euclidean, LOS'd from the impact tile, same target-gathering shape as `_resolve_sphere_aoe()`)
+  rolls a DEX save; on a fail, `Enemy.faerie_fire_turns = 100` — checked in `PlayerVfx.
+  has_advantage()` (same chokepoint as Blinded/Incapacitated) so every attack roll against an
+  outlined enemy has Advantage for the duration. Ticked once per real enemy turn in `decide_turn()`
+  alongside `frozen_feet_turns`.
+- **Darkness** (`_darkness()`, level 2, TILE, sphere shape_size 2, AUTO_HIT): a second, independent
+  Heavily Obscured zone — `GameState.darkness_pos`/`darkness_radius` mirror `fog_cloud_pos`/
+  `fog_cloud_radius` exactly, and `is_heavily_obscured(pos)` now checks both zones (`is_in_fog_cloud
+  or is_in_darkness`) so Fog Cloud's entire existing ADV/DISADV/`effective_fov_radius()`/
+  cant-see-through-it mechanism (see "Concentration"/Fog Cloud sections below) applies verbatim —
+  no new combat-roll code needed. Concentration id `"darkness"`, `Stats.darkness_turns` (100,
+  ticked like Fog Cloud). Visual reuses `DungeonFloor._update_fog_cloud_visual()`, generalized to
+  paint both zones' tiles into the same pooled-sprite set.
+- **Detect Magic** (`_detect_magic()`, level 1, SELF, AUTO_HIT, `shape_size` reused as a flat
+  Chebyshev radius of 6): `SpellEffects._resolve_detect_magic()` — an instant read, not a lasting
+  sense (documented simplification vs. the real 10-minute duration — this engine has no ongoing
+  "detect" UI to hang a lasting sense on): scans floor items within range and logs the names of any
+  with `requires_attunement` or a nonzero `bonus_ac`/`bonus_damage`.
+- **Misty Step**: no new code — High Elf's level-5 grant is the exact same spell id
+  (`"misty_step"`) Wizard/Ranger already cast, just delivered via the lineage-grant path instead of
+  learning it normally.
+- **High Elf's long-rest cantrip swap** (level-1 benefit, Wizard-only in practice — see below):
+  `GameState.is_high_elf_caster()` / `high_elf_known_cantrips()` / `high_elf_learnable_cantrips()` /
+  `swap_high_elf_cantrip(old_id, new_id)` — erases a known+prepared cantrip and its ability-bar
+  entry, learns a new one from `SpellDb.CANTRIP_IDS` not yet known, re-preparing it if the old one
+  was prepared (updates the Special slot too if it pointed at the swapped-out cantrip). UI:
+  `scripts/ui/high_elf_cantrip_swap.gd` (two-round card picker, modeled on `cantrip_select.gd`),
+  reachable only from the long-rest hub (`scripts/ui/CLAUDE.md`'s "Long-rest hub" section) — an
+  extra "High Elf Cantrip Swap" option shown only when `is_high_elf_caster()`. A non-caster High
+  Elf has nothing to swap (cantrips don't exist for any other class) — the option simply never
+  appears, a documented no-op rather than a dead button.
+- **Wood Elf's 35 ft speed** (level-1 benefit): approximated as a duty cycle rather than a
+  distance, same reasoning as an `Enemy`'s own `"speed"` pool key (see "Movement speed scaling"
+  below) — `Player._wood_elf_move_counter` increments on every real move; every 6th one doesn't
+  cost the turn (`_try_move()`'s free-move check, extended to also fire for this counter alongside
+  Expeditious Retreat/Longstrider — see the next entry). **Scope limitation**: only wired into
+  `_try_move()` (single-step WASD movement), same documented gap as Expeditious Retreat/
+  Battlefield Expert R3 — the queued-path/chase-to-target movement functions don't check it.
+- **Longstrider** (`_longstrider()`, level 1, SELF, AUTO_HIT, NOT Concentration): reuses the exact
+  same "first move this turn is free" mechanism Expeditious Retreat already has —
+  `Player._try_move()`'s free-move check now fires on `expeditious_retreat_turns > 0 OR
+  longstrider_turns > 0`, sharing the one `_expeditious_retreat_move_used_this_turn` per-turn flag
+  so only one bonus move is granted no matter how many of the three sources (Expeditious Retreat,
+  Longstrider, Wood Elf's own speed) are active at once. `Stats.longstrider_turns` (100, ticked in
+  `player.gd`'s per-real-turn block, NOT serialized — mid-floor buff state, same precedent as
+  `expeditious_retreat_turns`).
+- **Pass Without Trace** (`_pass_without_trace()`, level 2, SELF, AUTO_HIT, Concentration id
+  `"pass_without_trace"`): `Stats.pass_without_trace_turns` (100) grants a flat
+  `Stats.PASS_WITHOUT_TRACE_BONUS` (+10) to the Stealth-vs-Passive-Perception roll's `total` in
+  `Player._resolve_stealth_check()` while active.
+
 ## Multi-tile footprint (Large enemies)
 
 `Entity.size: Vector2i` (default `ONE`) gives an entity a real WxH footprint instead of a single
@@ -464,7 +569,17 @@ so a short RAW range never collapses below the content type's own floor and lose
   below) almost never triggers for a character with no vision-extending bonus, but triggers
   immediately the moment they gain one. `long_range` itself is **hand-tuned per weapon, not a
   fixed multiplier of `range`** (current roster: Short Bow 4/16, Heavy Crossbow 5/20, Longbow
-  8/30) — pick a value that feels right, don't auto-derive it from a ratio.
+  8/30) — pick a value that feels right, don't auto-derive it from a ratio. **Bugfix**: a
+  beyond-normal-range shot's visibility requirement (`is_tile_visible`) used to also silently fail
+  while the player is Blinded (Fog Cloud/Darkness — see "Conditions" below), since Blinded
+  collapses `GameState.effective_fov_radius()` to a flat 1 tile, which in turn shrinks
+  `_visible_tiles` to almost nothing — so a target that drifted even one tile past a bow's normal
+  range while standing in the cloud became permanently unshootable, not just Disadvantaged (which
+  is what Blinded is actually supposed to do to the shot). `PlayerRanged.
+  is_ranged_target_in_range()` now falls back to a pure terrain check (`has_ranged_los` — walls/
+  closed doors only, not FOV) for this gate specifically while `GameState.is_blinded(player.
+  grid_pos)` is true, leaving the normal (non-blinded) "no blind long shots into unexplored fog"
+  rule via `is_tile_visible` unchanged.
 - **Thrown weapons** (Spear/Handaxe/Dagger/Javelin/Torch, same `Item.range`/`Item.long_range`
   fields as ranged weapons, mechanically) use a gentler **`/10`** instead — a thrown weapon swings
   off a melee stat (STR, or `max(STR,DEX)` if Finesse), not a dedicated ranged weapon, so its reach
