@@ -562,6 +562,22 @@ func die() -> void:
 	# dies" is a deliberate one-turn delay, not an instant drop.
 	if _thrown_weapon_lodged_target != null and is_instance_valid(_thrown_weapon_lodged_target) and _dungeon_floor != null:
 		_dungeon_floor.queue_thrown_weapon_drop(_thrown_weapon_lodged_target, _thrown_weapon_lodged_item, _thrown_weapon_lodged_chance)
+	# Opener-mode thrown weapon (Orc Warrior's/Ogre's Javelin — "thrown_weapon" present, NOT
+	# flee_only) that never actually left this enemy's hand: killed before it got an opening to
+	# throw, or the target was already adjacent the very first time it could act (so the opener's
+	# own "target 2+ tiles away" condition never fired and it went straight to melee instead).
+	# Either way the Javelin is still physically on the corpse, so it drops here guaranteed (no
+	# drop_chance roll, no next-turn delay — unlike the lodged-in-target recovery above) — but
+	# with only 2 of its drop_uses_max uses, not a fresh full stack, since this copy still saw
+	# some prior wear same as any other dropped weapon. Goblin Minion's flee_only Dagger is
+	# deliberately excluded — that one only ever throws as a one-time parting shot, not an opener,
+	# and already drops via the lodged-weapon path above when it does.
+	if not _thrown_weapon_used and _dungeon_floor != null:
+		var opener_wpn: Dictionary = _type.get("thrown_weapon", {})
+		if not opener_wpn.is_empty() and not bool(opener_wpn.get("flee_only", false)):
+			var unused_item: Item = _build_thrown_weapon_item(opener_wpn)
+			unused_item.uses_remaining = mini(2, unused_item.uses_max)
+			_dungeon_floor.place_item_on_floor(grid_pos, unused_item)
 	# Bloodhound R3: if this was the Hunter's Mark target, re-mark the nearest visible enemy for free.
 	if _dungeon_floor != null and _dungeon_floor._player != null:
 		_dungeon_floor._player._ranger_talents.try_bloodhound_remark(self)
@@ -1643,6 +1659,14 @@ func _move_step(step: Vector2i, next_pos: Vector2i, provokes_oa: bool = true) ->
 	if tile_type == DungeonData.TileType.WATER and stats.burning_turns > 0:
 		stats.burning_turns = 0
 		GameState.game_log("[color=cyan]The water extinguishes %s's flames![/color]" % display_name)
+	# A lit torch embedded in this enemy (thrown-and-lodged, scripts/items/CLAUDE.md's "Torch")
+	# also douses out when it steps into water — same "water extinguishes fire" rule as the
+	# burning_turns status above, just for the physically-embedded torch item instead.
+	if tile_type == DungeonData.TileType.WATER:
+		for it: Item in embedded_items:
+			if it.is_torch and it.torch_lit:
+				it.torch_lit = false
+				GameState.game_log("[color=cyan]The water douses the torch lodged in %s![/color]" % display_name)
 	if tile_type == DungeonData.TileType.GRASS:
 		_dungeon_floor.destroy_grass(grid_pos)
 	var trap: Dictionary = _dungeon_floor.get_trap_at(grid_pos)

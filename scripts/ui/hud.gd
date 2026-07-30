@@ -973,6 +973,11 @@ func _on_qbar_slot_hover(idx: int) -> void:
 		return
 	var bar: Array = GameState.player_ability_bar if _ability_bar_mode else GameState.player_quickbar
 	var item_or_ability: Variant = bar[idx] if idx < bar.size() else null
+	# Thrown-item range preview: hovering a thrown weapon in the item bar shows its range/
+	# long_range as a world-space backdrop (player.gd._update_ranged_range_preview()'s
+	# quickbar-hover branch), same visual as Shift-hovering an equipped ranged weapon.
+	var hover_thrown: Item = item_or_ability as Item if not _ability_bar_mode else null
+	GameState.quickbar_hover_thrown_item = hover_thrown if (hover_thrown != null and hover_thrown.item_type == Item.Type.WEAPON and hover_thrown.is_thrown) else null
 	if item_or_ability == null:
 		return
 	var text: String = ""
@@ -1017,6 +1022,7 @@ func _on_qbar_slot_hover(idx: int) -> void:
 	_qbar_tooltip.visible = true
 
 func _on_qbar_slot_hover_end() -> void:
+	GameState.quickbar_hover_thrown_item = null
 	if _qbar_tooltip_frozen:
 		return
 	if _qbar_tooltip != null:

@@ -350,20 +350,9 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 
-	# Torch: a lit torch thrown at an enemy also deals a second, independent 1d4 Fire damage
-	# instance — mirrors the Main-Hand melee Fire bonus in player.gd._bump_attack() exactly (own
-	# take_typed_damage() call, own floater, own dmg: tooltip segment on the same log line).
-	var torch_actual: int = 0
-	var torch_inst: Dictionary = {}
-	if weapon.is_torch and weapon.torch_lit:
-		var torch_rolls: Array[int] = Rng.roll_dice(1, 4)
-		torch_inst = CombatMath.build_damage_instance(torch_rolls, 4, [], is_crit, "Fire")
-		var torch_result: Dictionary = enemy.take_typed_damage(torch_inst["subtotal"], "Fire", is_crit)
-		torch_inst["final"] = torch_result["actual"]
-		torch_inst["resist_mul"] = torch_result["mul"]
-		torch_actual = torch_result["actual"]
-		enemy.update_hp_bar()
-		player._dungeon_floor.show_damage(enemy.position, torch_actual, false, CombatMath.damage_type_color("Fire"), 1)
+	# Torch: NO instant Fire damage on the throw itself — a lit torch that embeds (non-lethal hit,
+	# see below) instead sets the enemy burning for as long as it stays lodged and lit, via
+	# DungeonFloor.tick_torches()' own 2d4 Fire/round tick (scripts/items/CLAUDE.md's "Torch").
 
 	# Hunter's Mark: second, independent Force damage instance on a hit against the marked target.
 	var hm_actual: int = 0
@@ -377,14 +366,11 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 		hm_inst["resist_mul"] = hm_result["mul"]
 		hm_actual = hm_result["actual"]
 		enemy.update_hp_bar()
-		player._dungeon_floor.show_damage(enemy.position, hm_actual, false, CombatMath.damage_type_color("Force"), 2 if torch_actual > 0 else 1)
+		player._dungeon_floor.show_damage(enemy.position, hm_actual, false, CombatMath.damage_type_color("Force"), 1)
 
 	var is_lethal: bool = enemy.stats.is_dead()
 
 	var dmg_segment: String = "[url=%s][color=yellow]%d[/color][/url]%s" % [dmg_meta, actual, type_tag]
-	if torch_actual > 0:
-		var torch_meta: String = CombatMath.encode_damage_instance(torch_inst)
-		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Fire[/color]" % [torch_meta, torch_actual]
 	if hm_actual > 0:
 		var hm_meta: String = CombatMath.encode_damage_instance(hm_inst)
 		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Force[/color]" % [hm_meta, hm_actual]
