@@ -11,34 +11,18 @@ var player: Player
 # Range gate for ranged weapons: within a weapon's "normal" range (weapon.range), the shot
 # rolls normally. Beyond normal range but within the weapon's own fixed long_range (Item.
 # long_range — a real per-weapon field, see item.gd), the shot is still possible but will roll
-# with Disadvantage (see ranged_shot_disadvantage()) and must actually be in current FOV
-# (is_tile_visible — no blind long shots through unexplored fog). A ranged item that doesn't set
-# long_range (none exist today) falls back to the player's live FOV radius as its cap instead.
+# with Disadvantage (see ranged_shot_disadvantage()) — no visibility/FOV requirement at all
+# (direct owner ruling: range alone gates whether a shot is possible; blind-firing at max range,
+# through fog/darkness/unexplored tiles alike, is intended, same as PlayerRanged.ranged_attack_tile()
+# already allows for an empty tile). A ranged item that doesn't set long_range (none exist today)
+# falls back to the player's live FOV radius as its cap instead.
 func is_ranged_target_in_range(weapon: Item, target_pos: Vector2i) -> bool:
 	if weapon == null or player._dungeon_floor == null:
 		return false
 	var d: Vector2i = target_pos - player.grid_pos
 	var dist_sq: int = d.x * d.x + d.y * d.y
 	var long_r: int = weapon.long_range if weapon.long_range > 0 else DungeonFloor.FOV_RADIUS
-	if dist_sq > long_r * long_r:
-		return false
-	if dist_sq > weapon.range * weapon.range:
-		# is_tile_visible() goes false for a heavily-obscured tile (Fog Cloud/Darkness) even with
-		# nothing but open air in the way — DungeonFloor.update_fog() deliberately strips those
-		# tiles out of _visible_tiles for anyone standing outside the cloud (see scripts/world/
-		# CLAUDE.md's "Fog Cloud spell zone"), and Blinded also collapses the VIEWER's own
-		# effective_fov_radius() to 1 tile. Either case would otherwise make ANY long shot at (or
-		# from within) a fog-obscured tile impossible outright, instead of merely Disadvantaged —
-		# which is what being Blinded, or attacking a Blinded target, already resolves to
-		# separately (see PlayerVfx.has_advantage()/is_blinded() below). Fall back to a pure
-		# terrain LOS check (walls/closed doors only) whenever obscurement, not terrain, is what's
-		# actually hiding the target.
-		if GameState.is_blinded(player.grid_pos) or GameState.is_heavily_obscured(target_pos):
-			if not player._dungeon_floor.has_ranged_los(player.grid_pos, target_pos):
-				return false
-		elif not player._dungeon_floor.is_tile_visible(target_pos):
-			return false
-	return true
+	return dist_sq <= long_r * long_r
 
 func ranged_shot_disadvantage(weapon: Item, target_pos: Vector2i) -> bool:
 	if weapon == null:

@@ -176,7 +176,7 @@ right alongside the Sap mastery hook, since this is a name-specific effect rathe
 
 `Item.is_thrown` + `range` (normal throw range) + `uses_max`/`uses_remaining` (currently only the Spear: Simple, Piercing, Versatile 1d6/1d8, `weapon_mastery="Sap"`, `range=2`, `uses_max=5`). Primed exactly like throwing a food item from the quickbar — **RMB a quickbar slot** (`hud.gd`'s `_on_slot_gui_input()` → `GameState.player_throw_primed`, no item-type filter) then **LMB a target tile** (`PlayerActions`/`player.gd` → `PlayerThrowTool.do_throw()`). `do_throw()` branches on `item.item_type == Item.Type.WEAPON and item.is_thrown` *before* the generic food/item-throw branch, dispatching to `PlayerThrowTool._throw_weapon(weapon, pos)`. Because priming only reads `GameState.player_quickbar` (not the equipment slots), a Spear must be sitting in the quickbar/bag to be thrown — an *equipped* copy in Main Hand is a separate `Item` instance and still attacks normally in melee.
 
-**Attack roll**: uses the wielder's **melee** attack modifier (STR, or `max(STR,DEX)` if `is_finesse`) and melee weapon-proficiency bonus — never a DEX/ranged stat, even though it's thrown. **Range**: `Item.range` is the normal range (full accuracy, follows the thrown-weapon `/10`-ceil rule — see `scripts/entities/CLAUDE.md`'s "Ranged distance scaling convention", a gentler divisor than ranged weapons' `/20` since a thrown weapon is a melee-stat swing, not a dedicated ranged weapon); beyond that but within `Item.long_range` (a real fixed field, hand-tuned per weapon — Spear/Handaxe/Dagger 2/6, Javelin 3/12, Torch 2/4 — not a fixed multiplier of `range`) the throw still works but rolls with Disadvantage, and must be in current FOV (`is_tile_visible()`) — identical convention to ranged weapons' normal/long-range rule (`PlayerRanged.is_ranged_target_in_range()`/`ranged_shot_disadvantage()`), just off the melee modifier instead of DEX. Throwing at an empty tile (no `DungeonFloor.get_enemy_at(pos)`) auto-"misses" (no roll, no use lost) and just lands. The chat log line's roll breakdown uses tooltip meta kind `"thrhit"` (same param shape as melee `"hit"`/`"miss"` — `hud.gd._format_tooltip()`'s `kind` dispatch routes it to the existing `TooltipFormatters.fmt_hit_tooltip(params, false)`, no new formatter needed) and `"dmg"` for the damage breakdown (shared with every other attack type). The **Dagger** is Finesse as well as Thrown/Light — its thrown attack roll uses `max(STR, DEX)` like any other Finesse weapon, same as a normal melee swing with it would.
+**Attack roll**: uses the wielder's **melee** attack modifier (STR, or `max(STR,DEX)` if `is_finesse`) and melee weapon-proficiency bonus — never a DEX/ranged stat, even though it's thrown. **Range**: `Item.range` is the normal range (full accuracy, follows the thrown-weapon `/10`-ceil rule — see `scripts/entities/CLAUDE.md`'s "Ranged distance scaling convention", a gentler divisor than ranged weapons' `/20` since a thrown weapon is a melee-stat swing, not a dedicated ranged weapon); beyond that but within `Item.long_range` (a real fixed field, hand-tuned per weapon — Spear/Handaxe/Dagger 2/6, Javelin 3/12, Torch 2/4 — not a fixed multiplier of `range`) the throw still works but rolls with Disadvantage — **no visibility/FOV requirement, range alone gates it** (direct owner ruling, permanent — see `PlayerRanged.is_ranged_target_in_range()`'s own note below), identical convention to ranged weapons' normal/long-range rule (`ranged_shot_disadvantage()`), just off the melee modifier instead of DEX. Throwing at an empty tile (no `DungeonFloor.get_enemy_at(pos)`) auto-"misses" (no roll, no use lost) and just lands. The chat log line's roll breakdown uses tooltip meta kind `"thrhit"` (same param shape as melee `"hit"`/`"miss"` — `hud.gd._format_tooltip()`'s `kind` dispatch routes it to the existing `TooltipFormatters.fmt_hit_tooltip(params, false)`, no new formatter needed) and `"dmg"` for the damage breakdown (shared with every other attack type). The **Dagger** is Finesse as well as Thrown/Light — its thrown attack roll uses `max(STR, DEX)` like any other Finesse weapon, same as a normal melee swing with it would.
 
 **Landing** (mirrors "Ammo items" above, with the thrown weapon's own rules): no enemy on the target tile → lands on the ground there as a normal pickupable floor item (`DungeonFloor.place_item_on_floor()`), **no use lost**. A **miss** OR a **non-lethal hit** against an enemy → embeds in the enemy — `Enemy.embedded_items: Array[Item]` (`scripts/entities/enemy.gd`) — instead of landing anywhere (`-1` use, `-2` on a nat-1 fumble miss, `0` on a nat-20 crit hit); no pickup while the enemy is still alive (a miss used to drop it as an immediately-pickable floor item at the enemy's tile — changed to embed-until-death so it behaves like ranged ammo instead of being trivially recoverable mid-fight). Enemy.**die()** is overridden to drop every item in `embedded_items` at its `grid_pos` (100% chance each, not the ranged-ammo 50%) right before freeing — every death call site (`player.gd._finish_kill()`, `companion.gd`, the trap/chasm death sites in `dungeon_floor.gd`) already ends with `enemy.die()`, so this single override covers an embedded Spear being recovered whenever/however that enemy eventually dies, not just from the throw that embedded it. A hit that also kills the enemy in the same throw still embeds first, so the override drops it immediately at the same tile.
 
@@ -191,11 +191,16 @@ delegators to the actual logic in `ItemStackSplit`, `scripts/items/item_stack_sp
 Every ranged weapon has two range values — `Item.range` (normal, full accuracy) and `Item.long_range`
 (a real fixed field — **not** a per-weapon FOV lookup anymore). Beyond `range` but within
 `long_range`, a shot still works but rolls with Disadvantage; beyond `long_range` it can't be taken
-at all — the shot must also currently be in FOV (`is_tile_visible()`) to use that extended reach,
-so blind-firing through unexplored fog is still impossible. `long_range` is a hand-tuned per-weapon
-value, not a fixed multiplier of `range` (Short Bow 4/16, Heavy Crossbow 5/20, Longbow 8/30 — see
-`scripts/entities/CLAUDE.md`'s "Ranged distance scaling convention" for the `/20`-ceil rule `range`
-itself follows). See
+at all. **No visibility/FOV requirement of any kind gates a shot** (direct owner ruling, permanent —
+range alone decides whether a shot is possible; blind-firing at max range through fog, darkness, or
+unexplored tiles is intended, exactly like `PlayerRanged.ranged_attack_tile()` already allowed for
+an untargeted empty tile). An earlier revision required the target tile to currently be in FOV
+(`is_tile_visible()`) for the long-range band specifically — removed after it collided with Fog
+Cloud/Darkness obscurement, which strips a tile from `_visible_tiles` for anyone outside the cloud
+regardless of terrain and silently turned a legal long shot into an impossible one. `long_range` is
+a hand-tuned per-weapon value, not a fixed multiplier of `range` (Short Bow 4/16, Heavy Crossbow
+5/20, Longbow 8/30 — see `scripts/entities/CLAUDE.md`'s "Ranged distance scaling convention" for
+the `/20`-ceil rule `range` itself follows). See
 `PlayerRanged.is_ranged_target_in_range()` / `ranged_shot_disadvantage()`
 (`scripts/entities/player_ranged.gd`) — a ranged item that doesn't set `long_range` (`0`, none
 exist today) falls back to the player's live FOV radius as its cap, the old behavior.
@@ -597,6 +602,14 @@ cast-resolution walkthroughs.
   doesn't have at all). Each spell's own `class_list` field mirrors this same split (`["WIZARD"]` /
   `["WIZARD", "RANGER"]` per entry) though nothing currently reads `class_list` programmatically —
   see `Spell`'s own field note below.
+  + `ELF_LINEAGE_SPELL_IDS` (5: `faerie_fire`/`darkness`/`detect_magic`/`longstrider`/
+  `pass_without_trace` — Misty Step, the 6th lineage spell, reuses the existing Wizard/Ranger
+  entry verbatim) — Elf race's Elven Lineage grant only (`scripts/entities/CLAUDE.md`'s "Elf"
+  section), deliberately excluded from `LEVELED_SPELL_IDS`/`CLASS_SPELL_LISTS` so none of the 5 are
+  ever offered by the level-up spellbook-growth picker or any class's known-spell list — the only
+  way to acquire one is `GameState._grant_elf_lineage_spell()`. `class_list` is left `[]` for all
+  five (no real class list applies). No Scroll of &lt;Spell&gt; exists for any of them — a
+  documented scope cut.
 - **`SpellcasterState`** (`Resource`) — lives on `Stats.caster` (Wizard and Ranger today — see
   `Stats.CLASS_ROLE` in `scripts/entities/stats.gd`, the internal-only FULL_CASTER/HALF_CASTER/
   MARTIAL/THIRD_CASTER categorization that decided this), not `GameState`, so a future enemy/

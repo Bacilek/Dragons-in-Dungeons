@@ -170,7 +170,8 @@ func try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 # Thrown weapon (e.g. Spear): uses the melee attack modifier (STR, or max(STR,DEX) if Finesse),
 # not a separate DEX/ranged stat. Normal range = weapon.range; beyond that but within weapon.
 # long_range (a real fixed field, same as ranged weapons — see item.gd) the throw still works but
-# rolls with Disadvantage, and must be in current FOV (is_tile_visible) — same convention as
+# rolls with Disadvantage — no visibility/FOV requirement, range alone gates it, blind-throwing
+# through fog/darkness/unexplored tiles is intended, same convention as
 # ranged weapons (see PlayerRanged.is_ranged_target_in_range()/ranged_shot_disadvantage()). A throw at an
 # adjacent target (Chebyshev 1) also rolls with Disadvantage, mirroring ranged_attack()'s
 # melee-range check.
@@ -210,7 +211,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var dist_sq: int = d.x * d.x + d.y * d.y
 	var long_r: int = weapon.long_range if weapon.long_range > 0 else DungeonFloor.FOV_RADIUS
 	var in_normal_range: bool = dist_sq <= weapon.range * weapon.range
-	var in_range: bool = in_normal_range or (dist_sq <= long_r * long_r and player._dungeon_floor.is_tile_visible(pos))
+	var in_range: bool = in_normal_range or dist_sq <= long_r * long_r
 	if not in_range:
 		GameState.game_log("[color=gray]Too far to throw %s.[/color]" % weapon.item_name)
 		player._handle_post_attack_turn()

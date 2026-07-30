@@ -569,24 +569,16 @@ so a short RAW range never collapses below the content type's own floor and lose
   below) almost never triggers for a character with no vision-extending bonus, but triggers
   immediately the moment they gain one. `long_range` itself is **hand-tuned per weapon, not a
   fixed multiplier of `range`** (current roster: Short Bow 4/16, Heavy Crossbow 5/20, Longbow
-  8/30) — pick a value that feels right, don't auto-derive it from a ratio. **Bugfix**: a
-  beyond-normal-range shot's visibility requirement (`is_tile_visible`) used to also silently fail
-  whenever Fog Cloud/Darkness obscurement (not terrain) was what actually hid the target — two
-  distinct cases, both now handled: (1) the **viewer** is Blinded (standing in the cloud
-  themselves), which collapses `GameState.effective_fov_radius()` to a flat 1 tile and shrinks
-  `_visible_tiles` accordingly; (2) the **target** is standing in a cloud the viewer is NOT inside
-  — `DungeonFloor.update_fog()` deliberately strips every heavily-obscured tile out of
-  `_visible_tiles` for an outside viewer (see `scripts/world/CLAUDE.md`'s "Fog Cloud spell zone"),
-  so `is_tile_visible(target_pos)` goes false even with nothing but open air between the two (this
-  was the actual reported case — Ranger outside the cloud, target inside it, Tremorsense still
-  making it targetable). Either way, the shot used to become permanently impossible the instant
-  distance ticked past the weapon's normal range, instead of just Disadvantaged (which is what
-  Blinded/attacking-a-Blinded-target already resolves to separately via `PlayerVfx.
-  has_advantage()`/the `disadv_count` check in `ranged_attack()`). `PlayerRanged.
-  is_ranged_target_in_range()` now falls back to a pure terrain check (`has_ranged_los` — walls/
-  closed doors only, not FOV/obscurement) for this gate whenever `GameState.is_blinded(player.
-  grid_pos)` OR `GameState.is_heavily_obscured(target_pos)` is true, leaving the normal
-  (non-obscured) "no blind long shots into unexplored fog" rule via `is_tile_visible` unchanged.
+  8/30) — pick a value that feels right, don't auto-derive it from a ratio. **`PlayerRanged.
+  is_ranged_target_in_range()` has no visibility/FOV requirement at all (direct owner ruling,
+  permanent) — a shot is legal purely by distance, out to the weapon's `long_range`; Disadvantage
+  (`ranged_shot_disadvantage()`) is the only penalty for a beyond-normal-range shot, same as
+  `PlayerRanged.ranged_attack_tile()` already allowed for an untargeted empty tile.** (An earlier
+  pass required `is_tile_visible(target_pos)` for any beyond-normal-range shot — "no blind long
+  shots into unexplored fog" — but that broke down against Fog Cloud/Darkness obscurement, which
+  strips a tile from `_visible_tiles` for anyone not standing inside the cloud regardless of
+  actual terrain, silently turning a perfectly legal long shot into an impossible one the instant
+  distance ticked past normal range. Removed outright rather than patched around per-case.)
 - **Thrown weapons** (Spear/Handaxe/Dagger/Javelin/Torch, same `Item.range`/`Item.long_range`
   fields as ranged weapons, mechanically) use a gentler **`/10`** instead — a thrown weapon swings
   off a melee stat (STR, or `max(STR,DEX)` if Finesse), not a dedicated ranged weapon, so its reach
