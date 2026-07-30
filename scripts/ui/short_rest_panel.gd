@@ -290,10 +290,11 @@ func _refresh_short() -> void:
 		var total_con: int = con_mod * _dice_to_spend
 		var min_heal: int = maxi(_dice_to_spend, _dice_to_spend + total_con)
 		var max_heal: int = maxi(_dice_to_spend, _dice_to_spend * sides + total_con)
+		var avg_heal: float = maxf(float(_dice_to_spend), _dice_to_spend * (sides + 1) / 2.0 + total_con)
 		if con_mod != 0:
-			_preview_label.text = "Heal: %d–%d HP  (%d×d%d  %+d CON per die)" % [min_heal, max_heal, _dice_to_spend, sides, con_mod]
+			_preview_label.text = "Heal: %d–%d HP  (avg %.1f)  (%d×d%d  %+d CON per die)" % [min_heal, max_heal, avg_heal, _dice_to_spend, sides, con_mod]
 		else:
-			_preview_label.text = "Heal: %d–%d HP  (%d×d%d)" % [min_heal, max_heal, _dice_to_spend, sides]
+			_preview_label.text = "Heal: %d–%d HP  (avg %.1f)  (%d×d%d)" % [min_heal, max_heal, avg_heal, _dice_to_spend, sides]
 		_rest_btn.disabled = false
 
 func _refresh_long() -> void:
