@@ -105,28 +105,63 @@ only, per direct owner request). Premade heroes skip this screen too (fixed stat
 Onboarding order (Custom path): **class select → point buy → background ASI → race select →
 mastery picker → game starts**. `race_select.gd` is a one-time blocking overlay spawned right
 after the background picker confirms (mirrors `subclass_select.gd`'s pattern), and itself spawns
-the Mastery Picker on confirm. 6 races (Orc, Human, Halfling, Dwarf,
-Elf w/ 3 sub-races, Dragonborn) each with distinct traits — darkvision/FOV bonus, long-rest-gated
-charges (Orc Relentless Endurance, Human Heroic Inspiration), a d20-reroll mechanic (Human
-miss-reroll — still stubbed; Halfling nat-1-reroll — implemented, see below), Dwarf +1 HP/level
+the Mastery Picker on confirm. 10 races (Orc, Human, Halfling, Dwarf,
+Elf w/ 3 sub-races, Dragonborn, Tiefling w/ 3 Fiendish Legacies, Aasimar, Gnome w/ 2 lineages,
+Goliath w/ 6 Giant Ancestries) each with distinct traits — darkvision/FOV bonus, long-rest-gated
+charges (Orc Relentless Endurance — passive, holds at 1 HP once per long rest — plus Orc Adrenaline
+Rush, an activatable ability, proficiency-bonus uses per short AND long rest, granting temp HP +
+a free next move; Human Heroic Inspiration — an activatable ability, 1/long rest, that forces the
+player's very next d20 roll to a natural 20 — see `scripts/entities/CLAUDE.md`'s "Orc"/"Human"
+sections), a d20-reroll mechanic (Halfling nat-1-reroll — implemented, see below), Dwarf +1 HP/level
 (including level 1) + Dwarven Resilience (Poison damage resistance — see
 `scripts/entities/CLAUDE.md`'s "Dwarf" section; the "ADV on checks to avoid/end Poisoned" half is
 deferred, no such check exists yet) + Stonecunning (a free-action, proficiency-bonus-per-long-rest
 Tremorsense buff — senses any living creature within 6 tiles standing on the exact same terrain
-type, shown as a red tremor-ping dot, sight-independent), Elf shorter rests + sub-race spell-like
-ability, Dragonborn ancestry-based
+type, shown as a red tremor-ping dot, sight-independent), **Elf** (Keen Senses/WIS proficiency,
+Fey Ancestry — deferred, no Charmed condition exists yet — shorter long rests, and **Elven
+Lineage**: the chosen sub-race grants one spell at character level 3 and a second at level 5,
+always prepared/free of any known-spell cap, each castable once per long rest for free before
+costing a real spell slot — see `scripts/entities/CLAUDE.md`'s "Elf" section for the full
+mechanism and per-sub-race spell table), Dragonborn ancestry-based
 resistance + a matching-element Breath Weapon (Cone/Line AoE, arm-toggle-cancel targeting on the
 ability bar) plus a level-5 Draconic Flight buff (crosses chasms, no grass trample, no traps, fire
-immune) — see `scripts/entities/CLAUDE.md`'s "Dragonborn" section for the full mechanism. Still
-deferred/stubbed: Human miss-reroll, Elf sub-race spell-like ability — these are cosmetic/flavor
-gaps, not blockers.
-**Halfling Lucky**: rolling a natural 1 on any player d20 roll (attack roll or the trap-disarm
-check) triggers an automatic, must-use reroll — `CombatMath.halfling_reroll(die)`
-(`scripts/entities/combat_math.gd`), baked into `CombatMath.roll_with_adv_disadv()` (the shared
-roll used by all 6 player attack sites) so every attack gets it for free; `player_thief_tools.gd`'s
-`attempt_disarm()` calls it directly. The chat log line wraps in dark green with a ☘ marker
-(`CombatMath.wrap_halfling_luck()`) and the hover tooltip shows a struck-through "1 → N" line
-(`fmt_hit_tooltip()`/`fmt_save_tooltip()` in `scripts/ui/tooltip_formatters.gd`) whenever it fires.
+immune) — see `scripts/entities/CLAUDE.md`'s "Dragonborn" section for the full mechanism,
+**Tiefling** (Darkvision +1, a chosen Fiendish Legacy — Abyssal/Chthonic/Infernal — granting a
+damage resistance plus one spell each at character levels 1/3/5, cast with whichever of INT/WIS/
+CHA is highest, each free once per long rest before costing a real spell slot, mechanically a
+direct clone of Elf's own Elven Lineage — see `scripts/entities/CLAUDE.md`'s "Tiefling" section),
+**Aasimar** (Celestial Resistance — Necrotic + Radiant, Darkvision +1, Healing Hands — an
+action-costing proficiency-bonus-scaled touch heal, 1/long rest, Light Bearer — a granted Light
+cantrip, and Celestial Revelation — unlocked at level 3, 1/long rest, a chosen 10-turn
+transformation granting bonus damage on the first hit each turn plus a per-transformation effect
+(Heavenly Wings flight, Inner Radiance instant burst + FOV bonus, Necrotic Shroud fear) — see
+`scripts/entities/CLAUDE.md`'s "Aasimar" section), **Gnome** (Darkvision +1, Gnomish Cunning —
+ADV on saves with ONE of INT/WIS/CHA, chosen at race select rather than all three per direct owner
+request (all three would be too strong; only WIS currently has any player-side save to apply to —
+see `scripts/entities/CLAUDE.md`'s "Gnome" section), and a chosen Gnomish Lineage — Forest Gnome
+knows Minor Illusion + Speak with Animals, Rock Gnome knows Mending, each castable
+proficiency-bonus times for free per long rest, granted immediately at race select rather than
+staggered by level like Elf/Tiefling's own lineage spells), and **Goliath** (no darkvision,
+Powerful Build — ADV to end Grappled, not yet wired, no Grappled condition exists — Large Form
+from level 5, 1/long rest, a real 2x2 footprint for up to 100 turns with ADV on STR checks and a
+duty-cycle +1/3 movement bonus, and a chosen Giant Ancestry — Cloud/Fire/Frost/Hill/Stone/Storm,
+each a proficiency-bonus-per-long-rest activatable — see `scripts/entities/CLAUDE.md`'s "Goliath"
+section).
+Still deferred/stubbed: Elf's Fey Ancestry (no Charmed condition to hook into) — a cosmetic/flavor
+gap, not a blocker.
+**Halfling** (Humanoid, Small, Speed 1 tile/turn, no darkvision) has 3 traits — see
+`scripts/entities/CLAUDE.md`'s "Halfling" section for the full table. **Luck**: rolling a natural 1
+on any player d20 roll (attack roll or the trap-disarm check) triggers an automatic, must-use
+reroll — `CombatMath.halfling_reroll(die)` (`scripts/entities/combat_math.gd`), baked into
+`CombatMath.roll_with_adv_disadv()` (the shared roll used by all 6 player attack sites) so every
+attack gets it for free; `player_thief_tools.gd`'s `attempt_disarm()` calls it directly. The chat
+log line wraps in dark green with a ☘ marker (`CombatMath.wrap_halfling_luck()`) and the hover
+tooltip shows a struck-through "1 → N" line (`fmt_hit_tooltip()`/`fmt_save_tooltip()` in
+`scripts/ui/tooltip_formatters.gd`) whenever it fires. **Brave**: ADV on saves to avoid/end
+Frightened (both the Quasit Scare save and the repeated end-of-turn save route through
+`CombatMath.roll_with_adv_disadv()` now). **Halfling Nimbleness** (move through a larger creature's
+space) is specced but not implemented — deferred until entities carry a real size category, see the
+size-category reference table in `scripts/entities/CLAUDE.md`'s "Halfling" section.
 `Stats.apply_race_defaults()`
 (`scripts/entities/stats.gd`) and `GameState.choose_race()`/`give_race_starting_items()`
 (`scripts/autoloads/CLAUDE.md`) hold the mechanical hooks; UI is `scripts/ui/race_select.gd`

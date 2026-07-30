@@ -242,6 +242,11 @@ var player_on_difficult_terrain: bool = false
 # Barbarian Tier 1 talents section.
 var psycho_adv_pending: bool = false
 var battlefield_adv_pending: bool = false
+# Human Heroic Inspiration: activating the ability arms this; the player's very next d20 roll
+# (attack, check, or save — anything routed through CombatMath.roll_with_adv_disadv() or the
+# stealth-check/Thief-Tools-disarm rolls) is forced to a natural 20, guaranteeing a critical
+# success, then consumed. See scripts/entities/CLAUDE.md's "Human" section.
+var heroic_inspiration_pending: bool = false
 # Battlefield Expert R1's Tactician buff expires if unused: counts down by 1 on every REAL
 # player turn-start (not on Battlefield Expert R3's free/reverted side-step turns) and clears
 # battlefield_adv_pending when it hits 0 — see PlayerBaseTalents.on_sidestep()/
@@ -375,9 +380,12 @@ func start_new_run() -> void:
 	fov_radius_bonus = 0
 	psycho_adv_pending = false
 	battlefield_adv_pending = false
+	heroic_inspiration_pending = false
 	battlefield_adv_expire_turns = 0
 	fog_cloud_pos = Vector2i(-1, -1)
 	fog_cloud_radius = 0
+	darkness_pos = Vector2i(-1, -1)
+	darkness_radius = 0
 	_give_starting_items()
 
 # Captures exactly what's needed to rebuild this same character (class, final ability scores,
@@ -556,11 +564,17 @@ func choose_race(race: Stats.CharacterRace, variant: int = 0, prof_ability: int 
 # spells are still deferred — see root CLAUDE.md's "Race system". Dragonborn grants Breath Weapon
 # immediately (level 1, full uses) and Draconic Flight once character_level >= 5 (see
 # scripts/entities/CLAUDE.md's "Dragonborn" section); Dwarf grants Stonecunning immediately (level
-# 1, full uses — see that file's "Dwarf" section). Save-load replay uses
+# 1, full uses — see that file's "Dwarf" section); Human grants Heroic Inspiration immediately
+# (level 1, 1 use — see that file's "Human" section); Orc grants Adrenaline Rush immediately
+# (level 1, full uses — see that file's "Orc" section). Save-load replay uses
 # _restore_race_ability_bar() instead (below) — it must NOT re-run this uses-reset logic, since by
 # the time it runs Stats.from_dict() has already restored the true saved uses count.
 func give_race_starting_items() -> void:
 	match player_stats.character_race:
+		Stats.CharacterRace.ORC:
+			if _find_ability_by_id("adrenaline_rush") == null:
+				player_stats.adrenaline_rush_uses_remaining = player_stats.proficiency_bonus
+				add_ability(_build_adrenaline_rush_ability())
 		Stats.CharacterRace.DRAGONBORN:
 			if _find_ability_by_id("breath_weapon") == null:
 				player_stats.breath_weapon_uses_remaining = player_stats.proficiency_bonus
@@ -571,6 +585,28 @@ func give_race_starting_items() -> void:
 			if _find_ability_by_id("stonecunning") == null:
 				player_stats.stonecunning_uses_remaining = player_stats.proficiency_bonus
 				add_ability(_build_stonecunning_ability())
+		Stats.CharacterRace.HUMAN:
+			if _find_ability_by_id("heroic_inspiration") == null:
+				player_stats.heroic_inspiration_available = true
+				add_ability(_build_heroic_inspiration_ability())
+		Stats.CharacterRace.TIEFLING:
+			_grant_tiefling_legacy_spell(_tiefling_legacy_spell_for(player_stats.race_variant, 1))
+		Stats.CharacterRace.GNOME:
+			_grant_gnome_lineage_spells()
+		Stats.CharacterRace.AASIMAR:
+			if _find_ability_by_id("healing_hands") == null:
+				player_stats.aasimar_healing_hands_available = true
+				add_ability(_build_healing_hands_ability())
+			if _find_ability_by_id("spell:light") == null:
+				add_ability(_build_spell_ability("light"))
+			if player_stats.character_level >= 3 and _find_ability_by_id("celestial_revelation") == null:
+				add_ability(_build_celestial_revelation_ability())
+		Stats.CharacterRace.GOLIATH:
+			if player_stats.character_level >= 5 and _find_ability_by_id("large_form") == null:
+				add_ability(_build_large_form_ability())
+			if _find_ability_by_id("giant_ancestry") == null:
+				player_stats.giant_ancestry_uses_remaining = player_stats.proficiency_bonus
+				add_ability(_build_giant_ancestry_ability())
 
 # from_dict()-only counterpart to give_race_starting_items(): re-adds the race ability-bar
 # entries from ALREADY-restored Stats state (player_stats.from_dict() has run by the time this is
@@ -580,6 +616,9 @@ func give_race_starting_items() -> void:
 # ab.uses_remaining/uses_max against them one more time regardless.
 func _restore_race_ability_bar() -> void:
 	match player_stats.character_race:
+		Stats.CharacterRace.ORC:
+			if _find_ability_by_id("adrenaline_rush") == null:
+				add_ability(_build_adrenaline_rush_ability())
 		Stats.CharacterRace.DRAGONBORN:
 			if _find_ability_by_id("breath_weapon") == null:
 				add_ability(_build_breath_weapon_ability())
@@ -588,6 +627,176 @@ func _restore_race_ability_bar() -> void:
 		Stats.CharacterRace.DWARF:
 			if _find_ability_by_id("stonecunning") == null:
 				add_ability(_build_stonecunning_ability())
+		Stats.CharacterRace.HUMAN:
+			if _find_ability_by_id("heroic_inspiration") == null:
+				add_ability(_build_heroic_inspiration_ability())
+		Stats.CharacterRace.ELF:
+			for sid: String in player_stats.elf_lineage_spell_ids:
+				if _find_ability_by_id("spell:" + sid) == null:
+					add_ability(_build_spell_ability(sid))
+		Stats.CharacterRace.TIEFLING:
+			for tsid: String in player_stats.tiefling_legacy_spell_ids:
+				if _find_ability_by_id("spell:" + tsid) == null:
+					add_ability(_build_spell_ability(tsid))
+		Stats.CharacterRace.GNOME:
+			for gsid: String in player_stats.gnome_lineage_spell_ids:
+				if _find_ability_by_id("spell:" + gsid) == null:
+					add_ability(_build_spell_ability(gsid))
+		Stats.CharacterRace.AASIMAR:
+			if _find_ability_by_id("healing_hands") == null:
+				add_ability(_build_healing_hands_ability())
+			if _find_ability_by_id("spell:light") == null:
+				add_ability(_build_spell_ability("light"))
+			if player_stats.character_level >= 3 and _find_ability_by_id("celestial_revelation") == null:
+				add_ability(_build_celestial_revelation_ability())
+		Stats.CharacterRace.GOLIATH:
+			if player_stats.character_level >= 5 and _find_ability_by_id("large_form") == null:
+				add_ability(_build_large_form_ability())
+			if _find_ability_by_id("giant_ancestry") == null:
+				add_ability(_build_giant_ancestry_ability())
+
+## Elven Lineage (scripts/entities/CLAUDE.md's "Elf" section): which spell each sub-race's lineage
+## grants at character level 3 vs. 5. Misty Step (High Elf, level 5) is the one lineage spell that
+## also exists as a real Wizard/Ranger leveled spell — reused verbatim, no separate copy needed.
+func _elf_lineage_spell_for(subrace: int, threshold_level: int) -> String:
+	match subrace:
+		Stats.ElfSubrace.DROW:
+			return "faerie_fire" if threshold_level == 3 else "darkness"
+		Stats.ElfSubrace.HIGH_ELF:
+			return "detect_magic" if threshold_level == 3 else "misty_step"
+		Stats.ElfSubrace.WOOD_ELF:
+			return "longstrider" if threshold_level == 3 else "pass_without_trace"
+
+## Fiendish Legacy (scripts/entities/CLAUDE.md's "Tiefling" section): which spell each legacy
+## grants at character level 1 (cantrip)/3 (1st-level)/5 (2nd-level). Fire Bolt (Infernal, level 1)
+## and False Life/Darkness (Chthonic level 3 / Infernal level 5) reuse the existing Wizard cantrip
+## and Wizard/Elf-lineage leveled spells verbatim, same "no separate copy needed" precedent as
+## Elven Lineage's own Misty Step reuse above.
+func _tiefling_legacy_spell_for(legacy: int, threshold_level: int) -> String:
+	match legacy:
+		Stats.TieflingLegacy.ABYSSAL:
+			if threshold_level == 1: return "poison_spray"
+			return "ray_of_sickness" if threshold_level == 3 else "hold_person"
+		Stats.TieflingLegacy.CHTHONIC:
+			if threshold_level == 1: return "chill_touch"
+			return "false_life" if threshold_level == 3 else "ray_of_enfeeblement"
+		Stats.TieflingLegacy.INFERNAL:
+			if threshold_level == 1: return "fire_bolt"
+			return "hellish_rebuke" if threshold_level == 3 else "darkness"
+		_:
+			return ""
+
+## Gnomish Lineage (scripts/entities/CLAUDE.md's "Gnome" section): which spell(s) each lineage
+## grants, all immediately at race select (unlike Elf/Tiefling's level-3/5 staggering — Gnomish
+## Lineage doesn't scale with character level).
+func _gnome_lineage_spells_for(lineage: int) -> Array[String]:
+	var out: Array[String] = []
+	match lineage:
+		Stats.GnomeLineage.FOREST:
+			out.append("minor_illusion")
+			out.append("speak_with_animals")
+		Stats.GnomeLineage.ROCK:
+			out.append("mending")
+	return out
+
+## Grants every Gnomish Lineage spell for the player's chosen lineage — ALWAYS PREPARED, outside
+## known_spells/prepared_spells/SpellcasterState bookkeeping (same shape as Elven Lineage/Fiendish
+## Legacy), each with its own proficiency_bonus-per-long-rest free-cast counter instead of a single
+## free-cast bool. Idempotent — safe to call again (e.g. via _restore_race_ability_bar() replay).
+func _grant_gnome_lineage_spells() -> void:
+	for spell_id: String in _gnome_lineage_spells_for(player_stats.race_variant):
+		if spell_id in player_stats.gnome_lineage_spell_ids:
+			continue
+		player_stats.gnome_lineage_spell_ids.append(spell_id)
+		player_stats.gnome_lineage_free_casts_remaining[spell_id] = player_stats.proficiency_bonus
+		if _find_ability_by_id("spell:" + spell_id) == null:
+			add_ability(_build_spell_ability(spell_id))
+		var spell: Spell = SpellDb.get_spell(spell_id)
+		if spell != null:
+			game_log("[color=lime]Gnomish Lineage grants you %s![/color]" % spell.spell_name)
+
+## Grants a Fiendish Legacy spell — ALWAYS PREPARED, outside known_spells/prepared_spells/
+## SpellcasterState bookkeeping, exactly mirroring _grant_elf_lineage_spell() above. Idempotent.
+func _grant_tiefling_legacy_spell(spell_id: String) -> void:
+	if spell_id == "" or spell_id in player_stats.tiefling_legacy_spell_ids:
+		return
+	player_stats.tiefling_legacy_spell_ids.append(spell_id)
+	if _find_ability_by_id("spell:" + spell_id) == null:
+		add_ability(_build_spell_ability(spell_id))
+	var spell: Spell = SpellDb.get_spell(spell_id)
+	if spell != null:
+		game_log("[color=lime]Fiendish Legacy grants you %s![/color]" % spell.spell_name)
+		_:
+			return ""
+
+## Grants a lineage spell — ALWAYS PREPARED, outside the normal known_spells/prepared_spells/
+## SpellcasterState bookkeeping entirely (never counts against a caster's known-cantrip or
+## prepared-spell cap; works even for a non-caster class). Idempotent — safe to call again
+## (gain_exp()'s own old_level < N guard already prevents a double-grant in practice, but
+## _restore_race_ability_bar() above may re-run this indirectly via save/load replay).
+func _grant_elf_lineage_spell(spell_id: String) -> void:
+	if spell_id == "" or spell_id in player_stats.elf_lineage_spell_ids:
+		return
+	player_stats.elf_lineage_spell_ids.append(spell_id)
+	if _find_ability_by_id("spell:" + spell_id) == null:
+		add_ability(_build_spell_ability(spell_id))
+	var spell: Spell = SpellDb.get_spell(spell_id)
+	if spell != null:
+		game_log("[color=lime]Elven Lineage grants you %s![/color]" % spell.spell_name)
+
+## High Elf lineage (level-1 benefit): "when long resting you may change 1 cantrip from your
+## chosen/known ones and change it for one from the Wizard spell list you don't know yet." Only
+## meaningful for a High Elf who's actually a Wizard (cantrips don't exist for any other class) —
+## a non-caster High Elf simply has nothing to swap, a documented no-op (same "narrow case, not the
+## full system" precedent as other race features with no hook to grab onto yet). Reachable only
+## from the long-rest hub (scripts/ui/high_elf_cantrip_swap.gd), same "changeable only at a long
+## rest" gating as Attunement/Weapon Masteries.
+func is_high_elf_caster() -> bool:
+	return player_stats.character_race == Stats.CharacterRace.ELF \
+		and player_stats.race_variant == Stats.ElfSubrace.HIGH_ELF \
+		and player_stats.caster != null
+
+func high_elf_known_cantrips() -> Array[String]:
+	if player_stats.caster == null:
+		return []
+	var out: Array[String] = []
+	for sid: String in player_stats.caster.known_spells:
+		if SpellDb.get_spell(sid) != null and SpellDb.get_spell(sid).level == 0:
+			out.append(sid)
+	return out
+
+func high_elf_learnable_cantrips() -> Array[String]:
+	if player_stats.caster == null:
+		return []
+	var known: Array[String] = high_elf_known_cantrips()
+	var out: Array[String] = []
+	for sid: String in SpellDb.CANTRIP_IDS:
+		if sid not in known:
+			out.append(sid)
+	return out
+
+func swap_high_elf_cantrip(old_id: String, new_id: String) -> bool:
+	if not is_high_elf_caster():
+		return false
+	var caster: SpellcasterState = player_stats.caster
+	if old_id not in caster.known_spells or new_id in caster.known_spells:
+		return false
+	var was_prepared: bool = caster.prepared_spells.has(old_id)
+	caster.known_spells.erase(old_id)
+	caster.prepared_spells.erase(old_id)
+	_remove_ability_by_id("spell:" + old_id)
+	caster.known_spells.append(new_id)
+	if was_prepared:
+		caster.prepared_spells.append(new_id)
+		add_ability(_build_spell_ability(new_id))
+	if special_slot_spell_id == old_id:
+		set_special_slot(new_id)
+	var old_spell: Spell = SpellDb.get_spell(old_id)
+	var new_spell: Spell = SpellDb.get_spell(new_id)
+	game_log("[color=lime]High Elf Cantrip Swap: %s replaced with %s.[/color]" % [
+		old_spell.spell_name if old_spell != null else old_id,
+		new_spell.spell_name if new_spell != null else new_id])
+	return true
 
 func _build_stonecunning_ability() -> Ability:
 	var ab := Ability.new()
@@ -597,6 +806,46 @@ func _build_stonecunning_ability() -> Ability:
 	ab.icon_path = ""
 	ab.uses_remaining = player_stats.stonecunning_uses_remaining
 	ab.uses_max = player_stats.proficiency_bonus
+	return ab
+
+func _build_adrenaline_rush_ability() -> Ability:
+	var ab := Ability.new()
+	ab.ability_id = "adrenaline_rush"
+	ab.ability_name = "Adrenaline Rush"
+	ab.description = "Gain temporary HP equal to your proficiency bonus (%d) and your next move doesn't cost you a turn. Free action, %d uses — refills on short rest AND long rest." % [player_stats.proficiency_bonus, player_stats.proficiency_bonus]
+	ab.icon_path = ""
+	ab.uses_remaining = player_stats.adrenaline_rush_uses_remaining
+	ab.uses_max = player_stats.proficiency_bonus
+	return ab
+
+func _build_heroic_inspiration_ability() -> Ability:
+	var ab := Ability.new()
+	ab.ability_id = "heroic_inspiration"
+	ab.ability_name = "Heroic Inspiration"
+	ab.description = "Your very next d20 roll (attack, check, or save) is guaranteed to succeed as a critical natural 20. Free action, 1 use per long rest."
+	ab.icon_path = ""
+	ab.uses_remaining = 1 if player_stats.heroic_inspiration_available else 0
+	ab.uses_max = 1
+	return ab
+
+func _build_healing_hands_ability() -> Ability:
+	var ab := Ability.new()
+	ab.ability_id = "healing_hands"
+	ab.ability_name = "Healing Hands"
+	ab.description = "Costs your action. Touch a creature (yourself or your companion) to heal 1d4 × your proficiency bonus (%d) HP. 1 use per long rest." % player_stats.proficiency_bonus
+	ab.icon_path = ""
+	ab.uses_remaining = 1 if player_stats.aasimar_healing_hands_available else 0
+	ab.uses_max = 1
+	return ab
+
+func _build_celestial_revelation_ability() -> Ability:
+	var ab := Ability.new()
+	ab.ability_id = "celestial_revelation"
+	ab.ability_name = "Celestial Revelation"
+	ab.description = "Free action. Choose Heavenly Wings, Inner Radiance, or Necrotic Shroud — press to cycle the choice, click anywhere to activate. For 10 turns, the first damage you deal each turn is boosted by your proficiency bonus (%d). 1 use per long rest." % player_stats.proficiency_bonus
+	ab.icon_path = ""
+	ab.uses_remaining = 0 if player_stats.aasimar_celestial_revelation_used else 1
+	ab.uses_max = 1
 	return ab
 
 func _build_breath_weapon_ability() -> Ability:
@@ -618,6 +867,56 @@ func _build_draconic_flight_ability() -> Ability:
 	ab.icon_path = ""
 	ab.uses_remaining = 0
 	ab.uses_max = 0
+	return ab
+
+func _build_large_form_ability() -> Ability:
+	var ab := Ability.new()
+	ab.ability_id = "large_form"
+	ab.ability_name = "Large Form"
+	ab.description = "Grow to Large size for up to 100 turns (needs a free 2x2 space): Advantage on STR checks, +1/3 movement speed. Press again to end early. Free action, 1/long rest."
+	ab.icon_path = ""
+	ab.uses_remaining = 0 if player_stats.large_form_used else 1
+	ab.uses_max = 1
+	return ab
+
+## Giant Ancestry's own flavor/effect text, per Stats.GiantAncestry — shown on the single
+## activatable ability every Goliath gets (see player_goliath.gd / scripts/entities/CLAUDE.md's
+## "Goliath" section).
+func _giant_ancestry_name(variant: int) -> String:
+	match variant:
+		Stats.GiantAncestry.CLOUD: return "Cloud's Jaunt"
+		Stats.GiantAncestry.FIRE:  return "Fire's Burn"
+		Stats.GiantAncestry.FROST: return "Frost's Chill"
+		Stats.GiantAncestry.HILL:  return "Hill's Tumble"
+		Stats.GiantAncestry.STONE: return "Stone's Endurance"
+		Stats.GiantAncestry.STORM: return "Storm's Thunder"
+		_: return "Giant Ancestry"
+
+func _giant_ancestry_description(variant: int) -> String:
+	match variant:
+		Stats.GiantAncestry.CLOUD:
+			return "Free action: teleport up to 3 tiles to an unoccupied space you can see. %d uses/long rest." % player_stats.proficiency_bonus
+		Stats.GiantAncestry.FIRE:
+			return "Arm, then your next attack that hits also deals +1d10 Fire damage (a miss doesn't spend a charge). %d uses/long rest." % player_stats.proficiency_bonus
+		Stats.GiantAncestry.FROST:
+			return "Arm, then your next attack that hits also chills the target, slowing it for a few turns (a miss doesn't spend a charge). %d uses/long rest." % player_stats.proficiency_bonus
+		Stats.GiantAncestry.HILL:
+			return "Arm, then the next hit you land on a Large-or-smaller creature knocks it Prone (a miss doesn't spend a charge). %d uses/long rest." % player_stats.proficiency_bonus
+		Stats.GiantAncestry.STONE:
+			return "Arm, then the next damage you take is reduced by 1d12 + your CON modifier. %d uses/long rest." % player_stats.proficiency_bonus
+		Stats.GiantAncestry.STORM:
+			return "Toggle on, then the next creature that damages you takes 1d8 Thunder damage back. %d uses/long rest." % player_stats.proficiency_bonus
+		_:
+			return ""
+
+func _build_giant_ancestry_ability() -> Ability:
+	var ab := Ability.new()
+	ab.ability_id = "giant_ancestry"
+	ab.ability_name = _giant_ancestry_name(player_stats.race_variant)
+	ab.description = _giant_ancestry_description(player_stats.race_variant)
+	ab.icon_path = ""
+	ab.uses_remaining = player_stats.giant_ancestry_uses_remaining
+	ab.uses_max = player_stats.proficiency_bonus
 	return ab
 
 # Wizard's one-time cantrip pick (cantrip_select.gd's round 1, or a premade hero's "cantrip" key
@@ -1248,12 +1547,28 @@ func clear_fog_cloud() -> void:
 	fog_cloud_pos = Vector2i(-1, -1)
 	fog_cloud_radius = 0
 
+## Darkness (Drow lineage spell, level 5) — a second, independent Heavily Obscured zone, same bare
+## position+radius shape as Fog Cloud above (Stats.darkness_turns/concentration_spell_id ==
+## "darkness" drives its duration). Kept as its own pos/radius pair rather than reusing Fog Cloud's
+## fields so both spells can be active at once without one silently overwriting the other.
+var darkness_pos: Vector2i = Vector2i(-1, -1)
+var darkness_radius: int = 0
+
+func is_in_darkness(pos: Vector2i) -> bool:
+	if darkness_pos == Vector2i(-1, -1):
+		return false
+	var d: Vector2i = pos - darkness_pos
+	return d.x * d.x + d.y * d.y <= darkness_radius * darkness_radius
+
+func clear_darkness() -> void:
+	darkness_pos = Vector2i(-1, -1)
+	darkness_radius = 0
+
 ## Heavily Obscured (5e terrain concept — distinct from the Blinded CONDITION it grants below):
-## Fog Cloud is the only source of Heavily Obscured terrain today; a future source (e.g. a
-## Darkness spell) would extend this function rather than every call site checking multiple
-## zones by hand.
+## Fog Cloud and Darkness are the two sources of Heavily Obscured terrain today; a further future
+## source would extend this function rather than every call site checking multiple zones by hand.
 func is_heavily_obscured(pos: Vector2i) -> bool:
-	return is_in_fog_cloud(pos)
+	return is_in_fog_cloud(pos) or is_in_darkness(pos)
 
 ## Blinded condition: standing in a Heavily Obscured tile grants it to WHOEVER is standing there —
 ## player or enemy, symmetric, since it's purely positional. Effects (5e text): can't see (auto-
@@ -1275,7 +1590,14 @@ func is_blinded(pos: Vector2i) -> bool:
 func effective_fov_radius(pos: Vector2i) -> int:
 	if is_blinded(pos):
 		return 1
-	return DungeonFloor.FOV_RADIUS + fov_radius_bonus + player_stats.darkvision_bonus + (1 if has_lit_torch_equipped() else 0)
+	return DungeonFloor.FOV_RADIUS + fov_radius_bonus + celestial_radiance_fov_bonus() + player_stats.darkvision_bonus + (1 if has_lit_torch_equipped() else 0)
+
+## Aasimar Celestial Revelation's Inner Radiance transformation: +2 FOV radius while active — see
+## scripts/entities/CLAUDE.md's "Aasimar" section. Applied BEFORE darkvision in the sum above (own
+## light source reaching out, same conceptual slot the equipped-torch bonus occupies) and gets its
+## own ring color in DungeonFloor's FOV-bonus-ring visuals (see that file's "FOV" section).
+func celestial_radiance_fov_bonus() -> int:
+	return 2 if (player_stats.celestial_revelation_turns > 0 and player_stats.celestial_revelation_transform == Stats.AasimarTransformation.INNER_RADIANCE) else 0
 
 ## Grants a subclass's free, rank-independent Tier 2 activation ability (Frenzy, Limit Break,
 ## Animal Form, Zealot Strike) directly at subclass selection — NOT gated by any talent rank.
@@ -1320,8 +1642,10 @@ func advance_floor() -> void:
 	bruiser_revive_used_this_floor = false
 	# Light cantrip: the lit object is left behind on the previous floor — ends on descent.
 	clear_light_source()
-	# Fog Cloud: same reasoning as Light above — the cloud is left behind on the previous floor.
+	# Fog Cloud/Darkness: same reasoning as Light above — the cloud/zone is left behind on the
+	# previous floor.
 	clear_fog_cloud()
+	clear_darkness()
 	short_rest_changed.emit()
 	floor_changed.emit(current_floor)
 	if current_floor > 10:
@@ -1407,6 +1731,17 @@ func long_rest() -> void:
 	scarred_warrior_limit_break_used = false
 	player_stats.relentless_endurance_used = false
 	player_stats.heroic_inspiration_available = true
+	player_stats.adrenaline_rush_uses_remaining = player_stats.proficiency_bonus
+	player_stats.aasimar_healing_hands_available = true
+	player_stats.aasimar_celestial_revelation_used = false
+	player_stats.large_form_used = false
+	player_stats.giant_ancestry_uses_remaining = player_stats.proficiency_bonus
+	# Elven Lineage: each lineage spell's one free-per-long-rest cast refills.
+	player_stats.elf_lineage_free_cast_used.clear()
+	player_stats.tiefling_legacy_free_cast_used.clear()
+	# Gnomish Lineage: each lineage spell's free-cast counter refills to proficiency_bonus.
+	for gnome_sid: String in player_stats.gnome_lineage_spell_ids:
+		player_stats.gnome_lineage_free_casts_remaining[gnome_sid] = player_stats.proficiency_bonus
 	# Natural Sleeper activates/locks in on long rest only (not short rest, not floor descent).
 	# Form is no longer player-chosen — a random one is rolled every long rest (owner request:
 	# simplify/ease the game by removing the manual cycling step).
@@ -1448,6 +1783,24 @@ func _sync_ability_uses() -> void:
 		elif ab.ability_id == "stonecunning":
 			ab.uses_remaining = player_stats.stonecunning_uses_remaining
 			ab.uses_max = player_stats.proficiency_bonus
+		elif ab.ability_id == "heroic_inspiration":
+			ab.uses_remaining = 1 if player_stats.heroic_inspiration_available else 0
+			ab.uses_max = 1
+		elif ab.ability_id == "adrenaline_rush":
+			ab.uses_remaining = player_stats.adrenaline_rush_uses_remaining
+			ab.uses_max = player_stats.proficiency_bonus
+		elif ab.ability_id == "healing_hands":
+			ab.uses_remaining = 1 if player_stats.aasimar_healing_hands_available else 0
+			ab.uses_max = 1
+		elif ab.ability_id == "celestial_revelation":
+			ab.uses_remaining = 0 if player_stats.aasimar_celestial_revelation_used else 1
+			ab.uses_max = 1
+		elif ab.ability_id == "large_form":
+			ab.uses_remaining = 0 if player_stats.large_form_used else 1
+			ab.uses_max = 1
+		elif ab.ability_id == "giant_ancestry":
+			ab.uses_remaining = player_stats.giant_ancestry_uses_remaining
+			ab.uses_max = player_stats.proficiency_bonus
 	ability_bar_changed.emit()
 
 ## Whether an ability-bar entry can currently be activated — beyond the generic uses_remaining
@@ -1480,6 +1833,10 @@ func _on_short_rest_completed() -> void:
 		game_log("[color=lime]Frenzy: use refreshed.[/color]")
 	berserker_frenzy_used = false
 	berserker_turns_since_frenzy = 0
+	if player_stats.character_race == Stats.CharacterRace.ORC and player_stats.adrenaline_rush_uses_remaining < player_stats.proficiency_bonus:
+		player_stats.adrenaline_rush_uses_remaining = player_stats.proficiency_bonus
+		_sync_ability_uses()
+		game_log("[color=lime]Adrenaline Rush: uses refreshed.[/color]")
 	if player_companion != null and is_instance_valid(player_companion):
 		player_companion.heal_to_max()
 		game_log("[color=lime]%s rests and recovers fully.[/color]" % player_companion.animal_name)
@@ -1616,6 +1973,48 @@ func gain_exp(amount: int) -> void:
 					player_stats.stonecunning_uses_remaining + (new_prof_bonus_dw - old_prof_bonus),
 					new_prof_bonus_dw)
 				_sync_ability_uses()
+		# Adrenaline Rush: same proficiency-bonus-crossing +1-current-use grant as Breath
+		# Weapon/Stonecunning above.
+		if player_stats.character_race == Stats.CharacterRace.ORC:
+			var new_prof_bonus_orc: int = player_stats.proficiency_bonus
+			if new_prof_bonus_orc > old_prof_bonus:
+				player_stats.adrenaline_rush_uses_remaining = mini(
+					player_stats.adrenaline_rush_uses_remaining + (new_prof_bonus_orc - old_prof_bonus),
+					new_prof_bonus_orc)
+				_sync_ability_uses()
+		# Elven Lineage: grants one spell at character level 3, a second at level 5 (see
+		# scripts/entities/CLAUDE.md's "Elf" section).
+		if player_stats.character_race == Stats.CharacterRace.ELF:
+			if old_level < 3 and player_stats.character_level >= 3:
+				_grant_elf_lineage_spell(_elf_lineage_spell_for(player_stats.race_variant, 3))
+			if old_level < 5 and player_stats.character_level >= 5:
+				_grant_elf_lineage_spell(_elf_lineage_spell_for(player_stats.race_variant, 5))
+		# Fiendish Legacy: grants a 1st-level spell at character level 3, a 2nd-level spell at
+		# level 5 (the level-1 cantrip is granted immediately at race select — see
+		# give_race_starting_items()) — see scripts/entities/CLAUDE.md's "Tiefling" section.
+		if player_stats.character_race == Stats.CharacterRace.TIEFLING:
+			if old_level < 3 and player_stats.character_level >= 3:
+				_grant_tiefling_legacy_spell(_tiefling_legacy_spell_for(player_stats.race_variant, 3))
+			if old_level < 5 and player_stats.character_level >= 5:
+				_grant_tiefling_legacy_spell(_tiefling_legacy_spell_for(player_stats.race_variant, 5))
+		# Celestial Revelation unlocks the instant character_level reaches 3 (same
+		# "give_race_starting_items() re-run is idempotent" pattern as Dragonborn's Draconic Flight
+		# unlocking at level 5).
+		if player_stats.character_race == Stats.CharacterRace.AASIMAR and old_level < 3 and player_stats.character_level >= 3:
+			give_race_starting_items()
+		# Giant Ancestry: same proficiency-bonus-crossing +1-current-use grant as Breath
+		# Weapon/Stonecunning/Adrenaline Rush above. Large Form unlocks the instant
+		# character_level reaches 5 (same "give_race_starting_items() re-run is idempotent"
+		# pattern as Dragonborn's Draconic Flight/Aasimar's Celestial Revelation above).
+		if player_stats.character_race == Stats.CharacterRace.GOLIATH:
+			var new_prof_bonus_gol: int = player_stats.proficiency_bonus
+			if new_prof_bonus_gol > old_prof_bonus:
+				player_stats.giant_ancestry_uses_remaining = mini(
+					player_stats.giant_ancestry_uses_remaining + (new_prof_bonus_gol - old_prof_bonus),
+					new_prof_bonus_gol)
+				_sync_ability_uses()
+			if old_level < 5 and player_stats.character_level >= 5:
+				give_race_starting_items()
 		AudioManager.play("level_up")
 		player_leveled_up.emit(player_stats.character_level)
 
@@ -2384,6 +2783,19 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 	# anywhere before this — a Dragonborn's own passive resistance silently did nothing.
 	if damage_type != "" and damage_type in player_stats.damage_resistances:
 		final_amount = int(floor(float(final_amount) * 0.5))
+	# Stone Giant ancestry (Goliath, see player_goliath.gd): a one-shot armed reduction, rolled at
+	# ARM time, consumed by the very next instance of damage taken (status-tick/trap damage never
+	# reaches this function, so it can only ever be consumed by a real attack — same scope as the
+	# concentration-break check below).
+	if not ignore_rage and player_stats.stone_ancestry_reduction_pending > 0:
+		var reduction: int = player_stats.stone_ancestry_reduction_pending
+		player_stats.stone_ancestry_reduction_pending = 0
+		player_stats.giant_ancestry_armed = false
+		if not invincible:
+			player_stats.giant_ancestry_uses_remaining -= 1
+		_sync_ability_uses()
+		final_amount = maxi(0, final_amount - reduction)
+		game_log("[color=cyan]Stone's Endurance absorbs %d damage.[/color]" % reduction)
 	# DR can reduce damage to 0 — skip Stats.take_damage() which floors at 1.
 	if final_amount <= 0:
 		if is_physical and not ignore_rage:
@@ -2445,6 +2857,11 @@ func end_concentration(reason_log: String = "") -> void:
 	elif broken_spell == "fog_cloud":
 		player_stats.fog_cloud_turns = 0
 		clear_fog_cloud()
+	elif broken_spell == "darkness":
+		player_stats.darkness_turns = 0
+		clear_darkness()
+	elif broken_spell == "pass_without_trace":
+		player_stats.pass_without_trace_turns = 0
 	elif broken_spell == "hunters_mark":
 		player_stats.hunters_mark_turns = 0
 		player_stats.hunters_mark_target = null

@@ -610,6 +610,26 @@ cast-resolution walkthroughs.
   way to acquire one is `GameState._grant_elf_lineage_spell()`. `class_list` is left `[]` for all
   five (no real class list applies). No Scroll of &lt;Spell&gt; exists for any of them — a
   documented scope cut.
+  + `TIEFLING_LEGACY_SPELL_IDS` (6: `poison_spray`/`chill_touch`/`ray_of_sickness`/`hold_person`/
+  `ray_of_enfeeblement`/`hellish_rebuke` — Fire Bolt, False Life, and Darkness, the other 3
+  Fiendish Legacy grants, reuse existing entries verbatim and aren't listed here) — Tiefling
+  race's Fiendish Legacy grant only (`scripts/entities/CLAUDE.md`'s "Tiefling" section), same
+  exclusion from `LEVELED_SPELL_IDS`/`CLASS_SPELL_LISTS`/level-up picker/Scroll-of-&lt;Spell&gt;
+  as `ELF_LINEAGE_SPELL_IDS` above — the only way to acquire one is
+  `GameState._grant_tiefling_legacy_spell()`. Introduces two new `Spell.resolution ==
+  Resolution.SAVE` + `TargetKind.ENEMY` leveled spells (Hold Person, Hellish Rebuke), resolved by
+  a new shared `SpellEffects.cast_leveled_save_at_enemy()` (the leveled counterpart to the
+  cantrip-only `cast_cantrip_save_at_enemy()` — no such single-target-SAVE-plus-slot-consumption
+  shape existed before these two needed it).
+  + `GNOME_LINEAGE_SPELL_IDS` (3: `minor_illusion`/`speak_with_animals`/`mending`, all cantrips)
+  - Gnome race's Gnomish Lineage grant only (`scripts/entities/CLAUDE.md`'s "Gnome" section), same
+  exclusion from `LEVELED_SPELL_IDS`/`CLASS_SPELL_LISTS`/level-up picker/Scroll-of-&lt;Spell&gt;
+  as the two lineage sets above — the only way to acquire one is
+  `GameState._grant_gnome_lineage_spells()`. Unlike Elf/Tiefling's single free-cast-per-long-rest
+  bool, each is castable `proficiency_bonus` times per long rest
+  (`Stats.gnome_lineage_free_casts_remaining: Dictionary`, spell_id to int) — a real counter
+  instead of a bool, since the direct owner judged "once" too weak and "unlimited" too strong for
+  a cantrip-tier grant.
 - **`SpellcasterState`** (`Resource`) — lives on `Stats.caster` (Wizard and Ranger today — see
   `Stats.CLASS_ROLE` in `scripts/entities/stats.gd`, the internal-only FULL_CASTER/HALF_CASTER/
   MARTIAL/THIRD_CASTER categorization that decided this), not `GameState`, so a future enemy/

@@ -13,17 +13,28 @@ const CHROMATIC_ORB_TYPES: Array[String] = ["Acid", "Cold", "Fire", "Lightning",
 # of <Spell>, Item.scroll_spell_id, castable by any class), but only Stats.caster (Wizard) has a
 # SpellcasterState with its own spellcasting_ability. Anyone without one uses proficiency_bonus +
 # INT modifier, per the design call in CLAUDE.md ("non-casters use INT as their casting stat").
-static func _attack_bonus(stats: Stats) -> int:
+# `spell` is optional and only matters for a Tiefling casting one of their own Fiendish Legacy
+# spells (scripts/entities/CLAUDE.md's "Tiefling" section) — those use "whichever of INT/WIS/CHA
+# is highest" instead of the character's own class spellcasting_ability (or the INT-only
+# non-caster fallback), checked BEFORE either of those. Every call site already has `spell` in
+# local scope, so this never needed a second parallel set of helpers.
+static func _attack_bonus(stats: Stats, spell: Spell = null) -> int:
+	if spell != null and stats.character_race == Stats.CharacterRace.TIEFLING and spell.spell_id in stats.tiefling_legacy_spell_ids:
+		return stats.proficiency_bonus + stats.tiefling_best_ability_mod()
 	if stats.caster != null:
 		return stats.caster.spell_attack_bonus(stats)
 	return stats.proficiency_bonus + stats.int_modifier()
 
-static func _save_dc(stats: Stats) -> int:
+static func _save_dc(stats: Stats, spell: Spell = null) -> int:
+	if spell != null and stats.character_race == Stats.CharacterRace.TIEFLING and spell.spell_id in stats.tiefling_legacy_spell_ids:
+		return 8 + stats.proficiency_bonus + stats.tiefling_best_ability_mod()
 	if stats.caster != null:
 		return stats.caster.spell_save_dc(stats)
 	return 8 + stats.proficiency_bonus + stats.int_modifier()
 
-static func _cast_ability_mod(stats: Stats) -> int:
+static func _cast_ability_mod(stats: Stats, spell: Spell = null) -> int:
+	if spell != null and stats.character_race == Stats.CharacterRace.TIEFLING and spell.spell_id in stats.tiefling_legacy_spell_ids:
+		return stats.tiefling_best_ability_mod()
 	if stats.caster != null:
 		return stats.caster._ability_mod(stats)
 	return stats.int_modifier()
@@ -54,7 +65,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	var target_was_unaware: bool = was_surprised
 
 	var stats: Stats = player.stats
-	var attack_bonus: int = _attack_bonus(stats)
+	var attack_bonus: int = _attack_bonus(stats, spell)
 
 	var adv_count: int = 0
 	adv_count += player._base_talents.consume_psycho_or_battlefield_adv()
@@ -89,7 +100,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	var is_nat_one: bool = die == 1
 
 	var hit_meta: String = "sphit:die=%d,d1=%d,d2=%d,int=%d,prof=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
-		die, die1, die2, _cast_ability_mod(stats), stats.proficiency_bonus, roll, target.stats.armor_class,
+		die, die1, die2, _cast_ability_mod(stats, spell), stats.proficiency_bonus, roll, target.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
 		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
 
@@ -140,7 +151,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	else:
 		match spell.effect_id:
 			"ray_of_frost":
-				var dc: int = _save_dc(stats)
+				var dc: int = _save_dc(stats, spell)
 				var save: Dictionary = target.resist_check_detailed(dc, false, false, false, false, true)
 				var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
 					save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
@@ -177,10 +188,9 @@ static func cast_cantrip_save_at_enemy(player: Player, spell: Spell, target: Ene
 	sprite.play("idle")
 
 	var stats: Stats = player.stats
-	var dc: int = _save_dc(stats)
-	var use_wis: bool = spell.effect_id == "toll_the_dead"
-	var use_int: bool = spell.effect_id == "mind_sliver"
-	var save: Dictionary = target.resist_check_detailed(dc, false, false, use_wis, use_int, true)
+	var dc: int = _save_dc(stats, spell)
+	var save: Dictionary = target.resist_check_detailed(dc,
+		spell.save_stat == "CON", spell.save_stat == "DEX", spell.save_stat == "WIS", spell.save_stat == "INT", true)
 	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
 		save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 
@@ -240,7 +250,7 @@ static func _resolve_thunderclap(player: Player, spell: Spell, dungeon_floor: No
 		if not dungeon_floor.has_ranged_los(player.grid_pos, e.grid_pos):
 			continue
 		e.on_disturbed(player.grid_pos)
-		var dc: int = _save_dc(stats)
+		var dc: int = _save_dc(stats, spell)
 		var save: Dictionary = e.resist_check_detailed(dc, true, false, false, false, true)
 		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
 			save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
@@ -347,8 +357,24 @@ static func cast_spell_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 # from_scroll: a Scroll of <Spell> is self-contained (its magic doesn't draw on the reader's
 # spellbook), so it never touches Stats.caster.slot_pool — that's true even for a Wizard reading
 # a scroll of their own known spell, not just for a non-caster.
-static func _consume_slot(player: Player, cast_level: int, from_scroll: bool = false) -> void:
+# An Elf lineage spell's first cast each long rest is free — Stats.is_lineage_free_cast_available()
+# — checked BEFORE ever touching caster.slot_pool, so it works even for a non-caster class (a
+# Barbarian Elf has no SpellcasterState at all; the free use is the only cast available to them).
+static func _consume_slot(player: Player, spell: Spell, cast_level: int, from_scroll: bool = false) -> void:
 	if from_scroll:
+		return
+	if player.stats.is_lineage_free_cast_available(spell.spell_id):
+		player.stats.elf_lineage_free_cast_used[spell.spell_id] = true
+		GameState.spell_slots_changed.emit()
+		return
+	if player.stats.is_tiefling_legacy_free_cast_available(spell.spell_id):
+		player.stats.tiefling_legacy_free_cast_used[spell.spell_id] = true
+		GameState.spell_slots_changed.emit()
+		return
+	if player.stats.is_gnome_lineage_free_cast_available(spell.spell_id):
+		if not GameState.invincible:
+			player.stats.gnome_lineage_free_casts_remaining[spell.spell_id] = player.stats.gnome_lineage_free_casts_remaining.get(spell.spell_id, 0) - 1
+		GameState.spell_slots_changed.emit()
 		return
 	if cast_level > 0 and not GameState.invincible:
 		player.stats.caster.slot_pool.consume(cast_level)
@@ -358,7 +384,7 @@ static func _consume_slot(player: Player, cast_level: int, from_scroll: bool = f
 static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
-	_consume_slot(player, cast_level, from_scroll)
+	_consume_slot(player, spell, cast_level, from_scroll)
 	match spell.effect_id:
 		"shield":
 			player.stats.shield_ac_bonus = 5
@@ -406,6 +432,29 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			player.stats.invisibility_just_cast = true
 			player._update_invisibility_visual()
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — you fade from view for up to 100 turns.[/color]" % spell.spell_name)
+		"detect_magic":
+			_resolve_detect_magic(player, spell, dungeon_floor)
+		"longstrider":
+			player.stats.longstrider_turns = 100
+			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your steps quicken for up to 100 turns.[/color]" % spell.spell_name)
+		"pass_without_trace":
+			if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "pass_without_trace":
+				GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+			player.stats.concentration_spell_id = "pass_without_trace"
+			player.stats.pass_without_trace_turns = 100
+			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your steps and voice are muffled for up to 100 turns.[/color]" % spell.spell_name)
+		"minor_illusion":
+			player.stats.minor_illusion_turns = 10
+			GameState.game_log("[color=cyan]You cast [b]%s[/b] — a small distraction covers your movements for 10 turns.[/color]" % spell.spell_name)
+		"speak_with_animals":
+			GameState.game_log("[color=cyan]You cast [b]%s[/b] — the chittering of nearby creatures briefly makes sense to you.[/color]" % spell.spell_name)
+		"mending":
+			var main_hand: Item = GameState.equipment.get("melee") as Item
+			if main_hand != null and main_hand.uses_max > 0 and main_hand.uses_remaining < main_hand.uses_max:
+				main_hand.uses_remaining = main_hand.uses_max
+				GameState.game_log("[color=cyan]You cast [b]%s[/b] — your %s is fully repaired.[/color]" % [spell.spell_name, main_hand.item_name])
+			else:
+				GameState.game_log("[color=gray]You cast [b]%s[/b], but there's nothing to mend right now.[/color]" % spell.spell_name)
 		_:
 			GameState.game_log("[color=cyan]You cast [b]%s[/b].[/color]" % spell.spell_name)
 	if dungeon_floor != null:
@@ -416,7 +465,7 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, tile_pos: Vector2i, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
-	_consume_slot(player, cast_level, from_scroll)
+	_consume_slot(player, spell, cast_level, from_scroll)
 	if dungeon_floor != null:
 		dungeon_floor.try_shoot_tripwire(tile_pos)
 	match spell.effect_id:
@@ -428,6 +477,10 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 			_resolve_cone_aoe(player, spell, tile_pos, dungeon_floor)
 		"fog_cloud":
 			_resolve_fog_cloud(player, spell, tile_pos)
+		"faerie_fire":
+			_resolve_faerie_fire(player, spell, tile_pos, dungeon_floor)
+		"darkness":
+			_resolve_darkness(player, spell, tile_pos)
 		_:
 			if spell.shape == "sphere":
 				_resolve_sphere_aoe(player, spell, tile_pos, dungeon_floor)
@@ -500,7 +553,7 @@ static func _resolve_cone_aoe(player: Player, spell: Spell, aim_tile: Vector2i, 
 		if not tile_set.has(e.grid_pos):
 			continue
 		e.on_disturbed(player.grid_pos)
-		var dc: int = _save_dc(stats)
+		var dc: int = _save_dc(stats, spell)
 		var save: Dictionary = e.resist_check_detailed(dc, false, true, false, false, true)
 		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
 			save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
@@ -556,7 +609,7 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, 
 					dungeon_floor.ignite_flammable(p)
 	for e: Enemy in targets:
 		e.on_disturbed(player.grid_pos)
-		var dc: int = _save_dc(stats)
+		var dc: int = _save_dc(stats, spell)
 		var save: Dictionary = e.resist_check_detailed(dc, false, true, false, false, true)
 		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
 			save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
@@ -578,7 +631,7 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, 
 
 	var d_player: Vector2i = player.grid_pos - center
 	if d_player.x * d_player.x + d_player.y * d_player.y <= r * r and (dungeon_floor == null or dungeon_floor.has_ranged_los(center, player.grid_pos)):
-		var pdc: int = _save_dc(stats)
+		var pdc: int = _save_dc(stats, spell)
 		var pdex_mod: int = stats.dex_modifier()
 		var pprof: int = stats.proficiency_bonus if stats.check_prof_dex else 0
 		var pdie: int = Rng.roll(20)
@@ -643,7 +696,7 @@ static func cast_magic_missile(player: Player, spell: Spell, cast_level: int, ta
 	sprite.play("hit")
 	await sprite.animation_finished
 	sprite.play("idle")
-	_consume_slot(player, cast_level, from_scroll)
+	_consume_slot(player, spell, cast_level, from_scroll)
 
 	for key: String in order:
 		var g: Dictionary = groups[key]
@@ -697,7 +750,7 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	var target_was_unaware: bool = was_surprised
 	target.on_disturbed(player.grid_pos)
 	var stats: Stats = player.stats
-	var attack_bonus: int = _attack_bonus(stats)
+	var attack_bonus: int = _attack_bonus(stats, spell)
 
 	var adv_count: int = 0
 	if not is_leap:
@@ -731,7 +784,7 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	var is_nat_one: bool = die == 1
 
 	var hit_meta: String = "sphit:die=%d,d1=%d,d2=%d,int=%d,prof=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
-		die, die1, die2, _cast_ability_mod(stats), stats.proficiency_bonus, roll, target.stats.armor_class,
+		die, die1, die2, _cast_ability_mod(stats, spell), stats.proficiency_bonus, roll, target.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
 		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
 
@@ -807,7 +860,7 @@ static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_leve
 	sprite.play("hit")
 	await sprite.animation_finished
 	sprite.play("idle")
-	_consume_slot(player, cast_level, from_scroll)
+	_consume_slot(player, spell, cast_level, from_scroll)
 
 	match spell.effect_id:
 		"chromatic_orb":
@@ -839,6 +892,91 @@ static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_leve
 				stats.witch_bolt_turns = 10
 				stats.witch_bolt_just_cast = true
 				GameState.game_log("[color=cyan]%s is Jolted — crackling energy will keep striking it.[/color]" % target.display_name)
+		"ray_of_sickness":
+			# Abyssal Tiefling lineage spell (level 3 grant): attack roll + damage exactly like
+			# Chromatic Orb, plus a secondary CON save on a landed non-lethal hit — a fail applies
+			# the real Poisoned condition for 2 turns (simplified from RAW's "until the end of your
+			# next turn" — same fixed-duration precedent as Mind Sliver's own documented gap).
+			var res3: Dictionary = _resolve_spell_attack_bolt(player, spell, target, spell.damage_type, dungeon_floor, false)
+			if res3["hit"] and not res3["lethal"]:
+				var dc3: int = _save_dc(player.stats, spell)
+				var save3: Dictionary = target.resist_check_detailed(dc3, true, false, false, false, true)
+				var save_meta3: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+					save3["die"], save3["mod"], save3["floor_bonus"], save3["prof_label"], save3["total"], save3["dc"], save3["stat"], int(save3["pass"]), save3["sliver_penalty"]]
+				if save3["pass"]:
+					GameState.game_log("%s [url=%s]fights off[/url] the sickness." % [target.display_name, save_meta3])
+				else:
+					target.apply_status("poisoned_condition", 2)
+					GameState.game_log("%s [url=%s]retches and doubles over[/url] — Poisoned!" % [target.display_name, save_meta3])
+		"ray_of_enfeeblement":
+			# Chthonic Tiefling lineage spell (level 5 grant): attack roll for a minor Necrotic
+			# sting, then on a hit the target is Enfeebled — its own physical weapon damage is
+			# halved for 10 turns (Enemy.enfeeble_turns, see enemy.gd's _attack_player()). No repeat
+			# CON save to end it early (same documented simplification as Ray of Sickness above).
+			var res4: Dictionary = _resolve_spell_attack_bolt(player, spell, target, spell.damage_type, dungeon_floor, false)
+			if res4["hit"] and not res4["lethal"]:
+				target.enfeeble_turns = 10
+				GameState.game_log("[color=cyan]%s's muscles wither — its weapon damage is halved![/color]" % target.display_name)
+
+	if dungeon_floor != null:
+		dungeon_floor.update_fog(player.grid_pos)
+	player._handle_post_attack_turn()
+
+# Single-target SAVE-resolution LEVELED spells (Hold Person, Hellish Rebuke — the leveled
+# counterpart to cast_cantrip_save_at_enemy() above, with real spell-slot consumption). A spell
+# with dice_count <= 0 is a pure debuff/condition with no damage roll at all (Hold Person); any
+# other spell deals damage, halved on a successful save (Hellish Rebuke, spell.save_for_half).
+static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	GameState.stealth_check_skip = true
+	TurnManager.begin_player_action()
+	target.on_disturbed(player.grid_pos)
+	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
+	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
+	sprite.play("hit")
+	await sprite.animation_finished
+	sprite.play("idle")
+	_consume_slot(player, spell, cast_level, from_scroll)
+
+	var stats: Stats = player.stats
+	var dc: int = _save_dc(stats, spell)
+	var save: Dictionary = target.resist_check_detailed(dc,
+		spell.save_stat == "CON", spell.save_stat == "DEX", spell.save_stat == "WIS", spell.save_stat == "INT", true)
+	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+		save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
+
+	if spell.dice_count <= 0:
+		if save["pass"]:
+			GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s resists[/url].[/color]" % [
+				spell.spell_name, target.display_name, save_meta, target.display_name])
+		else:
+			GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s fails the save[/url]!" % [
+				spell.spell_name, target.display_name, save_meta, target.display_name])
+			match spell.effect_id:
+				"hold_person":
+					target.apply_status("incapacitated", 10)
+					GameState.game_log("[color=cyan]%s is paralyzed, unable to act![/color]" % target.display_name)
+		if dungeon_floor != null:
+			dungeon_floor.update_fog(player.grid_pos)
+		player._handle_post_attack_turn()
+		return
+
+	var rolls: Array[int] = Rng.roll_dice(spell.dice_count, spell.dice_sides)
+	var inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], false, spell.damage_type)
+	var roll_total: int = int(inst["subtotal"])
+	var dmg: int = roll_total if not save["pass"] else roll_total / 2
+	var result: Dictionary = target.take_typed_damage(dmg, spell.damage_type)
+	inst["final"] = result["actual"]
+	inst["resist_mul"] = result["mul"]
+	var actual: int = result["actual"]
+	target.update_hp_bar()
+	if dungeon_floor != null:
+		dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color(spell.damage_type))
+	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
+	var is_lethal: bool = target.stats.is_dead()
+	GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s[/url] and takes [url=%s][color=yellow]%d[/color][/url] %s dmg.%s" % [
+		spell.spell_name, target.display_name, save_meta, "resists" if save["pass"] else "fails", dmg_meta, actual, spell.damage_type, CombatMath.death_suffix(is_lethal)])
+	if is_lethal:
+		player._finish_kill(target)
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
@@ -880,3 +1018,66 @@ static func _resolve_fog_cloud(player: Player, spell: Spell, center: Vector2i) -
 	GameState.fog_cloud_pos = center
 	GameState.fog_cloud_radius = spell.shape_size
 	GameState.game_log("[color=cyan]A thick fog billows outward, obscuring the area![/color]")
+
+# Darkness (Drow lineage spell) — a second, independent Heavily Obscured zone, otherwise identical
+# mechanism to Fog Cloud above (see GameState.darkness_pos/darkness_radius and
+# is_heavily_obscured()'s "checks both zones" comment).
+static func _resolve_darkness(player: Player, spell: Spell, center: Vector2i) -> void:
+	var stats: Stats = player.stats
+	if stats.concentration_spell_id != "" and stats.concentration_spell_id != "darkness":
+		GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+	stats.concentration_spell_id = "darkness"
+	stats.darkness_turns = 100
+	GameState.darkness_pos = center
+	GameState.darkness_radius = spell.shape_size
+	GameState.game_log("[color=cyan]Magical darkness pools outward, swallowing the light![/color]")
+
+# Faerie Fire (Drow lineage spell) — every enemy within spell.shape_size tiles (Euclidean, LOS'd
+# from the impact tile — same target-gathering shape as _resolve_sphere_aoe()) makes a DEX save;
+# on a fail, Enemy.faerie_fire_turns is set (100 turns — grants Advantage to every attack against
+# it, see PlayerVfx.has_advantage()). No damage, no friendly fire (the player is never a target).
+static func _resolve_faerie_fire(player: Player, spell: Spell, center: Vector2i, dungeon_floor: Node) -> void:
+	if dungeon_floor == null:
+		return
+	var stats: Stats = player.stats
+	var r: int = spell.shape_size
+	GameState.game_log("[color=cyan]Dancing lights swirl outward, seeking to outline your foes![/color]")
+	for e: Enemy in dungeon_floor.get_all_enemies():
+		if not is_instance_valid(e) or e.stats.is_dead():
+			continue
+		var d: Vector2i = e.grid_pos - center
+		if d.x * d.x + d.y * d.y > r * r:
+			continue
+		if not dungeon_floor.has_ranged_los(center, e.grid_pos):
+			continue
+		e.on_disturbed(player.grid_pos)
+		var dc: int = _save_dc(stats, spell)
+		var save: Dictionary = e.resist_check_detailed(dc, false, true, false, false, true)
+		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+			save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
+		if save["pass"]:
+			GameState.game_log("%s [url=%s]resists[/url] the light." % [e.display_name, save_meta])
+		else:
+			e.faerie_fire_turns = 100
+			GameState.game_log("%s is [url=%s]outlined[/url] in dancing light!" % [e.display_name, save_meta])
+
+# Detect Magic (High Elf lineage spell) — an instant read, not a lasting sense: lists every magic
+# item (Item.requires_attunement, or a nonzero bonus_ac/bonus_damage) currently lying on the floor
+# within spell.shape_size tiles (Chebyshev). Simplified vs. the real 10-minute-duration spell —
+# this engine has no ongoing "detect" UI to hang a lasting sense on.
+static func _resolve_detect_magic(player: Player, spell: Spell, dungeon_floor: Node) -> void:
+	if dungeon_floor == null:
+		GameState.game_log("[color=cyan]You cast [b]%s[/b] but sense nothing nearby.[/color]" % spell.spell_name)
+		return
+	var r: int = spell.shape_size
+	var found: Array[String] = []
+	for dy: int in range(-r, r + 1):
+		for dx: int in range(-r, r + 1):
+			var p: Vector2i = player.grid_pos + Vector2i(dx, dy)
+			for item: Item in dungeon_floor.get_items_at(p):
+				if item.requires_attunement or item.bonus_ac > 0 or item.bonus_damage > 0:
+					found.append(item.item_name)
+	if found.is_empty():
+		GameState.game_log("[color=cyan]You cast [b]%s[/b] — no magic detected nearby.[/color]" % spell.spell_name)
+	else:
+		GameState.game_log("[color=cyan]You cast [b]%s[/b] — you sense: %s.[/color]" % [spell.spell_name, ", ".join(found)])

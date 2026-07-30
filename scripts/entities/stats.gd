@@ -39,13 +39,18 @@ const CLASS_ROLE: Dictionary = {
 	"RANGER":    "HALF_CASTER",
 	"PALADIN":   "HALF_CASTER",
 }
-enum CharacterRace { ORC, HUMAN, HALFLING, DWARF, ELF, DRAGONBORN }
+enum CharacterRace { ORC, HUMAN, HALFLING, DWARF, ELF, DRAGONBORN, TIEFLING, AASIMAR, GNOME, GOLIATH }
 enum ElfSubrace { DROW, HIGH_ELF, WOOD_ELF }          # only meaningful when character_race == ELF
 enum DragonbornAncestry { BLACK, BLUE, BRASS, BRONZE, COPPER, GOLD, GREEN, RED, SILVER, WHITE }
+enum TieflingLegacy { ABYSSAL, CHTHONIC, INFERNAL }   # only meaningful when character_race == TIEFLING; stored in race_variant like ElfSubrace/DragonbornAncestry
+enum GnomeLineage { FOREST, ROCK }                    # only meaningful when character_race == GNOME; stored in race_variant like ElfSubrace/DragonbornAncestry/TieflingLegacy
+enum GiantAncestry { CLOUD, FIRE, FROST, HILL, STONE, STORM }  # only meaningful when character_race == GOLIATH; stored in race_variant like ElfSubrace/DragonbornAncestry
+enum AasimarTransformation { HEAVENLY_WINGS, INNER_RADIANCE, NECROTIC_SHROUD }  # Celestial Revelation's chosen form — NOT stored in race_variant (chosen fresh on each activation, not at race select), see Stats.celestial_revelation_transform below
 
 const DRAGONBORN_DAMAGE_TYPE: Array[String] = [
 	"Acid", "Lightning", "Fire", "Lightning", "Acid", "Fire", "Poison", "Fire", "Cold", "Cold"
 ]
+const TIEFLING_LEGACY_RESIST: Array[String] = ["Poison", "Necrotic", "Fire"]  # indexed by TieflingLegacy
 
 # Check proficiency flags — which ability checks the class rolls with proficiency bonus.
 # Barbarian: STR + CON. Ranger: STR + DEX. Wizard: INT + WIS. Monk: STR + DEX.
@@ -127,10 +132,122 @@ var darkvision_bonus: int = 0            # 0 = none, 1 = standard (+1 FOV tile),
 var sees_through_magical_darkness: bool = false
 var damage_resistances: Array[String] = []
 
+# Gnome only: which of INT/WIS/CHA Gnomish Cunning grants Advantage on saves with — always
+# re-derived from race_prof_ability in apply_race_defaults() (same "never saved directly" pattern
+# as darkvision_bonus above), NOT a separate serialized field. race_prof_ability reuses the same
+# STR=0..CHA=5 index Human's own ability-proficiency pick uses: 3=INT, 4=WIS, 5=CHA — see
+# scripts/entities/CLAUDE.md's "Gnome" section for why only one stat is chosen (not all three).
+var gnomish_cunning_stat: String = ""  # "" / "int" / "wis" / "cha"
+
+func gnomish_cunning_grants_adv(stat: String) -> bool:
+	return character_race == CharacterRace.GNOME and gnomish_cunning_stat == stat
+
 # Per-long-rest race charge trackers — reset in GameState.long_rest(), same chokepoint as
 # rage_uses_remaining/hit_dice.
 var relentless_endurance_used: bool = false     # Orc
 var heroic_inspiration_available: bool = false  # Human
+
+# Orc Adrenaline Rush: proficiency_bonus uses, refilled on BOTH short rest AND long rest (unlike
+# every other race charge above, which is long-rest-only) — see GameState._on_short_rest_completed()/
+# long_rest() and scripts/entities/CLAUDE.md's "Orc" section.
+var adrenaline_rush_uses_remaining: int = 0
+# One-shot flag: the player's very next WASD move doesn't cost a turn. Not serialized — mid-floor
+# buff state, same precedent as expeditious_retreat_turns/longstrider_turns.
+var adrenaline_rush_move_free_pending: bool = false
+
+# ── Elf: Elven Lineage ────────────────────────────────────────────────────────────
+# Each of the 3 sub-races (ElfSubrace) grants two spells, at character levels 3 and 5
+# (GameState.gain_exp()'s level-up block calls _grant_elf_lineage_spell() the instant either
+# threshold is crossed — see scripts/entities/CLAUDE.md's "Elf" section). A lineage spell is
+# ALWAYS PREPARED — granted straight onto the ability bar via GameState._build_spell_ability(),
+# outside the normal known_spells/prepared_spells/SpellcasterState bookkeeping entirely, so it
+# never counts against a caster's known-cantrip or prepared-spell cap (and exists even for a
+# non-caster class, e.g. a Barbarian Elf). Each grants exactly one free cast per long rest
+# (elf_lineage_free_cast_used, cleared in GameState.long_rest()) — SpellEffects._consume_slot()
+# checks Stats.is_lineage_free_cast_available() before ever touching a real spell slot. Beyond
+# the free use, a further cast needs a real spell slot of the spell's own level (Wizard/Ranger
+# only) — a non-caster simply has no further casts available once the free one is spent, a
+# documented simplification (same "non-caster gets the narrow case, not the full system" precedent
+# as Scroll of <Spell> casting).
+var elf_lineage_spell_ids: Array[String] = []
+var elf_lineage_free_cast_used: Dictionary = {}
+
+func is_lineage_free_cast_available(spell_id: String) -> bool:
+	return spell_id in elf_lineage_spell_ids and not elf_lineage_free_cast_used.get(spell_id, false)
+
+# ── Tiefling: Fiendish Legacy ─────────────────────────────────────────────────────
+# Exact same shape as Elven Lineage above, just three thresholds instead of two (character levels
+# 1/3/5, not 3/5 — the level-1 grant is handed out immediately at race select via
+# GameState.give_race_starting_items(), not waiting for a level-up). Each of the 3 legacies
+# (TieflingLegacy) grants a cantrip at level 1, a 1st-level spell at level 3, a 2nd-level spell at
+# level 5 — always prepared, outside known_spells/prepared_spells bookkeeping, one free cast per
+# long rest before falling back to a real spell slot (leveled spells only — a cantrip is already
+# unlimited, so the free-cast tracking is a harmless no-op for the level-1 grant). See
+# scripts/entities/CLAUDE.md's "Tiefling" section for the full spell table.
+var tiefling_legacy_spell_ids: Array[String] = []
+var tiefling_legacy_free_cast_used: Dictionary = {}
+
+func is_tiefling_legacy_free_cast_available(spell_id: String) -> bool:
+	return spell_id in tiefling_legacy_spell_ids and not tiefling_legacy_free_cast_used.get(spell_id, false)
+
+# Fiendish Legacy spells are cast using "whichever of INT/WIS/CHA is highest" — not the character's
+# own class spellcasting_ability (a Tiefling Barbarian has no caster ability at all; a Tiefling
+# Wizard's own INT might not even be the best of the three). Checked by SpellEffects._attack_bonus()/
+# _save_dc()/_cast_ability_mod() whenever the spell being cast is one of tiefling_legacy_spell_ids.
+func tiefling_best_ability_mod() -> int:
+	return maxi(int_modifier(), maxi(wis_modifier(), cha_modifier()))
+
+# ── Gnome: Gnomish Lineage ────────────────────────────────────────────────────────
+# Unlike Elf/Tiefling's single free-cast-per-long-rest bool, Gnomish Lineage spells are each
+# castable proficiency_bonus times for free per long rest (direct owner request — a flat "once"
+# felt too weak for a cantrip-tier grant, but all three unlimited felt too strong, hence a real
+# counter instead of a bool). Granted immediately at race select (GameState.give_race_starting_items()),
+# not staggered by character level like Elf/Tiefling — see scripts/entities/CLAUDE.md's "Gnome"
+# section. Always prepared, outside known_spells/prepared_spells/SpellcasterState bookkeeping,
+# same as Elven Lineage/Fiendish Legacy above.
+var gnome_lineage_spell_ids: Array[String] = []
+var gnome_lineage_free_casts_remaining: Dictionary = {}  # spell_id -> int, refilled in GameState.long_rest()
+
+func is_gnome_lineage_free_cast_available(spell_id: String) -> bool:
+	return spell_id in gnome_lineage_spell_ids and gnome_lineage_free_casts_remaining.get(spell_id, 0) > 0
+
+# ── Aasimar ────────────────────────────────────────────────────────────────────────
+# Healing Hands: proficiency-bonus-scaled touch heal, 1/long rest — see
+# scripts/entities/player_aasimar.gd / scripts/entities/CLAUDE.md's "Aasimar" section.
+var aasimar_healing_hands_available: bool = false
+# Celestial Revelation: unlocked at character level 3 (GameState.give_race_starting_items()'s
+# level-gate, same "granted the instant character_level reaches N" pattern as Dragonborn's Draconic
+# Flight), 1/long rest. celestial_revelation_transform is chosen FRESH each activation (NOT stored
+# in race_variant, which is fixed at race select) — so none of these three fields are serialized as
+# "mid-floor buff state" except celestial_revelation_used, which genuinely needs to survive a
+# save/load (it's a real once-per-long-rest resource, not a transient turn-counter).
+var aasimar_celestial_revelation_used: bool = false
+var celestial_revelation_turns: int = 0             # not serialized — mid-floor buff, same precedent as expeditious_retreat_turns
+var celestial_revelation_transform: int = -1         # -1 = none active; else Stats.AasimarTransformation
+var celestial_revelation_bonus_used_this_turn: bool = false  # resets every real turn while active — "the FIRST damage you deal each turn"
+
+# ── Goliath ────────────────────────────────────────────────────────────────────────
+# Large Form (unlocked at character level 5, same level-gate shape as Dragonborn's Draconic
+# Flight): free action, up to 100 turns, 1/long rest. Turns the player into a real 2x2 footprint
+# (Entity.size — see scripts/entities/CLAUDE.md's "Multi-tile footprint" section; this is the
+# first time PLAYER, not just an enemy, ever sets it above (1,1)). Grants ADV on the one player
+# STR check that currently exists (the Web escape check, PlayerThiefTools) and a Wood-Elf-style
+# duty-cycle +1/3 movement bonus (every 3rd move is free) — see player_goliath.gd. Not serialized
+# (mid-floor buff state, same precedent as draconic_flight_turns).
+var large_form_turns: int = 0
+var large_form_used: bool = false
+# Giant Ancestry: proficiency_bonus uses per long rest, same shape as Dwarf's Stonecunning. Which
+# one of Cloud/Fire/Frost/Hill/Stone/Storm is chosen lives in race_variant (Stats.GiantAncestry).
+var giant_ancestry_uses_remaining: int = 0
+# Fire/Frost/Stone/Storm Giant all share one "arm now, spend the charge only when it actually
+# triggers" shape (a miss/no-trigger never wastes a charge) — this single pending flag is enough
+# since only one Giant Ancestry is ever active per character. Cloud Giant (instant teleport) and
+# Hill Giant (passive on-hit) don't use it. Not serialized — mid-floor pending state.
+var giant_ancestry_armed: bool = false
+# Stone Giant's armed reduction, consumed by the next instance of damage taken (GameState.
+# take_damage_raw()) — rolled at ARM time (not at the moment damage lands), per the "arm now"
+# shape above sharing one `giant_ancestry_armed` flag with Fire/Frost/Storm.
+var stone_ancestry_reduction_pending: int = 0
 
 @export var max_hp: int = 10
 @export var current_hp: int = 10
@@ -270,6 +387,35 @@ var expeditious_retreat_turns: int = 0
 # player's AND every enemy's attack rolls need to query it, not just this caster's own turn tick.
 # Deliberately NOT serialized, same as witch_bolt_turns above.
 var fog_cloud_turns: int = 0
+
+# Darkness (Drow lineage spell, level 5) — same generic concentration_spell_id mechanism
+# ("darkness") and the same GameState-side position/radius split as Fog Cloud (darkness_pos/
+# darkness_radius) — reuses the exact same Heavily Obscured/Blinded mechanism (see
+# scripts/entities/CLAUDE.md's "Fog Cloud" section); the only difference is a second, independent
+# zone so both spells can be active at once. Deliberately NOT serialized, same as fog_cloud_turns.
+var darkness_turns: int = 0
+
+# Longstrider (Wood Elf lineage spell, level 3) — NOT Concentration (5e RAW). Reuses the exact
+# same "first move this turn is free" mechanism Expeditious Retreat already has (Player._try_move()
+# checks `expeditious_retreat_turns > 0 or longstrider_turns > 0`) rather than a separate movement-
+# speed system — see scripts/entities/CLAUDE.md's "Elf" section. Deliberately NOT serialized, same
+# mid-floor-only simplification as expeditious_retreat_turns.
+var longstrider_turns: int = 0
+
+# Pass Without Trace (Wood Elf lineage spell, level 5) — same generic concentration_spell_id
+# mechanism ("pass_without_trace"). Grants a flat bonus to the Stealth-vs-Passive-Perception roll
+# (Player._resolve_stealth_check()) while active. Deliberately NOT serialized, same as
+# fog_cloud_turns above.
+var pass_without_trace_turns: int = 0
+const PASS_WITHOUT_TRACE_BONUS: int = 10
+
+# Minor Illusion (Forest Gnome's Gnomish Lineage cantrip) — a much smaller, shorter-lived version
+# of Pass Without Trace's own stealth bonus (a minor visual/sound distraction, not true invisibility
+# to sound and sight), same "flat bonus to the Stealth-vs-Passive-Perception roll" mechanism.
+# Deliberately NOT Concentration (5e RAW: Minor Illusion has no concentration tag). Not serialized,
+# same mid-floor-only simplification as pass_without_trace_turns above.
+var minor_illusion_turns: int = 0
+const MINOR_ILLUSION_BONUS: int = 5
 
 # Invisibility (level-2 spell, touch/self) — NOT a concentration effect (5e RAW: it ends on
 # attacking or casting a spell, not on taking damage, so it doesn't use concentration_spell_id at
@@ -507,6 +653,7 @@ func to_dict() -> Dictionary:
 		"race_prof_ability": race_prof_ability,
 		"relentless_endurance_used": relentless_endurance_used,
 		"heroic_inspiration_available": heroic_inspiration_available,
+		"adrenaline_rush_uses_remaining": adrenaline_rush_uses_remaining,
 		"experience": experience,
 		"max_hp": max_hp,
 		"current_hp": current_hp,
@@ -517,6 +664,8 @@ func to_dict() -> Dictionary:
 		"breath_weapon_uses_remaining": breath_weapon_uses_remaining,
 		"draconic_flight_used": draconic_flight_used,
 		"stonecunning_uses_remaining": stonecunning_uses_remaining,
+		"large_form_used": large_form_used,
+		"giant_ancestry_uses_remaining": giant_ancestry_uses_remaining,
 		"temp_hp": temp_hp,
 		"poison_turns": poison_turns,
 		"burning_turns": burning_turns,
@@ -527,6 +676,14 @@ func to_dict() -> Dictionary:
 		"concentration_spell_id": concentration_spell_id,
 		"blade_ward_turns": blade_ward_turns,
 		"known_weapon_masteries": known_weapon_masteries.duplicate(),
+		"elf_lineage_spell_ids": elf_lineage_spell_ids.duplicate(),
+		"elf_lineage_free_cast_used": elf_lineage_free_cast_used.duplicate(),
+		"tiefling_legacy_spell_ids": tiefling_legacy_spell_ids.duplicate(),
+		"tiefling_legacy_free_cast_used": tiefling_legacy_free_cast_used.duplicate(),
+		"gnome_lineage_spell_ids": gnome_lineage_spell_ids.duplicate(),
+		"gnome_lineage_free_casts_remaining": gnome_lineage_free_casts_remaining.duplicate(),
+		"aasimar_healing_hands_available": aasimar_healing_hands_available,
+		"aasimar_celestial_revelation_used": aasimar_celestial_revelation_used,
 		"caster_known_spells": caster.known_spells.duplicate() if caster != null else [],
 		"caster_prepared_spells": caster.prepared_spells.duplicate() if caster != null else [],
 		"caster_slot_remaining": caster.slot_pool.remaining.duplicate() if caster != null and caster.slot_pool != null else {},
@@ -544,6 +701,7 @@ func from_dict(d: Dictionary) -> void:
 	apply_race_defaults()
 	relentless_endurance_used = bool(d.get("relentless_endurance_used", false))
 	heroic_inspiration_available = bool(d.get("heroic_inspiration_available", true))
+	adrenaline_rush_uses_remaining = int(d.get("adrenaline_rush_uses_remaining", 0))
 	strength = int(d.get("strength", strength))
 	dexterity = int(d.get("dexterity", dexterity))
 	constitution = int(d.get("constitution", constitution))
@@ -561,6 +719,8 @@ func from_dict(d: Dictionary) -> void:
 	breath_weapon_uses_remaining = int(d.get("breath_weapon_uses_remaining", 0))
 	draconic_flight_used = bool(d.get("draconic_flight_used", false))
 	stonecunning_uses_remaining = int(d.get("stonecunning_uses_remaining", 0))
+	large_form_used = bool(d.get("large_form_used", false))
+	giant_ancestry_uses_remaining = int(d.get("giant_ancestry_uses_remaining", 0))
 	temp_hp = int(d.get("temp_hp", 0))
 	poison_turns = int(d.get("poison_turns", 0))
 	burning_turns = int(d.get("burning_turns", 0))
@@ -573,6 +733,20 @@ func from_dict(d: Dictionary) -> void:
 	known_weapon_masteries.clear()
 	for m: Variant in (d.get("known_weapon_masteries", []) as Array):
 		known_weapon_masteries.append(String(m))
+	elf_lineage_spell_ids.clear()
+	for sid: Variant in (d.get("elf_lineage_spell_ids", []) as Array):
+		elf_lineage_spell_ids.append(String(sid))
+	elf_lineage_free_cast_used = (d.get("elf_lineage_free_cast_used", {}) as Dictionary).duplicate()
+	tiefling_legacy_spell_ids.clear()
+	for tsid: Variant in (d.get("tiefling_legacy_spell_ids", []) as Array):
+		tiefling_legacy_spell_ids.append(String(tsid))
+	tiefling_legacy_free_cast_used = (d.get("tiefling_legacy_free_cast_used", {}) as Dictionary).duplicate()
+	gnome_lineage_spell_ids.clear()
+	for gsid: Variant in (d.get("gnome_lineage_spell_ids", []) as Array):
+		gnome_lineage_spell_ids.append(String(gsid))
+	gnome_lineage_free_casts_remaining = (d.get("gnome_lineage_free_casts_remaining", {}) as Dictionary).duplicate()
+	aasimar_healing_hands_available = bool(d.get("aasimar_healing_hands_available", true))
+	aasimar_celestial_revelation_used = bool(d.get("aasimar_celestial_revelation_used", false))
 	if caster != null:
 		caster.known_spells.clear()
 		for sid: Variant in (d.get("caster_known_spells", []) as Array):
@@ -795,6 +969,7 @@ func apply_class_defaults() -> void:
 func apply_race_defaults() -> void:
 	darkvision_bonus = 0
 	damage_resistances.clear()
+	gnomish_cunning_stat = ""
 	match character_race:
 		CharacterRace.ORC:
 			darkvision_bonus = 2
@@ -824,12 +999,47 @@ func apply_race_defaults() -> void:
 			# check exists (direct owner decision — see scripts/entities/CLAUDE.md's "Dwarf" section).
 			damage_resistances.append("Poison")
 		CharacterRace.ELF:
-			darkvision_bonus = 1
+			# Keen Senses: WIS proficiency (shared underlying flag with Wizard's own INT+WIS class
+			# checks — harmless overlap, not a stacking bonus, since check_prof_wis is a bool).
+			darkvision_bonus = 2 if race_variant == ElfSubrace.DROW else 1  # Drow: superior darkvision
 			check_prof_wis = true
+			# Fey Ancestry: ADV on checks to avoid/end the Charmed condition. Deliberately inert
+			# today — no Charmed condition (or any check against it) exists anywhere in this engine
+			# yet, same "granted but nothing to hook into" precedent as Dwarf's own Dwarven
+			# Resilience ADV-vs-Poisoned-condition half (see this file's DWARF branch above). Wire
+			# in once a real Charmed source/check exists rather than inventing one just to hang
+			# this on.
 		CharacterRace.DRAGONBORN:
 			darkvision_bonus = 1
 			var dmg_type: String = DRAGONBORN_DAMAGE_TYPE[clampi(race_variant, 0, DRAGONBORN_DAMAGE_TYPE.size() - 1)]
 			damage_resistances = [dmg_type]
+		CharacterRace.TIEFLING:
+			darkvision_bonus = 1
+			# Fiendish Legacy's resistance is baked into the chosen legacy (Abyssal/Chthonic/
+			# Infernal → Poison/Necrotic/Fire) — the spells themselves are granted separately, see
+			# GameState.give_race_starting_items()/gain_exp() and scripts/entities/CLAUDE.md's
+			# "Tiefling" section.
+			var legacy_dmg_type: String = TIEFLING_LEGACY_RESIST[clampi(race_variant, 0, TIEFLING_LEGACY_RESIST.size() - 1)]
+			damage_resistances = [legacy_dmg_type]
+		CharacterRace.AASIMAR:
+			darkvision_bonus = 1
+			# Celestial Resistance: both Necrotic and Radiant, unconditionally (no race_variant
+			# choice — unlike Tiefling's legacy-picked single resistance).
+			damage_resistances = ["Necrotic", "Radiant"]
+		CharacterRace.GNOME:
+			darkvision_bonus = 1
+			# Gnomish Cunning: ADV on saves with ONE of INT/WIS/CHA (player's choice at race
+			# select, not all three — see scripts/entities/CLAUDE.md's "Gnome" section for why).
+			# race_prof_ability reuses Human's own STR=0..CHA=5 index; only 3/4/5 (INT/WIS/CHA)
+			# are ever set for a Gnome.
+			if race_prof_ability >= 3:
+				gnomish_cunning_stat = ["int", "wis", "cha"][race_prof_ability - 3]
+		CharacterRace.GOLIATH:
+			darkvision_bonus = 0
+			# Giant Ancestry's resistance/passive (if any) is folded into the ability itself rather
+			# than a passive damage_resistances entry — unlike Dragonborn/Tiefling/Aasimar, none of
+			# the 6 Giant Ancestries grant an unconditional passive resistance; each is purely an
+			# activatable (see player_goliath.gd / scripts/entities/CLAUDE.md's "Goliath" section).
 
 func _grant_ability_proficiency(idx: int) -> void:
 	match idx:

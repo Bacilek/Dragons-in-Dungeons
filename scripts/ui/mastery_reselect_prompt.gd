@@ -51,6 +51,9 @@ func _build_ui() -> void:
 	if GameState.player_stats.caster != null:
 		_add_option_btn("Spellbook", y, _open_spellbook)
 		y += 46.0
+	if GameState.is_high_elf_caster():
+		_add_option_btn("High Elf Cantrip Swap", y, _open_high_elf_swap)
+		y += 46.0
 	y += 8.0
 
 	var done_btn := Button.new()
@@ -82,6 +85,9 @@ func _open_attunements() -> void:
 
 func _open_spellbook() -> void:
 	_open_subpicker(load("res://scripts/ui/spellbook_overlay.gd").new())
+
+func _open_high_elf_swap() -> void:
+	_open_subpicker(load("res://scripts/ui/high_elf_cantrip_swap.gd").new())
 
 func _open_subpicker(sub: Node) -> void:
 	_panel.visible = false

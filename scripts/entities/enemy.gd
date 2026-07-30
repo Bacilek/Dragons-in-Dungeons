@@ -52,8 +52,11 @@ var prone: bool = false          # Maul's Topple mastery — real Prone conditio
 var poisoned_condition_turns: int = 0  # true 5e Poisoned condition (DISADV on this enemy's own attack rolls/checks) — separate from any future enemy-side damage-over-time status, mirrors Stats.poisoned_condition_turns
 var incapacitated_turns: int = 0       # "can't take actions" — skips this enemy's entire turn (decide_turn() below) and makes every player attack against it a Surprise Attack (PlayerVfx.has_advantage())
 var frozen_feet_turns: int = 0   # Ray of Frost's STR-save-fail — skips movement, still attacks if adjacent (same shape as rooted_turns, kept separate so inspect can name it "Frozen Feet")
+var faerie_fire_turns: int = 0   # Drow lineage spell Faerie Fire — a failed DEX save outlines the target in light: every attack roll against it gets Advantage (PlayerVfx.has_advantage()). Purely a to-hit modifier, no movement/attack restriction of its own — ticked once per real turn in decide_turn(), same shape as frozen_feet_turns above.
 var shocked_no_oa: bool = false  # Shocking Grasp — blocks this enemy's next Opportunity Attack exposure, whenever it next happens
 var mind_sliver_penalty_die: bool = false  # Mind Sliver cantrip — the next check this enemy makes (any resist_check_detailed() call) rolls with -1d4. Consumed on that next check; deliberately not turn-expiry-timed against "until the end of your next turn" per the spell text — enemy checks are rare enough that this one-shot-consumed simplification is documented here rather than adding a second timing system for it.
+var frightened_turns: int = 0    # Aasimar Necrotic Shroud (Celestial Revelation) — a failed CHA check frightens this enemy. Simplified vs. the real player-side Frightened (scripts/entities/CLAUDE.md's "Conditions"): DISADV on this enemy's own attack rolls only, no can't-approach-the-source movement block (no enemy-side "source" tracking exists) — ticked once per real turn in decide_turn(), same shape as faerie_fire_turns/enfeeble_turns.
+var enfeeble_turns: int = 0      # Chthonic Tiefling lineage spell Ray of Enfeeblement — this enemy's own weapon (physical: Slashing/Piercing/Bludgeoning) damage is halved while active. Purely a damage modifier, no movement/attack restriction — ticked once per real turn in decide_turn(), same shape as faerie_fire_turns above. Simplified vs. RAW: no repeated CON save to end it early, fixed duration instead (same precedent as mind_sliver_penalty_die's own documented simplification).
 var embedded_items: Array[Item] = []  # thrown weapons stuck in a non-lethal hit (PlayerThrowTool._throw_weapon) — dropped at 100% chance wherever/whenever this enemy eventually dies, see die() override below
 var escape_turns: int = 0    # Nimble Escape trait (Goblin) — random 1-5 turns fleeing escape_from, set in on_melee_hit()
 var escape_from: Node = null  # entity being fled from; always is_instance_valid()-checked before use (may die/despawn mid-flee)
@@ -270,6 +273,7 @@ func apply_status(condition: String, turns: int) -> bool:
 		"bleeding": stats.bleeding_turns = maxi(stats.bleeding_turns, turns)
 		"poisoned_condition": poisoned_condition_turns = maxi(poisoned_condition_turns, turns)
 		"incapacitated": incapacitated_turns = maxi(incapacitated_turns, turns)
+		"frightened": frightened_turns = maxi(frightened_turns, turns)
 	return true
 
 # Nimble Escape (Goblin trait): after taking damage from a MELEE attack, the enemy's next action(s)
@@ -482,13 +486,13 @@ func resist_check(dc: int, use_con: bool = false) -> bool:
 # Same roll as resist_check(), but returns the full breakdown so callers can log a chat-log
 # tooltip (see Topple's "save" meta in player.gd._try_topple()) instead of just the pass/fail
 # bool. "pass" here means the enemy RESISTS (roll >= dc), matching resist_check().
-# Priority when multiple use_* flags are somehow true: DEX > WIS > INT > CON > STR (arbitrary —
-# every real call site only ever sets one).
+# Priority when multiple use_* flags are somehow true: DEX > WIS > INT > CHA > CON > STR (arbitrary
+# — every real call site only ever sets one).
 # `magical`: true when this check is a saving throw against a SPELL (Ray of Frost, Toll the Dead,
 # Mind Sliver, Thunderclap, Fireball) — NOT a weapon-mastery save (Push/Topple/Grip of the Forest/
 # Branching Strike), which aren't spells and never pass this. Combined with the "magic_resistance"
 # trait (Imp), rolls the d20 with Advantage (max of two rolls) — Magic Resistance's real D&D text.
-func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false, use_wis: bool = false, use_int: bool = false, magical: bool = false) -> Dictionary:
+func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false, use_wis: bool = false, use_int: bool = false, magical: bool = false, use_cha: bool = false) -> Dictionary:
 	var mod: int
 	var stat_name: String
 	var stat_key: String
@@ -498,6 +502,8 @@ func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false
 		mod = stats.wis_modifier(); stat_name = "WIS"; stat_key = "wis"
 	elif use_int:
 		mod = stats.int_modifier(); stat_name = "INT"; stat_key = "int"
+	elif use_cha:
+		mod = stats.cha_modifier(); stat_name = "CHA"; stat_key = "cha"
 	elif use_con:
 		mod = stats.con_modifier(); stat_name = "CON"; stat_key = "con"
 	else:
@@ -856,6 +862,11 @@ func _dist_sq_to(e: Node) -> int:
 	return dx * dx + dy * dy
 
 func _chebyshev_to(e: Node) -> int:
+	# e may itself be a footprint larger than 1x1 (Large-Form Goliath player) — min_dist_to_entity()
+	# checks every occupied tile on both sides, reducing to the plain min_dist_to(e.grid_pos) for
+	# any 1x1 target (every other case today).
+	if e is Entity:
+		return min_dist_to_entity(e)
 	return min_dist_to(e.grid_pos)
 
 # §10: pool "senses" -> "sight_bonus" is an offset relative to FOV_RADIUS (e.g. +1 = darkvision,
@@ -934,6 +945,12 @@ func decide_turn() -> Dictionary:
 	_tick_invisibility()
 	_tick_web_cooldown()
 	_tick_shape_shift()
+	if faerie_fire_turns > 0:
+		faerie_fire_turns -= 1
+	if enfeeble_turns > 0:
+		enfeeble_turns -= 1
+	if frightened_turns > 0:
+		frightened_turns -= 1
 	if poisoned_condition_turns > 0:
 		poisoned_condition_turns -= 1
 	# Incapacitated: "can't take actions" — skips this entire turn outright, same shape the OLD
@@ -1615,7 +1632,11 @@ func _execute_cast_scare(target: Node, cfg: Dictionary) -> void:
 	var s: Stats = target.stats
 	var wis_mod: int = s.wis_modifier()
 	var prof: int = s.proficiency_bonus if s.check_prof_wis else 0
-	var die: int = Rng.roll(20)
+	# Halfling Brave: ADV on saves to avoid the Frightened condition. Gnomish Cunning: same ADV,
+	# only if the player chose WIS as their one Gnomish-Cunning stat (see scripts/entities/CLAUDE.md's
+	# "Gnome" section).
+	var scare_adv: int = 1 if (s.character_race == Stats.CharacterRace.HALFLING or s.gnomish_cunning_grants_adv("wis")) else 0
+	var die: int = CombatMath.roll_with_adv_disadv(scare_adv, 0)["die"]
 	var total: int = die + wis_mod + prof
 	var passed: bool = total >= dc
 	var meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=WIS,pass=%d" % [
@@ -1693,8 +1714,8 @@ func _check_opportunity_attacks_on_move(prev_pos: Vector2i, next_pos: Vector2i) 
 	var player: Player = _dungeon_floor.get_player()
 	if player != null and is_instance_valid(player) and not player.stats.is_dead() and not player._oa_used_this_round:
 		var reach: int = CombatMath.melee_reach(GameState.equipped_weapon, GameState.get_talent_rank("branching_strike"))
-		var d_prev: int = maxi(absi(prev_pos.x - player.grid_pos.x), absi(prev_pos.y - player.grid_pos.y))
-		var d_next: int = maxi(absi(next_pos.x - player.grid_pos.x), absi(next_pos.y - player.grid_pos.y))
+		var d_prev: int = player.min_dist_to(prev_pos)
+		var d_next: int = player.min_dist_to(next_pos)
 		if d_prev <= reach and d_next > reach:
 			player._oa_used_this_round = true
 			player.resolve_opportunity_attack(self)
@@ -1851,9 +1872,12 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	var condition_disadv: bool = target_prone and is_ranged
 	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, _attack_bonus_for(sub), bw_penalty,
 		fog_adv or pack_tactics_adv or condition_adv,
-		# poisoned_condition_turns here is THIS enemy's own Poisoned condition (DISADV on its own
-		# attack) — separate from target_prone/target_restrained above, which are the PLAYER's.
-		long_shot or GameState.is_blinded(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0)
+		# poisoned_condition_turns/frightened_turns here are THIS enemy's own conditions (DISADV on
+		# its own attack) — separate from target_prone/target_restrained above, which are the
+		# PLAYER's. frightened_turns: Aasimar Necrotic Shroud (Celestial Revelation transformation,
+		# scripts/entities/CLAUDE.md's "Aasimar" section) — simplified vs. real Frightened (no
+		# can't-approach-the-source movement block, DISADV-on-own-attacks only).
+		long_shot or GameState.is_blinded(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0 or frightened_turns > 0)
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]
@@ -1872,6 +1896,12 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	var roll_info: Dictionary = CombatMath.roll_flat_range(min_d, max_d)
 	var dmg_roll: int = roll_info["total"] + adv_bonus_roll
 	var dmg: int = dmg_roll * (2 if is_crit else 1)
+	# Ray of Enfeeblement (Chthonic Tiefling lineage spell): this enemy's own physical weapon
+	# damage is halved while enfeebled — same "weapon attacks that use Strength" scope as RAW,
+	# approximated here as any physical damage type since this engine doesn't track per-attack
+	# ability score usage for enemies.
+	if enfeeble_turns > 0 and dmg_type in ["Slashing", "Piercing", "Bludgeoning"]:
+		dmg = maxi(1, dmg / 2)
 	if is_crit:
 		AudioManager.play("crit")
 	else:
@@ -1883,6 +1913,26 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	var actual: int = GameState.take_damage_raw(dmg, false, dmg_type)
 	if _dungeon_floor != null and not invincible:
 		_dungeon_floor.show_damage(_player.position, actual, true)
+	# Storm Giant ancestry (Goliath, see player_goliath.gd): toggled on, the next entity that
+	# deals ANY damage to the player takes 1d8 Thunder back. Consumes the armed flag + a charge
+	# only when it actually procs.
+	if actual > 0 and GameState.player_stats.character_race == Stats.CharacterRace.GOLIATH \
+			and GameState.player_stats.race_variant == Stats.GiantAncestry.STORM \
+			and GameState.player_stats.giant_ancestry_armed and not stats.is_dead():
+		GameState.player_stats.giant_ancestry_armed = false
+		if not GameState.invincible:
+			GameState.player_stats.giant_ancestry_uses_remaining -= 1
+		GameState._sync_ability_uses()
+		var storm_dmg: int = Rng.roll(8)
+		var storm_result: Dictionary = take_typed_damage(storm_dmg, "Thunder")
+		update_hp_bar()
+		GameState.game_log("[color=cyan]Storm's Thunder crackles back at %s for [color=yellow]%d[/color] dmg![/color]" % [display_name, storm_result["actual"]])
+		if stats.is_dead():
+			GameState.game_log("[color=orange]%s[/color] [color=gray]is killed by the backlash![/color]" % display_name)
+			GameState.gain_exp(maxi(1, exp_reward / 2))
+			if _dungeon_floor != null:
+				_dungeon_floor.remove_enemy(self)
+			die()
 	# Rage's 50% DR (take_damage_raw()) was live for this hit whenever the player was raging AND
 	# dmg_type is one of the three physical types.
 	var rage_applied: int = 1 if GameState.is_raging else 0
@@ -1942,7 +1992,7 @@ func _attack_companion(companion: Companion, sub: Dictionary = {}, long_shot: bo
 				break
 	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, _attack_bonus_for(sub), 0,
 		GameState.is_blinded(companion.grid_pos) or pack_tactics_adv,
-		long_shot or GameState.is_blinded(grid_pos) or poisoned_condition_turns > 0)
+		long_shot or GameState.is_blinded(grid_pos) or poisoned_condition_turns > 0 or frightened_turns > 0)
 	if not r["is_hit"]:
 		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [atk_label, companion.animal_name])
 		return

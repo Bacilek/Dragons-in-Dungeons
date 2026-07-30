@@ -26,6 +26,10 @@ var _ranged: PlayerRanged
 var _spellcasting: PlayerSpellcasting
 var _dragonborn: PlayerDragonborn
 var _dwarf: PlayerDwarf
+var _human: PlayerHuman
+var _orc: PlayerOrc
+var _aasimar: PlayerAasimar
+var _goliath: PlayerGoliath
 
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
@@ -131,6 +135,13 @@ var _oa_used_this_round: bool = false
 # functions don't check it, same documented scope limitation as Battlefield Expert R3's own
 # free side-step.
 var _expeditious_retreat_move_used_this_turn: bool = false
+# Wood Elf's 35 ft speed (vs. the 30 ft baseline every other race/the engine's own 1-tile/turn
+# grid assumes) — approximated as a duty cycle rather than a distance, same reasoning as Enemy's
+# own "speed" pool key (scripts/entities/CLAUDE.md's "Movement speed scaling"): every 6th real
+# move this Wood Elf makes doesn't cost a turn. Counted (not serialized — mid-floor combat
+# bookkeeping, same tier as _expeditious_retreat_move_used_this_turn) in _try_move()'s free-move
+# check below, independent of and stacking with Expeditious Retreat/Longstrider.
+var _wood_elf_move_counter: int = 0
 
 
 func _ready() -> void:
@@ -155,6 +166,10 @@ func _ready() -> void:
 	_spellcasting = PlayerSpellcasting.new(); _spellcasting.player = self; add_child(_spellcasting)
 	_dragonborn = PlayerDragonborn.new(); _dragonborn.player = self; add_child(_dragonborn)
 	_dwarf = PlayerDwarf.new(); _dwarf.player = self; add_child(_dwarf)
+	_human = PlayerHuman.new(); _human.player = self; add_child(_human)
+	_orc = PlayerOrc.new(); _orc.player = self; add_child(_orc)
+	_aasimar = PlayerAasimar.new(); _aasimar.player = self; add_child(_aasimar)
+	_goliath = PlayerGoliath.new(); _goliath.player = self; add_child(_goliath)
 
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
@@ -259,6 +274,33 @@ func _on_turn_started() -> void:
 					stats.concentration_spell_id = ""
 				GameState.clear_fog_cloud()
 				GameState.game_log("[color=gray]The fog cloud dissipates.[/color]")
+		# Darkness (Drow lineage spell): same 100-turn Concentration pattern as Fog Cloud above.
+		if stats.darkness_turns > 0:
+			stats.darkness_turns -= 1
+			if stats.darkness_turns <= 0:
+				if stats.concentration_spell_id == "darkness":
+					stats.concentration_spell_id = ""
+				GameState.clear_darkness()
+				GameState.game_log("[color=gray]The darkness dissipates.[/color]")
+		# Longstrider (Wood Elf lineage spell): NOT Concentration — same 100-turn flat duration as
+		# Draconic Flight/Invisibility.
+		if stats.longstrider_turns > 0:
+			stats.longstrider_turns -= 1
+			if stats.longstrider_turns <= 0:
+				GameState.game_log("[color=gray]Longstrider fades.[/color]")
+		# Pass Without Trace (Wood Elf lineage spell): same 100-turn Concentration pattern as Fog
+		# Cloud/Darkness above.
+		if stats.pass_without_trace_turns > 0:
+			stats.pass_without_trace_turns -= 1
+			if stats.pass_without_trace_turns <= 0:
+				if stats.concentration_spell_id == "pass_without_trace":
+					stats.concentration_spell_id = ""
+				GameState.game_log("[color=gray]Pass Without Trace fades.[/color]")
+		# Minor Illusion (Forest Gnome lineage cantrip): flat duration, NOT Concentration.
+		if stats.minor_illusion_turns > 0:
+			stats.minor_illusion_turns -= 1
+			if stats.minor_illusion_turns <= 0:
+				GameState.game_log("[color=gray]Your minor illusion fades.[/color]")
 		# Hunter's Mark: 100-turn Concentration duration, ticked once per real turn (same pattern
 		# as Blade Ward/Expeditious Retreat/Fog Cloud above).
 		if stats.hunters_mark_turns > 0:
@@ -294,6 +336,23 @@ func _on_turn_started() -> void:
 			if stats.draconic_flight_turns <= 0:
 				GameState.game_log("[color=gray]You touch back down to the ground.[/color]")
 				GameState.player_status_changed.emit()
+		# Celestial Revelation: 10-turn duration, ticked once per real turn (same pattern above) —
+		# celestial_revelation_bonus_used_this_turn resets every tick so "the first damage you
+		# deal EACH turn" is genuinely per-turn, not just the one attack right after activation
+		# (see _bump_attack() for where the bonus is consumed).
+		# Large Form (Goliath): 100-turn duration, ticked once per real turn (same pattern
+		# above) - see player_goliath.gd.
+		if stats.large_form_turns > 0:
+			stats.large_form_turns -= 1
+			if stats.large_form_turns <= 0:
+				_goliath.end_large_form()
+		if stats.celestial_revelation_turns > 0:
+			stats.celestial_revelation_bonus_used_this_turn = false
+			stats.celestial_revelation_turns -= 1
+			if stats.celestial_revelation_turns <= 0:
+				stats.celestial_revelation_transform = -1
+				GameState.game_log("[color=gray]Celestial Revelation fades.[/color]")
+				GameState.player_status_changed.emit()
 		# Stonecunning's Tremorsense: 100-turn duration, ticked once per real turn (same pattern).
 		if stats.tremorsense_turns > 0:
 			stats.tremorsense_turns -= 1
@@ -315,7 +374,13 @@ func _on_turn_started() -> void:
 			else:
 				var fr_wis_mod: int = stats.wis_modifier()
 				var fr_prof: int = stats.proficiency_bonus if stats.check_prof_wis else 0
-				var fr_die: int = Rng.roll(20)
+				# Halfling Brave: ADV on saves to end the Frightened condition. Gnomish Cunning:
+				# same ADV, but only if the player chose WIS as their one Gnomish-Cunning stat
+				# (see scripts/entities/CLAUDE.md's "Gnome" section — this is the only existing
+				# player-side WIS SAVE in the game; search_action()/passive_trap_check() are WIS
+				# CHECKS and deliberately untouched by this trait).
+				var fr_adv: int = 1 if (stats.character_race == Stats.CharacterRace.HALFLING or stats.gnomish_cunning_grants_adv("wis")) else 0
+				var fr_die: int = CombatMath.roll_with_adv_disadv(fr_adv, 0)["die"]
 				var fr_total: int = fr_die + fr_wis_mod + fr_prof
 				if fr_total >= stats.frightened_save_dc:
 					GameState.game_log("[color=lime]You shake off your fear of %s![/color]" % stats.frightened_source.display_name)
@@ -640,6 +705,9 @@ func _resolve_stealth_check() -> void:
 	var r1: Dictionary = CombatMath.halfling_reroll(Rng.roll(20))
 	var die1: int = r1["value"]
 	var lucky1: bool = r1["lucky"]
+	# Heroic Inspiration: consumed once for this whole check (not per-observer) — forces every
+	# observer's resolved die to a natural 20, guaranteeing you stay hidden from all of them.
+	var heroic: bool = CombatMath.consume_heroic_inspiration()
 	for e: Enemy in observers:
 		# Baseline is a NORMAL roll (no ADV/DISADV) against an awake-but-unaware observer
 		# (STATIONARY/ROAMING) — ADV only ever comes from an explicit source (SLEEPING's own +1,
@@ -656,7 +724,15 @@ func _resolve_stealth_check() -> void:
 			die2 = r2["value"]
 			lucky2 = r2["lucky"]
 			die = maxi(die1, die2) if obs_net > 0 else mini(die1, die2)
+		if heroic:
+			die = 20
 		var total: int = die + dex_mod + prof
+		# Pass Without Trace (Wood Elf lineage spell): flat +10 to the stealth roll while active.
+		if stats.pass_without_trace_turns > 0:
+			total += Stats.PASS_WITHOUT_TRACE_BONUS
+		# Minor Illusion (Forest Gnome lineage cantrip): a smaller, shorter flat bonus, same shape.
+		if stats.minor_illusion_turns > 0:
+			total += Stats.MINOR_ILLUSION_BONUS
 		# Distance-to-DC bonus: the closer you are relative to THIS enemy's own sight range
 		# (darkvision etc. included), the harder you are to miss — +1 DC per tile closer than its
 		# FOV edge, capped at 0 for anything at or beyond max sight range. Chebyshev, matching
@@ -783,6 +859,11 @@ func _process(_delta: float) -> void:
 		_spellcasting.cancel()
 		GameState.game_log("[color=gray]Spell cancelled.[/color]")
 	_dragonborn.cancel_breath_weapon()
+	_aasimar.cancel_healing_hands()
+	_aasimar.cancel_celestial_revelation()
+	if _goliath.cloud_teleport_mode_active:
+		_goliath.cloud_teleport_mode_active = false
+		GameState.game_log("[color=gray]Cloud Giant teleport cancelled.[/color]")
 	_try_move(dir)
 
 # Holding Space repeats a single wait_action() per real turn for as long as it's held down —
@@ -1114,7 +1195,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _hunters_mark_mode_active:
 				_hunters_mark_mode_active = false
 				GameState.game_log("[color=gray]Hunter's Mark cancelled.[/color]")
+			if _goliath.cloud_teleport_mode_active:
+				_goliath.cloud_teleport_mode_active = false
+				GameState.game_log("[color=gray]Cloud Giant teleport cancelled.[/color]")
 			_dragonborn.cancel_breath_weapon()
+			_aasimar.cancel_healing_hands()
+			_aasimar.cancel_celestial_revelation()
 			if _spellcasting.spell_targeting_active:
 				_spellcasting.cancel()
 				GameState.game_log("[color=gray]Spell cancelled.[/color]")
@@ -1330,6 +1416,15 @@ func _unhandled_input(event: InputEvent) -> void:
 						_execute_hook(target_enemy)
 			return
 
+		# Cloud Giant teleport targeting mode (Goliath Giant Ancestry) — click a visible tile
+		# within 3; the charge is only spent on a CONFIRMED teleport (Esc/any other click mode
+		# switch costs nothing, see player_goliath.gd).
+		if _goliath.cloud_teleport_mode_active:
+			_goliath.cloud_teleport_mode_active = false
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				_goliath.resolve_cloud_teleport(clicked)
+			return
+
 		# Breath Weapon targeting mode (Dragonborn) — any click supplies a direction only, the
 		# clicked tile need not itself be in range (same convention as Burning Hands' cone).
 		if _dragonborn.breath_weapon_mode_active:
@@ -1337,6 +1432,21 @@ func _unhandled_input(event: InputEvent) -> void:
 				_dragonborn.resolve_breath_weapon(clicked)
 			else:
 				_dragonborn.cancel_breath_weapon()
+			return
+
+		# Healing Hands / Celestial Revelation targeting mode (Aasimar) — any click confirms, same
+		# "no aim needed" convention as Mage Armor's self-cast.
+		if _aasimar.healing_hands_mode_active:
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				_aasimar.resolve_healing_hands(clicked)
+			else:
+				_aasimar.cancel_healing_hands()
+			return
+		if _aasimar.celestial_revelation_mode_active:
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				_aasimar.resolve_celestial_revelation()
+			else:
+				_aasimar.cancel_celestial_revelation()
 			return
 
 		# Frenzy targeting mode (Berserker) — melee only, must be adjacent.
@@ -1733,6 +1843,14 @@ func _try_move(dir: Vector2i) -> void:
 		return
 	var target: Vector2i = grid_pos + dir
 
+	# Large Form (Goliath, see player_goliath.gd): a 2x2 footprint needs its WHOLE destination
+	# block free, not just the single leading tile the rest of this function checks — otherwise a
+	# Large player could squeeze partway through a 1-wide gap. Only the 3 NEW tiles (the ones not
+	# already part of the current footprint) are checked here; the leading `target` tile itself
+	# still goes through the normal enemy-bump/walkability logic below unchanged.
+	if size != Vector2i.ONE and not GameState.noclip and _goliath.blocks_large_form_move(target):
+		return
+
 	var enemy: Enemy = _dungeon_floor.get_enemy_at(target)
 	if enemy != null and enemy.is_hidden_from_player():
 		# Invisible enemy's tile feels exactly like a wall bump: no move, no blind attack, no
@@ -1896,9 +2014,33 @@ func _try_move(dir: Vector2i) -> void:
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return
-	if stats.expeditious_retreat_turns > 0 and not _expeditious_retreat_move_used_this_turn:
+	if stats.adrenaline_rush_move_free_pending:
+		stats.adrenaline_rush_move_free_pending = false
+		GameState.game_log("[color=cyan]Adrenaline Rush: that move didn't cost you your turn.[/color]")
+		_reverted_this_round = true
+		TurnManager.revert_to_waiting()
+		return
+	var _wood_elf_free_step: bool = false
+	if stats.character_race == Stats.CharacterRace.ELF and stats.race_variant == Stats.ElfSubrace.WOOD_ELF:
+		_wood_elf_move_counter += 1
+		if _wood_elf_move_counter >= 6:
+			_wood_elf_move_counter = 0
+			_wood_elf_free_step = true
+	var _large_form_free_step: bool = _goliath.consume_large_form_free_move()
+	if _large_form_free_step:
+		GameState.game_log("[color=cyan]Large Form: your giant stride carries you further at no cost.[/color]")
+		_reverted_this_round = true
+		TurnManager.revert_to_waiting()
+		return
+	if (stats.expeditious_retreat_turns > 0 or stats.longstrider_turns > 0) and not _expeditious_retreat_move_used_this_turn:
 		_expeditious_retreat_move_used_this_turn = true
-		GameState.game_log("[color=cyan]Expeditious Retreat: that move didn't cost you your turn.[/color]")
+		var _quick_src: String = "Expeditious Retreat" if stats.expeditious_retreat_turns > 0 else "Longstrider"
+		GameState.game_log("[color=cyan]%s: that move didn't cost you your turn.[/color]" % _quick_src)
+		_reverted_this_round = true
+		TurnManager.revert_to_waiting()
+		return
+	elif _wood_elf_free_step:
+		GameState.game_log("[color=cyan]Wood Elf: your swift steps carry you further at no cost.[/color]")
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return
@@ -1927,13 +2069,25 @@ func _attempt_web_escape() -> void:
 	# Poisoned (DISADV on ALL checks, including this STR check — Restrained's own DEX-check
 	# clause doesn't apply here since this is STR).
 	var has_disadv: bool = stats.poisoned_condition_turns > 0 or _frightened_active()
+	# Large Form (Goliath): ADV on STR checks — the one player-side STR check that exists today.
+	var has_adv: bool = _goliath.has_large_form_str_adv()
+	var roll_net: bool = has_adv and not has_disadv
+	var roll_both: bool = has_adv == has_disadv and has_adv  # both true cancels to a flat roll
 	var die1: int = Rng.roll(20)
-	var die2: int = Rng.roll(20) if has_disadv else die1
-	var die: int = mini(die1, die2) if has_disadv else die1
+	var die2: int = Rng.roll(20) if (has_adv or has_disadv) and not (has_adv and has_disadv) else die1
+	var die: int
+	if roll_both:
+		die = die1
+	elif roll_net:
+		die = maxi(die1, die2)
+	elif has_disadv:
+		die = mini(die1, die2)
+	else:
+		die = die1
 	var total: int = die + str_mod + prof
 	var passed: bool = total >= dc
-	var meta: String = "check:stat=STR,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=0" % [
-		die, die1, die2, str_mod, prof, total, dc, int(passed)]
+	var meta: String = "check:stat=STR,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [
+		die, die1, die2, str_mod, prof, total, dc, int(passed), 1 if roll_net else 0]
 	if passed:
 		GameState.game_log("[color=lime]You tear free of the webbing! [url=%s]%d vs DC %d[/url][/color]" % [meta, total, dc])
 		stats.web_restrained = false
@@ -2270,6 +2424,55 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		if _dungeon_floor != null:
 			_dungeon_floor.show_damage(enemy.position, hm_actual, false, CombatMath.damage_type_color("Force"), hm_stack_index)
 
+	# Aasimar Celestial Revelation: the FIRST damage dealt each turn while active gets a bonus
+	# instance equal to proficiency bonus, Radiant or Necrotic depending on the chosen
+	# transformation — same "one hit, two damage types" shape as Judgement Day/Torch/Hunter's Mark
+	# above. Scope limitation: only wired into this primary melee hit, same documented gap as
+	# those three (see scripts/entities/CLAUDE.md's "Aasimar" section).
+	var cr_actual: int = 0
+	var cr_inst: Dictionary = {}
+	var cr_type: String = ""
+	if stats.celestial_revelation_turns > 0 and not stats.celestial_revelation_bonus_used_this_turn:
+		stats.celestial_revelation_bonus_used_this_turn = true
+		cr_type = "Necrotic" if stats.celestial_revelation_transform == Stats.AasimarTransformation.NECROTIC_SHROUD else "Radiant"
+		cr_inst = CombatMath.build_damage_instance([], 0, [{"name": "Celestial Revelation", "amount": stats.proficiency_bonus, "color": "gold"}], is_crit, cr_type)
+		var cr_result: Dictionary = enemy.take_typed_damage(cr_inst["subtotal"], cr_type, is_crit)
+		cr_inst["final"] = cr_result["actual"]
+		cr_inst["resist_mul"] = cr_result["mul"]
+		cr_actual = cr_result["actual"]
+		enemy.update_hp_bar()
+		var cr_stack_index: int = 1
+		if jd_actual > 0: cr_stack_index += 1
+		if torch_actual > 0: cr_stack_index += 1
+		if hm_actual > 0: cr_stack_index += 1
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(enemy.position, cr_actual, false, CombatMath.damage_type_color(cr_type), cr_stack_index)
+
+	# Fire Giant ancestry (Goliath, see player_goliath.gd): armed, next hit also deals a second,
+	# independent Fire damage instance (same "one hit, two damage types" shape as Torch/Hunter's
+	# Mark above) — a miss never reaches this line at all, so the charge is only ever spent on a
+	# landed hit, matching the "misses don't spend charges" rule.
+	var gol_actual: int = 0
+	var gol_inst: Dictionary = {}
+	var gol_type: String = ""
+	if actual > 0:
+		gol_type = _goliath.consume_giant_ancestry_on_hit(enemy)
+		if gol_type != "":
+			var gol_rolls: Array[int] = Rng.roll_dice(1, 10)
+			gol_inst = CombatMath.build_damage_instance(gol_rolls, 10, [], is_crit, gol_type)
+			var gol_result: Dictionary = enemy.take_typed_damage(gol_inst["subtotal"], gol_type, is_crit)
+			gol_inst["final"] = gol_result["actual"]
+			gol_inst["resist_mul"] = gol_result["mul"]
+			gol_actual = gol_result["actual"]
+			enemy.update_hp_bar()
+			var gol_stack_index: int = 1
+			if jd_actual > 0: gol_stack_index += 1
+			if torch_actual > 0: gol_stack_index += 1
+			if hm_actual > 0: gol_stack_index += 1
+			if cr_actual > 0: gol_stack_index += 1
+			if _dungeon_floor != null:
+				_dungeon_floor.show_damage(enemy.position, gol_actual, false, CombatMath.damage_type_color(gol_type), gol_stack_index)
+
 	var is_lethal: bool = enemy.stats.is_dead()
 
 	var dmg_meta: String = CombatMath.encode_damage_instance(main_inst)
@@ -2285,6 +2488,12 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if hm_actual > 0:
 		var hm_meta: String = CombatMath.encode_damage_instance(hm_inst)
 		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Force[/color]" % [hm_meta, hm_actual]
+	if cr_actual > 0:
+		var cr_meta: String = CombatMath.encode_damage_instance(cr_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [cr_meta, cr_actual, cr_type]
+	if gol_actual > 0:
+		var gol_meta: String = CombatMath.encode_damage_instance(gol_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [gol_meta, gol_actual, gol_type]
 	var verb: String = "strike" if is_monk_unarmed else ("punch" if is_unarmed else "strike")
 
 	if is_crit:
@@ -2827,4 +3036,10 @@ func _use_ability_slot(idx: int) -> void:
 		"breath_weapon":           _dragonborn.activate_breath_weapon()
 		"draconic_flight":         _dragonborn.activate_draconic_flight()
 		"stonecunning":            _dwarf.activate_stonecunning()
+		"heroic_inspiration":      _human.activate_heroic_inspiration()
+		"adrenaline_rush":         _orc.activate_adrenaline_rush()
+		"healing_hands":           _aasimar.activate_healing_hands()
+		"celestial_revelation":    _aasimar.activate_celestial_revelation()
+		"large_form":              _goliath.activate_large_form()
+		"giant_ancestry":          _goliath.activate_giant_ancestry()
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)

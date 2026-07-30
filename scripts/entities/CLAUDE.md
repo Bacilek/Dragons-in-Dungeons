@@ -402,13 +402,455 @@ casting for a non-caster).
   `Stats.PASS_WITHOUT_TRACE_BONUS` (+10) to the Stealth-vs-Passive-Perception roll's `total` in
   `Player._resolve_stealth_check()` while active.
 
+## Orc
+
+Humanoid, Medium (6-7 ft), Speed 1 tile/turn (baseline). Two traits, `Stats.apply_race_defaults()`'s
+ORC branch:
+
+- **Superior darkvision** (passive): `darkvision_bonus = 2`.
+- **Relentless Endurance** (passive): no ability-bar entry, just a plain check in
+  `GameState.check_player_death()` — a hit that would drop the player to 0 HP instead drops them
+  to 1 HP, once per long rest (`Stats.relentless_endurance_used`, reset in `long_rest()`). Checked
+  after Bruiser R3 (Barbarian talent) — if both are active, Bruiser's own check runs first and
+  claims the save.
+- **Adrenaline Rush** (ability_id `"adrenaline_rush"`, granted immediately at level 1 via
+  `GameState.give_race_starting_items()`/`_restore_race_ability_bar()`, same composition-child-node
+  pattern as Dwarf/Dragonborn/Human — `scripts/entities/player_orc.gd`, `PlayerOrc`): free action,
+  `proficiency_bonus` uses. **Unlike every other race charge in this file, refills on BOTH a
+  completed short rest AND a long rest** (`GameState._on_short_rest_completed()`/`long_rest()`,
+  each topping `Stats.adrenaline_rush_uses_remaining` back to `proficiency_bonus` — direct owner
+  correction, since real 5e Adrenaline Rush is normally long-rest-only). Activating
+  (`PlayerOrc.activate_adrenaline_rush()`) sets `Stats.temp_hp = proficiency_bonus` (flat replace,
+  not additive, matching every other temp-HP grant's convention — Natural Sleeper R2, Overheal
+  Shield, Ironwood Bark) and arms a one-shot `Stats.adrenaline_rush_move_free_pending` flag (not
+  serialized — mid-floor buff state, same precedent as `expeditious_retreat_turns`). The player's
+  very next WASD move consumes that flag and doesn't cost a turn (`player.gd._try_move()`, the
+  same `TurnManager.revert_to_waiting()` free-action pattern as Battlefield Expert R3's free
+  side-step / Expeditious Retreat/Longstrider's free move — checked as its own standalone gate
+  right after the Battlefield Expert branch, ahead of Wood Elf/Expeditious Retreat). Same scope
+  limitation as those: only wired into `_try_move()` (single-step WASD movement), not the
+  queued-path/chase-to-target movement functions. Proficiency-bonus level-up crossings (5/9/13/17)
+  grant +1 CURRENT use immediately, mirroring Breath Weapon/Stonecunning's identical treatment.
+
+## Aasimar
+
+Humanoid, Small or Medium (2-7 ft), Speed 1 tile/turn (baseline). `Stats.apply_race_defaults()`'s
+AASIMAR branch:
+
+- **Celestial Resistance** (passive): `damage_resistances = ["Necrotic", "Radiant"]` —
+  unconditional, no `race_variant` choice (unlike Tiefling's legacy-picked single resistance).
+- **Darkvision +1** (passive).
+- **Light Bearer** (passive grant, not an ability): the Light cantrip (`SpellDb`'s existing
+  `"light"` entry, unchanged — see "Wizard spellcasting" above) is granted directly onto the
+  ability bar at race select (`GameState.give_race_starting_items()`'s AASIMAR branch,
+  `_build_spell_ability("light")`) — works for any class, even a non-caster, same "spell ability
+  outside the normal known_spells/prepared_spells bookkeeping" shape every other race-granted
+  spell in this file uses.
+- **Healing Hands** (ability_id `"healing_hands"`, granted immediately at level 1): unlike every
+  other race ability in this file, **costs the player's action** (not a free action) — 1 use,
+  refilled on long rest. Arm-then-click targeting (`scripts/entities/player_aasimar.gd`,
+  `PlayerAasimar`): since no general ally-targeting system exists in this engine (only two valid
+  touch targets exist — the player themselves, or the Wild Heart Companion — same "narrow case,
+  not the full system" limitation as Mage Armor/Invisibility's own touch-self-only scope), the
+  click's only job is picking between them: clicking the Companion's own tile heals it, any other
+  click heals the player. Heals `1d4 × proficiency_bonus` HP (a literal read of "d4 ×
+  proficiency bonus" — a single die scaled by the multiplier, not `proficiency_bonus` separate
+  d4s summed).
+- **Celestial Revelation** (ability_id `"celestial_revelation"`, granted the instant
+  `character_level` reaches 3 — `gain_exp()`'s `old_level < 3 and character_level >= 3` check
+  re-runs `give_race_starting_items()`, idempotent, same pattern as Dragonborn's Draconic Flight
+  unlocking at level 5): free action, 1 use per long rest. **Arm-cycle-cancel targeting**, one step
+  further than Breath Weapon's own Cone↔Line toggle since there are 3 choices instead of 2: 1st
+  press arms Heavenly Wings, 2nd press (same slot) cycles to Inner Radiance, 3rd to Necrotic
+  Shroud, 4th cancels. **Any world click confirms/activates** whichever choice is currently
+  selected (Mage Armor's "any click confirms a self-cast" convention — there's nothing to aim, the
+  click is purely a confirm gesture). On activation: `Stats.celestial_revelation_turns = 10`,
+  `Stats.celestial_revelation_transform` records the choice (`Stats.AasimarTransformation` —
+  **not** stored in `race_variant`, which is fixed at race select; this is chosen fresh every
+  activation), `Stats.celestial_revelation_bonus_used_this_turn = false`.
+  - **"First damage each turn" bonus**: `player.gd._bump_attack()` gained a `cr_actual`/`cr_inst`
+    block mirroring Judgement Day/Torch/Hunter's Mark's own "second, independent same-hit damage
+    instance" shape (see "Damage types / resistances" above) — while
+    `celestial_revelation_turns > 0` and `not celestial_revelation_bonus_used_this_turn`, the flag
+    is consumed and a flat `proficiency_bonus` bonus instance (Radiant, or Necrotic for Necrotic
+    Shroud) is dealt alongside the primary hit, with its own floater/tooltip/log segment. Reset to
+    unconsumed every real player turn in `_on_turn_started()` (10-turn duration ticked the same
+    "100-turn buff" way as `draconic_flight_turns`/`invisibility_turns`, just a shorter window) —
+    so it's genuinely per-turn, not a one-shot pending flag like Judgement Day. **Scope
+    limitation**: only wired into this primary melee hit, same documented gap Ironwood
+    Bark/Judgement Day/Torch's own Fire bonus already have (not ranged/spell/off-hand/cleave).
+  - **Heavenly Wings**: sets `Stats.draconic_flight_turns = maxi(draconic_flight_turns, 10)` —
+    **reuses Dragonborn's own field/mechanism outright** rather than a separate copy (chasm
+    crossing, no grass trample, no trap trigger, immune to standing-fire damage, ticked by the
+    same `draconic_flight_turns` countdown in `player.gd`'s `_on_turn_started()`) — the "no
+    separate copy needed" precedent High Elf's own Misty Step reuse already established.
+  - **Inner Radiance**: on activation, deals `proficiency_bonus` Radiant damage to every enemy
+    within 2 tiles (Chebyshev, via `Enemy.min_dist_to()`) — a self-centered instant burst, mirrors
+    Thunderclap's shape. **Also grants +2 FOV radius for the full 10-turn duration** —
+    `GameState.celestial_radiance_fov_bonus()`, folded into `effective_fov_radius()` **before**
+    `darkvision_bonus` in the sum (same "own light source" conceptual slot the equipped-Torch
+    bonus occupies) — see `scripts/world/CLAUDE.md`'s "FOV" section for the ring-visual ordering
+    (`base → torch → celestial → darkvision`, each its own tinted ring,
+    `DungeonFloor._update_celestial_fov_ring_glow()` — a bright celestial gold/yellow, warmer and
+    brighter than the torch ring's pale yellow).
+  - **Necrotic Shroud**: on activation, every enemy within 2 tiles rolls a CHA check
+    (`8 + CHA mod + proficiency_bonus`) — the first Aasimar-specific check stat this engine has
+    needed: `Enemy.resist_check_detailed()` gained a `use_cha: bool = false` 7th param (CHA slots
+    into the existing DEX > WIS > INT > ... priority chain, now `DEX > WIS > INT > CHA > CON >
+    STR`) — a failed check applies `Enemy.frightened_turns` (new field, `apply_status("frightened",
+    turns)`). **Simplified vs. real Frightened** (see "Conditions" below): DISADV on the enemy's
+    own attack rolls only (folded into `_attack_player()`/`_attack_companion()`'s existing
+    `poisoned_condition_turns`-style disadv aggregation) — no can't-approach-the-source movement
+    block, since there's no enemy-side "source" reference tracking to hang that on (the player's
+    own Frightened, `Stats.frightened_source`, is the only place that exists today). Fixed 2-turn
+    duration, not RAW's "until the end of your next turn" — same documented-simplification
+    precedent as Mind Sliver's penalty die. Ticked once per real enemy turn in `decide_turn()`
+    alongside `enfeeble_turns`/`faerie_fire_turns`.
+
+## Tiefling
+
+Humanoid, Small or Medium (3-7 ft), Speed 1 tile/turn (baseline). `Stats.apply_race_defaults()`'s
+TIEFLING branch:
+
+- **Darkvision +1** (passive): `darkvision_bonus = 1`.
+- **Fiendish Legacy**: at race select the player picks one of three legacies
+  (`Stats.TieflingLegacy` — ABYSSAL/CHTHONIC/INFERNAL, stored in `race_variant` like
+  `ElfSubrace`/`DragonbornAncestry`), which grants a damage resistance (`Stats.
+  TIEFLING_LEGACY_RESIST[legacy]` — Poison/Necrotic/Fire) plus one spell each at character levels
+  1, 3, and 5:
+
+  | Legacy | Resistance | Level 1 (cantrip) | Level 3 | Level 5 |
+  |---|---|---|---|---|
+  | Abyssal | Poison | Poison Spray | Ray of Sickness | Hold Person |
+  | Chthonic | Necrotic | Chill Touch | False Life | Ray of Enfeeblement |
+  | Infernal | Fire | Fire Bolt | Hellish Rebuke | Darkness |
+
+  Fire Bolt (the existing Wizard cantrip), False Life (existing Wizard leveled spell), and
+  Darkness (the existing Drow Elf lineage spell, see "Elf" above) are reused verbatim — no
+  separate copy, same "no separate copy needed" precedent as High Elf's own Misty Step reuse. The
+  other five (Poison Spray, Chill Touch, Ray of Sickness, Hold Person, Ray of Enfeeblement,
+  Hellish Rebuke) are new `SpellDb` entries, `TIEFLING_LEGACY_SPELL_IDS`
+  (`scripts/items/CLAUDE.md`'s spellcasting-data section).
+
+  **Mechanism is a direct clone of Elf's Elven Lineage** (see "Elf" above) — same ALWAYS-PREPARED
+  ability-bar grant outside `known_spells`/`prepared_spells`/`SpellcasterState` bookkeeping (works
+  even for a non-caster class, e.g. a Tiefling Barbarian), same one-free-cast-per-long-rest economy
+  (`Stats.tiefling_legacy_spell_ids`/`tiefling_legacy_free_cast_used`/
+  `is_tiefling_legacy_free_cast_available()`, checked in `SpellEffects._consume_slot()` right
+  alongside the Elf check, cleared in `GameState.long_rest()`), same three-threshold grant timing
+  except the level-1 cantrip is handed out immediately at race select
+  (`GameState.give_race_starting_items()`'s TIEFLING branch) rather than waiting for a level-up —
+  levels 3 and 5 are granted from `gain_exp()`'s level-up block exactly like Elf's own level-3/5
+  grants. `GameState._tiefling_legacy_spell_for(legacy, threshold_level)` / `_grant_tiefling_legacy_spell(spell_id)`
+  mirror `_elf_lineage_spell_for()`/`_grant_elf_lineage_spell()` line for line.
+  **Casting ability**: every Fiendish Legacy spell is cast using **whichever of INT/WIS/CHA is
+  highest** (`Stats.tiefling_best_ability_mod()`), never the character's own class
+  `spellcasting_ability` (a Tiefling Barbarian has none at all; a Tiefling Wizard's own INT might
+  not even be the best of the three) — `SpellEffects._attack_bonus()`/`_save_dc()`/
+  `_cast_ability_mod()` all gained an optional `spell: Spell = null` parameter (every call site
+  already had `spell` in local scope) checked before the normal `stats.caster`/INT-fallback path:
+  whenever `spell.spell_id in stats.tiefling_legacy_spell_ids`, the Tiefling override wins.
+
+- **New spell mechanics introduced for this race** (documented simplifications, matching this
+  codebase's established "narrow case, not the full system" precedent):
+  - **`SpellEffects.cast_leveled_save_at_enemy()`** — a new shared resolver, the leveled
+    counterpart to `cast_cantrip_save_at_enemy()` (single-target SAVE resolution + real spell-slot
+    consumption; no such leveled shape existed before Hold Person/Hellish Rebuke needed it).
+    `Spell.dice_count <= 0` (Hold Person) is a pure debuff with no damage roll at all; any other
+    spell (Hellish Rebuke) deals damage, halved on a successful save
+    (`spell.save_for_half`). Wired into `PlayerSpellcasting.try_cast_at()`'s `ENEMY`/`SAVE` branch.
+  - **Poison Spray / cast_cantrip_save_at_enemy() generalization**: that function used to hardcode
+    `use_wis = effect_id == "toll_the_dead"` / `use_int = effect_id == "mind_sliver"` — generalized
+    to read `spell.save_stat` directly (backward-compatible: Toll the Dead is WIS, Mind Sliver is
+    INT, unchanged) so Poison Spray's CON save works without another hardcoded branch.
+    `PlayerSpellcasting.try_cast_at()`'s level-0 dispatch was similarly generalized from a hardcoded
+    `"toll_the_dead", "mind_sliver":` id list to `spell.resolution == Spell.Resolution.SAVE` — any
+    future SAVE cantrip Just Works without a matching edit here.
+  - **Ray of Sickness** (`cast_leveled_attack_at_enemy()`'s `"ray_of_sickness"` effect_id case):
+    ATTACK_ROLL + damage exactly like Chromatic Orb, then a secondary CON save on a non-lethal hit
+    — a fail applies the real Poisoned condition for 2 turns (fixed duration, not RAW's "until the
+    end of your next turn" — same simplification precedent as Mind Sliver's own penalty die).
+  - **Ray of Enfeeblement** (`"ray_of_enfeeblement"` effect_id case): ATTACK_ROLL + a minor 1d4
+    Necrotic sting, then on a hit sets `Enemy.enfeeble_turns = 10` — **new Enemy field**, ticked
+    once per real enemy turn in `decide_turn()` alongside `faerie_fire_turns` (pure duration
+    counter, no movement/attack restriction of its own). While active, `_attack_player()`'s
+    physical-damage calc (Slashing/Piercing/Bludgeoning only — RAW's "weapon attacks that use
+    Strength" approximated as any physical type, since this engine doesn't track per-attack
+    ability-score usage for enemies) halves `dmg` (floored, min 1) right before crit doubling. No
+    repeated CON save to end it early (documented simplification, same as Ray of Sickness above).
+  - **Hold Person** (`cast_leveled_save_at_enemy()`'s `"hold_person"` effect_id case): a failed WIS
+    save applies `Enemy.apply_status("incapacitated", 10)` — the real bidirectional Incapacitated
+    condition (see "Conditions" below) stands in for RAW's separate Paralyzed condition (no
+    Paralyzed state exists in this engine — Incapacitated's "can't take actions, every attack
+    against it is a Surprise Attack" is the closest fit) and there's no repeated save to end it
+    early, fixed 10-turn duration instead.
+  - **Hellish Rebuke** (`cast_leveled_save_at_enemy()`, damage branch): RAW is a reaction cast the
+    instant a creature hits you; this engine has no reaction-casting framework (only Opportunity
+    Attacks/Retaliation exist), so it's a normal on-demand cast instead — same simplification
+    Shield's own same-turn manual self-cast already established for a spell that's RAW a reaction.
+
+## Gnome
+
+Small, Speed 1 tile/turn, Darkvision +1. `Stats.apply_race_defaults()`'s GNOME branch:
+
+- **Gnomish Cunning**: real 5e text grants ADV on ALL THREE of INT/WIS/CHA saves unconditionally —
+  deliberately narrowed to **one** stat, chosen at race select (direct owner decision: all three
+  would be too strong, see the design conversation this feature shipped from). Reuses Human's own
+  `race_prof_ability` field (STR=0..CHA=5 index) purely as a transport — no new serialized field —
+  `Stats.gnomish_cunning_stat: String` ("int"/"wis"/"cha") is re-derived from it in
+  `apply_race_defaults()` exactly like `darkvision_bonus` (idempotent, never saved directly).
+  `Stats.gnomish_cunning_grants_adv(stat) -> bool` is the single check every save site adds
+  alongside its existing Halfling-Brave-style ADV term. **This codebase still has no real "saves
+  vs. checks" distinction** (root CLAUDE.md: "all defensive rolls are checks") — rather than build
+  one, this trait is scoped to the two existing player-side rolls that already ARE conceptually
+  saves (both currently WIS): the repeated end-of-turn Frightened save (`Player._on_turn_started()`)
+  and Quasit's Scare save (`Enemy._execute_cast_scare()`) — both already had a Halfling-only ADV
+  term, now `or stats.gnomish_cunning_grants_adv("wis")`. Picking INT or CHA is currently dormant
+  (no player-side INT/CHA save exists yet, same "granted but nothing to hook into" precedent as
+  Elf's Fey Ancestry/Dwarf's Poisoned-check half) — wire in the same `gnomish_cunning_grants_adv()`
+  check the moment a real INT/CHA save is added, rather than inventing one just to hang this on.
+  Deliberately does NOT touch `search_action()`/`passive_trap_check()` (`player_actions.gd`) even
+  though both are WIS-based d20 rolls — those are ability CHECKS (Perception-flavored), not saves,
+  and buffing them would be exactly the "too strong" overreach the single-stat restriction was
+  meant to avoid.
+- **Gnomish Lineage**: the chosen sub-race (`Stats.GnomeLineage` — FOREST/ROCK, picked at race
+  select alongside the Cunning stat, both packed into ONE `race_select.gd` sub-choice grid of 6
+  combined options — "Forest (INT)".."Rock (CHA)" — since a race with two independent picks had no
+  existing UI pattern; see `scripts/ui/CLAUDE.md`'s "Race select" section) grants cantrips
+  immediately at race select (unlike Elf/Tiefling's level-3/5 staggering — Gnomish Lineage doesn't
+  scale with character level at all): Forest Gnome gets Minor Illusion + Speak with Animals, Rock
+  Gnome gets Mending. All three are always-prepared ability-bar grants outside the normal
+  `known_spells`/`prepared_spells`/`SpellcasterState` bookkeeping — same mechanism as Elven
+  Lineage/Fiendish Legacy (`Stats.gnome_lineage_spell_ids`, `GameState._grant_gnome_lineage_spells()`/
+  `_gnome_lineage_spells_for()`, `_restore_race_ability_bar()`'s GNOME branch for save/load replay).
+  **Free-cast economy differs from Elf/Tiefling's single free-use bool**: each Gnomish Lineage
+  spell is castable **`proficiency_bonus` times per long rest**, not just once (direct owner
+  request — a flat "once" felt too weak for a cantrip-tier grant, all-three-unlimited felt too
+  strong) — `Stats.gnome_lineage_free_casts_remaining: Dictionary` (spell_id → int, refilled to
+  `proficiency_bonus` in `GameState.long_rest()`), `Stats.is_gnome_lineage_free_cast_available(id)`.
+  Since all three are cantrips (level 0), there's no real-spell-slot fallback once the counter hits
+  0 — `PlayerSpellcasting.begin_cast()` hard-blocks the cast outright (gray log line) rather than
+  falling through to a slot check the way a leveled Elf/Tiefling lineage spell would;
+  `SpellEffects._consume_slot()` decrements the counter alongside the existing Elf/Tiefling
+  free-cast checks. All three resolve via `SpellEffects.cast_leveled_self()`'s SELF/AUTO_HIT branch
+  (same shape as Blade Ward/Longstrider):
+  - **Minor Illusion**: `Stats.minor_illusion_turns` (10, NOT Concentration) grants a flat
+    `Stats.MINOR_ILLUSION_BONUS` (+5) to the Stealth-vs-Passive-Perception roll — a smaller,
+    shorter-lived cousin of Wood Elf's Pass Without Trace (+10, 100 turns), ticked the same way in
+    `player.gd._on_turn_started()`/read in `_resolve_stealth_check()`.
+  - **Speak with Animals**: flavor-only, no mechanical effect (this engine has no animal-dialogue
+    system to hook into — same documented-simplification precedent as Elf's inert Fey Ancestry).
+  - **Mending**: restores the equipped Main Hand weapon's `uses_remaining` to `uses_max` if it has
+    any (a limited-use thrown weapon like a Spear/Handaxe/Dagger) — approximates the real spell's
+    "repair a single break/tear" text, since this engine has no separate object-HP system to mend.
+    Logs a gray "nothing to mend" line if Main Hand has no `uses_max` or is already full.
+  No Scroll of &lt;Spell&gt; exists for any of the three (`SpellDb.GNOME_LINEAGE_SPELL_IDS`) — same
+  documented scope cut as the Elf lineage set.
+
+## Goliath
+
+Humanoid, Medium (7-8 ft), Speed 1 tile/turn baseline (flavor text only, like every other race —
+see "Movement speed scaling" below the table; only Large Form's own bonus is mechanized). No
+darkvision. Composition child-node `player_goliath.gd` (`PlayerGoliath`), instantiated as
+`_goliath` in `player.gd._ready()` — same pattern as `PlayerDwarf`/`PlayerDragonborn`. Powerful
+Build (ADV to end the Grappled condition) has no hook — no Grappled condition exists anywhere in
+this engine, same "granted but nothing to hook into" precedent as Elf's Fey Ancestry.
+
+- **Large Form** (ability_id `"large_form"`, granted the instant `character_level` reaches 5 —
+  same level-gate/idempotent-re-grant pattern as Dragonborn's Draconic Flight): free action, up to
+  100 turns, 1/long rest (`Stats.large_form_turns`/`large_form_used`). Activating
+  (`PlayerGoliath.activate_large_form()`) requires the 2x2 block anchored at the player's current
+  tile to be entirely open floor and enemy-free (`_footprint_free()` — terrain via
+  `DungeonFloor.is_walkable()`, occupancy via `get_enemy_at()`); refusing with a gray log line if
+  not. On success sets `player.size = Vector2i(2, 2)` — **the first time the PLAYER, not just an
+  enemy, ever sets `Entity.size` above `(1,1)`** (see "Multi-tile footprint" below). **Click again
+  while active ends it early** (`activate_large_form()`'s own re-entry check, rather than a
+  separate cancel path — no "arm" phase exists since this is an instant self-buff, same shape
+  Draconic Flight would need if it ever gained an early-cancel). While active:
+  - **ADV on STR checks**: the only player-side STR check that exists today, the Spider's Web
+    escape attempt (`player.gd._attempt_web_escape()`), reads
+    `PlayerGoliath.has_large_form_str_adv()` alongside its existing Poisoned/Frightened DISADV
+    check, netting ADV/DISADV/flat per the normal cancel rule.
+  - **+1/3 movement speed**: reuses Wood Elf's own duty-cycle mechanism verbatim (see "Elf" above)
+    — `PlayerGoliath._large_form_move_counter` increments every real move; every 3rd one is free
+    (`_try_move()`'s free-move check, alongside Expeditious Retreat/Longstrider/Wood Elf's own
+    counters). Same scope limitation as those three: only wired into `_try_move()` (single-step
+    WASD movement).
+  - **Collision (full footprint audit)**: `DungeonFloor.is_walkable_for_enemy()`/
+    `is_walkable_for_companion()`/`get_blocking_body_on_line()`/`close_door()`/
+    `force_move_entity()`/`resolve_push()` all check `_player.occupies(pos)` instead of
+    `_player.grid_pos == pos`, so nothing can walk onto ANY of the 4 tiles a Large-Form player
+    occupies. `Enemy._chebyshev_to()`/`_in_attack_range()` and the OA reach check in
+    `_check_opportunity_attacks_on_move()` route through the new `Entity.min_dist_to_entity()`
+    (checks every occupied tile on BOTH sides) instead of a bare `min_dist_to(e.grid_pos)`, so an
+    enemy's attack-range/OA-reach math against a Large-Form player is correct from whichever tile
+    is actually closest. **The player's own movement while Large** is validated by
+    `PlayerGoliath.blocks_large_form_move(target)`, called from `_try_move()` right after `target`
+    is computed (before the existing single-tile enemy-bump/walkability checks) — verifies the 3
+    NEW tiles a step into `target` would cover (the 4th, `target` itself, still goes through the
+    normal bump-attack/walkability logic unchanged) are open and enemy-free, silently blocking the
+    move (like a wall bump) otherwise. **Known simplification, matching this codebase's own
+    "documented gap, not a bug" precedent for Ogre's Large footprint**: the queued-path/
+    chase-to-target movement functions and `_resolve_enemy_opportunity_attacks()`'s own
+    `min_dist_to(prev)`/`min_dist_to(next)` calls still measure against the player's single
+    `grid_pos` corner rather than the full footprint mid-move — same "not exhaustively wired"
+    scope cut Companion's own AI targeting has against a Large enemy.
+- **Giant Ancestry** (ability_id `"giant_ancestry"`, granted immediately at level 1): the player
+  chooses one of `Stats.GiantAncestry` (CLOUD/FIRE/FROST/HILL/STONE/STORM) at race select, stored
+  in `race_variant` like every other race's sub-choice. `proficiency_bonus` uses per long rest
+  (`Stats.giant_ancestry_uses_remaining`) — same grant/restore/sync/level-up-crossing wiring as
+  Dwarf's Stonecunning. `GameState._giant_ancestry_name()`/`_giant_ancestry_description()` build
+  the ability's flavor text per variant. **Shared "arm now, spend the charge only when it actually
+  triggers" shape** for Fire/Frost/Hill/Storm — activating (`PlayerGoliath.
+  activate_giant_ancestry()`) just toggles `Stats.giant_ancestry_armed` on/off, no charge spent yet
+  (a second press disarms for free); the charge is only deducted at the moment the effect actually
+  fires, so an unused arm — or Fire Giant's own explicit "if it misses, doesn't reduce charges"
+  rule — never wastes one. Cloud Giant and Stone Giant don't fit that shape and each work
+  differently (below).
+  - **Cloud Giant** (`Cloud's Jaunt`): free action, instant teleport up to 3 tiles to a visible,
+    unoccupied, walkable tile — arm-then-click targeting (`PlayerGoliath.
+    cloud_teleport_mode_active`, same "hook mode" pattern as Grip of the Forest, wired into
+    `player.gd`'s mouse-release handler, Esc/movement-key cancel chokepoints). **The charge is
+    spent only on a CONFIRMED teleport** — `resolve_cloud_teleport()` validates range/visibility/
+    walkability/occupancy (and, if Large Form is also active, the destination footprint via
+    `blocks_large_form_move()`) BEFORE deducting a charge; cancelling (Esc, a movement key, or an
+    invalid click) costs nothing. Uses `Entity.set_grid_pos()` (no tween, instant) like Misty Step.
+  - **Fire Giant** (`Fire's Burn`): armed, the next attack that HITS also deals a second,
+    independent 1d10 Fire damage instance — same "one hit, two damage types" shape as Torch/
+    Hunter's Mark (`player.gd._bump_attack()`'s `gol_actual`/`gol_inst` block, right after the
+    Aasimar Celestial Revelation block). `PlayerGoliath.consume_giant_ancestry_on_hit(enemy)`
+    (called only when `actual > 0`, i.e. never on a miss) returns `"Fire"` and consumes the charge
+    when this variant is active/armed, else `""` (no-op for every other variant/race). **Melee
+    only** — same documented scope limitation as Torch/Hunter's Mark/Ironwood Bark/Judgement
+    Day/Celestial Revelation's own bonus-instance hooks (not ranged/spell/off-hand/cleave).
+  - **Frost Giant** (`Frost's Chill`): same trigger shape as Fire Giant, but instead of a damage
+    instance it calls `enemy.apply_status("slowed", 3)` — reuses the EXACT same Mud/Water Slowed
+    mechanism every enemy already has (see "Enemy resist checks" above's `Enemy.slowed_turns`
+    entry) rather than inventing a new "reduce speed by 1/3" system: a slowed enemy sheds roughly
+    one movement step every few turns instead of being stunned outright, which is what "1/3
+    slower" actually means in a 1-tile-per-turn grid (a true stun would be far stronger than the
+    5e trait text). `consume_giant_ancestry_on_hit()` handles this internally and returns `""`
+    (no separate damage instance).
+  - **Hill Giant** (`Hill's Tumble`): same trigger shape, applies the real Prone condition
+    (`enemy.apply_status("prone", 1)`, see "Conditions" above) instead of damage — gated on
+    `enemy.size.x * enemy.size.y <= 4` ("Large or smaller"; every enemy in this game today is
+    Medium or Large-2x2 at most, so this is unconditional in practice, kept for correctness
+    against a future Huge+ enemy). `consume_giant_ancestry_on_hit()` handles this internally too.
+  - **Stone Giant** (`Stone's Endurance`): activating immediately rolls `1d12 + CON modifier` into
+    `Stats.stone_ancestry_reduction_pending` (arms it) — **the charge itself is spent later**, by
+    `GameState.take_damage_raw()`'s own Stone Giant block (right before the "DR can reduce to 0"
+    check), which subtracts the pending reduction from the next instance of damage taken, floors
+    at 0, then consumes the charge — so an armed-but-never-hit Stone Giant charge is never wasted
+    on nothing, matching the "spend on trigger" family shape even though its own trigger (getting
+    hit at all) has no "miss" concept the way an attack does.
+  - **Storm Giant** (`Storm's Thunder`): a toggle, not a one-shot arm — `enemy.gd._attack_player()`
+    checks `Stats.giant_ancestry_armed` right after damage lands (`actual > 0`): if armed and this
+    is a Goliath with the Storm ancestry, the ATTACKING enemy takes `1d8` Thunder back
+    (`Enemy.take_typed_damage()`), the toggle clears, and a charge is spent — "any attacker"
+    (melee or ranged) per direct owner design. A killing reflect calls `die()` directly (with its
+    own gray-exp-grant/log line, mirroring `DungeonFloor.resolve_push()`'s own inline kill
+    handling) rather than routing through `player.gd._finish_kill()`, since the player didn't
+    initiate this kill.
+
+## Human
+
+Humanoid, Small or Medium, Speed 1 tile/turn (baseline), no darkvision. Three traits,
+`Stats.apply_race_defaults()`'s HUMAN branch:
+
+- **Skillful** (passive): bonus check proficiency in one ability score of the player's choosing,
+  picked at race select (`Stats.race_prof_ability`, `Stats._grant_ability_proficiency()`) — a
+  Human-only sub-choice on `race_select.gd`'s card, same pattern as Elf's sub-race/Dragonborn's
+  ancestry picker.
+- **Versatile** (passive): gain an Origin feat — **not implemented**, no feat system exists
+  anywhere in this codebase (documented gap, same "sourced trait, no hook to grab onto yet"
+  precedent as Elf's Fey Ancestry).
+- **Resourceful — Heroic Inspiration** (ability_id `"heroic_inspiration"`, granted immediately at
+  level 1 via `GameState.give_race_starting_items()`/`_restore_race_ability_bar()`, same
+  composition-child-node pattern as Dwarf/Dragonborn — `scripts/entities/player_human.gd`,
+  `PlayerHuman`): free action, 1 use, refilled on long rest
+  (`Stats.heroic_inspiration_available`, already-existing field). Activating
+  (`PlayerHuman.activate_heroic_inspiration()`) arms `GameState.heroic_inspiration_pending` — the
+  player's very **next** d20 roll (attack roll, ability check, or save) is forced to a natural 20,
+  guaranteeing a critical success/auto-pass, then the flag is consumed. **Guaranteed even under
+  Disadvantage**: every hook site overrides the roll's `die` to `20` AFTER Advantage/Disadvantage
+  has already resolved its own min/max pick, not by forcing one component die — forcing a
+  component alone would still lose to a lower second roll under Disadvantage (direct owner
+  correction). Three hook sites cover every player-rolled d20 in the game:
+  - `CombatMath.roll_with_adv_disadv()` (`combat_math.gd`) — the single chokepoint shared by all 6
+    player attack-roll sites (melee/cleave/off-hand/OA/ranged/thrown), every cantrip/leveled-spell
+    ATTACK_ROLL cast (`spell_effects.gd`), and the player's own repeated Frightened save
+    (`player.gd._on_turn_started()`) and initial Scare save (`enemy.gd._execute_cast_scare()`) —
+    `CombatMath.consume_heroic_inspiration()` is called once inside it, after `die` is already
+    resolved, forcing `die = 20` when it fires. Returns a `"heroic"` key alongside the existing
+    `"lucky"` (Halfling Luck) one.
+  - `Player._resolve_stealth_check()` — consumed once per check (not per-observer, since the roll
+    is "rolled once, reused against every observer" per that function's own convention), forcing
+    every observer's resolved `die` to 20 so the player stays hidden from all of them at once.
+  - `PlayerThiefTools.attempt_disarm()` — same override on its own hand-rolled final `die`.
+  Deliberately does NOT hook Spider's Web save (`enemy.gd._execute_cast_web()`, a bare
+  `Rng.roll(20)` not routed through any shared d20 helper) — a pre-existing gap Halfling Brave
+  doesn't cover either, not new scope for this feature. A forced natural 20 on an attack roll
+  falls through to the existing crit-on-nat-20 handling for free (`CombatMath.is_critical_hit()`);
+  on a check/save it just reads as an unbeatable roll — no separate "critical success" concept
+  exists for checks in this engine, "guaranteed to pass" is the practical equivalent.
+
+## Halfling
+
+Creature type Humanoid, Size Small, Speed 1 tile/turn (same baseline every entity already moves
+at — Small doesn't change movement rate in 5e, only Nimbleness below cares about size at all).
+Three traits, `Stats.apply_race_defaults()`'s HALFLING branch (`darkvision_bonus = 0` — the only
+race with no darkvision):
+
+- **Luck** (passive, formerly labeled "Halfling Lucky"): see "Halfling Luck" above (the
+  ADV/DISADV section) — automatic, must-use reroll of a natural 1 on any player d20 roll.
+- **Brave** (passive): Advantage on saves to avoid or end the Frightened condition. Two call
+  sites, both a plain `d20 + WIS mod + (proficiency if check_prof_wis)` check that now rolls
+  through `CombatMath.roll_with_adv_disadv(1, 0)` (ADV forced on) instead of a bare `Rng.roll(20)`
+  when `character_race == HALFLING`: the repeated end-of-turn save in `Player._on_turn_started()`
+  ("end" — ticks `Stats.frightened_turns` down early on a pass) and the initial save in
+  `Enemy._execute_cast_scare()` (Quasit's Scare, "avoid" — the only source of Frightened today, see
+  "Conditions" above and Quasit's own section). Any future Frightened source that rolls its own
+  save should route through the same `roll_with_adv_disadv(1 if HALFLING else 0, 0)` pattern rather
+  than a bare roll, to stay covered by Brave automatically.
+- **Halfling Nimbleness** (`"you can move through the space of any creature that is a size larger
+  than you"`): **specced, not implemented** — direct owner request, deferred until entities carry
+  a real named size category (see the table below); `Entity.size` today is only a raw `Vector2i`
+  w/h footprint (Ogre/Spider's 2×2), with no tiny/small/medium/large/huge/gargantuan classification
+  to compare against, and Player is hardcoded 1×1 forever (`scripts/entities/CLAUDE.md`'s
+  "Multi-tile footprint" below). Once entities are annotated with a size category, this becomes a
+  move-executor change (a Halfling's `_try_move()`/queued-path/chase step onto a tile occupied by a
+  creature 1+ category larger, instead of being blocked like any other occupied tile, resolves to
+  the tile on the FAR side of that creature along the same direction — "go through it, come out the
+  other side" — rather than a swap or an attack).
+
+**D&D 2024 size categories** (reference table — not yet wired to any code; for whenever entities
+gain a real size-category field, e.g. to back Halfling Nimbleness above or a more precise footprint
+system than the current raw w/h `Entity.size`): space/area multiplier relative to a Medium
+creature's 1 tile —
+
+| Size | Area multiplier |
+|---|---|
+| Tiny | 1/4 |
+| Small | 1 |
+| Medium | 1 |
+| Large | 4 |
+| Huge | 9 |
+| Gargantuan | 16+ |
+
+(Quasit is Tiny, Player/most enemies are Medium, Ogre/Spider are Large 2×2 — matches the `4`
+multiplier above.)
+
 ## Multi-tile footprint (Large enemies)
 
 `Entity.size: Vector2i` (default `ONE`) gives an entity a real WxH footprint instead of a single
-tile — `grid_pos` is always the **top-left** corner. Only `Enemy` ever sets it above `(1,1)` today
-(pool `"size": {"w","h"}`, read in `Enemy._apply_stats()`), so Player/Companion stay 1x1 forever
-and every function below reduces to exactly today's single-tile behavior for them. First (only)
-user: `ogre` (2x2, `dungeon_floor_data.gd`).
+tile — `grid_pos` is always the **top-left** corner. Only `Enemy` (pool `"size": {"w","h"}`, read
+in `Enemy._apply_stats()`) and, since Goliath's Large Form, the **Player** (temporarily, while
+`large_form_turns > 0` — see "Goliath" above) ever set it above `(1,1)`; Companion stays 1x1
+forever. `Entity.min_dist_to_entity(other: Entity) -> int` (new) generalizes `min_dist_to()` to
+correctly measure between two POSSIBLY-large footprints (checks every occupied tile on both
+sides) — `Enemy._chebyshev_to()` uses it whenever its target `is Entity`, so an enemy's attack-
+range/OA-reach math against a Large-Form player is correct regardless of which side of either
+footprint is actually closest. First enemy user: `ogre` (2x2, `dungeon_floor_data.gd`).
 
 **Entity API** (`entity.gd`, generic — usable on any `Entity` reference):
 - `occupied_tiles() -> Array[Vector2i]` — every tile the footprint covers, top-left first.
@@ -462,7 +904,13 @@ footprint-aware — a companion may take one extra approach step against a Large
 actually able to attack. `Enemy._move_step()`'s post-move trap/water/grass tile check only looks
 at `grid_pos` (the top-left tile), not the full footprint. Sprite `z_index`/HP-bar/notice-mark
 vertical offsets are unchanged constants, tuned for 1-tile art — a Large enemy's HP bar sits lower
-relative to its (taller) sprite than a normal enemy's.
+relative to its (taller) sprite than a normal enemy's. **Player-as-Large (Goliath's Large Form,
+see "Goliath" above)**: `DungeonFloor`'s own collision checks (`is_walkable_for_enemy()`/
+`is_walkable_for_companion()`/`get_blocking_body_on_line()`/door-close/forced-movement) and
+`Enemy._chebyshev_to()`/`_check_opportunity_attacks_on_move()` are all footprint-aware; the
+queued-path/chase-to-target movement functions and `Player._resolve_enemy_opportunity_attacks()`
+are NOT (still measure against the player's single `grid_pos` corner) — same "not exhaustively
+wired" scope cut as Companion's own AI targeting against a Large enemy above.
 
 ## Invisibility
 
@@ -665,7 +1113,7 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 - ADV + DISADV cancel → 1d20
 - Yellow "!" floats above enemy on ADV surprise attacks
 - Enemy attack log lines (`enemy.gd._attack_player()`) never name the specific talent/ability that granted ADV/DISADV — that context lives only in the `ehit` tooltip roll breakdown, not the log line.
-- **Halfling Lucky**: `CombatMath.roll_with_adv_disadv()` runs every individually-rolled d20 through `CombatMath.halfling_reroll(die)` — a natural 1 (Halfling only) is automatically rerolled and the new value MUST be used (single reroll, even if the reroll is also a 1). Baked into the one shared roll function, so it covers all 6 player attack-roll sites (melee/cleave/off-hand/OA/ranged/thrown) for free; `player_thief_tools.gd`'s `attempt_disarm()` calls `halfling_reroll()` directly for the trap-disarm check. `CombatMath.wrap_halfling_luck(text, lucky)` wraps the finished chat-log line in dark green + a ☘ marker; the `lucky1`/`lucky2` fields on `hit_meta`/`check_meta` drive a struck-through "☘ Halfling Luck: ~~1~~ → N" tooltip line in `fmt_hit_tooltip()`/`fmt_save_tooltip()` (`scripts/ui/tooltip_formatters.gd`). Never applies to enemy rolls.
+- **Halfling Luck**: `CombatMath.roll_with_adv_disadv()` runs every individually-rolled d20 through `CombatMath.halfling_reroll(die)` — a natural 1 (Halfling only) is automatically rerolled and the new value MUST be used (single reroll, even if the reroll is also a 1). Baked into the one shared roll function, so it covers all 6 player attack-roll sites (melee/cleave/off-hand/OA/ranged/thrown) for free; `player_thief_tools.gd`'s `attempt_disarm()` calls `halfling_reroll()` directly for the trap-disarm check. `CombatMath.wrap_halfling_luck(text, lucky)` wraps the finished chat-log line in dark green + a ☘ marker; the `lucky1`/`lucky2` fields on `hit_meta`/`check_meta` drive a struck-through "☘ Halfling Luck: ~~1~~ → N" tooltip line in `fmt_hit_tooltip()`/`fmt_save_tooltip()` (`scripts/ui/tooltip_formatters.gd`). Never applies to enemy rolls. See "Halfling" below for the race's other traits.
 
 ### Damage types / resistances / per-die breakdown (typed damage instances)
 Every main attack path (`player.gd._bump_attack()`/`_resolve_cleave_attack()`/`_resolve_offhand_attack()`/`resolve_opportunity_attack()`, `PlayerRanged.ranged_attack()`, cantrips/Fireball/Magic Missile in `spell_effects.gd`) builds a **typed damage instance** via `CombatMath.build_damage_instance(rolls: Array[int], sides: int, flat_mods: Array, crit: bool, damage_type: String) -> Dictionary` instead of a bare int. `rolls` is every individual die result (from `Rng.roll_dice(count, sides)` — weapon dice are stored as a flat range on `Item`, `CombatMath.dice_notation(dmin, dmax) -> Vector2i` recovers `(count, sides)` since every weapon pool entry constructs that range as an exact `NdM`), `flat_mods` is the same `{name, amount, color}` shape `encode_bonus_sources()` always took (weapon enhancement, ability mod, Rage bonus, Frenzy, Ironwood Bark — same-type sources that fold into ONE instance). The instance sums dice + flat mods, then doubles on crit (**multiplication always happens last** — never double a partial subtotal and tack bonuses on after).
@@ -765,9 +1213,9 @@ ever targets the player).
 | Restrained | `Stats.web_restrained` (persists until the web is destroyed — Spider's Web is still its only source, see "Spider" below) | *(no enemy-side trigger exists yet — infra would mirror the player's, not built until something needs it)* | Speed 0 (already blocked movement pre-conditions-system). ADV on attacks against the restrained creature (any kind, melee or ranged — unlike Prone's kind-split). DISADV on the restrained creature's own attacks (folds into the same `has_disadvantage_condition()`/`poisoned_condition_turns>0` DISADV pool) and DEX checks specifically (`PlayerThiefTools.attempt_disarm()`, the only player-side DEX check today). |
 | Incapacitated | `Stats.incapacitated_turns` | `Enemy.incapacitated_turns` | "Can't take actions" — blocks player movement/bump-attack (`player.gd._try_move()`) and ability/spell activation (`_use_ability_slot()`); **partial coverage** — mouse-click attacks and item/tool use aren't gated (no current trigger source exists for either side, so this wasn't exhaustively wired; extend these two gates if a future ability actually inflicts it). Breaks Concentration immediately (`GameState.apply_player_status()`'s `"incapacitated"` case calls `end_concentration()`). On the enemy side: skips its entire turn (`decide_turn()`'s very first check, same shape Prone used to have before this rework) AND makes every player attack against it a Surprise Attack (`PlayerVfx.has_advantage()`), since "every attack against it is a Surprise Attack" is 5e's own Incapacitated text and this engine's Surprise Attack mechanism already IS exactly that (flat +1 ADV). |
 | Blinded | `GameState.is_blinded(pos)` (positional, no Stats field — see "Fog Cloud" below) | same query, symmetric | ADV on attacks against a Blinded creature, DISADV on its own attacks (both sides, player and enemy). Vision collapses to a flat 1-tile radius (`GameState.effective_fov_radius()`), overriding every other bonus including darkvision. "Auto-fails sight-based checks" is NOT implemented (no concrete "sight check" mechanic exists in this engine to gate). |
-| Frightened | `Stats.frightened_source: Enemy`/`frightened_turns`/`frightened_save_dc` (live ref, NOT serialized — same precedent as `hunters_mark_target`/`witch_bolt_target`) | *(no enemy-side trigger — only Quasit's Scare inflicts it, and Scare only ever targets the player)* | DISADV on attacks/checks ONLY while the source is in LOS (`Player._frightened_active()` — NOT unconditional like the other three, hence its own helper rather than folding into `has_disadvantage_condition()`). Can't willingly move closer to the source via voluntary movement (`Player._frightened_blocks_move_to()`, checked in both `_try_move()` and the queued-path executor — forced movement like Push/a chasm shove is unaffected since it never calls either). Repeats a WIS save once per real turn (`Player._on_turn_started()`, vs `frightened_save_dc`) — success ends it early, a fail ticks toward the outer ~10-turn "1 minute" cap. Auto-clears if the source dies (`Enemy.die()`). |
+| Frightened | `Stats.frightened_source: Enemy`/`frightened_turns`/`frightened_save_dc` (live ref, NOT serialized — same precedent as `hunters_mark_target`/`witch_bolt_target`) — only Quasit's Scare inflicts it, always targeting the player | `Enemy.frightened_turns` — a SEPARATE, simplified mirror (no live source-reference tracking exists on the enemy side, unlike the player's own `frightened_source`), only Aasimar's Necrotic Shroud (Celestial Revelation transformation, see "Aasimar" above) inflicts it | Player-side: DISADV on attacks/checks ONLY while the source is in LOS (`Player._frightened_active()` — NOT unconditional like the other three, hence its own helper rather than folding into `has_disadvantage_condition()`). Can't willingly move closer to the source via voluntary movement (`Player._frightened_blocks_move_to()`, checked in both `_try_move()` and the queued-path executor — forced movement like Push/a chasm shove is unaffected since it never calls either). Repeats a WIS save once per real turn (`Player._on_turn_started()`, vs `frightened_save_dc`) — success ends it early, a fail ticks toward the outer ~10-turn "1 minute" cap. Auto-clears if the source dies (`Enemy.die()`). Enemy-side: DISADV on the enemy's own attack rolls only (folded into `_attack_player()`/`_attack_companion()`'s existing `poisoned_condition_turns`-style disadv aggregation) — no can't-approach-the-source movement block, fixed 2-turn duration instead of a repeated save (documented simplification). |
 
-**Apply a condition** (mirrors the DoT-status shape above): `GameState.apply_player_status("poisoned_condition"|"prone"|"incapacitated", turns)` (player) or `Enemy.apply_status("prone"|"poisoned_condition"|"incapacitated", turns)` (enemy) — Restrained has no generic apply path since Web sets `web_restrained`/`web_escape_dc` directly (a persistent flag + escape DC, not a turn counter, so it doesn't fit the shared `turns` shape); Frightened has its own dedicated `GameState.apply_player_frightened(source, turns, save_dc)`/`clear_player_frightened()` (needs a live source reference the generic shape can't carry) and Blinded has no apply path at all (purely derived from position, see `is_heavily_obscured()`/`is_blinded()`). `"turns"` is ignored for Prone (bool, not counted).
+**Apply a condition** (mirrors the DoT-status shape above): `GameState.apply_player_status("poisoned_condition"|"prone"|"incapacitated", turns)` (player) or `Enemy.apply_status("prone"|"poisoned_condition"|"incapacitated"|"frightened", turns)` (enemy) — Restrained has no generic apply path since Web sets `web_restrained`/`web_escape_dc` directly (a persistent flag + escape DC, not a turn counter, so it doesn't fit the shared `turns` shape); Frightened has its own dedicated `GameState.apply_player_frightened(source, turns, save_dc)`/`clear_player_frightened()` (needs a live source reference the generic shape can't carry) and Blinded has no apply path at all (purely derived from position, see `is_heavily_obscured()`/`is_blinded()`). `"turns"` is ignored for Prone (bool, not counted).
 
 **On-hit condition via `"multiattack"`**: a sub-entry's optional `"status"`/`"status_turns"` keys (mirrors the pre-existing `"abilities"` array's own `ab.has("status")` shape) apply generically on a landed hit — `Enemy._attack_player()`'s tail, after the Orc Shaman poison hardcode. First user: Quasit's Rend (`"status": "poisoned_condition", "status_turns": 1`) — see `scripts/world/CLAUDE.md`'s Quasit entry / `dungeon_floor_data.gd`.
 

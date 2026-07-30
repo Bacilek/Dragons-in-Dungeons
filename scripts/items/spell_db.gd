@@ -28,6 +28,26 @@ const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor
 const RANGER_SPELL_IDS: Array[String] = ["fog_cloud"]
 const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS, "RANGER": RANGER_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
+# Elf lineage-only spells (see scripts/entities/CLAUDE.md's "Elf" section) — granted exclusively by
+# GameState._grant_elf_lineage_spell(), never learnable via the level-up spellbook-growth picker or
+# any class's known-spell list, so these are deliberately NOT added to LEVELED_SPELL_IDS/
+# CLASS_SPELL_LISTS. No Scroll of <Spell> exists for any of the four (Misty Step, the 5th lineage
+# spell, already has one) — a documented scope cut, not an oversight.
+const ELF_LINEAGE_SPELL_IDS: Array[String] = ["faerie_fire", "darkness", "detect_magic", "longstrider", "pass_without_trace"]
+
+# Tiefling Fiendish Legacy-only spells (see scripts/entities/CLAUDE.md's "Tiefling" section) —
+# granted exclusively by GameState._grant_tiefling_legacy_spell(), same "never in the level-up
+# picker or any class's known-spell list" exclusion as ELF_LINEAGE_SPELL_IDS above. Fire Bolt
+# (Infernal, level 1), False Life (Chthonic, level 3), and Darkness (Infernal, level 5) reuse the
+# existing Wizard cantrip / Wizard-leveled / Elf-lineage spells verbatim — not listed here.
+const TIEFLING_LEGACY_SPELL_IDS: Array[String] = ["poison_spray", "chill_touch", "ray_of_sickness", "hold_person", "ray_of_enfeeblement", "hellish_rebuke"]
+
+# Gnome Gnomish Lineage-only spells (see scripts/entities/CLAUDE.md's "Gnome" section) — granted
+# exclusively by GameState._grant_gnome_lineage_spells(), same "never in the level-up picker or any
+# class's known-spell list" exclusion as ELF_LINEAGE_SPELL_IDS/TIEFLING_LEGACY_SPELL_IDS above. No
+# Scroll of <Spell> exists for any of the three — same documented scope cut as the Elf lineage set.
+const GNOME_LINEAGE_SPELL_IDS: Array[String] = ["minor_illusion", "speak_with_animals", "mending"]
+
 ## Shared level-name formatter — "Cantrips" for level 0, "1st"/"2nd"/"3rd"/"Nth" otherwise.
 ## Reused by spellbook_overlay.gd's tab labels and debug_panel.gd's Give Spell level badge.
 static func ordinal(lv: int) -> String:
@@ -60,6 +80,20 @@ static func get_spell(id: String) -> Spell:
 		"false_life": return _false_life()
 		"fog_cloud": return _fog_cloud()
 		"invisibility": return _invisibility()
+		"faerie_fire": return _faerie_fire()
+		"darkness": return _darkness()
+		"detect_magic": return _detect_magic()
+		"longstrider": return _longstrider()
+		"pass_without_trace": return _pass_without_trace()
+		"poison_spray": return _poison_spray()
+		"chill_touch": return _chill_touch()
+		"ray_of_sickness": return _ray_of_sickness()
+		"hold_person": return _hold_person()
+		"ray_of_enfeeblement": return _ray_of_enfeeblement()
+		"hellish_rebuke": return _hellish_rebuke()
+		"minor_illusion": return _minor_illusion()
+		"speak_with_animals": return _speak_with_animals()
+		"mending": return _mending()
 	return null
 
 static func _fire_bolt() -> Spell:
@@ -416,4 +450,258 @@ static func _invisibility() -> Spell:
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "invisibility"
 	s.class_list = ["WIZARD"]
+	return s
+
+# ── Elf lineage spells (Drow/High Elf/Wood Elf) — see scripts/entities/CLAUDE.md's "Elf" section
+# and ELF_LINEAGE_SPELL_IDS's own comment above. class_list is left empty ("") rather than a real
+# class name — these are never offered by any class's known-spell list or the level-up picker, only
+# ever granted directly by GameState._grant_elf_lineage_spell().
+
+static func _faerie_fire() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "faerie_fire"
+	s.spell_name = "Faerie Fire"
+	s.school = "Conjuration"
+	s.level = 1
+	s.range_tiles = 6
+	s.target_kind = Spell.TargetKind.TILE
+	s.shape = "sphere"
+	s.shape_size = 2
+	s.resolution = Spell.Resolution.SAVE
+	s.save_stat = "DEX"
+	s.description = "Every creature in a 2-tile sphere makes a DEX save or is outlined in light for up to 100 turns — every attack roll against an outlined creature has Advantage. No damage. Drow lineage spell."
+	s.icon_path = ""
+	s.effect_id = "faerie_fire"
+	s.class_list = []
+	return s
+
+static func _darkness() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "darkness"
+	s.spell_name = "Darkness"
+	s.school = "Evocation"
+	s.level = 2
+	s.range_tiles = 6
+	s.target_kind = Spell.TargetKind.TILE
+	s.shape = "sphere"
+	s.shape_size = 2
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.description = "Magical darkness fills a 2-tile sphere for up to 100 turns (Concentration) — anyone inside, you or an enemy, is Heavily Obscured/Blinded exactly like standing in a Fog Cloud. Drow lineage spell."
+	s.icon_path = ""
+	s.effect_id = "darkness"
+	s.class_list = []
+	return s
+
+static func _detect_magic() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "detect_magic"
+	s.spell_name = "Detect Magic"
+	s.school = "Divination"
+	s.level = 1
+	s.range_tiles = 0
+	s.shape_size = 6
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.description = "Sense magic items within 6 tiles — an instant read, not a lasting sense (simplified from the real spell's 10-minute duration; this engine has no ongoing detection UI). High Elf lineage spell."
+	s.icon_path = ""
+	s.effect_id = "detect_magic"
+	s.class_list = []
+	return s
+
+static func _longstrider() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "longstrider"
+	s.spell_name = "Longstrider"
+	s.school = "Transmutation"
+	s.level = 1
+	s.range_tiles = 0
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.description = "+10 ft speed for up to 100 turns — once per turn, your first move doesn't cost you your turn (same mechanism as Expeditious Retreat). NOT Concentration. Wood Elf lineage spell."
+	s.icon_path = ""
+	s.effect_id = "longstrider"
+	s.class_list = []
+	return s
+
+static func _pass_without_trace() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "pass_without_trace"
+	s.spell_name = "Pass Without Trace"
+	s.school = "Abjuration"
+	s.level = 2
+	s.range_tiles = 0
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.description = "+10 to your Stealth-vs-Passive-Perception roll for up to 100 turns (Concentration). Wood Elf lineage spell."
+	s.icon_path = ""
+	s.effect_id = "pass_without_trace"
+	s.class_list = []
+	return s
+
+# ── Tiefling Fiendish Legacy spells (Abyssal/Chthonic/Infernal) — see
+# scripts/entities/CLAUDE.md's "Tiefling" section and TIEFLING_LEGACY_SPELL_IDS's own comment
+# above. class_list is left empty, same convention as the Elf lineage spells above — these are
+# never offered by any class's known-spell list or the level-up picker, only ever granted directly
+# by GameState._grant_tiefling_legacy_spell().
+
+static func _poison_spray() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "poison_spray"
+	s.spell_name = "Poison Spray"
+	s.school = "Conjuration"
+	s.range_tiles = 2
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.SAVE
+	s.save_stat = "CON"
+	s.dice_count = 1
+	s.dice_sides = 12
+	s.damage_type = "Poison"
+	s.cantrip_tier_scaling = true
+	s.description = "Extend a hand toward a creature within 2 tiles, and a puff of poison bursts from it. CON save or take 1d12 Poison. Abyssal Tiefling lineage cantrip."
+	s.icon_path = ""
+	s.effect_id = "poison_spray"
+	s.class_list = []
+	return s
+
+static func _chill_touch() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "chill_touch"
+	s.spell_name = "Chill Touch"
+	s.school = "Necromancy"
+	s.range_tiles = 6
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.ATTACK_ROLL
+	s.dice_count = 1
+	s.dice_sides = 8
+	s.damage_type = "Necrotic"
+	s.cantrip_tier_scaling = true
+	s.description = "A ghostly, skeletal hand reaches out to a target within 6 tiles. 1d8 Necrotic damage. Chthonic Tiefling lineage cantrip. (Simplified from RAW: doesn't block the target from regaining HP, and grants no bonus against Undead — this engine has no HP-regen-block or Undead-matchup hook to hang either on.)"
+	s.icon_path = ""
+	s.effect_id = ""
+	s.class_list = []
+	return s
+
+static func _ray_of_sickness() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "ray_of_sickness"
+	s.spell_name = "Ray of Sickness"
+	s.school = "Necromancy"
+	s.level = 1
+	s.range_tiles = 5
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.ATTACK_ROLL
+	s.dice_count = 2
+	s.dice_sides = 8
+	s.damage_type = "Poison"
+	s.description = "A ray of sickening green energy lashes out at a target within 5 tiles. 2d8 Poison damage; on a hit the target also makes a CON save or is Poisoned for 2 turns. Abyssal Tiefling lineage spell."
+	s.icon_path = ""
+	s.effect_id = "ray_of_sickness"
+	s.class_list = []
+	return s
+
+static func _hold_person() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "hold_person"
+	s.spell_name = "Hold Person"
+	s.school = "Enchantment"
+	s.level = 2
+	s.range_tiles = 6
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.SAVE
+	s.save_stat = "WIS"
+	s.dice_count = 0
+	s.description = "A target within 6 tiles makes a WIS save or is Paralyzed for 10 turns — approximated here as the real Incapacitated condition (this engine has no separate Paralyzed state or repeated-save-to-end mechanic for enemies). Abyssal Tiefling lineage spell."
+	s.icon_path = ""
+	s.effect_id = "hold_person"
+	s.class_list = []
+	return s
+
+static func _ray_of_enfeeblement() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "ray_of_enfeeblement"
+	s.spell_name = "Ray of Enfeeblement"
+	s.school = "Necromancy"
+	s.level = 2
+	s.range_tiles = 5
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.ATTACK_ROLL
+	s.dice_count = 1
+	s.dice_sides = 4
+	s.damage_type = "Necrotic"
+	s.description = "A black ray of enervating energy at a target within 5 tiles. A minor 1d4 Necrotic sting on a hit, but the real effect is lasting: the target's own physical weapon damage is halved for 10 turns. No repeated CON save to end it early (documented simplification). Chthonic Tiefling lineage spell."
+	s.icon_path = ""
+	s.effect_id = "ray_of_enfeeblement"
+	s.class_list = []
+	return s
+
+static func _hellish_rebuke() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "hellish_rebuke"
+	s.spell_name = "Hellish Rebuke"
+	s.school = "Evocation"
+	s.level = 1
+	s.range_tiles = 6
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.SAVE
+	s.save_stat = "DEX"
+	s.save_for_half = true
+	s.dice_count = 2
+	s.dice_sides = 10
+	s.damage_type = "Fire"
+	s.description = "A target within 6 tiles is engulfed in hellish flames — DEX save or take 2d10 Fire (half on a save). RAW is a reaction cast when you're hit by that creature; this engine has no reaction-casting framework, so it's a normal on-demand cast instead (same simplification Shield's own self-cast already uses). Infernal Tiefling lineage spell."
+	s.icon_path = ""
+	s.effect_id = "hellish_rebuke"
+	s.class_list = []
+	return s
+
+# ── Gnome Gnomish Lineage spells (Forest/Rock) — see scripts/entities/CLAUDE.md's "Gnome" section
+# and GNOME_LINEAGE_SPELL_IDS's own comment above. class_list is left empty, same convention as the
+# Elf/Tiefling lineage spells above — these are never offered by any class's known-spell list or
+# the level-up picker, only ever granted directly by GameState._grant_gnome_lineage_spells(). All
+# three are cantrips (level 0) — Gnomish Lineage's own scarcity comes from the proficiency-bonus-
+# per-long-rest free-cast counter (Stats.gnome_lineage_free_casts_remaining), not from spell level.
+
+static func _minor_illusion() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "minor_illusion"
+	s.spell_name = "Minor Illusion"
+	s.school = "Illusion"
+	s.level = 0
+	s.range_tiles = 0
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.description = "A minor sound-or-image distraction grants +5 to your Stealth-vs-Passive-Perception roll for 10 turns. NOT Concentration. Forest Gnome lineage cantrip."
+	s.icon_path = ""
+	s.effect_id = "minor_illusion"
+	s.class_list = []
+	return s
+
+static func _speak_with_animals() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "speak_with_animals"
+	s.spell_name = "Speak with Animals"
+	s.school = "Divination"
+	s.level = 0
+	s.range_tiles = 0
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.description = "You can communicate with beasts for a short while. Flavor only — this engine has no animal dialogue system, so casting it is purely a roleplay flourish (documented simplification, same as Elf's own inert Fey Ancestry). Forest Gnome lineage cantrip."
+	s.icon_path = ""
+	s.effect_id = "speak_with_animals"
+	s.class_list = []
+	return s
+
+static func _mending() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "mending"
+	s.spell_name = "Mending"
+	s.school = "Transmutation"
+	s.level = 0
+	s.range_tiles = 0
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.description = "Repairs your equipped Main Hand weapon's durability back to full (a real break/tear only, per the spell's own text — approximated here as restoring a limited-use weapon's remaining uses; simplification, since this engine has no separate object-HP system to mend). Rock Gnome lineage cantrip."
+	s.icon_path = ""
+	s.effect_id = "mending"
+	s.class_list = []
 	return s

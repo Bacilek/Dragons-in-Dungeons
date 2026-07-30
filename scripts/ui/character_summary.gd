@@ -32,6 +32,10 @@ const RACE_NAMES: Dictionary = {
 	Stats.CharacterRace.DWARF: "Dwarf",
 	Stats.CharacterRace.ELF: "Elf",
 	Stats.CharacterRace.DRAGONBORN: "Dragonborn",
+	Stats.CharacterRace.TIEFLING: "Tiefling",
+	Stats.CharacterRace.AASIMAR: "Aasimar",
+	Stats.CharacterRace.GNOME: "Gnome",
+	Stats.CharacterRace.GOLIATH: "Goliath",
 }
 const ABILITY_SCORE_NAMES: Dictionary = {
 	Stats.CharacterRace.HUMAN: ["STR", "DEX", "CON", "INT", "WIS", "CHA"],
@@ -40,6 +44,9 @@ const ELF_SUBRACES: Array = ["Drow", "High Elf", "Wood Elf"]
 const DRAGONBORN_ANCESTRIES: Array = [
 	"Black", "Blue", "Brass", "Bronze", "Copper", "Gold", "Green", "Red", "Silver", "White",
 ]
+const TIEFLING_LEGACIES: Array = ["Abyssal", "Chthonic", "Infernal"]
+const GNOME_LINEAGES: Array = ["Forest", "Rock"]
+const GIANT_ANCESTRIES: Array = ["Cloud", "Fire", "Frost", "Hill", "Stone", "Storm"]
 
 var _panel: Panel
 
@@ -228,6 +235,18 @@ func _race_display_name(stats: Stats) -> String:
 			var idx2: int = stats.race_variant
 			if idx2 >= 0 and idx2 < DRAGONBORN_ANCESTRIES.size():
 				return "%s %s" % [DRAGONBORN_ANCESTRIES[idx2], base_name]
+		Stats.CharacterRace.TIEFLING:
+			var idx3: int = stats.race_variant
+			if idx3 >= 0 and idx3 < TIEFLING_LEGACIES.size():
+				return "%s (%s)" % [base_name, TIEFLING_LEGACIES[idx3]]
+		Stats.CharacterRace.GNOME:
+			var idx4: int = stats.race_variant
+			if idx4 >= 0 and idx4 < GNOME_LINEAGES.size():
+				return "%s %s" % [GNOME_LINEAGES[idx4], base_name]
+		Stats.CharacterRace.GOLIATH:
+			var idx5: int = stats.race_variant
+			if idx5 >= 0 and idx5 < GIANT_ANCESTRIES.size():
+				return "%s (%s Giant)" % [base_name, GIANT_ANCESTRIES[idx5]]
 	return base_name
 
 func _on_confirm() -> void:

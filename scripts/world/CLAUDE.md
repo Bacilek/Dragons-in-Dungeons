@@ -34,7 +34,14 @@ dungeon_floor.is_walkable_for_companion(pos: Vector2i) -> bool  # walkable + not
 ```
 
 ## FOV
-`FOV_RADIUS = 5`. Algorithm: recursive shadowcasting (`_compute_shadowcast`, 8 octants, Roguebasin multiplier tables). Result stored in `_visible_tiles: Dictionary`. Both `update_fog()`'s own `_compute_shadowcast()` call and `get_visible_enemies()`'s radius check go through `GameState.effective_fov_radius(pos) -> int` — normally `FOV_RADIUS + fov_radius_bonus + player_stats.darkvision_bonus + (1 if has_lit_torch_equipped() else 0)` (the last term is a lit Torch equipped in either hand, `scripts/items/CLAUDE.md`'s "Torch", computed live so it can't drift out of sync with equip/light/burnout state), but flattens to `1` — ignoring every bonus, darkvision included — whenever `GameState.is_blinded(pos)` (see `scripts/entities/CLAUDE.md`'s "Conditions"/"Fog Cloud" sections). A single shared function so the two call sites can never compute a different radius from each other.
+`FOV_RADIUS = 5`. Algorithm: recursive shadowcasting (`_compute_shadowcast`, 8 octants, Roguebasin multiplier tables). Result stored in `_visible_tiles: Dictionary`. Both `update_fog()`'s own `_compute_shadowcast()` call and `get_visible_enemies()`'s radius check go through `GameState.effective_fov_radius(pos) -> int` — normally `FOV_RADIUS + fov_radius_bonus + GameState.celestial_radiance_fov_bonus() + player_stats.darkvision_bonus + (1 if has_lit_torch_equipped() else 0)` (the torch term is a lit Torch equipped in either hand, `scripts/items/CLAUDE.md`'s "Torch", computed live so it can't drift out of sync with equip/light/burnout state; `celestial_radiance_fov_bonus()` is Aasimar's Inner Radiance transformation, `scripts/entities/CLAUDE.md`'s "Aasimar" section — +2 while active, deliberately summed BEFORE darkvision, same conceptual "own light source" slot the torch bonus occupies), but flattens to `1` — ignoring every bonus, darkvision included — whenever `GameState.is_blinded(pos)` (see `scripts/entities/CLAUDE.md`'s "Conditions"/"Fog Cloud" sections). A single shared function so the two call sites can never compute a different radius from each other.
+
+**FOV-bonus ring visuals stack in the same order the terms are summed**: `base → torch → celestial
+→ darkvision`, each ring computed as the tile-diff between two progressively larger shadowcasts
+(`update_fog()`) and painted by its own dedicated glow function — `_update_torch_fov_ring_glow()`
+(pale yellow), `_update_celestial_fov_ring_glow()` (bright celestial gold, Aasimar Inner Radiance),
+`_update_darkvision_ring_glow()` (dim desaturated gray, always the outermost ring) — so each bonus
+source visibly occupies its own band around the player rather than all blending into one tint.
 
 **Torch light bubble (floor/embedded, separate from the equipped FOV bonus above)**:
 `update_fog()` also unions `_compute_torch_light_tiles()` into `_visible_tiles` and paints it via
@@ -77,8 +84,14 @@ away instead of waiting for the player's next move. See `scripts/entities/CLAUDE
 spellcasting" section for the spell itself.
 
 ## Fog Cloud spell zone (Heavily Obscured terrain)
+**Darkness** (Drow lineage spell, `scripts/entities/CLAUDE.md`'s "Elf" section) is a second,
+independent Heavily Obscured zone — `GameState.darkness_pos`/`darkness_radius` mirror
+`fog_cloud_pos`/`fog_cloud_radius` exactly, and `is_heavily_obscured(pos)` now checks both zones,
+so everything below applies to Darkness too, not just Fog Cloud.
+
 `_update_fog_cloud_visual()` (called every `update_fog()`, alongside the Light glow) tints
-`GameState.fog_cloud_pos`/`fog_cloud_radius`'s tiles with a persistent **dark** overlay
+`GameState.fog_cloud_pos`/`fog_cloud_radius`'s tiles (and, generalized, `darkness_pos`/
+`darkness_radius`'s) with a persistent **dark** overlay
 (`Color(0.10, 0.10, 0.13, 0.80)` — deliberately dark, not a light haze, since the tile is
 Heavily Obscured) — pooled `Sprite2D`s + shared 1×1 white texture, same convention as
 `_update_light_source_glow()`. A raw Euclidean disc, not LOS-filtered, and it's still painted

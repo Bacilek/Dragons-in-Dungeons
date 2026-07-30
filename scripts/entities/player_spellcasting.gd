@@ -40,11 +40,16 @@ func begin_cast(spell_id: String) -> void:
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return
-	if spell.level > 0 and not GameState.invincible:
+	if spell.level > 0 and not GameState.invincible and not player.stats.is_lineage_free_cast_available(spell_id):
 		var caster: SpellcasterState = player.stats.caster
 		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
 			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
 			return
+	# Gnomish Lineage cantrips have no spell-slot fallback at all — proficiency_bonus free casts
+	# per long rest IS the entire resource (see Stats.gnome_lineage_free_casts_remaining).
+	if spell_id in player.stats.gnome_lineage_spell_ids and not GameState.invincible and not player.stats.is_gnome_lineage_free_cast_available(spell_id):
+		GameState.game_log("[color=gray]You have no uses of %s left this long rest.[/color]" % spell.spell_name)
+		return
 	if spell.effect_id == "magic_missile":
 		_begin_multi_target(spell_id, false, null)
 		return
@@ -119,7 +124,13 @@ func _cast_level_for(spell: Spell) -> int:
 		return 0
 	if GameState.invincible:
 		return spell.level  # God Mode: never needs (or spends) a slot — see _consume_slot()
+	# Elf lineage spell's free-per-long-rest cast — works even for a non-caster class (no
+	# SpellcasterState/slot_pool to read at all), see Stats.is_lineage_free_cast_available().
+	if player.stats.is_lineage_free_cast_available(spell.spell_id):
+		return spell.level
 	var caster: SpellcasterState = player.stats.caster
+	if caster == null or caster.slot_pool == null:
+		return -1
 	return caster.slot_pool.available_level(spell)
 
 func _cast_self(spell: Spell, from_scroll: bool = false) -> void:
@@ -165,7 +176,7 @@ func cast_direct(spell_id: String, clicked: Vector2i) -> void:
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return
-	if spell.level > 0 and not GameState.invincible:
+	if spell.level > 0 and not GameState.invincible and not player.stats.is_lineage_free_cast_available(spell_id):
 		var caster: SpellcasterState = player.stats.caster
 		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
 			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
@@ -236,21 +247,23 @@ func try_cast_at(clicked: Vector2i) -> void:
 		_consume_scroll(scroll_item)
 
 	if spell.level == 0:
-		match spell.effect_id:
-			"toll_the_dead", "mind_sliver":
-				var save_target: Enemy = player._dungeon_floor.get_targetable_enemy_at(clicked)
-				if save_target == null:
-					GameState.game_log("[color=gray]%s needs a target.[/color]" % spell.spell_name)
-				else:
-					await SpellEffects.cast_cantrip_save_at_enemy(player, spell, save_target, player._dungeon_floor, from_scroll)
-			"light":
-				await SpellEffects.cast_light_at_tile(player, spell, clicked, player._dungeon_floor, from_scroll)
-			_:
-				var target0: Enemy = player._dungeon_floor.get_targetable_enemy_at(clicked)
-				if target0 == null:
-					await SpellEffects.cast_spell_at_tile(player, spell, clicked, player._dungeon_floor)
-				else:
-					await SpellEffects.cast_spell(player, spell, target0, player._dungeon_floor, from_scroll)
+		# Dispatched by resolution shape, not a hardcoded effect_id list, so a new SAVE-resolution
+		# cantrip (e.g. Poison Spray, a Tiefling Fiendish Legacy grant) never needs a matching edit
+		# here — only Light needs special-casing (touches a tile/prop, not an enemy).
+		if spell.effect_id == "light":
+			await SpellEffects.cast_light_at_tile(player, spell, clicked, player._dungeon_floor, from_scroll)
+		elif spell.resolution == Spell.Resolution.SAVE:
+			var save_target: Enemy = player._dungeon_floor.get_targetable_enemy_at(clicked)
+			if save_target == null:
+				GameState.game_log("[color=gray]%s needs a target.[/color]" % spell.spell_name)
+			else:
+				await SpellEffects.cast_cantrip_save_at_enemy(player, spell, save_target, player._dungeon_floor, from_scroll)
+		else:
+			var target0: Enemy = player._dungeon_floor.get_targetable_enemy_at(clicked)
+			if target0 == null:
+				await SpellEffects.cast_spell_at_tile(player, spell, clicked, player._dungeon_floor)
+			else:
+				await SpellEffects.cast_spell(player, spell, target0, player._dungeon_floor, from_scroll)
 		return
 
 	match spell.target_kind:
@@ -259,12 +272,15 @@ func try_cast_at(clicked: Vector2i) -> void:
 		Spell.TargetKind.ENEMY:
 			# Magic Missile (the only AUTO_HIT ENEMY-target leveled spell) is intercepted earlier
 			# via _begin_multi_target() before it ever reaches this dispatch — so every spell that
-			# actually resolves here is ATTACK_ROLL (Chromatic Orb/Witch Bolt).
+			# actually resolves here is ATTACK_ROLL (Chromatic Orb/Witch Bolt/Ray of Sickness/Ray of
+			# Enfeeblement) or SAVE (Hold Person/Hellish Rebuke — Tiefling Fiendish Legacy grants).
 			var target: Enemy = player._dungeon_floor.get_targetable_enemy_at(clicked)
 			if target == null:
 				GameState.game_log("[color=gray]%s needs a target.[/color]" % spell.spell_name)
 			elif spell.resolution == Spell.Resolution.ATTACK_ROLL:
 				await SpellEffects.cast_leveled_attack_at_enemy(player, spell, lvl, target, player._dungeon_floor, from_scroll)
+			elif spell.resolution == Spell.Resolution.SAVE:
+				await SpellEffects.cast_leveled_save_at_enemy(player, spell, lvl, target, player._dungeon_floor, from_scroll)
 		_:
 			pass
 

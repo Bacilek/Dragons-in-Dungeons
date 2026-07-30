@@ -51,6 +51,8 @@ func attempt_disarm(trap_pos: Vector2i) -> void:
 		die2 = lr2["value"]
 		lucky2 = lr2["lucky"]
 	var die: int = maxi(die1, die2) if has_adv else (mini(die1, die2) if has_disadv else die1)
+	if CombatMath.consume_heroic_inspiration():
+		die = 20
 	var lucky: bool = lucky1 or lucky2
 	var total: int = die + dex_mod + prof_bonus
 	const DC: int = 10

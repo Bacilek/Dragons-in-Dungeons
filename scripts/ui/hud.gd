@@ -411,6 +411,10 @@ func _update_status_icons() -> void:
 		return
 	var s: Stats = GameState.player_stats
 	var entries: Array = []
+	# Race Bonus — always shown first, for the whole run, regardless of race (a permanent
+	# at-a-glance reference for every trait the player's chosen race grants). Unlike every other
+	# tray entry this one is never conditional on a live game-state flag.
+	entries.append({"id": "race_bonus", "icon_path": "res://icons/status/race_bonus.png", "fallback_color": Color(0.85, 0.70, 0.35)})
 	if s.poison_turns > 0:
 		entries.append({"id": "poisoned", "icon_path": "res://icons/status/poisoned.png", "fallback_color": Color(0.20, 0.85, 0.35)})
 	if s.burning_turns > 0:

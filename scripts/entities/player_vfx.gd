@@ -32,6 +32,10 @@ func has_advantage(enemy: Enemy) -> bool:
 	# second ADV source, since a Surprise Attack already IS "the defender never saw it coming".
 	if enemy.incapacitated_turns > 0:
 		return true
+	# Faerie Fire (Drow lineage spell): a failed DEX save outlines the target in light — every
+	# attack roll against it has Advantage for the duration, same chokepoint as Blinded above.
+	if enemy.faerie_fire_turns > 0:
+		return true
 	return enemy.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
 
 func show_surprise_mark(enemy: Enemy) -> void:

@@ -19,17 +19,17 @@ const SUB_BTN_H: float = 30.0
 const RACES: Array[Dictionary] = [
 	{
 		"id": "orc", "name": "Orc",
-		"blurb": "Relentless Endurance holds you at 1 HP once per long rest. Superior darkvision.",
+		"blurb": "Relentless Endurance holds you at 1 HP once per long rest. Adrenaline Rush: temp HP + a free move, proficiency-bonus uses per short/long rest. Superior darkvision.",
 	},
 	{
 		"id": "human", "name": "Human",
-		"blurb": "Heroic Inspiration rerolls a miss once per long rest. Choose one bonus ability proficiency. No darkvision.",
+		"blurb": "Heroic Inspiration guarantees your next roll critically succeeds, once per long rest. Choose one bonus ability proficiency. No darkvision.",
 		"sub_kind": "ability_score",
 		"sub_options": ["STR", "DEX", "CON", "INT", "WIS", "CHA"],
 	},
 	{
 		"id": "halfling", "name": "Halfling",
-		"blurb": "Lucky: automatically reroll a natural 1, keeping the new result. No darkvision.",
+		"blurb": "Small, Speed 1. Luck: automatically reroll a natural 1, keeping the new result. Brave: ADV on saves to avoid/end Frightened. Halfling Nimbleness: can move through a larger creature's space (not yet wired up). No darkvision.",
 	},
 	{
 		"id": "dwarf", "name": "Dwarf",
@@ -37,7 +37,7 @@ const RACES: Array[Dictionary] = [
 	},
 	{
 		"id": "elf", "name": "Elf",
-		"blurb": "WIS proficiency, shorter long rests, darkvision. Choose a sub-race.",
+		"blurb": "Keen Senses (WIS proficiency), Fey Ancestry (ADV vs. Charmed), shorter long rests, darkvision. Elven Lineage grants a spell at level 3 and 5 (Drow: Faerie Fire/Darkness. High Elf: Detect Magic/Misty Step + a long-rest cantrip swap. Wood Elf: 35ft speed + Longstrider/Pass Without Trace) — each free once per long rest. Choose a sub-race.",
 		"sub_kind": "subrace",
 		"sub_options": ["Drow", "High Elf", "Wood Elf"],
 	},
@@ -46,6 +46,28 @@ const RACES: Array[Dictionary] = [
 		"blurb": "Choose an ancestry for elemental resistance + a Breath Weapon (Cone/Line, same damage type). Draconic Flight at level 5. Darkvision.",
 		"sub_kind": "ancestry",
 		"sub_options": ["Black", "Blue", "Brass", "Bronze", "Copper", "Gold", "Green", "Red", "Silver", "White"],
+	},
+	{
+		"id": "tiefling", "name": "Tiefling",
+		"blurb": "Choose a Fiendish Legacy for a damage resistance + a free spell at levels 1/3/5 (cast with your best of INT/WIS/CHA, free once per long rest then via spell slots). Abyssal: Poison resist, Poison Spray/Ray of Sickness/Hold Person. Chthonic: Necrotic resist, Chill Touch/False Life/Ray of Enfeeblement. Infernal: Fire resist, Fire Bolt/Hellish Rebuke/Darkness. Darkvision.",
+		"sub_kind": "legacy",
+		"sub_options": ["Abyssal", "Chthonic", "Infernal"],
+	},
+	{
+		"id": "aasimar", "name": "Aasimar",
+		"blurb": "Celestial Resistance (Necrotic + Radiant). Healing Hands: touch-heal 1d4×prof HP, costs your action, once per long rest. Light Bearer: know the Light cantrip. Celestial Revelation (from level 3): once per long rest, choose Heavenly Wings/Inner Radiance/Necrotic Shroud for 10 turns — first damage each turn deals bonus Radiant/Necrotic. Darkvision.",
+	},
+	{
+		"id": "gnome", "name": "Gnome",
+		"blurb": "Gnomish Cunning: ADV on saves with the ONE of INT/WIS/CHA you choose. Gnomish Lineage: Forest Gnome knows Minor Illusion + Speak with Animals; Rock Gnome knows Mending — each castable proficiency-bonus times for free per long rest. Darkvision. Choose a lineage + your Cunning stat.",
+		"sub_kind": "gnome",
+		"sub_options": ["Forest (INT)", "Forest (WIS)", "Forest (CHA)", "Rock (INT)", "Rock (WIS)", "Rock (CHA)"],
+	},
+	{
+		"id": "goliath", "name": "Goliath",
+		"blurb": "Large Form (from level 5): grow to a 2x2 giant for up to 100 turns in a big enough space — ADV on STR checks, +1/3 speed — once per long rest. Powerful Build: ADV to end Grappled (not yet wired). Choose a Giant Ancestry for a proficiency-bonus-per-long-rest activatable: Cloud (short teleport), Fire (bonus Fire dmg), Frost (chill/slow on hit), Hill (Prone on hit), Stone (reduce next hit taken), Storm (reflect Thunder dmg). No darkvision.",
+		"sub_kind": "giant_ancestry",
+		"sub_options": ["Cloud", "Fire", "Frost", "Hill", "Stone", "Storm"],
 	},
 ]
 
@@ -249,7 +271,14 @@ func _on_confirm() -> void:
 	var prof_ability: int = -1
 	match data.get("sub_kind", ""):
 		"ability_score": prof_ability = _selected_sub
-		"subrace", "ancestry": variant = _selected_sub
+		"subrace", "ancestry", "legacy", "giant_ancestry": variant = _selected_sub
+		"gnome":
+			# 6 combined options ("Forest (INT)"..."Rock (CHA)") — decode into lineage
+			# (Stats.GnomeLineage, 0=Forest/1=Rock) + Gnomish Cunning stat, reusing the same
+			# STR=0..CHA=5 race_prof_ability index Human's own ability pick uses (3=INT/4=WIS/5=CHA)
+			# rather than adding a second serialized field — see scripts/entities/CLAUDE.md's "Gnome".
+			variant = _selected_sub / 3
+			prof_ability = 3 + (_selected_sub % 3)
 	GameState.race_picker_open = false
 	GameState.choose_race(race, variant, prof_ability)
 	if GameState.player_stats.mastery_cap() > 0:
@@ -289,6 +318,10 @@ func _race_enum(race_id: String) -> Stats.CharacterRace:
 		"dwarf": return Stats.CharacterRace.DWARF
 		"elf": return Stats.CharacterRace.ELF
 		"dragonborn": return Stats.CharacterRace.DRAGONBORN
+		"tiefling": return Stats.CharacterRace.TIEFLING
+		"aasimar": return Stats.CharacterRace.AASIMAR
+		"gnome": return Stats.CharacterRace.GNOME
+		"goliath": return Stats.CharacterRace.GOLIATH
 	return Stats.CharacterRace.HUMAN
 
 # ── Style helpers (mirrors subclass_select.gd) ─────────────────────────────────────────

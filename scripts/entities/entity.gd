@@ -86,3 +86,16 @@ func nearest_occupied_tile(pos: Vector2i) -> Vector2i:
 			best_d = d
 			best = t
 	return best
+
+## Chebyshev distance between this entity's footprint and `other`'s footprint (min over both sets
+## of occupied tiles) — the correct generalization of min_dist_to() for when BOTH sides might be
+## larger than 1x1 (today: only a Large-Form Goliath player vs. a Large enemy). Reduces to
+## min_dist_to(other.grid_pos) whenever `other` is 1x1, so every existing 1x1-target call site is
+## unaffected if migrated to this function.
+func min_dist_to_entity(other: Entity) -> int:
+	var best: int = -1
+	for t: Vector2i in other.occupied_tiles():
+		var d: int = min_dist_to(t)
+		if best == -1 or d < best:
+			best = d
+	return best

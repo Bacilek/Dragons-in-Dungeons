@@ -10,7 +10,7 @@ extends RefCounted
 # with early returns) and deliberately stay in player.gd's _bump_attack()/_ranged_attack() —
 # see the "Bonus damage stacking" rule in scripts/entities/CLAUDE.md.
 
-# Halfling Lucky: rolling a natural 1 on a d20 (attack roll or ability check) triggers an
+# Halfling Luck: rolling a natural 1 on a d20 (attack roll or ability check) triggers an
 # automatic reroll that MUST be used, even if the new roll is also a 1 (single reroll only,
 # per 5e Lucky). Centralized here so every player d20 roll goes through the same rule — never
 # applies to enemy rolls (GameState.player_stats is the player's own Stats). Returns
@@ -25,6 +25,18 @@ static func halfling_reroll(die: int) -> Dictionary:
 static func wrap_halfling_luck(text: String, lucky: bool) -> String:
 	return "[color=#2e8b3d]☘ %s[/color]" % text if lucky else text
 
+# Human Heroic Inspiration: forces the RESOLVED value of the player's very next d20 roll to a
+# natural 20 (guaranteed critical success/pass), consumed once. Applied to the already-resolved
+# `die` (after ADV/DISADV's own max/min pick), never to an individual component roll — otherwise
+# forcing one component to 20 could still lose to a lower second roll under Disadvantage. Callers
+# that resolve their own roll by hand (stealth check, Thief Tools disarm — see player.gd/
+# player_thief_tools.gd) apply this the same way, at their own final `die`, not through this helper.
+static func consume_heroic_inspiration() -> bool:
+	if GameState.heroic_inspiration_pending:
+		GameState.heroic_inspiration_pending = false
+		return true
+	return false
+
 # ADV/DISADV: standard 5e rule, not a net-count house rule — any ADV source together with any
 # DISADV source always cancels to a flat roll, regardless of how many sources are on each side
 # (adv_count=2, disadv_count=1 is still a flat roll, NOT Advantage). Only a pure adv_count>0/
@@ -32,10 +44,11 @@ static func wrap_halfling_luck(text: String, lucky: bool) -> String:
 # when ADV/DISADV is active — nat 1 on die1 does NOT skip it. Each d20 individually goes through
 # halfling_reroll() (a Halfling attacking with Advantage can get BOTH dice rerolled if both come
 # up 1).
-# Returns {die1, die2, die, adv, disadv, lucky1, lucky2, lucky} — die1/die2 are the (post-reroll)
-# rolls, die is the resolved value (max for ADV, min for DISADV, die1 otherwise), adv/disadv are
-# the resolved booleans, lucky1/lucky2 flag which die (if any) was Halfling-rerolled, lucky is
-# their OR (convenience for callers that don't care which die).
+# Returns {die1, die2, die, adv, disadv, lucky1, lucky2, lucky, heroic} — die1/die2 are the
+# (post-reroll) rolls, die is the resolved value (max for ADV, min for DISADV, die1 otherwise,
+# then forced to 20 if Heroic Inspiration fired), adv/disadv are the resolved booleans,
+# lucky1/lucky2 flag which die (if any) was Halfling-rerolled, lucky is their OR (convenience for
+# callers that don't care which die), heroic flags whether Heroic Inspiration forced this roll.
 static func roll_with_adv_disadv(adv_count: int, disadv_count: int) -> Dictionary:
 	var adv: bool = adv_count > 0 and disadv_count == 0
 	var disadv: bool = disadv_count > 0 and adv_count == 0
@@ -55,8 +68,11 @@ static func roll_with_adv_disadv(adv_count: int, disadv_count: int) -> Dictionar
 		die2 = r2["value"]
 		lucky2 = r2["lucky"]
 		die = mini(die1, die2)
+	var heroic: bool = consume_heroic_inspiration()
+	if heroic:
+		die = 20
 	return {"die1": die1, "die2": die2, "die": die, "adv": adv, "disadv": disadv,
-		"lucky1": lucky1, "lucky2": lucky2, "lucky": lucky1 or lucky2}
+		"lucky1": lucky1, "lucky2": lucky2, "lucky": lucky1 or lucky2, "heroic": heroic}
 
 # Weapon proficiency: unarmed strikes are always proficient. A Simple/Martial weapon only adds
 # proficiency_bonus to the attack roll if the matching proficiency flag is set — lacking

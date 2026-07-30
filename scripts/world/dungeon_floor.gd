@@ -106,6 +106,8 @@ var _tremor_marker_sprites: Array[Sprite2D] = []  # Dwarf Stonecunning's tremors
 var _tremor_marker_tex: ImageTexture
 var _torch_fov_ring_sprites: Array[Sprite2D] = []  # equipped-lit-Torch's +1 FOV ring — see _update_torch_fov_ring_glow()
 var _torch_fov_ring_tex: ImageTexture
+var _celestial_fov_ring_sprites: Array[Sprite2D] = []  # Aasimar Inner Radiance's +2 FOV ring — see _update_celestial_fov_ring_glow()
+var _celestial_fov_ring_tex: ImageTexture
 var _darkvision_ring_sprites: Array[Sprite2D] = []  # darkvision's own FOV ring — see _update_darkvision_ring_glow()
 var _darkvision_ring_tex: ImageTexture
 var _explored: Dictionary = {}
@@ -454,7 +456,7 @@ func is_walkable_for_enemy(pos: Vector2i, excluding: Enemy = null) -> bool:
 		# Closed doors block normal movement (enemy handles opening separately)
 		if not _doors[pos]["is_open"]:
 			return false
-	if _player != null and _player.grid_pos == pos:
+	if _player != null and _player.occupies(pos):
 		return false
 	for e in _enemies:
 		if is_instance_valid(e) and e != excluding and e.occupies(pos):
@@ -520,29 +522,38 @@ func update_fog(player_pos: Vector2i) -> void:
 			if GameState.is_heavily_obscured(pos):
 				_visible_tiles.erase(pos)
 
-	# Torch/darkvision FOV bonus rings — tinted overlays diffed against progressively larger
-	# shadowcasts, in the SAME order effective_fov_radius() sums them (base → torch → darkvision),
-	# so the torch's ring always sits closer to the player and darkvision's ring always sits
-	# beyond it, matching the real 5e stacking (a torch's light only reaches so far; darkvision
-	# sees further into the dark past it). Both empty outright when blinded — is_blinded() already
-	# zeroes every bonus term inside effective_fov_radius(), so there's no "extra" radius to ring.
+	# Torch/celestial/darkvision FOV bonus rings — tinted overlays diffed against progressively
+	# larger shadowcasts, in the SAME order effective_fov_radius() sums them (base → torch →
+	# celestial → darkvision), so each ring always sits at its own distinct band (torch closest,
+	# darkvision furthest out), matching the real 5e stacking (a torch's light only reaches so far;
+	# darkvision sees further into the dark past it). All empty outright when blinded — is_blinded()
+	# already zeroes every bonus term inside effective_fov_radius(), so there's no "extra" radius to
+	# ring.
 	var torch_ring_tiles: Dictionary = {}
+	var celestial_ring_tiles: Dictionary = {}
 	var darkvision_ring_tiles: Dictionary = {}
 	if not GameState.is_blinded(player_pos):
 		var base_radius: int = DungeonFloor.FOV_RADIUS + GameState.fov_radius_bonus
 		var torch_bonus: int = 1 if GameState.has_lit_torch_equipped() else 0
+		var celestial_bonus: int = GameState.celestial_radiance_fov_bonus()
 		var dark_bonus: int = GameState.player_stats.darkvision_bonus
 		var base_tiles: Dictionary = _compute_shadowcast(player_pos, base_radius)
 		var torch_tiles: Dictionary = _compute_shadowcast(player_pos, base_radius + torch_bonus) if torch_bonus > 0 else base_tiles
+		var celestial_tiles: Dictionary = _compute_shadowcast(player_pos, base_radius + torch_bonus + celestial_bonus) if celestial_bonus > 0 else torch_tiles
 		if torch_bonus > 0:
 			for pos: Vector2i in torch_tiles:
 				if not base_tiles.has(pos):
 					torch_ring_tiles[pos] = true
+		if celestial_bonus > 0:
+			for pos: Vector2i in celestial_tiles:
+				if not torch_tiles.has(pos):
+					celestial_ring_tiles[pos] = true
 		if dark_bonus > 0:
 			for pos: Vector2i in _visible_tiles:
-				if not torch_tiles.has(pos):
+				if not celestial_tiles.has(pos):
 					darkvision_ring_tiles[pos] = true
 	_update_torch_fov_ring_glow(torch_ring_tiles)
+	_update_celestial_fov_ring_glow(celestial_ring_tiles)
 	_update_darkvision_ring_glow(darkvision_ring_tiles)
 
 	# Light cantrip: ends the instant the lit thing is no longer there (item picked up, door
@@ -882,6 +893,39 @@ func _update_torch_fov_ring_glow(ring_tiles: Dictionary) -> void:
 		else:
 			spr.visible = false
 
+# Aasimar Inner Radiance's own +2 FOV bonus ring (GameState.celestial_radiance_fov_bonus()) —
+# sits between the torch ring and the darkvision ring (same "base -> torch -> celestial ->
+# darkvision" order effective_fov_radius() sums its terms in), tinted a bright celestial
+# gold/yellow — warmer and brighter than the torch's own pale-yellow ring, reading as divine light
+# rather than a mundane flame.
+func _update_celestial_fov_ring_glow(ring_tiles: Dictionary) -> void:
+	if ring_tiles.is_empty():
+		for spr: Sprite2D in _celestial_fov_ring_sprites:
+			spr.visible = false
+		return
+	if _celestial_fov_ring_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color(1, 1, 1, 1))
+		_celestial_fov_ring_tex = ImageTexture.create_from_image(img)
+	var tiles: Array = ring_tiles.keys()
+	while _celestial_fov_ring_sprites.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _celestial_fov_ring_tex
+		spr.centered = false
+		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
+		spr.z_index = 2
+		add_child(spr)
+		_celestial_fov_ring_sprites.append(spr)
+	for i: int in _celestial_fov_ring_sprites.size():
+		var spr: Sprite2D = _celestial_fov_ring_sprites[i]
+		if i < tiles.size():
+			var pos: Vector2i = tiles[i]
+			spr.position = Vector2(pos.x * TILE_SIZE, pos.y * TILE_SIZE)
+			spr.modulate = Color(1.0, 0.92, 0.45, 0.22)
+			spr.visible = true
+		else:
+			spr.visible = false
+
 # Darkvision's own FOV bonus ring — the ring of tiles seen only because of darkvision (standard or
 # superior, same field just a bigger radius — see Stats.darkvision_bonus), always the OUTERMOST
 # ring (computed past the torch ring in update_fog(), never overlapping it). Tinted a dim, desaturated
@@ -1018,7 +1062,7 @@ func tick_torches() -> void:
 # Rebuilt every update_fog() call (cheap — pooled Sprite2Ds, same convention as the light glow
 # above) so it tracks the cloud fading/moving without needing its own dedicated signal.
 func _update_fog_cloud_visual() -> void:
-	if GameState.fog_cloud_pos == Vector2i(-1, -1):
+	if GameState.fog_cloud_pos == Vector2i(-1, -1) and GameState.darkness_pos == Vector2i(-1, -1):
 		for spr: Sprite2D in _fog_cloud_sprites:
 			spr.visible = false
 		return
@@ -1026,13 +1070,23 @@ func _update_fog_cloud_visual() -> void:
 		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 		img.fill(Color(1, 1, 1, 1))
 		_fog_cloud_tex = ImageTexture.create_from_image(img)
-	var center: Vector2i = GameState.fog_cloud_pos
-	var radius: int = GameState.fog_cloud_radius
+	# Darkness (Drow lineage spell) is a second, independent Heavily Obscured zone — painted with
+	# the same dark tint, into the same tile set/pooled sprites, as Fog Cloud (GameState.
+	# is_heavily_obscured() already treats both as equivalent).
 	var tiles: Array[Vector2i] = []
-	for dy: int in range(-radius, radius + 1):
-		for dx: int in range(-radius, radius + 1):
-			if dx * dx + dy * dy <= radius * radius:
-				tiles.append(center + Vector2i(dx, dy))
+	var seen: Dictionary = {}
+	for zone: Array in [[GameState.fog_cloud_pos, GameState.fog_cloud_radius], [GameState.darkness_pos, GameState.darkness_radius]]:
+		var center: Vector2i = zone[0]
+		var radius: int = zone[1]
+		if center == Vector2i(-1, -1):
+			continue
+		for dy: int in range(-radius, radius + 1):
+			for dx: int in range(-radius, radius + 1):
+				if dx * dx + dy * dy <= radius * radius:
+					var p: Vector2i = center + Vector2i(dx, dy)
+					if not seen.has(p):
+						seen[p] = true
+						tiles.append(p)
 	while _fog_cloud_sprites.size() < tiles.size():
 		var spr := Sprite2D.new()
 		spr.texture = _fog_cloud_tex
@@ -1325,7 +1379,7 @@ func get_blocking_body_on_line(from: Vector2i, to: Vector2i) -> Node:
 		var blocker: Enemy = get_enemy_at(pos)
 		if blocker != null:
 			return blocker
-		if _player != null and is_instance_valid(_player) and _player.grid_pos == pos:
+		if _player != null and is_instance_valid(_player) and _player.occupies(pos):
 			return _player
 		var comp: Variant = GameState.player_companion
 		if comp != null and is_instance_valid(comp) and comp.grid_pos == pos:
@@ -1535,7 +1589,7 @@ func is_walkable_for_companion(pos: Vector2i) -> bool:
 		return false
 	if _doors.has(pos) and not _doors[pos]["is_open"]:
 		return false
-	if _player != null and _player.grid_pos == pos:
+	if _player != null and _player.occupies(pos):
 		return false
 	for e: Enemy in _enemies:
 		if is_instance_valid(e) and e.occupies(pos):
@@ -2033,7 +2087,7 @@ func _fire_dispenser_arrow(trap: Dictionary) -> void:
 			break
 		if has_door_at(pos) and not is_door_open(pos):
 			break
-		if _player != null and is_instance_valid(_player) and _player.grid_pos == pos and not _player.stats.is_dead():
+		if _player != null and is_instance_valid(_player) and _player.occupies(pos) and not _player.stats.is_dead():
 			hit_target = _player
 			break
 		var e: Enemy = get_enemy_at(pos)
@@ -2464,7 +2518,7 @@ func force_move_entity(entity: Node2D, direction: Vector2i, max_distance: int, d
 			if entity is Player and get_enemy_at(nxt) != null:
 				hit_wall = true
 				break
-			if entity is Enemy and _player != null and _player.grid_pos == nxt:
+			if entity is Enemy and _player != null and _player.occupies(nxt):
 				hit_wall = true
 				break
 		current = nxt
@@ -2658,7 +2712,7 @@ func open_door(pos: Vector2i) -> void:
 func close_door(pos: Vector2i) -> void:
 	if not _doors.has(pos) or not _doors[pos]["is_open"]:
 		return
-	if _player != null and _player.grid_pos == pos:
+	if _player != null and _player.occupies(pos):
 		return
 	for e: Enemy in _enemies:
 		if is_instance_valid(e) and e.grid_pos == pos:
@@ -3780,7 +3834,7 @@ func resolve_push(enemy: Enemy, direction: Vector2i) -> void:
 		await enemy.move_to(dest, 0.15)
 		GameState.game_log("[color=cyan]Push:[/color] [color=orange]%s[/color] [color=gray]is shoved back.[/color]" % enemy.display_name)
 		return
-	if get_enemy_at(dest) != null or (_player != null and _player.grid_pos == dest):
+	if get_enemy_at(dest) != null or (_player != null and _player.occupies(dest)):
 		return  # blocked by another occupant — stays put, no damage
 	var tile: DungeonData.TileType = _data.get_tile(dest.x, dest.y)
 	if tile == DungeonData.TileType.CHASM:

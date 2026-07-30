@@ -1,0 +1,185 @@
+class_name PlayerGoliath
+extends Node
+
+# Goliath race features. Composition child-node split out of player.gd — see
+# scripts/entities/CLAUDE.md's "Goliath" section. Large Form and Giant Ancestry are the two
+# grantable abilities (see GameState.give_race_starting_items()'s GOLIATH branch); Powerful Build
+# (ADV to end Grappled) has no hook — no Grappled condition exists anywhere in this engine, same
+# "granted but nothing to hook into" precedent as Elf's Fey Ancestry/Dwarf's Poisoned-check half.
+
+var player: Player
+
+# ── Large Form ───────────────────────────────────────────────────────────────────
+# Wood-Elf-style duty cycle for the +1/3 movement bonus (see scripts/entities/CLAUDE.md's "Elf"
+# section, "Wood Elf's 35 ft speed") — every 3rd real move while Large Form is active doesn't cost
+# a turn. Not serialized — mid-floor combat bookkeeping, same tier as _wood_elf_move_counter.
+var _large_form_move_counter: int = 0
+
+func activate_large_form() -> void:
+	if player.stats.character_level < 5:
+		return
+	# Second press while already active ends it early.
+	if player.stats.large_form_turns > 0:
+		end_large_form()
+		return
+	if player.stats.large_form_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Large Form: already used this long rest.[/color]")
+		return
+	if not _footprint_free(player.grid_pos):
+		GameState.game_log("[color=gray]Large Form: not enough open space here.[/color]")
+		return
+	if not GameState.invincible:
+		player.stats.large_form_used = true
+	player.stats.large_form_turns = 100
+	player.size = Vector2i(2, 2)
+	_large_form_move_counter = 0
+	GameState.player_status_changed.emit()
+	GameState.game_log("[color=cyan]You swell to giant size — Large Form active for up to 100 turns.[/color]")
+	if player._dungeon_floor != null:
+		player._dungeon_floor.update_fog(player.grid_pos)
+
+func end_large_form() -> void:
+	if player.size == Vector2i.ONE:
+		return
+	player.stats.large_form_turns = 0
+	player.size = Vector2i.ONE
+	GameState.game_log("[color=gray]Large Form fades — you return to normal size.[/color]")
+	GameState.player_status_changed.emit()
+	if player._dungeon_floor != null:
+		player._dungeon_floor.update_fog(player.grid_pos)
+
+# ADV on the one player-side STR check that exists today (Web escape) — see
+# PlayerThiefTools/player.gd's _attempt_web_escape().
+func has_large_form_str_adv() -> bool:
+	return player.stats.large_form_turns > 0
+
+# Called from player.gd's per-real-turn "first move free" gate, alongside Expeditious Retreat/
+# Longstrider/Wood Elf's own counters — a duty-cycle +1/3 speed bonus (every 3rd real move is
+# free), same mechanism/precedent as Wood Elf's own 35 ft speed.
+func consume_large_form_free_move() -> bool:
+	if player.stats.large_form_turns <= 0:
+		return false
+	_large_form_move_counter += 1
+	if _large_form_move_counter >= 3:
+		_large_form_move_counter = 0
+		return true
+	return false
+
+func _footprint_free(top_left: Vector2i) -> bool:
+	if player._dungeon_floor == null:
+		return false
+	for dy: int in 2:
+		for dx: int in 2:
+			var t: Vector2i = top_left + Vector2i(dx, dy)
+			if not player._dungeon_floor.is_walkable(t):
+				return false
+			if player._dungeon_floor.get_enemy_at(t) != null:
+				return false
+	return true
+
+# Called from player.gd's _try_move() before the normal single-tile walkability check — the 3 NEW
+# tiles a 2x2 move into `target` would cover (excluding tiles already part of the CURRENT
+# footprint, which are handled by the existing bump-attack/walkability logic on the leading tile).
+# Returns true (blocks the move) if any of those 3 tiles isn't free.
+func blocks_large_form_move(target: Vector2i) -> bool:
+	if player._dungeon_floor == null:
+		return true
+	for dy: int in 2:
+		for dx: int in 2:
+			var t: Vector2i = target + Vector2i(dx, dy)
+			if player.occupies(t):
+				continue
+			if not player._dungeon_floor.is_walkable(t):
+				return true
+			var e: Enemy = player._dungeon_floor.get_enemy_at(t)
+			if e != null and not e.is_hidden_from_player():
+				return true
+	return false
+
+# ── Giant Ancestry ───────────────────────────────────────────────────────────────
+var cloud_teleport_mode_active: bool = false
+const CLOUD_TELEPORT_RANGE: int = 3
+
+func activate_giant_ancestry() -> void:
+	if player.stats.giant_ancestry_uses_remaining <= 0 and not GameState.invincible:
+		GameState.game_log("[color=gray]%s: no uses remaining (long rest to recover).[/color]" % GameState._giant_ancestry_name(player.stats.race_variant))
+		return
+	match player.stats.race_variant:
+		Stats.GiantAncestry.CLOUD:
+			cloud_teleport_mode_active = true
+			GameState.game_log("[color=cyan]Cloud Giant: click a tile within %d tiles to teleport there.[/color]" % CLOUD_TELEPORT_RANGE)
+		Stats.GiantAncestry.STONE:
+			if player.stats.giant_ancestry_armed:
+				player.stats.giant_ancestry_armed = false
+				player.stats.stone_ancestry_reduction_pending = 0
+				GameState.game_log("[color=gray]Stone's Endurance stood down.[/color]")
+				return
+			player.stats.giant_ancestry_armed = true
+			player.stats.stone_ancestry_reduction_pending = Rng.roll(12) + player.stats.con_modifier()
+			GameState.game_log("[color=cyan]Stone's Endurance braces — your next hit taken is reduced by %d.[/color]" % player.stats.stone_ancestry_reduction_pending)
+		Stats.GiantAncestry.FIRE, Stats.GiantAncestry.FROST, Stats.GiantAncestry.HILL, Stats.GiantAncestry.STORM:
+			player.stats.giant_ancestry_armed = not player.stats.giant_ancestry_armed
+			if player.stats.giant_ancestry_armed:
+				GameState.game_log("[color=cyan]%s is armed.[/color]" % GameState._giant_ancestry_name(player.stats.race_variant))
+			else:
+				GameState.game_log("[color=gray]%s stood down.[/color]" % GameState._giant_ancestry_name(player.stats.race_variant))
+
+# Called from player.gd._bump_attack() right after the primary hit lands (actual > 0). Handles
+# Frost's chill / Hill's Prone directly (no damage instance of their own) and returns "" for them;
+# returns "Fire" for Fire Giant so the caller builds a real second damage instance (same "one hit,
+# two damage types" shape as Torch/Hunter's Mark) — a miss never reaches this function at all, so
+# a charge is only ever spent on a landed hit, matching "misses don't spend charges".
+func consume_giant_ancestry_on_hit(enemy: Enemy) -> String:
+	if player.stats.character_race != Stats.CharacterRace.GOLIATH or not player.stats.giant_ancestry_armed:
+		return ""
+	var spend_charge: Callable = func() -> void:
+		player.stats.giant_ancestry_armed = false
+		if not GameState.invincible:
+			player.stats.giant_ancestry_uses_remaining -= 1
+		GameState._sync_ability_uses()
+	match player.stats.race_variant:
+		Stats.GiantAncestry.FIRE:
+			spend_charge.call()
+			return "Fire"
+		Stats.GiantAncestry.FROST:
+			spend_charge.call()
+			enemy.apply_status("slowed", 3)
+			GameState.game_log("[color=cyan]Frost's Chill slows %s.[/color]" % enemy.display_name)
+		Stats.GiantAncestry.HILL:
+			# "Large or smaller" — every enemy in this game today is Medium or Large (2x2, area
+			# multiplier 4) at most, so this is unconditional in practice; the size check is kept
+			# for correctness against any future Huge+ enemy.
+			if enemy.size.x * enemy.size.y <= 4:
+				spend_charge.call()
+				enemy.apply_status("prone", 1)
+				GameState.game_log("[color=cyan]Hill's Tumble knocks %s Prone.[/color]" % enemy.display_name)
+	return ""
+
+func resolve_cloud_teleport(clicked: Vector2i) -> void:
+	if player._dungeon_floor == null:
+		return
+	if player.stats.giant_ancestry_uses_remaining <= 0 and not GameState.invincible:
+		GameState.game_log("[color=gray]Cloud's Jaunt: no uses remaining (long rest to recover).[/color]")
+		return
+	var dist: int = maxi(absi(clicked.x - player.grid_pos.x), absi(clicked.y - player.grid_pos.y))
+	if dist > CLOUD_TELEPORT_RANGE:
+		GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % CLOUD_TELEPORT_RANGE)
+		return
+	if not player._dungeon_floor.is_tile_visible(clicked):
+		GameState.game_log("[color=gray]You can't see that space.[/color]")
+		return
+	if not player._dungeon_floor.is_walkable(clicked) or player._dungeon_floor.get_enemy_at(clicked) != null:
+		GameState.game_log("[color=gray]That space is occupied.[/color]")
+		return
+	if player.size != Vector2i.ONE and blocks_large_form_move(clicked):
+		GameState.game_log("[color=gray]Not enough room there for your Large Form.[/color]")
+		return
+	if not GameState.invincible:
+		player.stats.giant_ancestry_uses_remaining -= 1
+	GameState._sync_ability_uses()
+	var prev: Vector2i = player.grid_pos
+	player.set_grid_pos(clicked)
+	GameState.game_log("[color=cyan]Cloud's Jaunt: you blink through the air.[/color]")
+	if player._dungeon_floor.has_door_at(prev):
+		player._dungeon_floor.close_door(prev)
+	player._dungeon_floor.update_fog(player.grid_pos)

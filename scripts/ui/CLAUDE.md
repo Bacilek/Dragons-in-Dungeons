@@ -79,7 +79,17 @@ old 5 hardcoded dot nodes (formerly `hud.gd:200-211`, `_make_status_dot()`/`_mak
 Fully data-driven: `hud.gd._update_status_icons()` builds a fresh `Array[Dictionary]` of
 `{id, icon_path, fallback_color}` every refresh (wired to the same chokepoint as before —
 `TurnManager.player_turn_started`, `GameState.player_status_changed`, `GameState.ability_bar_changed`)
-and calls `_status_tray.refresh(entries)`. `StatusTray` pools `TextureRect` icon nodes
+and calls `_status_tray.refresh(entries)`. **`race_bonus` is always the FIRST entry appended**,
+unconditionally (every other entry is gated on a live game-state flag; this one never is) — a
+permanent, always-visible reference icon for the player's chosen race's full trait kit, gold
+placeholder tint (`res://icons/status/race_bonus.png`, no art yet). Hover text is built by
+`StatusTooltips.race_bonus_text(stats)`/`race_display_name(stats)` (`status_tooltips.gd`) — a
+`match stats.character_race` returning every trait that race grants in plain English (Elf/
+Dragonborn branch further on `race_variant` for their sub-race/ancestry-specific lines), title
+reads `"Race Bonus: <display name>"` (e.g. `"Race Bonus: High Elf"`, `"Race Bonus: Red
+Dragonborn"`) via `build_bbcode()`'s own `id == "race_bonus"` special case (same pattern as
+`concentration`'s dynamic spell-name title). See `scripts/entities/CLAUDE.md`'s per-race sections
+for the mechanical detail this tooltip text summarizes. `StatusTray` pools `TextureRect` icon nodes
 (`ignore_texture_size = true` per the rule above), tints them with `fallback_color` when
 `icon_path` doesn't resolve via `ResourceLoader.exists()` (no separate `ColorRect` fallback type),
 and emits `icon_hovered(id)`/`icon_unhovered()` on mouse enter/exit. `hud.gd` connects these to
@@ -169,7 +179,8 @@ CanvasLayer, layer = 26. Spawned by `player.gd` right after `GameState.long_rest
 originally a plain Yes/No "reselect masteries?" confirm, now a small hub offering every
 long-rest-gated adjustment in one place: **Weapon Masteries** (only shown when
 `player_stats.mastery_cap() > 0`), **Attunement** (always shown), **Spellbook** (only shown when
-`player_stats.caster != null`), and **Done**. Sets `GameState.mastery_picker_open = true` for its
+`player_stats.caster != null`), **High Elf Cantrip Swap** (only shown when `GameState.
+is_high_elf_caster()` — see `scripts/entities/CLAUDE.md`'s "Elf" section), and **Done**. Sets `GameState.mastery_picker_open = true` for its
 own duration (blocking input like every other long-rest picker — reused deliberately rather than
 adding a parallel flag, since every input gate check in `player.gd`/`scripts/entities/CLAUDE.md`
 already keys off this one name). Clicking an option hides the hub's own panel (`_panel.visible =
@@ -198,6 +209,15 @@ expected today, since no `ITEM_POOL` entry sets `requires_attunement` yet (infra
 pass). Sets `GameState.mastery_picker_open = true`/`false` on open/close like every other picker in
 this family. Esc or the Done button closes it, which the parent hub's `tree_exited` hook detects to
 re-show itself.
+
+## High Elf Cantrip Swap (`high_elf_cantrip_swap.gd`)
+CanvasLayer, layer = 25. High Elf lineage's level-1 benefit (`scripts/entities/CLAUDE.md`'s "Elf"
+section) — only ever reachable from the long-rest hub, only shown to a Wizard/caster High Elf.
+Two-round card picker modeled on `cantrip_select.gd`: round 1 lists `GameState.
+high_elf_known_cantrips()` (pick one to replace), round 2 lists `high_elf_learnable_cantrips()`
+(pick the Wizard cantrip you don't know yet to learn instead) — each card commits immediately on
+click, "Skip / Done" (or Esc) at either round bails with nothing changed. Confirm calls
+`GameState.swap_high_elf_cantrip(old_id, new_id)`.
 
 ---
 
@@ -414,9 +434,21 @@ CanvasLayer, layer = 25. One-time, mandatory choice spawned by `background_selec
 (Custom path) — see "Background select" above. Modeled directly on
 `subclass_select.gd`'s conventions (dim overlay + centered bordered `Panel`, `focus_mode =
 FOCUS_NONE` everywhere, `race_picker_open` input-gate flag, non-dismissible — no close button,
-`_unhandled_input` swallows Esc/keys). 6 race cards (Orc/Human/Halfling/Dwarf/Elf/Dragonborn);
-Human/Elf/Dragonborn additionally show an inline sub-choice row (ability-score proficiency /
-sub-race / ancestry) that must be picked before Confirm enables. Confirm calls
+`_unhandled_input` swallows Esc/keys). 10 race cards (Orc/Human/Halfling/Dwarf/Elf/Dragonborn/
+Tiefling/Aasimar/Gnome/Goliath); Human/Elf/Dragonborn/Tiefling/Gnome/Goliath additionally show an
+inline sub-choice row (ability-score proficiency / sub-race / ancestry / legacy / a combined
+lineage+stat pick / Giant Ancestry) that must be picked before Confirm enables. Goliath's own
+sub-choice (`sub_kind: "giant_ancestry"`, 6 flat options — Cloud/Fire/Frost/Hill/Stone/Storm) is
+the simplest of the bunch, decoded exactly like Dragonborn's ancestry/Tiefling's legacy (`variant
+= _selected_sub` directly, no combined-index decoding needed) — see
+`scripts/entities/CLAUDE.md`'s "Goliath" section. **Gnome is the one race with two independent sub-choices**
+(a Gnomish Lineage AND a Gnomish Cunning stat, see `scripts/entities/CLAUDE.md`'s "Gnome" section)
+— rather than build a second parallel sub-choice UI, its `sub_options` just lists all 6
+combinations ("Forest (INT)"/"Forest (WIS)"/"Forest (CHA)"/"Rock (INT)"/"Rock (WIS)"/"Rock (CHA)")
+through the exact same single-`sub_kind` grid every other race uses; `_on_confirm()`'s `"gnome"`
+match arm decodes the picked index back into `variant = idx / 3` (lineage) and
+`prof_ability = 3 + idx % 3` (3/4/5 = INT/WIS/CHA, reusing Human's own ability-index convention
+instead of adding a second field). Confirm calls
 `GameState.choose_race(race, variant, prof_ability)`, then spawns `mastery_picker.gd` itself
 (same `mastery_cap() > 0` gate class_select used to apply) before `queue_free()` — so the full
 onboarding order for the Custom path is **class select → point buy → background ASI → race
