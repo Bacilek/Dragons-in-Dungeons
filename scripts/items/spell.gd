@@ -25,6 +25,13 @@ enum TargetKind { ENEMY, SELF, TILE }
 # characters see further than others (e.g. Wild Heart Eagle's +1 FOV radius), so a fixed range
 # would be wrong for them. See PlayerSpellcasting.try_cast_at().
 @export var range_is_fov: bool = false
+# BG3-style "seeking" targeting (Magic Missile): when true, the normal has_ranged_los() check is
+# skipped entirely and replaced with a walkable-PATH-exists check instead (DungeonFloor.
+# has_walkable_route_ignoring_chasms()) — the caster doesn't need to SEE the target (it can be
+# behind a wall corner, grass, closed door — anything), it just needs a route a walking character
+# could physically take to reach it, EXCEPT chasms don't block that route (the missile flies over
+# one; a character on foot couldn't). See PlayerSpellcasting.try_cast_at().
+@export var bypasses_los: bool = false
 @export var dice_count: int = 1
 @export var dice_sides: int = 6
 @export var damage_type: String = ""

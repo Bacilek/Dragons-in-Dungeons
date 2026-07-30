@@ -230,6 +230,16 @@ func _refresh() -> void:
 func _close() -> void:
 	GameState.mastery_picker_open = false
 	if character_creation_mode:
+		# A caster class that also has known weapon masteries (currently only Ranger — Wizard's
+		# mastery_cap() is 0, so it never reaches this picker with character_creation_mode set at
+		# all) still needs its one-time starting-spell pick before the summary screen — cantrip_
+		# select.gd, generalized to support a Ranger-only single-round mode (see that file's own
+		# header comment and scripts/entities/CLAUDE.md's "Ranger class").
+		if GameState.player_stats.caster != null:
+			var spell_picker = load("res://scripts/ui/cantrip_select.gd").new()
+			get_tree().root.call_deferred("add_child", spell_picker)
+			queue_free()
+			return
 		GameState.pending_summary_return_scene = "res://scripts/ui/mastery_picker.gd"
 		var summary = load("res://scripts/ui/character_summary.gd").new()
 		get_tree().root.call_deferred("add_child", summary)

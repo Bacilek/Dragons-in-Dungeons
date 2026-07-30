@@ -2,6 +2,40 @@ class_name Stats
 extends Resource
 
 enum CharacterClass { BARBARIAN, RANGER, WIZARD, MONK }
+
+# Internal-only D&D-role categorization — never shown in any UI, purely a filter this codebase's
+# own authors use when deciding "should class X get spellcasting / which slot table / etc." Keyed
+# by plain class-name string rather than the CharacterClass enum above, since most of the 5e roster
+# isn't implemented as a selectable class at all yet (see root CLAUDE.md's "Locked-class art") —
+# this dict still names all of them so the categorization is complete even for classes that only
+# exist as a locked character-select tile today.
+#   MARTIAL      — no spellcasting: Barbarian, Fighter, Monk, Rogue
+#   FULL_CASTER  — full spell-slot progression (Wizard's StandardSlotPool table): Bard, Cleric,
+#                  Druid, Sorcerer, Warlock, Wizard
+#   HALF_CASTER  — half spell-slot progression (HalfCasterSlotPool table, slots from level 1 per
+#                  this project's 2024-rules convention): Ranger, Paladin
+#   THIRD_CASTER — subclass-specific (e.g. Fighter's Eldritch Knight, Rogue's Arcane Trickster) —
+#                  not a base-class role at all, so no third-caster row is implemented; noted here
+#                  only so the categorization itself is complete.
+# The only thing that currently CONSUMES this dict's information is `apply_class_defaults()`
+# below, which grants a `caster` to every non-MARTIAL implemented class by hand (Wizard: FULL_CASTER,
+# Ranger: HALF_CASTER) — nothing reads CLASS_ROLE programmatically yet, it's documentation of the
+# decision, not a live gate. Extend this table (and the matching `apply_class_defaults()` branch)
+# the moment a new class — Bard, Paladin, etc. — actually gets implemented.
+const CLASS_ROLE: Dictionary = {
+	"BARBARIAN": "MARTIAL",
+	"FIGHTER":   "MARTIAL",
+	"MONK":      "MARTIAL",
+	"ROGUE":     "MARTIAL",
+	"BARD":      "FULL_CASTER",
+	"CLERIC":    "FULL_CASTER",
+	"DRUID":     "FULL_CASTER",
+	"SORCERER":  "FULL_CASTER",
+	"WARLOCK":   "FULL_CASTER",
+	"WIZARD":    "FULL_CASTER",
+	"RANGER":    "HALF_CASTER",
+	"PALADIN":   "HALF_CASTER",
+}
 enum CharacterRace { ORC, HUMAN, HALFLING, DWARF, ELF, DRAGONBORN }
 enum ElfSubrace { DROW, HIGH_ELF, WOOD_ELF }          # only meaningful when character_race == ELF
 enum DragonbornAncestry { BLACK, BLUE, BRASS, BRONZE, COPPER, GOLD, GREEN, RED, SILVER, WHITE }
@@ -565,6 +599,13 @@ func apply_class_defaults() -> void:
 			proficient_shields = true
 			proficient_light_armor = true
 			proficient_medium_armor = true
+			# Half-caster (CLASS_ROLE above) — WIS-based, HalfCasterSlotPool (slots from level 1,
+			# 2024-rules half-caster table, max spell level 5). No cantrips (cantrip_max() stays 0
+			# for every non-Wizard class) — see scripts/entities/CLAUDE.md's "Ranger class".
+			caster = SpellcasterState.new()
+			caster.spellcasting_ability = "WIS"
+			caster.slot_pool = HalfCasterSlotPool.new()
+			caster.slot_pool.owner_stats = self
 		CharacterClass.WIZARD:
 			intelligence = 16; dexterity = 14; wisdom = 12
 			constitution = 10; strength = 8; charisma = 10

@@ -16,7 +16,15 @@ extends Resource
                                                       # be known (in known_spells) without being here,
                                                       # e.g. learned past its kind's cap
 
-var slot_pool: StandardSlotPool = null               # null until the caster's class-defaults init grants one
+# Untyped (not `: StandardSlotPool`) on purpose: holds a `StandardSlotPool` (Wizard, full-caster)
+# OR a `HalfCasterSlotPool` (Ranger, half-caster, scripts/items/half_caster_slot_pool.gd) — the two
+# are deliberate duplicate implementations sharing an identical method surface, not a common base
+# class (see HalfCasterSlotPool's own header comment), so a static `StandardSlotPool` type
+# annotation here would reject assigning the Ranger's pool. Every call site only ever calls the
+# shared interface methods (`max_slots()`/`available_level()`/`can_cast()`/`consume()`/
+# `on_long_rest()`/`grant_new_slots_on_levelup()`/`ui_summary()`), which both classes implement
+# identically in shape, so this resolves correctly at runtime regardless of which one is stored.
+var slot_pool = null               # null until the caster's class-defaults init grants one
 
 # Computed live, never cached — mirrors Stats.mastery_cap()'s "recompute every time" convention
 # so a level-up (proficiency_bonus, character_level) is picked up automatically. Deliberately NOT
@@ -36,8 +44,12 @@ func _ability_mod(stats: Stats) -> int:
 
 # leveled-spells-and-slots-plan.md §1 owner decision: prepared count = character level, counting
 # only leveled (non-cantrip) prepared spells. Supersedes the framework doc's
-# ability_mod + caster_level formula for Wizard.
+# ability_mod + caster_level formula for Wizard. Ranger (half-caster, scripts/entities/CLAUDE.md's
+# "Ranger class") uses the real 2024 half-caster formula instead: WIS mod + half level (floored),
+# minimum 1 — a Ranger always has at least one spell prepared once they have any slot at all.
 func prepared_max(stats: Stats) -> int:
+	if stats.character_class == Stats.CharacterClass.RANGER:
+		return maxi(1, _ability_mod(stats) + stats.character_level / 2)
 	return stats.character_level
 
 func is_cantrip(spell_id: String) -> bool:

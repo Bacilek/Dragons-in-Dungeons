@@ -38,6 +38,7 @@ const PREMADE: Array = [
 		"prof":    -1,
 		"masteries": ["Slow", "Nick"],
 		"scores":  {"str": 8, "dex": 16, "con": 14, "int": 10, "wis": 16, "cha": 10},
+		"spell1":  "fog_cloud",
 		"sprite":  CHAR_PATH + "Ranger/idle_1.png",
 		"subtitle": "Wood Elf Ranger",
 		"desc":    "A swift hunter of the wilds.\nMasteries: Slow, Nick.",
