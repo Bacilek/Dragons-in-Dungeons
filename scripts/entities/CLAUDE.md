@@ -571,15 +571,22 @@ so a short RAW range never collapses below the content type's own floor and lose
   fixed multiplier of `range`** (current roster: Short Bow 4/16, Heavy Crossbow 5/20, Longbow
   8/30) — pick a value that feels right, don't auto-derive it from a ratio. **Bugfix**: a
   beyond-normal-range shot's visibility requirement (`is_tile_visible`) used to also silently fail
-  while the player is Blinded (Fog Cloud/Darkness — see "Conditions" below), since Blinded
-  collapses `GameState.effective_fov_radius()` to a flat 1 tile, which in turn shrinks
-  `_visible_tiles` to almost nothing — so a target that drifted even one tile past a bow's normal
-  range while standing in the cloud became permanently unshootable, not just Disadvantaged (which
-  is what Blinded is actually supposed to do to the shot). `PlayerRanged.
+  whenever Fog Cloud/Darkness obscurement (not terrain) was what actually hid the target — two
+  distinct cases, both now handled: (1) the **viewer** is Blinded (standing in the cloud
+  themselves), which collapses `GameState.effective_fov_radius()` to a flat 1 tile and shrinks
+  `_visible_tiles` accordingly; (2) the **target** is standing in a cloud the viewer is NOT inside
+  — `DungeonFloor.update_fog()` deliberately strips every heavily-obscured tile out of
+  `_visible_tiles` for an outside viewer (see `scripts/world/CLAUDE.md`'s "Fog Cloud spell zone"),
+  so `is_tile_visible(target_pos)` goes false even with nothing but open air between the two (this
+  was the actual reported case — Ranger outside the cloud, target inside it, Tremorsense still
+  making it targetable). Either way, the shot used to become permanently impossible the instant
+  distance ticked past the weapon's normal range, instead of just Disadvantaged (which is what
+  Blinded/attacking-a-Blinded-target already resolves to separately via `PlayerVfx.
+  has_advantage()`/the `disadv_count` check in `ranged_attack()`). `PlayerRanged.
   is_ranged_target_in_range()` now falls back to a pure terrain check (`has_ranged_los` — walls/
-  closed doors only, not FOV) for this gate specifically while `GameState.is_blinded(player.
-  grid_pos)` is true, leaving the normal (non-blinded) "no blind long shots into unexplored fog"
-  rule via `is_tile_visible` unchanged.
+  closed doors only, not FOV/obscurement) for this gate whenever `GameState.is_blinded(player.
+  grid_pos)` OR `GameState.is_heavily_obscured(target_pos)` is true, leaving the normal
+  (non-obscured) "no blind long shots into unexplored fog" rule via `is_tile_visible` unchanged.
 - **Thrown weapons** (Spear/Handaxe/Dagger/Javelin/Torch, same `Item.range`/`Item.long_range`
   fields as ranged weapons, mechanically) use a gentler **`/10`** instead — a thrown weapon swings
   off a melee stat (STR, or `max(STR,DEX)` if Finesse), not a dedicated ranged weapon, so its reach
