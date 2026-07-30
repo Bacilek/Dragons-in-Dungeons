@@ -106,6 +106,13 @@ func decide_turn() -> Dictionary:
 		stats.zealous_presence_turns -= 1
 	if _dungeon_floor == null:
 		return {"type": "wait"}
+	# Standing on a burning door tile — same start-of-own-turn timing as Player/Enemy (see
+	# DungeonFloor.tick_fire_damage_for()'s doc comment). take_damage_from_enemy() already calls
+	# _on_companion_die() internally on a lethal hit (queue_free() is deferred, so `stats` is still
+	# safe to read below).
+	_dungeon_floor.tick_fire_damage_for(self)
+	if stats.current_hp <= 0:
+		return {"type": "dead"}
 	var nearest: Enemy = _find_nearest_visible_enemy()
 	if nearest != null:
 		var diff: Vector2i = nearest.grid_pos - grid_pos
