@@ -219,13 +219,15 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 
 	var enemy: Enemy = player._dungeon_floor.get_targetable_enemy_at(pos)
 	# Captured BEFORE on_disturbed() wakes the enemy — both has_advantage() and the melee-range
-	# DISADV exemption below read pre-attack behavior/door_ambush state, which on_disturbed()
-	# immediately mutates away.
+	# DISADV exemption below read pre-attack behavior/surprise_available state, which on_disturbed()
+	# immediately mutates away. The DISADV exemption reuses has_advantage()'s own result rather than
+	# re-deriving it, so a freshly re-sighted (surprise_available) enemy gets the same exemption a
+	# still-unaware one does.
 	var was_surprised: bool = false
 	var target_was_unaware: bool = false
 	if enemy != null:
 		was_surprised = player._vfx.has_advantage(enemy)
-		target_was_unaware = enemy.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
+		target_was_unaware = was_surprised
 		enemy.on_disturbed(player.grid_pos)
 	var target_world_pos: Vector2 = enemy.position if enemy != null else Vector2(pos.x * 16 + 8, pos.y * 16 + 8)
 	player._ranged.show_projectile(target_world_pos, weapon)
@@ -236,6 +238,9 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 			if player._dungeon_floor.get_tile_type(pos) == DungeonData.TileType.WATER:
 				weapon.torch_lit = false
 				GameState.game_log("[color=cyan]The water douses the torch![/color]")
+			elif player._dungeon_floor.get_tile_type(pos) == DungeonData.TileType.GRASS:
+				if player._dungeon_floor.ignite_grass(pos):
+					GameState.game_log("[color=orange]The grass catches fire![/color]")
 			else:
 				player._dungeon_floor.ignite_flammable(pos)
 		GameState.remove_item(weapon)

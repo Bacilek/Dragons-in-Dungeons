@@ -12,15 +12,17 @@ func leave_blood_trail(pos: Vector2i) -> void:
 	if player._dungeon_floor != null and GameState.player_stats.bleeding_turns > 0:
 		player._dungeon_floor.place_blood_decal(pos)
 
-# Surprise-attack ADV (stealth-and-surprise-attacks-design.md §4.2): the defender is unaware of
-# the player at the moment of the attack roll — SLEEPING (never noticed), STATIONARY/ROAMING
-# (awake but hasn't spotted the player yet — they flip to CHASING the instant they do), or a
-# door_ambush this round (CHASING enemy stepped through a door with no prior LOS to the player).
-# CHASING/SEARCHING never grant it otherwise — a fully aware hunter, even one that's momentarily
-# out of FOV, is not surprised.
+# Surprise-attack ADV (see "Stealth & Surprise Attacks" in scripts/entities/CLAUDE.md): the
+# defender is unaware of the player at the moment of the attack roll — SLEEPING (never noticed),
+# STATIONARY/ROAMING (awake but hasn't spotted the player yet — they flip to CHASING the instant
+# they do), or `surprise_available` (CHASING/SEARCHING enemy whose OWN turn just re-established
+# sight it had lost — door ambush, mid-chase obstacle break, Invisibility ending). A stealth-check-
+# driven notice (the player's own turn causing an enemy to spot them) does NOT set this flag — by
+# the time the player can attack again, the enemy has already had its own notice-round turn, so
+# it's no longer surprised; that case is covered by the plain behavior check below instead.
 func has_advantage(enemy: Enemy) -> bool:
-	if enemy.door_ambush:
-		enemy.door_ambush = false
+	if enemy.surprise_available:
+		enemy.surprise_available = false
 		return true
 	# Blinded condition: attack rolls against a Blinded creature have Advantage.
 	if GameState.is_blinded(enemy.grid_pos):

@@ -50,10 +50,12 @@ func ranged_attack(enemy: Enemy) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	# Captured BEFORE on_disturbed() wakes the enemy — both has_advantage() and the melee-range
-	# DISADV exemption below read pre-attack behavior/door_ambush state, which on_disturbed()
-	# immediately mutates away.
+	# DISADV exemption below read pre-attack behavior/surprise_available state, which on_disturbed()
+	# immediately mutates away. The DISADV exemption reuses has_advantage()'s own result rather than
+	# re-deriving it, so a freshly re-sighted (surprise_available) enemy gets the same exemption a
+	# still-unaware one does.
 	var was_surprised: bool = player._vfx.has_advantage(enemy)
-	var target_was_unaware: bool = enemy.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
+	var target_was_unaware: bool = was_surprised
 	enemy.on_disturbed(player.grid_pos)
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = enemy.grid_pos.x < player.grid_pos.x
