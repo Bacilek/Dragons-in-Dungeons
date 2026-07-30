@@ -121,6 +121,10 @@ func mastery_cap() -> int:
 
 # Always re-derived by apply_race_defaults() — never saved directly (mirrors check_prof_* above).
 var darkvision_bonus: int = 0            # 0 = none, 1 = standard (+1 FOV tile), 2 = superior (+2)
+# Not granted by anything yet (future hook — e.g. a Warlock Devil's Sight-style feature). While
+# false (always, today), heavily obscured terrain (Fog Cloud) blocks vision INTO it from outside —
+# not even darkvision/truesight bypasses this, per 5e RAW; only this flag would.
+var sees_through_magical_darkness: bool = false
 var damage_resistances: Array[String] = []
 
 # Per-long-rest race charge trackers — reset in GameState.long_rest(), same chokepoint as
@@ -170,6 +174,8 @@ var rage_bonus_damage: int:
 # level (unlike Rage) — simple to start, tune later.
 var hunters_mark_uses_remaining: int = 0
 const HUNTERS_MARK_USES_MAX: int = 3
+const HUNTERS_MARK_RANGE: int = 9
+const HUNTERS_MARK_DURATION: int = 100
 
 # The currently marked enemy (Hunter's Mark). Deliberately NOT serialized in to_dict()/from_dict()
 # — a live Enemy node reference can't survive save/load, same precedent as witch_bolt_target
@@ -178,6 +184,17 @@ var hunters_mark_target: Enemy = null
 # Set true the moment a mark is (re)established, cleared on the marked target's first taken hit —
 # drives Bloodhound R1's "first attack against a fresh mark gets Advantage".
 var hunters_mark_fresh: bool = false
+# Concentration duration (100 turns, ticked once per real player turn like Blade Ward/Fog Cloud/
+# Expeditious Retreat) — 0 = not currently marking. Not serialized (mid-floor concentration state,
+# same precedent as witch_bolt_turns/expeditious_retreat_turns).
+var hunters_mark_turns: int = 0
+# Free-recast window (markdowns/ranger_base.md): if the Marked target dies while concentration is
+# still active, the player gets ONE free re-mark (no use spent) — but only during their very next
+# real turn, never later. `_pending` is armed the instant the target dies; the following
+# `_on_turn_started()` promotes it to `_available` for that single turn, then clears it at the turn
+# after that if unused. Both transient, not serialized.
+var hunters_mark_free_recast_pending: bool = false
+var hunters_mark_free_recast_available: bool = false
 
 var poison_turns: int = 0
 var burning_turns: int = 0

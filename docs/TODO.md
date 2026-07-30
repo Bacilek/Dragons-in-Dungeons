@@ -45,3 +45,5 @@ aren't lost. Delete an entry once it's picked up (either built, or promoted to a
 - **Ranger icon art missing** — no icons under `icons/classes/ranger/` yet (Hunter's Mark, Trailblazer/Bloodhound/Twin Fang all render via the name-text fallback).
 
 - **Spiderling enemy stat block** — smaller/weaker Spider variant (Small/Medium, low CR, early-floor filler), reusing the same Spider/{idle,run}.png sheet at a smaller `sprite_scale` than the Large Spider's 1.0.
+
+- **Tool proficiencies + Monk/Rogue property-restricted weapon profs** — no `Stats` field exists yet for tool proficiency (Bard's starting instrument — bagpipes/drum/flute/horn/lute/lyre, randomly picked — isn't implemented at all), and `proficient_simple_weapons`/`proficient_martial_weapons` are flat bools with no per-weapon-property granularity, so Monk (Martial-but-Light-only) and Rogue (Martial-but-Finesse-or-Light-only) currently leave `proficient_martial_weapons = false` as a conservative placeholder instead of their real restricted proficiency.

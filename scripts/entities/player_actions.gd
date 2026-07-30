@@ -236,6 +236,28 @@ func interact_action(can_lock: bool = true, target: Vector2i = Vector2i(-1, -1))
 		if player._dungeon_floor.has_shopkeeper_at(pos):
 			open_shop_panel(pos)
 			return
+	# Priority 1.7: Tripwire dispenser (disguised floor tile) — only lootable once found via
+	# Search (dispenser.revealed) and still holding its one dart (not already spent by triggering
+	# or a prior loot). Same exact-tile-vs-scan-8-neighbors split as trap/door/Blacksmith/Shop.
+	var dispenser_tiles: Array[Vector2i] = []
+	if target != Vector2i(-1, -1):
+		var ddiff: Vector2i = target - player.grid_pos
+		if abs(ddiff.x) <= 1 and abs(ddiff.y) <= 1:
+			dispenser_tiles.append(target)
+	else:
+		for d: Vector2i in dirs8:
+			dispenser_tiles.append(player.grid_pos + d)
+	for pos: Vector2i in dispenser_tiles:
+		if player._dungeon_floor.has_dispenser_at(pos):
+			var disp: Dictionary = player._dungeon_floor.get_dispenser_at(pos)
+			if disp.get("revealed", false) and not disp.get("spent", false):
+				var arrow: Item = player._dungeon_floor.loot_dispenser(pos)
+				if arrow != null:
+					if GameState.add_item(arrow):
+						GameState.game_log("[color=yellow]You carefully pry a [b]Poisoned Arrow[/b] from the dispenser.[/color]")
+					else:
+						GameState.game_log("[color=red]Your inventory is full.[/color]")
+				return
 	# Priority 2: door
 	# When called from RMB (target provided), only interact with that exact tile if adjacent.
 	# When called from F key (no target), scan all 8 neighbors for the first door.

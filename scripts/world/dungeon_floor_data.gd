@@ -69,6 +69,11 @@ const ITEM_POOL: Array = [
 	# fmin/fmax=99 keeps it out of every generic floor-loot roll — its only spawn path is
 	# DungeonFloor._spawn_mold()'s guaranteed once-per-run placement (scripts/world/CLAUDE.md).
 	{"name": "Mold",           "type": 7, "icon": "Materials/plate/iron.png",           "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A strange mold. A Blacksmith could forge it into a weapon — for a price."},
+	# Poisoned Arrow: the one dart inside a Tripwire trap's hidden dispenser (scripts/world/CLAUDE.md's
+	# "Tripwire trap"). Sentinel fmin/fmax=99 keeps it out of every generic floor-loot roll — its only
+	# spawn path is DungeonFloor.loot_dispenser(). Single-use thrown weapon; a landed hit also poisons
+	# the target (player_throw_tool.gd's item_name == "Poisoned Arrow" check).
+	{"name": "Poisoned Arrow", "type": 0, "icon": "ammo/arrow.png",              "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A single dart tipped with venom. Poisons whatever it strikes.", "dmg_type": "Piercing", "category": "Simple", "die_min": 1, "die_max": 4, "finesse": true, "light": true, "thrown": true, "range": 4, "long_range": 12, "uses_max": 1, "gold": 15},
 	{"name": "Shield",         "type": 1, "icon": "shields/wood.png",                "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Requires shield proficiency; can't be worn with a two-handed Main Hand weapon, and blocks spellcasting while equipped.", "bonus_ac": 2, "is_shield": true, "gold": 40},
 	# Body armor (Item.armor_category — see Item.gd, GameState.can_equip_armor()/ARMOR_CHANGE_TURNS
 	# and Stats.recalc_ac()). No dedicated armor sprites exist yet — every entry placeholder-reuses

@@ -324,6 +324,9 @@ static func cast_spell_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 	await sprite.animation_finished
 	sprite.play("idle")
 
+	if dungeon_floor != null:
+		dungeon_floor.try_shoot_tripwire(tile_pos)
+
 	if spell.effect_id == "" and dungeon_floor != null and dungeon_floor.get_tile_type(tile_pos) == DungeonData.TileType.GRASS:
 		if dungeon_floor.ignite_grass(tile_pos):
 			GameState.game_log("[color=orange]The grass catches fire![/color]")
@@ -414,6 +417,8 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	_consume_slot(player, cast_level, from_scroll)
+	if dungeon_floor != null:
+		dungeon_floor.try_shoot_tripwire(tile_pos)
 	match spell.effect_id:
 		"misty_step":
 			player.set_grid_pos(tile_pos)

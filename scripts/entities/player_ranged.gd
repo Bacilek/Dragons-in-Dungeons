@@ -315,7 +315,30 @@ func ranged_attack_tile(target_pos: Vector2i) -> void:
 			GameState.game_log("[color=gray]Last throwing dagger thrown.[/color]")
 	var target_world: Vector2 = Vector2(target_pos.x * 16 + 8, target_pos.y * 16 + 8)
 	show_projectile(target_world, weapon)
-	player._ammo.resolve_ammo_landing(ammo_item, target_pos)
+	if player._dungeon_floor != null:
+		player._dungeon_floor.try_shoot_tripwire(target_pos)
+		var prop_result: Dictionary = player._dungeon_floor.damage_prop_at(target_pos, _roll_prop_damage(weapon))
+		if prop_result["hit"]:
+			var kind_label: String = "barrel" if prop_result["kind"] == "barrel" else "door"
+			if prop_result["destroyed"]:
+				GameState.game_log("[color=gray]Your shot smashes the %s to pieces![/color]" % kind_label)
+			else:
+				GameState.game_log("[color=gray]Your shot thuds into the %s for %d dmg.[/color]" % [kind_label, prop_result["damage"]])
+			player._dungeon_floor.show_damage(target_world, prop_result["damage"], false)
+		else:
+			player._ammo.resolve_ammo_landing(ammo_item, target_pos)
 	if player._dungeon_floor != null:
 		player._dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()
+
+# Flat physical-damage roll for a shot aimed at a solid prop (barrel/closed door) instead of an
+# enemy — no attack roll (a stationary prop can't dodge), same weapon dice as a normal shot.
+func _roll_prop_damage(weapon: Item) -> int:
+	var dmin: int = weapon.damage_die_min if weapon != null and weapon.damage_die_min > 0 else player.stats.base_min_damage
+	var dmax: int = weapon.damage_die_max if weapon != null and weapon.damage_die_max > 0 else player.stats.base_max_damage
+	var dice_ct: Vector2i = CombatMath.dice_notation(dmin, dmax)
+	var rolls: Array[int] = Rng.roll_dice(dice_ct.x, dice_ct.y)
+	var total: int = 0
+	for r: int in rolls:
+		total += r
+	return maxi(1, total + (weapon.bonus_damage if weapon != null else 0))

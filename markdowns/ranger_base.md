@@ -17,6 +17,16 @@ modules").
 - **Type:** Arm-then-click targeting mode (same UX pattern as World Tree's Grip of the Forest
   hook mode) — activating the ability bar slot arms `Player._hunters_mark_mode_active`; the next
   LMB click on a visible enemy resolves via `PlayerRangerTalents.commit_mark(enemy)`.
+- **Casting time:** Free — `commit_mark()` never calls `TurnManager.begin_player_action()`/
+  `on_player_action_complete()`, so marking or re-marking never costs a turn.
+- **Range:** `Stats.HUNTERS_MARK_RANGE` (9 tiles), checked against squared distance in
+  `commit_mark()`; out-of-range clicks are rejected with a chat-log message and no cost.
+- **Duration:** Concentration, up to `Stats.HUNTERS_MARK_DURATION` (100 turns,
+  `Stats.hunters_mark_turns`) — ticked once per real turn in `player.gd._on_turn_started()`
+  alongside Blade Ward/Expeditious Retreat/Fog Cloud, via the generic
+  `Stats.concentration_spell_id` mechanism (`"hunters_mark"`). Ends early on a failed CON
+  concentration check after taking damage, or on casting a different Concentration spell (both via
+  `GameState.end_concentration()`), same as every other Concentration effect.
 - **Uses:** `Stats.hunters_mark_uses_remaining` (`Stats.HUNTERS_MARK_USES_MAX` = 3), refilled at
   `GameState.long_rest()`. A use is spent **only** when establishing a mark from having none —
   retargeting an already-active mark (clicking a different enemy while one is marked) is free,
@@ -24,6 +34,10 @@ modules").
   slot (`hud.gd`'s `_refresh_ability_bar()`, same use-count-badge convention as Rage — a special
   case reads `Stats.hunters_mark_uses_remaining` directly since the `Ability` resource's own
   `uses_remaining`/`uses_max` stay 0/0 for this free base ability, same as Rage's own Ability).
+  **Once free uses run out**, establishing a new mark automatically spends a real 1st-level Ranger
+  spell slot instead (`Stats.caster.slot_pool.remaining.get(1, 0)`/`.consume(1)`, same slot pool
+  every other Ranger spell reads — Hunter's Mark really is a 1st-level spell in 5e) — with neither
+  a free use nor a slot available, marking is blocked entirely.
 - **Effect:** every hit against `Stats.hunters_mark_target` (any weapon — melee, Off-hand, Nick,
   ranged, thrown) deals a second, independent **+1d6 Force** damage instance
   (`PlayerRangerTalents.hunters_mark_bonus_die()`), the same "one hit, two damage types" shape as
@@ -34,20 +48,34 @@ modules").
   **Twin Fang R1**; that gate was removed so the full weapon-agnostic behavior works from level 1,
   per direct owner request. R1 is now a dead rank until redesigned — see `docs/TODO.md`'s "Twin
   Fang R1 redesign".)
+- **Advantage to find the target:** NOT implemented — 5e's "Advantage on a Wisdom
+  (Perception/Survival) check to find the Marked target" has no matching mechanic in this codebase
+  to hook into (no player-side "find a creature" WIS check exists at all; `search_action()` is
+  trap/secret-door-only and already rolls Advantage unconditionally for everyone).
 - **Tracking:** while a target is marked, `scripts/ui/hunters_mark_indicator.gd` shows its
   direction on-screen even outside FOV/LOS (mirrors `compass.gd`'s arrow-glyph pattern verbatim,
   visibility driven by "is a target currently marked" instead of a one-shot discovery flag).
-- **Ends:** the marked target dies (`Stats.hunters_mark_target = null`, unless **Bloodhound R3**
-  re-attaches it for free — see below), or the player marks a different target. `hunters_mark_target`
-  is deliberately **not serialized** (`to_dict()`/`from_dict()`) — a live `Enemy` node reference
-  can't survive save/load, same precedent as `witch_bolt_target` (mid-floor state, ends silently
-  on load).
+- **Free re-mark on kill (baseline, not Bloodhound-gated):** if the Marked target dies while
+  Concentration is still active, `PlayerRangerTalents.try_bloodhound_remark()` (called
+  unconditionally from `Enemy.die()`) arms `Stats.hunters_mark_free_recast_pending`. The next
+  `_on_turn_started()` promotes it to `hunters_mark_free_recast_available` for exactly that one
+  real turn — `commit_mark()` consumes it for free (no use/slot spent) if the player re-marks
+  during that turn; otherwise the following `_on_turn_started()` clears it as expired. "Next turn
+  only, never later," per direct owner spec. **Bloodhound R3 supersedes this entirely** — see
+  below — re-marking the nearest visible enemy instantly instead of arming the window.
+- **Ends:** duration expires, Concentration breaks, the marked target dies with no re-mark
+  following, or the player marks a different target. `hunters_mark_target` is deliberately **not
+  serialized** (`to_dict()`/`from_dict()`) — a live `Enemy` node reference can't survive save/load,
+  same precedent as `witch_bolt_target` (mid-floor state, ends silently on load).
 
 **State tracked** (`stats.gd`):
 ```
-hunters_mark_target: Enemy       # not serialized
-hunters_mark_fresh: bool         # not serialized — Bloodhound R1's one-shot flag
-hunters_mark_uses_remaining: int # serialized
+hunters_mark_target: Enemy                     # not serialized
+hunters_mark_fresh: bool                       # not serialized — Bloodhound R1's one-shot flag
+hunters_mark_uses_remaining: int                # serialized
+hunters_mark_turns: int                        # not serialized — Concentration duration countdown
+hunters_mark_free_recast_pending: bool          # not serialized — armed on kill
+hunters_mark_free_recast_available: bool        # not serialized — usable for exactly one turn
 ```
 
 ---
@@ -98,7 +126,9 @@ nearest visible enemy.
   that instead of the enemy's raw `passive_perception`.
 - R3: `Enemy.die()` calls `PlayerRangerTalents.try_bloodhound_remark(self)` — if the dying enemy
   was the mark, it re-attaches (rank-gated, no use spent, sets `hunters_mark_fresh = true` again)
-  to the nearest still-alive enemy in `DungeonFloor.get_visible_enemies()`.
+  to the nearest still-alive enemy in `DungeonFloor.get_visible_enemies()`. Below R3 (or if the
+  function can't find `player`/`_dungeon_floor`), the same call instead arms the baseline
+  "Hunter's Mark" free-recast window described above, if Concentration is still active.
 
 ---
 

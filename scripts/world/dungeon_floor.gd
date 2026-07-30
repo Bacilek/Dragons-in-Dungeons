@@ -36,6 +36,7 @@ var _player: Player
 var _enemies: Array[Enemy] = []
 var _companions: Array = []  # Array[Companion] — ally entities processed in enemy phase
 var _traps: Dictionary = {}         # Vector2i → {name, damage, msg, sprite_node, revealed, triggered, is_push}
+var _dispensers: Dictionary = {}    # Vector2i → {revealed: bool, spent: bool, tripwire_pos: Vector2i} — Tripwire trap's hidden poison-dart shooter, disguised as plain floor (see "Tripwire trap" below)
 var _doors: Dictionary = {}         # Vector2i → {is_open: bool, sprite: Sprite2D}
 var _barrels: Dictionary = {}       # Vector2i → {sprite: Sprite2D, burning: bool, material: String, ac: int, hp: int, max_hp: int} — see "Flammable props" below
 const BARREL_TEX_PATH: String = DungeonFloorData.OBJECTS_PATH + "crate.png"
@@ -107,6 +108,7 @@ var _darkvision_ring_sprites: Array[Sprite2D] = []  # darkvision's own FOV ring 
 var _darkvision_ring_tex: ImageTexture
 var _explored: Dictionary = {}
 var _visible_tiles: Dictionary = {}  # Vector2i → true; current FOV set, reset each update_fog
+var _ignore_magical_darkness: bool = false  # true only during the player's own FOV shadowcast when Stats.sees_through_magical_darkness — see _blocks_los()
 var _fov_player_pos: Vector2i = Vector2i(-1, -1)
 var _see_all_active: bool = false
 
@@ -258,6 +260,7 @@ func _load_floor() -> void:
 		if sn != null and is_instance_valid(sn):
 			sn.queue_free()
 	_traps.clear()
+	_dispensers.clear()
 
 	for pos: Vector2i in _doors:
 		var sp: Sprite2D = _doors[pos].get("sprite")
@@ -351,6 +354,7 @@ func _load_floor() -> void:
 	_pop_rng = RandomNumberGenerator.new()
 	_pop_rng.seed = GameState.run_seed ^ (GameState.current_floor * POPULATION_SEED_MIX)
 	_spawn_traps()
+	_spawn_tripwire_traps()
 	_spawn_doors()
 	_spawn_barrels()
 	_spawn_items()
@@ -497,7 +501,22 @@ func update_fog(player_pos: Vector2i) -> void:
 	var stairs_was_known: bool = _explored.get(_data.stairs_pos, false)
 
 	var full_fov_radius: int = GameState.effective_fov_radius(player_pos)
+	_ignore_magical_darkness = GameState.player_stats.sees_through_magical_darkness
 	_visible_tiles = _compute_shadowcast(player_pos, full_fov_radius)
+	_ignore_magical_darkness = false
+
+	# Heavily Obscured terrain can't be seen INTO from outside it, even at the boundary tile —
+	# _blocks_los() above already stops the shadowcast from reaching past a fog tile, but the
+	# tile marking in _cast_light() happens before the block check runs, so the very first fog
+	# tile along each ray would otherwise still show up as visible (same as a wall/grass tile
+	# "showing its face"). Strip every heavily-obscured tile from an outside, non-magic-sight
+	# viewer's own visible set so nothing inside the cloud (not even its edge) is ever revealed —
+	# a player already standing inside the cloud (is_blinded) is unaffected: their own radius is
+	# already collapsed to 1 by effective_fov_radius(), and immediate neighbors must stay visible.
+	if not GameState.is_blinded(player_pos) and not GameState.player_stats.sees_through_magical_darkness:
+		for pos: Vector2i in _visible_tiles.keys():
+			if GameState.is_heavily_obscured(pos):
+				_visible_tiles.erase(pos)
 
 	# Torch/darkvision FOV bonus rings — tinted overlays diffed against progressively larger
 	# shadowcasts, in the SAME order effective_fov_radius() sums them (base → torch → darkvision),
@@ -1171,7 +1190,17 @@ func _blocks_los(bx: int, by: int) -> bool:
 	if t == DungeonData.TileType.WALL or t == DungeonData.TileType.GRASS:
 		return true
 	var pos := Vector2i(bx, by)
-	return _doors.has(pos) and not _doors[pos]["is_open"]
+	if _doors.has(pos) and not _doors[pos]["is_open"]:
+		return true
+	# Heavily Obscured terrain (Fog Cloud) blocks sight like a wall — nothing beyond it is
+	# visible from outside, unless the viewer can see through magical darkness (not granted by
+	# anything today, see Stats.sees_through_magical_darkness). Shared by every shadowcast
+	# (player FOV, torch/light-cantrip glows) and has_line_of_sight() (enemy AI/search) — none of
+	# those callers have magic sight either, so this always blocks except during the player's own
+	# FOV shadowcast when _ignore_magical_darkness is explicitly set.
+	if not _ignore_magical_darkness and GameState.is_heavily_obscured(pos):
+		return true
+	return false
 
 func _blocks_projectile(bx: int, by: int) -> bool:
 	var t: DungeonData.TileType = _data.get_tile(bx, by)
@@ -1780,6 +1809,207 @@ func _spawn_traps() -> void:
 
 	GameState.game_log("[color=gray]Floor has %d hidden traps.[/color]" % _traps.size())
 
+# ── Tripwire trap (rope spanning a 1-wide corridor + hidden poison-dart dispenser) ────────────
+# A rope stretched wall-to-wall across a straight 1-tile-wide corridor tile (or a corridor's own
+# entrance/exit into a room, which is detected by the exact same "FLOOR-FLOOR through axis,
+# WALL-WALL perpendicular axis" check). Walking across it (or hitting it with a ranged attack,
+# thrown item, or spell — see try_shoot_tripwire()/throw_item_onto_trap() below) fires a single
+# poisoned dart from a hidden dispenser one tile further along the corridor, in the direction the
+# rope was strung FROM — the dart travels back down the corridor through the rope's own tile and
+# beyond, hitting whichever Player/Enemy is first in its path (nobody in the way = harmless).
+# The dispenser itself is disguised as plain floor (no sprite, no grid change) until the player
+# finds it via Search (same passive/active detection as every other trap, since it lives in the
+# same _traps dict) — at which point it can be RMB-looted for its one Poisoned Arrow instead of
+# triggering it, see PlayerActions.interact_action()'s dispenser priority.
+const TRIPWIRE_COUNT_MAX: int = 1
+const TRIPWIRE_ARROW_RANGE: int = 14
+const TRIPWIRE_DMG_MIN: int = 3
+const TRIPWIRE_DMG_MAX: int = 6
+const TRIPWIRE_POISON_TURNS: int = 6
+
+func _spawn_tripwire_traps() -> void:
+	var axes: Array[Vector2i] = [Vector2i(1, 0), Vector2i(0, 1)]
+	var candidates: Array = []
+	for y: int in _data.height:
+		for x: int in _data.width:
+			var pos: Vector2i = Vector2i(x, y)
+			if _data.get_tile(x, y) != DungeonData.TileType.FLOOR:
+				continue
+			if pos == _data.player_start or pos == _data.stairs_pos:
+				continue
+			if _data.start_room.has_area() and _data.start_room.grow(1).has_point(pos):
+				continue
+			if maxi(abs(pos.x - _data.player_start.x), abs(pos.y - _data.player_start.y)) < 3:
+				continue
+			if _traps.has(pos) or _doors.has(pos) or _barrels.has(pos) or _floor_items.has(pos) \
+				or _blacksmiths.has(pos) or _shopkeepers.has(pos):
+				continue
+			for axis: Vector2i in axes:
+				var perp: Vector2i = Vector2i(-axis.y, axis.x)
+				var through_a: Vector2i = pos + axis
+				var through_b: Vector2i = pos - axis
+				var perp_a: Vector2i = pos + perp
+				var perp_b: Vector2i = pos - perp
+				var is_narrow: bool = \
+					_data.get_tile(through_a.x, through_a.y) == DungeonData.TileType.FLOOR \
+					and _data.get_tile(through_b.x, through_b.y) == DungeonData.TileType.FLOOR \
+					and _data.get_tile(perp_a.x, perp_a.y) != DungeonData.TileType.FLOOR \
+					and _data.get_tile(perp_b.x, perp_b.y) != DungeonData.TileType.FLOOR
+				if not is_narrow:
+					continue
+				var ends: Array[Vector2i] = [axis, -axis]
+				RngUtil.shuffle(ends, _pop_rng)
+				for d: Vector2i in ends:
+					var dispenser_pos: Vector2i = pos + d
+					if dispenser_pos == _data.player_start or dispenser_pos == _data.stairs_pos:
+						continue
+					if _traps.has(dispenser_pos) or _doors.has(dispenser_pos) or _barrels.has(dispenser_pos) \
+						or _floor_items.has(dispenser_pos) or _blacksmiths.has(dispenser_pos) or _shopkeepers.has(dispenser_pos):
+						continue
+					candidates.append({"pos": pos, "dispenser_pos": dispenser_pos, "fire_dir": -d})
+					break
+				break
+
+	if candidates.is_empty():
+		return
+	RngUtil.shuffle(candidates, _pop_rng)
+	var claimed: Dictionary = {}
+	var placed: int = 0
+	for c: Dictionary in candidates:
+		if placed >= TRIPWIRE_COUNT_MAX:
+			break
+		if claimed.has(c["pos"]) or claimed.has(c["dispenser_pos"]):
+			continue
+		_place_tripwire_trap(c["pos"], c["dispenser_pos"], c["fire_dir"])
+		claimed[c["pos"]] = true
+		claimed[c["dispenser_pos"]] = true
+		placed += 1
+
+func _place_tripwire_trap(pos: Vector2i, dispenser_pos: Vector2i, fire_dir: Vector2i) -> void:
+	var perp: Vector2i = Vector2i(-fire_dir.y, fire_dir.x)
+	var img := Image.create(TILE_SIZE, TILE_SIZE, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var rope_color := Color(0.55, 0.42, 0.25, 1.0)
+	var mid: int = TILE_SIZE / 2
+	for i: int in TILE_SIZE:
+		if perp.x != 0:
+			img.set_pixel(i, mid, rope_color)
+			img.set_pixel(i, mid - 1, rope_color)
+		else:
+			img.set_pixel(mid, i, rope_color)
+			img.set_pixel(mid - 1, i, rope_color)
+	var tex := ImageTexture.create_from_image(img)
+	var sprite := Sprite2D.new()
+	sprite.texture = tex
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.position = Vector2(pos.x * TILE_SIZE + TILE_SIZE * 0.5, pos.y * TILE_SIZE + TILE_SIZE * 0.5)
+	sprite.z_index = 1
+	sprite.modulate.a = 0.0
+	entities.add_child(sprite)
+	_traps[pos] = {"name": "Tripwire", "damage": 0,
+				   "msg": "A tripwire snaps taut — a poisoned dart hisses out!",
+				   "sprite_node": sprite, "revealed": false, "is_push": false, "triggered": false,
+				   "reusable": false, "tripwire": true, "dispenser_pos": dispenser_pos, "fire_dir": fire_dir}
+	_dispensers[dispenser_pos] = {"revealed": false, "spent": false, "tripwire_pos": pos}
+
+func has_tripwire_at(pos: Vector2i) -> bool:
+	return _traps.has(pos) and _traps[pos].get("tripwire", false) and not _traps[pos].get("triggered", false)
+
+# Called from a ranged shot / thrown item / spell landing on an EMPTY tile — "shooting the rope"
+# deliberately, per the player's own choice, rather than walking into it. Only ever triggers a
+# still-armed Tripwire; every other trap type is untouched by a shot at an empty tile.
+func try_shoot_tripwire(pos: Vector2i) -> bool:
+	if not has_tripwire_at(pos):
+		return false
+	_trigger_tripwire(pos, _traps[pos])
+	return true
+
+func _trigger_tripwire(pos: Vector2i, trap: Dictionary) -> void:
+	if trap.get("triggered", false):
+		return
+	trap["triggered"] = true
+	trap["revealed"] = true
+	var sprite_node: Sprite2D = trap.get("sprite_node") as Sprite2D
+	if is_instance_valid(sprite_node):
+		sprite_node.modulate = Color(1.0, 1.0, 1.0, 1.0)
+	GameState.game_log("[color=orange]%s[/color]" % trap["msg"])
+	_fire_dispenser_arrow(trap)
+
+func _fire_dispenser_arrow(trap: Dictionary) -> void:
+	var dispenser_pos: Vector2i = trap.get("dispenser_pos", Vector2i(-1, -1))
+	var fire_dir: Vector2i = trap.get("fire_dir", Vector2i.ZERO)
+	if dispenser_pos == Vector2i(-1, -1) or fire_dir == Vector2i.ZERO:
+		return
+	if _dispensers.has(dispenser_pos):
+		if _dispensers[dispenser_pos].get("spent", false):
+			GameState.game_log("[color=gray]The dispenser is empty — nothing happens.[/color]")
+			return
+		_dispensers[dispenser_pos]["spent"] = true
+		_dispensers[dispenser_pos]["revealed"] = true
+	var pos: Vector2i = dispenser_pos
+	var hit_target: Node2D = null
+	for _i: int in TRIPWIRE_ARROW_RANGE:
+		pos += fire_dir
+		var tt: int = _data.get_tile(pos.x, pos.y)
+		if tt == DungeonData.TileType.WALL or tt == DungeonData.TileType.VOID:
+			break
+		if has_door_at(pos) and not is_door_open(pos):
+			break
+		if _player != null and is_instance_valid(_player) and _player.grid_pos == pos and not _player.stats.is_dead():
+			hit_target = _player
+			break
+		var e: Enemy = get_enemy_at(pos)
+		if e != null and is_instance_valid(e) and not e.stats.is_dead():
+			hit_target = e
+			break
+	if hit_target == null:
+		GameState.game_log("[color=gray]A poisoned dart streaks down the passage and clatters harmlessly against the wall.[/color]")
+		return
+	_resolve_dispenser_hit(hit_target)
+
+func _resolve_dispenser_hit(target: Node2D) -> void:
+	var dmg: int = Rng.range_i(TRIPWIRE_DMG_MIN, TRIPWIRE_DMG_MAX)
+	var msg: String = "A poisoned dart hits you!" if target is Player else "A poisoned dart strikes %s!" % (target as Enemy).display_name
+	_apply_trap_damage(target, dmg, msg)
+	if target is Player and not GameState.player_stats.is_dead():
+		if GameState.apply_player_status("poisoned_condition", TRIPWIRE_POISON_TURNS):
+			GameState.game_log("[color=green]You are poisoned! (%d turns, Disadvantage)[/color]" % TRIPWIRE_POISON_TURNS)
+	elif target is Enemy and not (target as Enemy).stats.is_dead():
+		(target as Enemy).apply_status("poisoned_condition", TRIPWIRE_POISON_TURNS)
+
+func has_dispenser_at(pos: Vector2i) -> bool:
+	return _dispensers.has(pos)
+
+func get_dispenser_at(pos: Vector2i) -> Dictionary:
+	return _dispensers.get(pos, {})
+
+func reveal_dispenser(pos: Vector2i) -> bool:
+	if not _dispensers.has(pos):
+		return false
+	if _dispensers[pos].get("revealed", false):
+		return false
+	_dispensers[pos]["revealed"] = true
+	GameState.game_log("[color=yellow]You discover a hidden dart dispenser![/color]")
+	return true
+
+# RMB loot — only reachable once the dispenser's been found via Search, and only while it still
+# has its one dart (see PlayerActions.interact_action()'s dispenser priority).
+func loot_dispenser(pos: Vector2i) -> Item:
+	if not _dispensers.has(pos):
+		return null
+	var d: Dictionary = _dispensers[pos]
+	if d.get("spent", false):
+		return null
+	d["spent"] = true
+	var poison_arrow: Dictionary = {}
+	for entry in DungeonFloorData.ITEM_POOL:
+		if entry.get("name", "") == "Poisoned Arrow":
+			poison_arrow = entry
+			break
+	if poison_arrow.is_empty():
+		return null
+	return _build_item_from_pool(poison_arrow)
+
 func get_trap_at(pos: Vector2i) -> Dictionary:
 	return _traps.get(pos, {})
 
@@ -1788,6 +2018,10 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 		return
 	var trap: Dictionary = _traps[pos]
 	var is_push: bool = trap.get("is_push", false)
+
+	if trap.get("tripwire", false):
+		_trigger_tripwire(pos, trap)
+		return
 
 	# Single-use traps already spent: skip
 	if trap.get("triggered", false) and not is_push:
@@ -1907,6 +2141,9 @@ func throw_item_onto_trap(pos: Vector2i, item: Item) -> Vector2i:
 		return pos
 	var trap: Dictionary = _traps[pos]
 	var trap_name: String = trap.get("name", "")
+	if trap.get("tripwire", false):
+		_trigger_tripwire(pos, trap)
+		return pos
 	if trap_name == "Pit Spikes":
 		return pos
 	var sprite_node: Sprite2D = trap.get("sprite_node") as Sprite2D
@@ -1942,7 +2179,26 @@ func throw_item_onto_trap(pos: Vector2i, item: Item) -> Vector2i:
 # oldest first). Only the newest (last) item's sprite is shown, so a spot where several
 # arrows/items landed still reads as a single pickup icon; walking onto the tile
 # (PlayerActions.check_pickup()) collects the whole stack at once.
+## An item must never land on a tile the player can't stand on (barrel, blacksmith, shopkeeper,
+## closed door, wall/void, chasm) — it would become permanently unreachable. Every place_item_on_
+## floor() caller funnels through this redirect, so a stray miss (a thrown weapon or ranged shot
+## that lands square on a crate/door tile) always resolves to the nearest actual pickup spot
+## instead of silently eating the item. No-op (returns pos unchanged) when pos is already walkable.
+func _resolve_item_drop_pos(pos: Vector2i) -> Vector2i:
+	if is_walkable(pos):
+		return pos
+	for radius: int in range(1, 6):
+		for dy: int in range(-radius, radius + 1):
+			for dx: int in range(-radius, radius + 1):
+				if maxi(absi(dx), absi(dy)) != radius:
+					continue
+				var cand := Vector2i(pos.x + dx, pos.y + dy)
+				if _in_grid_bounds(cand) and is_walkable(cand):
+					return cand
+	return pos  # no walkable tile found nearby — shouldn't happen on any real floor layout
+
 func place_item_on_floor(pos: Vector2i, item: Item) -> void:
+	pos = _resolve_item_drop_pos(pos)
 	var tex: Texture2D
 	if item.icon_path != "" and ResourceLoader.exists(item.icon_path):
 		tex = load(item.icon_path)
@@ -2042,6 +2298,16 @@ func search_around(pos: Vector2i, radius: int = 2) -> int:
 		if not has_line_of_sight(pos, door_pos):
 			continue
 		_reveal_secret_door(door_pos)
+	# Tripwire's hidden dispenser (see "Tripwire trap" above) — same radius+LOS gate, its own
+	# dict since it isn't keyed by _traps. Counts toward the returned trap-found total.
+	for disp_pos: Vector2i in _dispensers.keys():
+		var dd: Vector2i = disp_pos - pos
+		if absi(dd.x) > radius or absi(dd.y) > radius:
+			continue
+		if not has_line_of_sight(pos, disp_pos):
+			continue
+		if reveal_dispenser(disp_pos):
+			found += 1
 	return found
 
 func get_unrevealed_traps() -> Array[Vector2i]:
@@ -2399,6 +2665,49 @@ func _place_barrel(pos: Vector2i, tex: Texture2D) -> void:
 
 func has_barrel_at(pos: Vector2i) -> bool:
 	return _barrels.has(pos)
+
+## Generic physical-damage chokepoint for a solid destructible prop (Barrel, or a closed — locked
+## or unlocked — Door) at `pos`. Unlike fire's own per-tick burn (tick_burning_props()), a physical
+## hit is a single instantaneous amount, always applied (no attack roll — a stationary prop can't
+## dodge, same convention as fire). Returns {"hit", "kind" ("barrel"/"door"/""), "destroyed",
+## "damage"} — "hit" is false (no-op) when neither prop is at pos. Destroying a barrel frees its
+## sprite/entry outright (tile becomes plain walkable floor); destroying a door frees its sprite +
+## lock icon too (permanently gone, same as burning one down — see "Barrels + flammable props").
+## Call sites: PlayerRanged.ranged_attack_tile() (a ranged shot aimed at an empty tile) and
+## PlayerThrowTool._throw_weapon() (a thrown weapon with no enemy at the target tile).
+func damage_prop_at(pos: Vector2i, amount: int) -> Dictionary:
+	if _barrels.has(pos):
+		var dmg: int = maxi(1, amount)
+		_barrels[pos]["hp"] -= dmg
+		var destroyed: bool = _barrels[pos]["hp"] <= 0
+		if destroyed:
+			var sp: Sprite2D = _barrels[pos]["sprite"]
+			if is_instance_valid(sp):
+				sp.queue_free()
+			_barrels.erase(pos)
+			if _player != null:
+				update_fog(_player.grid_pos)
+		return {"hit": true, "kind": "barrel", "destroyed": destroyed, "damage": dmg}
+	# Hidden (undiscovered secret) doors read as a plain wall to every other chokepoint
+	# (has_door_at()) — must be excluded here too, or blind-shooting a wall tile could damage/
+	# reveal/destroy a secret door before it's ever found via Search.
+	if _doors.has(pos) and not _doors[pos]["is_open"] and not _doors[pos].get("hidden", false):
+		var dmg2: int = maxi(1, amount)
+		_doors[pos]["hp"] -= dmg2
+		var destroyed2: bool = _doors[pos]["hp"] <= 0
+		if destroyed2:
+			var sp2: Sprite2D = _doors[pos]["sprite"]
+			if is_instance_valid(sp2):
+				sp2.queue_free()
+			if _doors[pos].has("lock_icon"):
+				var icon: Node = _doors[pos]["lock_icon"]
+				if is_instance_valid(icon):
+					icon.queue_free()
+			_doors.erase(pos)
+			if _player != null:
+				update_fog(_player.grid_pos)
+		return {"hit": true, "kind": "door", "destroyed": destroyed2, "damage": dmg2}
+	return {"hit": false, "kind": "", "destroyed": false, "damage": 0}
 
 # ── Spider Web (see scripts/entities/CLAUDE.md's "Spider" entry) ───────────────
 # Placed at the target's own tile the instant its DEX save vs the Web ability fails

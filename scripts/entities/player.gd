@@ -255,6 +255,26 @@ func _on_turn_started() -> void:
 					stats.concentration_spell_id = ""
 				GameState.clear_fog_cloud()
 				GameState.game_log("[color=gray]The fog cloud dissipates.[/color]")
+		# Hunter's Mark: 100-turn Concentration duration, ticked once per real turn (same pattern
+		# as Blade Ward/Expeditious Retreat/Fog Cloud above).
+		if stats.hunters_mark_turns > 0:
+			stats.hunters_mark_turns -= 1
+			if stats.hunters_mark_turns <= 0:
+				if stats.concentration_spell_id == "hunters_mark":
+					stats.concentration_spell_id = ""
+				stats.hunters_mark_target = null
+				stats.hunters_mark_fresh = false
+				GameState.game_log("[color=gray]Hunter's Mark fades.[/color]")
+		# Baseline free-recast window (markdowns/ranger_base.md's Hunter's Mark section): `_pending`
+		# (armed the instant the Marked target died) becomes `_available` for exactly this one real
+		# turn; if it was already available and still unused from the PREVIOUS turn, the window has
+		# now expired.
+		if stats.hunters_mark_free_recast_available:
+			stats.hunters_mark_free_recast_available = false
+			GameState.game_log("[color=gray]Hunter's Mark: the free re-mark window has passed.[/color]")
+		elif stats.hunters_mark_free_recast_pending:
+			stats.hunters_mark_free_recast_pending = false
+			stats.hunters_mark_free_recast_available = true
 		# Invisibility: 100-turn duration, ticked once per real turn. Usually already ended earlier
 		# this same turn transition via _resolve_stealth_check()'s attack/cast check (which runs
 		# first, from _on_turn_ending()) — this decrement is a no-op whenever that already zeroed
@@ -1244,7 +1264,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_spellcasting.cancel()
 			return
 
-		# Hunter's Mark targeting mode (Ranger) — no range/LOS gate beyond what's clickable/visible.
+		# Hunter's Mark targeting mode (Ranger) — range gate (9 tiles) is checked inside commit_mark().
 		if _hunters_mark_mode_active:
 			_hunters_mark_mode_active = false
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:

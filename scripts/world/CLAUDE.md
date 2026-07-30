@@ -79,14 +79,37 @@ spellcasting" section for the spell itself.
 `GameState.fog_cloud_pos`/`fog_cloud_radius`'s tiles with a persistent **dark** overlay
 (`Color(0.10, 0.10, 0.13, 0.80)` — deliberately dark, not a light haze, since the tile is
 Heavily Obscured) — pooled `Sprite2D`s + shared 1×1 white texture, same convention as
-`_update_light_source_glow()`. A raw Euclidean disc, not LOS-filtered. Doesn't itself union into
-`_visible_tiles` the way Light does — the FOV shrink below happens through the shadowcast radius
-instead, not a separate visibility union. See `scripts/entities/CLAUDE.md`'s "Conditions"/"Fog
-Cloud" sections for the full mechanic: `GameState.is_heavily_obscured(pos)`/`is_blinded(pos)` are
-the canonical queries every ADV/DISADV combat site reads (Fog Cloud is currently the only source
-of Heavily Obscured terrain), and `GameState.effective_fov_radius(pos)` — read by this file's own
-`update_fog()`/`get_visible_enemies()` — collapses to a flat `1` for a Blinded player regardless
-of every other FOV bonus, including darkvision.
+`_update_light_source_glow()`. A raw Euclidean disc, not LOS-filtered, and it's still painted
+regardless of whether the tile is actually seeable that turn — you always know roughly where the
+fog is, you just can't see what's inside it (below). Doesn't itself union into `_visible_tiles`
+the way Light does — the FOV shrink for a player standing INSIDE the cloud happens through the
+shadowcast radius instead, not a separate visibility union. See `scripts/entities/CLAUDE.md`'s
+"Conditions"/"Fog Cloud" sections for the full mechanic: `GameState.is_heavily_obscured(pos)`/
+`is_blinded(pos)` are the canonical queries every ADV/DISADV combat site reads (Fog Cloud is
+currently the only source of Heavily Obscured terrain), and `GameState.effective_fov_radius(pos)`
+— read by this file's own `update_fog()`/`get_visible_enemies()` — collapses to a flat `1` for a
+Blinded player regardless of every other FOV bonus, including darkvision.
+
+**Can't see INTO a heavily-obscured area from outside it, even standing right at the edge** —
+`_blocks_los(bx, by)` treats a heavily-obscured tile as opaque exactly like a WALL/GRASS tile
+(gated on `not _ignore_magical_darkness and GameState.is_heavily_obscured(pos)`), so it's shared
+by every consumer of that function: the player's own FOV shadowcast, the Torch/Light-cantrip
+shadowcasts, AND `has_line_of_sight()` (enemy AI/search — symmetric, an enemy on the far side of
+a cloud can't see the player through it either, matching Blinded's existing symmetric design).
+Blocking propagation alone isn't quite enough — `_cast_light()`'s tile-marking happens BEFORE the
+block check, so the very first fog tile along a ray would otherwise still read as "visible" (same
+as how you can see a wall's own face). `update_fog()` additionally strips every
+`GameState.is_heavily_obscured()` tile out of `_visible_tiles` whenever the player themselves
+isn't inside the cloud (`not GameState.is_blinded(player_pos)`) and lacks
+`GameState.player_stats.sees_through_magical_darkness` (see below) — so nothing inside a cloud,
+not even its boundary tile, is ever revealed to an outside viewer, while a player already standing
+inside it is unaffected (their own radius is already collapsed to 1 by `effective_fov_radius()`,
+and `_cast_light()`'s unconditional tile-marking still lets them see their own immediate
+neighbors). `DungeonFloor._ignore_magical_darkness: bool` — set true only around the player's own
+`_compute_shadowcast()` call inside `update_fog()` when `Stats.sees_through_magical_darkness` is
+true, reset immediately after — is the one bypass hook; nothing grants that flag today (a stub for
+a future Warlock Devil's Sight-style feature, see `scripts/entities/stats.gd`) — **darkvision and
+a hypothetical truesight bonus do NOT bypass this**, per 5e RAW, only that flag would.
 
 ## AoE targeting preview
 **Grid-bounds clipping**: every disc-shaped preview below (blue max-reach backdrop, purple/red
@@ -132,6 +155,7 @@ Value keys: `name, damage, msg, sprite_node, revealed, triggered, is_push, reusa
 | Bear | no | slowed 20 turns | — |
 | Fire | no | burning 4 turns | can cook Rotten Meat |
 | Piston | no | push + damage | detectable only from push side |
+| Tripwire | no | 3-6 Piercing + Poisoned (6 turns) to whoever's downrange | see "Tripwire trap" below — the one type NOT drawn from `TRAP_POOL` |
 
 ```gdscript
 dungeon_floor.trigger_trap(pos)
@@ -155,6 +179,86 @@ flammable item (`Item.is_flammable` — every Scroll, set generically in `_build
 landing anywhere (`Vector2i(-1, -1)` sentinel return) — Rotten Meat is a separate, pre-existing
 special case (`cook_rotten_meat()`, checked first in `do_throw()`) that still cooks into Cooked
 Meat regardless of this flag. See `scripts/items/CLAUDE.md`'s `Item.is_flammable` entry.
+
+## Tripwire trap (`_dispensers: Dictionary[Vector2i, Dictionary]`)
+A rope stretched wall-to-wall across a straight, genuinely 1-tile-wide corridor cell (or a
+corridor's own entrance/exit into a room — detected by the identical check) + a hidden poison-dart
+dispenser one tile further along the same corridor, **disguised as plain, unremarkable floor** (no
+sprite, no `_data.grid` change — the "never touch the grid, only the cosmetic layer" rule from
+"Hidden doors" above applies here too, just without even a tilemap-cell swap since there's nothing
+to disguise: the tile was always ordinary floor). The one type placed by its own dedicated spawn
+function, **not** drawn from `TRAP_POOL`/the generic per-tile `_spawn_traps()` loop, since it needs
+narrow-corridor detection + a paired dispenser tile that no other trap type needs.
+
+**Detection** (`DungeonFloor._spawn_tripwire_traps()`, called right after `_spawn_traps()`): for
+every FLOOR tile, checks both axes for "FLOOR-FLOOR through this tile, WALL-WALL perpendicular" —
+the same shape `_spawn_traps()`'s own Piston-trap `is_narrow` check already uses, just checked on
+BOTH sides of the axis instead of one (a Piston only cares about the wall it's embedded in; a
+Tripwire needs the full through-corridor). One of the two ends becomes the dispenser (`_pop_rng`-
+shuffled, so which side isn't fixed), placed exactly one tile past the rope — no `*2` offset needed
+since the axis-adjacent tile is already guaranteed FLOOR by the detection check itself. Up to
+`TRIPWIRE_COUNT_MAX` (1) per floor, candidates reservation-checked against every other prop dict
+(`_traps`/`_doors`/`_barrels`/`_floor_items`/`_blacksmiths`/`_shopkeepers`) exactly like every other
+prop spawner. **Deliberately skips the "alternate path exists" bypass check** every other floor trap
+uses — the whole point is that a straight 1-wide corridor usually has no alternate path, and that's
+what makes a Tripwire dangerous rather than trivially avoidable.
+
+**The rope itself lives in `_traps`** as an ordinary entry with an extra `"tripwire": true` marker
+plus `"dispenser_pos"`/`"fire_dir"` (`Vector2i`s — where the dart comes from, and which direction it
+travels) — this is deliberate, not an oversight: it means the rope gets the exact same passive/
+active detection every other trap already has for free (`PlayerActions`' passive trap-proximity
+sensing, Ctrl-Search's `reveal_trap()` loop in `search_around()`) with zero new detection code.
+`_place_tripwire_trap()` builds its own rope sprite procedurally (`Image`/`ImageTexture`, a thin
+brown stripe drawn perpendicular to `fire_dir` — no art asset exists or is needed), alpha-faded
+until revealed exactly like every other trap's sprite.
+
+**Trigger — walking onto it, or "shooting the rope"**: `trigger_trap()` branches to
+`_trigger_tripwire()` before any of the normal push/DEX-dodge/damage logic runs (a Tripwire has no
+dodge check of its own — the dodge, if any, is really "don't be standing in the dart's path", not a
+roll). Per direct owner design, deliberately shootable/throwable/castable at from a DISTANCE too,
+not just steppable-on: `DungeonFloor.try_shoot_tripwire(pos)` is called from every empty-tile attack
+resolver — `PlayerRanged.ranged_attack_tile()`, `SpellEffects.cast_spell_at_tile()`/
+`cast_leveled_at_tile()` — and `throw_item_onto_trap()` (already the generic "any thrown item hits
+any trap tile" chokepoint) gained its own tripwire branch calling the same `_trigger_tripwire()`.
+None of these roll anything special for "did the shot land on the rope" — landing an attack ON that
+tile IS the trigger, exactly like walking onto it.
+
+**The dart itself** (`_fire_dispenser_arrow()`): fires from `dispenser_pos`, stepping through
+`fire_dir` up to `TRIPWIRE_ARROW_RANGE` (14) tiles — starting at the dispenser and immediately
+passing through the rope's own tile and beyond, so a player who just walked onto the rope (already
+standing there) is the very first thing checked and gets hit; a player who instead shot the rope
+from further down the same corridor is, geometrically, usually also standing somewhere along that
+same straight line (a 1-wide corridor has no "safe angle"), so shooting it from range is a real
+gamble, not a guaranteed-safe disarm — direct owner design, confirmed: "if nobody/nothing is
+standing in the path, nothing happens" is the whole rule, no separate dodge chance layered on top.
+Stops at the first WALL/VOID/closed-door tile or the first Player/Enemy found; hits nothing if the
+path is clear the whole way (harmless flavor line instead). A hit rolls a flat 3-6 Piercing
+(`TRIPWIRE_DMG_MIN`/`MAX`) via the shared `_apply_trap_damage()` (same function every other trap
+already uses — Player and Enemy targets both just work) plus applies the real Poisoned condition
+(`"poisoned_condition"`, `TRIPWIRE_POISON_TURNS` = 6 turns — see `scripts/entities/CLAUDE.md`'s
+"Conditions" table) via `GameState.apply_player_status()` / `Enemy.apply_status()`. **Single dart,
+single use** — the dispenser's own `_dispensers[pos]["spent"]` flag is set the instant it fires
+(or the instant it's looted, see below), and a second trigger on an already-spent dispenser just
+logs "The dispenser is empty" with zero effect, matching the direct owner's 1-use-only answer.
+
+**Looting instead of springing it**: once found via Search (`reveal_dispenser()`, hooked into
+`search_around()`'s existing radius+LOS loop alongside the trap/hidden-door reveals — same
+detection mechanism, separate dict since a dispenser isn't keyed by `_traps`), the dispenser can be
+RMB-interacted (`PlayerActions.interact_action()`'s Priority 1.7, same exact-tile-vs-scan-8-
+neighbors split as every other prop priority) to pry out its one **Poisoned Arrow** — a real,
+single-use thrown `Item` (`scripts/items/CLAUDE.md`) — instead of ever triggering the trap. Looting
+also sets `"spent": true`, so the rope becomes permanently harmless (walking across it afterward
+just reveals an already-triggered-looking rope with an empty dispenser) — this is the reward for
+finding it BEFORE walking into it, per the direct owner's own framing of the whole feature.
+
+```gdscript
+dungeon_floor.has_tripwire_at(pos) -> bool        # true only for a still-armed (unspent) Tripwire
+dungeon_floor.try_shoot_tripwire(pos) -> bool      # ranged/thrown/spell empty-tile hook, see above
+dungeon_floor.has_dispenser_at(pos) -> bool
+dungeon_floor.get_dispenser_at(pos) -> Dictionary  # {revealed, spent, tripwire_pos}
+dungeon_floor.reveal_dispenser(pos) -> bool        # called from search_around()
+dungeon_floor.loot_dispenser(pos) -> Item          # null if not found yet or already spent
+```
 
 ## Forced movement (`force_move_entity`)
 ```gdscript
@@ -188,9 +292,16 @@ barrel can never be the thing that blocks the only path.
 material-name → AC lookup — Cloth/Paper/Rope 11, Crystal/Glass/Ice 13, Wood/Bone 15, Stone 17,
 Iron/Steel 19, Mithral 21, Adamantine 23) resolves each prop's `ac` from its `material` field at
 spawn time. Both Barrels (`BARREL_MATERIAL = "wood"`, `BARREL_MAX_HP = 5`) and Doors
-(`DOOR_MATERIAL = "wood"`, `DOOR_MAX_HP = 10`) are Wood. `ac` is stored for a future "attack a
-prop directly" system (still doesn't exist — see the Web's own `ac`/`hp` fields for the same
-not-yet-consumed precedent) — today only fire ever damages a prop, which never rolls to hit.
+(`DOOR_MATERIAL = "wood"`, `DOOR_MAX_HP = 10`) are Wood. **Physical damage (not just fire)**: `DungeonFloor.damage_prop_at(pos, amount) -> Dictionary`
+(`{"hit","kind","destroyed","damage"}`) is the generic chokepoint for a Barrel or closed (locked
+or unlocked) Door taking a direct hit — no attack roll (a stationary prop can't dodge, same
+convention fire already used), always applies `amount` to its `hp`, destroys it at 0 exactly like
+`tick_burning_props()`'s own burn-down (frees the sprite/lock-icon, erases the dict entry, calls
+`update_fog()`). Two call sites today: `PlayerRanged.ranged_attack_tile()` (a ranged shot aimed at
+an empty tile — `_roll_prop_damage()` rolls the equipped weapon's normal damage dice) and
+`PlayerThrowTool._throw_weapon()`'s no-enemy branch (a thrown weapon landing on the tile instead of
+an enemy). `ac` is still unread by either (stored for a possible future "roll to hit a prop"
+refinement) — today the shot always lands, mirroring fire's own unconditional per-tick damage.
 
 **Ignition is generic** — `dungeon_floor.ignite_flammable(pos: Vector2i) -> bool` is the single
 chokepoint every fire source calls: a barrel OR an OPEN/CLOSED (not locked) door both count as
@@ -377,6 +488,11 @@ dungeon_floor.lock_door(pos)               # purple tint + lock icon; enemy bloc
 dungeon_floor.unlock_door(pos)             # restores white tint, removes lock icon
 ```
 
+**Taking physical damage**: a closed door (locked or not) can be shot/thrown at like a Barrel — see
+`DungeonFloor.damage_prop_at()` in "Barrels + flammable props" above. Deliberately excludes a
+still-hidden SecretRoom door (`"hidden": true`, see below) — it reads as a plain wall to this
+chokepoint too, so blind-shooting a wall tile can never damage/reveal one before it's found.
+
 **Generation-time locking**: `_spawn_locked_doors()` runs after `_spawn_items()`. Picks 1 door per floor whose removal doesn't disconnect spawn from stairs (`_bfs_reachable` validation). Places 2–3 reward items from `DungeonFloorData.ITEM_POOL` in the room behind the locked door. Uses `_bfs_collect()` to find tiles unreachable without that door. **Skips entirely if the floor rolled a TreasureRoom** (`_data.room_metadata` has a `"treasure"` entry) — one gated-loot room per floor, and the TreasureRoom already is it (special-rooms-economy-design.md §4.2).
 **Player locking**: F key on adjacent CLOSED UNLOCKED door with Thief Tools → DC 10 DEX Sleight of Hand. Fail consumes Thief Tools.
 **Unlocking**: Player walks into locked door → auto-unlock (free). Or F on locked door → unlock+open (spends action).
@@ -439,6 +555,14 @@ dungeon_floor.remove_floor_item(pos: Vector2i)                   # clears the wh
 dungeon_floor.cook_rotten_meat(trap_pos: Vector2i) -> Item  # erases Fire Trap, returns Cooked Meat (food_value=75)
 ```
 `cook_rotten_meat` only called from `PlayerThrowTool.do_throw()` (`scripts/entities/player_throw_tool.gd`) when `trap["revealed"] == true`. `place_item_on_floor` is also called from `PlayerAmmo`'s ranged-ammo landing resolver (`resolve_ammo_landing()`) — see "Ammo items" in `scripts/items/CLAUDE.md`.
+
+**Never lands on an unwalkable tile**: `place_item_on_floor(pos, item)` first runs `pos` through
+`_resolve_item_drop_pos(pos)` — a no-op when `is_walkable(pos)` is already true, otherwise a
+ring-search (Chebyshev radius 1..5) for the nearest tile that is, redirecting the drop there
+instead. Fixes a real bug: a ranged miss or thrown-item throw landing exactly on a Barrel/
+Blacksmith/Shopkeeper/closed-door tile used to become permanently unreachable (the player can
+never stand on that tile to pick it up) — every caller of `place_item_on_floor` gets this for free,
+no per-call-site change needed.
 **Pickup**: `PlayerActions.check_pickup()` (`scripts/entities/player_actions.gd`) calls `get_items_at()` + `remove_floor_item()` to grab the entire stack on the player's tile in one step (walking onto a pile of arrows returns all of them at once), collapsing same-named items into one `"xN"` log line.
 
 ---
@@ -458,6 +582,7 @@ moving `_spawn_enemies()` to run after all of it instead of adding one-off enemy
 to every prop spawner.
 ```gdscript
 _spawn_traps()          # places traps by type
+_spawn_tripwire_traps() # up to 1 Tripwire + hidden dispenser per floor, see "Tripwire trap" above
 _spawn_doors()          # see "Doors" below
 _spawn_barrels()        # 1-3 flammable obstacle props/floor on plain FLOOR tiles, see "Barrels + flammable props" above; runs right after _spawn_doors()
 _spawn_items()          # 2-3 random items from DungeonFloorData.ITEM_POOL; calls _build_floor_item()

@@ -233,6 +233,30 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	player._ranged.show_projectile(target_world_pos, weapon)
 
 	if enemy == null:
+		# A solid prop (barrel/closed door) at the target tile takes physical damage instead of
+		# the throw just silently missing into empty space — see DungeonFloor.damage_prop_at().
+		var prop_dmg: int = maxi(1, Rng.range_i(
+			weapon.damage_die_min if weapon.damage_die_min > 0 else stats.base_min_damage,
+			weapon.damage_die_max if weapon.damage_die_max > 0 else stats.base_max_damage
+		) + weapon.bonus_damage + atk_mod)
+		var prop_result: Dictionary = player._dungeon_floor.damage_prop_at(pos, prop_dmg)
+		if prop_result["hit"]:
+			var kind_label: String = "barrel" if prop_result["kind"] == "barrel" else "door"
+			if prop_result["destroyed"]:
+				GameState.game_log("[color=gray]You throw [b]%s[/b] at the %s — it shatters to pieces![/color]" % [weapon.item_name, kind_label])
+			else:
+				GameState.game_log("[color=gray]You throw [b]%s[/b] at the %s for %d dmg.[/color]" % [weapon.item_name, kind_label, prop_result["damage"]])
+			player._dungeon_floor.show_damage(target_world_pos, prop_result["damage"], false)
+			if not _consume_throw_use(weapon, 1):
+				GameState.remove_item(weapon)
+				if prop_result["destroyed"]:
+					# The prop is gone — the tile is walkable floor again, safe to land on.
+					player._dungeon_floor.place_item_on_floor(pos, weapon)
+				else:
+					GameState.game_log("[color=gray]The %s is lost against it.[/color]" % weapon.item_name)
+			player._dungeon_floor.update_fog(player.grid_pos)
+			player._handle_post_attack_turn()
+			return
 		GameState.game_log("[color=gray]You throw [b]%s[/b] — it lands on the ground.[/color]" % weapon.item_name)
 		if weapon.is_torch and weapon.torch_lit:
 			if player._dungeon_floor.get_tile_type(pos) == DungeonData.TileType.WATER:
@@ -374,6 +398,12 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	# same Enemy.disadv_next_attack flag/consumption point as Grip of the Forest R3.
 	if weapon.weapon_mastery == "Sap" and stats.knows_mastery("Sap"):
 		enemy.disadv_next_attack = true
+
+	# Poisoned Arrow (looted from a sprung Tripwire dispenser, scripts/world/CLAUDE.md's "Tripwire
+	# trap"): on a landed hit, also applies the real Poisoned condition — venom, not a mastery.
+	if weapon.item_name == "Poisoned Arrow" and not enemy.stats.is_dead():
+		enemy.apply_status("poisoned_condition", DungeonFloor.TRIPWIRE_POISON_TURNS)
+		GameState.game_log("[color=green]%s is poisoned![/color]" % enemy.display_name)
 
 	if not _consume_throw_use(weapon, 0 if is_crit else 1):
 		# Embed rather than drop — survives on the enemy until it dies (any cause, any turn),

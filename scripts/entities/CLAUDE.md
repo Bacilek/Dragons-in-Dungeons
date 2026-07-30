@@ -903,20 +903,45 @@ Tier 1 (levels 1–6): earns 5 talent points, spent across 3 talents — Psycho,
 
 Level-1 baseline: **Hunter's Mark** (ability_id `"hunters_mark"`, granted directly at character
 creation like Rage, not talent-gated) — arm-then-click targeting (same UX as Grip of the Forest's
-hook mode), marks one enemy; every hit against it — **any weapon, including Off-hand and Nick
-bonus attacks, unconditionally** — deals a second, independent +1d6 Force damage instance
-(`PlayerRangerTalents.hunters_mark_bonus_die()`; this used to require Twin Fang R1, see that
-talent's entry below for the now-dead rank). `Stats.hunters_mark_target`/`hunters_mark_fresh` (not
-serialized, same precedent as `witch_bolt_target`) + `Stats.hunters_mark_uses_remaining`/
-`HUNTERS_MARK_USES_MAX` (3, serialized, refilled in `long_rest()`) — a use is spent only when
-establishing a mark from none; retargeting an active mark is free. Shown as a `X/3` use-count
-badge on the ability bar slot (`hud.gd`'s `_refresh_ability_bar()`, same special-cased-`Ability`
-convention as Rage — `Stats.hunters_mark_uses_remaining` is read directly since the `Ability`
-resource's own `uses_remaining`/`uses_max` stay 0/0). Direction to the marked target shows
-on-screen even outside FOV/LOS via `scripts/ui/hunters_mark_indicator.gd` (mirrors `compass.gd`'s
-pattern). **In-world marker**: the marked `Enemy` itself also shows a small red "▼" above its
-sprite whenever it's currently `Stats.hunters_mark_target` — `Enemy._mark_indicator` (`enemy.gd`,
-same per-enemy-child-`Label` pattern as `_zzz_label`/`_notice_label`), toggled every frame in a new
+hook mode), marks one enemy within `Stats.HUNTERS_MARK_RANGE` (9 tiles, checked in
+`PlayerRangerTalents.commit_mark()`). **Casting time is free** — `commit_mark()` never calls
+`TurnManager.begin_player_action()`/`on_player_action_complete()`, so marking (or re-marking)
+doesn't cost a turn. **Duration**: Concentration, up to `Stats.HUNTERS_MARK_DURATION` (100 turns,
+`Stats.hunters_mark_turns`, ticked once per real turn in `player.gd._on_turn_started()` alongside
+Blade Ward/Expeditious Retreat/Fog Cloud) — uses the generic `Stats.concentration_spell_id`
+mechanism (`"hunters_mark"`), so a CON-check failure on taking damage
+(`GameState._check_concentration_break()`) or casting a different Concentration spell ends it
+early via `GameState.end_concentration()`. Every hit against the marked target — **any weapon,
+including Off-hand and Nick bonus attacks, unconditionally** — deals a second, independent +1d6
+Force damage instance (`PlayerRangerTalents.hunters_mark_bonus_die()`; this used to require Twin
+Fang R1, see that talent's entry below for the now-dead rank). `Stats.hunters_mark_target`/
+`hunters_mark_fresh` (not serialized, same precedent as `witch_bolt_target`) +
+`Stats.hunters_mark_uses_remaining`/`HUNTERS_MARK_USES_MAX` (3, serialized, refilled in
+`long_rest()`) — a use is spent only when establishing a mark from none; retargeting an active mark
+is free. **Once free uses run out**, establishing a new mark automatically spends a real
+1st-level Ranger spell slot instead (Hunter's Mark is a real 1st-level spell in 5e —
+`commit_mark()` checks `Stats.caster.slot_pool.remaining.get(1, 0)` directly and calls
+`slot_pool.consume(1)`, same as any other leveled-spell cast); with neither a free use nor a slot
+available, marking is blocked with a chat-log message. **Free re-mark on kill**: if the Marked
+target dies while Concentration is still active, `PlayerRangerTalents.try_bloodhound_remark()`
+(called unconditionally from `Enemy.die()`, not just for Bloodhound) arms
+`Stats.hunters_mark_free_recast_pending` — the following `_on_turn_started()` promotes it to
+`hunters_mark_free_recast_available` for exactly that one real turn (consumed for free by
+`commit_mark()` if used, otherwise cleared as expired at the NEXT `_on_turn_started()`) — "next
+turn only, never later" per direct owner spec. Bloodhound R3 (see below) supersedes this baseline
+entirely: it re-marks the nearest visible enemy instantly instead of arming the window. **Not yet
+implemented**: the 5e "Advantage on a Wisdom (Perception/Survival) check to find the Marked
+target" clause — this codebase has no player-side "find a creature" WIS-check mechanic to hook it
+into (`player_actions.gd`'s `search_action()` is for traps/secret doors and already always rolls
+with Advantage for everyone; the closest analog, `_resolve_stealth_check()`, is the opposite
+direction — enemy Stealth vs. player Passive Perception). Shown as a `X/3` use-count badge on the
+ability bar slot (`hud.gd`'s `_refresh_ability_bar()`, same special-cased-`Ability` convention as
+Rage — `Stats.hunters_mark_uses_remaining` is read directly since the `Ability` resource's own
+`uses_remaining`/`uses_max` stay 0/0). Direction to the marked target shows on-screen even outside
+FOV/LOS via `scripts/ui/hunters_mark_indicator.gd` (mirrors `compass.gd`'s pattern). **In-world
+marker**: the marked `Enemy` itself also shows a small red "▼" above its sprite whenever it's
+currently `Stats.hunters_mark_target` — `Enemy._mark_indicator` (`enemy.gd`, same
+per-enemy-child-`Label` pattern as `_zzz_label`/`_notice_label`), toggled every frame in a new
 `Enemy._process()` (the first `_process()` override on this class) rather than wired to a signal,
 since the mark can move to a different enemy or clear at several call sites
 (`player_ranger_talents.gd`) without a single common chokepoint to hook. Bobs up/down continuously
@@ -1662,6 +1687,10 @@ codebase only has a Wizard caster, so `class_list` stays `["WIZARD"]` like every
     concrete mechanic in this codebase that maps onto "a sight check" the way ADV/DISADV on attack
     rolls does, so this clause is still a no-op. "Ends early if a strong wind disperses it" — no
     such spell/ability exists yet to trigger it.
+  **Can't be seen into from outside, even at the edge** — heavily obscured tiles block sight like
+  a wall for every viewer without `Stats.sees_through_magical_darkness` (not granted by anything
+  today — darkvision does NOT bypass this), including enemy AI's own `has_line_of_sight()`; full
+  mechanism in `scripts/world/CLAUDE.md`'s "Fog Cloud spell zone" section.
   Duration ticks in `_on_turn_started()` like Blade Ward, but ALSO calls `GameState.
   clear_fog_cloud()` at 0 (unlike Blade Ward/Witch Bolt, which have nothing beyond their own Stats
   field to clear). **Explicitly cleared on floor descent** (`GameState.advance_floor()`) — unlike

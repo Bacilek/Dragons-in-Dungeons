@@ -1324,6 +1324,13 @@ func long_rest() -> void:
 	player_status_changed.emit()
 	player_stats.rage_uses_remaining = player_stats.rage_uses_max
 	player_stats.hunters_mark_uses_remaining = Stats.HUNTERS_MARK_USES_MAX
+	if player_stats.concentration_spell_id == "hunters_mark":
+		player_stats.concentration_spell_id = ""
+	player_stats.hunters_mark_turns = 0
+	player_stats.hunters_mark_target = null
+	player_stats.hunters_mark_fresh = false
+	player_stats.hunters_mark_free_recast_pending = false
+	player_stats.hunters_mark_free_recast_available = false
 	hit_dice = max_hit_dice()
 	short_rests_remaining = max_short_rests
 	berserker_frenzy_used = false
@@ -2333,6 +2340,10 @@ func end_concentration(reason_log: String = "") -> void:
 	elif broken_spell == "fog_cloud":
 		player_stats.fog_cloud_turns = 0
 		clear_fog_cloud()
+	elif broken_spell == "hunters_mark":
+		player_stats.hunters_mark_turns = 0
+		player_stats.hunters_mark_target = null
+		player_stats.hunters_mark_fresh = false
 	if reason_log != "":
 		game_log(reason_log)
 
