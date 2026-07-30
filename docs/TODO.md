@@ -10,11 +10,11 @@ aren't lost. Delete an entry once it's picked up (either built, or promoted to a
 
 - **Sort/triage unused Orc textures** — `sprites/characters/Orcs - unused/Orcs/orcs.png`.
 
-- **Spell icons missing** — Expeditious Retreat, False Life, Fog Cloud, Invisibility (all render blank, `icons/spells/1|2/`).
-
 - **Body armor icons missing** — all 12 placeholder-reuse `materials/plate/iron.png`/`gold.png`: Padded, Leather, Studded Leather, Hide, Chain Shirt, Scale Mail, Breastplate, Half Plate, Ring Mail, Chain Mail, Splint, Plate.
 
 - **Mold icon** — placeholder-reuses `materials/plate/iron.png`.
+
+- **Torch icons missing** — unlit, lit, and burnt states all reuse the same `weapon_torch.png`.
 
 - **Scroll icon** — no dedicated scroll sprite yet, every Scroll of &lt;Spell&gt; reuses that spell's own icon.
 

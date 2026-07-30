@@ -153,14 +153,17 @@ Dagger 2gp, Javelin 5sp, Torch 10gp, Short Bow 50gp, Heavy Crossbow 120gp, Longb
 1gp per stack-of-6. Sub-gold prices use the new `Item.silver_value` field (see the field table
 above) via the `"silver"` `ITEM_POOL`/`debug_panel.ALL_ITEMS` pool key, mirroring `"gold"`.
 
-**Weapon tiers (design-only, not implemented)**: `docs/architecture/weapon-tiers-design.md` — now
-that every weapon has a real price, price doesn't track combat power 1:1 (a 5e price reflects
-crafting rarity, not this engine's own balance), and the Barbarian's guaranteed starting Greataxe
-(1d12, free Cleave) bypasses the `floor_min`/`floor_max` floor-gate every other weapon is subject
-to entirely. That doc proposes an explicit Tier 0-4 table re-deriving `fmin`/`fmax` from price +
-dice + mastery utility (concrete finding: Rapier is priced/statted like a Tier-3 weapon but gated
-like Tier-1), plus a real `ITEM_POOL` entry for the Greataxe — blocked on an unresolved
-class-balance question (what the Barbarian starts with instead), not on engineering effort.
+**Weapon tiers (implemented; design doc shipped and was deleted, `scripts/world/CLAUDE.md`'s
+`ITEM_POOL` table and `scripts/entities/CLAUDE.md`'s "Barbarian class" section are now
+authoritative)**: an explicit Tier 0-4 table re-derives every weapon's `fmin`/`fmax` from price +
+dice + mastery utility instead of the old per-weapon ad hoc values. Two concrete `fmin` changes:
+**Rapier** `1 → 4` (was priced/statted like a Tier-3 weapon — 25gp, Martial, 1d8 finesse — but
+gated like a Tier-1 starter) and **Heavy Crossbow** `5 → 6` (cleaner Tier-4 boundary). **Greataxe**
+is now a real `ITEM_POOL` Tier-4 entry (`fmin=6, fmax=10`) instead of Barbarian-only unreachable
+starting gear — the Barbarian's starter was downgraded to a Tier-1 Spear + 2 thrown Handaxes (§6
+option (a)), so the Greataxe is a genuine late-game find now, the only Cleave-mastery weapon in
+the game. Enemy weapon drops and boss weapon loot (the doc's §4/§5) remain unbuilt — noted as
+natural v2 extensions, not required for the tier table itself.
 
 ## Thrown weapons
 `Item.is_thrown` + `range` (normal throw range) + `uses_max`/`uses_remaining` (currently only the Spear: Simple, Piercing, Versatile 1d6/1d8, `weapon_mastery="Sap"`, `range=3`, `uses_max=5`). Primed exactly like throwing a food item from the quickbar — **RMB a quickbar slot** (`hud.gd`'s `_on_slot_gui_input()` → `GameState.player_throw_primed`, no item-type filter) then **LMB a target tile** (`PlayerActions`/`player.gd` → `PlayerThrowTool.do_throw()`). `do_throw()` branches on `item.item_type == Item.Type.WEAPON and item.is_thrown` *before* the generic food/item-throw branch, dispatching to `PlayerThrowTool._throw_weapon(weapon, pos)`. Because priming only reads `GameState.player_quickbar` (not the equipment slots), a Spear must be sitting in the quickbar/bag to be thrown — an *equipped* copy in Main Hand is a separate `Item` instance and still attacks normally in melee.
@@ -253,7 +256,14 @@ exactly — own `take_typed_damage()` call, own floater, own `dmg:` tooltip segm
 same log line). Thrown at empty ground → lands as a normal floor item (unchanged generic thrown
 behavior). Thrown at an enemy, on a miss or non-lethal hit → embeds in `Enemy.embedded_items`
 (unchanged generic thrown-weapon embedding — no Torch-specific code needed there at all), dropped
-at `grid_pos` when that enemy eventually dies (`Enemy.die()`'s existing override).
+at `grid_pos` when that enemy eventually dies (`Enemy.die()`'s existing override). **A lit torch
+embedded in an enemy keeps burning them every round it stays lodged and lit** — `DungeonFloor.
+tick_torches()` (`scripts/world/CLAUDE.md`), on top of ticking `torch_turns_remaining` down, rolls
+a fresh independent 2d4 Fire hit against that enemy each real turn (same rate as a creature
+standing on a burning door — `DungeonFloor.tick_fire_damage_for()`), with the usual floater/log
+line/kill handling; stops the moment the torch runs out and burns out. A lit torch merely lying on
+the floor does not damage anything standing on its tile — this is specifically about one still
+lodged in a living target.
 
 **Passive radius-2 light bubble** (floor/embedded only, distinct from the equipped +1 FOV bonus):
 `DungeonFloor._compute_torch_light_tiles()`, called from `update_fog()` every fog recompute (no
@@ -418,7 +428,17 @@ Light (Padded 11+DEX w/ stealth disadv, Leather 11+DEX, Studded Leather 12+DEX),
 Plate 15+DEX≤2 w/ stealth disadv), Heavy (Ring Mail 14 w/ stealth disadv, Chain Mail 16/STR 13 w/
 stealth disadv, Splint 17/STR 15 w/ stealth disadv, Plate 18/STR 15 w/ stealth disadv) — no
 dedicated armor sprites exist yet, every entry placeholder-reuses `materials/plate/iron.png` or
-`PlateGold.png`. `Stats.recalc_ac()` (`scripts/entities/CLAUDE.md`) folds `base_ac`/`dex_cap` in
+`PlateGold.png`. **`"desc"`/`Item.description` is empty for every armor entry that has nothing to
+say beyond what `ArmorTooltip.build()` already renders as its own structured lines** (Type/AC/
+Disadvantage-on-Stealth/Don-Doff, `scripts/items/armor_tooltip.gd`) — `hud.gd`'s qbar tooltip and
+`inventory_overlay.gd`'s hover both append `item.description` right after `ArmorTooltip.build()`'s
+output (guarded on `not item.description.is_empty()`), so a `"desc"` that repeats those same facts
+in prose renders the same information twice. Only Chain Mail/Splint/Plate Armor's `"Requires N
+STR."` and the Shield's proficiency/two-handed/spellcasting caveat carry real `"desc"` text — both
+are facts `ArmorTooltip.build()` never renders itself (STR requirement only ever shows up
+reactively in the equip-blocked chat message, `GameState.log_armor_equip_blocked()`). Any new
+armor/shield `ITEM_POOL` entry should follow the same rule: leave `"desc"` empty unless it says
+something the tooltip's own structured lines don't already cover. `Stats.recalc_ac()` (`scripts/entities/CLAUDE.md`) folds `base_ac`/`dex_cap` in
 ahead of every unarmored-defense formula (real body armor always wins over Barbarian/Monk/Mage
 Armor while worn). Gated by `GameState.can_equip_armor()` — `Stats.proficient_light_armor`/
 `proficient_medium_armor`/`proficient_heavy_armor` (Barbarian/Ranger: Light+Medium only, no class
@@ -529,7 +549,10 @@ cast-resolution walkthroughs.
   `save_stat`/`save_for_half` (SAVE
   resolution only), `shape`/`shape_size` (`""` = single target, `"sphere"` = AoE radius —
   deliberately no cone/line/cube, see the plan doc §7's content-scope cut), `effect_id` (`""` =
-  pure generic damage path; else dispatched in `SpellEffects`), `class_list`. Still missing
+  pure generic damage path; else dispatched in `SpellEffects`), `class_list`, `bypasses_los: bool`
+  (Magic Missile only today — BG3-style "seeking dart" targeting: skips `has_ranged_los()` entirely
+  and requires `DungeonFloor.has_walkable_route_ignoring_chasms()` instead, see
+  `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" → Magic Missile entry). Still missing
   concentration/reaction/component fields from the full design doc's `Spell` shape — add if a
   future spell needs them.
 - **`SpellDb`** (static factory, `RefCounted`) — `get_spell(id) -> Spell` builds all spells in
@@ -543,38 +566,57 @@ cast-resolution walkthroughs.
   `magic_missile`/`shield`/`mage_armor`/`misty_step`/`fireball`/`chromatic_orb`/`burning_hands`/
   `witch_bolt`/`expeditious_retreat`/`false_life`/`fog_cloud` — the last 6 added after the initial
   pass, see `scripts/entities/CLAUDE.md`'s "More 1st-level spells" and "More 1st-level non-damage
-  spells" sections) + `CLASS_SPELL_LISTS: Dictionary`
-  (`"WIZARD"` → `LEVELED_SPELL_IDS`, the level-up learn picker's candidate pool — cantrips are
-  deliberately excluded from this list since they're a separate, always-known system).
-- **`SpellcasterState`** (`Resource`) — lives on `Stats.caster` (null for every class but Wizard),
-  not `GameState`, so a future enemy/companion caster can carry its own instance.
-  `spellcasting_ability: String` ("INT"/"WIS"/"CHA"), `known_spells: Array[String]` (cantrips AND
+  spells" sections) + `RANGER_SPELL_IDS` (Ranger's own eligible subset, currently just
+  `["fog_cloud"]` — the only `LEVELED_SPELL_IDS` entry whose real 5e/5.5e class list actually
+  includes Ranger; every other entry is Sorcerer/Wizard(/Warlock)-only on both rule sets, so it was
+  deliberately NOT opened up to Ranger despite reusing the same shared spell pool — a real
+  content-thinness gap, not a bug; see `scripts/entities/CLAUDE.md`'s "Ranger class")
+  + `CLASS_SPELL_LISTS: Dictionary`
+  (`"WIZARD"` → `LEVELED_SPELL_IDS`, `"RANGER"` → `RANGER_SPELL_IDS` — keyed by
+  `Stats.CharacterClass` enum-name string, the level-up learn picker's candidate pool; cantrips are
+  deliberately excluded from both lists since they're a separate, always-known system Ranger
+  doesn't have at all). Each spell's own `class_list` field mirrors this same split (`["WIZARD"]` /
+  `["WIZARD", "RANGER"]` per entry) though nothing currently reads `class_list` programmatically —
+  see `Spell`'s own field note below.
+- **`SpellcasterState`** (`Resource`) — lives on `Stats.caster` (Wizard and Ranger today — see
+  `Stats.CLASS_ROLE` in `scripts/entities/stats.gd`, the internal-only FULL_CASTER/HALF_CASTER/
+  MARTIAL/THIRD_CASTER categorization that decided this), not `GameState`, so a future enemy/
+  companion caster can carry its own instance. `spellcasting_ability: String` ("INT"/"WIS"/"CHA" —
+  Wizard: INT, Ranger: WIS), `known_spells: Array[String]` (cantrips AND
   leveled spells — `is_cantrip(id)` distinguishes via `SpellDb.get_spell(id).level == 0`, not by
   a separate array), `prepared_spells: Array[String]` (currently prepared/selected spells — BOTH
   cantrips, capped by `cantrip_max()`, and leveled spells, capped by `prepared_max()`; a spell can
   be known without being prepared, e.g. learned past its kind's cap — see
-  `scripts/entities/CLAUDE.md`'s "Cantrip cap" note), `slot_pool: StandardSlotPool`.
+  `scripts/entities/CLAUDE.md`'s "Cantrip cap" note), `slot_pool: StandardSlotPool` (Wizard) or
+  `HalfCasterSlotPool` (Ranger) — same interface, different table, see below.
   `prepared_cantrip_count()`/`prepared_leveled_count()` split the one array by kind for cap checks.
   `spell_attack_bonus(stats)` / `spell_save_dc(stats)`
   are computed **live, never cached** (`proficiency_bonus + ability_mod`,
   `8 + proficiency_bonus + ability_mod`) — mirrors `Stats.mastery_cap()`'s "recompute every time"
   convention, and deliberately does NOT derive from `character_class` (keeps a future multiclass
-  caster sane — see the design doc §10.3). `prepared_max(stats) -> int` returns
-  `stats.character_level` (leveled-spells-and-slots-plan.md §1 — supersedes the framework doc's
-  `ability_mod + caster_level` formula for Wizard).
-- **`StandardSlotPool`** (`Resource`, `scripts/items/spell_slot_pool.gd`) — the real D&D 2024
-  full-caster 1–20 slot table (`SLOT_TABLE` const), long-rest-only recharge
-  (`on_short_rest()` is a no-op). `available_level(spell) -> int` returns `spell.level` if that
-  EXACT slot level currently has an unspent slot, else `-1` — **no upcasting**: a spell locked out
-  of its own slot level never falls back to a higher still-available one (was
+  caster sane — see the design doc §10.3). `prepared_max(stats) -> int` branches on
+  `character_class`: `stats.character_level` for Wizard (leveled-spells-and-slots-plan.md §1 —
+  supersedes the framework doc's `ability_mod + caster_level` formula), or the real 2024
+  half-caster formula `max(1, WIS mod + character_level / 2)` for Ranger.
+- **`StandardSlotPool`** (`Resource`, `scripts/items/spell_slot_pool.gd`) — Wizard's full-caster
+  bookkeeper, the real D&D 2024 full-caster 1–20 slot table (`SLOT_TABLE` const), long-rest-only
+  recharge (`on_short_rest()` is a no-op). `available_level(spell) -> int` returns `spell.level` if
+  that EXACT slot level currently has an unspent slot, else `-1` — **no upcasting**: a spell locked
+  out of its own slot level never falls back to a higher still-available one (was
   `lowest_available_level()`, which searched upward and could silently auto-upcast — removed per
   direct owner correction; upcasting was never requested and produced surprising results, e.g.
   Chromatic Orb auto-casting at a 5th-level slot). `grant_new_slots_on_levelup(old_max)` tops up
   newly-grown slot levels immediately after a level-up instead of leaving them empty until the
-  next long rest (see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why). Deliberately
-  **not** a `SpellSlotPool` base class + subclass hierarchy — only one caster type exists, so a
-  pluggable-pool abstraction for Pact/Cooldown pools that don't exist yet would be speculative;
-  add the base class back when a second caster archetype needs different pool behavior.
+  next long rest (see `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" for why).
+- **`HalfCasterSlotPool`** (`Resource`, `scripts/items/half_caster_slot_pool.gd`) — Ranger's own
+  bookkeeper, same exact interface as `StandardSlotPool` above (`max_slots()`/`available_level()`/
+  `can_cast()`/`consume()`/`on_long_rest()`/`grant_new_slots_on_levelup()`/`ui_summary()`) but its
+  own `SLOT_TABLE`: the real D&D 2024 half-caster progression — slots from character level 1 (2024
+  rules moved this earlier than the 2014 rules' level-2 start), max spell level 5 at character
+  level 17. A deliberate duplicate implementation rather than a shared base class — same
+  "duplicate rather than force a premature abstraction" call `StandardSlotPool`'s own comment used
+  to justify staying singular, now that a genuine second table exists; add a real `SpellSlotPool`
+  base class back only if a THIRD distinct progression (e.g. a Pact Magic-style pool) shows up.
 
 ## Scroll-taught spells
 
@@ -630,9 +672,12 @@ check/consumption (a scroll never touches `SpellcasterState.slot_pool`, even for
 their own known spell) and to consume the scroll item itself instead, via `_consume_scroll()`
 (skipped while `GameState.invincible`) — fired the instant the cast actually resolves (after the
 range/LOS check passes), so a scroll is spent even on a miss, same as a real D&D scroll.
-`SpellEffects.cast_spell()`/`cast_leveled_self()`/`cast_leveled_at_tile()`/`cast_leveled_at_enemy()`
+`SpellEffects.cast_spell()`/`cast_leveled_self()`/`cast_leveled_at_tile()`/`cast_magic_missile()`
 all take an added `from_scroll: bool = false` param threaded down to `_consume_slot()`, which
-early-returns when true instead of touching `player.stats.caster.slot_pool`.
+early-returns when true instead of touching `player.stats.caster.slot_pool`. A Scroll of Magic
+Missile goes through the same multi-target dart collection as the ability-bar cast (see
+`scripts/entities/CLAUDE.md`'s Magic Missile entry) — `on_scroll_primed()` intercepts it before
+arming the normal single-click flow.
 
 **"Learn" (Wizard-only RMB scroll interaction)**: a Wizard (any character with `Stats.caster !=
 null`) who doesn't yet know a scroll's spell gets a third RMB menu option, **Learn**, alongside

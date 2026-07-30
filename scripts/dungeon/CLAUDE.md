@@ -37,7 +37,20 @@ mirroring how the boss room is special-cased outside `ROOM_POOL` too — a `chan
 was rejected since it would still burn one `rng.randf()` per seed for no benefit. Consumes zero
 extra rng calls on any floor.
 
-**ShopRoom**/**SecretRoom** remain session-7b **stubs** (`extends StandardRoom`, `_init()` sets only `type_id`, everything else inherited) — their real sizing/`max_connections()`/`paint()` overrides land in sessions 7e/7f per `docs/architecture/special-rooms-economy-design.md` §4. One `class_name` per file — placeholder types simply don't override anything (structural fallback; never write a `has_content()` runtime check).
+**ShopRoom** (session 7e, implemented): same dead-end vault shape as TreasureRoom (`min_size` 5x5,
+`max_size` 7x7, `max_connections() = 1`); `paint()` stays a no-op guard — a shop is plain floor.
+Runtime content — the shopkeeper prop + generated 4-6-item Buy/Sell stock — is
+`DungeonFloor._spawn_shop(rect)` (`scripts/world/CLAUDE.md`).
+
+**SecretRoom** (session 7f, implemented): dead-end room (`min_size` 5x5, `max_size` 6x6 — smallest
+of the four, `max_connections() = 1`); `paint()` a no-op guard. Its one connecting door is hidden
+at generation time — rendered as a plain wall, impassable, invisible — until found via the
+existing Ctrl search verb. Runtime content — hiding the door, the biased-reward spawn, and the
+reveal — is `DungeonFloor._spawn_secret_room(rect)`/`_reveal_secret_door(pos)`
+(`scripts/world/CLAUDE.md`'s "Hidden doors").
+
+One `class_name` per room-type file — a placeholder type (none remain today) would simply not
+override anything (structural fallback; never write a `has_content()` runtime check).
 
 ### Multi-entrance connectivity (implemented; design doc shipped and was deleted from `docs/architecture/` — this section is now authoritative)
 Entrance/Exit rooms are guaranteed ≥2 distinct corridor connections to *different* rooms, so the

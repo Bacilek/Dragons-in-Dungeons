@@ -88,7 +88,7 @@ behavior refactor — decide/execute split, `attack_profile`, targeting — this
 | `"speed"` | `{"moves": N, "per": M}` | Movement-speed scaling (see "Movement speed scaling" note below the table) — how many of every `per` real turns this enemy actually gets to move. Absent = `{"moves": 1, "per": 1}`, i.e. today's unconditional 1-move-every-turn, unchanged for every entry that doesn't author it. `Enemy._tick_speed_gate()` (called every real turn from `take_turn()`, a Bresenham-style integer accumulator, no floats) sets `_moves_this_turn`; `_decide_action()` treats `_moves_this_turn <= 0` exactly like `rooted_turns` (skip movement, still attack if already adjacent), and `_act_toward()` loops `maxi(1, _moves_this_turn)` steps for a `moves > per` (above-baseline speed) entry, re-checking attack range after every step. Reference: Zombie's 20 ft speed → `{"moves": 2, "per": 3}` (below baseline); Ogre's 40 ft speed → `{"moves": 4, "per": 3}` (above baseline — the same mechanism works in either direction). |
 | `"multiattack"` | `[{"name","count","dmg_min","dmg_max","damage_type"}, ...]` | Each sub-attack resolves as its own independent roll/floater/log line via `_attack_player()`/`_attack_companion()`'s `sub` param — same one-log-line-per-swing convention as the player's Off-hand/Nick bonus attacks. Absent = today's single top-level-stats attack. |
 | `"abilities"` | `[{"id","cooldown"\|"uses_max"\|"recharge","range","long_range","dmg_min","dmg_max","damage_type","status","turns"}, ...]` | Ranged damage(+optional status) ability, picked in `_decide_action()` over melee approach whenever ready, in range, LOS'd, AND the target isn't already melee-adjacent (snipe-then-melee, matching the Skeleton worked example in the design doc). Timer is exactly one of `cooldown` (flat turn counter), `uses_max` (per-life budget), or `recharge` (d6 roll ≥ N re-arms it, D&D "Recharge 5-6" style) — combining two on one ability is an authoring error. Optional `long_range` extends how far the ability can be picked from at all (`_pick_ready_ability()`'s reach check uses `long_range` if present, else falls back to `range`); a shot landing beyond `range` but within `long_range` rolls with Disadvantage (`Enemy._ability_is_long_shot()` → the `long_shot` param threaded through `_execute_ability()` → `_attack_player()`/`_attack_companion()` → `_resolve_attack_roll()`'s `extra_disadv`), the same weapon-style normal/long split as `PlayerRanged.ranged_shot_disadvantage()`. Absent `long_range` = flat cutoff at `range`, unchanged old behavior (e.g. Goblin Archer's plain `attack_profile`, not this key at all). Execution reuses `_attack_player()`/`_attack_companion()` wholesale (abilities and multiattack sub-attacks share the exact same damage shape) plus an optional `GameState.apply_player_status()` call if `"status"` is set. No per-ability custom code needed for this generic ranged-damage shape; a truly bespoke ability (summon, aura) still needs a `match ability_id:` special case added to `Enemy._execute_ability()`. Reference: Skeleton's Shortbow (`range: 8`, `long_range: 32`). |
-| `"traits"` | `[{"id":"regeneration","amount":N,"shutoff_types":[...]}]` or `[{"id":"undead_fortitude","dc_base":N}]` | The two traits the design doc specs in full are implemented generically: **regeneration** heals `amount` HP at the top of a real turn unless a `shutoff_types` damage type hit last round (`Enemy._tick_regeneration()`, hooked from `take_turn()`); **undead_fortitude** intercepts a would-be-lethal hit with a CON check vs `dc_base + damage`, once per life, surviving at 1 HP (`Enemy.take_typed_damage()`'s death branch) — **except** when the killing blow's damage type is `"Radiant"` or it was a critical hit, matching the real D&D trait text exactly (`Enemy.take_typed_damage(amount, damage_type, is_crit: bool = false)`'s 3rd param, threaded through from every attack-roll call site that has a local `is_crit` — melee/cleave/off-hand/OA in `player.gd`, ranged in `player_ranged.gd`, the two ATTACK_ROLL cantrip/spell paths in `spell_effects.gd`; SAVE-resolution and auto-hit spells have no crit concept and pass the default `false`). A third `"id"`, **aggressive** (no payload — `Enemy._has_trait(id)` is a bare presence check, not a per-trait dispatch table entry), grants +1 movement step on any turn where the enemy can see its target: wired at `_execute_action()`'s `"act_toward"` case (`bonus_moves = 1 if (intent.can_see and _has_trait("aggressive")) else 0`, passed into `_act_toward(target, bonus_moves)`) rather than through `_tick_speed_gate()`/`"speed"`, since it's conditional on visibility, not a flat per-turn ratio — it stacks on top of whatever `"speed"` already grants. Never adds a second attack (D&D's own text only grants the movement, not another swing) — `_act_toward()` re-checks attack range after every step of a multi-step turn and attacks (and stops moving) the instant it's in range, so "move + attack" falls out for free, and "attack + move"/"just attack" (already adjacent at decision time) never call `_act_toward()` at all, going straight through the normal `_act_toward_or_ability()` → attack dispatch with no extra movement spent. A fourth `"id"`, **nimble_escape** (no payload), triggers off a landed MELEE hit rather than off a trait check: `Enemy.on_melee_hit(attacker)` (called only from the melee-only player attack sites — `_bump_attack()`/`_resolve_cleave_attack()`/`_resolve_offhand_attack()`/`resolve_opportunity_attack()` in `player.gd`, guarded on `actual > 0` — NOT ranged/thrown/spell hits) rolls `escape_turns = Rng.range_i(1, 5)` and stores `escape_from = attacker`. **Only fires on this enemy's very first damage instance this life**: `Enemy._hits_taken` (incremented in `take_typed_damage()` on every `actual > 0` instance, any source — melee, ranged, spell, DoT tick) is already at its post-this-hit value by the time `on_melee_hit()` runs (damage is always applied before the `on_melee_hit()` call at every site above), so `_hits_taken > 1` means this melee hit landed on an already-damaged goblin and `on_melee_hit()` no-ops instead of arming the flee — direct owner request: a goblin already proven vulnerable to ranged (e.g. shot once before closing to melee) gains nothing by fleeing melee range, since the player can just shoot it while it runs. `_decide_action()` checks `escape_turns > 0` before every other behavior branch (including an adjacent target — a fleeing goblin doesn't stop to swing): decrements the counter and returns a `{"type": "flee", "target": escape_from}` intent for every decrement that leaves `escape_turns > 0` — EXCEPT the turn the decrement brings it to exactly `0` (the flee just wore off): on that turn, if the pool's own `"thrown_weapon"` dict sets `"flee_only": true`, that weapon hasn't been used yet, and the flee target is still 2+ tiles away and within throw range/LOS, a one-shot `"throw_weapon"` intent (a parting shot, NOT thrown mid-flee) is returned instead of falling through to the normal chase/attack decision (Goblin Minion's Dagger — see the `"thrown_weapon"` row below; deliberately does NOT fire off a ranged/spell hit, only off this same melee-triggered `escape_turns` state, so a Fire Bolt hit never makes it throw). If the target IS adjacent by then, or the throw doesn't line up, this same "just wore off" turn instead falls straight through to the ordinary decision logic below (chase/attack — no wasted turn). Every other tick with `escape_turns > 0` still resolves via `_flee_from()` — a single greedy step directly away from the attacker (`_preferred_steps()` on the negated delta, no BFS fallback), returning whether it actually moved. If cornered (no walkable tile directly away — wall or blocked), `_execute_action()`'s `"flee"` case has it attack the fled-from entity instead of idling, but only if still in range (a trapped animal turning to fight rather than pathing the long way around). Its own `_move_step()` call passes `provokes_oa = false` (a new 3rd param, default `true` for every other caller) so fleeing never triggers the player's/companion's Opportunity Attack hook, matching the trait's own "doesn't provoke opportunity attacks" text. Any other `"id"` is inert (no dispatch exists yet — add one to `take_typed_damage()`/`_tick_regeneration()`/`_has_trait()`-style check/a new hook when a concrete monster needs it). A fifth `"id"`, **pack_tactics** (no payload), grants Advantage on this enemy's own attack roll whenever another enemy (any `Enemy`, not just the same species) is within 5 ft (Chebyshev 1 tile) of the target AND that other enemy is awake (`behavior != Behavior.SLEEPING` — the closest analogue this engine has to 5e's "incapacitated"; no other enemy status here, e.g. `rooted_turns`/`frozen_feet_turns`, maps to a real incapacitating condition, so SLEEPING is the only exclusion). Checked inline in both `_attack_player()` and `_attack_companion()` right where the existing `fog_adv` local is computed, OR'd into the same `extra_adv` param passed to `_resolve_attack_roll()` — no schema or signature changes needed, same "small conditional local, computed at the call site" shape as `fog_adv`/`terrain_disadv`. Reference: `giant_rat`'s Pack Tactics. References: `zombie`'s Undead Fortitude (`dc_base: 5`), `orc_warrior`'s Aggressive, `goblin_warrior`/`goblin_archer`'s Nimble Escape. |
+| `"traits"` | `[{"id":"regeneration","amount":N,"shutoff_types":[...]}]` or `[{"id":"undead_fortitude","dc_base":N}]` | The two traits the design doc specs in full are implemented generically: **regeneration** heals `amount` HP at the top of a real turn unless a `shutoff_types` damage type hit last round (`Enemy._tick_regeneration()`, hooked from `take_turn()`); **undead_fortitude** intercepts a would-be-lethal hit with a CON check vs `dc_base + damage`, once per life, surviving at 1 HP (`Enemy.take_typed_damage()`'s death branch) — **except** when the killing blow's damage type is `"Radiant"` or it was a critical hit, matching the real D&D trait text exactly (`Enemy.take_typed_damage(amount, damage_type, is_crit: bool = false)`'s 3rd param, threaded through from every attack-roll call site that has a local `is_crit` — melee/cleave/off-hand/OA in `player.gd`, ranged in `player_ranged.gd`, the two ATTACK_ROLL cantrip/spell paths in `spell_effects.gd`; SAVE-resolution and auto-hit spells have no crit concept and pass the default `false`). A third `"id"`, **aggressive** (no payload — `Enemy._has_trait(id)` is a bare presence check, not a per-trait dispatch table entry), grants +1 movement step on any turn where the enemy can see its target: wired at `_execute_action()`'s `"act_toward"` case (`bonus_moves = 1 if (intent.can_see and _has_trait("aggressive")) else 0`, passed into `_act_toward(target, bonus_moves)`) rather than through `_tick_speed_gate()`/`"speed"`, since it's conditional on visibility, not a flat per-turn ratio — it stacks on top of whatever `"speed"` already grants. Never adds a second attack (D&D's own text only grants the movement, not another swing) — `_act_toward()` re-checks attack range after every step of a multi-step turn and attacks (and stops moving) the instant it's in range, so "move + attack" falls out for free, and "attack + move"/"just attack" (already adjacent at decision time) never call `_act_toward()` at all, going straight through the normal `_act_toward_or_ability()` → attack dispatch with no extra movement spent. A fourth `"id"`, **nimble_escape** (no payload), triggers off a landed MELEE hit rather than off a trait check: `Enemy.on_melee_hit(attacker)` (called only from the melee-only player attack sites — `_bump_attack()`/`_resolve_cleave_attack()`/`_resolve_offhand_attack()`/`resolve_opportunity_attack()` in `player.gd`, guarded on `actual > 0` — NOT ranged/thrown/spell hits) rolls `escape_turns = Rng.range_i(1, 5)`, stores `escape_from = attacker`, and immediately `await`s a single `_flee_from(attacker)` step right there as a reaction — still within the attacker's own turn, before `TurnManager` ever hands control to this enemy — so the goblin visibly flinches one tile away from the very swing that hurt it instead of standing still to eat a follow-up hit on the same beat its escape starts. Reuses `_flee_from()` completely as-is (same no-OA-provoked step, `provokes_oa=false`); if it's cornered (wall/blocked tile behind it) `_flee_from()` just returns `false` without moving — no separate handling needed, it stays put for this reaction and still starts its normal (possibly cornered-fight) flee on its own next turn. **Only fires on this enemy's very first damage instance this life**: `Enemy._hits_taken` (incremented in `take_typed_damage()` on every `actual > 0` instance, any source — melee, ranged, spell, DoT tick) is already at its post-this-hit value by the time `on_melee_hit()` runs (damage is always applied before the `on_melee_hit()` call at every site above), so `_hits_taken > 1` means this melee hit landed on an already-damaged goblin and `on_melee_hit()` no-ops instead of arming the flee — direct owner request: a goblin already proven vulnerable to ranged (e.g. shot once before closing to melee) gains nothing by fleeing melee range, since the player can just shoot it while it runs. `_decide_action()` checks `escape_turns > 0` before every other behavior branch (including an adjacent target — a fleeing goblin doesn't stop to swing): decrements the counter and returns a `{"type": "flee", "target": escape_from}` intent for every decrement that leaves `escape_turns > 0` — EXCEPT the turn the decrement brings it to exactly `0` (the flee just wore off): on that turn, if the pool's own `"thrown_weapon"` dict sets `"flee_only": true`, that weapon hasn't been used yet, and the flee target is still 2+ tiles away and within throw range/LOS, a one-shot `"throw_weapon"` intent (a parting shot, NOT thrown mid-flee) is returned instead of falling through to the normal chase/attack decision (Goblin Minion's Dagger — see the `"thrown_weapon"` row below; deliberately does NOT fire off a ranged/spell hit, only off this same melee-triggered `escape_turns` state, so a Fire Bolt hit never makes it throw). If the target IS adjacent by then, or the throw doesn't line up, this same "just wore off" turn instead falls straight through to the ordinary decision logic below (chase/attack — no wasted turn). Every other tick with `escape_turns > 0` still resolves via `_flee_from()` — a single greedy step directly away from the attacker (`_preferred_steps()` on the negated delta, no BFS fallback), returning whether it actually moved. If cornered (no walkable tile directly away — wall or blocked), `_execute_action()`'s `"flee"` case has it attack the fled-from entity instead of idling, but only if still in range (a trapped animal turning to fight rather than pathing the long way around). Its own `_move_step()` call passes `provokes_oa = false` (a new 3rd param, default `true` for every other caller) so fleeing never triggers the player's/companion's Opportunity Attack hook, matching the trait's own "doesn't provoke opportunity attacks" text. Any other `"id"` is inert (no dispatch exists yet — add one to `take_typed_damage()`/`_tick_regeneration()`/`_has_trait()`-style check/a new hook when a concrete monster needs it). A fifth `"id"`, **pack_tactics** (no payload), grants Advantage on this enemy's own attack roll whenever another enemy (any `Enemy`, not just the same species) is within 5 ft (Chebyshev 1 tile) of the target AND that other enemy is awake (`behavior != Behavior.SLEEPING` — the closest analogue this engine has to 5e's "incapacitated"; no other enemy status here, e.g. `rooted_turns`/`frozen_feet_turns`, maps to a real incapacitating condition, so SLEEPING is the only exclusion). Checked inline in both `_attack_player()` and `_attack_companion()` right where the existing `fog_adv` local is computed, OR'd into the same `extra_adv` param passed to `_resolve_attack_roll()` — no schema or signature changes needed, same "small conditional local, computed at the call site" shape as `fog_adv`/`terrain_disadv`. Reference: `giant_rat`'s Pack Tactics. References: `zombie`'s Undead Fortitude (`dc_base: 5`), `orc_warrior`'s Aggressive, `goblin_warrior`/`goblin_archer`'s Nimble Escape. |
 | `"legendary_resistances"` | int (BOSS_POOL only) | Per-life counter (`Enemy.legendary_resistances_remaining`) consumed inside `resist_check_detailed()`: a roll that would fail is forced to pass instead, logged gray. `big_demon` ships with 3, per the design doc's target-boss recommendation. |
 | `"passive_perception"` | int | **Implemented** — the Stealth-vs-Passive-Perception check's static DC (see "Stealth & Surprise Attacks" below). Authored value always wins; absent, `Enemy._apply_stats()` derives `10 + stats.wis_modifier()` from the now-resolved WIS score, so every enemy has a usable value even before the full bestiary is annotated. Currently authored on `goblin_minion`/`goblin_warrior`/`goblin_archer` (all 9, shared goblin-family WIS 8), `skeleton` (9, WIS 8), `zombie` (8, WIS 6), `orc_warrior` (10, WIS 11), and `ogre` (8, WIS 7); every other pool entry runs on the derived default (WIS 10 → PP 10) until annotated for flavor — safe/playable either way. |
 | `"thrown_weapon"` / `"unarmed_fallback"` | `{"name","dmg_min","dmg_max","damage_type","range","icon","drop_die_min","drop_die_max","weapon_category","is_finesse","is_light","weapon_mastery","drop_uses_max","drop_chance","random_uses","flee_only"}` / `{"name","dmg_min","dmg_max","damage_type"}`, optionally + `"attack_stat"` | A **generic, reusable pair** — originally authored for Goblin Minion's Dagger, now also used by Orc Warrior's and Ogre's Javelins (same underlying code, different pool values; Ogre's Javelin reuses Orc Warrior's own `"range": 3` verbatim). Two mutually-exclusive trigger modes, selected by the optional `"flee_only"` key (default `false`): **opener mode** (Orc Warrior's Javelin, `"flee_only"` absent) — once NOT escaping (see Nimble Escape below), the enemy is actively pursuing (`behavior in [CHASING, SEARCHING]` — an unaware SLEEPING/STATIONARY/ROAMING enemy never throws, it has to have noticed the target first), and the target is 2+ tiles away (not adjacent) and within `"range"` (default 4), `_decide_action()` returns a one-shot `"throw_weapon"` intent instead of the normal chase-then-melee dispatch. **Flee-only mode** (Goblin Minion's Dagger, `"flee_only": true`) — the opener check above is skipped entirely; instead the throw is offered only on the single turn Nimble Escape's flee state (`escape_turns`, itself only ever triggered by a landed MELEE hit) WEARS OFF (decrements to exactly `0`), as a one-time parting shot — NOT on any turn while still actively fleeing, and only if the target still isn't adjacent by then (adjacent = it just stabs instead via the normal fall-through decision logic). A Goblin never throws its dagger unless it was hit in melee first (a ranged/spell hit like Fire Bolt never sets `escape_turns`, so it never reaches this branch at all) — see the `"traits"` row's `nimble_escape` entry above for the exact condition. Either way, once triggered — `Enemy._execute_thrown_weapon_attack()` resolves it via `_attack_player()`/`_attack_companion()` with `long_shot=true` forcing Disadvantage (reusing that param purely for its Disadvantage side effect, not its normal normal/long-range meaning), sets `Enemy._thrown_weapon_used = true` (a per-life one-shot flag), and — regardless of whether the throw actually landed, matching the original Goblin Minion behavior — registers the target with `DungeonFloor.queue_thrown_weapon_drop(target, item, chance)` for a per-entry `"drop_chance"` (default `0.5`). `"unarmed_fallback"`: once `_thrown_weapon_used` is true, `_attack_target()` dispatches every subsequent attack here instead of the pool's `"multiattack"` — but **only when the thrown weapon and the melee weapon are the same item** (compared by `"name"`: `thrown_weapon.name == multiattack[0].name`). Goblin Minion's Dagger is both its thrown AND its only melee weapon, so losing it really does mean bare-fisted forever. Orc Warrior's Javelin and Ogre's Javelin are each a SEPARATE weapon from their Greataxe/Greatclub — once thrown, `_attack_target()` finds the names don't match and keeps dispatching to the normal `"multiattack"` entry in melee, exactly as if the Javelin had never been thrown. (Bugfix: this used to check only `_thrown_weapon_used`, so an Orc/Ogre that had already thrown its Javelin punched with Fists forever even once adjacent with its Greataxe/Greatclub still notionally in hand — nonsensical, since throwing a side weapon shouldn't disarm the main one. Fixed by adding the same-weapon-name comparison.) Its optional `"attack_stat"` key (both enemies' Fists use `"str"` regardless of their own attack-stat default) is a per-sub-attack override read by `Enemy._attack_bonus_for(sub)`, which every `_attack_player()`/`_attack_companion()` call now threads into `_resolve_attack_roll()`'s `attack_bonus_override` instead of always passing `-9999`/falling back to the enemy-wide `attack_profile.attack_stat` default — falls back to the normal `_attack_bonus()` for every pre-existing multiattack/ability entry that doesn't set it. **The dropped `Item`** is built generically by `Enemy._build_thrown_weapon_item(wpn)` from the `"thrown_weapon"` dict's own fields (`"icon"`, `"drop_die_min"`/`"drop_die_max"` — the raw weapon's die, distinct from `dmg_min`/`dmg_max`, which are the enemy's already-ability-mod-inflated attack numbers — `"weapon_category"`, `"is_finesse"`, `"is_light"`, `"weapon_mastery"`, `"drop_uses_max"`), every field defaulting to whatever the original hardcoded Dagger builder used (so Goblin Minion's pool entry, which sets none of these, reproduces its exact original output) — a new consumer is expected to set them all explicitly. `"random_uses"` (default `false`) picks between an already-full drop (Goblin's Dagger) and a randomly-worn-down one (`Rng.range_i(1, drop_uses_max)` — Orc's Javelin, "already used"). **Recovering the thrown weapon**: `DungeonFloor._pending_thrown_weapon_drops`/`_resolve_pending_thrown_weapon_drops()` (`scripts/world/CLAUDE.md`) — checked once on the player's next real turn after the thrower dies (`Enemy.die()` queues it with its own `_thrown_weapon_lodged_chance`, `TurnManager.player_turn_started` resolves it), to drop a normal pickupable `Item` at wherever the throw's target currently stands. Unconditional on the throw actually having landed — `_attack_player()`/`_attack_companion()` don't return their hit result, so gating strictly on a hit would need a broader refactor; documented simplification, still true for both enemies using this mechanic today. |
@@ -96,7 +96,7 @@ behavior refactor — decide/execute split, `attack_profile`, targeting — this
 | `"extra"` (nested inside a `"multiattack"` sub-entry) | `{"dmg_min","dmg_max","damage_type"}` | A second, independent typed damage instance dealt on the SAME hit as its parent sub-entry (one attack roll, two damage numbers/floaters/log segments) — Imp's Sting (1d6+3 Piercing weapon dmg + 2d6 Poison venom). Mirrors the player-side Judgement Day/Fireball-friendly-fire "one hit, multiple damage types" convention. `_attack_player()` gives it its own `edmg:` tooltip segment; `_attack_companion()` folds it into the one flat damage number instead (Companion has no per-type tooltip system at all, pre-existing simplification). |
 | `"invisibility"` | `{"cooldown","duration"}` | Imp-only. While pursuing (CHASING/SEARCHING) and not yet adjacent, with the cooldown ready and not already invisible, `_decide_action()` returns a one-shot `"cast_invisibility"` intent (costs the turn) instead of closing distance. See "Invisibility" below — shared mechanism with the player-castable level-2 spell of the same name. |
 | `"web"` | `{"cooldown","range","save_dc"}` | Spider-only, Player-only target. Ranged, non-damage, SAVE-based restraint — see the "Spider" section below for the full mechanism. |
-| `"scare"` | `{"range","save_dc"}` | Quasit-only, Player-only target. Ranged, non-damage, WIS-SAVE-based fear effect, 1/life (no `"cooldown"` — see the "Quasit" section below for the full mechanism, including the deferred Frightened-condition gap). |
+| `"scare"` | `{"range","save_dc"}` | Quasit-only, Player-only target. Ranged, non-damage, WIS-SAVE-based fear effect, 1/life (no `"cooldown"` — see the "Quasit" section below for the full mechanism, including the real Frightened condition it applies). |
 
 **Traits `"magic_resistance"` / `"shape_shift"`** (presence-only like `"aggressive"`; `magic_resistance` is Imp/Quasit today, `shape_shift` is generalized — any entry can opt in with its own form list):
 - **`magic_resistance`**: Advantage on saving throws against spells — `Enemy.resist_check_detailed()` gained a `magical: bool = false` param; when true AND this trait is present, the d20 is rolled with Advantage (max of two rolls). Threaded through every SAVE-resolution spell's enemy-facing call in `spell_effects.gd` (Ray of Frost, Toll the Dead, Mind Sliver's own save, Thunderclap, Fireball) — **not** weapon-mastery saves (Push/Topple/Grip of the Forest/Branching Strike), which aren't spells and never pass `magical=true`.
@@ -411,7 +411,7 @@ max_damage  = type["dmg_max"] + (floor_num - 1) / 2
 **RNG source rule**: every roll in this table — and every other gameplay-affecting random draw in entity code (damage dice, resist checks, talent proc chances, enemy roam/wander shuffles, loot rolled at kill time) — goes through the **`Rng` autoload** (`Rng.roll(20)`, `Rng.range_i(min,max)`, `Rng.chance(p)`, `Rng.shuffle(arr)`), never global `randi_range`/`randf`/`Array.shuffle()`. Seeded from `run_seed` for reproducible runs; see `scripts/autoloads/CLAUDE.md`. Cosmetic jitter (camera shake in `player_vfx.gd`) deliberately stays on the global RNG.
 
 ### Advantage / Disadvantage
-- **ADV**: attacking a SLEEPING/STATIONARY/ROAMING enemy (unaware defender — see "Stealth & Surprise Attacks" below); attacking an enemy whose `door_ambush == true` (consumed one-shot after check)
+- **ADV**: attacking a SLEEPING/STATIONARY/ROAMING enemy (unaware defender — see "Stealth & Surprise Attacks" below); attacking an enemy whose `surprise_available == true` (a CHASING/SEARCHING enemy's own turn just re-established sight it had lost — door ambush, mid-chase obstacle break, Invisibility ending; consumed one-shot after check)
 - **DISADV**: ranged attack at Chebyshev distance 1 (melee range); melee with a `is_heavy` weapon when STR < 13; ranged with a `is_heavy` weapon when DEX < 13; ranged shot beyond the weapon's normal range but within its own fixed `Item.long_range` (`PlayerRanged.ranged_shot_disadvantage()` — see `scripts/items/CLAUDE.md`'s "Ranged weapons (current)"); a Thrown weapon (Spear/Handaxe/Dagger/Torch) thrown at Chebyshev distance 1, and a thrown weapon's own long-throw equivalent (same `Item.long_range` mechanism), both applied in `PlayerThrowTool._throw_weapon()` (`scripts/entities/player_throw_tool.gd`); a ranged spell attack roll (`spell.range_tiles > 1`) cast at Chebyshev distance 1, applied in `SpellEffects.cast_spell()` (cantrips) and `SpellEffects._resolve_spell_attack_bolt()` (leveled ATTACK_ROLL spells — Chromatic Orb/Witch Bolt) in `scripts/entities/spell_effects.gd`. **Exemption**: the "melee-range" DISADV (ranged, thrown, AND spell) is skipped outright when the target is unaware (`SLEEPING`/`STATIONARY`/`ROAMING`) — 5e RAW exempts an incapacitated nearby creature from this "distracted by a hostile at melee range" penalty, and this engine's closest equivalent is an unaware enemy; without the exemption a point-blank surprise shot/throw/cast always cancelled its own surprise-attack ADV back to a flat roll (`PlayerRanged.ranged_attack()`, `PlayerThrowTool._throw_weapon()`, `SpellEffects.cast_spell()`/`_resolve_spell_attack_bolt()`). (Bugfix, 2026-07-28: the spell-attack sites had the melee-range DISADV check but were missing this exemption — casting at an unaware target from melee range always looked like a flat roll instead of a real surprise-ADV hit, since the unconditional DISADV cancelled the surprise ADV.)
 - ADV + DISADV cancel → 1d20
 - Yellow "!" floats above enemy on ADV surprise attacks
@@ -635,7 +635,7 @@ Expert's side-step).
   `resolve_opportunity_attack()`, `_resolve_cleave_attack()`, `_resolve_offhand_attack()`,
   `PlayerRanged.ranged_attack()`, `PlayerThrowTool._throw_weapon()`, `Companion._attack_enemy()`,
   and every enemy-targeting cast in `spell_effects.gd` (`cast_spell()`, `cast_cantrip_save_at_enemy()`,
-  `cast_leveled_at_enemy()`, `_resolve_spell_attack_bolt()` — covers both Chromatic Orb/Witch
+  `cast_magic_missile()`, `_resolve_spell_attack_bolt()` — covers both Chromatic Orb/Witch
   Bolt's primary AND leap target — and the per-target loop inside every AoE resolver:
   `_resolve_thunderclap()`, `_resolve_cone_aoe()`, `_resolve_sphere_aoe()`). Net effect: surprise
   ADV (Part B) only ever applies to the first attack of an engagement, and casting a spell/cantrip
@@ -668,10 +668,39 @@ Expert's side-step).
 
 **Part B — Surprise-attack Advantage**: `PlayerVfx.has_advantage(enemy)` (`player.gd:1196`,
 `player_ranged.gd`'s ranged call site) returns true iff the defender is unaware at the moment of
-the attack roll: `door_ambush` (one-shot, see below) OR Fog Cloud's Blinded clause OR
-`behavior in [SLEEPING, STATIONARY, ROAMING]`. `CHASING`/`SEARCHING` never grant it otherwise — a
-fully aware hunter, even one momentarily out of FOV, is **not** surprised (deliberate: surprise is
-purely a function of `behavior`, never re-evaluated against live FOV at attack time).
+the attack roll: `Enemy.surprise_available` (one-shot, see below) OR Fog Cloud's Blinded clause OR
+`behavior in [SLEEPING, STATIONARY, ROAMING]`.
+
+**`Enemy.surprise_available` — SPD-style re-triggering surprise** (replaces the old
+`door_ambush`, and the old rule that surprise was "purely a function of `behavior`, never
+re-evaluated against live FOV" — a deliberate reversal, matching Shattered Pixel Dungeon's own
+live-sight tracking instead of a coarse state gate). The crux distinction: **surprise persists to
+the player's next attack only when the enemy's OWN turn is what re-establishes sight of an
+already-noticed target** — a stealth-check-driven notice (the *player's* turn causing an enemy to
+spot them) never sets this flag, because the enemy still gets its own notice-round turn before the
+player can act again, so by then it's no longer surprised (covered instead by the plain
+`behavior in [SLEEPING, STATIONARY, ROAMING]` check above, unchanged). Concretely, `surprise_available`
+is set only inside `_decide_action()`'s `CHASING`/`SEARCHING` branches, when this enemy's own
+per-turn LOS check (`can_see`) flips from false to true (tracked via `_had_los_to_player`) — one
+general mechanism covering three distinct scenarios: a door-camping ambush (enemy was chasing
+blind toward `last_known_target_pos`, a closed door blocked LOS, then it crosses the door and
+regains sight on its own turn), a mid-chase obstacle break (the SPD "ring around the rosie" tech —
+circling a single vision-blocking obstacle so a chasing enemy repeatedly loses/regains sight, each
+regain re-arming a surprise window; the Opportunity Attack a player takes for stepping out of the
+enemy's threat range mid-circle is the intended balancing friction, unchanged by this system), and
+the target's Invisibility ending while still being actively hunted. Firing this branch also calls
+`_notice_target()` (same golden "?" freeze as any other notice) and returns a `"notice"` intent for
+that round. **`surprise_available` never grants an enemy a bonus against the player** — it is read
+only by `PlayerVfx.has_advantage()` (player-attacks-enemy), never by any enemy-attack-roll path;
+this holds even for an enemy that momentarily loses/regains sight of an invisible player itself —
+there is no symmetric mechanic and none should ever be added.
+Lifetime: set true either by the regain-branch above or (implicitly, transitively) never by
+`_notice_target()`/`on_disturbed()` themselves (both only set `_had_los_to_player = true`, to
+prevent the very next CHASING check from spuriously re-firing a regain the round right after any
+notice). Expires — cleared in `_execute_action()`'s expiry guard — the moment this enemy completes
+one further REAL action (non-`"notice"` intent) without the player having consumed it via
+`has_advantage()`, so the window is exactly "one round after the regain event, or until the enemy
+next acts, whichever the player misses first."
 **Call-order rule (BUGFIX — this used to be dead code)**: every attack site must read
 `has_advantage(enemy)` (and any `enemy.behavior`-based DISADV exemption, e.g. the ranged/thrown
 melee-range penalty's "unaware target" carve-out) **before** calling `enemy.on_disturbed(...)` —
@@ -680,19 +709,14 @@ either afterward always sees an already-awake target and silently loses the surp
 at every one of the six attack-roll call sites (`_bump_attack()`, `_resolve_cleave_attack()`,
 `resolve_opportunity_attack()`, `PlayerRanged.ranged_attack()`, `PlayerThrowTool._throw_weapon()`,
 `SpellEffects.cast_spell()`/`_resolve_spell_attack_bolt()`) is: capture `has_advantage(enemy)`
-into a local `was_surprised` (plus `target_was_unaware` where the melee-range DISADV exemption
-applies) as the very first thing, THEN call `on_disturbed()`, THEN use the captured value(s) later
-in the roll. `_resolve_offhand_attack()` is the one deliberate exception — it always fires in the
-same player turn right after the main-hand swing already consumed the surprise, so the target is
-already `CHASING` by the time it runs (correct: only the first attack of an engagement surprises).
-
-**`Enemy.door_ambush`** (replaces the old, buggy `just_crossed_door`): set in `_move_step()` only
-when the enemy steps onto a door tile AND had **no** LOS to the player from its pre-step tile
-(`_had_los_to_player_from(prev_pos)`) — so a CHASING enemy that already sees you opening a door
-mid-pursuit does NOT get this (it's already covered by the CHASING-is-never-surprised rule
-above); only a genuine door-camping ambush does. Expires unconditionally at the top of the
-enemy's own next `take_turn()` (lifetime = exactly the round it happened) and is also consumed
-one-shot on read by `has_advantage()`.
+into a local `was_surprised` as the very first thing, THEN call `on_disturbed()`, THEN use the
+captured value later in the roll — the ranged/thrown/spell sites also reuse this same
+`was_surprised` value directly as their `target_was_unaware` (melee-range DISADV exemption),
+rather than re-deriving it from `behavior` separately, so a freshly re-sighted
+(`surprise_available`) target gets the same exemption a still-unaware one does.
+`_resolve_offhand_attack()` is the one deliberate exception — it always fires in the same player
+turn right after the main-hand swing already consumed the surprise, so the target is already
+`CHASING` by the time it runs (correct: only the first attack of an engagement surprises).
 
 ## Multi-turn action interrupts (short rest / armor change / scroll learn)
 
@@ -727,8 +751,8 @@ there" feel:
 
 **SLEEPING**: shows zzz label. Vs. the Player: no free wake of any kind anymore (neither LOS- nor adjacency-based) — detection is entirely the Stealth-vs-Passive-Perception check's job, see "Stealth & Surprise Attacks" below. Vs. the Companion: true adjacency (Chebyshev ≤ 1) in `_decide_action()` still routes through `_notice_target()` (golden "?", one-round freeze) instead of attacking immediately.
 **ROAMING**: waypoint BFS. `_pick_roam_target()` shuffles `DungeonFloor.get_room_centers()`, picks tile at Chebyshev ≥ 4. Follows `_roam_path: Array[Vector2i]` via `_bfs_to()`. Falls back to `_do_random_step()` if blocked. Vs. the Player: no free wake, same as SLEEPING above. Vs. the Companion: spotting it (`can_see`) still routes through `_notice_target()` — a one-round freeze before it starts actually chasing.
-**CHASING**: follows the selected target directly. Opens doors (sets `door_ambush = true` when stepping onto a door tile it had no prior LOS to the player from — see "Stealth & Surprise Attacks" below). Records `_search_heading` (direction toward target) each turn target is visible.
-**SEARCHING**: entered when a CHASING enemy reaches `last_known_target_pos` without LOS. Searches for 7 turns in `_search_heading` direction (BFS to `_search_target = last_known_pos + heading * 5`). If the target is spotted → CHASING. After 7 turns → ROAMING. Fields: `_search_heading: Vector2i`, `_search_turns_remaining: int`, `_search_target: Vector2i`, `_search_path: Array[Vector2i]`.
+**CHASING**: follows the selected target directly. Tracks `_had_los_to_player` each decision — the false→true edge (this enemy's own turn regaining sight it had lost, e.g. crossing a door or rounding an obstacle) fires a re-notice (golden "?" + `surprise_available = true`) instead of silently resuming the chase — see "Stealth & Surprise Attacks" above. Records `_search_heading` (direction toward target) each turn target is visible.
+**SEARCHING**: entered when a CHASING enemy reaches `last_known_target_pos` without LOS. Searches for 7 turns in `_search_heading` direction (BFS to `_search_target = last_known_pos + heading * 5`). If the target is spotted → CHASING (same LOS-regain re-notice check as CHASING above). After 7 turns → ROAMING. Fields: `_search_heading: Vector2i`, `_search_turns_remaining: int`, `_search_target: Vector2i`, `_search_path: Array[Vector2i]`.
 
 `_roam_path` and `_roam_target` are cleared on state transitions.
 
@@ -828,7 +852,7 @@ Pool entries may set `"attack_profile": {"kind": "ranged", "range": N, "projecti
 `Stats.proficiency_bonus` is a computed property scaling per D&D 5e (+2 at levels 1–4, +3 at 5–8, +4 at 9–12, etc.). `Stats.rage_uses_max` is a computed property scaling by Barbarian level: 2/3/4/5 at levels 1/4/6/12 (cap 5 at 17+). `Stats.rage_bonus_damage` is a computed property: +2 at levels 1–8, +3 at 9–15, +4 at 16+. Level-up grants the extra use immediately when crossing a threshold. **Barbarian unarmored defense**: `Stats.recalc_ac(has_armor_equipped)` — if BARBARIAN and no armor, AC = 10 + DEX + CON.
 
 Tier 1 (levels 1–6): earns 5 talent points, spent across 3 talents — Psycho, Bruiser, Battlefield Expert (max 3 ranks each = 9 total possible cost → a run can max at most two, or spread points across all three). Points are granted on the level-up transitions into 2/3/4/5/6 (`GameState.TIER_LEVEL_RANGES[1] = [1, 6]`) — level 1 itself grants nothing (no level-up fires), so the 5th and last Tier 1 point lands at level 6, not level 5. These base talents (added per `markdowns/barbarian_base.md`) are shared by every subclass and grant no ability-bar entry — they're pure passive/reactive hooks read directly via `GameState.get_talent_rank()` at point of use. (Reckless Attack and Danger Sense were removed — vestigial, unused talents; nothing reads their old talent ids anymore.) Starting equipment given in `GameState.give_class_starting_items()` → `_give_barbarian_starting_items()`:
-- **Greataxe** — 1d12 Slashing, `is_two_handed=true`, `is_heavy=true`, `weapon_mastery="Cleave"`, `weapon_category="Martial"`. `damage_die_min/max` on Item define dice; `recalculate_stats()` applies them. Two-handed blocks the ranged slot. Barbarian has both `proficient_simple_weapons` and `proficient_martial_weapons` set, so the Martial tag never shows red for this class.
+- **Spear** (main hand) — 1d6/1d8 versatile, Piercing, `weapon_mastery="Sap"`, `weapon_category="Simple"`, thrown (5 uses) — plus **2 Handaxes** (`weapon_mastery="Vex"`, Slashing, light, thrown, 5 uses each) given straight into the bag for RMB-throw. Tier-1 starter (`weapon-tiers-design.md` §6, option (a)) — the Greataxe (1d12 Slashing, `weapon_mastery="Cleave"`, the only Cleave-mastery weapon in the game) moved to a real `ITEM_POOL` Tier-4 floor-loot entry (`fmin=6`) instead of guaranteed starting gear, so a fresh Barbarian no longer starts with what should be an end-game find — accepted tradeoff: no guaranteed way to actually trigger a picked Cleave mastery rank until one drops. Barbarian has both `proficient_simple_weapons` and `proficient_martial_weapons` set, so the Martial tag never shows red for this class.
 - **Rage** (ability_id `"rage"`) — in slot 0. Uses and bonus damage scale by level (see computed properties above). **Baked-in baseline (no longer talent-gated, per `markdowns/barbarian_base.md`)**: lasts 1 turn, refreshed to 1 turn whenever the player attacks (hit or miss) or is attacked (hit or miss) — `player.gd._on_turn_started()`'s rage-tick block reads `_rage_attacked_this_turn` (set in `_bump_attack()` and `PlayerBerserker.execute_frenzy()`) or `GameState.player_attacked_this_turn` (set in `enemy.gd._attack_player()` on any attack roll, hit or miss — distinct from `GameState.player_was_hit_this_turn`, which specifically means damage landed and is what Battlefield Expert R3 reads). The whole rage-tick block is gated on `not came_from_revert` — it only runs on a REAL turn (after enemies actually act), never on a reverted/free-action turn (Frenzy, Battlefield Expert's free side-step), so using a free action doesn't silently burn down Rage's duration. Always grants 50% physical damage reduction (Slashing/Piercing/Bludgeoning) while active — `GameState.take_damage_raw(amount, ignore_rage, damage_type)` applies it unconditionally. Activation is a **free action**. Red sprite tint. Rage ends if heavy armor equipped (`item.is_heavy_armor`). Masochist Monster R3 (Berserker) can override the per-turn decrement — see below.
 
 **Barbarian Tier 1 talents** (levels 1–5, no fixed level-up unlocks — all are point-gated):
@@ -890,14 +914,80 @@ badge on the ability bar slot (`hud.gd`'s `_refresh_ability_bar()`, same special
 convention as Rage — `Stats.hunters_mark_uses_remaining` is read directly since the `Ability`
 resource's own `uses_remaining`/`uses_max` stay 0/0). Direction to the marked target shows
 on-screen even outside FOV/LOS via `scripts/ui/hunters_mark_indicator.gd` (mirrors `compass.gd`'s
-pattern). Composition module: `scripts/entities/player_ranger_talents.gd` (`PlayerRangerTalents`,
-`_ranger_talents`). Full spec: `markdowns/ranger_base.md`.
+pattern). **In-world marker**: the marked `Enemy` itself also shows a small red "▼" above its
+sprite whenever it's currently `Stats.hunters_mark_target` — `Enemy._mark_indicator` (`enemy.gd`,
+same per-enemy-child-`Label` pattern as `_zzz_label`/`_notice_label`), toggled every frame in a new
+`Enemy._process()` (the first `_process()` override on this class) rather than wired to a signal,
+since the mark can move to a different enemy or clear at several call sites
+(`player_ranger_talents.gd`) without a single common chokepoint to hook. Bobs up/down continuously
+while shown (`_start_mark_bob()`/`_stop_mark_bob()`, a looping sine-eased `position:y` tween —
+same `create_tween().set_loops()` convention as `_zzz_tween`) so it reads as a floating marker, not
+a static icon. Composition module:
+`scripts/entities/player_ranger_talents.gd` (`PlayerRangerTalents`, `_ranger_talents`). Full spec:
+`markdowns/ranger_base.md`.
 
 **Starting gear** (`GameState._give_ranger_starting_items()`): two Daggers (Main Hand + Off-hand
 — immediate dual-wield melee is a fully "correct" build, not a fallback) plus a Short Bow + 20
 Arrows in the ranged slot. `Stats.apply_class_defaults()`'s RANGER branch also sets
 `proficient_simple_weapons`/`proficient_martial_weapons` true (previously unset — every Ranger
 weapon would've shown "not proficient").
+
+**Ranger spellcasting (half-caster)**: Ranger is `Stats.CLASS_ROLE["RANGER"] == "HALF_CASTER"` (see
+that dict's own header comment in `scripts/entities/stats.gd` — a purely internal, never-shown-in-
+UI categorization of the full 5e class roster: MARTIAL = Barbarian/Fighter/Monk/Rogue, FULL_CASTER
+= Bard/Cleric/Druid/Sorcerer/Warlock/Wizard, HALF_CASTER = Ranger/Paladin, THIRD_CASTER = a
+subclass-only role — Eldritch Knight, Arcane Trickster — not a base-class row at all. Only the
+implemented classes actually do anything with this; it exists so a future class's role is decided
+consistently). `Stats.apply_class_defaults()`'s RANGER branch grants `Stats.caster =
+SpellcasterState.new()` (WIS-based, matching real 5e) with a `HalfCasterSlotPool`
+(`scripts/items/half_caster_slot_pool.gd`) instead of Wizard's `StandardSlotPool` — same interface
+(`max_slots()`/`available_level()`/`can_cast()`/`consume()`/`on_long_rest()`/
+`grant_new_slots_on_levelup()`), its own 2024-rules half-caster table (slots from character level 1,
+not level 2 like the 2014 rules — max spell level 5, reached at level 17). No cantrips
+(`SpellcasterState.cantrip_max()` stays 0 for every non-Wizard class — matches 2024 Ranger, which
+genuinely has none). **Prepared count**: `SpellcasterState.prepared_max()` branches on
+`character_class` — Ranger uses the real half-caster formula `max(1, WIS mod + character_level /
+2)` instead of Wizard's flat `character_level`.
+
+**Spell list**: Ranger draws from the same shared `SpellDb` pool as Wizard, but ONLY the subset
+actually on Ranger's real 5e/5.5e (2024) spell list — `SpellDb.RANGER_SPELL_IDS` deliberately does
+NOT just open every `LEVELED_SPELL_IDS` entry up to Ranger; each spell's own `class_list` was
+checked against its actual RAW class list (direct owner correction after an earlier pass got this
+wrong). Of the 12 `LEVELED_SPELL_IDS` entries, only **Fog Cloud** is genuinely
+Druid/Ranger/Sorcerer/Wizard — every other one (Magic Missile, Shield, Mage Armor, Misty Step,
+Fireball, Chromatic Orb, Burning Hands, Witch Bolt, Expeditious Retreat, False Life, Invisibility)
+is Sorcerer/Wizard(/Warlock) only on both 2014 and 2024 rules, so `RANGER_SPELL_IDS` is currently
+just `["fog_cloud"]` — a real content gap (this codebase has no nature-flavored spell content of
+its own, e.g. the real 2024 Ranger list's Ensnaring Strike/Goodberry/Zephyr Strike/etc.), not a
+bug; the starting-spell picker below already degrades gracefully to fewer than 3 cards when the
+eligible pool is this thin. `SpellDb.CLASS_SPELL_LISTS["RANGER"]` feeds the level-up spell-learn picker exactly like Wizard's
+own entry — `GameState._roll_spell_learn_choices()` was generalized to look up
+`Stats.CharacterClass.keys()[character_class]` instead of a hardcoded `"WIZARD"` string, and
+`gain_exp()`'s call site dropped its `character_class == WIZARD` gate in favor of a bare
+`caster != null` check, so a Ranger level-up now offers the exact same "pick 1 of up to 3" mandatory
+growth picker (`spell_learn_picker.gd`) Wizard already had.
+
+**Onboarding**: a Custom-path Ranger reaches the Mastery Picker after race select (its
+`mastery_cap()` is 2, unlike Wizard's 0) — `mastery_picker.gd`'s `_close()` was extended so that,
+in character-creation mode, if the class has a `caster` (Ranger today), it spawns
+`cantrip_select.gd` (generalized — see that file's own header comment for the Wizard-vs-Ranger
+branch split) for a single "pick 1 of 3" random level-1-spell round via
+`GameState.choose_starting_spell()`, in place of going straight to `character_summary.gd`; that
+picker's own confirm/Back then continues on to the summary screen / back to the Mastery Picker
+respectively. Premade Tish (Wood Elf Ranger, `character_select.gd`) carries a fixed `"spell1":
+"misty_step"` key, applied via the same `choose_starting_spell()` call every premade hero's fixed
+spell picks already use — no separate code path needed.
+
+**Everything else Wizard's leveled-spell system already built is caster-generic, not
+Wizard-specific, and needed zero changes for Ranger to inherit it for free**: the Spellbook
+overlay (`O` key, gated on `player_stats.caster != null`), the Special quick-cast slot + Alt+click
+cast, `Scroll of <Spell>` casting (already used INT for a non-caster and the caster's own ability
+otherwise — Ranger's WIS flows through the same `SpellcasterState.spell_attack_bonus()`/
+`spell_save_dc()` unchanged), the always-visible spell-slots HUD row, and save/load
+(`Stats.to_dict()`/`from_dict()`'s `caster_known_spells`/`caster_prepared_spells`/
+`caster_slot_remaining` fields were already keyed off `caster != null`, never a class check) all
+just work. See `scripts/items/CLAUDE.md`'s spellcasting-data section for `HalfCasterSlotPool`'s
+own field-level detail.
 
 **Tier 1 talents** (levels 1–5, point-gated, same schedule as Barbarian's — see
 `GameState._setup_ranger_talents()`), all three deliberately weapon-agnostic (none require a
@@ -1003,11 +1093,12 @@ section below is now authoritative). Data classes (`Spell`, `SpellDb`, `Spellcas
 - **The original three cantrips** (`SpellDb`, `scripts/items/spell_db.gd`), all Evocation, 1
   action, tier-scaling dice:
   - **Fire Bolt** — 12 tiles, 1d10 Fire. No `effect_id` (pure generic damage path) — if the target
-    stands on a `GRASS` tile, the hit also calls `DungeonFloor.destroy_grass()`; otherwise it calls
-    `DungeonFloor.ignite_flammable()`, which sets a Barrel or (unlocked) Door alight for a real
-    3-turn burn-down timer — see `scripts/world/CLAUDE.md`'s "Barrels + flammable props". Fireball
-    and Burning Hands' AoE resolvers (below) ignite every flammable tile they pass through the same
-    way.
+    stands on a `GRASS` tile, the hit also calls `DungeonFloor.ignite_grass()` (one round of
+    burning, long enough to spread and burn whoever's standing there, before it converts to
+    TRAMPLED_GRASS); otherwise it calls `DungeonFloor.ignite_flammable()`, which sets a Barrel or
+    (unlocked) Door alight for an HP-based burn-down (2d4 Fire/round off its own HP, not a flat
+    turn timer) — see `scripts/world/CLAUDE.md`'s "Barrels + flammable props". Fireball and Burning
+    Hands' AoE resolvers (below) ignite every flammable tile they pass through the same way.
   - **Ray of Frost** — 6 tiles, 1d8 Cold. `effect_id = "ray_of_frost"`: on a hit, the target rolls
     a STR save (`resist_check_detailed()`, `dc = SpellcasterState.spell_save_dc()`) — logged to
     chat with a hoverable `save:` tooltip **either way** (pass or fail, Topple's
@@ -1075,24 +1166,31 @@ extra was needed there).
   single-slot field (only Blade Ward uses it today, but casting a second, different concentration
   spell would break this one first — the chokepoint already exists in `cast_leveled_self()`'s
   `"blade_ward"` branch for whenever a second one is added).
-- **Light** (Evocation, `effect_id: "light"`, AUTO_HIT, TILE, touch range 1): touch an object
-  resting on the ground (a floor item — `dungeon_floor.get_item_at(tile_pos) != null`, never a
-  worn/carried one) and it becomes a **real light source**, not cosmetic: `GameState.
-  set_light_source(pos, color, item)` (random color from a fixed palette; `item` is the specific
-  `Item` reference touched — kept so the light can tell when it's gone, see below) is read every
-  `DungeonFloor.update_fog()` call, which unions its own `_compute_shadowcast(pos,
-  LIGHT_SOURCE_RADIUS=4)` into the player's visible-tiles set (walls still block it — same
-  shadowcast algorithm as the player's own FOV) — see `scripts/world/CLAUDE.md`'s "FOV" section.
-  Only one Light source active at a time (recasting replaces it outright); ends on a completed rest
-  (short or long — `_on_short_rest_completed()`/`long_rest()` both call
-  `GameState.clear_light_source()`), on floor descent (`advance_floor()` — the lit object is left
-  behind on the previous floor; this codebase's own reinterpretation of the spell's RAW "1 hour"
-  duration, since there's no real-time clock to hang that off of), **or the instant the lit object
-  leaves its floor tile** — picked up by the player, or otherwise removed — checked every
-  `update_fog()` call via `GameState.light_source_item`'s presence in
-  `get_items_at(light_source_pos)`. `DungeonFloor._update_light_source_glow()` tints every tile the
-  light's own shadowcast actually reaches with `GameState.light_source_color` (not just a single
-  square over the source tile) so the player can see both where it is and how far it reaches.
+- **Light** (Evocation, `effect_id: "light"`, AUTO_HIT, TILE, touch range 1): touch almost
+  anything except bare terrain/walls or a living creature and it becomes a **real light source**,
+  not cosmetic. `SpellEffects.cast_light_at_tile()` checks the target tile in priority order — a
+  floor item (`dungeon_floor.get_item_at(tile_pos) != null`, never a worn/carried one), else a
+  door (`has_door_at()`), else a GRASS tile (`get_tile_type() == GRASS`), else a barrel
+  (`has_barrel_at()`) — and rejects the cast (gray log line, no turn-consuming side effect beyond
+  the swing animation) if none match; **Mud/Water and every other bare terrain tile are
+  deliberately excluded**, same as any wall/void tile. `GameState.set_light_source(pos, color,
+  item, kind)` (random color from a fixed palette; `kind` is `"item"`/`"door"`/`"grass"`/
+  `"barrel"`, `item` only meaningful for the `"item"` kind — kept so the light can tell when it's
+  gone) is read every `DungeonFloor.update_fog()` call, which unions its own
+  `_compute_shadowcast(pos, LIGHT_SOURCE_RADIUS=4)` into the player's visible-tiles set (walls
+  still block it — same shadowcast algorithm as the player's own FOV) — see
+  `scripts/world/CLAUDE.md`'s "FOV" section. Only one Light source active at a time (recasting
+  replaces it outright); ends on a completed rest (short or long —
+  `_on_short_rest_completed()`/`long_rest()` both call `GameState.clear_light_source()`), on floor
+  descent (`advance_floor()` — the lit thing is left behind on the previous floor; this codebase's
+  own reinterpretation of the spell's RAW "1 hour" duration, since there's no real-time clock to
+  hang that off of), **or the instant the lit thing itself is gone** — checked every `update_fog()`
+  call via a `light_source_kind`-branched validity check (item: still present at
+  `get_items_at(light_source_pos)`; door: `has_door_at()` still true, i.e. not burnt away; grass:
+  tile is still GRASS, i.e. not destroyed/trampled by fire; barrel: `has_barrel_at()` still true,
+  i.e. not burnt down). `DungeonFloor._update_light_source_glow()` tints every tile the light's own
+  shadowcast actually reaches with `GameState.light_source_color` (not just a single square over
+  the source tile) so the player can see both where it is and how far it reaches.
 
 ## Concentration (generic mechanism)
 `Stats.concentration_spell_id: String` (`""` = not concentrating) + one duration field per
@@ -1251,8 +1349,10 @@ impact point rather than stop at the first wall it can't directly see through.
   targeting and cast immediately) — **skipped entirely while `GameState.invincible`** (God Mode),
   so a slot never needs to exist to cast, not just never gets spent; `try_cast_at()` dispatches on
   `Spell.target_kind` to one of three new `SpellEffects` functions — `cast_leveled_self()`,
-  `cast_leveled_at_tile()`, `cast_leveled_at_enemy()` — each consuming a slot via `_consume_slot()`
-  (guarded by `GameState.invincible`, same as every other consumption site) before resolving.
+  `cast_leveled_at_tile()`, `cast_leveled_attack_at_enemy()` (Magic Missile is intercepted earlier
+  and resolves via its own `cast_magic_missile()`, see below) — each consuming a slot via
+  `_consume_slot()` (guarded by `GameState.invincible`, same as every other consumption site)
+  before resolving.
   `PlayerSpellcasting._cast_level_for(spell)` is the one chokepoint every arm/cast/direct-cast path
   reads: returns `spell.level` immediately when `invincible` (no slot lookup at all), else
   `caster.slot_pool.available_level(spell)` — the EXACT slot for that spell's own level, or `-1` if
@@ -1366,22 +1466,68 @@ impact point rather than stop at the first wall it can't directly see through.
   from character creation until their first long rest or level-up, contradicting the agreed "2×
   1st-level slots at level 1". `_give_wizard_starting_items()` now seeds `remaining` from
   `max_slots()` directly, same population `on_long_rest()` does.
-- **Magic Missile's range is the caster's LIVE field of view, not a fixed tile number**:
-  `Spell.range_is_fov: bool` (when true, `PlayerSpellcasting._effective_range()` returns
-  `DungeonFloor.FOV_RADIUS + GameState.fov_radius_bonus + GameState.player_stats.darkvision_bonus`
-  instead of `spell.range_tiles` — the exact same live formula `dungeon_floor.gd`'s own FOV
-  computation uses, so Wild Heart Eagle's +1 FOV radius or Orc/Dwarf darkvision genuinely extend
-  how far the spell reaches). Set on `magic_missile` only; every other spell still uses a fixed
-  `range_tiles`. `begin_cast()`'s targeting-prompt log line and the out-of-range rejection message
-  both read the live value too, not a hardcoded "7 tiles".
+- **Magic Missile — BG3-style "seeking dart" targeting, fixed 12-tile range**: `Spell.range_tiles
+  = 12` (a plain fixed number now — the earlier `Spell.range_is_fov`-driven "range = live FOV
+  radius" mechanic was replaced per direct owner correction; `range_is_fov` itself still exists on
+  `Spell` and still works for any future spell that wants it, magic_missile just no longer sets
+  it). `Spell.bypasses_los: bool` (`scripts/items/spell.gd`) is the new mechanic: when true,
+  `PlayerSpellcasting.try_cast_at()` skips the normal `has_ranged_los()` check entirely and
+  requires `DungeonFloor.has_walkable_route_ignoring_chasms(caster_pos, clicked)` instead — the
+  target doesn't need to be SEEN (behind a wall corner, through grass, past a closed door all
+  still hit), it just needs a route a walking character could physically take to reach it, with
+  one deliberate exception: **chasms don't block this route** (`_is_walkable_ignoring_chasm()`
+  blocks only WALL/VOID/barrel-blacksmith-shopkeeper props — every other tile type, CHASM
+  included, passes — the dart flies over a chasm a real character on foot couldn't cross). 8-
+  directional BFS, same shape as the existing click-to-move `find_path()` otherwise, but
+  deliberately NOT gated on `_explored` (a spell can blind-cast into unseen fog like any other
+  spell/ranged attack in this codebase — only real click-to-move pathing requires
+  explored tiles). The Shift/spell-targeting tile-tint preview (`scripts/world/CLAUDE.md`'s "AoE
+  targeting preview") also runs this same path check before allowing an enemy to tint red for a
+  `bypasses_los` spell — never shows red on an enemy the dart genuinely couldn't reach, even if
+  it's within the flat 12-tile range. Out-of-range still rejects with the normal
+  "Target out of range" message; failing the path check (in range, but no route) rejects with
+  "No path to the target." instead of "No clear line to target."
 - **Magic Missile's detailed damage tooltip**: a dedicated `mmdmg:` meta (`darts`, `rolls`
   `|`-joined per-dart totals, `total`, `final`) replaces the generic `dmg:` meta for this spell —
   `TooltipFormatters.fmt_mmdmg_tooltip()` (`scripts/ui/tooltip_formatters.gd`, dispatched in
   `hud.gd._format_tooltip()`) lists each dart's individual 1d4+1 roll before the summed total.
-  **Damage-only, deliberately** — "always hits"/"range = full FOV" do NOT belong on a damage-
-  number tooltip (per direct owner correction); that context lives on the spell's own ability-bar
-  hover tooltip instead (`Spell.description`, `SpellDb._magic_missile()`), which already states
-  both.
+  **Damage-only, deliberately** — "always hits"/"ignores LOS" do NOT belong on a damage-number
+  tooltip (per direct owner correction); that context lives on the spell's own ability-bar hover
+  tooltip instead (`Spell.description`, `SpellDb._magic_missile()`), which already states both.
+- **Magic Missile — 3 independently-targeted darts, not one 3-dart hit on a single target**:
+  casting it arms `spell_targeting_active` exactly like any other spell, but instead of resolving
+  on the first click it collects exactly **3 dart-target picks**, one per click (repeats freely
+  allowed — clicking the same target twice/three times focuses that many darts' damage onto it),
+  before the cast actually resolves — `PlayerSpellcasting._begin_multi_target()` /
+  `_handle_multi_target_click()` / `_mm_active`/`_mm_targets` (`scripts/entities/
+  player_spellcasting.gd`), intercepted before the normal single-click ENEMY dispatch in
+  `begin_cast()`/`cast_direct()`/`on_scroll_primed()` (checked via `Spell.effect_id ==
+  "magic_missile"`, so the ability-bar cast, the Special-slot Alt+click one-motion cast, AND a
+  Scroll of Magic Missile all go through the same multi-target collection). Each click is
+  range/path-validated exactly like a normal single-target cast (Chebyshev range +
+  `bypasses_los`'s walkable-route check, see above) before being accepted — an invalid click just
+  logs why and lets the player try again, it does not cancel the whole cast. **Esc (`cancel()`) at
+  any point cancels the entire cast with nothing spent** — the spell slot and the turn are only
+  consumed once all 3 picks are in (`SpellEffects.cast_magic_missile()`'s own
+  `TurnManager.begin_player_action()`/`_consume_slot()` envelope), same "nothing happens until it
+  actually resolves" precedent as every other arm-then-click spell. **RMB undoes the single most
+  recent pick** instead of cancelling everything (`PlayerSpellcasting.
+  is_collecting_multi_target()`/`undo_last_multi_target_pick()`, checked first in `player.gd`'s
+  RMB handler, ahead of Inspect/tool-complete/the normal RMB dispatch) — pops the last entry off
+  `_mm_targets` and re-prompts for that many darts again; a no-op if nothing's been picked yet.
+  **Valid targets beyond enemies**: a click can also land on a barrel or a (non-hidden) door
+  (`PlayerSpellcasting._resolve_multi_target_at()` — `DungeonFloor.has_barrel_at()`/
+  `has_door_at()`, checked after `get_targetable_enemy_at()` finds nothing) — neither has an
+  HP/AC system yet (see "Enemy D&D stat-block schema" above, which still only covers `Enemy`), so a
+  dart aimed at one just visibly streaks in and "shatters harmlessly against it," logged but with
+  no mechanical effect — a forward-compatible slot for once destructible props exist, not a no-op
+  bug. **Resolution** (`SpellEffects.cast_magic_missile()`, replacing the old single-target
+  `cast_leveled_at_enemy()`, which is now dead and was deleted): the 3 picks are grouped by unique
+  target (`_mm_target_key()` — an `Enemy`'s instance id, or a prop's kind+position) before
+  resolving, so 2 or 3 darts aimed at the same enemy sum into one `take_typed_damage()` call/one
+  floater/one log line (still each individually rolled 1d4+1 first, per-dart rolls preserved in the
+  `mmdmg:` tooltip) rather than resolving as separate hits. Distinct targets each get their own
+  independent damage instance/log line in the same cast.
 
 ### More 1st-level spells (Chromatic Orb, Burning Hands, Witch Bolt)
 
@@ -1424,7 +1570,7 @@ introduces one new mechanic not needed by any earlier spell.
   range or behind a wall — only its direction from the caster is used). **Never damages the
   caster** (unlike Fireball's sphere) and, matching `_resolve_sphere_aoe()`'s own existing scope,
   doesn't hit a companion either — enemies only. Ignites every `GRASS` tile the cone passes
-  through (`DungeonFloor.destroy_grass()`), mirroring Fire Bolt/Thunderclap's flammable-terrain
+  through (`DungeonFloor.ignite_grass()`), mirroring Fire Bolt/Thunderclap's flammable-terrain
   side effect.
 - **Witch Bolt** (Evocation, `effect_id: "witch_bolt"`, ATTACK_ROLL, ENEMY, 6 tiles, 2d12
   Lightning initial hit): a second concentration spell alongside Blade Ward — casting it while a

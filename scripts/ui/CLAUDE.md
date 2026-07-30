@@ -219,6 +219,26 @@ result is immediately shown via a reveal `RichTextLabel` built from the existing
 `WeaponTooltip.build(item)`, no new tooltip-formatting code needed. Esc or the Close button
 dismisses without side effects.
 
+## Shop panel (`shop_panel.gd`)
+CanvasLayer, layer = 25. ShopRoom's Buy/Sell overlay (special-rooms-economy-design.md §4.1,
+session 7e) — modeled on `attunement_picker.gd`'s conventions (dim overlay + centered bordered
+`Panel`, `focus_mode = FOCUS_NONE` everywhere, one row per item). Only ever reachable by bumping/
+RMB-interacting the shopkeeper prop tile (`scripts/world/CLAUDE.md`'s "Shopkeeper prop" —
+`PlayerActions.open_shop_panel(pos)`), never a hotkey. Sets `GameState.shop_open = true` on open
+(blocks all player input, threaded through the same OR-chains every other overlay flag lives in)
+→ `false` on close.
+
+Two simple mode-toggle buttons (Buy/Sell — plain bool `_mode`, not a real `TabContainer`) switch
+which list `_refresh()` builds. **Buy**: lists `DungeonFloor.get_shopkeeper_stock(shop_pos)` (the
+shopkeeper's own generated stock — live array, not a copy), price = `item.gold_value` flat, Buy
+button disabled when `GameState.gold < item.gold_value`; confirming calls `GameState.add_item()`
+first (refuses + logs "inventory full" if it fails, without spending gold), then
+`GameState.spend_gold()` (rolling the item back out on the rare race where gold changed between
+the button-disable check and the click), then removes the item from the live stock array. **Sell**:
+lists every `player_quickbar`/`player_inventory` item with `gold_value > 0`, price =
+`maxi(1, gold_value / 2)`; confirming calls `GameState.remove_item()` + `GameState.add_gold()`.
+Gold readout top-right, refreshed on `GameState.gold_changed`. Esc or the Close button dismisses.
+
 ## Debug panel (`debug_panel.gd`)
 F3 toggle. CanvasLayer, layer = 25.
 Features: **God Mode** (checkbox — activates invincible + noclip + see_all + exposes enemy rolls/HP in chat log), **All Checks** (checkbox — `GameState.debug_show_all_checks`, logs every per-turn Stealth-vs-Passive-Perception roll AND every Undead Fortitude save, pass or fail, instead of only real events (detections / trait triggers); visibility only, never changes the roll — see `scripts/entities/CLAUDE.md`'s "Stealth & Surprise Attacks" and its "Undead Fortitude's own check-visibility" note), Invincible, Noclip, Jump to Floor, Give Item, **Spawn Enemy** (sub-panel listing all `DungeonFloorData.ENEMY_POOL` + `BOSS_POOL`, spawns adjacent to player via `dungeon_floor.debug_spawn_enemy()`), **Level Up** (`GameState.debug_level_up()`), **Give 100 Gold** (`GameState.add_gold(100)`), **Give Spell...** (sub-panel listing every `SpellDb.CANTRIP_IDS + LEVELED_SPELL_IDS` entry — icon, name, `SpellDb.ordinal(level)` badge, description, "Give" button; `_on_give_spell()` calls `GameState.choose_cantrip()` for a level-0 spell or `learn_spell()` + `set_spell_prepared(id, true)` for a leveled one, both idempotent/cap-safe — for testing any spell without playing through level-ups, no quantity control since spells are boolean known/prepared, not stackable), See All, **Enhance Item (Slot 1)** (`GameState.enhance_quickbar_slot1_item()` — +1 per press to whatever sits in item-quickbar slot 1: weapon → `bonus_damage`, Armor/Shield → `bonus_ac`, everything else a no-op; not added to the Give Item pool on purpose — see `scripts/items/CLAUDE.md`'s "Enhance debug tool"), **Mute** (bottom of the main panel, below Give Spell — calls `AudioManager.toggle_mute()`, label swaps 🔊/🔇 in sync with `AudioManager.mute_changed`, same signal the HUD's own top-right `MuteButton` listens to; added as a more-discoverable second entry point since that corner button is easy to miss).
