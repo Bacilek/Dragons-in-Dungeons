@@ -39,7 +39,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	# Captured BEFORE on_disturbed() wakes the target — has_advantage() reads pre-attack
-	# behavior/door_ambush state, which on_disturbed() immediately mutates away.
+	# behavior/surprise_available state, which on_disturbed() immediately mutates away.
 	var was_surprised: bool = player._vfx.has_advantage(target)
 	target.on_disturbed(player.grid_pos)
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
@@ -48,7 +48,10 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	await sprite.animation_finished
 	sprite.play("idle")
 
-	var target_was_unaware: bool = target.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
+	# Reuses has_advantage()'s own result for the melee-range DISADV exemption below, rather than
+	# re-deriving "unaware" from behavior — so a freshly re-sighted (surprise_available) target
+	# gets the same exemption a still-unaware one does.
+	var target_was_unaware: bool = was_surprised
 
 	var stats: Stats = player.stats
 	var attack_bonus: int = _attack_bonus(stats)
@@ -151,8 +154,8 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 				GameState.game_log("[color=cyan]%s is Shocked![/color]" % target.display_name)
 			_:
 				if dungeon_floor != null and dungeon_floor.get_tile_type(target.grid_pos) == DungeonData.TileType.GRASS:
-					dungeon_floor.destroy_grass(target.grid_pos)
-					GameState.game_log("[color=orange]The grass catches fire![/color]")
+					if dungeon_floor.ignite_grass(target.grid_pos):
+						GameState.game_log("[color=orange]The grass catches fire![/color]")
 				elif dungeon_floor != null:
 					dungeon_floor.ignite_flammable(target.grid_pos)
 
@@ -259,12 +262,16 @@ static func _resolve_thunderclap(player: Player, spell: Spell, dungeon_floor: No
 		if is_lethal:
 			player._finish_kill(e)
 
-# Light cantrip — touch an object resting on the ground (a floor item, never a worn/carried one)
-# and it becomes a real light source: DungeonFloor.update_fog() unions its own shadowcast into the
-# player's FOV every turn (scripts/world/CLAUDE.md), so it genuinely pushes back the fog, not just
-# a cosmetic glow. Only one Light source active at a time (GameState.set_light_source() replaces
-# whatever was lit before); ends on rest or floor descent — see GameState.clear_light_source()'s
-# call sites.
+# Light cantrip — touch almost anything except terrain/walls and living creatures and it becomes
+# a real light source: DungeonFloor.update_fog() unions its own shadowcast into the player's FOV
+# every turn (scripts/world/CLAUDE.md), so it genuinely pushes back the fog, not just a cosmetic
+# glow. Valid targets, checked in this priority order: a floor item (never a worn/carried one), a
+# door, a grass tile, or a barrel — deliberately EXCLUDES Mud/Water (and every other bare terrain
+# tile) and any living entity (no enemy/player click path even resolves here). Only one Light
+# source active at a time (GameState.set_light_source() replaces whatever was lit before); ends on
+# rest or floor descent, or the instant the lit thing itself is gone (item picked up, door/barrel
+# burnt down, grass destroyed) — see GameState.clear_light_source()'s call sites and
+# DungeonFloor.update_fog()'s per-kind validity check.
 static func cast_light_at_tile(player: Player, spell: Spell, tile_pos: Vector2i, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
@@ -275,16 +282,31 @@ static func cast_light_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 	sprite.play("idle")
 
 	var target_item: Item = dungeon_floor.get_item_at(tile_pos) if dungeon_floor != null else null
-	if target_item == null:
-		GameState.game_log("[color=gray]You must touch an object resting on the ground.[/color]")
+	var target_kind: String = ""
+	var target_desc: String = ""
+	if target_item != null:
+		target_kind = "item"
+		target_desc = target_item.item_name
+	elif dungeon_floor != null and dungeon_floor.has_door_at(tile_pos):
+		target_kind = "door"
+		target_desc = "door"
+	elif dungeon_floor != null and dungeon_floor.get_tile_type(tile_pos) == DungeonData.TileType.GRASS:
+		target_kind = "grass"
+		target_desc = "grass"
+	elif dungeon_floor != null and dungeon_floor.has_barrel_at(tile_pos):
+		target_kind = "barrel"
+		target_desc = "barrel"
+
+	if target_kind == "":
+		GameState.game_log("[color=gray]You must touch an object, door, patch of grass, or barrel.[/color]")
 	else:
 		const LIGHT_COLORS: Array[Color] = [
 			Color(1.0, 0.85, 0.55), Color(0.55, 0.85, 1.0), Color(0.6, 1.0, 0.65),
 			Color(1.0, 0.6, 0.8), Color(0.8, 0.65, 1.0), Color(1.0, 1.0, 0.6),
 		]
 		var c: Color = Rng.pick(LIGHT_COLORS)
-		GameState.set_light_source(tile_pos, c, target_item)
-		GameState.game_log("[color=cyan]The %s begins to glow with a soft light.[/color]" % target_item.item_name)
+		GameState.set_light_source(tile_pos, c, target_item, target_kind)
+		GameState.game_log("[color=cyan]The %s begins to glow with a soft light.[/color]" % target_desc)
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
@@ -303,8 +325,8 @@ static func cast_spell_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 	sprite.play("idle")
 
 	if spell.effect_id == "" and dungeon_floor != null and dungeon_floor.get_tile_type(tile_pos) == DungeonData.TileType.GRASS:
-		dungeon_floor.destroy_grass(tile_pos)
-		GameState.game_log("[color=orange]The grass catches fire![/color]")
+		if dungeon_floor.ignite_grass(tile_pos):
+			GameState.game_log("[color=orange]The grass catches fire![/color]")
 	elif spell.effect_id == "" and dungeon_floor != null:
 		dungeon_floor.ignite_flammable(tile_pos)
 
@@ -463,7 +485,7 @@ static func _resolve_cone_aoe(player: Player, spell: Spell, aim_tile: Vector2i, 
 	for p: Vector2i in cone:
 		tile_set[p] = true
 		if dungeon_floor.get_tile_type(p) == DungeonData.TileType.GRASS:
-			dungeon_floor.destroy_grass(p)
+			dungeon_floor.ignite_grass(p)
 		else:
 			dungeon_floor.ignite_flammable(p)
 
@@ -523,7 +545,10 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, 
 				var p: Vector2i = center + Vector2i(dx, dy)
 				if not dungeon_floor.has_ranged_los(center, p):
 					continue
-				dungeon_floor.ignite_flammable(p)
+				if dungeon_floor.get_tile_type(p) == DungeonData.TileType.GRASS:
+					dungeon_floor.ignite_grass(p)
+				else:
+					dungeon_floor.ignite_flammable(p)
 	for e: Enemy in targets:
 		e.on_disturbed(player.grid_pos)
 		var dc: int = _save_dc(stats)
@@ -572,38 +597,81 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, 
 		GameState.game_log("[color=orange]You are [url=%s]%s[/url] in your own blast for [url=%s]%d[/url] Fire dmg%s.[/color]" % [
 			psave_meta, "caught" if not pass_save else "singed", pdmg_meta, actual_p, reduced_note])
 
-# ENEMY target, AUTO_HIT resolution (Magic Missile) — no attack roll.
-static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
+## Groups a dart-target descriptor (see PlayerSpellcasting._resolve_multi_target_at()) into a
+## unique string key so repeated picks of the same target focus multiple darts onto it instead of
+## resolving as separate instances.
+static func _mm_target_key(t: Dictionary) -> String:
+	if t["kind"] == "enemy":
+		return "enemy:%d" % (t["enemy"] as Object).get_instance_id()
+	var pos: Vector2i = t["pos"]
+	return "%s:%d:%d" % [t["kind"], pos.x, pos.y]
+
+static func _mm_target_pos(t: Dictionary) -> Vector2i:
+	if t["kind"] == "enemy":
+		return (t["enemy"] as Enemy).grid_pos
+	return t["pos"]
+
+# ENEMY/prop MULTI-TARGET, AUTO_HIT resolution (Magic Missile) — no attack roll. `targets` is
+# exactly 3 dart-target descriptors, one per dart, gathered click-by-click in
+# PlayerSpellcasting._handle_multi_target_click() (any combination of repeats — see that
+# function's own header comment). Grouped here by unique target so a repeated pick focuses more
+# than one dart's damage onto that target instead of resolving as separate hits. A barrel/door
+# target has no HP/AC system yet (scripts/entities/CLAUDE.md's Enemy stat-block schema still only
+# covers Enemy) — the dart(s) visibly strike it with no mechanical effect until that lands; a
+# forward-compatible slot, not a bug.
+static func cast_magic_missile(player: Player, spell: Spell, cast_level: int, targets: Array[Dictionary], dungeon_floor: Node, from_scroll: bool = false) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
-	target.on_disturbed(player.grid_pos)
+
+	var order: Array[String] = []
+	var groups: Dictionary = {}  # key -> {"desc": Dictionary, "count": int}
+	for t: Dictionary in targets:
+		var key: String = _mm_target_key(t)
+		if not groups.has(key):
+			groups[key] = {"desc": t, "count": 0}
+			order.append(key)
+		groups[key]["count"] += 1
+
+	var first_pos: Vector2i = _mm_target_pos(targets[0])
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
-	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
+	sprite.flip_h = first_pos.x < player.grid_pos.x
 	sprite.play("hit")
 	await sprite.animation_finished
 	sprite.play("idle")
 	_consume_slot(player, cast_level, from_scroll)
 
-	match spell.effect_id:
-		"magic_missile":
-			var darts: int = 3
-			var dart_rolls: Array[int] = []
-			var total: int = 0
-			for _i: int in darts:
-				var r: int = Rng.range_i(1, 4) + 1
-				dart_rolls.append(r)
-				total += r
-			var actual: int = target.take_typed_damage(total, "Force")["actual"]
-			target.update_hp_bar()
-			if dungeon_floor != null:
-				dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color("Force"))
-			var rolls_str: String = "|".join(dart_rolls.map(func(x: int) -> String: return str(x)))
-			var dmg_meta: String = "mmdmg:darts=%d,rolls=%s,total=%d,final=%d" % [darts, rolls_str, total, actual]
-			var is_lethal: bool = target.stats.is_dead()
-			GameState.game_log("%d darts of force streak toward %s for [url=%s][color=yellow]%d[/color][/url] Force dmg.%s" % [
-				darts, target.display_name, dmg_meta, actual, CombatMath.death_suffix(is_lethal)])
-			if is_lethal:
-				player._finish_kill(target)
+	for key: String in order:
+		var g: Dictionary = groups[key]
+		var desc: Dictionary = g["desc"]
+		var darts: int = g["count"]
+		var dart_rolls: Array[int] = []
+		var total: int = 0
+		for _i: int in darts:
+			var r: int = Rng.range_i(1, 4) + 1
+			dart_rolls.append(r)
+			total += r
+		var rolls_str: String = "|".join(dart_rolls.map(func(x: int) -> String: return str(x)))
+		var plural: String = "s" if darts != 1 else ""
+
+		match desc["kind"]:
+			"enemy":
+				var target: Enemy = desc["enemy"]
+				if not is_instance_valid(target) or target.stats.is_dead():
+					continue
+				target.on_disturbed(player.grid_pos)
+				var actual: int = target.take_typed_damage(total, "Force")["actual"]
+				target.update_hp_bar()
+				if dungeon_floor != null:
+					dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color("Force"))
+				var dmg_meta: String = "mmdmg:darts=%d,rolls=%s,total=%d,final=%d" % [darts, rolls_str, total, actual]
+				var is_lethal: bool = target.stats.is_dead()
+				GameState.game_log("%d dart%s of force streak toward %s for [url=%s][color=yellow]%d[/color][/url] Force dmg.%s" % [
+					darts, plural, target.display_name, dmg_meta, actual, CombatMath.death_suffix(is_lethal)])
+				if is_lethal:
+					player._finish_kill(target)
+			"barrel", "door":
+				var noun: String = "barrel" if desc["kind"] == "barrel" else "door"
+				GameState.game_log("%d dart%s of force streak toward the %s and shatter harmlessly against it." % [darts, plural, noun])
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
@@ -616,9 +684,12 @@ static func cast_leveled_at_enemy(player: Player, spell: Spell, cast_level: int,
 # instead of "cast ... at".
 static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Enemy, dtype: String, dungeon_floor: Node, is_leap: bool) -> Dictionary:
 	# Captured BEFORE on_disturbed() wakes the target — has_advantage() reads pre-attack
-	# behavior/door_ambush state, which on_disturbed() immediately mutates away.
+	# behavior/surprise_available state, which on_disturbed() immediately mutates away. The DISADV
+	# exemption reuses has_advantage()'s own result rather than re-deriving "unaware" from behavior,
+	# so a freshly re-sighted (surprise_available) target gets the same exemption a still-unaware
+	# one does.
 	var was_surprised: bool = player._vfx.has_advantage(target)
-	var target_was_unaware: bool = target.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
+	var target_was_unaware: bool = was_surprised
 	target.on_disturbed(player.grid_pos)
 	var stats: Stats = player.stats
 	var attack_bonus: int = _attack_bonus(stats)

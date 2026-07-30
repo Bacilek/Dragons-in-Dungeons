@@ -308,6 +308,19 @@ func _on_turn_started() -> void:
 					GameState.burn_out_torch(_bag_item)
 		if _dungeon_floor != null:
 			_dungeon_floor.tick_torches()
+			# The player's own "standing on a burning door/grass tile" damage MUST be checked
+			# BEFORE tick_burning_props() below — that call can destroy the very door/finish
+			# burning the very grass tile the player is standing on this same tick (its own 2d4
+			# HP-loss roll, or _tick_burning_grass()'s one-round expiry), which would silently
+			# rob the player of their last tick of damage if checked afterward. Enemy/Companion
+			# each do the equivalent check for themselves at the top of their own decide_turn(),
+			# which always runs later in the round than this, so they don't share this ordering
+			# concern the same way.
+			_dungeon_floor.tick_fire_damage_for(self)
+			# Barrel/door burn-down + fire-propagation-between-props, at the start of the round
+			# (see DungeonFloor.tick_burning_props()'s own doc comment for why this moved off
+			# player_turn_ending).
+			_dungeon_floor.tick_burning_props()
 	GameState.ability_bar_changed.emit()
 	# Natural Sleeper R2: 2d6 temp HP (replace, not stack) if standing in form's terrain.
 	# Only fires on real turns, not on reverted turns.
@@ -668,10 +681,13 @@ func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
 # Cardinal + diagonal movement via per-frame key sampling so two held cardinals = diagonal
 func _process(_delta: float) -> void:
 	_update_hover_indicator()
-	_update_spell_aoe_preview()
+	var spell_preview_active: bool = _update_spell_aoe_preview()
+	var ranged_preview_active: bool = _update_ranged_range_preview()
+	if _dungeon_floor != null:
+		_dungeon_floor.set_fov_bonus_overlay_suppressed(spell_preview_active or ranged_preview_active)
 	if GameState.is_game_over or GameState.inventory_open or GameState.short_rest_open \
 			or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
-			or GameState.background_select_open or GameState.blacksmith_panel_open \
+			or GameState.background_select_open or GameState.blacksmith_panel_open or GameState.shop_open \
 			or not GameState.class_selected:
 		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
@@ -758,7 +774,7 @@ func _update_hover_indicator() -> void:
 		return
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing \
 			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over \
-			or GameState.blacksmith_panel_open:
+			or GameState.blacksmith_panel_open or GameState.shop_open:
 		_hover_indicator.visible = false
 		return
 	var world_mouse: Vector2 = get_global_mouse_position()
@@ -816,27 +832,32 @@ func _update_hover_indicator() -> void:
 # Dynamic tile-tint preview while a spell is armed for targeting — see dungeon_floor.gd's "AoE
 # targeting preview" section. A blue "maximum reach" backdrop shows for ANY armed spell (single-
 # target or AoE); sphere/cone spells additionally get the exact purple/red footprint preview on
-# top (red instead of purple on a tile with a known, targetable enemy). The ability-bar arm-then-
-# click flow (PlayerSpellcasting.begin_cast()) arms spell_targeting_active for this directly; the
-# Alt+click Special-slot one-motion cast never arms it (cast_direct() resolves the same frame it's
-# clicked), so while Alt is held with a spell in the Special slot, preview that spell instead —
-# same tile-tint, just keyed off the held modifier instead of armed-targeting state.
-func _update_spell_aoe_preview() -> void:
+# top (red instead of purple on a tile with a known, targetable enemy); a plain single-target
+# ENEMY spell (Fire Bolt, Shocking Grasp, ...) gets just the red highlight on the hovered tile,
+# with no purple footprint at all, whenever a targetable enemy stands there. The ability-bar
+# arm-then-click flow (PlayerSpellcasting.begin_cast()) arms spell_targeting_active for this
+# directly; the Alt+click Special-slot one-motion cast never arms it (cast_direct() resolves the
+# same frame it's clicked), so while Alt is held with a spell in the Special slot, preview that
+# spell instead — same tile-tint, just keyed off the held modifier instead of armed-targeting
+# state. Returns whether a preview is actually showing this frame — `_process()` uses this (OR'd
+# with `_update_ranged_range_preview()`'s own return) to suppress the torch/darkvision FOV-bonus
+# glows so their yellow/gray never visually blends with this preview's blue/purple/red.
+func _update_spell_aoe_preview() -> bool:
 	if _dungeon_floor == null:
-		return
+		return false
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing \
 			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over \
-			or GameState.blacksmith_panel_open:
+			or GameState.blacksmith_panel_open or GameState.shop_open:
 		_dungeon_floor.hide_aoe_preview()
 		_dungeon_floor.hide_spell_range_preview()
-		return
+		return false
 	var spell: Spell = _spellcasting.get_armed_spell()
 	if spell == null and Input.is_key_pressed(KEY_ALT) and GameState.special_slot_spell_id != "":
 		spell = SpellDb.get_spell(GameState.special_slot_spell_id)
 	if spell == null:
 		_dungeon_floor.hide_aoe_preview()
 		_dungeon_floor.hide_spell_range_preview()
-		return
+		return false
 	# Blue "maximum reach" backdrop — every tile that could possibly be hit from here, shown for
 	# any armed spell (not just AoE shapes). Cone: reach = the cone's own length (its origin is
 	# always the caster). Sphere: reach = how far the blast's own center can be placed, plus the
@@ -844,15 +865,64 @@ func _update_spell_aoe_preview() -> void:
 	# out). Everything else (single-target ENEMY/TILE spells): reach = the spell's plain range.
 	var range_radius: int = spell.shape_size if spell.shape == "cone" else (spell.range_tiles + spell.shape_size if spell.shape == "sphere" else spell.range_tiles)
 	_dungeon_floor.show_spell_range_preview(grid_pos, range_radius)
-	if spell.target_kind != Spell.TargetKind.TILE or (spell.shape != "sphere" and spell.shape != "cone"):
-		_dungeon_floor.hide_aoe_preview()
-		return
 	var world_mouse: Vector2 = get_global_mouse_position()
 	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
-	if spell.shape == "cone":
+	# Chebyshev distance to the hovered tile vs the spell's own actual castable range — the same
+	# check try_cast_at() enforces for real. Gates whether any enemy in the preview is allowed to
+	# tint red (see show_aoe_preview()'s/show_single_target_preview()'s own doc comments) — a tile
+	# the player couldn't actually cast at never implies "this would hit."
+	var d: Vector2i = tile - grid_pos
+	var dist_cheb: int = maxi(absi(d.x), absi(d.y))
+	var in_range: bool = dist_cheb <= _spellcasting._effective_range(spell)
+	# Magic Missile-style spells need a real walkable path too (see try_cast_at()'s own check) —
+	# never preview red on an enemy the dart genuinely couldn't reach, even if it's in range.
+	if in_range and spell.bypasses_los:
+		in_range = _dungeon_floor.has_walkable_route_ignoring_chasms(grid_pos, tile)
+	if spell.target_kind == Spell.TargetKind.TILE and spell.shape == "cone":
 		_dungeon_floor.show_cone_preview(grid_pos, tile, spell.shape_size)
+	elif spell.target_kind == Spell.TargetKind.TILE and spell.shape == "sphere":
+		_dungeon_floor.show_aoe_preview(tile, spell.shape_size, in_range)
+	elif spell.target_kind == Spell.TargetKind.ENEMY:
+		_dungeon_floor.show_single_target_preview(tile, in_range)
 	else:
-		_dungeon_floor.show_aoe_preview(tile, spell.shape_size)
+		_dungeon_floor.hide_aoe_preview()
+	return true
+
+# Shift+hover ranged-weapon targeting preview — mirrors _update_spell_aoe_preview()'s shape but for
+# a plain equipped ranged weapon: a two-tone blue backdrop (light = normal range, dark = the extra
+# long-range band that rolls with Disadvantage — DungeonFloor.show_ranged_range_preview()) plus the
+# same red single-tile enemy highlight spells use (DungeonFloor.show_single_target_preview() —
+# shared, not duplicated). Only active while no spell is armed for targeting, so the two previews
+# never fight over the same frame — see the comment on show_ranged_range_preview() itself. Returns
+# whether the preview is actually showing this frame, same reason as _update_spell_aoe_preview()'s
+# own return.
+func _update_ranged_range_preview() -> bool:
+	if _dungeon_floor == null:
+		return false
+	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing \
+			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over \
+			or GameState.blacksmith_panel_open or GameState.shop_open:
+		_dungeon_floor.hide_ranged_range_preview()
+		return false
+	var spell_armed: bool = _spellcasting.get_armed_spell() != null \
+			or (Input.is_key_pressed(KEY_ALT) and GameState.special_slot_spell_id != "")
+	if spell_armed or not Input.is_key_pressed(KEY_SHIFT):
+		_dungeon_floor.hide_ranged_range_preview()
+		return false
+	var weapon: Item = GameState.equipped_ranged
+	if weapon == null:
+		_dungeon_floor.hide_ranged_range_preview()
+		return false
+	var long_r: int = weapon.long_range if weapon.long_range > 0 else DungeonFloor.FOV_RADIUS
+	_dungeon_floor.show_ranged_range_preview(grid_pos, weapon.range, long_r)
+	var world_mouse: Vector2 = get_global_mouse_position()
+	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
+	# Same range/FOV check the real shot enforces (is_ranged_target_in_range()) — an enemy beyond
+	# the weapon's own long range (or hiding beyond the normal range in unexplored fog) never tints
+	# red, matching the spell-preview rule above.
+	var in_range: bool = _ranged.is_ranged_target_in_range(weapon, tile)
+	_dungeon_floor.show_single_target_preview(tile, in_range)
+	return true
 
 func _reset_camera_offset() -> void:
 	if _camera != null:
@@ -925,7 +995,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active \
 			or GameState.talent_picker_open or GameState.mastery_picker_open \
 			or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
-			or GameState.background_select_open or GameState.blacksmith_panel_open \
+			or GameState.background_select_open or GameState.blacksmith_panel_open or GameState.shop_open \
 			or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open):
 		return
 	if event is InputEventKey:
@@ -938,6 +1008,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					and not GameState.subclass_picker_open and not GameState.race_picker_open \
 					and not GameState.point_buy_open and not GameState.background_select_open \
 					and not GameState.cantrip_picker_open and not GameState.blacksmith_panel_open \
+					and not GameState.shop_open \
 					and not GameState.spell_learn_picker_open and not GameState.spellbook_open:
 				GameState.inventory_toggle.emit()
 			return
@@ -948,6 +1019,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					and not GameState.mastery_picker_open and not GameState.subclass_picker_open \
 					and not GameState.race_picker_open and not GameState.point_buy_open \
 					and not GameState.background_select_open and not GameState.blacksmith_panel_open \
+					and not GameState.shop_open \
 					and not GameState.cantrip_picker_open and not GameState.spell_learn_picker_open \
 					and not GameState.spellbook_open:
 				_actions.open_talent_picker()
@@ -961,6 +1033,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					and not GameState.mastery_picker_open and not GameState.subclass_picker_open \
 					and not GameState.race_picker_open and not GameState.point_buy_open \
 					and not GameState.background_select_open and not GameState.blacksmith_panel_open \
+					and not GameState.shop_open \
 					and not GameState.cantrip_picker_open and not GameState.spell_learn_picker_open \
 					and not GameState.spellbook_open:
 				var picker = load("res://scripts/ui/spellbook_overlay.gd").new()
@@ -970,7 +1043,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if GameState.inventory_open or GameState.short_rest_open or GameState.short_rest_active \
 				or GameState.talent_picker_open or GameState.mastery_picker_open \
 				or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
-				or GameState.background_select_open or GameState.blacksmith_panel_open \
+				or GameState.background_select_open or GameState.blacksmith_panel_open or GameState.shop_open \
 				or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
@@ -1060,7 +1133,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_pending_click_tile = Vector2i(-1, -1)
 				if _lmb_panning or pending == Vector2i(-1, -1) or _dungeon_floor == null:
 					return
-				if GameState.short_rest_active or GameState.short_rest_open or GameState.blacksmith_panel_open:
+				if GameState.short_rest_active or GameState.short_rest_open or GameState.blacksmith_panel_open or GameState.shop_open:
 					return
 				# BUGFIX: this Alt+special-slot check must run BEFORE the "pending == grid_pos"
 				# no-op-move guard below — a SELF-target spell (Mage Armor) in the Special slot is
@@ -1117,6 +1190,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		var clicked: Vector2i = Vector2i(int(world_pos.x / TILE_SIZE), int(world_pos.y / TILE_SIZE))
 
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
+			# Magic Missile multi-target picking: RMB undoes the most recently locked-in dart
+			# instead of whatever RMB would normally do (Inspect/tool-complete/etc.) — takes
+			# priority over everything else below while a dart pick is in progress.
+			if _spellcasting.is_collecting_multi_target():
+				if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
+					_spellcasting.undo_last_multi_target_pick()
+				return
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
 				_throw_item = null
 				if _tool_item != null and _tool_item.item_name == "Empty Bottle":
@@ -1148,7 +1228,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_actions.do_inspect(clicked)
 			return
 
-		if GameState.short_rest_active or GameState.short_rest_open or GameState.blacksmith_panel_open:
+		if GameState.short_rest_active or GameState.short_rest_open or GameState.blacksmith_panel_open or GameState.shop_open:
 			return
 
 		# Cantrip targeting mode
@@ -1657,6 +1737,10 @@ func _try_move(dir: Vector2i) -> void:
 		if _dungeon_floor.has_blacksmith_at(target):
 			_actions.open_blacksmith_panel()
 			return
+		# Shopkeeper prop: bump-to-open, same ergonomics as the Blacksmith prop above.
+		if _dungeon_floor.has_shopkeeper_at(target):
+			_actions.open_shop_panel(target)
+			return
 		# Door handling — locked doors distinguish dungeon-generated vs player-set
 		if _dungeon_floor.has_door_at(target) and not _dungeon_floor.is_door_open(target):
 			if _dungeon_floor.is_door_locked(target):
@@ -1883,7 +1967,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	# Captured BEFORE on_disturbed() wakes the enemy — has_advantage() reads pre-attack
-	# behavior/door_ambush state, which on_disturbed() immediately mutates away.
+	# behavior/surprise_available state, which on_disturbed() immediately mutates away.
 	var was_surprised: bool = _vfx.has_advantage(enemy)
 	enemy.on_disturbed(grid_pos)
 	$AnimatedSprite2D.flip_h = dir.x < 0

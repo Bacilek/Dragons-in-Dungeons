@@ -108,6 +108,7 @@ var mold_spawned: bool = false
 # never touches it) so death's "Try Again" can rebuild the same character on a fresh run/seed.
 var character_creation_snapshot: Dictionary = {}
 var blacksmith_panel_open: bool = false     # blocks ALL player input while blacksmith_panel.gd is visible
+var shop_open: bool = false                 # blocks ALL player input while shop_panel.gd is visible
 var short_rest_open: bool = false
 var talent_picker_open: bool = false
 var mastery_picker_open: bool = false
@@ -295,6 +296,7 @@ func start_new_run() -> void:
 	mold_target_floor = Rng.range_i(1, 4)
 	mold_spawned = false
 	blacksmith_panel_open = false
+	shop_open = false
 	current_floor = 1
 	is_game_over = false
 	inventory_open = false
@@ -646,27 +648,41 @@ func choose_starting_spell(spell_id: String, silent: bool = false) -> void:
 		game_log("[color=lime]You learn %s![/color]" % spell.spell_name)
 
 func _give_barbarian_starting_items() -> void:
-	var axe := Item.new()
-	axe.item_name = "Greataxe"
-	axe.item_type = Item.Type.WEAPON
-	axe.icon_path = "res://sprites/weapons/weapon_double_axe.png"
-	axe.description = ""
-	axe.is_heavy = true
-	axe.bonus_damage = 0      # proficiency adds to attack roll, not to damage
-	axe.damage_die_min = 1    # weapon defines its own dice: 1d12
-	axe.damage_die_max = 12
-	axe.floor_min = 1
-	axe.floor_max = 10
-	axe.is_ranged = false
-	axe.is_two_handed = true
-	axe.damage_type = "Slashing"
-	axe.weapon_mastery = "Cleave"
-	axe.weapon_category = "Martial"
-	axe.gold_value = 30
+	# Tier-1 Spear main-hand + 2 thrown Handaxes (weapon-tiers-design.md §6 option (a)) — the
+	# Greataxe moved to a real Tier-4 floor-loot entry (DungeonFloorData.ITEM_POOL, fmin=6) instead
+	# of guaranteed starting gear; a fresh Barbarian no longer starts with what should be an
+	# end-game find. Accepted tradeoff: Greataxe was the only Cleave-mastery weapon in the game, so
+	# a Barbarian now has no guaranteed way to use a picked Cleave mastery rank until one drops.
+	var spear := Item.new()
+	spear.item_name = "Spear"
+	spear.item_type = Item.Type.WEAPON
+	spear.icon_path = "res://sprites/weapons/weapon_spear.png"
+	spear.description = ""
+	spear.bonus_damage = 0
+	spear.damage_die_min = 1
+	spear.damage_die_max = 6
+	spear.versatile_die_min = 1
+	spear.versatile_die_max = 8
+	spear.is_versatile = true
+	spear.floor_min = 1
+	spear.floor_max = 10
+	spear.is_ranged = false
+	spear.damage_type = "Piercing"
+	spear.weapon_mastery = "Sap"
+	spear.weapon_category = "Simple"
+	spear.is_thrown = true
+	spear.range = 3
+	spear.long_range = 12
+	spear.uses_max = 5
+	spear.uses_remaining = 5
+	spear.gold_value = 1
 	# Equip silently (no turn cost, no turn consumed — startup)
-	equipment["melee"] = axe
+	equipment["melee"] = spear
 	recalculate_stats()
 	equipment_changed.emit()
+
+	for _i: int in 2:
+		add_item(_build_barbarian_handaxe())
 
 	# Rage ability in slot 0 of ability bar
 	var rage := Ability.new()
@@ -690,7 +706,34 @@ func _give_barbarian_starting_items() -> void:
 	ud.is_passive = true
 	add_ability(ud)
 
+func _build_barbarian_handaxe() -> Item:
+	var handaxe := Item.new()
+	handaxe.item_name = "Handaxe"
+	handaxe.item_type = Item.Type.WEAPON
+	handaxe.icon_path = "res://sprites/weapons/weapon_throwing_axe.png"
+	handaxe.description = ""
+	handaxe.damage_type = "Slashing"
+	handaxe.weapon_category = "Simple"
+	handaxe.damage_die_min = 1
+	handaxe.damage_die_max = 6
+	handaxe.weapon_mastery = "Vex"
+	handaxe.is_light = true
+	handaxe.is_thrown = true
+	handaxe.range = 3
+	handaxe.long_range = 12
+	handaxe.uses_max = 5
+	handaxe.uses_remaining = 5
+	handaxe.gold_value = 5
+	return handaxe
+
 func _give_ranger_starting_items() -> void:
+	# Half-caster spell-slot seeding — same BUGFIX reasoning as _give_wizard_starting_items()
+	# above: slot_pool.remaining otherwise stays {} until the first long rest/level-up, and the
+	# 2024-rules half-caster table already grants slots at character level 1 (HalfCasterSlotPool,
+	# scripts/items/half_caster_slot_pool.gd), so a level-1 Ranger needs them available immediately.
+	if player_stats.caster != null and player_stats.caster.slot_pool != null:
+		player_stats.caster.slot_pool.remaining = player_stats.caster.slot_pool.max_slots().duplicate()
+		spell_slots_changed.emit()
 	# Two Daggers (Main Hand + Off-hand — immediate dual-wield melee is a fully "correct" Ranger
 	# build, not a fallback) plus a Short Bow in the ranged slot — the player picks whichever
 	# fits the moment, neither path is favored mechanically.
@@ -938,11 +981,13 @@ func _rebuild_spell_ability_bar() -> void:
 	ability_bar_changed.emit()
 
 ## Rolls up to 3 candidate spells for the level-up learn picker (§4.1) — every level-up, not just
-## even ones (owner decision). Candidates: WIZARD class list, spell.level > 0 (cantrips excluded),
-## spell.level <= the highest slot level the character can currently cast (no offering a 4th-level
-## spell at character level 5), not already known. Sets spell_learn_pending only if >= 1 candidate
-## exists; otherwise logs a gray "nothing new" line — the content-count caveat in
-## leveled-spells-and-slots-plan.md §7 means this happens often with only 4 example spells.
+## even ones (owner decision). Candidates: this character's own class spell list
+## (SpellDb.CLASS_SPELL_LISTS, keyed by class-enum name — WIZARD or RANGER today, see
+## scripts/entities/CLAUDE.md's "Ranger class"), spell.level > 0 (cantrips excluded), spell.level
+## <= the highest slot level the character can currently cast (no offering a 4th-level spell at
+## character level 5), not already known. Sets spell_learn_pending only if >= 1 candidate exists;
+## otherwise logs a gray "nothing new" line — the content-count caveat in
+## leveled-spells-and-slots-plan.md §7 means this happens often with only a handful of spells.
 func _roll_spell_learn_choices() -> void:
 	var caster: SpellcasterState = player_stats.caster
 	if caster == null or caster.slot_pool == null:
@@ -950,7 +995,8 @@ func _roll_spell_learn_choices() -> void:
 	var max_level: int = 0
 	for lv: int in caster.slot_pool.max_slots():
 		max_level = maxi(max_level, lv)
-	var pool_variant: Variant = SpellDb.CLASS_SPELL_LISTS.get("WIZARD")
+	var class_name_str: String = Stats.CharacterClass.keys()[player_stats.character_class]
+	var pool_variant: Variant = SpellDb.CLASS_SPELL_LISTS.get(class_name_str)
 	var candidates: Array[String] = []
 	if pool_variant == null:
 		return
@@ -1089,11 +1135,18 @@ const TORCH_LIGHT_RADIUS: int = 2
 var light_source_pos: Vector2i = Vector2i(-1, -1)
 var light_source_color: Color = Color.WHITE
 var light_source_item: Item = null
+## What kind of thing is lit — "item" (default, the original floor-item-only behavior, validity
+## checked via light_source_item's presence), "door", "grass", or "barrel" (see spell_effects.gd's
+## cast_light_at_tile() — Light can now touch almost anything except terrain/walls/living
+## creatures/Mud/Water). DungeonFloor.update_fog() branches on this to decide whether the lit
+## thing is still there each recompute; item stays the only kind that carries a live Item ref.
+var light_source_kind: String = "item"
 
-func set_light_source(pos: Vector2i, color: Color, item: Item) -> void:
+func set_light_source(pos: Vector2i, color: Color, item: Item, kind: String = "item") -> void:
 	light_source_pos = pos
 	light_source_color = color
 	light_source_item = item
+	light_source_kind = kind
 	light_source_changed.emit()
 
 func clear_light_source() -> void:
@@ -1101,6 +1154,7 @@ func clear_light_source() -> void:
 		return
 	light_source_pos = Vector2i(-1, -1)
 	light_source_item = null
+	light_source_kind = "item"
 	light_source_changed.emit()
 
 ## Fog Cloud (leveled spell, Conjuration) — a persistent circular zone, tracked purely as
@@ -1447,7 +1501,7 @@ func gain_exp(amount: int) -> void:
 		combat_message.emit(level_msg)
 		short_rest_changed.emit()
 		_apply_monk_level_features(player_stats.character_level)
-		if player_stats.character_class == Stats.CharacterClass.WIZARD and player_stats.caster != null and player_stats.caster.slot_pool != null:
+		if player_stats.caster != null and player_stats.caster.slot_pool != null:
 			player_stats.caster.slot_pool.grant_new_slots_on_levelup(old_slot_max)
 			spell_slots_changed.emit()
 			_roll_spell_learn_choices()

@@ -31,7 +31,18 @@ var initial_behavior: Behavior = Behavior.SLEEPING
 var behavior: Behavior = Behavior.SLEEPING
 var last_known_target_pos: Vector2i = Vector2i(-1, -1)
 
-var door_ambush: bool = false  # set in _move_step() when stepping through a door with no prior LOS to the player; expires at the top of the NEXT take_turn() (lifetime = the round it happened), consumed one-shot by PlayerVfx.has_advantage()
+# Surprise-attack ADV (see "Stealth & Surprise Attacks" in scripts/entities/CLAUDE.md): set only
+# when THIS enemy's own decision cycle is what re-establishes sight of an already-noticed target
+# (a door-camping ambush, a mid-chase obstacle break, or Invisibility ending while still hunted —
+# see _decide_action()'s CHASING/SEARCHING branches) — never by a player-triggered stealth-check
+# notice, which stays purely behavior-gated (see PlayerVfx.has_advantage()). Lifetime = exactly one
+# round (the round after it's set) — cleared by _execute_action()'s expiry guard if unconsumed, or
+# consumed one-shot by PlayerVfx.has_advantage().
+var surprise_available: bool = false
+# Tracks whether this enemy could see its current target as of its own last decision — the false→
+# true edge is what fires the regain-notice above. Set true unconditionally by _notice_target()/
+# on_disturbed() so the round right after a fresh notice never double-fires a regain.
+var _had_los_to_player: bool = false
 var passive_perception: int = 10  # docs/architecture/stealth-and-surprise-attacks-design.md §3.2 — static DC (pool key "passive_perception", default 10 + WIS mod, derived in _apply_stats())
 var oa_used_this_round: bool = false  # Opportunity Attack reaction cap — reset at the top of take_turn()
 var slowed_turns: int = 0
@@ -110,6 +121,10 @@ var _zzz_tween: Tween
 var just_noticed: bool = false  # set the instant an unaware enemy detects the player (stealth-check notice — including at true adjacency, now just a very-high-DC roll rather than an auto-notice — or, vs the Companion only, the true-adjacency backstop) — consumed by the very next _decide_action(), which skips movement/attack that round (shows _notice_label instead) so a freshly-noticed enemy can't also act the same round it noticed. NOT set on the "wake-on-attacked" path (on_disturbed's default via_attack), which still wakes+acts immediately, unchanged.
 var _notice_label: Label
 
+var _mark_indicator: Label  # Ranger's Hunter's Mark — small red arrow shown above the currently-marked enemy
+var _mark_tween: Tween
+var _mark_base_y: float = -34.0
+
 func configure(type_data: Dictionary) -> void:
 	_type = type_data
 	display_name = type_data.get("display_name", "Enemy")
@@ -123,6 +138,7 @@ func _ready() -> void:
 	_setup_hp_bar()
 	_setup_zzz()
 	_setup_notice_mark()
+	_setup_mark_indicator()
 	behavior = initial_behavior
 	if behavior == Behavior.SLEEPING:
 		_start_zzz()
@@ -267,11 +283,20 @@ func apply_status(condition: String, turns: int) -> bool:
 # called) — direct owner request: if the goblin was already damaged before this melee swing (shot
 # by a ranged weapon, say), fleeing melee range is pointless since the player can just shoot it
 # while it runs, so a melee hit landed on an already-damaged goblin no longer triggers a flee.
+# Also fires an immediate one-tile "flinch" hop directly away from the attacker, right here in
+# reaction to the hit that provoked it (still within the attacker's own turn, before TurnManager
+# ever hands control to this enemy) — otherwise the goblin would stand still eating a follow-up
+# swing on the very turn its escape starts, letting the player just walk in lockstep with it for
+# the whole flee and get a free stab at the end regardless. Reuses _flee_from() as-is: same
+# no-OA-provoked step, and if it's cornered (wall/blocked tile behind it) _flee_from() simply
+# returns false without moving — no special-casing needed, the goblin just stays put this beat and
+# starts its normal (possibly cornered-fight) flee behavior on its own turn as usual.
 func on_melee_hit(attacker: Node) -> void:
 	if stats.is_dead() or not _has_trait("nimble_escape") or _hits_taken > 1:
 		return
 	escape_turns = Rng.range_i(1, 5)
 	escape_from = attacker
+	await _flee_from(attacker)
 
 # Traits (§11): "regeneration" heals at the top of a real turn unless a shutoff-type hit landed
 # last round (take_typed_damage() sets _regen_blocked_this_round). Called from take_turn().
@@ -702,6 +727,46 @@ func _hide_notice_mark() -> void:
 	if is_instance_valid(_notice_label):
 		_notice_label.visible = false
 
+func _setup_mark_indicator() -> void:
+	_mark_indicator = Label.new()
+	_mark_indicator.text = "▼"
+	_mark_indicator.add_theme_font_size_override("font_size", 16)
+	_mark_indicator.add_theme_color_override("font_color", Color(0.9, 0.15, 0.15))
+	_mark_indicator.position = Vector2(-4, _mark_base_y)
+	_mark_indicator.z_index = 10
+	_mark_indicator.visible = false
+	add_child(_mark_indicator)
+
+func _start_mark_bob() -> void:
+	if not is_instance_valid(_mark_indicator):
+		return
+	_mark_indicator.visible = true
+	if _mark_tween != null and _mark_tween.is_valid():
+		_mark_tween.kill()
+	_mark_indicator.position.y = _mark_base_y
+	_mark_tween = create_tween().set_loops()
+	_mark_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_mark_tween.tween_property(_mark_indicator, "position:y", _mark_base_y - 5.0, 0.35)
+	_mark_tween.tween_property(_mark_indicator, "position:y", _mark_base_y, 0.35)
+
+func _stop_mark_bob() -> void:
+	if _mark_tween != null and _mark_tween.is_valid():
+		_mark_tween.kill()
+		_mark_tween = null
+	if is_instance_valid(_mark_indicator):
+		_mark_indicator.visible = false
+
+func _process(_delta: float) -> void:
+	if not is_instance_valid(_mark_indicator):
+		return
+	var should_show: bool = GameState.player_stats != null \
+		and GameState.player_stats.hunters_mark_target == self \
+		and not stats.is_dead()
+	if should_show and not _mark_indicator.visible:
+		_start_mark_bob()
+	elif not should_show and _mark_indicator.visible:
+		_stop_mark_bob()
+
 func _wake_up() -> void:
 	behavior = Behavior.CHASING
 	_stop_zzz()
@@ -715,6 +780,7 @@ func _notice_target(source_pos: Vector2i) -> void:
 	_wake_up()
 	last_known_target_pos = source_pos
 	just_noticed = true
+	_had_los_to_player = true  # so the very next CHASING check doesn't immediately re-fire a regain
 	_show_notice_mark()
 	GameState.enemy_noticed_player_this_turn = true
 
@@ -731,6 +797,7 @@ func on_disturbed(source_pos: Vector2i) -> void:
 	if just_noticed:
 		just_noticed = false
 		_hide_notice_mark()
+	_had_los_to_player = true  # being struck already implies awareness; avoid a spurious regain-fire
 	if behavior in [Behavior.SLEEPING, Behavior.STATIONARY, Behavior.ROAMING]:
 		_wake_up()
 		last_known_target_pos = source_pos
@@ -798,18 +865,6 @@ func _can_see_entity(e: Node) -> bool:
 	var r: int = _sight_range()
 	return _dist_sq_to(e) <= r * r and _dungeon_floor.has_line_of_sight(nearest_occupied_tile(e.grid_pos), e.grid_pos)
 
-# door_ambush gate (§4.3): true if this enemy could already see the player from `from_pos`
-# (BEFORE the door step) — used to tell "door-camping ambush" (no prior LOS) apart from an
-# already-aware hunter that simply opened a door mid-chase (has LOS, no ambush).
-func _had_los_to_player_from(from_pos: Vector2i) -> bool:
-	var player: Player = _dungeon_floor.get_player()
-	if player == null or not is_instance_valid(player):
-		return false
-	var r: int = _sight_range()
-	var dx: int = player.grid_pos.x - from_pos.x
-	var dy: int = player.grid_pos.y - from_pos.y
-	return dx * dx + dy * dy <= r * r and _dungeon_floor.has_line_of_sight(from_pos, player.grid_pos)
-
 # Adjacency wins first (first to reach range gets attacked); ties broken by lower current HP.
 # Otherwise, whichever candidate is nearer is the one stepped toward / seen.
 func _select_target(candidates: Array) -> Node:
@@ -847,8 +902,15 @@ func take_turn() -> void:
 # only cross-entity/world mutation is deferred to execute_turn().
 func decide_turn() -> Dictionary:
 	oa_used_this_round = false
-	door_ambush = false  # lifetime = exactly one round ("the round it came through the door")
 	if _dungeon_floor == null:
+		return {"type": "wait"}
+	# Standing on a burning door tile — checked at the very top of THIS enemy's own turn (direct
+	# owner request: fire damage lands "at the start of their own turn", not lumped into a single
+	# global round tick — see DungeonFloor.tick_fire_damage_for()'s own doc comment). Can kill this
+	# enemy outright; TurnManager._run_single_enemy() already guards on `not stats.is_dead()`
+	# before calling execute_turn(), so bailing out here with a harmless "wait" intent is safe.
+	_dungeon_floor.tick_fire_damage_for(self)
+	if stats.is_dead():
 		return {"type": "wait"}
 	_tick_abilities()
 	_tick_regeneration()
@@ -1057,16 +1119,35 @@ func _decide_action() -> Dictionary:
 
 		Behavior.CHASING:
 			if can_see:
+				# LOS-regain (SPD-style ring-around/door-ambush/invisibility-ending): this enemy's
+				# OWN turn is what re-establishes sight after having lost it — grants one round of
+				# surprise-attack eligibility on the player's very next attack. See "Stealth &
+				# Surprise Attacks" in scripts/entities/CLAUDE.md for why this differs from a
+				# player-triggered stealth-check notice (which never grants this).
+				if not _had_los_to_player:
+					_had_los_to_player = true
+					surprise_available = true
+					_notice_target(target.grid_pos)
+					return {"type": "notice"}
 				last_known_target_pos = target.grid_pos
 				_search_heading = Vector2i(sign(dx), sign(dy))
+			else:
+				_had_los_to_player = false
 			return _act_toward_or_ability(target, can_see, {"chasing": true})
 
 		Behavior.SEARCHING:
 			if can_see:
+				if not _had_los_to_player:
+					_had_los_to_player = true
+					surprise_available = true
+					behavior = Behavior.CHASING
+					_notice_target(target.grid_pos)
+					return {"type": "notice"}
 				behavior = Behavior.CHASING
 				last_known_target_pos = target.grid_pos
 				_search_heading = Vector2i(sign(dx), sign(dy))
 				return _act_toward_or_ability(target, can_see)
+			_had_los_to_player = false
 			return {"type": "search"}
 
 	return {"type": "wait"}
@@ -1091,6 +1172,11 @@ func _execute_action(intent: Dictionary) -> void:
 	# chasing/attacking. "notice" itself is handled by its own case below (label stays up).
 	if intent.get("type", "wait") != "notice":
 		_hide_notice_mark()
+	# surprise_available expiry: snapshot BEFORE dispatch so a flag set THIS round (a regain-notice
+	# just decided above, or door-ambush-equivalent) is never immediately wiped by the guard below —
+	# only a flag that already survived a full round unconsumed gets cleared once this enemy takes a
+	# real (non-"notice") action. See "Stealth & Surprise Attacks" in scripts/entities/CLAUDE.md.
+	var had_surprise_before: bool = surprise_available
 	match intent.get("type", "wait"):
 		"notice":
 			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
@@ -1163,6 +1249,8 @@ func _execute_action(intent: Dictionary) -> void:
 				await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
 		"wait":
 			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
+	if intent.get("type", "wait") != "notice" and had_surprise_before:
+		surprise_available = false
 
 # True if `target` is within this enemy's current attack_profile range (melee default = adjacent).
 # An invisible player can't be attacked even while adjacent — an enemy that has no idea where
@@ -1528,7 +1616,6 @@ func _move_step(step: Vector2i, next_pos: Vector2i, provokes_oa: bool = true) ->
 		_check_opportunity_attacks_on_move(prev_pos, next_pos)
 	if not is_instance_valid(self) or stats.is_dead():
 		return
-	var stepping_through_door: bool = _dungeon_floor.has_door_at(next_pos)
 	$AnimatedSprite2D.flip_h = step.x < 0
 	$AnimatedSprite2D.play("run")
 	await move_to(next_pos, 0.04 if TurnManager.fast_mode else 0.08)
@@ -1537,8 +1624,10 @@ func _move_step(step: Vector2i, next_pos: Vector2i, provokes_oa: bool = true) ->
 	$AnimatedSprite2D.play("idle")
 	if visible:
 		AudioManager.play("footstep")
-	if stepping_through_door and not _had_los_to_player_from(prev_pos):
-		door_ambush = true
+	# Door-camping ambush is no longer detected here — it's fully subsumed by the general
+	# CHASING/SEARCHING LOS-regain check in _decide_action() (see "Stealth & Surprise Attacks" in
+	# scripts/entities/CLAUDE.md): a door blocks LOS while closed, so crossing it and regaining
+	# sight of the target on THIS enemy's own next decision fires the same regain-notice branch.
 	if _dungeon_floor.has_door_at(prev_pos):
 		_dungeon_floor.close_door(prev_pos)
 	var tile_type: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
