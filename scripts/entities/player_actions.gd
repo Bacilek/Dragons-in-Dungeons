@@ -22,6 +22,15 @@ func open_blacksmith_panel() -> void:
 	var panel_script = load("res://scripts/ui/blacksmith_panel.gd")
 	player.get_tree().root.add_child(panel_script.new())
 
+func open_shop_panel(pos: Vector2i) -> void:
+	if GameState.shop_open:
+		return
+	GameState.shop_open = true
+	var panel_script = load("res://scripts/ui/shop_panel.gd")
+	var panel = panel_script.new()
+	panel.shop_pos = pos
+	player.get_tree().root.add_child(panel)
+
 func open_talent_picker() -> void:
 	if GameState._class_talents.is_empty():
 		return
@@ -213,6 +222,19 @@ func interact_action(can_lock: bool = true, target: Vector2i = Vector2i(-1, -1))
 	for pos: Vector2i in blacksmith_tiles:
 		if player._dungeon_floor.has_blacksmith_at(pos):
 			open_blacksmith_panel()
+			return
+	# Priority 1.6: Shopkeeper prop (same exact-tile-vs-scan-8-neighbors split as trap/door)
+	var shop_tiles: Array[Vector2i] = []
+	if target != Vector2i(-1, -1):
+		var sdiff: Vector2i = target - player.grid_pos
+		if abs(sdiff.x) <= 1 and abs(sdiff.y) <= 1:
+			shop_tiles.append(target)
+	else:
+		for d: Vector2i in dirs8:
+			shop_tiles.append(player.grid_pos + d)
+	for pos: Vector2i in shop_tiles:
+		if player._dungeon_floor.has_shopkeeper_at(pos):
+			open_shop_panel(pos)
 			return
 	# Priority 2: door
 	# When called from RMB (target provided), only interact with that exact tile if adjacent.
