@@ -51,8 +51,7 @@ var disadv_next_attack: bool = false  # World Tree Grip of the Forest R3 — con
 var prone: bool = false          # Maul's Topple mastery — real Prone condition (not turn-counted): auto-stands at the top of this enemy's own next turn, consuming one point of movement budget to do so (see decide_turn()). While it remains prone (i.e. on the PLAYER's turns before then), Player.gd's melee/ranged attack sites grant ADV/DISADV against it directly off this field.
 var poisoned_condition_turns: int = 0  # true 5e Poisoned condition (DISADV on this enemy's own attack rolls/checks) — separate from any future enemy-side damage-over-time status, mirrors Stats.poisoned_condition_turns
 var incapacitated_turns: int = 0       # "can't take actions" — skips this enemy's entire turn (decide_turn() below) and makes every player attack against it a Surprise Attack (PlayerVfx.has_advantage())
-var frozen_feet_turns: int = 0   # Ray of Frost's STR-save-fail — skips movement, still attacks if adjacent (same shape as rooted_turns, kept separate so inspect can name it "Frozen Feet")
-var faerie_fire_turns: int = 0   # Drow lineage spell Faerie Fire — a failed DEX save outlines the target in light: every attack roll against it gets Advantage (PlayerVfx.has_advantage()). Purely a to-hit modifier, no movement/attack restriction of its own — ticked once per real turn in decide_turn(), same shape as frozen_feet_turns above.
+var faerie_fire_turns: int = 0   # Drow lineage spell Faerie Fire — a failed DEX save outlines the target in light: every attack roll against it gets Advantage (PlayerVfx.has_advantage()). Purely a to-hit modifier, no movement/attack restriction of its own — ticked once per real turn in decide_turn().
 var shocked_no_oa: bool = false  # Shocking Grasp — blocks this enemy's next Opportunity Attack exposure, whenever it next happens
 var mind_sliver_penalty_die: bool = false  # Mind Sliver cantrip — the next check this enemy makes (any resist_check_detailed() call) rolls with -1d4. Consumed on that next check; deliberately not turn-expiry-timed against "until the end of your next turn" per the spell text — enemy checks are rare enough that this one-shot-consumed simplification is documented here rather than adding a second timing system for it.
 var frightened_turns: int = 0    # Aasimar Necrotic Shroud (Celestial Revelation) — a failed CHA check frightens this enemy. Simplified vs. the real player-side Frightened (scripts/entities/CLAUDE.md's "Conditions"): DISADV on this enemy's own attack rolls only, no can't-approach-the-source movement block (no enemy-side "source" tracking exists) — ticked once per real turn in decide_turn(), same shape as faerie_fire_turns/enfeeble_turns.
@@ -1092,13 +1091,6 @@ func _decide_action() -> Dictionary:
 	# World Tree Grip of the Forest R2: rooted — no movement this turn, but can still attack if adjacent.
 	if rooted_turns > 0:
 		rooted_turns -= 1
-		if _chebyshev_to(target) == 1 and not _target_is_untouchable(target):
-			return {"type": "attack", "target": target}
-		return {"type": "wait"}
-
-	# Ray of Frost's Frozen Feet — same shape as rooted_turns above (no movement, can still attack).
-	if frozen_feet_turns > 0:
-		frozen_feet_turns -= 1
 		if _chebyshev_to(target) == 1 and not _target_is_untouchable(target):
 			return {"type": "attack", "target": target}
 		return {"type": "wait"}

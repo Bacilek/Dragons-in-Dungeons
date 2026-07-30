@@ -156,8 +156,8 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 				var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
 					save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 				if not save["pass"]:
-					target.frozen_feet_turns = maxi(target.frozen_feet_turns, 1)
-					GameState.game_log("[color=cyan]%s's feet [url=%s]freeze[/url] to the ground![/color]" % [target.display_name, save_meta])
+					target.apply_status("slowed", 3)
+					GameState.game_log("[color=cyan]%s is [url=%s]slowed[/url] by the cold![/color]" % [target.display_name, save_meta])
 				else:
 					GameState.game_log("[color=gray]%s [url=%s]resists[/url] the freeze.[/color]" % [target.display_name, save_meta])
 			"shocking_grasp":

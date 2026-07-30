@@ -122,8 +122,6 @@ func do_inspect(pos: Vector2i) -> void:
 	var enemy: Enemy = player._dungeon_floor.get_enemy_at(pos)
 	if enemy != null and enemy.visible:
 		var status_suffix: String = ""
-		if enemy.frozen_feet_turns > 0:
-			status_suffix += " [color=cyan]Frozen Feet[/color]"
 		if enemy.shocked_no_oa:
 			status_suffix += " [color=cyan]Shocked[/color]"
 		if GameState.player_stats.witch_bolt_turns > 0 and GameState.player_stats.witch_bolt_target == enemy:
