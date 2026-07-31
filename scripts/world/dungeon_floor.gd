@@ -115,6 +115,7 @@ var _darkvision_ring_tex: ImageTexture
 var _explored: Dictionary = {}
 var _visible_tiles: Dictionary = {}  # Vector2i → true; current FOV set, reset each update_fog
 var _ignore_magical_darkness: bool = false  # true only during the player's own FOV shadowcast when Stats.sees_through_magical_darkness — see _blocks_los()
+var _ignore_grass_los: bool = false  # true only during the player's own FOV shadowcast while Draconic Flight is active — see _blocks_los()
 var _fov_player_pos: Vector2i = Vector2i(-1, -1)
 var _see_all_active: bool = false
 
@@ -508,8 +509,10 @@ func update_fog(player_pos: Vector2i) -> void:
 
 	var full_fov_radius: int = GameState.effective_fov_radius(player_pos)
 	_ignore_magical_darkness = GameState.player_stats.sees_through_magical_darkness
+	_ignore_grass_los = GameState.player_stats.draconic_flight_turns > 0
 	_visible_tiles = _compute_shadowcast(player_pos, full_fov_radius)
 	_ignore_magical_darkness = false
+	_ignore_grass_los = false
 
 	# Heavily Obscured terrain can't be seen INTO from outside it, even at the boundary tile —
 	# _blocks_los() above already stops the shadowcast from reaching past a fog tile, but the
@@ -729,6 +732,16 @@ func _in_grid_bounds(pos: Vector2i) -> bool:
 func show_cone_preview(origin: Vector2i, aim: Vector2i, length: int) -> void:
 	var key: String = "cone,%d,%d,%d,%d,%d" % [origin.x, origin.y, aim.x, aim.y, length]
 	_paint_aoe_preview_tiles(key, SpellEffects.cone_tiles(origin, aim, length, self), true)
+
+# Line-shaped preview (Dragonborn Breath Weapon's Line option) — generic pass-through to
+# _paint_aoe_preview_tiles() for an already-computed tile list (PlayerDragonborn._line_tiles()),
+# same convention as show_cone_preview() above just without its own tile-gather since the caller's
+# shape isn't derived from SpellEffects.
+func show_line_preview(tiles: Array[Vector2i]) -> void:
+	var key: String = "line"
+	for t: Vector2i in tiles:
+		key += ",%d,%d" % [t.x, t.y]
+	_paint_aoe_preview_tiles(key, tiles, true)
 
 # Every tile in the footprint that has a known (non-invisible) enemy standing on it tints red
 # ("to be hit") instead of the flat purple every other footprint tile gets — a splash spell
@@ -1522,7 +1535,9 @@ func _update_enemy_visibility() -> void:
 
 func _blocks_los(bx: int, by: int) -> bool:
 	var t: DungeonData.TileType = _data.get_tile(bx, by)
-	if t == DungeonData.TileType.WALL or t == DungeonData.TileType.GRASS:
+	if t == DungeonData.TileType.WALL:
+		return true
+	if t == DungeonData.TileType.GRASS and not _ignore_grass_los:
 		return true
 	var pos := Vector2i(bx, by)
 	if _doors.has(pos) and not _doors[pos]["is_open"]:

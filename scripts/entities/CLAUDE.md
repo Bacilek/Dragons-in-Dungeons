@@ -240,11 +240,35 @@ re-rolling starting uses — see `scripts/autoloads/CLAUDE.md`).
   `_try_move()`, the chase-to-target loop, and the queued-path loop — each gained a local
   `_flying`/`_flying_c`/`_flying_p` bool gating their existing `destroy_grass()`/`trigger_trap()`
   calls); **immune to standing-on-fire damage** (`DungeonFloor.tick_fire_damage_for()`'s `Player`
-  branch returns early) — covers "grass burning underneath you doesn't ignite you". **Known
-  simplification**: ground-effect immunity doesn't extend to Spider's Web structure (a Restrained
-  player can still be caught mid-flight) — not wired, since Web's own movement-block path
-  (`player.gd`'s `_try_move()` WASD-redirect into `_attempt_web_escape()`) is a separate mechanism
-  from the walkability/grass/trap checks above and wasn't in scope for this pass.
+  branch returns early) — covers "grass burning underneath you doesn't ignite you". **WATER/MUD
+  never apply the difficult-terrain `slowed` status** (bugfix — all 3 movement code paths only
+  checked Trailblazer/Natural-Sleeper-form bypasses before, so flying still got bogged down
+  wading through water/mud despite the CHASM/grass/trap bypasses above already existing) and
+  **grass no longer blocks the player's own FOV/LOS while flying** — `DungeonFloor._blocks_los()`
+  gained a `_ignore_grass_los` bool, set true only during the player's OWN `update_fog()`
+  shadowcast while `draconic_flight_turns > 0` (mirrors `_ignore_magical_darkness`'s exact
+  set-before/reset-after-the-shadowcast-call pattern) — an enemy's own LOS check is a separate
+  shadowcast call that never sets this flag, so grass still blocks an enemy's sight of the player
+  normally; only the flying player's own vision sees over it. **Known simplification**:
+  ground-effect immunity doesn't extend to Spider's Web structure (a Restrained player can still be
+  caught mid-flight) — not wired, since Web's own movement-block path (`player.gd`'s `_try_move()`
+  WASD-redirect into `_attempt_web_escape()`) is a separate mechanism from the walkability/grass/
+  trap checks above and wasn't in scope for this pass.
+
+**Breath Weapon targeting preview** (bugfix — it used to arm with zero visual feedback, the only
+armed ability-bar action with none): `player.gd._update_breath_weapon_preview()`, dispatched from
+`_update_spell_aoe_preview()`'s own `spell == null` branch whenever `_dragonborn.
+breath_weapon_mode_active` (so it reuses the same per-frame call site, FOV-bonus-overlay
+suppression, and pooled-`Sprite2D` preview layers every spell already uses — no parallel `_process`
+hookup needed). Mirrors Burning Hands' own cone preview exactly: a blue max-reach backdrop unioning
+`SpellEffects.cone_tiles()` (Cone shape) or `PlayerDragonborn._line_tiles()` (Line shape) over all 8
+`SpellEffects.DIR8` directions (`DungeonFloor.show_spell_range_preview_tiles()`), plus a purple/red
+exact-footprint highlight at the currently-hovered aim direction (`DungeonFloor.
+show_cone_preview()` for Cone, reusing the existing function verbatim; a new `DungeonFloor.
+show_line_preview(tiles)` — a thin pass-through to the shared `_paint_aoe_preview_tiles()` — for
+Line, since no line-shaped preview existed before). Both shapes read `PlayerDragonborn.
+BREATH_CONE_LENGTH`/`BREATH_LINE_LENGTH` directly rather than a `Spell` resource, since Breath
+Weapon isn't cast through the spell system at all.
 
 ## Dwarf
 

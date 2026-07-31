@@ -687,7 +687,8 @@ func _on_turn_started() -> void:
 			var _dt_panther_bypass: bool = _dt_sleeper_on and _dt_ns_form == "Panther" and _dt_tile == DungeonData.TileType.MUD
 			var _dt_salmon_bypass: bool = _dt_sleeper_on and _dt_ns_form == "Salmon" and _dt_tile == DungeonData.TileType.WATER
 			var _dt_trailblazer_bypass: bool = GameState.get_talent_rank("trailblazer") >= 1
-			_dt_difficult = not _dt_panther_bypass and not _dt_salmon_bypass and not _dt_trailblazer_bypass
+			var _dt_flying_bypass: bool = GameState.player_stats.draconic_flight_turns > 0
+			_dt_difficult = not _dt_panther_bypass and not _dt_salmon_bypass and not _dt_trailblazer_bypass and not _dt_flying_bypass
 		if _dt_difficult != GameState.player_on_difficult_terrain:
 			GameState.player_on_difficult_terrain = _dt_difficult
 			GameState.player_status_changed.emit()
@@ -1105,6 +1106,8 @@ func _update_spell_aoe_preview() -> bool:
 	if spell == null and Input.is_key_pressed(KEY_ALT) and GameState.special_slot_spell_id != "":
 		spell = SpellDb.get_spell(GameState.special_slot_spell_id)
 	if spell == null:
+		if _dragonborn.breath_weapon_mode_active:
+			return _update_breath_weapon_preview()
 		_dungeon_floor.hide_aoe_preview()
 		_dungeon_floor.hide_spell_range_preview()
 		return false
@@ -1174,6 +1177,41 @@ func _update_spell_aoe_preview() -> bool:
 		_dungeon_floor.show_touch_target_preview(grid_pos, true)
 	else:
 		_dungeon_floor.hide_aoe_preview()
+	return true
+
+# Dragonborn Breath Weapon's own targeting preview — mirrors Burning Hands' cone preview exactly
+# (blue max-reach backdrop + purple/red exact-footprint highlight), just fed from
+# PlayerDragonborn's own armed state (breath_weapon_shape/BREATH_CONE_LENGTH/BREATH_LINE_LENGTH)
+# instead of a Spell resource, since Breath Weapon isn't cast through the spell system at all.
+# Bugfix: this used to have no preview whatsoever — the only armed ability-bar action with none.
+func _update_breath_weapon_preview() -> bool:
+	var origin: Vector2i = grid_pos
+	if _dragonborn.breath_weapon_shape == "line":
+		var length: int = PlayerDragonborn.BREATH_LINE_LENGTH
+		var line_union: Dictionary = {}
+		for dir_v: Vector2 in SpellEffects.DIR8:
+			var aim_dir: Vector2i = origin + Vector2i(roundi(dir_v.x * 100), roundi(dir_v.y * 100))
+			for t: Vector2i in PlayerDragonborn._line_tiles(origin, aim_dir, length, _dungeon_floor):
+				line_union[t] = true
+		var line_tiles_typed: Array[Vector2i] = []
+		line_tiles_typed.assign(line_union.keys())
+		_dungeon_floor.show_spell_range_preview_tiles(line_tiles_typed)
+		var world_mouse: Vector2 = get_global_mouse_position()
+		var aim_tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
+		_dungeon_floor.show_line_preview(PlayerDragonborn._line_tiles(origin, aim_tile, length, _dungeon_floor))
+	else:
+		var length: int = PlayerDragonborn.BREATH_CONE_LENGTH
+		var cone_union: Dictionary = {}
+		for dir_v: Vector2 in SpellEffects.DIR8:
+			var aim_dir: Vector2i = origin + Vector2i(roundi(dir_v.x * 100), roundi(dir_v.y * 100))
+			for t: Vector2i in SpellEffects.cone_tiles(origin, aim_dir, length, _dungeon_floor):
+				cone_union[t] = true
+		var cone_tiles_typed: Array[Vector2i] = []
+		cone_tiles_typed.assign(cone_union.keys())
+		_dungeon_floor.show_spell_range_preview_tiles(cone_tiles_typed)
+		var world_mouse2: Vector2 = get_global_mouse_position()
+		var aim_tile2: Vector2i = Vector2i(floori(world_mouse2.x / 16.0), floori(world_mouse2.y / 16.0))
+		_dungeon_floor.show_cone_preview(origin, aim_tile2, length)
 	return true
 
 # Shift+hover ranged-weapon targeting preview — mirrors _update_spell_aoe_preview()'s shape but for
@@ -1852,10 +1890,12 @@ func _execute_queued_path() -> void:
 			break
 
 		# Difficult terrain or slowed: costs 2 turns — stop queued path and waste a turn
-		# (Trailblazer R1 ignores Mud/Water entirely — same bypass as _try_move()'s.)
+		# (Trailblazer R1 ignores Mud/Water entirely, same as Draconic Flight — same bypasses as
+		# _try_move()'s.)
 		var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
 		if (tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD) \
-				and GameState.get_talent_rank("trailblazer") < 1:
+				and GameState.get_talent_rank("trailblazer") < 1 \
+				and GameState.player_stats.draconic_flight_turns <= 0:
 			GameState.apply_player_status("slowed", maxi(1, GameState.player_stats.slowed_turns))
 		if tile_t == DungeonData.TileType.WATER and GameState.player_stats.burning_turns > 0:
 			GameState.player_stats.burning_turns = 0
@@ -2162,8 +2202,10 @@ func _try_move(dir: Vector2i) -> void:
 	var _salmon_bypass: bool = _sleeper_on and _ns_form == "Salmon" and tile_t == DungeonData.TileType.WATER
 	# Trailblazer R1: Ranger ignores Mud/Water's difficult-terrain penalty entirely.
 	var _trailblazer_bypass: bool = GameState.get_talent_rank("trailblazer") >= 1
+	# Draconic Flight: flying over the terrain, not wading through it.
+	var _flying_bypass: bool = GameState.player_stats.draconic_flight_turns > 0
 	if tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD:
-		if not _panther_bypass and not _salmon_bypass and not _trailblazer_bypass:
+		if not _panther_bypass and not _salmon_bypass and not _trailblazer_bypass and not _flying_bypass:
 			GameState.apply_player_status("slowed", maxi(1, GameState.player_stats.slowed_turns))
 	if tile_t == DungeonData.TileType.WATER and GameState.player_stats.burning_turns > 0:
 		GameState.player_stats.burning_turns = 0
