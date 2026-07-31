@@ -614,6 +614,9 @@ func give_race_starting_items() -> void:
 			if _find_ability_by_id("giant_ancestry") == null:
 				player_stats.giant_ancestry_uses_remaining = player_stats.proficiency_bonus
 				add_ability(_build_giant_ancestry_ability())
+		Stats.CharacterRace.HALFLING:
+			if _find_ability_by_id("halfling_nimbleness") == null:
+				add_ability(_build_halfling_nimbleness_ability())
 
 # from_dict()-only counterpart to give_race_starting_items(): re-adds the race ability-bar
 # entries from ALREADY-restored Stats state (player_stats.from_dict() has run by the time this is
@@ -664,6 +667,9 @@ func _restore_race_ability_bar() -> void:
 				add_ability(_build_large_form_ability())
 			if _find_ability_by_id("giant_ancestry") == null:
 				add_ability(_build_giant_ancestry_ability())
+		Stats.CharacterRace.HALFLING:
+			if _find_ability_by_id("halfling_nimbleness") == null:
+				add_ability(_build_halfling_nimbleness_ability())
 
 ## Elven Lineage (scripts/entities/CLAUDE.md's "Elf" section): which spell each sub-race's lineage
 ## grants at character level 3 vs. 5. Misty Step (High Elf, level 5) is the one lineage spell that
@@ -944,6 +950,18 @@ func _build_giant_ancestry_ability() -> Ability:
 	ab.icon_path = ""
 	ab.uses_remaining = player_stats.giant_ancestry_uses_remaining
 	ab.uses_max = player_stats.proficiency_bonus
+	return ab
+
+func _build_halfling_nimbleness_ability() -> Ability:
+	var ab := Ability.new()
+	ab.ability_id = "halfling_nimbleness"
+	ab.ability_name = "Nimbleness"
+	ab.description = "Slip through the space of a creature larger than you. Click one of the 8 tiles next to you that holds a larger creature to come out the other side. Free action, once per round."
+	ab.icon_path = ""
+	# uses_max = 0 (infinite/free) — gated by PlayerHalfling.used_this_turn, a per-round flag, not
+	# a rest-refilled counter, same shape as Grip of the Forest's "_grip_used_this_turn".
+	ab.uses_remaining = 0
+	ab.uses_max = 0
 	return ab
 
 # Wizard's one-time cantrip pick (cantrip_select.gd's round 1, or a premade hero's "cantrip" key

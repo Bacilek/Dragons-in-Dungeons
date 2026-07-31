@@ -1053,18 +1053,37 @@ race with no darkvision):
   a `[url=]` breakdown on both outcomes, matching every other repeated-save convention (e.g. Hold
   Person's "remains paralyzed").
 - **Halfling Nimbleness** (`"you can move through the space of any creature that is a size larger
-  than you"`): **specced, not implemented** — direct owner request, deferred until entities carry
-  a real named size category (see the table below); `Entity.size` today is only a raw `Vector2i`
-  w/h footprint (Ogre/Spider's 2×2), with no tiny/small/medium/large/huge/gargantuan classification
-  to compare against, and Player is hardcoded 1×1 forever (`scripts/entities/CLAUDE.md`'s
-  "Multi-tile footprint" below). Once entities are annotated with a size category, this becomes a
-  move-executor change (a Halfling's `_try_move()`/queued-path/chase step onto a tile occupied by a
-  creature 1+ category larger, instead of being blocked like any other occupied tile, resolves to
-  the tile on the FAR side of that creature along the same direction — "go through it, come out the
-  other side" — rather than a swap or an attack).
+  than you"`): **implemented, as an activated ability rather than a move-executor rule** — direct
+  owner request, sidestepping the need for a real named size-category field (see the table below):
+  "larger than a Small Halfling" is approximated as `Enemy.size.x * enemy.size.y > 1` (a real
+  multi-tile footprint — Ogre/Spider's 2×2 today, `PlayerHalfling.is_larger_than_halfling()`)
+  rather than a true 5e size comparison. Ability id `"halfling_nimbleness"`, granted immediately at
+  race select (`GameState.give_race_starting_items()`'s HALFLING branch); composition child-node
+  `scripts/entities/player_halfling.gd` (`PlayerHalfling`, `_halfling` on `player.gd`), same pattern
+  as `PlayerDwarf`/`PlayerGoliath`. Free action, capped at once per real round
+  (`PlayerHalfling.used_this_turn`, reset from `player.gd._on_turn_started()`'s
+  `if not came_from_revert:` block — not rest-gated, so `Ability.uses_max` stays 0/infinite and the
+  ability bar never greys it for this cap, same precedent as Grip of the Forest's own
+  `_grip_used_this_turn`). Activating arms `nimbleness_mode_active` (arm-then-click, same family as
+  Grip of the Forest's hook mode/Cloud Giant's Jaunt) and shows a blue backdrop over the 8 tiles
+  directly adjacent to the player (`PlayerHalfling.adjacent_tiles()`,
+  `player.gd._update_nimbleness_preview()` → `DungeonFloor.show_spell_range_preview_tiles()`) with
+  a red highlight on the hovered tile whenever it holds a targetable enemy that qualifies as
+  larger (`show_single_target_preview()`, same red-means-valid-target convention every spell
+  preview uses). Clicking a qualifying tile (`PlayerHalfling.resolve_nimbleness()`) walks out along
+  the same direction from the player through the target's own `occupied_tiles()` until clear, then
+  teleports the player there (`Entity.set_grid_pos()`, no tween, same instant-move convention as
+  Misty Step/Cloud Giant's Jaunt) if that landing tile is walkable and unoccupied — otherwise logs
+  "no room to come out the other side" and spends nothing (the per-round flag, like Cloud Giant's
+  charge, is only consumed on a CONFIRMED slip-through). Esc, any movement key, and re-pressing the
+  ability slot all cancel the armed mode for free, same chokepoints as every other arm-then-click
+  ability. Genuine RAW movement-integration ("move through as part of a normal step, no separate
+  activation") is still not implemented — this ability is the whole feature as shipped, not a
+  partial stand-in for a later full rework.
 
-**D&D 2024 size categories** (reference table — not yet wired to any code; for whenever entities
-gain a real size-category field, e.g. to back Halfling Nimbleness above or a more precise footprint
+**D&D 2024 size categories** (reference table — not yet wired to any code; Halfling Nimbleness
+above approximates "larger" off `Entity.size`'s footprint area instead of this table; for whenever
+entities gain a real size-category field, e.g. a more precise footprint
 system than the current raw w/h `Entity.size`): space/area multiplier relative to a Medium
 creature's 1 tile —
 

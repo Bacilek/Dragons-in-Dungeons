@@ -31,6 +31,7 @@ var _orc: PlayerOrc
 var _aasimar: PlayerAasimar
 var _goliath: PlayerGoliath
 var _tiefling: PlayerTiefling
+var _halfling: PlayerHalfling
 
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
@@ -182,6 +183,7 @@ func _ready() -> void:
 	_aasimar = PlayerAasimar.new(); _aasimar.player = self; add_child(_aasimar)
 	_goliath = PlayerGoliath.new(); _goliath.player = self; add_child(_goliath)
 	_tiefling = PlayerTiefling.new(); _tiefling.player = self; add_child(_tiefling)
+	_halfling = PlayerHalfling.new(); _halfling.player = self; add_child(_halfling)
 
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
@@ -244,6 +246,7 @@ func _on_turn_started() -> void:
 		_vex_adv_target = null
 		_oa_used_this_round = false
 		_expeditious_retreat_move_used_this_turn = false
+		_halfling.reset_turn()
 		_berserker.clear_turn_start_ac_bonus()
 		_berserker.tick_frenzied_killer()
 		# Zealot Strike deactivates with no effect if the turn ends without a melee attack.
@@ -990,6 +993,9 @@ func _process(_delta: float) -> void:
 	if _goliath.cloud_teleport_mode_active:
 		_goliath.cloud_teleport_mode_active = false
 		GameState.game_log("[color=gray]Cloud Giant teleport cancelled.[/color]")
+	if _halfling.nimbleness_mode_active:
+		_halfling.cancel()
+		GameState.game_log("[color=gray]Nimbleness cancelled.[/color]")
 	_try_move(dir)
 
 # Holding Space repeats a single wait_action() per real turn for as long as it's held down —
@@ -1108,6 +1114,8 @@ func _update_spell_aoe_preview() -> bool:
 	if spell == null:
 		if _dragonborn.breath_weapon_mode_active:
 			return _update_breath_weapon_preview()
+		if _halfling.nimbleness_mode_active:
+			return _update_nimbleness_preview()
 		_dungeon_floor.hide_aoe_preview()
 		_dungeon_floor.hide_spell_range_preview()
 		return false
@@ -1212,6 +1220,21 @@ func _update_breath_weapon_preview() -> bool:
 		var world_mouse2: Vector2 = get_global_mouse_position()
 		var aim_tile2: Vector2i = Vector2i(floori(world_mouse2.x / 16.0), floori(world_mouse2.y / 16.0))
 		_dungeon_floor.show_cone_preview(origin, aim_tile2, length)
+	return true
+
+# Halfling Nimbleness targeting preview — a blue backdrop over the 8 tiles directly adjacent to
+# the player (same "maximum reach" convention as a touch spell's own range-1 backdrop), plus a red
+# highlight on the hovered tile whenever it holds a targetable enemy LARGER than the Halfling
+# (PlayerHalfling.is_larger_than_halfling()) — reuses show_single_target_preview() verbatim, same
+# red-means-valid-target convention every other single-target preview uses.
+func _update_nimbleness_preview() -> bool:
+	var tiles: Array[Vector2i] = _halfling.adjacent_tiles()
+	_dungeon_floor.show_spell_range_preview_tiles(tiles)
+	var world_mouse: Vector2 = get_global_mouse_position()
+	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
+	var target: Enemy = _dungeon_floor.get_targetable_enemy_at(tile)
+	var valid: bool = tile in tiles and target != null and PlayerHalfling.is_larger_than_halfling(target)
+	_dungeon_floor.show_single_target_preview(tile, valid)
 	return true
 
 # Shift+hover ranged-weapon targeting preview — mirrors _update_spell_aoe_preview()'s shape but for
@@ -1399,6 +1422,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _goliath.cloud_teleport_mode_active:
 				_goliath.cloud_teleport_mode_active = false
 				GameState.game_log("[color=gray]Cloud Giant teleport cancelled.[/color]")
+			if _halfling.nimbleness_mode_active:
+				_halfling.cancel()
+				GameState.game_log("[color=gray]Nimbleness cancelled.[/color]")
 			_dragonborn.cancel_breath_weapon()
 			_aasimar.cancel_healing_hands()
 			_aasimar.cancel_celestial_revelation()
@@ -1624,6 +1650,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			_goliath.cloud_teleport_mode_active = false
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
 				_goliath.resolve_cloud_teleport(clicked)
+			return
+
+		# Halfling Nimbleness targeting mode — click one of the 8 adjacent tiles (blue preview);
+		# the charge is only spent on a CONFIRMED slip-through, same "nothing spent on cancel/miss"
+		# convention as Cloud Giant's teleport above.
+		if _halfling.nimbleness_mode_active:
+			_halfling.nimbleness_mode_active = false
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				_halfling.resolve_nimbleness(clicked)
 			return
 
 		# Breath Weapon targeting mode (Dragonborn) — any click supplies a direction only, the
@@ -3273,4 +3308,5 @@ func _use_ability_slot(idx: int) -> void:
 		"large_form":              _goliath.activate_large_form()
 		"giant_ancestry":          _goliath.activate_giant_ancestry()
 		"hellish_rebuke_toggle":   _tiefling.activate_hellish_rebuke()
+		"halfling_nimbleness":     _halfling.activate_nimbleness()
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)

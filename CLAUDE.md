@@ -159,9 +159,10 @@ log line wraps in dark green with a ☘ marker (`CombatMath.wrap_halfling_luck()
 tooltip shows a struck-through "1 → N" line (`fmt_hit_tooltip()`/`fmt_save_tooltip()` in
 `scripts/ui/tooltip_formatters.gd`) whenever it fires. **Brave**: ADV on saves to avoid/end
 Frightened (both the Quasit Scare save and the repeated end-of-turn save route through
-`CombatMath.roll_with_adv_disadv()` now). **Halfling Nimbleness** (move through a larger creature's
-space) is specced but not implemented — deferred until entities carry a real size category, see the
-size-category reference table in `scripts/entities/CLAUDE.md`'s "Halfling" section.
+`CombatMath.roll_with_adv_disadv()` now). **Halfling Nimbleness** (slip through a larger creature's
+space) is implemented as a free, once-per-round activated ability (arm-then-click, blue 8-tile
+preview, teleport to the far side) rather than a move-executor rule — see
+`scripts/entities/CLAUDE.md`'s "Halfling" section and `scripts/entities/player_halfling.gd`.
 `Stats.apply_race_defaults()`
 (`scripts/entities/stats.gd`) and `GameState.choose_race()`/`give_race_starting_items()`
 (`scripts/autoloads/CLAUDE.md`) hold the mechanical hooks; UI is `scripts/ui/race_select.gd`
