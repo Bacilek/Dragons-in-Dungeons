@@ -573,6 +573,8 @@ func update_fog(player_pos: Vector2i) -> void:
 				still_there = get_tile_type(GameState.light_source_pos) == DungeonData.TileType.GRASS
 			"barrel":
 				still_there = has_barrel_at(GameState.light_source_pos)
+			"trap":
+				still_there = not get_trap_at(GameState.light_source_pos).is_empty()
 			_:
 				still_there = GameState.light_source_item != null \
 					and get_items_at(GameState.light_source_pos).has(GameState.light_source_item)
@@ -580,6 +582,16 @@ func update_fog(player_pos: Vector2i) -> void:
 			GameState.light_source_pos = Vector2i(-1, -1)
 			GameState.light_source_item = null
 			GameState.light_source_kind = "item"
+
+	# Darkness cast on an unattended floor item: ends the instant that specific item is picked up
+	# (or otherwise removed) — same "cast on an object, ends if it's moved/taken" RAW rule as Light
+	# above. Cleared directly (not via GameState.clear_darkness(), which has no signal to re-enter
+	# update_fog() from anyway) and also ends Concentration if darkness is still the active spell.
+	if GameState.darkness_item != null and not get_items_at(GameState.darkness_pos).has(GameState.darkness_item):
+		if GameState.player_stats.concentration_spell_id == "darkness":
+			GameState.player_stats.concentration_spell_id = ""
+		GameState.player_stats.darkness_turns = 0
+		GameState.clear_darkness()
 
 	# A real light source, not cosmetic — union its own shadowcast (walls still block it, same
 	# algorithm as the player's own FOV) into the visible-tiles set every time fog recomputes, so
@@ -617,13 +629,19 @@ func update_fog(player_pos: Vector2i) -> void:
 	_update_tremor_markers(player_pos)
 	_update_detect_magic_markers(player_pos)
 
+	# While Blinded (standing inside a Fog Cloud/Darkness zone), vision genuinely collapses to just
+	# the currently-visible tiles — the normal "dimmed memory of already-explored tiles" fog-of-war
+	# view is suppressed, so the player can't see the remembered dungeon layout around them, only
+	# what effective_fov_radius()'s flattened 1-tile shadowcast actually reaches right now. Explored
+	# tiles are still marked (so map memory outside the cloud is untouched once it ends).
+	var _player_blinded: bool = GameState.is_blinded(player_pos)
 	for y: int in _data.height:
 		for x: int in _data.width:
 			var tile_pos := Vector2i(x, y)
 			if _visible_tiles.has(tile_pos):
 				_explored[tile_pos] = true
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0))
-			elif _explored.get(tile_pos, false):
+			elif _explored.get(tile_pos, false) and not _player_blinded:
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0.65))
 			else:
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 1.0))
@@ -743,8 +761,8 @@ func show_single_target_preview(tile: Vector2i, in_range: bool = true) -> void:
 # armed for targeting (not just AoE shapes — single-target spells get one too). Independent pooled-
 # Sprite2D set from the purple/red exact-footprint preview above so both can render at once (this
 # one at a lower z-index so the exact footprint always reads on top of it).
-func show_spell_range_preview(center: Vector2i, radius: int) -> void:
-	var key: String = "range,%d,%d,%d" % [center.x, center.y, radius]
+func show_spell_range_preview(center: Vector2i, radius: int, euclidean: bool = false) -> void:
+	var key: String = "range,%d,%d,%d,%d" % [center.x, center.y, radius, 1 if euclidean else 0]
 	if key == _spell_range_last_key:
 		return
 	_spell_range_last_key = key
@@ -755,11 +773,21 @@ func show_spell_range_preview(center: Vector2i, radius: int) -> void:
 	var tiles: Array[Vector2i] = []
 	for dy: int in range(-radius, radius + 1):
 		for dx: int in range(-radius, radius + 1):
-			# Chebyshev, not Euclidean — must match try_cast_at()'s own range check exactly (see
-			# player_spellcasting.gd's dist_cheb comment), or a diagonal tile at radius 1 (a touch
-			# spell like Mage Armor/Shocking Grasp) reads as "out of range" in this backdrop despite
-			# being a perfectly valid cast.
-			if maxi(absi(dx), absi(dy)) <= radius:
+			# Chebyshev, not Euclidean, for every non-cone spell — must match try_cast_at()'s own
+			# range check exactly (see player_spellcasting.gd's dist_cheb comment), or a diagonal
+			# tile at radius 1 (a touch spell like Mage Armor/Shocking Grasp) reads as "out of
+			# range" in this backdrop despite being a perfectly valid cast.
+			# A cone (Burning Hands) is different: its origin is always the caster and its aim can
+			# point in any direction, so the true union of every possible cone orientation is a
+			# EUCLIDEAN disc of radius `shape_size` (aiming straight at a tile puts it on the
+			# cone's own zero-lateral-offset center line, reachable out to its full length) — a
+			# Chebyshev square overstates this, including diagonal "corner" tiles whose real
+			# Euclidean distance exceeds the cone's length and which the cone can therefore never
+			# actually reach no matter how it's aimed (bugfix — this used to always use Chebyshev,
+			# so Burning Hands' blue backdrop looked like a square the cone's own corners could
+			# never fill).
+			var in_range: bool = (dx * dx + dy * dy <= radius * radius) if euclidean else (maxi(absi(dx), absi(dy)) <= radius)
+			if in_range:
 				var t: Vector2i = center + Vector2i(dx, dy)
 				if _in_grid_bounds(t):
 					tiles.append(t)

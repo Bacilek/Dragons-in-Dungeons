@@ -460,6 +460,9 @@ func _update_status_icons() -> void:
 	var _lit_torch: Item = GameState.lit_torch_item()
 	if _lit_torch != null:
 		entries.append({"id": "torch", "icon_path": _lit_torch.icon_path, "fallback_color": Color(1.0, 0.55, 0.1)})
+	if s.longstrider_turns > 0:
+		var _ls_spell: Spell = SpellDb.get_spell("longstrider")
+		entries.append({"id": "longstrider", "icon_path": _ls_spell.icon_path if _ls_spell != null else "", "fallback_color": Color(0.55, 0.85, 0.45)})
 	if s.mastery_cap() > 0 and s.known_weapon_masteries.size() > 0:
 		entries.append({"id": "weapon_mastery", "icon_path": "res://icons/status/weapon_mastery.png", "fallback_color": Color(0.80, 0.65, 0.20)})
 	_status_tray.refresh(entries)

@@ -144,6 +144,15 @@ var _expeditious_retreat_move_used_this_turn: bool = false
 # check below, independent of and stacking with Expeditious Retreat/Longstrider.
 var _wood_elf_move_counter: int = 0
 
+# Longstrider (scripts/entities/CLAUDE.md's "Elf" section, promoted to a real LEVELED_SPELL_IDS
+# entry): RAW is a flat +10 ft speed buff, i.e. +1/3 over the 30 ft baseline this grid assumes —
+# NOT "double movement," which is Expeditious Retreat's own (correct) Dash-as-bonus-action shape.
+# Longstrider used to incorrectly share Expeditious Retreat's "first move each turn is free"
+# check, which grants far more than +1/3. Reworked to the same duty-cycle mechanism as Wood Elf's
+# 35 ft speed / Goliath's Large Form +1/3 movement: every 3rd real move this turn-counter-tracked
+# step doesn't cost a turn. Not serialized — mid-floor combat bookkeeping.
+var _longstrider_move_counter: int = 0
+
 
 func _ready() -> void:
 	stats = GameState.player_stats
@@ -781,12 +790,21 @@ func _resolve_stealth_check() -> void:
 		if heroic:
 			die = 20
 		var total: int = die + dex_mod + prof
-		# Pass Without Trace (Wood Elf lineage spell): flat +10 to the stealth roll while active.
+		# Pass Without Trace (Wood Elf/Ranger spell) and Minor Illusion (Forest Gnome lineage
+		# cantrip) both grant a flat bonus to the stealth roll while active — stbonus/stbonus_id
+		# below carry whichever is active into the tooltip breakdown (fmt_stealth_tooltip()),
+		# which used to silently fold this into `total` with no visible line explaining the gap
+		# between die+dex+prof and the shown total.
+		var stbonus: int = 0
+		var stbonus_id: int = 0
 		if stats.pass_without_trace_turns > 0:
 			total += Stats.PASS_WITHOUT_TRACE_BONUS
-		# Minor Illusion (Forest Gnome lineage cantrip): a smaller, shorter flat bonus, same shape.
+			stbonus += Stats.PASS_WITHOUT_TRACE_BONUS
+			stbonus_id = 1
 		if stats.minor_illusion_turns > 0:
 			total += Stats.MINOR_ILLUSION_BONUS
+			stbonus += Stats.MINOR_ILLUSION_BONUS
+			stbonus_id = 2 if stbonus_id == 0 else 3
 		# Distance-to-DC bonus: the closer you are relative to THIS enemy's own sight range
 		# (darkvision etc. included), the harder you are to miss — +1 DC per tile closer than its
 		# FOV edge, capped at 0 for anything at or beyond max sight range. Chebyshev, matching
@@ -801,9 +819,9 @@ func _resolve_stealth_check() -> void:
 		if e == s.hunters_mark_target and GameState.get_talent_rank("bloodhound") >= 2:
 			effective_pp -= BLOODHOUND_R2_PP_DEBUFF
 		var noticed: bool = total < effective_pp
-		var stealth_meta: String = "stealth:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,total=%d,epp=%d,basepp=%d,distbonus=%d,adv=%d,pass=%d,lucky1=%d,lucky2=%d" % [
+		var stealth_meta: String = "stealth:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,total=%d,epp=%d,basepp=%d,distbonus=%d,adv=%d,pass=%d,lucky1=%d,lucky2=%d,stbonus=%d,stbonusid=%d" % [
 			die, die1, die2, dex_mod, prof, total, effective_pp, e.passive_perception, dist_bonus,
-			signi(obs_net), 0 if noticed else 1, 1 if lucky1 else 0, 1 if lucky2 else 0]
+			signi(obs_net), 0 if noticed else 1, 1 if lucky1 else 0, 1 if lucky2 else 0, stbonus, stbonus_id]
 		var god_suffix: String = " [color=gray](Stealth %d vs PP %d)[/color]" % [total, e.passive_perception] if GameState.god_mode else ""
 		if noticed:
 			e._notice_target(grid_pos)
@@ -1043,7 +1061,7 @@ func _update_spell_aoe_preview() -> bool:
 	# blast's own radius (the impact point can land at the edge of range and still splash further
 	# out). Everything else (single-target ENEMY/TILE spells): reach = the spell's plain range.
 	var range_radius: int = spell.shape_size if spell.shape == "cone" else (spell.range_tiles + spell.shape_size if spell.shape == "sphere" else spell.range_tiles)
-	_dungeon_floor.show_spell_range_preview(grid_pos, range_radius)
+	_dungeon_floor.show_spell_range_preview(grid_pos, range_radius, spell.shape == "cone")
 	var world_mouse: Vector2 = get_global_mouse_position()
 	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
 	# Chebyshev distance to the hovered tile vs the spell's own actual castable range — the same
@@ -1794,7 +1812,15 @@ func _resolve_enemy_opportunity_attacks(prev: Vector2i, next: Vector2i) -> void:
 	# Opportunity Attack — matches Enemy._can_see_entity()'s same outright-false treatment.
 	var player_invisible: bool = GameState.player_stats.invisibility_turns > 0
 	for e: Enemy in _dungeon_floor.get_all_enemies():
-		if not is_instance_valid(e) or e.stats.is_dead() or e.behavior == Enemy.Behavior.SLEEPING:
+		if not is_instance_valid(e) or e.stats.is_dead():
+			continue
+		# An enemy that hasn't detected the player yet (SLEEPING/STATIONARY/ROAMING — hasn't failed
+		# its Stealth-vs-Passive-Perception check, hasn't been attacked) has no idea anything is
+		# there to react to, so it can't take an Opportunity Attack — only CHASING/SEARCHING (it
+		# has noticed/is hunting the target) qualifies. Bugfix: this used to only exclude SLEEPING,
+		# so an idle ROAMING/STATIONARY enemy that had never spotted the player could still land a
+		# free reactive swing the instant the player stepped out of its threat range.
+		if e.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]:
 			continue
 		if e.oa_used_this_round:
 			continue
@@ -2080,16 +2106,26 @@ func _try_move(dir: Vector2i) -> void:
 		if _wood_elf_move_counter >= 6:
 			_wood_elf_move_counter = 0
 			_wood_elf_free_step = true
+	var _longstrider_free_step: bool = false
+	if stats.longstrider_turns > 0:
+		_longstrider_move_counter += 1
+		if _longstrider_move_counter >= 3:
+			_longstrider_move_counter = 0
+			_longstrider_free_step = true
 	var _large_form_free_step: bool = _goliath.consume_large_form_free_move()
 	if _large_form_free_step:
 		GameState.game_log("[color=cyan]Large Form: your giant stride carries you further at no cost.[/color]")
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return
-	if (stats.expeditious_retreat_turns > 0 or stats.longstrider_turns > 0) and not _expeditious_retreat_move_used_this_turn:
+	if stats.expeditious_retreat_turns > 0 and not _expeditious_retreat_move_used_this_turn:
 		_expeditious_retreat_move_used_this_turn = true
-		var _quick_src: String = "Expeditious Retreat" if stats.expeditious_retreat_turns > 0 else "Longstrider"
-		GameState.game_log("[color=cyan]%s: that move didn't cost you your turn.[/color]" % _quick_src)
+		GameState.game_log("[color=cyan]Expeditious Retreat: that move didn't cost you your turn.[/color]")
+		_reverted_this_round = true
+		TurnManager.revert_to_waiting()
+		return
+	elif _longstrider_free_step:
+		GameState.game_log("[color=cyan]Longstrider: your long strides carry you further at no cost.[/color]")
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return

@@ -386,6 +386,7 @@ func start_new_run() -> void:
 	fog_cloud_radius = 0
 	darkness_pos = Vector2i(-1, -1)
 	darkness_radius = 0
+	darkness_item = null
 	_give_starting_items()
 
 # Captures exactly what's needed to rebuild this same character (class, final ability scores,
@@ -747,8 +748,7 @@ func _build_hellish_rebuke_ability() -> Ability:
 	ab.uses_remaining = 0
 	ab.uses_max = 0
 	return ab
-_:
-	return ""
+
 
 ## Grants a lineage spell — ALWAYS PREPARED, outside the normal known_spells/prepared_spells/
 ## SpellcasterState bookkeeping entirely (never counts against a caster's known-cantrip or
@@ -1574,6 +1574,12 @@ func clear_fog_cloud() -> void:
 ## fields so both spells can be active at once without one silently overwriting the other.
 var darkness_pos: Vector2i = Vector2i(-1, -1)
 var darkness_radius: int = 0
+## The specific floor Item this Darkness was cast on, if any (null = cast at a bare point, or on a
+## worn/equipped/carried item — dungeon_floor.get_item_at() only ever returns an unattended floor
+## item). Mirrors light_source_item's own tracking — DungeonFloor.update_fog() clears the whole
+## zone the instant this item is no longer at darkness_pos (picked up or otherwise removed), same
+## "cast on an object, ends if it's moved/taken" RAW behavior the Light cantrip already has.
+var darkness_item: Item = null
 
 func is_in_darkness(pos: Vector2i) -> bool:
 	if darkness_pos == Vector2i(-1, -1):
@@ -1584,6 +1590,7 @@ func is_in_darkness(pos: Vector2i) -> bool:
 func clear_darkness() -> void:
 	darkness_pos = Vector2i(-1, -1)
 	darkness_radius = 0
+	darkness_item = null
 
 ## Heavily Obscured (5e terrain concept — distinct from the Blinded CONDITION it grants below):
 ## Fog Cloud and Darkness are the two sources of Heavily Obscured terrain today; a further future

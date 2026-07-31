@@ -368,8 +368,22 @@ func _build_spells_sub() -> void:
 	vbox.add_theme_constant_override("separation", 3)
 	scroll.add_child(vbox)
 
-	for spell_id: String in (SpellDb.CANTRIP_IDS + SpellDb.LEVELED_SPELL_IDS):
-		vbox.add_child(_make_spell_row(spell_id))
+	# Also list race-lineage-only spells (Elf Elven Lineage / Tiefling Fiendish Legacy / Gnome
+	# Gnomish Lineage) so they're reachable for testing even outside LEVELED_SPELL_IDS/
+	# CLASS_SPELL_LISTS — deduped against spells already covered above. "Give" for one of these
+	# routes through its own GameState._grant_*_spell() function (see _on_give_spell()) instead of
+	# the normal known/prepared path, since that's how the game actually delivers them (works even
+	# for a non-caster class, and handles special cases like Hellish Rebuke's reaction-toggle
+	# ability automatically).
+	var _seen_spell_ids: Dictionary = {}
+	for _sid: String in (SpellDb.CANTRIP_IDS + SpellDb.LEVELED_SPELL_IDS):
+		_seen_spell_ids[_sid] = true
+		vbox.add_child(_make_spell_row(_sid))
+	for _sid: String in (SpellDb.ELF_LINEAGE_SPELL_IDS + SpellDb.TIEFLING_LEGACY_SPELL_IDS + SpellDb.GNOME_LINEAGE_SPELL_IDS):
+		if _seen_spell_ids.has(_sid):
+			continue
+		_seen_spell_ids[_sid] = true
+		vbox.add_child(_make_spell_row(_sid))
 
 func _rebuild_talent_rows() -> void:
 	for child: Node in _talent_vbox.get_children():
@@ -729,11 +743,27 @@ func _on_mute_changed(muted: bool) -> void:
 	_mute_btn.text = "🔇 Unmute" if muted else "🔊 Mute"
 
 func _on_give_spell(spell_id: String) -> void:
-	if GameState.player_stats.caster == null:
-		GameState.game_log("[color=red][DEBUG] Current class has no spellcasting.[/color]")
-		return
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
+		return
+	# Race-lineage-only spells (Elf Elven Lineage / Tiefling Fiendish Legacy / Gnome Gnomish
+	# Lineage) aren't part of the normal known/prepared spellbook flow — they're granted directly
+	# via their own GameState._grant_*() function, which also works for a non-caster class and
+	# handles special cases (e.g. Hellish Rebuke's reaction-toggle ability) automatically.
+	if SpellDb.ELF_LINEAGE_SPELL_IDS.has(spell_id) and not SpellDb.LEVELED_SPELL_IDS.has(spell_id):
+		GameState._grant_elf_lineage_spell(spell_id)
+		GameState.game_log("[color=lime][DEBUG] Given (lineage grant): %s[/color]" % spell.spell_name)
+		return
+	if SpellDb.TIEFLING_LEGACY_SPELL_IDS.has(spell_id) and not SpellDb.CANTRIP_IDS.has(spell_id):
+		GameState._grant_tiefling_legacy_spell(spell_id)
+		GameState.game_log("[color=lime][DEBUG] Given (legacy grant): %s[/color]" % spell.spell_name)
+		return
+	if SpellDb.GNOME_LINEAGE_SPELL_IDS.has(spell_id):
+		GameState._grant_gnome_lineage_spells()   # grants all 3 of the player's chosen lineage at once
+		GameState.game_log("[color=lime][DEBUG] Given (lineage grant): %s[/color]" % spell.spell_name)
+		return
+	if GameState.player_stats.caster == null:
+		GameState.game_log("[color=red][DEBUG] Current class has no spellcasting.[/color]")
 		return
 	if spell.level == 0:
 		GameState.choose_cantrip(spell_id)   # idempotent — already has()-guarded

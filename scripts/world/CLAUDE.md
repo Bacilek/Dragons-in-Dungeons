@@ -130,20 +130,40 @@ true, reset immediately after — is the one bypass hook; nothing grants that fl
 a future Warlock Devil's Sight-style feature, see `scripts/entities/stats.gd`) — **darkvision and
 a hypothetical truesight bonus do NOT bypass this**, per 5e RAW, only that flag would.
 
+**Blinded suppresses the dimmed "remembered map" fog-of-war view too**: normally a tile that's
+been explored but isn't currently visible renders at partial fog alpha (0.65 — a dim memory of the
+layout) instead of fully opaque. `update_fog()`'s final per-tile loop now additionally checks
+`GameState.is_blinded(player_pos)` and, while true, renders every non-currently-visible tile fully
+opaque (alpha 1.0) regardless of whether it was previously explored — so standing inside a Fog
+Cloud/Darkness zone genuinely collapses vision down to just the flattened 1-tile shadowcast
+`effective_fov_radius()` grants, not "can't see anything new, but can still see the remembered
+room layout around me." Explored tiles are still marked (`_explored[tile_pos] = true`) so the
+normal dimmed view returns immediately once the player leaves the cloud.
+
 ## AoE targeting preview
 **Grid-bounds clipping**: every disc-shaped preview below (blue max-reach backdrop, purple/red
 sphere footprint, two-tone ranged backdrop) is a raw Euclidean/Chebyshev disc computed from the
 caster's position with **no wall/LOS filtering by design** — but that also meant, unfiltered, a
 caster standing near the map's edge would paint tint tiles past `DungeonData.width`/`height`
 (VOID). **The blue max-reach backdrop (`show_spell_range_preview()`) uses Chebyshev, not
-Euclidean** — it must match `try_cast_at()`'s own range check exactly (`dist_cheb <=
-_effective_range(spell)`), or a diagonal tile at radius 1 (a touch spell like Mage Armor/Shocking
-Grasp) rendered as visually "out of range" despite being a perfectly valid, actually-castable
-target (bugfix — it used to share the sphere-footprint's Euclidean formula, which is correct only
-for that footprint since `_resolve_sphere_aoe()`'s actual blast really is a Euclidean circle, not
-the single-target range gate). The purple/red sphere footprint (`show_aoe_preview()`) and the Fog
-Cloud visual stay Euclidean on purpose — both mirror a real Euclidean-distance game mechanic
-(`_resolve_sphere_aoe()`, `is_heavily_obscured()`), not a Chebyshev range gate.
+Euclidean, for every non-cone spell** — it must match `try_cast_at()`'s own range check exactly
+(`dist_cheb <= _effective_range(spell)`), or a diagonal tile at radius 1 (a touch spell like Mage
+Armor/Shocking Grasp) rendered as visually "out of range" despite being a perfectly valid,
+actually-castable target (bugfix — it used to share the sphere-footprint's Euclidean formula,
+which is correct only for that footprint since `_resolve_sphere_aoe()`'s actual blast really is a
+Euclidean circle, not the single-target range gate). **A cone (Burning Hands) is the one
+exception**: `show_spell_range_preview()` takes an `euclidean: bool` 3rd param, set true by
+`player.gd._update_spell_aoe_preview()` whenever `spell.shape == "cone"` — the cone's origin is
+always the caster and its aim direction can point anywhere, so the true union of every possible
+orientation is a EUCLIDEAN disc of radius `shape_size` (aiming straight at any given tile puts it
+on the cone's own zero-lateral-offset center line, reachable out to the cone's full length), not a
+Chebyshev square. **Bugfix**: this backdrop used to always use Chebyshev, so Burning Hands' blue
+max-range preview rendered as a square whose diagonal "corner" tiles (real Euclidean distance
+greater than the cone's length) the actual cone could never reach no matter how it was aimed —
+exactly the tiles a player would expect a `shape_size`-tile cone to cover based on the preview but
+which the real cast could never hit. The purple/red sphere footprint (`show_aoe_preview()`) and
+the Fog Cloud visual stay Euclidean on purpose — both mirror a real Euclidean-distance game
+mechanic (`_resolve_sphere_aoe()`, `is_heavily_obscured()`), not a Chebyshev range gate.
 `DungeonFloor._in_grid_bounds(pos) -> bool` is the one bounds check `show_aoe_preview()`,
 `show_spell_range_preview()`, and `show_ranged_range_preview()` each filter their generated tile
 list through — a coordinate check only (`x/y` within `0..width`/`0..height`), never a

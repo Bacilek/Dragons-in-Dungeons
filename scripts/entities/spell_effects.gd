@@ -313,9 +313,16 @@ static func cast_light_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 	elif dungeon_floor != null and dungeon_floor.has_barrel_at(tile_pos):
 		target_kind = "barrel"
 		target_desc = "barrel"
+	elif dungeon_floor != null and not dungeon_floor.get_trap_at(tile_pos).is_empty():
+		# Shining a light directly on a trap mechanism reveals it, lit or not — same "obviously
+		# visible once lit" logic as everything else Light can touch. Works on an unrevealed trap
+		# too (the whole point — you couldn't tell it was there until you lit it up).
+		target_kind = "trap"
+		target_desc = "trap"
+		dungeon_floor.reveal_trap(tile_pos)
 
 	if target_kind == "":
-		GameState.game_log("[color=gray]You must touch an object, door, patch of grass, or barrel.[/color]")
+		GameState.game_log("[color=gray]You must touch an object, door, patch of grass, barrel, or trap.[/color]")
 	else:
 		const LIGHT_COLORS: Array[Color] = [
 			Color(1.0, 0.85, 0.55), Color(0.55, 0.85, 1.0), Color(0.6, 1.0, 0.65),
@@ -503,7 +510,7 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 		"faerie_fire":
 			_resolve_faerie_fire(player, spell, tile_pos, dungeon_floor)
 		"darkness":
-			_resolve_darkness(player, spell, tile_pos)
+			_resolve_darkness(player, spell, tile_pos, dungeon_floor)
 		_:
 			if spell.shape == "sphere":
 				_resolve_sphere_aoe(player, spell, tile_pos, dungeon_floor)
@@ -1093,10 +1100,15 @@ static func _resolve_fog_cloud(player: Player, spell: Spell, center: Vector2i) -
 # Darkness (real LEVELED_SPELL_IDS entry, also the Drow lineage spell) — a second, independent
 # Heavily Obscured zone, otherwise identical mechanism to Fog Cloud above (see
 # GameState.darkness_pos/darkness_radius and is_heavily_obscured()'s "checks both zones" comment).
-# Can be cast at a bare point OR at a tile holding an unattended floor object — mechanically the
-# same either way, since the zone is just a position+radius with no live Item reference to track
-# (unlike the Light cantrip, which DOES track its lit object and auto-ends when it's gone).
-static func _resolve_darkness(player: Player, spell: Spell, center: Vector2i) -> void:
+# Can be cast at a bare point OR at a tile holding an unattended floor object — 5e RAW: cast on an
+# object and the darkness follows it if moved, INCLUDING ending if it's picked up. GameState.
+# darkness_item (mirrors light_source_item's own tracking) records that specific Item reference
+# when one is present at cast time; DungeonFloor.update_fog() clears the zone the instant it's no
+# longer at darkness_pos (picked up, or otherwise removed) — see scripts/world/CLAUDE.md's "Fog
+# Cloud spell zone" section. A bare-point cast (or one on a worn/equipped/carried item, which never
+# shows up in dungeon_floor.get_item_at()) leaves darkness_item null and the zone just stays a
+# fixed position+radius like before.
+static func _resolve_darkness(player: Player, spell: Spell, center: Vector2i, dungeon_floor: Node = null) -> void:
 	var stats: Stats = player.stats
 	if stats.concentration_spell_id != "" and stats.concentration_spell_id != "darkness":
 		GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
@@ -1104,6 +1116,7 @@ static func _resolve_darkness(player: Player, spell: Spell, center: Vector2i) ->
 	stats.darkness_turns = 100
 	GameState.darkness_pos = center
 	GameState.darkness_radius = spell.shape_size
+	GameState.darkness_item = dungeon_floor.get_item_at(center) if dungeon_floor != null else null
 	GameState.game_log("[color=cyan]Magical darkness pools outward, swallowing the light![/color]")
 	_darkness_dispel_overlapping_light(spell.shape_size, center)
 

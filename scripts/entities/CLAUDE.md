@@ -403,11 +403,15 @@ casting for a non-caster).
   acquired, same "no separate copy needed" precedent as High Elf's Misty Step/Tiefling's Fire
   Bolt reuse.
   **Casting on an object**: 5e RAW lets Darkness be cast on an unattended object instead of a bare
-  point, in which case the darkness follows that object if it's later moved. This engine's zone is
-  a bare position+radius (no live `Item` reference, unlike the Light cantrip's own
-  `light_source_item` tracking) — casting on a tile that happens to hold a floor item works
-  identically to casting on empty ground (the TILE-target mechanism already covers it), it just
-  doesn't follow the object if picked up/moved afterward — a documented scope cut, not a bug.
+  point, ending early if that object is picked up. `GameState.darkness_item` (mirrors the Light
+  cantrip's own `light_source_item` tracking) records the specific unattended floor `Item` at
+  `darkness_pos` at cast time (`dungeon_floor.get_item_at(center)`, null for a bare-point cast or
+  one on a worn/equipped/carried item, since those never show up there) — `DungeonFloor.
+  update_fog()` checks every recompute whether that exact item is still at `darkness_pos` and
+  calls `GameState.clear_darkness()` (+ ends Concentration) the instant it isn't, same cadence and
+  mechanism as the Light cantrip's own auto-expiry. **Still doesn't follow the object if merely
+  moved elsewhere on the same floor** (only "picked up" is covered, not "relocated") — a smaller,
+  documented scope cut than before, not the full RAW "follows the object" behavior.
   **Dispels overlapping light**: `SpellEffects._darkness_dispel_overlapping_light()` (called from
   `_resolve_darkness()` right after the zone is placed) checks whether the new Darkness zone's
   circle overlaps the Light cantrip's own glow (`GameState.light_source_pos`,
@@ -465,12 +469,17 @@ casting for a non-caster).
   Armor/Invisibility), AUTO_HIT, NOT Concentration): now a real, independently-learnable
   `SpellDb.LEVELED_SPELL_IDS` entry too (`class_list = ["WIZARD"]` — real 5e/5.5e list is
   Bard/Druid/Ranger/Wizard), not just a Wood Elf lineage-only spell — a real
-  `Scroll of Longstrider` exists now. Reuses the exact same "first move this turn is free"
-  mechanism Expeditious Retreat already has — `Player._try_move()`'s free-move check fires on
-  `expeditious_retreat_turns > 0 OR longstrider_turns > 0`, sharing the one
-  `_expeditious_retreat_move_used_this_turn` per-turn flag so only one bonus move is granted no
-  matter how many of the three sources (Expeditious Retreat, Longstrider, Wood Elf's own speed) are
-  active at once. `Stats.longstrider_turns` (600 — 5e RAW's "1 hour", was 100 before this spell was
+  `Scroll of Longstrider` exists now. RAW is a flat +10 ft speed buff (+1/3 over the 30 ft
+  baseline), so — unlike Expeditious Retreat, which is genuinely a Dash-as-bonus-action double
+  move — it uses the same duty-cycle mechanism as Wood Elf's 35 ft speed / Goliath's Large Form
+  +1/3 movement: `Player._longstrider_move_counter` increments every real move while
+  `longstrider_turns > 0`, and every 3rd one is free (`_try_move()`'s free-move check, its own
+  branch alongside — not sharing a flag with — Expeditious Retreat/Wood Elf's own counters).
+  **Bugfix**: this used to incorrectly share Expeditious Retreat's "first move each turn is free"
+  mechanism, which granted far more than +1/3 (effectively doubling movement on any turn the
+  player moved on consecutive real turns). Shown in the HUD status tray (`"longstrider"` entry,
+  `scripts/ui/CLAUDE.md`) with a hover tooltip naming the +1/3 effect and turns remaining.
+  `Stats.longstrider_turns` (600 — 5e RAW's "1 hour", was 100 before this spell was
   promoted to a real learnable entry — ticked in `player.gd`'s per-real-turn block, NOT serialized
   — mid-floor buff state, same precedent as `expeditious_retreat_turns`).
 - **Pass Without Trace** (`_pass_without_trace()`, Abjuration, level 2, SELF, AUTO_HIT,
@@ -1392,7 +1401,7 @@ Full design doc: `docs/architecture/opportunity-attacks-design.md`. Core rule (5
 
 **Two hooks, one per moving side**:
 - **Enemy moves → player/companion may OA**: `enemy.gd._check_opportunity_attacks_on_move(prev_pos, next_pos)`, called at the top of `_move_step()` (the single chokepoint for ALL enemy voluntary movement — chase/roam/random-step/search). Gates on `_dungeon_floor.is_tile_visible(prev_pos)`, the attacker's per-round flag, and (for the player) `not player.stats.is_dead()`. If it provokes, resolves the attack (`player.resolve_opportunity_attack(enemy)` or `Companion._attack_enemy(enemy)`), then aborts the move (`if not is_instance_valid(self) or stats.is_dead(): return`) if the OA killed the mover.
-- **Player moves → each threatening enemy may OA**: `player.gd._resolve_enemy_opportunity_attacks(prev, next)`, called from `_try_move()` and both `_execute_queued_path()` move bodies (chase-step and regular queued-path step) right before `TurnManager.begin_player_action()`/the tween. Skips entirely on `GameState.noclip`. Skips a given enemy if `SLEEPING`, already used its reaction this round, or lacks LOS to `prev`. Calls `enemy._attack_player(self)` directly (already turn-free, routes through `take_damage_raw` so Rage DR/Reckless/Orc-Shaman-poison/Retaliation all apply exactly as a normal enemy attack would). Checks `GameState.is_game_over` after each swing and bails the move if the player died.
+- **Player moves → each threatening enemy may OA**: `player.gd._resolve_enemy_opportunity_attacks(prev, next)`, called from `_try_move()` and both `_execute_queued_path()` move bodies (chase-step and regular queued-path step) right before `TurnManager.begin_player_action()`/the tween. Skips entirely on `GameState.noclip`. Skips a given enemy if `SLEEPING`/`STATIONARY`/`ROAMING` (hasn't detected the player at all — only `CHASING`/`SEARCHING` qualifies, matching "Stealth & Surprise Attacks" below: a creature with no idea anything is there can't react to it leaving reach), already used its reaction this round, or lacks LOS to `prev`. **Bugfix**: this used to only exclude `SLEEPING`, so an idle `ROAMING`/`STATIONARY` enemy that had never spotted the player (still failing its Stealth-vs-Passive-Perception check every turn) could still land a free reactive Opportunity Attack the instant the player stepped out of its threat range. Calls `enemy._attack_player(self)` directly (already turn-free, routes through `take_damage_raw` so Rage DR/Reckless/Orc-Shaman-poison/Retaliation all apply exactly as a normal enemy attack would). Checks `GameState.is_game_over` after each swing and bails the move if the player died.
 
 **Once-per-round reaction flags** (never on `GameState` — per-entity combat state, same tier as `just_crossed_door`/`rooted_turns`):
 | Attacker | Field | Reset point |
@@ -1433,7 +1442,14 @@ Expert's side-step).
   Tools disarm/lock/pick, non-weapon item throw, bottle fill, Grip of the Forest, Shield
   equip/unequip/drag) grants +1 ADV on the roll (on top of whatever else applies) but the check
   still fires — it doesn't gate whether the check happens, only its ADV input.
-- **Roll**: `d20 (Halfling-reroll-aware) + DEX mod + (proficiency_bonus if check_prof_dex)`.
+- **Roll**: `d20 (Halfling-reroll-aware) + DEX mod + (proficiency_bonus if check_prof_dex)`, plus a
+  flat `Stats.PASS_WITHOUT_TRACE_BONUS` (+10, while `pass_without_trace_turns > 0`) and/or
+  `Stats.MINOR_ILLUSION_BONUS` (+5, while `minor_illusion_turns > 0`) — both folded into `total`
+  and now also carried into the `stealth:` tooltip meta as `stbonus`/`stbonusid`, rendered by
+  `TooltipFormatters.fmt_stealth_tooltip()` as its own `"+N (Pass Without Trace)"` line.
+  **Bugfix**: these two bonuses used to only affect the roll total with no corresponding tooltip
+  line — hovering the check showed `die + dex + prof` not summing to the displayed `total`, with no
+  visible explanation for the gap.
   Rolled **once**, reused against every qualifying observer (5e group-stealth style) — but
   ADV/DISADV is evaluated **per observer**, and the baseline (no other modifier active) against an
   awake-but-unaware observer (`STATIONARY`/`ROAMING`) is a **plain, un-modified roll** — ADV only
@@ -2048,12 +2064,17 @@ extra was needed there).
   not cosmetic. `SpellEffects.cast_light_at_tile()` checks the target tile in priority order — a
   floor item (`dungeon_floor.get_item_at(tile_pos) != null`, never a worn/carried one), else a
   door (`has_door_at()`), else a GRASS tile (`get_tile_type() == GRASS`), else a barrel
-  (`has_barrel_at()`) — and rejects the cast (gray log line, no turn-consuming side effect beyond
-  the swing animation) if none match; **Mud/Water and every other bare terrain tile are
-  deliberately excluded**, same as any wall/void tile. `GameState.set_light_source(pos, color,
-  item, kind)` (random color from a fixed palette; `kind` is `"item"`/`"door"`/`"grass"`/
-  `"barrel"`, `item` only meaningful for the `"item"` kind — kept so the light can tell when it's
-  gone) is read every `DungeonFloor.update_fog()` call, which unions its own
+  (`has_barrel_at()`), else a **trap** (`not get_trap_at(tile_pos).is_empty()`) — and rejects the
+  cast (gray log line, no turn-consuming side effect beyond the swing animation) if none match;
+  **Mud/Water and every other bare terrain tile are deliberately excluded**, same as any wall/void
+  tile. **Targeting an unrevealed trap reveals it** (`dungeon_floor.reveal_trap(tile_pos)`, called
+  right when the "trap" branch matches) — bugfix: casting Light directly at a trap tile (e.g. a
+  still-hidden Bear Trap) used to always reject with "You must touch an object, door, patch of
+  grass, or barrel," since a trap wasn't one of the checked target kinds at all; shining a light
+  right on the mechanism now sensibly both reveals AND lights it. `GameState.set_light_source(pos,
+  color, item, kind)` (random color from a fixed palette; `kind` is `"item"`/`"door"`/`"grass"`/
+  `"barrel"`/`"trap"`, `item` only meaningful for the `"item"` kind — kept so the light can tell
+  when it's gone) is read every `DungeonFloor.update_fog()` call, which unions its own
   `_compute_shadowcast(pos, LIGHT_SOURCE_RADIUS=4)` into the player's visible-tiles set (walls
   still block it — same shadowcast algorithm as the player's own FOV) — see
   `scripts/world/CLAUDE.md`'s "FOV" section. Only one Light source active at a time (recasting

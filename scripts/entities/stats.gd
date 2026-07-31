@@ -425,11 +425,12 @@ var ray_of_enfeeblement_turns: int = 0
 var hold_person_target: Enemy = null
 var hold_person_turns: int = 0
 
-# Longstrider (Wood Elf lineage spell, level 3) — NOT Concentration (5e RAW). Reuses the exact
-# same "first move this turn is free" mechanism Expeditious Retreat already has (Player._try_move()
-# checks `expeditious_retreat_turns > 0 or longstrider_turns > 0`) rather than a separate movement-
-# speed system — see scripts/entities/CLAUDE.md's "Elf" section. Deliberately NOT serialized, same
-# mid-floor-only simplification as expeditious_retreat_turns.
+# Longstrider (Wood Elf lineage spell, level 3) — NOT Concentration (5e RAW). +1/3 movement speed
+# via the same duty-cycle mechanism as Wood Elf's 35ft speed / Goliath's Large Form (Player.
+# _longstrider_move_counter — every 3rd real move is free) — NOT Expeditious Retreat's "first
+# move each turn is free" mechanism, which is a genuine double-move and was a bug when Longstrider
+# used to share it. See scripts/entities/CLAUDE.md's "Elf" section. Deliberately NOT serialized,
+# same mid-floor-only simplification as expeditious_retreat_turns.
 var longstrider_turns: int = 0
 
 # Detect Magic (level-1 spell, Ritual, SELF) — same generic concentration_spell_id mechanism

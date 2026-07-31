@@ -365,6 +365,8 @@ static func fmt_stealth_tooltip(p: Dictionary) -> String:
 	var passed: bool = p.get("pass", "0") == "1"
 	var lucky1: bool = p.get("lucky1", "0") == "1"
 	var lucky2: bool = p.get("lucky2", "0") == "1"
+	var stbonus: int = int(p.get("stbonus", "0"))
+	var stbonus_id: int = int(p.get("stbonusid", "0"))
 	var lines: PackedStringArray = []
 	if adv_net > 0:
 		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
@@ -380,6 +382,13 @@ static func fmt_stealth_tooltip(p: Dictionary) -> String:
 		lines.append("[color=lightblue]%+d[/color]  (DEX mod)" % dex)
 	if prof != 0:
 		lines.append("[color=lightblue]+%d[/color]  (Proficiency, DEX check)" % prof)
+	if stbonus != 0:
+		var stbonus_name: String
+		match stbonus_id:
+			1: stbonus_name = "Pass Without Trace"
+			2: stbonus_name = "Minor Illusion"
+			_: stbonus_name = "Pass Without Trace + Minor Illusion"
+		lines.append("[color=lightgreen]+%d[/color]  (%s)" % [stbonus, stbonus_name])
 	lines.append("─────────────────")
 	if distbonus > 0:
 		lines.append("Passive Perception %d [color=orange]+%d[/color]  (proximity)  =  %d" % [basepp, distbonus, epp])

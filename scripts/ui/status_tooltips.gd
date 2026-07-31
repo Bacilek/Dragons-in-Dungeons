@@ -16,6 +16,7 @@ const TITLES: Dictionary = {
 	"tactician": "Tactician",
 	"psycho_adv": "Psycho",
 	"torch": "Torch Lit",
+	"longstrider": "Longstrider",
 	"poisoned_condition": "Poisoned",
 	"prone": "Prone",
 	"restrained": "Restrained",
@@ -85,6 +86,8 @@ static func get_text(id: String) -> String:
 			var in_main_hand: bool = GameState.equipment.get("melee") as Item == t
 			var fire_note: String = " Attacks also deal +1d4 Fire damage." if in_main_hand else ""
 			return "Lit — burns out in %d more turns.\n+1 FOV.%s" % [t.torch_turns_remaining, fire_note]
+		"longstrider":
+			return "+1/3 movement speed — every 3rd real move doesn't cost a turn.\nFades in %d more turns." % GameState.player_stats.longstrider_turns
 		"poisoned_condition":
 			return "Disadvantage on attack rolls and ability checks. Separate from the green Poisoned damage-over-time status."
 		"prone":
