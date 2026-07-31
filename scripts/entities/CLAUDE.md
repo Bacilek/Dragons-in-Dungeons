@@ -350,23 +350,31 @@ casting for a non-caster).
 | Wood Elf | 35 ft speed (below) | Longstrider | Pass Without Trace |
 
 - **Faerie Fire** (`spell_db.gd`'s `_faerie_fire()`, real 5e class list Bard/Druid, level 1, range
-  3, TILE target, **`shape = "cube"`, shape_size 2** — a real Chebyshev/square footprint matching
-  the spell's actual 2-tile cube (`Spell.shape`'s third value, alongside `""`/`"sphere"`/`"cone"`;
-  threaded through the generic AoE preview system exactly like `cone_tiles()` is shared between
-  resolver and preview — `DungeonFloor.show_aoe_preview()` takes a `shape` param and switches to a
-  Chebyshev bound when `"cube"`, `Player._update_spell_aoe_preview()` passes `spell.shape` through
-  — so the preview can never show a circle for what's actually a square blast), SAVE/DEX,
-  Concentration, no damage. **Bugfix**: this used to be a Euclidean sphere approximation, which
-  excluded the cube's own corner tiles from actually being hit despite being inside the nominal
-  radius. `SpellEffects._resolve_faerie_fire()` — one random color (blue/green/
+  3, TILE target, **`shape = "cube"`, shape_size 2** — `shape_size` is a literal SIDE LENGTH here
+  (2 = a real 2x2 block, corner-anchored at the impact tile), NOT a centered Chebyshev radius
+  (`Spell.shape`'s third value, alongside `""`/`"sphere"`/`"cone"`; threaded through the generic
+  AoE preview system exactly like `cone_tiles()` is shared between resolver and preview —
+  `DungeonFloor.show_aoe_preview()`'s `"cube"` branch gathers the identical corner-anchored NxN
+  block `SpellEffects._resolve_faerie_fire()` does, so the preview can never diverge from the real
+  footprint), SAVE/DEX, Concentration, no damage. **Bugfix (twice over)**: this used to be a
+  Euclidean sphere approximation (excluded the cube's own corner tiles); then briefly a *centered*
+  Chebyshev-radius square (`shape_size=2` → a 5x5 area, far larger than the real spell's small
+  2-tile cube) before being corrected to the literal 2x2 side-length interpretation.
+  `SpellEffects._resolve_faerie_fire()` — one random color (blue/green/
   violet, `SpellEffects.FAERIE_FIRE_COLORS`, `Rng.pick()`) is rolled ONCE per cast and shared by
   every creature outlined that same cast (`Enemy.faerie_fire_color`) — "outlined in a random color,
-  all the same." Every enemy within the cube (Chebyshev, LOS'd from the impact tile) rolls a DEX
+  all the same." Every enemy within the 2x2 block (LOS'd from the impact tile) rolls a DEX
   save; on a fail, `Enemy.
   faerie_fire_turns = 10` (the caster's own Concentration duration is a separate field,
-  `Stats.faerie_fire_turns`, ticked in `player.gd`'s per-turn block alongside Darkness — ending it
-  does NOT retroactively un-outline an already-outlined enemy, a documented simplification matching
-  every other concentration spell here). Three effects while outlined:
+  `Stats.faerie_fire_turns`, ticked in `player.gd`'s per-turn block alongside Darkness). **Ending
+  concentration DOES retroactively un-outline every currently-outlined enemy** — `GameState.
+  end_concentration()`'s `"faerie_fire"` branch, on top of clearing the caster's own field, looks
+  up the live `DungeonFloor` (`get_tree().get_first_node_in_group("dungeon_floor")`, since
+  `GameState` holds no floor reference of its own) and zeroes every enemy's own `faerie_fire_turns`
+  + calls `_refresh_faerie_fire_visual()` (bugfix — this used to only clear the caster's own
+  counter, so an enemy's outline/debuff could silently outlive the concentration that was
+  supposedly sustaining it). Shown on Ctrl-Inspect (`PlayerActions.do_inspect()`'s enemy status
+  suffix — "Outlined"). Three effects while outlined:
   - **Advantage on attacks against it, but only if the attacker can see it**: `PlayerVfx.
     has_advantage()`'s Faerie Fire branch now additionally requires
     `player._dungeon_floor.is_tile_visible(enemy.grid_pos)` — an outlined enemy sitting somewhere
@@ -1111,7 +1119,14 @@ underlying mechanism, described once here.
   `"invisibility"` branch clears `invisibility_turns`; the natural-expiry and attack/cast-ending
   tick sites (`player.gd`) also clear `concentration_spell_id` back to `""` once the effect is
   actually gone. The enemy side (`Enemy._invis_turns`) has no analogous Concentration mechanic —
-  only the player's own casting is affected by this.
+  only the player's own casting is affected by this. **Bugfix**: `Player._update_invisibility_visual()`
+  (the sprite's translucent-tint toggle) is now called unconditionally once every real turn from
+  `_on_turn_started()`, not just from the branches that decrement `invisibility_turns` directly —
+  a damage-triggered CON-check break (`GameState._check_concentration_break()`) or a different
+  concentration spell's own end-the-old-one guard both correctly zero `invisibility_turns`/clear
+  `concentration_spell_id` from `GameState`, which has no `Player` node reference to refresh the
+  visual from directly, so the player used to stay visually translucent even after Invisibility
+  had mechanically ended.
 - **Ending early on attack/cast** (still an ADDITIONAL end condition on top of Concentration, per
   5e RAW's own text): the player's own end-check reuses the Stealth system's existing
   `GameState.stealth_check_skip` flag (already set `true` by every attack/spell-cast call site

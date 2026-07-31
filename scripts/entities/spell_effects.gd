@@ -538,10 +538,17 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 # included (forward must be > 0).
 static func cone_tiles(origin: Vector2i, aim_tile: Vector2i, length: int, dungeon_floor: Node) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
-	var dir_v: Vector2 = Vector2(aim_tile - origin)
-	if dir_v.length() < 0.001:
+	var delta: Vector2 = Vector2(aim_tile - origin)
+	if delta.length() < 0.001:
 		return out
-	dir_v = dir_v.normalized()
+	# Snapped to the nearest of 8 fixed compass directions (same convention as Dragonborn's Breath
+	# Weapon Line, PlayerDragonborn._line_tiles()) rather than a continuous freely-rotating angle —
+	# direct owner request: the cone's orientation should only change when the mouse crosses into a
+	# genuinely different one of the 8 tiles immediately adjacent to the caster, not flicker/reorient
+	# continuously as the cursor drifts anywhere at a slightly different angle further away.
+	var step: float = PI / 4.0
+	var snapped: float = round(delta.angle() / step) * step
+	var dir_v: Vector2 = Vector2(cos(snapped), sin(snapped))
 	for dy: int in range(-length, length + 1):
 		for dx: int in range(-length, length + 1):
 			if dx == 0 and dy == 0:
@@ -1182,9 +1189,11 @@ static func _resolve_faerie_fire(player: Player, spell: Spell, center: Vector2i,
 		if not is_instance_valid(e) or e.stats.is_dead():
 			continue
 		var d: Vector2i = e.grid_pos - center
-		# Faerie Fire is a real 5e cube (Chebyshev/square footprint), not a sphere — a straight
-		# Euclidean radius check used to exclude the cube's own corner tiles.
-		if maxi(absi(d.x), absi(d.y)) > r:
+		# Faerie Fire's cube is a literal `r`-tiles-wide (2x2 for shape_size=2) corner-anchored
+		# block, not a centered radius — `shape_size` is a side length here, matching the real
+		# spell's small 2-tile-cube footprint (a "radius 2" Chebyshev square would have been 5x5,
+		# far too large). Bugfix: an earlier pass treated it as a Chebyshev radius by mistake.
+		if d.x < 0 or d.x >= r or d.y < 0 or d.y >= r:
 			continue
 		if not dungeon_floor.has_ranged_los(center, e.grid_pos):
 			continue

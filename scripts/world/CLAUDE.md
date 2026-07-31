@@ -98,15 +98,15 @@ as visually distinct despite being mechanically identical Heavily Obscured terra
 darkness) for Darkness, `DungeonFloor.FOG_CLOUD_TINT` (`Color(0.55, 0.55, 0.58, 0.72)` — a lighter
 genuine gray) for Fog Cloud; a tile inside both zones renders with Darkness's tint (it's drawn
 second into the shared `tile_colors` dict `_update_fog_cloud_visual()` builds). A raw Euclidean
-disc per zone, **LOS-filtered from the player's own current viewpoint** (`has_line_of_sight
-(_fov_player_pos, tile)`, checked per candidate tile before adding it to `tile_colors`) — **bugfix**:
-this used to paint every tile unconditionally regardless of walls, so an outside viewer could see
-the cloud's exact full shape/extent through a wall or around a corner they had no actual sight
-into. `has_line_of_sight()` excludes its own ray endpoint from the `_blocks_los()` check (breaks
-before testing `to`), so this still shows the near boundary tile even though `_blocks_los()` treats
-heavily-obscured tiles as opaque — only a tile reached by the ray passing THROUGH another
-obscured tile first is correctly hidden, giving exactly "you can tell where the edge is, not what's
-past it." Doesn't itself union into `_visible_tiles`
+disc per zone, deliberately **NOT LOS-filtered** — a brief attempt at LOS-filtering this visual was
+tried and reverted per direct owner request: the full footprint should render whenever it's within
+the player's own explored/FOV range, not disappear behind a wall the moment part of the zone dips
+out of view. The actual "can't see into/out of it" blocking lives entirely in `update_fog()`'s
+`_visible_tiles` stripping + dimmed-memory suppression (below), not in this visual paint. **WALL
+tiles are excluded** from the painted set (`_data.get_tile(t.x, t.y) != DungeonData.TileType.WALL`)
+so the cloud never paints over/hides a wall tile — the map geometry stays visible exactly where it
+is, the cloud's own rendered footprint just ends up smaller wherever it overlaps a wall. Doesn't
+itself union into `_visible_tiles`
 the way Light does — the FOV shrink for a player standing INSIDE the cloud happens through the
 shadowcast radius instead, not a separate visibility union. See `scripts/entities/CLAUDE.md`'s
 "Conditions"/"Fog Cloud" sections for the full mechanic: `GameState.is_heavily_obscured(pos)`/

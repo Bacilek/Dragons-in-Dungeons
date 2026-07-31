@@ -684,17 +684,24 @@ var _aoe_preview_tex: ImageTexture
 # radius is centered on a legitimately-reachable impact point.
 func show_aoe_preview(center: Vector2i, radius: int, center_in_range: bool = true, shape: String = "sphere") -> void:
 	var tiles: Array[Vector2i] = []
-	var is_cube: bool = shape == "cube"
-	for dy: int in range(-radius, radius + 1):
-		for dx: int in range(-radius, radius + 1):
-			# Cube (Faerie Fire — a real 5e square/Chebyshev footprint) vs. sphere (Fireball — a
-			# real Euclidean blast radius): the preview must match whichever shape the resolver
-			# actually uses, same "shared shape, preview and resolver can never diverge" precedent
-			# as show_cone_preview()'s cone_tiles() reuse below.
-			if (maxi(absi(dx), absi(dy)) <= radius) if is_cube else (dx * dx + dy * dy <= radius * radius):
+	if shape == "cube":
+		# Cube (Faerie Fire) — `radius` here is a literal SIDE LENGTH (2 = a 2x2 block), corner-
+		# anchored at `center`, NOT a centered Chebyshev radius — matches SpellEffects.
+		# _resolve_faerie_fire()'s own tile-gather exactly, so preview and real footprint can never
+		# diverge. A centered radius-2 square would have been 5x5, far larger than the real spell's
+		# small 2-tile cube.
+		for dy: int in range(radius):
+			for dx: int in range(radius):
 				var t: Vector2i = center + Vector2i(dx, dy)
 				if _in_grid_bounds(t):
 					tiles.append(t)
+	else:
+		for dy: int in range(-radius, radius + 1):
+			for dx: int in range(-radius, radius + 1):
+				if dx * dx + dy * dy <= radius * radius:
+					var t: Vector2i = center + Vector2i(dx, dy)
+					if _in_grid_bounds(t):
+						tiles.append(t)
 	_paint_aoe_preview_tiles("%s,%d,%d,%d,%d" % [shape, center.x, center.y, radius, int(center_in_range)], tiles, center_in_range)
 
 # Every tile-preview overlay (blue max-reach backdrop, purple/red sphere footprint, two-tone ranged
@@ -1144,14 +1151,16 @@ func _update_fog_cloud_visual() -> void:
 			for dx: int in range(-radius, radius + 1):
 				if dx * dx + dy * dy <= radius * radius:
 					var t: Vector2i = center + Vector2i(dx, dy)
-					# LOS-filtered from the player's own current viewpoint: a heavily-obscured
-					# zone is impenetrable to sight like a wall (_blocks_los()'s own check), so an
-					# outside viewer should only ever see its near boundary tinted, never the full
-					# shape/extent through walls or around corners. has_line_of_sight() excludes
-					# its own endpoint from the block check, so the boundary tile itself still
-					# renders even though it's heavily obscured — only a tile reached by passing
-					# THROUGH another obscured tile first correctly stays hidden.
-					if has_line_of_sight(_fov_player_pos, t):
+					# Deliberately NOT LOS-filtered (reverted — an earlier pass tried gating this
+					# on has_line_of_sight(), but the direct owner wants the full footprint visible
+					# whenever it's within the player's own explored/FOV range, not hidden behind
+					# walls the moment any part of the zone dips out of view — the actual "can't
+					# see into/out of it" blocking already lives in update_fog()'s _visible_tiles
+					# stripping + dimmed-memory suppression below, not in this visual paint).
+					# WALL tiles are excluded so the cloud never paints over/hides a wall — the map
+					# geometry stays visible exactly where it is, the cloud's rendered footprint
+					# just ends up smaller wherever it overlaps a wall.
+					if _data.get_tile(t.x, t.y) != DungeonData.TileType.WALL:
 						tile_colors[t] = tint
 	var tiles: Array = tile_colors.keys()
 	while _fog_cloud_sprites.size() < tiles.size():

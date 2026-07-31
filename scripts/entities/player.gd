@@ -383,7 +383,14 @@ func _on_turn_started() -> void:
 				if stats.concentration_spell_id == "invisibility":
 					stats.concentration_spell_id = ""
 				GameState.game_log("[color=gray]You fade back into view.[/color]")
-				_update_invisibility_visual()
+		# Unconditional sync, every real turn, regardless of the branch above — Invisibility being
+		# a real Concentration effect now means it can also end via a completely different code
+		# path (GameState._check_concentration_break()'s damage-based CON check, or casting a
+		# different concentration spell), neither of which has a Player node reference to call
+		# _update_invisibility_visual() from directly. Bugfix: those paths correctly zeroed
+		# invisibility_turns/cleared concentration_spell_id, but the player's own sprite stayed
+		# translucent since nothing ever told it to refresh. Idempotent — cheap no-op most turns.
+		_update_invisibility_visual()
 		# Draconic Flight: 100-turn duration, ticked once per real turn (same pattern above).
 		if stats.draconic_flight_turns > 0:
 			stats.draconic_flight_turns -= 1
@@ -1060,11 +1067,19 @@ func _update_spell_aoe_preview() -> bool:
 		_dungeon_floor.hide_spell_range_preview()
 		return false
 	# Blue "maximum reach" backdrop — every tile that could possibly be hit from here, shown for
-	# any armed spell (not just AoE shapes). Cone: reach = the cone's own length (its origin is
-	# always the caster). Sphere: reach = how far the blast's own center can be placed, plus the
-	# blast's own radius (the impact point can land at the edge of range and still splash further
-	# out). Everything else (single-target ENEMY/TILE spells): reach = the spell's plain range.
-	var range_radius: int = spell.shape_size if spell.shape == "cone" else (spell.range_tiles + spell.shape_size if spell.shape in ["sphere", "cube"] else spell.range_tiles)
+	# any armed spell (not just AoE shapes). Cone: reach = the cone's own length, INFLATED by
+	# sqrt(1.25) (~1.118×) — the cone's true max-reach envelope (union over every possible aim
+	# angle) extends further than a flat `length`-radius circle: a corner tile at forward=length,
+	# lateral=1 (still legally inside the wedge, `lateral <= forward*0.5`) sits at Euclidean
+	# distance sqrt(length²+1) > length, so a plain `length`-radius circle under-represented the
+	# cone's own actual width right at its tip. The exact multiplier is `1/cos(atan(0.5))` — the
+	# cosine of the wedge's own half-angle — derived by minimizing forward for a fixed off-axis
+	# point while staying inside `lateral <= forward*0.5`. (Cone's origin is always the caster.)
+	# Sphere/cube: reach = how far the blast's own center can be placed, plus the blast's own
+	# radius (the impact point can land at the edge of range and still splash further out).
+	# Everything else (single-target ENEMY/TILE spells): reach = the spell's plain range.
+	const CONE_MAX_REACH_MULTIPLIER: float = 1.1180339887498949  # 1 / cos(atan(0.5)) = sqrt(1.25)
+	var range_radius: int = ceili(spell.shape_size * CONE_MAX_REACH_MULTIPLIER) if spell.shape == "cone" else (spell.range_tiles + spell.shape_size if spell.shape in ["sphere", "cube"] else spell.range_tiles)
 	_dungeon_floor.show_spell_range_preview(grid_pos, range_radius, spell.shape == "cone")
 	var world_mouse: Vector2 = get_global_mouse_position()
 	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
