@@ -745,8 +745,6 @@ func _build_hellish_rebuke_ability() -> Ability:
 	ab.uses_remaining = 0
 	ab.uses_max = 0
 	return ab
-		_:
-			return ""
 
 ## Grants a lineage spell — ALWAYS PREPARED, outside the normal known_spells/prepared_spells/
 ## SpellcasterState bookkeeping entirely (never counts against a caster's known-cantrip or
