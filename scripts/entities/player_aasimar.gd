@@ -9,10 +9,13 @@ extends Node
 var player: Player
 
 var healing_hands_mode_active: bool = false
-var celestial_revelation_mode_active: bool = false
-var celestial_revelation_pending_transform: int = Stats.AasimarTransformation.HEAVENLY_WINGS
 
 const TRANSFORM_NAMES: Array[String] = ["Heavenly Wings", "Inner Radiance", "Necrotic Shroud"]
+const TRANSFORM_DESCRIPTIONS: Array[String] = [
+	"Sprout wings and take to the air for 10 turns — cross chasms freely, no grass trample, no traps triggered, immune to standing-fire damage.",
+	"Radiant light bursts from you, dealing proficiency-bonus Radiant damage to every enemy within 2 tiles — and bursts again at the end of every one of your turns for 10 turns. +2 FOV radius while active.",
+	"A shroud of graveyard shadow wreathes you — every enemy within 2 tiles must succeed a CHA save or become Frightened of you for 2 turns.",
+]
 
 # ── Healing Hands ──────────────────────────────────────────────────────────────────
 # Arm-then-click targeting (same shape as Grip of the Forest's hook mode). Only two valid touch
@@ -43,50 +46,41 @@ func resolve_healing_hands(clicked: Vector2i) -> void:
 	if not GameState.invincible:
 		player.stats.aasimar_healing_hands_available = false
 	GameState._sync_ability_uses()
-	var die: int = Rng.roll(4)
-	var amount: int = die * player.stats.proficiency_bonus
+	# "d4 × proficiency bonus" reads as proficiency_bonus SEPARATE d4 dice summed (e.g. 2d4/3d4),
+	# not one d4 roll multiplied by the bonus — bugfix, was the latter (a single 1-4 roll scaled up,
+	# which is both a much smaller expected total and a much narrower variance than the real dice
+	# pool it's meant to represent).
+	var prof: int = player.stats.proficiency_bonus
+	var rolls: Array[int] = Rng.roll_dice(prof, 4)
+	var amount: int = 0
+	for r: int in rolls:
+		amount += r
+	var rolls_str: String = "+".join(rolls.map(func(r: int) -> String: return str(r)))
 	if heal_companion:
 		companion.stats.current_hp = mini(companion.stats.max_hp, companion.stats.current_hp + amount)
-		GameState.game_log("[color=lime]Healing Hands: %s is healed for %d (1d4=%d × prof %d) HP.[/color]" % [
-			companion.animal_name, amount, die, player.stats.proficiency_bonus])
+		GameState.game_log("[color=lime]Healing Hands: %s is healed for %d (%dd4: %s) HP.[/color]" % [
+			companion.animal_name, amount, prof, rolls_str])
 	else:
 		GameState.heal(amount)
-		GameState.game_log("[color=lime]Healing Hands: you are healed for %d (1d4=%d × prof %d) HP.[/color]" % [
-			amount, die, player.stats.proficiency_bonus])
+		GameState.game_log("[color=lime]Healing Hands: you are healed for %d (%dd4: %s) HP.[/color]" % [
+			amount, prof, rolls_str])
 	player._handle_post_attack_turn()
 
 # ── Celestial Revelation ───────────────────────────────────────────────────────────
-# Arm-cycle-cancel targeting, one step further than Breath Weapon's own Cone<->Line toggle since
-# there are 3 choices instead of 2: 1st press arms Heavenly Wings, 2nd press (same slot) cycles to
-# Inner Radiance, 3rd to Necrotic Shroud, 4th cancels. ANY world click confirms/activates whichever
-# choice is currently selected (Mage Armor's "any click confirms a self-cast" convention — there's
-# nothing to aim, the click is purely a confirm gesture).
+# Opens a 3-option click-to-choose picker overlay (celestial_revelation_picker.gd) instead of the
+# old arm-cycle-cancel-then-click-anywhere flow (bugfix/redesign, direct owner request — the old
+# flow just silently rotated through choices with no visible list of what was even on offer).
 func activate_celestial_revelation() -> void:
-	if celestial_revelation_mode_active:
-		celestial_revelation_pending_transform += 1
-		if celestial_revelation_pending_transform > Stats.AasimarTransformation.NECROTIC_SHROUD:
-			celestial_revelation_mode_active = false
-			GameState.game_log("[color=gray]Celestial Revelation cancelled.[/color]")
-			return
-		GameState.game_log("[color=lime]Celestial Revelation: %s selected. Click again to cycle, click anywhere to activate.[/color]" % TRANSFORM_NAMES[celestial_revelation_pending_transform])
-		return
 	if player.stats.character_level < 3:
 		return
 	if player.stats.aasimar_celestial_revelation_used and not GameState.invincible:
 		GameState.game_log("[color=gray]Celestial Revelation: already used this long rest.[/color]")
 		return
-	celestial_revelation_mode_active = true
-	celestial_revelation_pending_transform = Stats.AasimarTransformation.HEAVENLY_WINGS
-	GameState.game_log("[color=lime]Celestial Revelation armed — %s selected. Click again to cycle choice, click anywhere to activate.[/color]" % TRANSFORM_NAMES[0])
+	var picker: Node = load("res://scripts/ui/celestial_revelation_picker.gd").new()
+	picker.aasimar = self
+	player.get_tree().root.add_child(picker)
 
-func cancel_celestial_revelation() -> void:
-	if celestial_revelation_mode_active:
-		celestial_revelation_mode_active = false
-		GameState.game_log("[color=gray]Celestial Revelation cancelled.[/color]")
-
-func resolve_celestial_revelation() -> void:
-	celestial_revelation_mode_active = false
-	var transform: int = celestial_revelation_pending_transform
+func resolve_celestial_revelation_choice(transform: int) -> void:
 	if not GameState.invincible:
 		player.stats.aasimar_celestial_revelation_used = true
 	GameState._sync_ability_uses()
@@ -112,8 +106,22 @@ func resolve_celestial_revelation() -> void:
 	if player._dungeon_floor != null:
 		player._dungeon_floor.update_fog(player.grid_pos)
 
-# Inner Radiance: instant proficiency-bonus Radiant damage to every enemy within 2 tiles (once, on
-# activation) — mirrors Thunderclap's self-centered burst shape.
+## Called once per real player turn from player.gd's _on_turn_started() tick block, right after
+## celestial_revelation_turns decrements — re-bursts Inner Radiance at the end of every turn while
+## it's still the active transformation, not just once on activation (bugfix/redesign, direct
+## owner request: "the passive damage from this choice should proc at the end of ALL my turns
+## while Celestial Revelation lasts, not just the first"). No-ops for the other two
+## transformations and once the effect has fully expired.
+func tick_inner_radiance() -> void:
+	if player.stats.celestial_revelation_turns <= 0:
+		return
+	if player.stats.celestial_revelation_transform != Stats.AasimarTransformation.INNER_RADIANCE:
+		return
+	_burst_inner_radiance()
+
+# Inner Radiance: proficiency-bonus Radiant damage to every enemy within 2 tiles — fires once on
+# activation AND again at the end of every subsequent turn while Inner Radiance stays the active
+# transformation (see tick_inner_radiance() above), mirrors Thunderclap's self-centered burst shape.
 func _burst_inner_radiance() -> void:
 	var dungeon_floor: Node = player._dungeon_floor
 	if dungeon_floor == null:

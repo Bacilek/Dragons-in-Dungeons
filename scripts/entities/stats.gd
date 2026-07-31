@@ -162,23 +162,26 @@ var adrenaline_rush_move_free_pending: bool = false
 # ALWAYS PREPARED — granted straight onto the ability bar via GameState._build_spell_ability(),
 # outside the normal known_spells/prepared_spells/SpellcasterState bookkeeping entirely, so it
 # never counts against a caster's known-cantrip or prepared-spell cap (and exists even for a
-# non-caster class, e.g. a Barbarian Elf). Each grants exactly one free cast per long rest
-# (elf_lineage_free_cast_used, cleared in GameState.long_rest()) — SpellEffects._consume_slot()
+# non-caster class, e.g. a Barbarian Elf). Each grants proficiency_bonus free casts per long rest
+# (elf_lineage_free_casts_remaining, refilled to proficiency_bonus in GameState.long_rest() — same
+# counter shape as Gnomish Lineage's gnome_lineage_free_casts_remaining below, was a single-bool
+# "one free cast" until a direct owner request made it a real per-long-rest counter, shown on the
+# ability-bar slot's use-count badge like Hunter's Mark/Rage) — SpellEffects._consume_slot()
 # checks Stats.is_lineage_free_cast_available() before ever touching a real spell slot. Beyond
-# the free use, a further cast needs a real spell slot of the spell's own level (Wizard/Ranger
-# only) — a non-caster simply has no further casts available once the free one is spent, a
+# the free uses, a further cast needs a real spell slot of the spell's own level (Wizard/Ranger
+# only) — a non-caster simply has no further casts available once the free ones are spent, a
 # documented simplification (same "non-caster gets the narrow case, not the full system" precedent
 # as Scroll of <Spell> casting).
 var elf_lineage_spell_ids: Array[String] = []
-var elf_lineage_free_cast_used: Dictionary = {}
+var elf_lineage_free_casts_remaining: Dictionary = {}  # spell_id -> int, refilled in GameState.long_rest()
 
 ## Gate helper for player_spellcasting.gd's cast sites — true iff EITHER Elven Lineage OR
 ## Tiefling Fiendish Legacy still has a free cast available for this spell (the two pools never
-## overlap on the same spell_id, and spell_effects.gd's _consume_slot() marks the correct one's
-## _free_cast_used flag separately once the cast actually resolves).
+## overlap on the same spell_id, and spell_effects.gd's _consume_slot() decrements the correct
+## one's own counter separately once the cast actually resolves).
 func is_lineage_free_cast_available(spell_id: String) -> bool:
-	var elf_free: bool = spell_id in elf_lineage_spell_ids and not elf_lineage_free_cast_used.get(spell_id, false)
-	var tiefling_free: bool = spell_id in tiefling_legacy_spell_ids and not tiefling_legacy_free_cast_used.get(spell_id, false)
+	var elf_free: bool = spell_id in elf_lineage_spell_ids and elf_lineage_free_casts_remaining.get(spell_id, 0) > 0
+	var tiefling_free: bool = spell_id in tiefling_legacy_spell_ids and tiefling_legacy_free_casts_remaining.get(spell_id, 0) > 0
 	return elf_free or tiefling_free
 
 # ── Tiefling: Fiendish Legacy ─────────────────────────────────────────────────────
@@ -186,15 +189,15 @@ func is_lineage_free_cast_available(spell_id: String) -> bool:
 # 1/3/5, not 3/5 — the level-1 grant is handed out immediately at race select via
 # GameState.give_race_starting_items(), not waiting for a level-up). Each of the 3 legacies
 # (TieflingLegacy) grants a cantrip at level 1, a 1st-level spell at level 3, a 2nd-level spell at
-# level 5 — always prepared, outside known_spells/prepared_spells bookkeeping, one free cast per
-# long rest before falling back to a real spell slot (leveled spells only — a cantrip is already
-# unlimited, so the free-cast tracking is a harmless no-op for the level-1 grant). See
-# scripts/entities/CLAUDE.md's "Tiefling" section for the full spell table.
+# level 5 — always prepared, outside known_spells/prepared_spells bookkeeping, proficiency_bonus
+# free casts per long rest before falling back to a real spell slot (leveled spells only — a
+# cantrip is already unlimited, so the free-cast counter is a harmless no-op for the level-1
+# grant). See scripts/entities/CLAUDE.md's "Tiefling" section for the full spell table.
 var tiefling_legacy_spell_ids: Array[String] = []
-var tiefling_legacy_free_cast_used: Dictionary = {}
+var tiefling_legacy_free_casts_remaining: Dictionary = {}  # spell_id -> int, refilled in GameState.long_rest()
 
 func is_tiefling_legacy_free_cast_available(spell_id: String) -> bool:
-	return spell_id in tiefling_legacy_spell_ids and not tiefling_legacy_free_cast_used.get(spell_id, false)
+	return spell_id in tiefling_legacy_spell_ids and tiefling_legacy_free_casts_remaining.get(spell_id, 0) > 0
 
 # Hellish Rebuke (Infernal Tiefling's level-3 legacy grant) is implemented as a toggle-armed
 # REACTION instead of a normal on-demand cast — RAW casts it as a reaction to being hit, and this
@@ -257,12 +260,11 @@ var giant_ancestry_uses_remaining: int = 0
 # Fire/Frost/Stone/Storm Giant all share one "arm now, spend the charge only when it actually
 # triggers" shape (a miss/no-trigger never wastes a charge) — this single pending flag is enough
 # since only one Giant Ancestry is ever active per character. Cloud Giant (instant teleport) and
-# Hill Giant (passive on-hit) don't use it. Not serialized — mid-floor pending state.
+# Hill Giant (passive on-hit) don't use it. Not serialized — mid-floor pending state. Stone Giant's
+# own 1d12+CON reduction is rolled fresh at the moment damage actually lands (GameState.
+# take_damage_raw()), not at arm time — see that function's own Stone Giant block; toggling this
+# flag off manually before it ever triggers costs nothing (no charge, no roll wasted).
 var giant_ancestry_armed: bool = false
-# Stone Giant's armed reduction, consumed by the next instance of damage taken (GameState.
-# take_damage_raw()) — rolled at ARM time (not at the moment damage lands), per the "arm now"
-# shape above sharing one `giant_ancestry_armed` flag with Fire/Frost/Storm.
-var stone_ancestry_reduction_pending: int = 0
 
 @export var max_hp: int = 10
 @export var current_hp: int = 10
@@ -754,9 +756,9 @@ func to_dict() -> Dictionary:
 		"blade_ward_turns": blade_ward_turns,
 		"known_weapon_masteries": known_weapon_masteries.duplicate(),
 		"elf_lineage_spell_ids": elf_lineage_spell_ids.duplicate(),
-		"elf_lineage_free_cast_used": elf_lineage_free_cast_used.duplicate(),
+		"elf_lineage_free_casts_remaining": elf_lineage_free_casts_remaining.duplicate(),
 		"tiefling_legacy_spell_ids": tiefling_legacy_spell_ids.duplicate(),
-		"tiefling_legacy_free_cast_used": tiefling_legacy_free_cast_used.duplicate(),
+		"tiefling_legacy_free_casts_remaining": tiefling_legacy_free_casts_remaining.duplicate(),
 		"gnome_lineage_spell_ids": gnome_lineage_spell_ids.duplicate(),
 		"gnome_lineage_free_casts_remaining": gnome_lineage_free_casts_remaining.duplicate(),
 		"aasimar_healing_hands_available": aasimar_healing_hands_available,
@@ -813,11 +815,11 @@ func from_dict(d: Dictionary) -> void:
 	elf_lineage_spell_ids.clear()
 	for sid: Variant in (d.get("elf_lineage_spell_ids", []) as Array):
 		elf_lineage_spell_ids.append(String(sid))
-	elf_lineage_free_cast_used = (d.get("elf_lineage_free_cast_used", {}) as Dictionary).duplicate()
+	elf_lineage_free_casts_remaining = (d.get("elf_lineage_free_casts_remaining", {}) as Dictionary).duplicate()
 	tiefling_legacy_spell_ids.clear()
 	for tsid: Variant in (d.get("tiefling_legacy_spell_ids", []) as Array):
 		tiefling_legacy_spell_ids.append(String(tsid))
-	tiefling_legacy_free_cast_used = (d.get("tiefling_legacy_free_cast_used", {}) as Dictionary).duplicate()
+	tiefling_legacy_free_casts_remaining = (d.get("tiefling_legacy_free_casts_remaining", {}) as Dictionary).duplicate()
 	gnome_lineage_spell_ids.clear()
 	for gsid: Variant in (d.get("gnome_lineage_spell_ids", []) as Array):
 		gnome_lineage_spell_ids.append(String(gsid))

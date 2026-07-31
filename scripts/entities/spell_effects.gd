@@ -138,13 +138,37 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	if dungeon_floor != null:
 		dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color(spell.damage_type))
 
+	# Fire/Frost/Hill Giant Ancestry: same "next attack that hits" trigger melee already has —
+	# extended to spell attack rolls too, see PlayerGoliath.consume_giant_ancestry_on_hit().
+	var gol_actual: int = 0
+	var gol_inst: Dictionary = {}
+	var gol_type: String = ""
+	if actual > 0:
+		gol_type = player._goliath.consume_giant_ancestry_on_hit(target)
+		if gol_type != "":
+			var gol_sides: int = 6 if gol_type == "Cold" else 10
+			var gol_rolls: Array[int] = Rng.roll_dice(1, gol_sides)
+			gol_inst = CombatMath.build_damage_instance(gol_rolls, gol_sides, [], is_crit, gol_type)
+			var gol_result: Dictionary = target.take_typed_damage(gol_inst["subtotal"], gol_type, is_crit)
+			gol_inst["final"] = gol_result["actual"]
+			gol_inst["resist_mul"] = gol_result["mul"]
+			gol_actual = gol_result["actual"]
+			target.update_hp_bar()
+			if dungeon_floor != null:
+				dungeon_floor.show_damage(target.position, gol_actual, false, CombatMath.damage_type_color(gol_type), 1)
+			player._goliath.finish_giant_ancestry_bonus_damage()
+
 	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
 	var type_tag: String = " [color=gray]%s[/color]" % spell.damage_type
 	var is_lethal: bool = target.stats.is_dead()
+	var dmg_segment: String = "[url=%s][color=yellow]%d[/color][/url]%s" % [dmg_meta, actual, type_tag]
+	if gol_actual > 0:
+		var gol_meta: String = CombatMath.encode_damage_instance(gol_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [gol_meta, gol_actual, gol_type]
 
 	var verb: String = "CRIT! " if is_crit else ""
-	GameState.game_log(CombatMath.wrap_halfling_luck("%sYou [url=%s]cast[/url] [color=cyan]%s[/color] at [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [
-		verb, hit_meta, spell.spell_name, target.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)], r["lucky"]))
+	GameState.game_log(CombatMath.wrap_halfling_luck("%sYou [url=%s]cast[/url] [color=cyan]%s[/color] at [color=orange]%s[/color] for %s dmg.%s" % [
+		verb, hit_meta, spell.spell_name, target.display_name, dmg_segment, CombatMath.death_suffix(is_lethal)], r["lucky"]))
 
 	if is_lethal:
 		player._finish_kill(target)
@@ -384,12 +408,17 @@ static func _consume_slot(player: Player, spell: Spell, cast_level: int, from_sc
 	if spell.is_ritual and not player.is_being_pursued():
 		GameState.spell_slots_changed.emit()
 		return
+	# BUGFIX: this used to unconditionally decrement elf_lineage's own counter whenever
+	# is_lineage_free_cast_available() (elf OR tiefling) was true — for a Tiefling-only spell
+	# (e.g. Infernal's Darkness), the elf_lineage dict never actually gates that spell_id, so the
+	# real (tiefling) counter never decremented and the free cast was effectively infinite. Decrement
+	# whichever pool actually contains this spell_id — the two never overlap on the same spell_id.
 	if player.stats.is_lineage_free_cast_available(spell.spell_id):
-		player.stats.elf_lineage_free_cast_used[spell.spell_id] = true
-		GameState.spell_slots_changed.emit()
-		return
-	if player.stats.is_tiefling_legacy_free_cast_available(spell.spell_id):
-		player.stats.tiefling_legacy_free_cast_used[spell.spell_id] = true
+		if not GameState.invincible:
+			if spell.spell_id in player.stats.elf_lineage_spell_ids:
+				player.stats.elf_lineage_free_casts_remaining[spell.spell_id] = player.stats.elf_lineage_free_casts_remaining.get(spell.spell_id, 0) - 1
+			if spell.spell_id in player.stats.tiefling_legacy_spell_ids:
+				player.stats.tiefling_legacy_free_casts_remaining[spell.spell_id] = player.stats.tiefling_legacy_free_casts_remaining.get(spell.spell_id, 0) - 1
 		GameState.spell_slots_changed.emit()
 		return
 	if player.stats.is_gnome_lineage_free_cast_available(spell.spell_id):
@@ -569,8 +598,19 @@ static func cone_tiles(origin: Vector2i, aim_tile: Vector2i, length: int, dungeo
 			if dx == 0 and dy == 0:
 				continue
 			var v: Vector2 = Vector2(dx, dy)
-			var forward: float = v.dot(dir_v)
-			if forward <= 0.0 or forward > float(length):
+			# `forward` is measured in GRID (Chebyshev) tiles, not continuous Euclidean distance —
+			# bugfix: a continuous dot-product `forward` (v.dot(dir_v), dir_v a unit vector) scales
+			# a diagonal step by sqrt(2) versus a cardinal step's exact 1, so at a fixed integer
+			# `length` (a tile-count range) the diagonal cone's own grid points (e.g. (2,1) relative
+			# to a SE aim) measure as `forward > length` well before they're actually `length` tiles
+			# out — squeezing the cone down to a single tile at any diagonal aim. Chebyshev distance
+			# (`max(|dx|,|dy|)`) treats a diagonal step as costing exactly 1 tile too, matching how
+			# this engine's own diagonal movement already works, and makes the cone widen
+			# symmetrically in every one of the 8 aim directions instead of only the 4 cardinal ones.
+			if v.dot(dir_v) <= 0.0:
+				continue
+			var forward: float = float(maxi(absi(dx), absi(dy)))
+			if forward > float(length):
 				continue
 			var lateral: float = absf(v.x * dir_v.y - v.y * dir_v.x)
 			if lateral > forward * 0.5:
@@ -879,17 +919,42 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	target.update_hp_bar()
 	if dungeon_floor != null:
 		dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color(dtype))
+
+	# Fire/Frost/Hill Giant Ancestry: same "next attack that hits" trigger melee already has —
+	# extended to leveled spell attack rolls too (not on the leap re-roll — only the primary bolt).
+	var gol_actual: int = 0
+	var gol_inst: Dictionary = {}
+	var gol_type: String = ""
+	if actual > 0 and not is_leap:
+		gol_type = player._goliath.consume_giant_ancestry_on_hit(target)
+		if gol_type != "":
+			var gol_sides: int = 6 if gol_type == "Cold" else 10
+			var gol_rolls: Array[int] = Rng.roll_dice(1, gol_sides)
+			gol_inst = CombatMath.build_damage_instance(gol_rolls, gol_sides, [], is_crit, gol_type)
+			var gol_result: Dictionary = target.take_typed_damage(gol_inst["subtotal"], gol_type, is_crit)
+			gol_inst["final"] = gol_result["actual"]
+			gol_inst["resist_mul"] = gol_result["mul"]
+			gol_actual = gol_result["actual"]
+			target.update_hp_bar()
+			if dungeon_floor != null:
+				dungeon_floor.show_damage(target.position, gol_actual, false, CombatMath.damage_type_color(gol_type), 1)
+			player._goliath.finish_giant_ancestry_bonus_damage()
+
 	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
 	var type_tag: String = " [color=gray]%s[/color]" % dtype
 	var is_lethal: bool = target.stats.is_dead()
+	var dmg_segment: String = "[url=%s][color=yellow]%d[/color][/url]%s" % [dmg_meta, actual, type_tag]
+	if gol_actual > 0:
+		var gol_meta: String = CombatMath.encode_damage_instance(gol_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [gol_meta, gol_actual, gol_type]
 	var verb: String = "CRIT! " if is_crit else ""
 	var hit_line: String
 	if is_leap:
-		hit_line = "%sThe orb [url=%s]leaps[/url] to [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [
-			verb, hit_meta, target.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)]
+		hit_line = "%sThe orb [url=%s]leaps[/url] to [color=orange]%s[/color] for %s dmg.%s" % [
+			verb, hit_meta, target.display_name, dmg_segment, CombatMath.death_suffix(is_lethal)]
 	else:
-		hit_line = "%sYou [url=%s]cast[/url] [color=cyan]%s[/color] at [color=orange]%s[/color] for [url=%s][color=yellow]%d[/color][/url]%s dmg.%s" % [
-			verb, hit_meta, spell.spell_name, target.display_name, dmg_meta, actual, type_tag, CombatMath.death_suffix(is_lethal)]
+		hit_line = "%sYou [url=%s]cast[/url] [color=cyan]%s[/color] at [color=orange]%s[/color] for %s dmg.%s" % [
+			verb, hit_meta, spell.spell_name, target.display_name, dmg_segment, CombatMath.death_suffix(is_lethal)]
 	GameState.game_log(CombatMath.wrap_halfling_luck(hit_line, r["lucky"]))
 
 	if is_lethal:
@@ -1065,7 +1130,8 @@ static func trigger_hellish_rebuke(player: Player, attacker: Enemy, dungeon_floo
 	var spell: Spell = SpellDb.get_spell("hellish_rebuke")
 	var stats: Stats = player.stats
 	if stats.is_tiefling_legacy_free_cast_available("hellish_rebuke"):
-		stats.tiefling_legacy_free_cast_used["hellish_rebuke"] = true
+		if not GameState.invincible:
+			stats.tiefling_legacy_free_casts_remaining["hellish_rebuke"] = stats.tiefling_legacy_free_casts_remaining.get("hellish_rebuke", 0) - 1
 	elif stats.caster != null and (GameState.invincible or stats.caster.slot_pool.can_cast(spell)):
 		if not GameState.invincible:
 			stats.caster.slot_pool.consume(spell.level)

@@ -2034,45 +2034,6 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	var actual: int = GameState.take_damage_raw(dmg, false, dmg_type)
 	if _dungeon_floor != null and not invincible:
 		_dungeon_floor.show_damage(_player.position, actual, true)
-	# Storm Giant ancestry (Goliath, see player_goliath.gd): toggled on, the next entity that
-	# deals ANY damage to the player takes 1d8 Thunder back. Consumes the armed flag + a charge
-	# only when it actually procs.
-	if actual > 0 and GameState.player_stats.character_race == Stats.CharacterRace.GOLIATH \
-			and GameState.player_stats.race_variant == Stats.GiantAncestry.STORM \
-			and GameState.player_stats.giant_ancestry_armed and not stats.is_dead():
-		GameState.player_stats.giant_ancestry_armed = false
-		if not GameState.invincible:
-			GameState.player_stats.giant_ancestry_uses_remaining -= 1
-		GameState._sync_ability_uses()
-		var storm_dmg: int = Rng.roll(8)
-		var storm_result: Dictionary = take_typed_damage(storm_dmg, "Thunder")
-		update_hp_bar()
-		GameState.game_log("[color=cyan]Storm's Thunder crackles back at %s for [color=yellow]%d[/color] dmg![/color]" % [display_name, storm_result["actual"]])
-		if stats.is_dead():
-			GameState.game_log("[color=orange]%s[/color] [color=gray]is killed by the backlash![/color]" % display_name)
-			GameState.gain_exp(maxi(1, exp_reward / 2))
-			if _dungeon_floor != null:
-				_dungeon_floor.remove_enemy(self)
-			die()
-	# Hellish Rebuke (Infernal Tiefling, see player_tiefling.gd/spell_effects.gd's own
-	# trigger_hellish_rebuke() comment): toggled on, the next enemy the player can see within the
-	# spell's own range that deals ANY damage to the player is engulfed in flames. Consumes the
-	# armed flag only when it actually procs (visible + in range + still alive). Gated only on
-	# "hellish_rebuke" in tiefling_legacy_spell_ids — that's already the correct, sufficient check
-	# (that array only ever contains it via _grant_tiefling_legacy_spell(), a Tiefling-only grant in
-	# normal play); a redundant character_race == TIEFLING clause used to also be required here,
-	# which silently blocked it from ever firing when debug-granted to a non-Tiefling test
-	# character (bugfix — matches "arms but never goes off").
-	if actual > 0 and not stats.is_dead() and GameState.player_stats.hellish_rebuke_armed \
-			and "hellish_rebuke" in GameState.player_stats.tiefling_legacy_spell_ids:
-		var hr_spell: Spell = SpellDb.get_spell("hellish_rebuke")
-		# Live LOS check (has_line_of_sight), not the cached _visible_tiles snapshot
-		# (is_tile_visible()) — that snapshot is only refreshed by the PLAYER's own update_fog()
-		# calls, so it can be stale for an enemy that moved into sight and attacked in the same
-		# round (bugfix — a same-round mover's exposure could be silently missed).
-		if min_dist_to(_player.grid_pos) <= hr_spell.range_tiles and _dungeon_floor != null and _dungeon_floor.has_line_of_sight(_player.grid_pos, grid_pos):
-			GameState.player_stats.hellish_rebuke_armed = false
-			SpellEffects.trigger_hellish_rebuke(_player, self, _dungeon_floor)
 	# Rage's 50% DR (take_damage_raw()) was live for this hit whenever the player was raging AND
 	# dmg_type is one of the three physical types.
 	var rage_applied: int = 1 if GameState.is_raging else 0
@@ -2102,6 +2063,53 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 		GameState.game_log("%s[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg%s.%s%s" % [bracket_l, atk_label, hit_meta, dmg_meta, actual, extra_suffix, god_suffix, bracket_r])
 	else:
 		GameState.game_log("%s[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg%s.%s%s" % [bracket_l, atk_label, hit_meta, dmg_meta, actual, extra_suffix, god_suffix, bracket_r])
+	# Storm Giant ancestry (Goliath, see player_goliath.gd): toggled on, the next entity that deals
+	# ANY damage to the player FROM WITHIN 3 TILES takes 1d8 Thunder back. Consumes the armed flag +
+	# a charge only when it actually procs — logged AFTER the "hits you for X dmg" line above
+	# (bugfix/redesign, direct owner request: correct chronological order — you take the hit, THEN
+	# the thunder lashes back — this used to log before the hit line it was reacting to).
+	if actual > 0 and GameState.player_stats.character_race == Stats.CharacterRace.GOLIATH \
+			and GameState.player_stats.race_variant == Stats.GiantAncestry.STORM \
+			and GameState.player_stats.giant_ancestry_armed and not stats.is_dead() \
+			and min_dist_to(_player.grid_pos) <= 3:
+		GameState.player_stats.giant_ancestry_armed = false
+		if not GameState.invincible:
+			GameState.player_stats.giant_ancestry_uses_remaining -= 1
+		GameState._sync_ability_uses()
+		var storm_rolls: Array[int] = Rng.roll_dice(1, 8)
+		var storm_inst: Dictionary = CombatMath.build_damage_instance(storm_rolls, 8, [], false, "Thunder")
+		var storm_result: Dictionary = take_typed_damage(storm_inst["subtotal"], "Thunder")
+		storm_inst["final"] = storm_result["actual"]
+		storm_inst["resist_mul"] = storm_result["mul"]
+		update_hp_bar()
+		var storm_meta: String = CombatMath.encode_damage_instance(storm_inst)
+		GameState.game_log("[color=cyan]Storm's Thunder[/color] crackles back at %s for [url=%s][color=yellow]%d[/color][/url] dmg!" % [display_name, storm_meta, storm_result["actual"]])
+		if stats.is_dead():
+			GameState.game_log("[color=orange]%s[/color] [color=gray]is killed by the backlash![/color]" % display_name)
+			GameState.gain_exp(maxi(1, exp_reward / 2))
+			if _dungeon_floor != null:
+				_dungeon_floor.remove_enemy(self)
+			die()
+	# Hellish Rebuke (Infernal Tiefling, see player_tiefling.gd/spell_effects.gd's own
+	# trigger_hellish_rebuke() comment): toggled on, the next enemy the player can see within the
+	# spell's own range that deals ANY damage to the player is engulfed in flames. Consumes the
+	# armed flag only when it actually procs (visible + in range + still alive). Gated only on
+	# "hellish_rebuke" in tiefling_legacy_spell_ids — that's already the correct, sufficient check
+	# (that array only ever contains it via _grant_tiefling_legacy_spell(), a Tiefling-only grant in
+	# normal play); a redundant character_race == TIEFLING clause used to also be required here,
+	# which silently blocked it from ever firing when debug-granted to a non-Tiefling test
+	# character (bugfix — matches "arms but never goes off"). Also logged after the main hit line
+	# now, same ordering fix as Storm Giant above.
+	if actual > 0 and not stats.is_dead() and GameState.player_stats.hellish_rebuke_armed \
+			and "hellish_rebuke" in GameState.player_stats.tiefling_legacy_spell_ids:
+		var hr_spell: Spell = SpellDb.get_spell("hellish_rebuke")
+		# Live LOS check (has_line_of_sight), not the cached _visible_tiles snapshot
+		# (is_tile_visible()) — that snapshot is only refreshed by the PLAYER's own update_fog()
+		# calls, so it can be stale for an enemy that moved into sight and attacked in the same
+		# round (bugfix — a same-round mover's exposure could be silently missed).
+		if min_dist_to(_player.grid_pos) <= hr_spell.range_tiles and _dungeon_floor != null and _dungeon_floor.has_line_of_sight(_player.grid_pos, grid_pos):
+			GameState.player_stats.hellish_rebuke_armed = false
+			SpellEffects.trigger_hellish_rebuke(_player, self, _dungeon_floor)
 	# Orc Shaman applies poison on hit (top-level attack only — never a multiattack/ability sub-swing).
 	if sub.is_empty() and not invincible and display_name == "Orc Shaman" and GameState.player_stats.poison_turns < 3:
 		if GameState.apply_player_status("poison", 3):

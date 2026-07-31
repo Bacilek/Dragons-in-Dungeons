@@ -185,7 +185,7 @@ static func race_bonus_text(stats: Stats) -> String:
 			return "Fiendish Legacy (%s): resistance to %s damage.\n%s Cast with your best of INT/WIS/CHA — each free once per long rest, then a real spell slot.\n%s" % [
 				legacy_name, legacy_dmg, legacy_spells, darkvision]
 		Stats.CharacterRace.AASIMAR:
-			return "Celestial Resistance: resistance to Necrotic and Radiant damage.\nHealing Hands: touch-heal 1d4 × proficiency bonus HP, costs your action (once per long rest).\nLight Bearer: know the Light cantrip.\nCelestial Revelation (from level 3): choose Heavenly Wings/Inner Radiance/Necrotic Shroud, once per long rest — 10 turns, first damage each turn deals bonus Radiant/Necrotic damage equal to your proficiency bonus.\n%s" % darkvision
+			return "Celestial Resistance: resistance to Necrotic and Radiant damage.\nHealing Hands: touch-heal (proficiency bonus)d4 HP, costs your action (once per long rest).\nLight Bearer: know the Light cantrip.\nCelestial Revelation (from level 3): choose Heavenly Wings/Inner Radiance/Necrotic Shroud, once per long rest — 10 turns, first damage each turn deals bonus Radiant/Necrotic damage equal to your proficiency bonus.\n%s" % darkvision
 		Stats.CharacterRace.GNOME:
 			var cunning_stat: String = stats.gnomish_cunning_stat.to_upper() if stats.gnomish_cunning_stat != "" else "?"
 			var gnome_lineage: String = ""

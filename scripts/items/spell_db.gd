@@ -487,7 +487,7 @@ static func _faerie_fire() -> Spell:
 	s.resolution = Spell.Resolution.SAVE
 	s.save_stat = "DEX"
 	s.description = "A 2-tile cube is outlined in a random dancing light (blue, green, or violet). Every creature inside makes a DEX save or is also outlined for 10 turns (Concentration): every attack roll against it has Advantage if the attacker can see it, it sheds its own dim light, and it can't turn invisible — an already-invisible creature that fails the save is instead seen, faintly, at reduced opacity. No damage. Real 5e class list: Bard/Druid. Drow lineage spell."
-	s.icon_path = ""
+	s.icon_path = "res://icons/spells/1/faerie_fire.png"
 	s.effect_id = "faerie_fire"
 	s.class_list = ["WIZARD"]
 	return s
@@ -552,7 +552,7 @@ static func _pass_without_trace() -> Spell:
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.description = "Action. Self. Concentration, up to 600 turns. An emanation extends 3 tiles from you — every friendly creature (including you) inside it gets +10 to its Stealth-vs-Passive-Perception roll. Real 5e/5.5e class list: Druid/Ranger (Druid isn't a playable class in this engine yet, so Ranger is the only class that can learn it today). Simplification: this engine only has a Stealth check for the player, so the bonus only ever applies to you in practice — it's still granted \"to every friendly creature\" per the spell text. Also the Wood Elf lineage's own free grant (Elven Lineage)."
-	s.icon_path = ""
+	s.icon_path = "res://icons/spells/2/pass_without_trace.png"
 	s.effect_id = "pass_without_trace"
 	s.class_list = ["RANGER"]
 	return s
@@ -576,7 +576,7 @@ static func _poison_spray() -> Spell:
 	s.damage_type = "Poison"
 	s.cantrip_tier_scaling = true
 	s.description = "Extend a hand toward a creature within 2 tiles and unleash a ranged puff of poison. 1d12 Poison damage. Also an Abyssal Tiefling lineage cantrip."
-	s.icon_path = ""
+	s.icon_path = "res://icons/spells/0/poison_spray.png"
 	s.effect_id = ""
 	s.class_list = ["WIZARD"]
 	return s
@@ -594,7 +594,7 @@ static func _chill_touch() -> Spell:
 	s.damage_type = "Necrotic"
 	s.cantrip_tier_scaling = true
 	s.description = "A ghostly, skeletal hand reaches out to a touched target. 1d10 Necrotic damage — on a hit, the target can't regenerate any HP until your next turn. Also a Chthonic Tiefling lineage cantrip. (Simplified from RAW: grants no bonus against Undead — no Undead-matchup hook exists here.)"
-	s.icon_path = ""
+	s.icon_path = "res://icons/spells/0/chill_touch.png"
 	s.effect_id = "chill_touch"
 	s.class_list = ["WIZARD"]
 	return s
@@ -612,7 +612,7 @@ static func _ray_of_sickness() -> Spell:
 	s.dice_sides = 8
 	s.damage_type = "Poison"
 	s.description = "A ray of sickening green energy lashes out at a target within 3 tiles. 2d8 Poison damage; on a hit the target is also Poisoned until the end of your next turn (approximated as a fixed 2-turn duration, same precedent as Mind Sliver's own documented simplification) — no save, it's automatic. Abyssal Tiefling lineage spell."
-	s.icon_path = ""
+	s.icon_path = "res://icons/spells/1/ray_of_sickness.png"
 	s.effect_id = "ray_of_sickness"
 	s.class_list = ["WIZARD"]
 	return s
@@ -629,7 +629,7 @@ static func _hold_person() -> Spell:
 	s.save_stat = "WIS"
 	s.dice_count = 0
 	s.description = "A target within 3 tiles, Concentration (up to 10 turns), makes a WIS save or is Paralyzed — a real Paralyzed condition: Speed 0, auto-fails STR/DEX checks, every attack against it has Advantage, and a hit made from within 1 tile of it is an automatic critical hit. Repeats the save at the end of each of its own turns, ending the spell early on a success. Abyssal Tiefling lineage spell."
-	s.icon_path = ""
+	s.icon_path = "res://icons/spells/2/hold_person.png"
 	s.effect_id = "hold_person"
 	s.class_list = ["WIZARD"]
 	return s
@@ -646,7 +646,7 @@ static func _ray_of_enfeeblement() -> Spell:
 	s.save_stat = "CON"
 	s.dice_count = 0
 	s.description = "A black ray of enervating energy at a target within 3 tiles, Concentration (up to 10 turns). The target makes a CON save: on a success it merely has Disadvantage on the next attack roll it makes, until the start of your next turn. On a failure, for the duration it has Disadvantage on all its own STR-based d20 tests and subtracts 1d8 from every damage roll it makes. It repeats the save at the end of each of its own turns, ending the spell on a success. Chthonic Tiefling lineage spell."
-	s.icon_path = ""
+	s.icon_path = "res://icons/spells/2/ray_of_enfeeblement.png"
 	s.effect_id = "ray_of_enfeeblement"
 	s.class_list = ["WIZARD"]
 	return s
@@ -666,7 +666,7 @@ static func _hellish_rebuke() -> Spell:
 	s.dice_sides = 10
 	s.damage_type = "Fire"
 	s.description = "Casting time: Reaction. Toggle this ability to arm it — the next enemy you can see within 3 tiles that deals you damage is engulfed in hellish flames and must make a DEX save or take 2d10 Fire (half on a success). RAW is cast as a genuine reaction the instant a creature hits you; this engine has no reaction-casting framework, so it's implemented as an activate-then-triggers-automatically toggle instead (same armed-reaction shape as Storm Giant Ancestry). Infernal Tiefling lineage spell."
-	s.icon_path = ""
+	s.icon_path = "res://icons/spells/1/hellish_rebuke.png"
 	s.effect_id = "hellish_rebuke"
 	s.class_list = []
 	return s
@@ -688,7 +688,7 @@ static func _minor_illusion() -> Spell:
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.description = "A minor sound-or-image distraction grants +5 to your Stealth-vs-Passive-Perception roll for 10 turns. NOT Concentration. Forest Gnome lineage cantrip."
-	s.icon_path = ""
+	s.icon_path = "res://icons/spells/0/minor_illusion.png"
 	s.effect_id = "minor_illusion"
 	s.class_list = []
 	return s
@@ -703,7 +703,7 @@ static func _speak_with_animals() -> Spell:
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.description = "You can communicate with beasts for a short while. Flavor only — this engine has no animal dialogue system, so casting it is purely a roleplay flourish (documented simplification, same as Elf's own inert Fey Ancestry). Forest Gnome lineage cantrip."
-	s.icon_path = ""
+	s.icon_path = "res://icons/spells/0/speak_with_animals.png"
 	s.effect_id = "speak_with_animals"
 	s.class_list = []
 	return s
@@ -718,7 +718,7 @@ static func _mending() -> Spell:
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.description = "Repairs your equipped Main Hand weapon's durability back to full (a real break/tear only, per the spell's own text — approximated here as restoring a limited-use weapon's remaining uses; simplification, since this engine has no separate object-HP system to mend). Rock Gnome lineage cantrip."
-	s.icon_path = ""
+	s.icon_path = "res://icons/spells/0/mending.png"
 	s.effect_id = "mending"
 	s.class_list = []
 	return s

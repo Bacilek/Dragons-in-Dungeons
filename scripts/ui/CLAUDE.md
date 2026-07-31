@@ -39,7 +39,9 @@ Connects to `GameState` signals only — never poll `GameState` in `_process()`.
 
 **ActionBar (bottom quickbar/ability bar) scale**: `scenes/ui/hud.tscn`'s `ActionBar` panel and its 9 `ItemSlotN` buttons + Wait/Search/Interact buttons are sized 1.5× the original layout (`ActionBar` height 90→135, slot size 76→114px, pitch 80→120px). Item/ability icons use `Button.icon` + `expand_icon = true` so they auto-scale with the button — no separate icon-size code to touch. The per-slot quantity badge (`_slot_qty_labels`) and ability use-count badge (`_slot_use_labels`) offsets/font sizes in `hud.gd` scale alongside (`-32/-18/11pt` → `-48/-27/16pt`). `_bar_mode_label` offsets are pinned to `ActionBar`'s new top (`-135`), not the old `-90`. Each slot also carries a static top-left `_slot_num_labels` badge showing its 1-9 hotkey (slot index `i` → `KEY_(i+1)`, matches `player.gd`'s `_use_quickbar_slot`/`_use_ability_slot` dispatch) — created once in `_ready()`, never toggled, visible in both item and ability bar mode.
 
-**Ability bar greying**: `_refresh_ability_bar()`'s slot `modulate` is gray whenever `not GameState.is_ability_usable(ab)` (see `scripts/autoloads/CLAUDE.md`) — covers plain exhausted charges (Rage) AND infinite-use abilities that are situationally blocked (Frenzy without Rage active, Limit Break already used this long rest, Zealot Strike with 0 Hit Dice, Grip of the Forest without Rage). Orange still means "active toggle" (`ab.is_active`), takes priority over the usability check. **Frenzy cooldown countdown** (Frenzied Killer R3): while `GameState.berserker_frenzy_used` and `get_talent_rank("frenzied_killer") >= 3`, the use-count badge shows `"%dt"` counting down from `3 - GameState.berserker_turns_since_frenzy` (same red tint/format as Rage's own "%dt" remaining-duration display) instead of the normal `uses/max` text — makes the automatic refresh timing visible instead of just guessing.
+**Ability bar greying**: `_refresh_ability_bar()`'s slot `modulate` is gray whenever `not GameState.is_ability_usable(ab)` (see `scripts/autoloads/CLAUDE.md`) — covers plain exhausted charges (Rage) AND infinite-use abilities that are situationally blocked (Frenzy without Rage active, Limit Break already used this long rest, Zealot Strike with 0 Hit Dice, Grip of the Forest without Rage, Hellish Rebuke with no free cast or 1st-level slot left to arm it). Orange still means "active toggle" (`ab.is_active`), takes priority over the usability check. **Frenzy cooldown countdown** (Frenzied Killer R3): while `GameState.berserker_frenzy_used` and `get_talent_rank("frenzied_killer") >= 3`, the use-count badge shows `"%dt"` counting down from `3 - GameState.berserker_turns_since_frenzy` (same red tint/format as Rage's own "%dt" remaining-duration display) instead of the normal `uses/max` text — makes the automatic refresh timing visible instead of just guessing.
+
+**Racial free-cast counter badges**: Hunter's Mark and Hellish Rebuke (`Stats.hunters_mark_uses_remaining`/`Stats.tiefling_legacy_free_casts_remaining["hellish_rebuke"]`) plus every Elven Lineage/Fiendish Legacy/Gnomish Lineage spell ability (`ability_id` starting `"spell:"`, resolved via `hud.gd._racial_lineage_spell_counter(spell_id)` against `Stats.elf_lineage_free_casts_remaining`/`tiefling_legacy_free_casts_remaining`/`gnome_lineage_free_casts_remaining`) show an `"X/Y"` use-count badge on their ability-bar slot — `Y` is the character's live `proficiency_bonus` (the value `GameState.long_rest()` refills each counter to), gold while `X > 0`, gray at `0`. These abilities themselves keep `Ability.uses_max == 0` (the free-base-ability convention, same as Rage) — the real counter lives on `Stats`, read directly in `_refresh_ability_bar()` before the generic `ab.uses_max == 0` blank-badge branch, same precedent as Hunter's Mark's own special case. Once the counter hits 0 the spell is still castable, it just falls back to a real spell slot of its own level (Wizard/Ranger only) — see `scripts/entities/CLAUDE.md`'s "Elf"/"Tiefling"/"Gnome" sections.
 
 **In-bar reorder drag** (no overlay needed — leveled-spells-and-slots-plan.md follow-up):
 press-and-drag any `ItemSlotN` button past `HUD.BAR_DRAG_THRESHOLD` (8px) and drop it on another
@@ -220,6 +222,18 @@ click, "Skip / Done" (or Esc) at either round bails with nothing changed. Confir
 `GameState.swap_high_elf_cantrip(old_id, new_id)`.
 
 ---
+
+## Celestial Revelation picker (`celestial_revelation_picker.gd`)
+CanvasLayer, layer = 25. Aasimar's Celestial Revelation (`scripts/entities/CLAUDE.md`'s "Aasimar"
+section) — reachable only from `PlayerAasimar.activate_celestial_revelation()` (the ability-bar
+press), never a hotkey. Reuses `GameState.mastery_picker_open` as its input-blocking flag (same
+"no dedicated flag" precedent as `high_elf_cantrip_swap.gd`/`attunement_picker.gd`). Shows all 3
+transformation choices (Heavenly Wings/Inner Radiance/Necrotic Shroud) as plain text cards side by
+side — no icon art yet, each card's full mechanical description is a native `Control.tooltip_text`
+(hover to read). Clicking a card calls `PlayerAasimar.resolve_celestial_revelation_choice(idx)`
+directly and frees the overlay; Esc cancels for free since nothing is spent until a card is
+actually clicked. Replaced an earlier arm-cycle-cancel-then-click-anywhere flow that had no visible
+list of the 3 choices on screen at all.
 
 ## Blacksmith panel (`blacksmith_panel.gd`)
 CanvasLayer, layer = 25. Modeled on `attunement_picker.gd`'s conventions (dim overlay + centered

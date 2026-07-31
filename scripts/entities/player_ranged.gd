@@ -210,6 +210,28 @@ func ranged_attack(enemy: Enemy) -> void:
 		if player._dungeon_floor != null:
 			player._dungeon_floor.show_damage(enemy.position, hm_actual, false, CombatMath.damage_type_color("Force"), 1)
 
+	# Fire/Frost/Hill Giant Ancestry: same "next attack that hits" trigger melee already has —
+	# extended to ranged attacks too, see PlayerGoliath.consume_giant_ancestry_on_hit().
+	var gol_actual: int = 0
+	var gol_inst: Dictionary = {}
+	var gol_type: String = ""
+	if actual > 0:
+		gol_type = player._goliath.consume_giant_ancestry_on_hit(enemy)
+		if gol_type != "":
+			var gol_sides: int = 6 if gol_type == "Cold" else 10
+			var gol_rolls: Array[int] = Rng.roll_dice(1, gol_sides)
+			gol_inst = CombatMath.build_damage_instance(gol_rolls, gol_sides, [], is_crit, gol_type)
+			var gol_result: Dictionary = enemy.take_typed_damage(gol_inst["subtotal"], gol_type, is_crit)
+			gol_inst["final"] = gol_result["actual"]
+			gol_inst["resist_mul"] = gol_result["mul"]
+			gol_actual = gol_result["actual"]
+			enemy.update_hp_bar()
+			var gol_stack_index: int = 1
+			if hm_actual > 0: gol_stack_index += 1
+			if player._dungeon_floor != null:
+				player._dungeon_floor.show_damage(enemy.position, gol_actual, false, CombatMath.damage_type_color(gol_type), gol_stack_index)
+			player._goliath.finish_giant_ancestry_bonus_damage()
+
 	var dmg_meta: String = CombatMath.encode_damage_instance(r_inst)
 	var r_type_tag: String = " [color=gray]%s[/color]" % r_dmg_type
 	var is_lethal: bool = enemy.stats.is_dead()
@@ -217,6 +239,9 @@ func ranged_attack(enemy: Enemy) -> void:
 	if hm_actual > 0:
 		var hm_meta: String = CombatMath.encode_damage_instance(hm_inst)
 		r_dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Force[/color]" % [hm_meta, hm_actual]
+	if gol_actual > 0:
+		var gol_meta: String = CombatMath.encode_damage_instance(gol_inst)
+		r_dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [gol_meta, gol_actual, gol_type]
 
 	if is_crit:
 		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for %s dmg.%s" % [hit_meta, enemy.display_name, r_dmg_segment, CombatMath.death_suffix(is_lethal)], r["lucky"]))

@@ -739,6 +739,7 @@ func _grant_tiefling_legacy_spell(spell_id: String) -> void:
 	if spell_id == "" or spell_id in player_stats.tiefling_legacy_spell_ids:
 		return
 	player_stats.tiefling_legacy_spell_ids.append(spell_id)
+	player_stats.tiefling_legacy_free_casts_remaining[spell_id] = player_stats.proficiency_bonus
 	# Hellish Rebuke is a toggle-armed reaction, not a normal on-demand cast — see Stats.
 	# hellish_rebuke_armed's own comment and scripts/entities/CLAUDE.md's "Tiefling" section.
 	if spell_id == "hellish_rebuke":
@@ -771,6 +772,7 @@ func _grant_elf_lineage_spell(spell_id: String) -> void:
 	if spell_id == "" or spell_id in player_stats.elf_lineage_spell_ids:
 		return
 	player_stats.elf_lineage_spell_ids.append(spell_id)
+	player_stats.elf_lineage_free_casts_remaining[spell_id] = player_stats.proficiency_bonus
 	if _find_ability_by_id("spell:" + spell_id) == null:
 		add_ability(_build_spell_ability(spell_id))
 	var spell: Spell = SpellDb.get_spell(spell_id)
@@ -836,7 +838,7 @@ func _build_stonecunning_ability() -> Ability:
 	ab.ability_id = "stonecunning"
 	ab.ability_name = "Stonecunning"
 	ab.description = "Gain Tremorsense for up to 100 turns: sense any living creature within %d tiles standing on the same terrain type as you, even through walls/darkness/blindness — shown as a red tremor ping, not a clear sighting. Free action." % Stats.STONECUNNING_RANGE
-	ab.icon_path = ""
+	ab.icon_path = "res://icons/races/dwarf/stonecunning.png"
 	ab.uses_remaining = player_stats.stonecunning_uses_remaining
 	ab.uses_max = player_stats.proficiency_bonus
 	return ab
@@ -846,7 +848,7 @@ func _build_adrenaline_rush_ability() -> Ability:
 	ab.ability_id = "adrenaline_rush"
 	ab.ability_name = "Adrenaline Rush"
 	ab.description = "Gain temporary HP equal to your proficiency bonus (%d) and your next move doesn't cost you a turn. Free action, %d uses — refills on short rest AND long rest." % [player_stats.proficiency_bonus, player_stats.proficiency_bonus]
-	ab.icon_path = ""
+	ab.icon_path = "res://icons/races/orc/adrenaline_rush.png"
 	ab.uses_remaining = player_stats.adrenaline_rush_uses_remaining
 	ab.uses_max = player_stats.proficiency_bonus
 	return ab
@@ -856,7 +858,7 @@ func _build_heroic_inspiration_ability() -> Ability:
 	ab.ability_id = "heroic_inspiration"
 	ab.ability_name = "Heroic Inspiration"
 	ab.description = "Your very next d20 roll (attack, check, or save) is guaranteed to succeed as a critical natural 20. Free action, 1 use per long rest."
-	ab.icon_path = ""
+	ab.icon_path = "res://icons/races/human/heroic_inspiration.png"
 	ab.uses_remaining = 1 if player_stats.heroic_inspiration_available else 0
 	ab.uses_max = 1
 	return ab
@@ -866,7 +868,7 @@ func _build_healing_hands_ability() -> Ability:
 	ab.ability_id = "healing_hands"
 	ab.ability_name = "Healing Hands"
 	ab.description = "Costs your action. Touch a creature (yourself or your companion) to heal 1d4 × your proficiency bonus (%d) HP. 1 use per long rest." % player_stats.proficiency_bonus
-	ab.icon_path = ""
+	ab.icon_path = "res://icons/races/aasimar/healing_hands.png"
 	ab.uses_remaining = 1 if player_stats.aasimar_healing_hands_available else 0
 	ab.uses_max = 1
 	return ab
@@ -876,7 +878,7 @@ func _build_celestial_revelation_ability() -> Ability:
 	ab.ability_id = "celestial_revelation"
 	ab.ability_name = "Celestial Revelation"
 	ab.description = "Free action. Choose Heavenly Wings, Inner Radiance, or Necrotic Shroud — press to cycle the choice, click anywhere to activate. For 10 turns, the first damage you deal each turn is boosted by your proficiency bonus (%d). 1 use per long rest." % player_stats.proficiency_bonus
-	ab.icon_path = ""
+	ab.icon_path = "res://icons/races/aasimar/celestial_revelation.png"
 	ab.uses_remaining = 0 if player_stats.aasimar_celestial_revelation_used else 1
 	ab.uses_max = 1
 	return ab
@@ -887,7 +889,7 @@ func _build_breath_weapon_ability() -> Ability:
 	ab.ability_name = "Breath Weapon"
 	ab.description = "A %d-tile Cone or %d-tile Line dealing %s damage (DEX save for half). Click to arm (Cone), click again to switch to Line, once more to cancel — then click a direction to fire." % [
 		PlayerDragonborn.BREATH_CONE_LENGTH, PlayerDragonborn.BREATH_LINE_LENGTH, Stats.DRAGONBORN_DAMAGE_TYPE[clampi(player_stats.race_variant, 0, Stats.DRAGONBORN_DAMAGE_TYPE.size() - 1)]]
-	ab.icon_path = ""
+	ab.icon_path = "res://icons/races/dragonborn/breath_weapon.png"
 	ab.uses_remaining = player_stats.breath_weapon_uses_remaining
 	ab.uses_max = player_stats.proficiency_bonus
 	return ab
@@ -897,7 +899,7 @@ func _build_draconic_flight_ability() -> Ability:
 	ab.ability_id = "draconic_flight"
 	ab.ability_name = "Draconic Flight"
 	ab.description = "Take to the air for up to 100 turns: cross chasms, never trample grass, never trigger traps, and ignore standing-on-fire damage. Free action, 1/long rest."
-	ab.icon_path = ""
+	ab.icon_path = "res://icons/races/dragonborn/draconic_flight.png"
 	ab.uses_remaining = 0
 	ab.uses_max = 0
 	return ab
@@ -907,7 +909,7 @@ func _build_large_form_ability() -> Ability:
 	ab.ability_id = "large_form"
 	ab.ability_name = "Large Form"
 	ab.description = "Grow to Large size for up to 100 turns (needs a free 2x2 space): Advantage on STR checks, +1/3 movement speed. Press again to end early. Free action, 1/long rest."
-	ab.icon_path = ""
+	ab.icon_path = "res://icons/races/goliath/large_form.png"
 	ab.uses_remaining = 0 if player_stats.large_form_used else 1
 	ab.uses_max = 1
 	return ab
@@ -942,12 +944,23 @@ func _giant_ancestry_description(variant: int) -> String:
 		_:
 			return ""
 
+## One icon per Giant Ancestry variant — see icons/races/goliath/giant_ancestry/.
+func _giant_ancestry_icon_path(variant: int) -> String:
+	match variant:
+		Stats.GiantAncestry.CLOUD: return "res://icons/races/goliath/giant_ancestry/cloud.png"
+		Stats.GiantAncestry.FIRE:  return "res://icons/races/goliath/giant_ancestry/fire.png"
+		Stats.GiantAncestry.FROST: return "res://icons/races/goliath/giant_ancestry/frost.png"
+		Stats.GiantAncestry.HILL:  return "res://icons/races/goliath/giant_ancestry/hill.png"
+		Stats.GiantAncestry.STONE: return "res://icons/races/goliath/giant_ancestry/stone.png"
+		Stats.GiantAncestry.STORM: return "res://icons/races/goliath/giant_ancestry/storm.png"
+		_: return ""
+
 func _build_giant_ancestry_ability() -> Ability:
 	var ab := Ability.new()
 	ab.ability_id = "giant_ancestry"
 	ab.ability_name = _giant_ancestry_name(player_stats.race_variant)
 	ab.description = _giant_ancestry_description(player_stats.race_variant)
-	ab.icon_path = ""
+	ab.icon_path = _giant_ancestry_icon_path(player_stats.race_variant)
 	ab.uses_remaining = player_stats.giant_ancestry_uses_remaining
 	ab.uses_max = player_stats.proficiency_bonus
 	return ab
@@ -957,7 +970,7 @@ func _build_halfling_nimbleness_ability() -> Ability:
 	ab.ability_id = "halfling_nimbleness"
 	ab.ability_name = "Nimbleness"
 	ab.description = "Slip through the space of a creature larger than you. Click one of the 8 tiles next to you that holds a larger creature to come out the other side. Free action, once per round."
-	ab.icon_path = ""
+	ab.icon_path = "res://icons/races/halfling/nimbleness.png"
 	# uses_max = 0 (infinite/free) — gated by PlayerHalfling.used_this_turn, a per-round flag, not
 	# a rest-refilled counter, same shape as Grip of the Forest's "_grip_used_this_turn".
 	ab.uses_remaining = 0
@@ -1788,9 +1801,12 @@ func long_rest() -> void:
 	player_stats.aasimar_celestial_revelation_used = false
 	player_stats.large_form_used = false
 	player_stats.giant_ancestry_uses_remaining = player_stats.proficiency_bonus
-	# Elven Lineage: each lineage spell's one free-per-long-rest cast refills.
-	player_stats.elf_lineage_free_cast_used.clear()
-	player_stats.tiefling_legacy_free_cast_used.clear()
+	# Elven Lineage / Fiendish Legacy: each lineage spell's free-cast counter refills to
+	# proficiency_bonus (same counter shape as Gnomish Lineage below).
+	for elf_sid: String in player_stats.elf_lineage_spell_ids:
+		player_stats.elf_lineage_free_casts_remaining[elf_sid] = player_stats.proficiency_bonus
+	for tsid2: String in player_stats.tiefling_legacy_spell_ids:
+		player_stats.tiefling_legacy_free_casts_remaining[tsid2] = player_stats.proficiency_bonus
 	# Gnomish Lineage: each lineage spell's free-cast counter refills to proficiency_bonus.
 	for gnome_sid: String in player_stats.gnome_lineage_spell_ids:
 		player_stats.gnome_lineage_free_casts_remaining[gnome_sid] = player_stats.proficiency_bonus
@@ -1875,6 +1891,12 @@ func is_ability_usable(ab: Ability) -> bool:
 			return is_raging
 		"draconic_flight":
 			return player_stats.character_level >= 5 and not player_stats.draconic_flight_used
+		"hellish_rebuke_toggle":
+			if player_stats.hellish_rebuke_armed or invincible:
+				return true
+			if player_stats.is_tiefling_legacy_free_cast_available("hellish_rebuke"):
+				return true
+			return player_stats.caster != null and player_stats.caster.slot_pool != null and player_stats.caster.slot_pool.remaining.get(1, 0) > 0
 	return true
 
 # Triggered on short rest completion. Heals companion (if alive) AND restores One with Nature charge.
@@ -2835,19 +2857,24 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 	# anywhere before this — a Dragonborn's own passive resistance silently did nothing.
 	if damage_type != "" and damage_type in player_stats.damage_resistances:
 		final_amount = int(floor(float(final_amount) * 0.5))
-	# Stone Giant ancestry (Goliath, see player_goliath.gd): a one-shot armed reduction, rolled at
-	# ARM time, consumed by the very next instance of damage taken (status-tick/trap damage never
-	# reaches this function, so it can only ever be consumed by a real attack — same scope as the
-	# concentration-break check below).
-	if not ignore_rage and player_stats.stone_ancestry_reduction_pending > 0:
-		var reduction: int = player_stats.stone_ancestry_reduction_pending
-		player_stats.stone_ancestry_reduction_pending = 0
+	# Stone Giant ancestry (Goliath, see player_goliath.gd): a toggle, not a one-shot arm — the
+	# 1d12+CON reduction is unknown until it actually rolls, right here, at the moment the very
+	# next instance of damage lands (status-tick/trap damage never reaches this function, so it can
+	# only ever be consumed by a real attack — same scope as the concentration-break check below).
+	# Bugfix/redesign, direct owner request: this used to roll (and commit to) the reduction amount
+	# the instant the toggle was armed, well before any damage was actually taken.
+	if not ignore_rage and player_stats.character_race == Stats.CharacterRace.GOLIATH \
+			and player_stats.race_variant == Stats.GiantAncestry.STONE and player_stats.giant_ancestry_armed:
+		var stone_die: int = Rng.roll(12)
+		var stone_con: int = player_stats.con_modifier()
+		var reduction: int = maxi(0, stone_die + stone_con)
 		player_stats.giant_ancestry_armed = false
 		if not invincible:
 			player_stats.giant_ancestry_uses_remaining -= 1
 		_sync_ability_uses()
 		final_amount = maxi(0, final_amount - reduction)
-		game_log("[color=cyan]Stone's Endurance absorbs %d damage.[/color]" % reduction)
+		var stone_meta: String = "stonedr:die=%d,con=%d,total=%d" % [stone_die, stone_con, reduction]
+		game_log("[color=cyan]Stone's Endurance[/color] absorbs [url=%s][color=yellow]%d[/color][/url] damage." % [stone_meta, reduction])
 	# DR can reduce damage to 0 — skip Stats.take_damage() which floors at 1.
 	if final_amount <= 0:
 		if is_physical and not ignore_rage:

@@ -109,14 +109,15 @@ func activate_giant_ancestry() -> void:
 			cloud_teleport_mode_active = true
 			GameState.game_log("[color=cyan]Cloud Giant: click a tile within %d tiles to teleport there.[/color]" % CLOUD_TELEPORT_RANGE)
 		Stats.GiantAncestry.STONE:
+			# Toggle only — the 1d12+CON reduction is unknown until it actually rolls, at the
+			# moment damage lands (GameState.take_damage_raw()), not here at arm time. Cancelling
+			# manually loses the buff for free (no charge spent) — same "arm now, spend the charge
+			# only when it actually triggers" shape as Fire/Frost/Storm's shared toggle below.
+			player.stats.giant_ancestry_armed = not player.stats.giant_ancestry_armed
 			if player.stats.giant_ancestry_armed:
-				player.stats.giant_ancestry_armed = false
-				player.stats.stone_ancestry_reduction_pending = 0
+				GameState.game_log("[color=cyan]Stone's Endurance braces — your next hit taken will be reduced by 1d12 + CON (rolled when it lands).[/color]")
+			else:
 				GameState.game_log("[color=gray]Stone's Endurance stood down.[/color]")
-				return
-			player.stats.giant_ancestry_armed = true
-			player.stats.stone_ancestry_reduction_pending = Rng.roll(12) + player.stats.con_modifier()
-			GameState.game_log("[color=cyan]Stone's Endurance braces — your next hit taken is reduced by %d.[/color]" % player.stats.stone_ancestry_reduction_pending)
 		Stats.GiantAncestry.FIRE, Stats.GiantAncestry.FROST, Stats.GiantAncestry.HILL, Stats.GiantAncestry.STORM:
 			player.stats.giant_ancestry_armed = not player.stats.giant_ancestry_armed
 			if player.stats.giant_ancestry_armed:
@@ -125,35 +126,51 @@ func activate_giant_ancestry() -> void:
 				GameState.game_log("[color=gray]%s stood down.[/color]" % GameState._giant_ancestry_name(player.stats.race_variant))
 
 # Called from player.gd._bump_attack() right after the primary hit lands (actual > 0). Handles
-# Frost's chill / Hill's Prone directly (no damage instance of their own) and returns "" for them;
-# returns "Fire" for Fire Giant so the caller builds a real second damage instance (same "one hit,
-# two damage types" shape as Torch/Hunter's Mark) — a miss never reaches this function at all, so
-# a charge is only ever spent on a landed hit, matching "misses don't spend charges".
+# Hill's Prone directly (no damage instance of its own) — applies it, logs it, THEN spends the
+# charge, same "effect first, spend after" order Stone's Endurance/Storm's Thunder both use — and
+# returns "" for it. Returns "Fire"/"Cold" for Fire/Frost Giant WITHOUT spending the charge yet —
+# unlike Hill, their actual damage instance is rolled/applied by the CALLER (player.gd, which needs
+# the type to pick a 1d10 vs 1d6 die and route it through take_typed_damage()), so the charge can
+# only be spent once that's actually happened: the caller must call
+# finish_giant_ancestry_bonus_damage(enemy, type) right after applying that damage — see its own
+# comment below. **Bugfix/redesign, direct owner request**: all three of Fire/Frost/Hill used to
+# spend the charge (and disarm the toggle) BEFORE their own bonus effect was actually resolved —
+# for Fire/Frost specifically, that meant the charge was gone before the bonus damage number had
+# even been rolled. Frost's own damage itself was ALSO a bugfix: this used to apply ONLY the Slowed
+# status with no damage instance at all, contradicting the real trait text ("the target takes 1d6
+# cold damage and its speed is reduced"). A miss never reaches this function at all, so a charge is
+# only ever spent on a landed hit, matching "misses don't spend charges".
 func consume_giant_ancestry_on_hit(enemy: Enemy) -> String:
 	if player.stats.character_race != Stats.CharacterRace.GOLIATH or not player.stats.giant_ancestry_armed:
 		return ""
-	var spend_charge: Callable = func() -> void:
-		player.stats.giant_ancestry_armed = false
-		if not GameState.invincible:
-			player.stats.giant_ancestry_uses_remaining -= 1
-		GameState._sync_ability_uses()
 	match player.stats.race_variant:
 		Stats.GiantAncestry.FIRE:
-			spend_charge.call()
 			return "Fire"
 		Stats.GiantAncestry.FROST:
-			spend_charge.call()
 			enemy.apply_status("slowed", 3)
-			GameState.game_log("[color=cyan]Frost's Chill slows %s.[/color]" % enemy.display_name)
+			return "Cold"
 		Stats.GiantAncestry.HILL:
 			# "Large or smaller" — every enemy in this game today is Medium or Large (2x2, area
 			# multiplier 4) at most, so this is unconditional in practice; the size check is kept
 			# for correctness against any future Huge+ enemy.
 			if enemy.size.x * enemy.size.y <= 4:
-				spend_charge.call()
 				enemy.apply_status("prone", 1)
 				GameState.game_log("[color=cyan]Hill's Tumble knocks %s Prone.[/color]" % enemy.display_name)
+				_spend_giant_ancestry_charge()
 	return ""
+
+func _spend_giant_ancestry_charge() -> void:
+	player.stats.giant_ancestry_armed = false
+	if not GameState.invincible:
+		player.stats.giant_ancestry_uses_remaining -= 1
+	GameState._sync_ability_uses()
+
+## Called by player.gd once a Fire/Frost bonus damage instance has actually been dealt (damage
+## rolled, applied via Enemy.take_typed_damage(), HP bar updated, floater shown) — only then is the
+## charge spent and the toggle cleared, matching Hill/Stone/Storm's own "resolve the effect, THEN
+## spend" order. No-op for any other race/variant (never called otherwise).
+func finish_giant_ancestry_bonus_damage() -> void:
+	_spend_giant_ancestry_charge()
 
 func resolve_cloud_teleport(clicked: Vector2i) -> void:
 	if player._dungeon_floor == null:

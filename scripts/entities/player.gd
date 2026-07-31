@@ -425,6 +425,10 @@ func _on_turn_started() -> void:
 				stats.celestial_revelation_transform = -1
 				GameState.game_log("[color=gray]Celestial Revelation fades.[/color]")
 				GameState.player_status_changed.emit()
+			else:
+				# Inner Radiance re-bursts at the end of every turn it's still active, not just
+				# the first — see PlayerAasimar.tick_inner_radiance()'s own comment.
+				_aasimar.tick_inner_radiance()
 		# Stonecunning's Tremorsense: 100-turn duration, ticked once per real turn (same pattern).
 		if stats.tremorsense_turns > 0:
 			stats.tremorsense_turns -= 1
@@ -989,7 +993,6 @@ func _process(_delta: float) -> void:
 		GameState.game_log("[color=gray]Spell cancelled.[/color]")
 	_dragonborn.cancel_breath_weapon()
 	_aasimar.cancel_healing_hands()
-	_aasimar.cancel_celestial_revelation()
 	if _goliath.cloud_teleport_mode_active:
 		_goliath.cloud_teleport_mode_active = false
 		GameState.game_log("[color=gray]Cloud Giant teleport cancelled.[/color]")
@@ -1116,6 +1119,8 @@ func _update_spell_aoe_preview() -> bool:
 			return _update_breath_weapon_preview()
 		if _halfling.nimbleness_mode_active:
 			return _update_nimbleness_preview()
+		if _goliath.cloud_teleport_mode_active:
+			return _update_cloud_teleport_preview()
 		_dungeon_floor.hide_aoe_preview()
 		_dungeon_floor.hide_spell_range_preview()
 		return false
@@ -1235,6 +1240,23 @@ func _update_nimbleness_preview() -> bool:
 	var target: Enemy = _dungeon_floor.get_targetable_enemy_at(tile)
 	var valid: bool = tile in tiles and target != null and PlayerHalfling.is_larger_than_halfling(target)
 	_dungeon_floor.show_single_target_preview(tile, valid)
+	return true
+
+# Cloud Giant's Jaunt targeting preview — same shape as Misty Step's own TILE-target preview (blue
+# max-reach backdrop + purple/gray exact-tile highlight via show_touch_target_preview()), just fed
+# from PlayerGoliath's own armed state instead of a Spell resource, since Cloud's Jaunt isn't cast
+# through the spell system at all. Bugfix: this used to have no preview whatsoever, same gap Breath
+# Weapon had before its own preview was added.
+func _update_cloud_teleport_preview() -> bool:
+	_dungeon_floor.show_spell_range_preview(grid_pos, PlayerGoliath.CLOUD_TELEPORT_RANGE, false)
+	var world_mouse: Vector2 = get_global_mouse_position()
+	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
+	var d: Vector2i = tile - grid_pos
+	var dist_cheb: int = maxi(absi(d.x), absi(d.y))
+	var in_range: bool = dist_cheb <= PlayerGoliath.CLOUD_TELEPORT_RANGE \
+		and _dungeon_floor.is_tile_visible(tile) and _dungeon_floor.is_walkable(tile) \
+		and _dungeon_floor.get_enemy_at(tile) == null
+	_dungeon_floor.show_touch_target_preview(tile, in_range)
 	return true
 
 # Shift+hover ranged-weapon targeting preview — mirrors _update_spell_aoe_preview()'s shape but for
@@ -1427,7 +1449,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				GameState.game_log("[color=gray]Nimbleness cancelled.[/color]")
 			_dragonborn.cancel_breath_weapon()
 			_aasimar.cancel_healing_hands()
-			_aasimar.cancel_celestial_revelation()
 			if _spellcasting.spell_targeting_active:
 				_spellcasting.cancel()
 				GameState.game_log("[color=gray]Spell cancelled.[/color]")
@@ -1670,19 +1691,15 @@ func _unhandled_input(event: InputEvent) -> void:
 				_dragonborn.cancel_breath_weapon()
 			return
 
-		# Healing Hands / Celestial Revelation targeting mode (Aasimar) — any click confirms, same
-		# "no aim needed" convention as Mage Armor's self-cast.
+		# Healing Hands targeting mode (Aasimar) — any click confirms, same "no aim needed"
+		# convention as Mage Armor's self-cast. Celestial Revelation no longer uses a targeting
+		# mode at all — it's a click-to-choose picker overlay instead, see
+		# celestial_revelation_picker.gd / PlayerAasimar.activate_celestial_revelation().
 		if _aasimar.healing_hands_mode_active:
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
 				_aasimar.resolve_healing_hands(clicked)
 			else:
 				_aasimar.cancel_healing_hands()
-			return
-		if _aasimar.celestial_revelation_mode_active:
-			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
-				_aasimar.resolve_celestial_revelation()
-			else:
-				_aasimar.cancel_celestial_revelation()
 			return
 
 		# Frenzy targeting mode (Berserker) — melee only, must be adjacent.
@@ -2723,8 +2740,11 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if actual > 0:
 		gol_type = _goliath.consume_giant_ancestry_on_hit(enemy)
 		if gol_type != "":
-			var gol_rolls: Array[int] = Rng.roll_dice(1, 10)
-			gol_inst = CombatMath.build_damage_instance(gol_rolls, 10, [], is_crit, gol_type)
+			# Fire Giant's Burn is 1d10 Fire; Frost Giant's Chill is 1d6 Cold (real 5e trait text —
+			# bugfix, Frost used to deal no damage instance at all, see consume_giant_ancestry_on_hit()).
+			var gol_sides: int = 6 if gol_type == "Cold" else 10
+			var gol_rolls: Array[int] = Rng.roll_dice(1, gol_sides)
+			gol_inst = CombatMath.build_damage_instance(gol_rolls, gol_sides, [], is_crit, gol_type)
 			var gol_result: Dictionary = enemy.take_typed_damage(gol_inst["subtotal"], gol_type, is_crit)
 			gol_inst["final"] = gol_result["actual"]
 			gol_inst["resist_mul"] = gol_result["mul"]
@@ -2737,6 +2757,10 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			if cr_actual > 0: gol_stack_index += 1
 			if _dungeon_floor != null:
 				_dungeon_floor.show_damage(enemy.position, gol_actual, false, CombatMath.damage_type_color(gol_type), gol_stack_index)
+			# The Fire/Frost bonus damage instance has now actually been dealt — only NOW does the
+			# charge get spent and the toggle clear (matches Hill/Stone/Storm's own "effect first,
+			# spend after" order — see PlayerGoliath.finish_giant_ancestry_bonus_damage()'s comment).
+			_goliath.finish_giant_ancestry_bonus_damage()
 
 	var is_lethal: bool = enemy.stats.is_dead()
 
@@ -2765,6 +2789,10 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]%s[/url] [color=orange]%s[/color] for %s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_segment, death_tag], r["lucky"]))
 	else:
 		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]%s[/url] [color=orange]%s[/color] for %s dmg.%s" % [hit_meta, verb, enemy.display_name, dmg_segment, death_tag], r["lucky"]))
+	# Frost Giant's Chill: logged AFTER the main hit line (which already carries the Cold damage
+	# instance above) — correct chronological order, damage first, then the slow flavor line.
+	if gol_type == "Cold" and not enemy.stats.is_dead():
+		GameState.game_log("[color=cyan]Frost's Chill slows %s.[/color]" % enemy.display_name)
 
 	# Branching Strike R3: push the target 1 tile away on a hit with a Heavy/Versatile melee weapon.
 	if GameState.get_talent_rank("branching_strike") >= 3 and is_str_weapon and not enemy.stats.is_dead() \

@@ -187,6 +187,14 @@ Slashing, `"multiattack"`), Magic Resistance (shared trait with Imp, see above),
   (`GameState.apply_player_frightened(self, SCARE_FRIGHTENED_TURNS, dc)`, `SCARE_FRIGHTENED_TURNS
   = 10`) — see "Conditions" above for the full mechanic.
 
+**Race-granted ability icons**: `res://icons/races/<race>/<ability_id>.png`, one folder per race,
+mirroring `icons/classes/<class>/`'s convention (root `CLAUDE.md`'s Sprite Assets section) — every
+`GameState._build_*_ability()` racial-ability builder below sets `Ability.icon_path` directly to
+its own file (no shared resolver like `talent_icon_path()`, since each race grants a fixed, small
+set of abilities with no rank-gradient icons to resolve). Goliath's Giant Ancestry is the one
+multi-icon case: `GameState._giant_ancestry_icon_path(variant)` maps `Stats.GiantAncestry` to
+`icons/races/goliath/giant_ancestry/{cloud,fire,frost,hill,stone,storm}.png`.
+
 ## Dragonborn
 
 Composition child-node `player_dragonborn.gd` (`PlayerDragonborn`), instantiated as `_dragonborn`
@@ -353,20 +361,28 @@ prepared-spell cap (and exists even for a non-caster class, e.g. a Barbarian Elf
 in `to_dict()`/`from_dict()`; `GameState._restore_race_ability_bar()` re-adds their ability-bar
 entries on save/load replay.
 
-**Free cast economy**: each lineage spell gets exactly one free cast per long rest —
-`Stats.elf_lineage_free_cast_used: Dictionary` (spell_id → bool, cleared in `GameState.
-long_rest()`) + `Stats.is_lineage_free_cast_available(spell_id)` (checks BOTH
-`elf_lineage_free_cast_used` and `tiefling_legacy_free_cast_used` — a single shared gate,
-since a Tiefling Fiendish Legacy spell is mechanically identical to an Elf lineage one; a
+**Free cast economy**: each lineage spell grants `proficiency_bonus` free casts per long rest —
+`Stats.elf_lineage_free_casts_remaining: Dictionary` (spell_id → int, refilled to
+`proficiency_bonus` in `GameState.long_rest()`, same counter shape as Gnomish Lineage's own
+`gnome_lineage_free_casts_remaining` below; was a single-bool "one free cast" until a direct owner
+request made it a real per-long-rest counter, shown on the ability-bar slot's use-count badge —
+`hud.gd`'s `_refresh_ability_bar()`, same `"X/Y"` treatment as Hunter's Mark/Rage) +
+`Stats.is_lineage_free_cast_available(spell_id)` (checks BOTH
+`elf_lineage_free_casts_remaining` and `tiefling_legacy_free_casts_remaining` — a single shared
+gate, since a Tiefling Fiendish Legacy spell is mechanically identical to an Elf lineage one; a
 non-caster class, e.g. a Barbarian Tiefling, has no other way to ever cast its own legacy spell,
 so this gate missing the Tiefling half used to mean "no spell slot available" forever), checked
 BEFORE ever touching a
 real spell slot at every relevant chokepoint: `PlayerSpellcasting.begin_cast()`/`cast_direct()`'s
 slot-availability gate, `_cast_level_for()` (also guards a `null` `Stats.caster` — a non-caster
-class has no `SpellcasterState`/`slot_pool` at all, so the free use is the ONLY cast available to
-them), and `SpellEffects._consume_slot()` (now takes the `Spell`, not just a level int, so it can
-check the lineage-free-cast condition before falling through to `caster.slot_pool.consume()`).
-Beyond the free use, a further cast needs a real spell slot of the spell's own level (Wizard/
+class has no `SpellcasterState`/`slot_pool` at all, so the free uses are the ONLY casts available
+to them), and `SpellEffects._consume_slot()` (now takes the `Spell`, not just a level int, so it
+can check the lineage-free-cast condition before falling through to `caster.slot_pool.consume()` —
+**bugfix**: this used to always decrement `elf_lineage_free_casts_remaining` whenever EITHER pool
+said "available", so a Tiefling-only spell's own counter — e.g. Infernal's level-5 Darkness — never
+actually decremented and was castable free forever; it now decrements whichever pool's array
+actually contains the spell_id). Beyond the free uses, a further cast needs a real spell slot of
+the spell's own level (Wizard/
 Ranger only) — a non-caster simply has no further casts once the free one is spent, a documented
 simplification (same "narrow case, not the full system" precedent as Scroll of &lt;Spell&gt;
 casting for a non-caster).
@@ -608,18 +624,29 @@ AASIMAR branch:
   touch targets exist — the player themselves, or the Wild Heart Companion — same "narrow case,
   not the full system" limitation as Mage Armor/Invisibility's own touch-self-only scope), the
   click's only job is picking between them: clicking the Companion's own tile heals it, any other
-  click heals the player. Heals `1d4 × proficiency_bonus` HP (a literal read of "d4 ×
-  proficiency bonus" — a single die scaled by the multiplier, not `proficiency_bonus` separate
-  d4s summed).
+  click heals the player. Heals `proficiency_bonus`d4 HP — `proficiency_bonus` SEPARATE d4 dice
+  rolled and summed (e.g. 2d4 or 3d4), **not** one d4 roll scaled by the multiplier (**bugfix**:
+  the original implementation read "d4 × proficiency bonus" as a single 1-4 roll multiplied by the
+  bonus, a much smaller expected value and much narrower variance than the real dice pool it's
+  meant to represent — `PlayerAasimar.resolve_healing_hands()` now calls `Rng.roll_dice(prof, 4)`
+  and sums every roll, same shape as any other multi-die damage/heal roll in this codebase).
 - **Celestial Revelation** (ability_id `"celestial_revelation"`, granted the instant
   `character_level` reaches 3 — `gain_exp()`'s `old_level < 3 and character_level >= 3` check
   re-runs `give_race_starting_items()`, idempotent, same pattern as Dragonborn's Draconic Flight
-  unlocking at level 5): free action, 1 use per long rest. **Arm-cycle-cancel targeting**, one step
-  further than Breath Weapon's own Cone↔Line toggle since there are 3 choices instead of 2: 1st
-  press arms Heavenly Wings, 2nd press (same slot) cycles to Inner Radiance, 3rd to Necrotic
-  Shroud, 4th cancels. **Any world click confirms/activates** whichever choice is currently
-  selected (Mage Armor's "any click confirms a self-cast" convention — there's nothing to aim, the
-  click is purely a confirm gesture). On activation: `Stats.celestial_revelation_turns = 10`,
+  unlocking at level 5): free action, 1 use per long rest. **Opens a 3-option click-to-choose
+  picker overlay** (`scripts/ui/celestial_revelation_picker.gd`, `GameState.mastery_picker_open` as
+  its input-blocking flag, same reused-shared-modal-gate precedent as `high_elf_cantrip_swap.gd`/
+  `attunement_picker.gd`) — **bugfix/redesign, direct owner request**: the original
+  arm-cycle-cancel-then-click-anywhere flow (1st press arms Heavenly Wings, 2nd press cycles to
+  Inner Radiance, 3rd to Necrotic Shroud, 4th cancels, any world click confirms whichever was
+  currently selected) silently rotated through the 3 choices with nothing on screen ever showing
+  what was even on offer. The picker shows all 3 as plain text cards (no icon art yet — each
+  card's full description is a native `Control.tooltip_text`, hover to read, same "i-badge"
+  convention `class_select.gd`'s info icon uses) side by side; clicking one calls
+  `PlayerAasimar.resolve_celestial_revelation_choice(transform_idx)` directly and the picker frees
+  itself — Esc cancels for free (nothing is spent — the long-rest use/turns/transform are only set
+  inside `resolve_celestial_revelation_choice()`, called only from a card click). On confirm:
+  `Stats.celestial_revelation_turns = 10`,
   `Stats.celestial_revelation_transform` records the choice (`Stats.AasimarTransformation` —
   **not** stored in `race_variant`, which is fixed at race select; this is chosen fresh every
   activation), `Stats.celestial_revelation_bonus_used_this_turn = false`.
@@ -641,7 +668,13 @@ AASIMAR branch:
     separate copy needed" precedent High Elf's own Misty Step reuse already established.
   - **Inner Radiance**: on activation, deals `proficiency_bonus` Radiant damage to every enemy
     within 2 tiles (Chebyshev, via `Enemy.min_dist_to()`) — a self-centered instant burst, mirrors
-    Thunderclap's shape. **Also grants +2 FOV radius for the full 10-turn duration** —
+    Thunderclap's shape. **Re-bursts at the end of every subsequent turn, not just once on
+    activation** (`PlayerAasimar.tick_inner_radiance()`, called from `player.gd`'s
+    `_on_turn_started()` tick block right after `celestial_revelation_turns` decrements, guarded on
+    `celestial_revelation_transform == INNER_RADIANCE` — **bugfix/redesign, direct owner request**:
+    the burst used to fire only once, at the moment of activation, so 9 of the 10 turns of "Inner
+    Radiance" delivered no actual passive damage at all). **Also grants +2 FOV radius for the full
+    10-turn duration** —
     `GameState.celestial_radiance_fov_bonus()`, folded into `effective_fov_radius()` **before**
     `darkvision_bonus` in the sum (same "own light source" conceptual slot the equipped-Torch
     bonus occupies) — see `scripts/world/CLAUDE.md`'s "FOV" section for the ring-visual ordering
@@ -689,10 +722,11 @@ TIEFLING branch:
 
   **Mechanism is a direct clone of Elf's Elven Lineage** (see "Elf" above) — same ALWAYS-PREPARED
   ability-bar grant outside `known_spells`/`prepared_spells`/`SpellcasterState` bookkeeping (works
-  even for a non-caster class, e.g. a Tiefling Barbarian), same one-free-cast-per-long-rest economy
-  (`Stats.tiefling_legacy_spell_ids`/`tiefling_legacy_free_cast_used`/
+  even for a non-caster class, e.g. a Tiefling Barbarian), same `proficiency_bonus`-free-casts-
+  per-long-rest counter economy
+  (`Stats.tiefling_legacy_spell_ids`/`tiefling_legacy_free_casts_remaining`/
   `is_tiefling_legacy_free_cast_available()`, checked in `SpellEffects._consume_slot()` right
-  alongside the Elf check, cleared in `GameState.long_rest()`), same three-threshold grant timing
+  alongside the Elf check, refilled to `proficiency_bonus` in `GameState.long_rest()`), same three-threshold grant timing
   except the level-1 cantrip is handed out immediately at race select
   (`GameState.give_race_starting_items()`'s TIEFLING branch) rather than waiting for a level-up —
   levels 3 and 5 are granted from `gain_exp()`'s level-up block exactly like Elf's own level-3/5
@@ -715,7 +749,15 @@ TIEFLING branch:
   of the usual `"spell:hellish_rebuke"` on-demand-cast ability every other legacy grant gets.
   Activating it (`PlayerTiefling.activate_hellish_rebuke()`, `scripts/entities/player_tiefling.gd`)
   toggles `Stats.hellish_rebuke_armed` — the exact same "arm now, spend the charge only when it
-  actually procs" shape as Storm Giant Ancestry's own toggle (see "Goliath" above). While armed,
+  actually procs" shape as Storm Giant Ancestry's own toggle (see "Goliath" above). **Can't be
+  armed with nothing to fuel it**: `PlayerTiefling.can_activate_hellish_rebuke()` (bugfix — arming
+  used to have no gate at all, so toggling it on with zero free casts AND zero 1st-level spell
+  slots left it lit forever, since `trigger_hellish_rebuke()` would just log "no charge left" every
+  time an attack tried to fire it) requires either a free Fiendish Legacy cast still remaining
+  this long rest OR (Wizard/Ranger casters only) a real 1st-level slot
+  (`caster.slot_pool.remaining.get(1, 0) > 0`) — checked only when ARMING (turning it OFF is always
+  allowed for free); `GameState.is_ability_usable()`'s `"hellish_rebuke_toggle"` case grays the
+  ability-bar slot the same way. While armed,
   `enemy.gd._attack_player()` checks right after a landed hit lands (`actual > 0`): if the
   attacker is within the spell's own `range_tiles` (3) and currently visible
   (`DungeonFloor.has_line_of_sight()` — a live geometry check, not the cached `is_tile_visible()`
@@ -725,10 +767,13 @@ TIEFLING branch:
   trigger_hellish_rebuke(player, attacker, dungeon_floor)` fires — no attack roll of its own, just
   a DEX save (`resist_check_detailed(dc, ..., use_dex=true, magical=true)`) at the same Tiefling
   best-ability-mod DC every other legacy spell uses, dealing 2d10 Fire (half on a success) to the
-  attacker via `take_typed_damage()`. Consumes the same free-cast-per-long-rest economy as any
-  other Fiendish Legacy spell (`Stats.is_tiefling_legacy_free_cast_available()`, falling back to a
+  attacker via `take_typed_damage()`. Consumes the same free-cast-per-long-rest counter economy as
+  any other Fiendish Legacy spell (`Stats.is_tiefling_legacy_free_cast_available()`, decrementing
+  `tiefling_legacy_free_casts_remaining["hellish_rebuke"]`, falling back to a
   real spell slot for a Wizard/Ranger caster once spent) — if neither is available the reaction
-  just can't fire yet and stays armed for the next opportunity. Not serialized
+  just can't fire yet and stays armed for the next opportunity (though the arm-time gate above
+  makes this rare in practice — it can still happen if a slot gets spent on something else between
+  arming and the reaction firing). Not serialized
   (`hellish_rebuke_armed`, combat-transient, same tier as `giant_ancestry_armed`). **Trigger gate**
   is `"hellish_rebuke" in tiefling_legacy_spell_ids` alone — that array only ever contains it via
   `_grant_tiefling_legacy_spell()`, a Tiefling-only grant in normal play, so it's already the
@@ -936,12 +981,14 @@ this engine, same "granted but nothing to hook into" precedent as Elf's Fey Ance
   (`Stats.giant_ancestry_uses_remaining`) — same grant/restore/sync/level-up-crossing wiring as
   Dwarf's Stonecunning. `GameState._giant_ancestry_name()`/`_giant_ancestry_description()` build
   the ability's flavor text per variant. **Shared "arm now, spend the charge only when it actually
-  triggers" shape** for Fire/Frost/Hill/Storm — activating (`PlayerGoliath.
+  triggers" shape** for Fire/Frost/Hill/Storm/**Stone** (Stone joined this shape in a redesign, see
+  its own bullet below) — activating (`PlayerGoliath.
   activate_giant_ancestry()`) just toggles `Stats.giant_ancestry_armed` on/off, no charge spent yet
-  (a second press disarms for free); the charge is only deducted at the moment the effect actually
-  fires, so an unused arm — or Fire Giant's own explicit "if it misses, doesn't reduce charges"
-  rule — never wastes one. Cloud Giant and Stone Giant don't fit that shape and each work
-  differently (below).
+  (a second press disarms for free, and the armed toggle persists across as many rounds as it takes
+  to actually trigger — it is NOT a one-round window); the charge is only deducted at the moment
+  the effect actually fires, so an unused arm — or Fire Giant's own explicit "if it misses, doesn't
+  reduce charges" rule — never wastes one. Cloud Giant doesn't fit that shape (it's a one-shot
+  instant effect, not something that "triggers" later).
   - **Cloud Giant** (`Cloud's Jaunt`): free action, instant teleport up to 3 tiles to a visible,
     unoccupied, walkable tile — arm-then-click targeting (`PlayerGoliath.
     cloud_teleport_mode_active`, same "hook mode" pattern as Grip of the Forest, wired into
@@ -950,42 +997,106 @@ this engine, same "granted but nothing to hook into" precedent as Elf's Fey Ance
     walkability/occupancy (and, if Large Form is also active, the destination footprint via
     `blocks_large_form_move()`) BEFORE deducting a charge; cancelling (Esc, a movement key, or an
     invalid click) costs nothing. Uses `Entity.set_grid_pos()` (no tween, instant) like Misty Step.
+    **Targeting preview** (bugfix — this used to have none at all, same gap Breath Weapon had
+    before its own preview was added): `player.gd._update_cloud_teleport_preview()`, hooked into
+    `_update_spell_aoe_preview()`'s own `spell == null` fallback chain alongside Breath Weapon/
+    Nimbleness — a blue max-3-tile backdrop (`DungeonFloor.show_spell_range_preview()`) plus a
+    purple/gray exact-tile highlight on the hovered tile (`DungeonFloor.
+    show_touch_target_preview()`, valid only when in range, visible, walkable, and unoccupied) —
+    the exact same visual shape Misty Step's own TILE-target preview uses, just fed from
+    `PlayerGoliath`'s own armed state instead of a `Spell` resource, since Cloud's Jaunt isn't cast
+    through the spell system at all.
   - **Fire Giant** (`Fire's Burn`): armed, the next attack that HITS also deals a second,
     independent 1d10 Fire damage instance — same "one hit, two damage types" shape as Torch/
     Hunter's Mark (`player.gd._bump_attack()`'s `gol_actual`/`gol_inst` block, right after the
     Aasimar Celestial Revelation block). `PlayerGoliath.consume_giant_ancestry_on_hit(enemy)`
     (called only when `actual > 0`, i.e. never on a miss) returns `"Fire"` and consumes the charge
-    when this variant is active/armed, else `""` (no-op for every other variant/race). **Melee
-    only** — same documented scope limitation as Torch/Hunter's Mark/Ironwood Bark/Judgement
-    Day/Celestial Revelation's own bonus-instance hooks (not ranged/spell/off-hand/cleave).
-  - **Frost Giant** (`Frost's Chill`): same trigger shape as Fire Giant, but instead of a damage
-    instance it calls `enemy.apply_status("slowed", 3)` — reuses the EXACT same Mud/Water Slowed
-    mechanism every enemy already has (see "Enemy resist checks" above's `Enemy.slowed_turns`
-    entry) rather than inventing a new "reduce speed by 1/3" system: a slowed enemy sheds roughly
-    one movement step every few turns instead of being stunned outright, which is what "1/3
-    slower" actually means in a 1-tile-per-turn grid (a true stun would be far stronger than the
-    5e trait text). `consume_giant_ancestry_on_hit()` handles this internally and returns `""`
-    (no separate damage instance).
+    when this variant is active/armed, else `""` (no-op for every other variant/race). **Melee,
+    ranged, and spell attack rolls all trigger it** — `player.gd._bump_attack()`,
+    `PlayerRanged.ranged_attack()`, `SpellEffects.cast_spell()` (cantrips), and
+    `SpellEffects._resolve_spell_attack_bolt()` (leveled ATTACK_ROLL spells — Chromatic Orb/Witch
+    Bolt, primary bolt only, not the leap re-roll) each call `consume_giant_ancestry_on_hit()`
+    independently right after their own primary hit lands, same duplicated-per-site pattern as
+    Hunter's Mark's own bonus-instance hook. Still not wired into Off-hand/Cleave/Opportunity
+    Attacks, same documented scope limitation as Torch/Hunter's Mark/Ironwood Bark/Judgement
+    Day/Celestial Revelation's own bonus-instance hooks.
+  - **Frost Giant** (`Frost's Chill`): same trigger shape as Fire Giant (melee/ranged/spell alike)
+    — armed, the next attack that HITS deals a second, independent **1d6 Cold** damage instance
+    (`consume_giant_ancestry_on_hit()` returns `"Cold"`, each call site's own `gol_actual`/
+    `gol_inst` block picks a 6- vs 10-sided die off the returned type) **and** applies
+    `enemy.apply_status("slowed", 3)` — reuses
+    the EXACT same Mud/Water Slowed mechanism every enemy already has (see "Enemy resist checks"
+    above's `Enemy.slowed_turns` entry) rather than inventing a new "reduce speed by 1/3" system: a
+    slowed enemy sheds roughly one movement step every few turns instead of being stunned outright,
+    which is what "1/3 slower" actually means in a 1-tile-per-turn grid. **Bugfix**: this used to
+    apply ONLY the Slowed status with no damage instance at all — the real trait text ("the target
+    takes 1d6 cold damage and its speed is reduced") was only half-implemented. **Correct
+    chronological order**: the Cold damage instance is folded into the main hit line (same segment
+    as the primary weapon damage, exactly like Fire Giant's own bonus instance); the "Frost's Chill
+    slows X" flavor line is logged separately by `player.gd._bump_attack()` right AFTER that
+    combined hit line (`gol_type == "Cold"` check), not inline inside
+    `consume_giant_ancestry_on_hit()` (which is called and returns before the hit line is even
+    built) — damage first, then the slow flavor, matching the trait's own reading order.
   - **Hill Giant** (`Hill's Tumble`): same trigger shape, applies the real Prone condition
     (`enemy.apply_status("prone", 1)`, see "Conditions" above) instead of damage — gated on
     `enemy.size.x * enemy.size.y <= 4` ("Large or smaller"; every enemy in this game today is
     Medium or Large-2x2 at most, so this is unconditional in practice, kept for correctness
     against a future Huge+ enemy). `consume_giant_ancestry_on_hit()` handles this internally too.
-  - **Stone Giant** (`Stone's Endurance`): activating immediately rolls `1d12 + CON modifier` into
-    `Stats.stone_ancestry_reduction_pending` (arms it) — **the charge itself is spent later**, by
-    `GameState.take_damage_raw()`'s own Stone Giant block (right before the "DR can reduce to 0"
-    check), which subtracts the pending reduction from the next instance of damage taken, floors
-    at 0, then consumes the charge — so an armed-but-never-hit Stone Giant charge is never wasted
-    on nothing, matching the "spend on trigger" family shape even though its own trigger (getting
-    hit at all) has no "miss" concept the way an attack does.
-  - **Storm Giant** (`Storm's Thunder`): a toggle, not a one-shot arm — `enemy.gd._attack_player()`
-    checks `Stats.giant_ancestry_armed` right after damage lands (`actual > 0`): if armed and this
-    is a Goliath with the Storm ancestry, the ATTACKING enemy takes `1d8` Thunder back
-    (`Enemy.take_typed_damage()`), the toggle clears, and a charge is spent — "any attacker"
-    (melee or ranged) per direct owner design. A killing reflect calls `die()` directly (with its
-    own gray-exp-grant/log line, mirroring `DungeonFloor.resolve_push()`'s own inline kill
-    handling) rather than routing through `player.gd._finish_kill()`, since the player didn't
-    initiate this kill.
+    See "Conditions" above's Prone row for exactly what the condition itself does (melee ADV/ranged
+    DISADV against the target, can't move without standing up first, no full-turn skip).
+  - **Fire/Frost/Hill's own charge-spend timing** — **redesigned, direct owner request**: all three
+    now spend the charge (and clear the toggle) only AFTER their own bonus effect has actually
+    resolved, matching Stone/Storm's own "effect first, then spend" order — **bugfix**: all three
+    used to disarm + decrement the charge BEFORE their bonus effect ran; for Fire/Frost specifically
+    that meant the charge was gone before the bonus damage number had even been rolled. Hill is
+    self-contained (`consume_giant_ancestry_on_hit()`'s own HILL branch applies Prone, logs it, THEN
+    calls the new private `_spend_giant_ancestry_charge()`); Fire/Frost's actual damage instance is
+    rolled/applied by the CALLER (`player.gd._bump_attack()`, which needs the returned type to pick
+    a 1d10-vs-1d6 die and route it through `Enemy.take_typed_damage()`), so
+    `consume_giant_ancestry_on_hit()` now just returns `"Fire"`/`"Cold"` WITHOUT spending anything,
+    and the caller calls the new `PlayerGoliath.finish_giant_ancestry_bonus_damage()` right after
+    the bonus damage has actually been applied/logged/floater-shown — that's what actually spends
+    the charge and clears `Stats.giant_ancestry_armed`.
+  - **Stone Giant** (`Stone's Endurance`) — **redesigned, direct owner request**: now a plain
+    toggle, same "arm now, roll/spend only on trigger" shape as Fire/Frost/Hill/Storm, not a
+    one-shot arm-and-roll-immediately. Activating just flips `Stats.giant_ancestry_armed` — no roll
+    happens yet, so the player genuinely doesn't know the reduction amount until it's actually
+    needed. The `1d12 + CON modifier` roll now happens **live, inside
+    `GameState.take_damage_raw()`'s own Stone Giant block** (right before the "DR can reduce to 0"
+    check), at the exact moment the very next instance of damage lands — only then does it subtract
+    from that damage, floor at 0, disarm, and spend the charge. Toggling the ability back OFF
+    manually before it ever triggers costs nothing (no charge, no wasted roll) — same free-cancel
+    behavior every other armed Giant Ancestry already had. **Bugfix**: the old version rolled (and
+    committed to) the reduction amount the instant the toggle was armed, well before any damage was
+    taken — contradicting "I don't know how much until it actually happens." **Hoverable roll
+    breakdown**: the log line's damage NUMBER itself (not just the "Stone's Endurance" label) now
+    wraps in a `[url=stonedr:die=,con=,total=]` tag (`TooltipFormatters.fmt_stonedr_tooltip()`,
+    `scripts/ui/hud.gd`'s `_format_tooltip()` dispatch) showing the die roll + CON mod breakdown on
+    hover — it used to be a bare, non-hoverable number (and a first pass at this wrapped the LABEL
+    text instead of the number, inconsistent with every other hoverable damage number in this
+    codebase, which always wraps the number itself — corrected).
+  - **Storm Giant** (`Storm's Thunder`): a toggle — `enemy.gd._attack_player()`
+    checks `Stats.giant_ancestry_armed` right after damage lands (`actual > 0`), **now also gated
+    on the attacker being within 3 tiles** (`min_dist_to(_player.grid_pos) <= 3` — bugfix/redesign,
+    direct owner request: this used to fire against "any attacker" at any distance, including a
+    ranged/thrown hit from clear across the room, which doesn't read as "lashing back" at all):
+    if armed, in range, and this is a Goliath with the Storm ancestry, the ATTACKING enemy takes
+    `1d8` Thunder back (`Enemy.take_typed_damage()`), the toggle clears, and a charge is spent — a
+    charge that never triggers (no hit lands within range while armed) is never wasted, same
+    "spend only on trigger" shape as the other armed variants; the toggle persists across as many
+    rounds as it takes. **Correct chronological order** (bugfix/redesign, direct owner request):
+    the reflect used to be logged BEFORE the "X hits you for N dmg" line it was reacting to — the
+    whole hit-resolution block in `_attack_player()` was reordered so the primary hit/damage log
+    (and any `"extra"` second-type instance, e.g. Imp's Sting) always logs FIRST, with the Storm
+    Giant reflect (and Hellish Rebuke's own reactive trigger, moved for the same reason) logged
+    strictly afterward — "you take the hit, THEN the thunder lashes back," not the reverse.
+    **Hoverable roll breakdown**: the reflect damage now goes through the same
+    `CombatMath.build_damage_instance()`/`encode_damage_instance()` pipeline every other typed
+    damage instance uses (a real `dmg:` meta, `[url=]`-wrapped, hover shows the 1d8 roll + final)
+    instead of a bare plain-text number. A killing reflect calls `die()` directly (with its own
+    gray-exp-grant/log line, mirroring `DungeonFloor.resolve_push()`'s own inline kill handling)
+    rather than routing through `player.gd._finish_kill()`, since the player didn't initiate this
+    kill.
 
 ## Human
 
@@ -2642,6 +2753,19 @@ introduces one new mechanic not needed by any earlier spell.
   residue in the component that should be exactly 0, which was just barely enough to flip the
   `lateral <= forward*0.5` boundary comparison at the cone's far edge — the cone was missing one
   tile at max range for every direction except aiming due East.
+  **Second bugfix (`forward` was Euclidean, not grid, distance)**: `forward` used to be the
+  continuous dot product `v.dot(dir_v)` (`dir_v` a unit vector) — a diagonal grid step measures as
+  `sqrt(2)` under that projection versus a cardinal step's exact `1`, so at a fixed integer
+  `length` (a tile-COUNT range, e.g. `BREATH_CONE_LENGTH = 2`) a diagonally-aimed cone's own grid
+  points (e.g. `(2,1)` relative to a SE aim) exceeded `forward > length` well before they were
+  actually `length` tiles out — squeezing a diagonal-aimed cone down to a single tile
+  (`(1,1)`) while the same-length cardinal aim correctly produced its full 4-tile widening shape.
+  `forward` is now `float(maxi(absi(dx), absi(dy)))` — Chebyshev (grid) distance, matching how
+  this engine's own diagonal movement already counts a diagonal step as costing exactly 1 tile —
+  `v.dot(dir_v)`'s sign is still checked (separately, `<= 0.0` continue) purely to keep the
+  "roughly in front of the aim direction" gate, not to measure range. Fixes both the Dragonborn
+  Breath Weapon's diagonal Cone aim (`PlayerDragonborn`, see "Dragonborn" below) and Burning
+  Hands' diagonal aim identically, since both share this one `cone_tiles()` function.
   called by both the resolver (`_resolve_cone_aoe()`, dispatched from `cast_leveled_at_tile()`) and
   the live preview (`DungeonFloor.show_cone_preview()`, mirroring `show_aoe_preview()`'s pooled-
   Sprite2D convention — see `scripts/world/CLAUDE.md`). Because only the *direction* to the clicked

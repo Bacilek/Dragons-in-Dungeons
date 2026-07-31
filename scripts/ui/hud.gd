@@ -758,6 +758,20 @@ func _refresh_item_bar() -> void:
 				slot.icon = null
 			qty_lbl.text = "×%d" % it.quantity if it.quantity > 1 else ""
 
+## Returns the free-casts-remaining counter for a spell_id granted by Elven Lineage, Fiendish
+## Legacy, or Gnomish Lineage — or null if spell_id belongs to none of the three (a normal known/
+## prepared Wizard/Ranger spell, which has no such counter). Used by _refresh_ability_bar()'s
+## racial-lineage badge branch above.
+func _racial_lineage_spell_counter(spell_id: String) -> Variant:
+	var stats: Stats = GameState.player_stats
+	if spell_id in stats.elf_lineage_spell_ids:
+		return stats.elf_lineage_free_casts_remaining.get(spell_id, 0)
+	if spell_id in stats.tiefling_legacy_spell_ids:
+		return stats.tiefling_legacy_free_casts_remaining.get(spell_id, 0)
+	if spell_id in stats.gnome_lineage_spell_ids:
+		return stats.gnome_lineage_free_casts_remaining.get(spell_id, 0)
+	return null
+
 func _refresh_ability_bar() -> void:
 	for i: int in SLOT_COUNT:
 		var raw = GameState.player_ability_bar[i]
@@ -796,6 +810,29 @@ func _refresh_ability_bar() -> void:
 					var hm_remaining: int = GameState.player_stats.hunters_mark_uses_remaining
 					use_lbl.text = "%d/%d" % [hm_remaining, Stats.HUNTERS_MARK_USES_MAX]
 					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if hm_remaining > 0 else Color(0.5, 0.5, 0.5))
+				elif ab.ability_id == "hellish_rebuke_toggle":
+					# Hellish Rebuke's free-cast counter lives on Stats.tiefling_legacy_free_casts_remaining
+					# ("hellish_rebuke" key), not the Ability itself (uses_max stays 0/0, same
+					# free-base-ability convention as Hunter's Mark above) — max is the character's
+					# live proficiency_bonus (the same value long_rest() refills every racial
+					# lineage/legacy free-cast counter to).
+					var hr_remaining: int = GameState.player_stats.tiefling_legacy_free_casts_remaining.get("hellish_rebuke", 0)
+					var hr_max: int = GameState.player_stats.proficiency_bonus
+					use_lbl.text = "%d/%d" % [hr_remaining, hr_max]
+					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if hr_remaining > 0 else Color(0.5, 0.5, 0.5))
+				elif ab.ability_id.begins_with("spell:") and _racial_lineage_spell_counter(ab.ability_id.substr(6)) != null:
+					# Elven Lineage / Fiendish Legacy / Gnomish Lineage spells: each grants
+					# proficiency_bonus free casts per long rest (Stats.
+					# elf_lineage_free_casts_remaining / tiefling_legacy_free_casts_remaining /
+					# gnome_lineage_free_casts_remaining, spell_id -> int) — same free-base-ability
+					# convention as Hunter's Mark/Hellish Rebuke above (Ability.uses_max stays 0/0).
+					# Once the counter hits 0 the spell is STILL castable, just no longer free — it
+					# falls back to a real spell slot of its own level (Wizard/Ranger only).
+					var sid: String = ab.ability_id.substr(6)
+					var lin_remaining: int = _racial_lineage_spell_counter(sid)
+					var lin_max: int = GameState.player_stats.proficiency_bonus
+					use_lbl.text = "%d/%d" % [lin_remaining, lin_max]
+					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if lin_remaining > 0 else Color(0.5, 0.5, 0.5))
 				elif ab.uses_max == 0:
 					# Passive / infinite uses.
 					use_lbl.text = ""
@@ -1163,4 +1200,5 @@ func _format_tooltip(meta: String) -> String:
 		"frzdmg":        return TooltipFormatters.fmt_frenzy_dmg_tooltip(params)
 		"msn":           return TooltipFormatters.fmt_masochist_tooltip(params)
 		"conc":          return TooltipFormatters.fmt_conc_tooltip(params)
+		"stonedr":       return TooltipFormatters.fmt_stonedr_tooltip(params)
 	return ""

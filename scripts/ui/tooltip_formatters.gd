@@ -495,6 +495,20 @@ static func fmt_conc_tooltip(p: Dictionary) -> String:
 	lines.append("= [color=yellow]%d[/color] vs DC %d  →  %s" % [total, dc, result])
 	return "\n".join(lines)
 
+## Stone Giant ancestry (Goliath) — the 1d12+CON damage-reduction roll, made at the moment damage
+## actually lands (GameState.take_damage_raw()'s own Stone Giant block), not at arm/toggle time.
+static func fmt_stonedr_tooltip(p: Dictionary) -> String:
+	var die: int = int(p.get("die", "0"))
+	var con: int = int(p.get("con", "0"))
+	var total: int = int(p.get("total", "0"))
+	var lines: PackedStringArray = []
+	lines.append("1d12 = [color=yellow]%d[/color]" % die)
+	if con != 0:
+		lines.append("[color=lightblue]%+d[/color]  (CON mod)" % con)
+	lines.append("─────────────────")
+	lines.append("= [color=cyan]%d[/color] damage reduced" % total)
+	return "\n".join(lines)
+
 static func fmt_ret_tooltip(p: Dictionary) -> String:
 	var rank: int      = int(p.get("rank", "0"))
 	var wpn_roll: int  = int(p.get("wpn_roll", "0"))
