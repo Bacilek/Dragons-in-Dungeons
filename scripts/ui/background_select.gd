@@ -216,6 +216,8 @@ func _refresh() -> void:
 func _on_confirm() -> void:
 	GameState.player_stats.apply_background_bonus(_bonus)
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
+	# AC just changed with these scores — see point_buy_select.gd's identical comment.
+	GameState.equipment_changed.emit()
 	GameState.background_select_open = false
 	GameState.pending_background_bonus = _bonus.duplicate()
 	var race_picker = load("res://scripts/ui/race_select.gd").new()

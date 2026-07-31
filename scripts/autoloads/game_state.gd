@@ -560,6 +560,12 @@ func choose_race(race: Stats.CharacterRace, variant: int = 0, prof_ability: int 
 	# bonus HP even though player_stats.max_hp itself is correct.
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 	race_chosen.emit(race)
+	# Darkvision/FOV bonus and anything else derived from the race pick only take effect on
+	# DungeonFloor's next update_fog() call, which otherwise doesn't happen until the player's
+	# first move — reuse equipment_changed (dungeon_floor.gd already listens to it and calls
+	# update_fog() immediately; hud.gd's AC label also listens, harmless no-op there since race
+	# doesn't touch AC) so the FOV ring is correct the instant race select confirms.
+	equipment_changed.emit()
 
 # Called once by choose_race() at the actual race pick — grants full starting uses. Elf sub-race
 # spells are still deferred — see root CLAUDE.md's "Race system". Dragonborn grants Breath Weapon

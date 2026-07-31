@@ -256,6 +256,10 @@ func _refresh() -> void:
 func _on_confirm() -> void:
 	GameState.player_stats.apply_point_buy_scores(_scores)
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
+	# AC (and any other equipment-independent derived stat) just changed with these scores —
+	# reuse equipment_changed so the HUD's AC label (and anything else wired to it) refreshes
+	# immediately instead of staying stale until the player's first move/action.
+	GameState.equipment_changed.emit()
 	GameState.point_buy_open = false
 	GameState.pending_point_buy_scores = _scores.duplicate()
 	var background_picker = load("res://scripts/ui/background_select.gd").new()
