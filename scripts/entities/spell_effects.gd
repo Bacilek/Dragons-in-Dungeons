@@ -1251,6 +1251,7 @@ static func _resolve_faerie_fire(player: Player, spell: Spell, center: Vector2i,
 		else:
 			stats.faerie_fire_outlined_turns = 10
 			stats.faerie_fire_outlined_color = color
+			player._refresh_faerie_fire_visual()
 			GameState.game_log("You are [url=%s]outlined[/url] in dancing light!" % psave_meta)
 
 # Detect Magic — a real, lasting sense now (previously a one-shot instant read; that read's own

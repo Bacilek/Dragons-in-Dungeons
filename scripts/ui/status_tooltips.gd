@@ -17,6 +17,7 @@ const TITLES: Dictionary = {
 	"psycho_adv": "Psycho",
 	"torch": "Torch Lit",
 	"longstrider": "Longstrider",
+	"faerie_fire_outlined": "Outlined (Faerie Fire)",
 	"poisoned_condition": "Poisoned",
 	"prone": "Prone",
 	"restrained": "Restrained",
@@ -88,6 +89,8 @@ static func get_text(id: String) -> String:
 			return "Lit — burns out in %d more turns.\n+1 FOV.%s" % [t.torch_turns_remaining, fire_note]
 		"longstrider":
 			return "+1/3 movement speed — every 3rd real move doesn't cost a turn.\nFades in %d more turns." % GameState.player_stats.longstrider_turns
+		"faerie_fire_outlined":
+			return "You're outlined in dancing light — every attack roll against you has Advantage if the attacker can see you.\nFades in %d more turns." % GameState.player_stats.faerie_fire_outlined_turns
 		"poisoned_condition":
 			return "Disadvantage on attack rolls and ability checks. Separate from the green Poisoned damage-over-time status."
 		"prone":

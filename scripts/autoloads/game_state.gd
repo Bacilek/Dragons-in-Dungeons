@@ -2913,12 +2913,16 @@ func end_concentration(reason_log: String = "") -> void:
 		# creature it lit up this cast — not just stop the caster's own duration counter (bugfix:
 		# this used to only clear the caster's field, so an enemy's own outline/debuff silently
 		# outlived the concentration that was supposedly sustaining it).
+		player_stats.faerie_fire_outlined_turns = 0
 		var df: Node = get_tree().get_first_node_in_group("dungeon_floor")
 		if df != null:
 			for e: Enemy in df.get_all_enemies():
 				if is_instance_valid(e) and e.faerie_fire_turns > 0:
 					e.faerie_fire_turns = 0
 					e._refresh_faerie_fire_visual()
+			var p: Node = df.get_player()
+			if p != null and is_instance_valid(p):
+				p._refresh_faerie_fire_visual()
 	elif broken_spell == "invisibility":
 		player_stats.invisibility_turns = 0
 	if reason_log != "":

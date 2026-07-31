@@ -399,7 +399,14 @@ casting for a non-caster).
     `Enemy._attack_player()`'s `faerie_fire_adv` local, gated on `is_tile_visible(player.grid_pos)`.
     Ticked alongside `faerie_fire_turns` in `player.gd`'s per-turn block. No enemy-side caster of
     this spell exists yet, so this only matters for a self-cast or a future enemy source — a
-    documented scope note, not a current gameplay path.
+    documented scope note, not a current gameplay path. **Visual feedback** (bugfix — this was
+    silent/invisible at first): a status-tray entry (`"faerie_fire_outlined"`, no art yet — flat
+    color-tinted placeholder square using the same random cast color) plus a small above-character
+    `✦` sparkle (`Player._faerie_fire_indicator`/`_refresh_faerie_fire_visual()`, a direct mirror of
+    `Enemy`'s own identical indicator) both show while outlined. `GameState.end_concentration()`'s
+    `"faerie_fire"` branch also clears the player's own `faerie_fire_outlined_turns` (via
+    `DungeonFloor.get_player()`) alongside every outlined enemy's, so losing concentration ends the
+    self-outline too, not just enemies'.
 
   A small `✦` sparkle (`Enemy._faerie_fire_indicator`, tinted `faerie_fire_color`) shows above an
   outlined enemy while active, toggled by `Enemy._refresh_faerie_fire_visual()` (called on cast and

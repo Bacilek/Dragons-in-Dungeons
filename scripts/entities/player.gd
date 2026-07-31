@@ -159,6 +159,7 @@ func _ready() -> void:
 	is_friendly = true
 	z_index = 3
 	_setup_animations()
+	_setup_faerie_fire_indicator()
 
 	_wild_heart = PlayerWildHeart.new(); _wild_heart.player = self; add_child(_wild_heart)
 	_zealot = PlayerZealot.new(); _zealot.player = self; add_child(_zealot)
@@ -311,6 +312,7 @@ func _on_turn_started() -> void:
 			stats.faerie_fire_outlined_turns -= 1
 			if stats.faerie_fire_outlined_turns <= 0:
 				GameState.game_log("[color=gray]The dancing light outlining you fades.[/color]")
+				_refresh_faerie_fire_visual()
 		# Longstrider: NOT Concentration — 600-turn flat duration (5e RAW's "1 hour").
 		if stats.longstrider_turns > 0:
 			stats.longstrider_turns -= 1
@@ -850,6 +852,30 @@ func _resolve_stealth_check() -> void:
 # check, not this. Translucent tint so the PLAYER can still tell their own state at a glance.
 func _update_invisibility_visual() -> void:
 	$AnimatedSprite2D.modulate.a = 0.4 if stats.invisibility_turns > 0 else 1.0
+
+# Small sparkle shown above the player while outlined by Faerie Fire — mirrors Enemy's own
+# _faerie_fire_indicator/_refresh_faerie_fire_visual() exactly (scripts/entities/enemy.gd), so the
+# player gets the same visible feedback an outlined enemy already had. Bugfix: casting Faerie Fire
+# on yourself correctly set Stats.faerie_fire_outlined_turns (granting enemies Advantage against
+# you) but had no matching visual — no status-tray icon and no above-character marker — so nothing
+# on screen ever showed it took effect.
+var _faerie_fire_indicator: Label
+
+func _setup_faerie_fire_indicator() -> void:
+	_faerie_fire_indicator = Label.new()
+	_faerie_fire_indicator.text = "✦"
+	_faerie_fire_indicator.add_theme_font_size_override("font_size", 14)
+	_faerie_fire_indicator.position = Vector2(6, -24)
+	_faerie_fire_indicator.z_index = 10
+	_faerie_fire_indicator.visible = false
+	add_child(_faerie_fire_indicator)
+
+func _refresh_faerie_fire_visual() -> void:
+	if not is_instance_valid(_faerie_fire_indicator):
+		return
+	_faerie_fire_indicator.visible = stats.faerie_fire_outlined_turns > 0
+	if stats.faerie_fire_outlined_turns > 0:
+		_faerie_fire_indicator.add_theme_color_override("font_color", stats.faerie_fire_outlined_color)
 
 func _setup_animations() -> void:
 	var char_folder: String
