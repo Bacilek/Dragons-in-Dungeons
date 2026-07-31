@@ -1959,6 +1959,16 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 			if _dungeon_floor != null:
 				_dungeon_floor.remove_enemy(self)
 			die()
+	# Hellish Rebuke (Infernal Tiefling, see player_tiefling.gd/spell_effects.gd's own
+	# trigger_hellish_rebuke() comment): toggled on, the next enemy the player can see within the
+	# spell's own range that deals ANY damage to the player is engulfed in flames. Consumes the
+	# armed flag only when it actually procs (visible + in range + still alive).
+	if actual > 0 and not stats.is_dead() and GameState.player_stats.character_race == Stats.CharacterRace.TIEFLING \
+			and GameState.player_stats.hellish_rebuke_armed and "hellish_rebuke" in GameState.player_stats.tiefling_legacy_spell_ids:
+		var hr_spell: Spell = SpellDb.get_spell("hellish_rebuke")
+		if min_dist_to(_player.grid_pos) <= hr_spell.range_tiles and _dungeon_floor != null and _dungeon_floor.is_tile_visible(grid_pos):
+			GameState.player_stats.hellish_rebuke_armed = false
+			SpellEffects.trigger_hellish_rebuke(_player, self, _dungeon_floor)
 	# Rage's 50% DR (take_damage_raw()) was live for this hit whenever the player was raging AND
 	# dmg_type is one of the three physical types.
 	var rage_applied: int = 1 if GameState.is_raging else 0

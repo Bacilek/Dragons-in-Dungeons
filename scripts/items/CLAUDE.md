@@ -588,34 +588,36 @@ cast-resolution walkthroughs.
   section for all 8, including `SpellcasterState.cantrip_max(stats)` — the known-cantrip cap,
   Wizard 3/4/5 at character levels 1/4/10) + `STARTER_CANTRIP_IDS` (the fixed 3-cantrip round-1 pool `cantrip_select.gd`
   always offers — kept separate from `CANTRIP_IDS` so old saves/the premade Jace's
-  `"cantrip": "fire_bolt"` shortcut stay valid) + `LEVELED_SPELL_IDS` (15:
+  `"cantrip": "fire_bolt"` shortcut stay valid) + `LEVELED_SPELL_IDS` (16:
   `magic_missile`/`shield`/`mage_armor`/`misty_step`/`fireball`/`chromatic_orb`/`burning_hands`/
   `witch_bolt`/`expeditious_retreat`/`false_life`/`fog_cloud`/`invisibility`/`darkness`/
-  `longstrider`/`detect_magic` — the last 10 added after the initial pass, see
+  `longstrider`/`detect_magic`/`pass_without_trace` — the last 11 added after the initial pass, see
   `scripts/entities/CLAUDE.md`'s "More 1st-level spells" and "More 1st-level non-damage spells"
-  sections; `darkness`/`longstrider`/`detect_magic` were each promoted from Elf-lineage-only to a
-  real learnable entry — all three are still ALSO listed in `ELF_LINEAGE_SPELL_IDS` below, since
-  their sub-race's own free grant and normal learn/slot-casting are independent paths to the same
-  spell, see `scripts/entities/CLAUDE.md`'s "Elf" section) + `RANGER_SPELL_IDS` (Ranger's own eligible subset, currently just
-  `["fog_cloud"]` — the only `LEVELED_SPELL_IDS` entry whose real 5e/5.5e class list actually
-  includes Ranger; every other entry is Sorcerer/Wizard(/Warlock)-only on both rule sets, so it was
-  deliberately NOT opened up to Ranger despite reusing the same shared spell pool — a real
-  content-thinness gap, not a bug; see `scripts/entities/CLAUDE.md`'s "Ranger class")
+  sections; `darkness`/`longstrider`/`detect_magic`/`pass_without_trace` were each promoted from
+  Elf-lineage-only to a real learnable entry — all four are still ALSO listed in
+  `ELF_LINEAGE_SPELL_IDS` below, since their sub-race's own free grant and normal learn/
+  slot-casting are independent paths to the same spell, see `scripts/entities/CLAUDE.md`'s "Elf"
+  section) + `RANGER_SPELL_IDS` (Ranger's own eligible subset, currently
+  `["fog_cloud", "pass_without_trace"]` — the only two `LEVELED_SPELL_IDS` entries whose real
+  5e/5.5e class list actually includes Ranger; every other entry is Sorcerer/Wizard(/Warlock)-only
+  on both rule sets, so it was deliberately NOT opened up to Ranger despite reusing the same shared
+  spell pool — a real content-thinness gap, not a bug; see `scripts/entities/CLAUDE.md`'s "Ranger
+  class")
   + `CLASS_SPELL_LISTS: Dictionary`
   (`"WIZARD"` → `LEVELED_SPELL_IDS`, `"RANGER"` → `RANGER_SPELL_IDS` — keyed by
   `Stats.CharacterClass` enum-name string, the level-up learn picker's candidate pool; cantrips are
   deliberately excluded from both lists since they're a separate, always-known system Ranger
   doesn't have at all). Each spell's own `class_list` field mirrors this same split (`["WIZARD"]` /
-  `["WIZARD", "RANGER"]` per entry) though nothing currently reads `class_list` programmatically —
+  `["RANGER"]` per entry) though nothing currently reads `class_list` programmatically —
   see `Spell`'s own field note below.
   + `ELF_LINEAGE_SPELL_IDS` (5: `faerie_fire`/`darkness`/`detect_magic`/`longstrider`/
   `pass_without_trace` — Misty Step, the 6th lineage spell, reuses the existing Wizard/Ranger
   entry verbatim) — Elf race's Elven Lineage grant only (`scripts/entities/CLAUDE.md`'s "Elf"
-  section), deliberately excluded from `LEVELED_SPELL_IDS`/`CLASS_SPELL_LISTS` so none of the 5 are
-  ever offered by the level-up spellbook-growth picker or any class's known-spell list — the only
-  way to acquire one is `GameState._grant_elf_lineage_spell()`. `class_list` is left `[]` for all
-  five (no real class list applies). No Scroll of &lt;Spell&gt; exists for any of them — a
-  documented scope cut.
+  section). Four of the five (`darkness`/`detect_magic`/`longstrider`/`pass_without_trace`) are
+  ALSO real `LEVELED_SPELL_IDS`/`CLASS_SPELL_LISTS` entries now (see above) — only `faerie_fire`
+  is still exclusively reachable via `GameState._grant_elf_lineage_spell()`, never offered by the
+  level-up spellbook-growth picker or any class's known-spell list. No Scroll of &lt;Spell&gt;
+  exists for `faerie_fire` — a documented scope cut for that one holdout.
   + `TIEFLING_LEGACY_SPELL_IDS` (6: `poison_spray`/`chill_touch`/`ray_of_sickness`/`hold_person`/
   `ray_of_enfeeblement`/`hellish_rebuke` — Fire Bolt, False Life, and Darkness, the other 3
   Fiendish Legacy grants, reuse existing entries verbatim and aren't listed here) — Tiefling
@@ -689,12 +691,12 @@ spell." instead). No scroll items use this mechanism in any loot pool yet — se
 `Item.scroll_spell_id: String` (`""` = not this kind of scroll) — a SCROLL item with one spell
 cast baked in, distinct from (and independent of) `taught_spell_id` above: reading it does NOT
 teach the spell, it just casts it once at the spell's base level (no upcasting, no slot spent)
-then crumbles. **Castable by any class**, not just Wizard — the point of this item type. 23 exist
+then crumbles. **Castable by any class**, not just Wizard — the point of this item type. 24 exist
 in `ITEM_POOL`/`debug_panel.ALL_ITEMS` today, one per `SpellDb` spell (`Scroll of Fire Bolt`,
 `Ray of Frost`, `Shocking Grasp`, `Toll the Dead`, `Blade Ward`, `Thunderclap`, `Mind Sliver`,
 `Light`, `Magic Missile`, `Shield`, `Mage Armor`, `Misty Step`, `Fireball`, `Chromatic Orb`,
 `Burning Hands`, `Witch Bolt`, `Expeditious Retreat`, `False Life`, `Fog Cloud`, `Invisibility`,
-`Darkness`, `Longstrider`, `Detect Magic`); icon reuses the
+`Darkness`, `Longstrider`, `Detect Magic`, `Pass Without Trace`); icon reuses the
 spell's own `Spell.icon_path` (`"src": "spells"` pool key) — `DungeonFloor._build_floor_item()`
 and `debug_panel._on_give_item()` both resolve it via `SpellDb.get_spell(item.scroll_spell_id).
 icon_path` rather than reconstructing a flat path from the `ITEM_POOL` entry's own `"icon"` key,

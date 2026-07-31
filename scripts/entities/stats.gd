@@ -190,6 +190,15 @@ var tiefling_legacy_free_cast_used: Dictionary = {}
 func is_tiefling_legacy_free_cast_available(spell_id: String) -> bool:
 	return spell_id in tiefling_legacy_spell_ids and not tiefling_legacy_free_cast_used.get(spell_id, false)
 
+# Hellish Rebuke (Infernal Tiefling's level-3 legacy grant) is implemented as a toggle-armed
+# REACTION instead of a normal on-demand cast — RAW casts it as a reaction to being hit, and this
+# engine has no reaction-casting framework, so arming it via the ability bar (PlayerTiefling.
+# activate_hellish_rebuke(), scripts/entities/player_tiefling.gd) and letting enemy.gd's own
+# _attack_player() trigger the actual cast is the closest analogue, same "arm now, spend the charge
+# only when it actually procs" shape as Storm Giant Ancestry's own toggle (player_goliath.gd). Not
+# serialized — combat-transient, same tier as giant_ancestry_armed.
+var hellish_rebuke_armed: bool = false
+
 # Fiendish Legacy spells are cast using "whichever of INT/WIS/CHA is highest" — not the character's
 # own class spellcasting_ability (a Tiefling Barbarian has no caster ability at all; a Tiefling
 # Wizard's own INT might not even be the best of the three). Checked by SpellEffects._attack_bonus()/

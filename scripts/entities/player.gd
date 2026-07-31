@@ -30,6 +30,7 @@ var _human: PlayerHuman
 var _orc: PlayerOrc
 var _aasimar: PlayerAasimar
 var _goliath: PlayerGoliath
+var _tiefling: PlayerTiefling
 
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
@@ -170,6 +171,7 @@ func _ready() -> void:
 	_orc = PlayerOrc.new(); _orc.player = self; add_child(_orc)
 	_aasimar = PlayerAasimar.new(); _aasimar.player = self; add_child(_aasimar)
 	_goliath = PlayerGoliath.new(); _goliath.player = self; add_child(_goliath)
+	_tiefling = PlayerTiefling.new(); _tiefling.player = self; add_child(_tiefling)
 
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
@@ -308,8 +310,7 @@ func _on_turn_started() -> void:
 				if stats.concentration_spell_id == "detect_magic":
 					stats.concentration_spell_id = ""
 				GameState.game_log("[color=gray]Your sense of magic fades.[/color]")
-		# Pass Without Trace (Wood Elf lineage spell): same 100-turn Concentration pattern as Fog
-		# Cloud/Darkness above.
+		# Pass Without Trace: same 600-turn Concentration pattern as Fog Cloud/Darkness above.
 		if stats.pass_without_trace_turns > 0:
 			stats.pass_without_trace_turns -= 1
 			if stats.pass_without_trace_turns <= 0:
@@ -3073,4 +3074,5 @@ func _use_ability_slot(idx: int) -> void:
 		"celestial_revelation":    _aasimar.activate_celestial_revelation()
 		"large_form":              _goliath.activate_large_form()
 		"giant_ancestry":          _goliath.activate_giant_ancestry()
+		"hellish_rebuke_toggle":   _tiefling.activate_hellish_rebuke()
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)

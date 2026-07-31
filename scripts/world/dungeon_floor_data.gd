@@ -118,6 +118,7 @@ const ITEM_POOL: Array = [
 	{"name": "Scroll of Darkness",    "type": 3, "icon": "darkness.png",    "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "Reading this casts Darkness once, then it crumbles to dust.", "scroll_spell": "darkness", "gold": 100},
 	{"name": "Scroll of Longstrider", "type": 3, "icon": "longstrider.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Longstrider once, then it crumbles to dust.", "scroll_spell": "longstrider", "gold": 50},
 	{"name": "Scroll of Detect Magic", "type": 3, "icon": "detect_magic.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Detect Magic once, then it crumbles to dust.", "scroll_spell": "detect_magic", "gold": 50},
+	{"name": "Scroll of Pass Without Trace", "type": 3, "icon": "pass_without_trace.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts Pass Without Trace once, then it crumbles to dust.", "scroll_spell": "pass_without_trace", "gold": 60},
 ]
 
 const BOSS_POOL: Array = [

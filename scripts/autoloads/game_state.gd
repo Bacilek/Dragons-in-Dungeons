@@ -636,7 +636,10 @@ func _restore_race_ability_bar() -> void:
 					add_ability(_build_spell_ability(sid))
 		Stats.CharacterRace.TIEFLING:
 			for tsid: String in player_stats.tiefling_legacy_spell_ids:
-				if _find_ability_by_id("spell:" + tsid) == null:
+				if tsid == "hellish_rebuke":
+					if _find_ability_by_id("hellish_rebuke_toggle") == null:
+						add_ability(_build_hellish_rebuke_ability())
+				elif _find_ability_by_id("spell:" + tsid) == null:
 					add_ability(_build_spell_ability(tsid))
 		Stats.CharacterRace.GNOME:
 			for gsid: String in player_stats.gnome_lineage_spell_ids:
@@ -721,11 +724,27 @@ func _grant_tiefling_legacy_spell(spell_id: String) -> void:
 	if spell_id == "" or spell_id in player_stats.tiefling_legacy_spell_ids:
 		return
 	player_stats.tiefling_legacy_spell_ids.append(spell_id)
-	if _find_ability_by_id("spell:" + spell_id) == null:
+	# Hellish Rebuke is a toggle-armed reaction, not a normal on-demand cast — see Stats.
+	# hellish_rebuke_armed's own comment and scripts/entities/CLAUDE.md's "Tiefling" section.
+	if spell_id == "hellish_rebuke":
+		if _find_ability_by_id("hellish_rebuke_toggle") == null:
+			add_ability(_build_hellish_rebuke_ability())
+	elif _find_ability_by_id("spell:" + spell_id) == null:
 		add_ability(_build_spell_ability(spell_id))
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell != null:
 		game_log("[color=lime]Fiendish Legacy grants you %s![/color]" % spell.spell_name)
+
+func _build_hellish_rebuke_ability() -> Ability:
+	var spell: Spell = SpellDb.get_spell("hellish_rebuke")
+	var ab := Ability.new()
+	ab.ability_id = "hellish_rebuke_toggle"
+	ab.ability_name = spell.spell_name if spell != null else "Hellish Rebuke"
+	ab.description = spell.description if spell != null else ""
+	ab.icon_path = spell.icon_path if spell != null else ""
+	ab.uses_remaining = 0
+	ab.uses_max = 0
+	return ab
 		_:
 			return ""
 

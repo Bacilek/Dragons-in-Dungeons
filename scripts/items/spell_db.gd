@@ -12,36 +12,37 @@ const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp
 # The Wizard's fixed round-1 starting choice (cantrip_select.gd) — unchanged by the 5 additions
 # above so the premade Jace's "cantrip": "fire_bolt" shortcut and existing save data stay valid.
 const STARTER_CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
-const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud", "invisibility", "darkness", "longstrider", "detect_magic"]
+const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud", "invisibility", "darkness", "longstrider", "detect_magic", "pass_without_trace"]
 # Ranger (half-caster, scripts/entities/CLAUDE.md's "Ranger class") draws from the same shared
 # `SpellDb` pool as Wizard, but ONLY the subset actually on Ranger's real 5e/5.5e (2024) spell
 # list — direct owner correction: don't just open every `LEVELED_SPELL_IDS` entry up to Ranger
-# "for consistency", each spell's actual RAW class list matters. Of these 12, only Fog Cloud is
-# genuinely Druid/Ranger/Sorcerer/Wizard; every arcane blast/utility spell here (Magic Missile,
-# Shield, Mage Armor, Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch Bolt, Expeditious
-# Retreat, False Life, Invisibility) is Sorcerer/Wizard(/Warlock) only on both rule sets — see each
-# spell's own `class_list` comment above. This makes Ranger's actual castable pool thin today
-# (a real content gap, not a bug — this codebase has zero nature-flavored spell content of its own
-# yet, e.g. Ensnaring Strike/Goodberry/Hunter's Mark-as-a-spell/Zephyr Strike from the real 2024
-# Ranger list). No cantrips for Ranger either way (`cantrip_max()` stays 0 for every non-Wizard
-# class, matching both rule sets — Rangers don't get cantrips).
-const RANGER_SPELL_IDS: Array[String] = ["fog_cloud"]
+# "for consistency", each spell's actual RAW class list matters. Of these 13, Fog Cloud and Pass
+# Without Trace are genuinely Druid/Ranger(/Sorcerer/Wizard); every arcane blast/utility spell here
+# (Magic Missile, Shield, Mage Armor, Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch
+# Bolt, Expeditious Retreat, False Life, Invisibility) is Sorcerer/Wizard(/Warlock) only on both
+# rule sets — see each spell's own `class_list` comment above. This makes Ranger's actual castable
+# pool thin today (a real content gap, not a bug — this codebase has zero other nature-flavored
+# spell content of its own, e.g. Ensnaring Strike/Goodberry/Hunter's Mark-as-a-spell/Zephyr Strike
+# from the real 2024 Ranger list). No cantrips for Ranger either way (`cantrip_max()` stays 0 for
+# every non-Wizard class, matching both rule sets — Rangers don't get cantrips).
+const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace"]
 const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS, "RANGER": RANGER_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
 # Elf lineage-only spells (see scripts/entities/CLAUDE.md's "Elf" section) — granted exclusively by
 # GameState._grant_elf_lineage_spell(). Originally none of these were learnable via the level-up
-# spellbook-growth picker or any class's known-spell list; that's no longer true for THREE of the
-# five — "darkness" (Drow, level 5), "longstrider" (Wood Elf, level 3), and "detect_magic" (High
-# Elf, level 3) are ALSO real, independently-learnable LEVELED_SPELL_IDS entries now (their real
-# 5e/5.5e class lists include several classes this codebase doesn't have, so class_list stays
-# ["WIZARD"] like every other spell) — they're listed here too only because their sub-race also
-# grants them for free at the matching level via the same lineage mechanism the other two
-# (faerie_fire, pass_without_trace — still lineage-only, not on LEVELED_SPELL_IDS) use. The
+# spellbook-growth picker or any class's known-spell list; that's no longer true for FOUR of the
+# five — "darkness" (Drow, level 5), "longstrider" (Wood Elf, level 3), "detect_magic" (High
+# Elf, level 3), and "pass_without_trace" (Wood Elf, level 5) are ALSO real, independently-
+# learnable LEVELED_SPELL_IDS entries now (their real 5e/5.5e class lists include several classes
+# this codebase doesn't have, so class_list is `["WIZARD"]` for the first three and `["RANGER"]`
+# for Pass Without Trace, its one implemented real-list class) — they're listed here too only
+# because their sub-race also grants them for free at the matching level via the same lineage
+# mechanism `faerie_fire` (still lineage-only, not on LEVELED_SPELL_IDS) uses. The
 # free-cast-per-long-rest economy and the LEVELED_SPELL_IDS/level-up-picker/slot-casting paths are
 # independent of each other and both work regardless of how a spell was acquired. No Scroll of
-# <Spell> exists for faerie_fire/pass_without_trace (Misty Step, the 6th lineage spell, already has
-# one; darkness/longstrider/detect_magic now do too, being real LEVELED_SPELL_IDS entries) — a
-# documented scope cut for the two lineage-only holdouts, not an oversight.
+# <Spell> exists for faerie_fire (Misty Step, the 6th lineage spell, already has one; darkness/
+# longstrider/detect_magic/pass_without_trace now do too, being real LEVELED_SPELL_IDS entries) —
+# a documented scope cut for the one remaining lineage-only holdout, not an oversight.
 const ELF_LINEAGE_SPELL_IDS: Array[String] = ["faerie_fire", "darkness", "detect_magic", "longstrider", "pass_without_trace"]
 
 # Tiefling Fiendish Legacy-only spells (see scripts/entities/CLAUDE.md's "Tiefling" section) —
@@ -512,7 +513,7 @@ static func _detect_magic() -> Spell:
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.is_ritual = true
-	s.description = "Ritual. For up to 600 turns (Concentration) you sense the presence of magic within 3 tiles of yourself — magic items lying on the floor show as a pulsing blue dot, same as Dwarf Stonecunning's tremorsense but for magic instead of creatures. Cast as a Ritual: free (no spell slot spent) as long as no enemy is currently hunting you; costs a real slot the instant one is. Real 5e/5.5e class list: Bard/Cleric/Druid/Paladin/Ranger/Sorcerer/Warlock/Wizard."
+	s.description = "Ritual. For up to 100 turns (Concentration) you sense the presence of magic within 3 tiles of yourself — magic items lying on the floor show as a pulsing blue dot, same as Dwarf Stonecunning's tremorsense but for magic instead of creatures. Cast as a Ritual: free (no spell slot spent) as long as no enemy is currently hunting you; costs a real slot the instant one is. Real 5e/5.5e class list: Bard/Cleric/Druid/Paladin/Ranger/Sorcerer/Warlock/Wizard."
 	s.icon_path = "res://icons/spells/1/detect_magic.png"
 	s.effect_id = "detect_magic"
 	s.class_list = ["WIZARD"]
@@ -540,12 +541,13 @@ static func _pass_without_trace() -> Spell:
 	s.school = "Abjuration"
 	s.level = 2
 	s.range_tiles = 0
+	s.shape_size = 3
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
-	s.description = "+10 to your Stealth-vs-Passive-Perception roll for up to 100 turns (Concentration). Wood Elf lineage spell."
+	s.description = "Action. Self. Concentration, up to 600 turns. An emanation extends 3 tiles from you — every friendly creature (including you) inside it gets +10 to its Stealth-vs-Passive-Perception roll. Real 5e/5.5e class list: Druid/Ranger (Druid isn't a playable class in this engine yet, so Ranger is the only class that can learn it today). Simplification: this engine only has a Stealth check for the player, so the bonus only ever applies to you in practice — it's still granted \"to every friendly creature\" per the spell text. Also the Wood Elf lineage's own free grant (Elven Lineage)."
 	s.icon_path = ""
 	s.effect_id = "pass_without_trace"
-	s.class_list = []
+	s.class_list = ["RANGER"]
 	return s
 
 # ── Tiefling Fiendish Legacy spells (Abyssal/Chthonic/Infernal) — see
@@ -658,7 +660,7 @@ static func _hellish_rebuke() -> Spell:
 	s.dice_count = 2
 	s.dice_sides = 10
 	s.damage_type = "Fire"
-	s.description = "A target within 6 tiles is engulfed in hellish flames — DEX save or take 2d10 Fire (half on a save). RAW is a reaction cast when you're hit by that creature; this engine has no reaction-casting framework, so it's a normal on-demand cast instead (same simplification Shield's own self-cast already uses). Infernal Tiefling lineage spell."
+	s.description = "Casting time: Reaction. Toggle this ability to arm it — the next enemy you can see within 6 tiles that deals you damage is engulfed in hellish flames and must make a DEX save or take 2d10 Fire (half on a success). RAW is cast as a genuine reaction the instant a creature hits you; this engine has no reaction-casting framework, so it's implemented as an activate-then-triggers-automatically toggle instead (same armed-reaction shape as Storm Giant Ancestry). Infernal Tiefling lineage spell."
 	s.icon_path = ""
 	s.effect_id = "hellish_rebuke"
 	s.class_list = []

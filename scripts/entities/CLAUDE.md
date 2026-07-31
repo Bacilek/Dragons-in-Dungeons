@@ -415,14 +415,14 @@ casting for a non-caster).
   text — and calls `GameState.clear_light_source()` if so. A lit Torch's passive glow is NOT a
   spell and is therefore untouched by this check.
 - **Detect Magic** (`_detect_magic()`, Divination, level 1, Ritual, SELF, AUTO_HIT, Concentration
-  up to 600 turns, `shape_size` reused as a flat Chebyshev radius of 3): now a real, independently-
+  up to 100 turns, `shape_size` reused as a flat Chebyshev radius of 3): now a real, independently-
   learnable `SpellDb.LEVELED_SPELL_IDS` entry too (`class_list = ["WIZARD"]` — real 5e/5.5e list is
   Bard/Cleric/Druid/Paladin/Ranger/Sorcerer/Warlock/Wizard), not just a High Elf lineage-only spell
   — a real `Scroll of Detect Magic` exists now that it's a normal `LEVELED_SPELL_IDS` entry.
   **No longer a one-shot instant read** (that version's own item-qualifying rule —
   `Item.requires_attunement`, or a nonzero `bonus_ac`/`bonus_damage` — is unchanged, just reused
   continuously instead of once): `SpellEffects._resolve_detect_magic()` sets `stats.
-  concentration_spell_id = "detect_magic"` and `Stats.detect_magic_turns = 600`, ticked in
+  concentration_spell_id = "detect_magic"` and `Stats.detect_magic_turns = 100`, ticked in
   `player.gd`'s per-turn block alongside Fog Cloud/Darkness. While active,
   `DungeonFloor._update_detect_magic_markers()` (called from `update_fog()`, same pooled-`Sprite2D`
   convention as Dwarf Stonecunning's tremorsense ping — see "Dwarf" above) shows a pulsing **blue**
@@ -473,8 +473,15 @@ casting for a non-caster).
   active at once. `Stats.longstrider_turns` (600 — 5e RAW's "1 hour", was 100 before this spell was
   promoted to a real learnable entry — ticked in `player.gd`'s per-real-turn block, NOT serialized
   — mid-floor buff state, same precedent as `expeditious_retreat_turns`).
-- **Pass Without Trace** (`_pass_without_trace()`, level 2, SELF, AUTO_HIT, Concentration id
-  `"pass_without_trace"`): `Stats.pass_without_trace_turns` (100) grants a flat
+- **Pass Without Trace** (`_pass_without_trace()`, Abjuration, level 2, SELF, AUTO_HIT,
+  Concentration id `"pass_without_trace"`): now a real, independently-learnable
+  `SpellDb.LEVELED_SPELL_IDS`/`RANGER_SPELL_IDS` entry too (`class_list = ["RANGER"]` — real
+  5e/5.5e list is Druid/Ranger; Druid isn't a playable class in this engine yet), not just a Wood
+  Elf lineage-only spell. RAW is a 3-tile emanation granting +10 Stealth to every friendly
+  creature inside it; this engine only has a Stealth-vs-Passive-Perception check for the player,
+  so the emanation/multi-creature text is flavor only — `Stats.pass_without_trace_turns` (600 —
+  was 100 before this spell was promoted to a real learnable entry, same "was 100, promoted to a
+  real RAW-duration entry" pattern as Longstrider above) grants a flat
   `Stats.PASS_WITHOUT_TRACE_BONUS` (+10) to the Stealth-vs-Passive-Perception roll's `total` in
   `Player._resolve_stealth_check()` while active.
 
@@ -626,15 +633,40 @@ TIEFLING branch:
   `_cast_ability_mod()` all gained an optional `spell: Spell = null` parameter (every call site
   already had `spell` in local scope) checked before the normal `stats.caster`/INT-fallback path:
   whenever `spell.spell_id in stats.tiefling_legacy_spell_ids`, the Tiefling override wins.
+  **Hellish Rebuke is the one exception** to the normal on-demand-cast shape every other Fiendish
+  Legacy spell uses — see its own bullet below.
+
+- **Hellish Rebuke is a toggle-armed REACTION, not a normal on-demand cast**: RAW is cast the
+  instant a creature you can see hits you, using your reaction; this engine has no
+  reaction-casting framework, so `_grant_tiefling_legacy_spell()` special-cases it to grant a
+  distinct `"hellish_rebuke_toggle"` ability (`GameState._build_hellish_rebuke_ability()`) instead
+  of the usual `"spell:hellish_rebuke"` on-demand-cast ability every other legacy grant gets.
+  Activating it (`PlayerTiefling.activate_hellish_rebuke()`, `scripts/entities/player_tiefling.gd`)
+  toggles `Stats.hellish_rebuke_armed` — the exact same "arm now, spend the charge only when it
+  actually procs" shape as Storm Giant Ancestry's own toggle (see "Goliath" above). While armed,
+  `enemy.gd._attack_player()` checks right after a landed hit lands (`actual > 0`): if the
+  attacker is within the spell's own `range_tiles` (6) and currently visible
+  (`DungeonFloor.is_tile_visible()`), the armed flag disarms and `SpellEffects.
+  trigger_hellish_rebuke(player, attacker, dungeon_floor)` fires — no attack roll of its own, just
+  a DEX save (`resist_check_detailed(dc, ..., use_dex=true, magical=true)`) at the same Tiefling
+  best-ability-mod DC every other legacy spell uses, dealing 2d10 Fire (half on a success) to the
+  attacker via `take_typed_damage()`. Consumes the same free-cast-per-long-rest economy as any
+  other Fiendish Legacy spell (`Stats.is_tiefling_legacy_free_cast_available()`, falling back to a
+  real spell slot for a Wizard/Ranger caster once spent) — if neither is available the reaction
+  just can't fire yet and stays armed for the next opportunity. Not serialized
+  (`hellish_rebuke_armed`, combat-transient, same tier as `giant_ancestry_armed`).
 
 - **New spell mechanics introduced for this race** (documented simplifications, matching this
   codebase's established "narrow case, not the full system" precedent):
   - **`SpellEffects.cast_leveled_save_at_enemy()`** — a new shared resolver, the leveled
     counterpart to `cast_cantrip_save_at_enemy()` (single-target SAVE resolution + real spell-slot
-    consumption; no such leveled shape existed before Hold Person/Hellish Rebuke needed it).
-    `Spell.dice_count <= 0` (Hold Person) is a pure debuff with no damage roll at all; any other
-    spell (Hellish Rebuke) deals damage, halved on a successful save
-    (`spell.save_for_half`). Wired into `PlayerSpellcasting.try_cast_at()`'s `ENEMY`/`SAVE` branch.
+    consumption; no such leveled shape existed before Hold Person needed it — Hellish Rebuke no
+    longer goes through this resolver at all, see its own bullet above).
+    `Spell.dice_count <= 0` (Hold Person) is a pure debuff with no damage roll at all; a future
+    damage-dealing `ENEMY`/`SAVE` leveled spell would deal damage halved on a successful save
+    (`spell.save_for_half`) through the same resolver — no current spell exercises that branch
+    (Hellish Rebuke used to, before it became a reaction; see above). Wired into
+    `PlayerSpellcasting.try_cast_at()`'s `ENEMY`/`SAVE` branch.
   - **Poison Spray / cast_cantrip_save_at_enemy() generalization**: that function used to hardcode
     `use_wis = effect_id == "toll_the_dead"` / `use_int = effect_id == "mind_sliver"` — generalized
     to read `spell.save_stat` directly (backward-compatible: Toll the Dead is WIS, Mind Sliver is
@@ -712,7 +744,7 @@ Small, Speed 1 tile/turn, Darkvision +1. `Stats.apply_race_defaults()`'s GNOME b
   (same shape as Blade Ward/Longstrider):
   - **Minor Illusion**: `Stats.minor_illusion_turns` (10, NOT Concentration) grants a flat
     `Stats.MINOR_ILLUSION_BONUS` (+5) to the Stealth-vs-Passive-Perception roll — a smaller,
-    shorter-lived cousin of Wood Elf's Pass Without Trace (+10, 100 turns), ticked the same way in
+    shorter-lived cousin of Wood Elf's Pass Without Trace (+10, 600 turns), ticked the same way in
     `player.gd._on_turn_started()`/read in `_resolve_stealth_check()`.
   - **Speak with Animals**: flavor-only, no mechanical effect (this engine has no animal-dialogue
     system to hook into — same documented-simplification precedent as Elf's inert Fey Ancestry).

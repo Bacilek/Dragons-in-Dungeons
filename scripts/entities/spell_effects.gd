@@ -448,7 +448,7 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "pass_without_trace":
 				GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 			player.stats.concentration_spell_id = "pass_without_trace"
-			player.stats.pass_without_trace_turns = 100
+			player.stats.pass_without_trace_turns = 600
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your steps and voice are muffled for up to 100 turns.[/color]" % spell.spell_name)
 		"minor_illusion":
 			player.stats.minor_illusion_turns = 10
@@ -989,6 +989,50 @@ static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level:
 		dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()
 
+# Hellish Rebuke as a REACTION (Infernal Tiefling only — scripts/entities/CLAUDE.md's "Tiefling"
+# section): armed via the ability bar toggle (PlayerTiefling.activate_hellish_rebuke(), mirrors
+# Storm Giant Ancestry's own arm/consume-on-proc shape) rather than cast on demand. Called from
+# enemy.gd._attack_player() right after a landed hit — no TurnManager envelope (fires mid-enemy-
+# turn, not a player action) and no attack roll of its own; the attacker just makes a DEX save.
+# Consumes the same free-cast-per-long-rest economy every other Fiendish Legacy spell uses, falling
+# back to a real spell slot (Wizard/Ranger casters only) once that's spent — if neither is
+# available the reaction simply can't fire yet (stays armed for the next opportunity).
+static func trigger_hellish_rebuke(player: Player, attacker: Enemy, dungeon_floor: Node) -> void:
+	var spell: Spell = SpellDb.get_spell("hellish_rebuke")
+	var stats: Stats = player.stats
+	if stats.is_tiefling_legacy_free_cast_available("hellish_rebuke"):
+		stats.tiefling_legacy_free_cast_used["hellish_rebuke"] = true
+	elif stats.caster != null and (GameState.invincible or stats.caster.slot_pool.can_cast(spell)):
+		if not GameState.invincible:
+			stats.caster.slot_pool.consume(spell.level)
+	else:
+		GameState.game_log("[color=gray]Hellish Rebuke has no charge left to fuel it.[/color]")
+		return
+	GameState.spell_slots_changed.emit()
+
+	var dc: int = _save_dc(stats, spell)
+	var save: Dictionary = attacker.resist_check_detailed(dc, false, true, false, false, true)
+	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+		save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
+
+	var rolls: Array[int] = Rng.roll_dice(spell.dice_count, spell.dice_sides)
+	var inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], false, spell.damage_type)
+	var roll_total: int = int(inst["subtotal"])
+	var dmg: int = roll_total if not save["pass"] else roll_total / 2
+	var result: Dictionary = attacker.take_typed_damage(dmg, spell.damage_type)
+	inst["final"] = result["actual"]
+	inst["resist_mul"] = result["mul"]
+	var actual: int = result["actual"]
+	attacker.update_hp_bar()
+	if dungeon_floor != null:
+		dungeon_floor.show_damage(attacker.position, actual, false, CombatMath.damage_type_color(spell.damage_type))
+	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
+	var is_lethal: bool = attacker.stats.is_dead()
+	GameState.game_log("[color=cyan]Hellish Rebuke[/color] flares as %s hurts you — [url=%s]%s[/url] and takes [url=%s][color=yellow]%d[/color][/url] Fire dmg.%s" % [
+		attacker.display_name, save_meta, "resists" if save["pass"] else "fails the save", dmg_meta, actual, CombatMath.death_suffix(is_lethal)])
+	if is_lethal:
+		player._finish_kill(attacker)
+
 # Witch Bolt's per-turn damage tick (called from player.gd's _on_turn_started(), NOT a player
 # action — no TurnManager envelope, no slot consumption, no fresh attack roll; only the initial
 # cast above rolls to hit). Automatic 1d12 Lightning to the Jolted target.
@@ -1110,7 +1154,7 @@ static func _resolve_faerie_fire(player: Player, spell: Spell, center: Vector2i,
 # Detect Magic — a real, lasting sense now (previously a one-shot instant read; that read's own
 # item-qualifying rule — Item.requires_attunement, or a nonzero bonus_ac/bonus_damage — lives on
 # unchanged as GameState.is_magic_item(), just reused every fog update instead of once at cast
-# time). Concentration up to 600 turns: Stats.detect_magic_turns, ticked in player.gd alongside
+# time). Concentration up to 100 turns: Stats.detect_magic_turns, ticked in player.gd alongside
 # every other 100/600-turn buff. While active, DungeonFloor._update_detect_magic_markers() (called
 # from update_fog(), same pooled-Sprite2D convention as Dwarf Stonecunning's own tremorsense ping —
 # scripts/entities/CLAUDE.md's "Dwarf" section) shows a pulsing BLUE dot over every qualifying
@@ -1120,5 +1164,5 @@ static func _resolve_detect_magic(player: Player, spell: Spell) -> void:
 	if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "detect_magic":
 		GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 	player.stats.concentration_spell_id = "detect_magic"
-	player.stats.detect_magic_turns = 600
+	player.stats.detect_magic_turns = 100
 	GameState.game_log("[color=cyan]You cast [b]%s[/b] — you sense the presence of magic around you.[/color]" % spell.spell_name)
