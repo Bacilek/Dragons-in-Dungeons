@@ -1161,6 +1161,17 @@ func _update_spell_aoe_preview() -> bool:
 		_dungeon_floor.show_aoe_preview(tile, spell.shape_size, in_range, spell.shape)
 	elif spell.target_kind == Spell.TargetKind.ENEMY:
 		_dungeon_floor.show_single_target_preview(tile, in_range)
+	elif spell.target_kind == Spell.TargetKind.TILE:
+		# No-shape TILE-target spells (Misty Step) — a plain purple highlight on the exact tile
+		# the spell would resolve at (e.g. the teleport destination), no enemy required. Previously
+		# these fell through to the `else` branch below and got no preview at all.
+		_dungeon_floor.show_touch_target_preview(tile, in_range)
+	elif spell.target_kind == Spell.TargetKind.SELF and spell.range_tiles > 0:
+		# Touch-range SELF spells (Mage Armor, Invisibility) — any click confirms the self-cast
+		# regardless of where it lands, so always highlight the caster's OWN tile (not the hovered
+		# one) to visually confirm "this resolves on you." range_tiles <= 0 SELF spells (Shield)
+		# instant-cast on activation and never reach this function armed, so no branch needed there.
+		_dungeon_floor.show_touch_target_preview(grid_pos, true)
 	else:
 		_dungeon_floor.hide_aoe_preview()
 	return true

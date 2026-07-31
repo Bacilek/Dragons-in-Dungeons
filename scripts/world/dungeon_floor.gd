@@ -783,6 +783,19 @@ func show_single_target_preview(tile: Vector2i, in_range: bool = true) -> void:
 	else:
 		hide_aoe_preview()
 
+# Touch/teleport/no-shape TILE-target spells (Misty Step) and touch-range SELF spells (Mage Armor,
+# Invisibility) — no enemy requirement at all, just a plain purple highlight on the exact tile the
+# spell would actually resolve at, so the player can see precisely where a teleport would land or
+# confirm "yes, this click/any-click casts on me" the same way an AoE footprint or a red enemy
+# highlight already shows for other spell shapes. Unlike show_single_target_preview() above, this
+# never requires an enemy present — it's purely "this is the tile in play," visible whenever
+# `in_range` (the same Chebyshev-range check try_cast_at() itself enforces).
+func show_touch_target_preview(tile: Vector2i, in_range: bool = true) -> void:
+	if in_range:
+		_paint_aoe_preview_tiles("touch,%d,%d" % [tile.x, tile.y], [tile], false)
+	else:
+		hide_aoe_preview()
+
 # Blue "maximum reach" preview — every tile within `radius` of `center` (the caster) that the
 # currently-armed spell could conceivably hit, shown as a wide static backdrop while any spell is
 # armed for targeting (not just AoE shapes — single-target spells get one too). Independent pooled-
