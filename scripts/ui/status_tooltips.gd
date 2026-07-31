@@ -202,7 +202,8 @@ static func build_bbcode(id: String) -> String:
 		var spell_id: String = GameState.player_stats.concentration_spell_id
 		var sp: Spell = SpellDb.get_spell(spell_id) if spell_id != "" else null
 		var spell_name: String = sp.spell_name if sp != null else "a spell"
-		return "[b]Concentrating: %s[/b]\n%s" % [spell_name, get_text(id)]
+		var turns_left: int = GameState.player_stats.concentration_turns_remaining()
+		return "[b]Concentrating: %s[/b]\n%s\n%d turns remaining (if concentration holds)." % [spell_name, get_text(id), turns_left]
 	if id == "race_bonus":
 		return "[b]Race Bonus: %s[/b]\n%s" % [race_display_name(GameState.player_stats), get_text(id)]
 	var title: String = TITLES.get(id, id)

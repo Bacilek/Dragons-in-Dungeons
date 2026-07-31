@@ -304,7 +304,7 @@ func _on_turn_started() -> void:
 			if stats.faerie_fire_turns <= 0:
 				if stats.concentration_spell_id == "faerie_fire":
 					stats.concentration_spell_id = ""
-				GameState.game_log("[color=gray]The dancing lights fade.[/color]")
+				GameState.game_log("[color=gray]Faerie Fire fades — the dancing lights die out.[/color]")
 		# Longstrider: NOT Concentration — 600-turn flat duration (5e RAW's "1 hour").
 		if stats.longstrider_turns > 0:
 			stats.longstrider_turns -= 1
@@ -380,6 +380,8 @@ func _on_turn_started() -> void:
 		if stats.invisibility_turns > 0:
 			stats.invisibility_turns -= 1
 			if stats.invisibility_turns <= 0:
+				if stats.concentration_spell_id == "invisibility":
+					stats.concentration_spell_id = ""
 				GameState.game_log("[color=gray]You fade back into view.[/color]")
 				_update_invisibility_visual()
 		# Draconic Flight: 100-turn duration, ticked once per real turn (same pattern above).
@@ -739,6 +741,8 @@ func _resolve_stealth_check() -> void:
 			stats.invisibility_just_cast = false
 		else:
 			stats.invisibility_turns = 0
+			if stats.concentration_spell_id == "invisibility":
+				stats.concentration_spell_id = ""
 			GameState.game_log("[color=purple]Your Invisibility ends.[/color]")
 			_update_invisibility_visual()
 	if skip or GameState.noclip or _dungeon_floor == null:
@@ -1060,7 +1064,7 @@ func _update_spell_aoe_preview() -> bool:
 	# always the caster). Sphere: reach = how far the blast's own center can be placed, plus the
 	# blast's own radius (the impact point can land at the edge of range and still splash further
 	# out). Everything else (single-target ENEMY/TILE spells): reach = the spell's plain range.
-	var range_radius: int = spell.shape_size if spell.shape == "cone" else (spell.range_tiles + spell.shape_size if spell.shape == "sphere" else spell.range_tiles)
+	var range_radius: int = spell.shape_size if spell.shape == "cone" else (spell.range_tiles + spell.shape_size if spell.shape in ["sphere", "cube"] else spell.range_tiles)
 	_dungeon_floor.show_spell_range_preview(grid_pos, range_radius, spell.shape == "cone")
 	var world_mouse: Vector2 = get_global_mouse_position()
 	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
@@ -1077,8 +1081,8 @@ func _update_spell_aoe_preview() -> bool:
 		in_range = _dungeon_floor.has_walkable_route_ignoring_chasms(grid_pos, tile)
 	if spell.target_kind == Spell.TargetKind.TILE and spell.shape == "cone":
 		_dungeon_floor.show_cone_preview(grid_pos, tile, spell.shape_size)
-	elif spell.target_kind == Spell.TargetKind.TILE and spell.shape == "sphere":
-		_dungeon_floor.show_aoe_preview(tile, spell.shape_size, in_range)
+	elif spell.target_kind == Spell.TargetKind.TILE and spell.shape in ["sphere", "cube"]:
+		_dungeon_floor.show_aoe_preview(tile, spell.shape_size, in_range, spell.shape)
 	elif spell.target_kind == Spell.TargetKind.ENEMY:
 		_dungeon_floor.show_single_target_preview(tile, in_range)
 	else:
@@ -2125,7 +2129,9 @@ func _try_move(dir: Vector2i) -> void:
 		TurnManager.revert_to_waiting()
 		return
 	elif _longstrider_free_step:
-		GameState.game_log("[color=cyan]Longstrider: your long strides carry you further at no cost.[/color]")
+		# Deliberately silent — no game_log() here. This fires roughly every 3rd move for the
+		# whole ~600-turn duration; the status-tray icon/tooltip already communicates the effect
+		# continuously, so a chat line every 3rd step was pure log spam.
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return

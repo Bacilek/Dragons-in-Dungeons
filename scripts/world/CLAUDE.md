@@ -98,9 +98,15 @@ as visually distinct despite being mechanically identical Heavily Obscured terra
 darkness) for Darkness, `DungeonFloor.FOG_CLOUD_TINT` (`Color(0.55, 0.55, 0.58, 0.72)` — a lighter
 genuine gray) for Fog Cloud; a tile inside both zones renders with Darkness's tint (it's drawn
 second into the shared `tile_colors` dict `_update_fog_cloud_visual()` builds). A raw Euclidean
-disc per zone, not LOS-filtered, and it's still painted regardless of whether the tile is actually
-seeable that turn — you always know roughly where the fog/darkness is, you just can't see what's
-inside it (below). Doesn't itself union into `_visible_tiles`
+disc per zone, **LOS-filtered from the player's own current viewpoint** (`has_line_of_sight
+(_fov_player_pos, tile)`, checked per candidate tile before adding it to `tile_colors`) — **bugfix**:
+this used to paint every tile unconditionally regardless of walls, so an outside viewer could see
+the cloud's exact full shape/extent through a wall or around a corner they had no actual sight
+into. `has_line_of_sight()` excludes its own ray endpoint from the `_blocks_los()` check (breaks
+before testing `to`), so this still shows the near boundary tile even though `_blocks_los()` treats
+heavily-obscured tiles as opaque — only a tile reached by the ray passing THROUGH another
+obscured tile first is correctly hidden, giving exactly "you can tell where the edge is, not what's
+past it." Doesn't itself union into `_visible_tiles`
 the way Light does — the FOV shrink for a player standing INSIDE the cloud happens through the
 shadowcast radius instead, not a separate visibility union. See `scripts/entities/CLAUDE.md`'s
 "Conditions"/"Fog Cloud" sections for the full mechanic: `GameState.is_heavily_obscured(pos)`/
@@ -124,7 +130,17 @@ isn't inside the cloud (`not GameState.is_blinded(player_pos)`) and lacks
 not even its boundary tile, is ever revealed to an outside viewer, while a player already standing
 inside it is unaffected (their own radius is already collapsed to 1 by `effective_fov_radius()`,
 and `_cast_light()`'s unconditional tile-marking still lets them see their own immediate
-neighbors). `DungeonFloor._ignore_magical_darkness: bool` — set true only around the player's own
+neighbors — now correctly all 8 of them, diagonals included, not just the 4 cardinals; see
+`scripts/entities/CLAUDE.md`'s Blinded condition entry for the Euclidean-vs-Chebyshev bugfix).
+**The dimmed "remembered map" fog-of-war view is ALSO suppressed per-zone, not just for the
+viewer's own blinded status**: `update_fog()`'s final per-tile render loop forces any tile inside
+`GameState.is_heavily_obscured(tile_pos)` fully opaque (ignoring `_explored`) whenever the viewer
+isn't themselves blinded and lacks `sees_through_magical_darkness` — bugfix: previously only the
+viewer's OWN blinded status suppressed this dimming, so a tile inside a cloud that had been
+explored before the cloud appeared there still rendered as a dimmed remembered floor plan when
+viewed from outside, contradicting "can't see into a heavily-obscured area at all." `_explored`
+itself is left untouched by this branch, so the tile renders normally again once the cloud ends.
+`DungeonFloor._ignore_magical_darkness: bool` — set true only around the player's own
 `_compute_shadowcast()` call inside `update_fog()` when `Stats.sees_through_magical_darkness` is
 true, reset immediately after — is the one bypass hook; nothing grants that flag today (a stub for
 a future Warlock Devil's Sight-style feature, see `scripts/entities/stats.gd`) — **darkvision and

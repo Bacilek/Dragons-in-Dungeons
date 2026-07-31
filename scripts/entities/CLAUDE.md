@@ -350,12 +350,19 @@ casting for a non-caster).
 | Wood Elf | 35 ft speed (below) | Longstrider | Pass Without Trace |
 
 - **Faerie Fire** (`spell_db.gd`'s `_faerie_fire()`, real 5e class list Bard/Druid, level 1, range
-  3, TILE target, sphere shape_size 2 approximating the real spell's 2-tile cube, SAVE/DEX,
-  Concentration, no damage): `SpellEffects._resolve_faerie_fire()` — one random color (blue/green/
+  3, TILE target, **`shape = "cube"`, shape_size 2** — a real Chebyshev/square footprint matching
+  the spell's actual 2-tile cube (`Spell.shape`'s third value, alongside `""`/`"sphere"`/`"cone"`;
+  threaded through the generic AoE preview system exactly like `cone_tiles()` is shared between
+  resolver and preview — `DungeonFloor.show_aoe_preview()` takes a `shape` param and switches to a
+  Chebyshev bound when `"cube"`, `Player._update_spell_aoe_preview()` passes `spell.shape` through
+  — so the preview can never show a circle for what's actually a square blast), SAVE/DEX,
+  Concentration, no damage. **Bugfix**: this used to be a Euclidean sphere approximation, which
+  excluded the cube's own corner tiles from actually being hit despite being inside the nominal
+  radius. `SpellEffects._resolve_faerie_fire()` — one random color (blue/green/
   violet, `SpellEffects.FAERIE_FIRE_COLORS`, `Rng.pick()`) is rolled ONCE per cast and shared by
   every creature outlined that same cast (`Enemy.faerie_fire_color`) — "outlined in a random color,
-  all the same." Every enemy within the sphere (Euclidean, LOS'd from the impact tile, same
-  target-gathering shape as `_resolve_sphere_aoe()`) rolls a DEX save; on a fail, `Enemy.
+  all the same." Every enemy within the cube (Chebyshev, LOS'd from the impact tile) rolls a DEX
+  save; on a fail, `Enemy.
   faerie_fire_turns = 10` (the caster's own Concentration duration is a separate field,
   `Stats.faerie_fire_turns`, ticked in `player.gd`'s per-turn block alongside Darkness — ending it
   does NOT retroactively un-outline an already-outlined enemy, a documented simplification matching
@@ -655,7 +662,10 @@ TIEFLING branch:
   actually procs" shape as Storm Giant Ancestry's own toggle (see "Goliath" above). While armed,
   `enemy.gd._attack_player()` checks right after a landed hit lands (`actual > 0`): if the
   attacker is within the spell's own `range_tiles` (3) and currently visible
-  (`DungeonFloor.is_tile_visible()`), the armed flag disarms and `SpellEffects.
+  (`DungeonFloor.has_line_of_sight()` — a live geometry check, not the cached `is_tile_visible()`
+  fog snapshot, which is only refreshed by the player's own actions and can be stale for an enemy
+  that moved into sight and attacked in the same round; bugfix, see below), the armed flag disarms
+  and `SpellEffects.
   trigger_hellish_rebuke(player, attacker, dungeon_floor)` fires — no attack roll of its own, just
   a DEX save (`resist_check_detailed(dc, ..., use_dex=true, magical=true)`) at the same Tiefling
   best-ability-mod DC every other legacy spell uses, dealing 2d10 Fire (half on a success) to the
@@ -663,7 +673,13 @@ TIEFLING branch:
   other Fiendish Legacy spell (`Stats.is_tiefling_legacy_free_cast_available()`, falling back to a
   real spell slot for a Wizard/Ranger caster once spent) — if neither is available the reaction
   just can't fire yet and stays armed for the next opportunity. Not serialized
-  (`hellish_rebuke_armed`, combat-transient, same tier as `giant_ancestry_armed`).
+  (`hellish_rebuke_armed`, combat-transient, same tier as `giant_ancestry_armed`). **Trigger gate**
+  is `"hellish_rebuke" in tiefling_legacy_spell_ids` alone — that array only ever contains it via
+  `_grant_tiefling_legacy_spell()`, a Tiefling-only grant in normal play, so it's already the
+  correct, sufficient check. **Bugfix**: a redundant `character_race == TIEFLING` clause used to
+  also be required, which silently blocked it from ever firing once the debug panel's Give Spell
+  (`scripts/ui/CLAUDE.md`'s "Debug panel") made it grantable to a non-Tiefling test character —
+  removed.
 
 - **New spell mechanics introduced for this race** (documented simplifications, matching this
   codebase's established "narrow case, not the full system" precedent):
@@ -703,7 +719,10 @@ TIEFLING branch:
     target is automatically Poisoned — **no save** — approximated as a fixed 2-turn duration (RAW:
     "until the end of your next turn", same simplification precedent as Mind Sliver's own penalty
     die). Reworked from an earlier version that gated the Poisoned application behind a secondary
-    CON save — the poison is now unconditional on a hit, per direct owner correction.
+    CON save — the poison is now unconditional on a hit, per direct owner correction. Shown on
+    Ctrl-Inspect (`PlayerActions.do_inspect()`'s enemy status suffix — bugfix: `enemy.
+    poisoned_condition_turns > 0` used to be missing from that suffix list entirely, so an enemy
+    poisoned by this or any other `poisoned_condition` source showed no debuff at all on Inspect).
   - **Ray of Enfeeblement** (`cast_leveled_save_at_enemy()`'s `"ray_of_enfeeblement"` effect_id
     case, range 3): fully reworked from an ATTACK_ROLL-plus-flat-halving spell into a real
     SAVE/CON, Concentration (up to 10 turns, `Stats.ray_of_enfeeblement_turns`/`_target`, same
@@ -723,7 +742,12 @@ TIEFLING branch:
     (no re-application of the initial-success minor disadv); a fail just decrements toward the
     outer 10-turn Concentration backstop ticked on the caster's side
     (`player.gd._on_turn_started()`).
-  - **Hold Person** (`cast_leveled_save_at_enemy()`'s `"hold_person"` effect_id case, range 3): a
+  - **Hold Person** (`cast_leveled_save_at_enemy()`'s `"hold_person"` effect_id case, range 3):
+    **Humanoid creature_type only** (5e RAW) — checked at the very top of
+    `cast_leveled_save_at_enemy()`, before any turn/slot/animation is spent, since this is a
+    targeting restriction (a Fiend/Undead/etc was never a legal target at all), not a resisted
+    effect like `condition_immunities` (still legally targeted, just no status applied) — an
+    illegal target gets a gray "is unaffected" log line and the cast is a true no-op. A
     failed WIS save, Concentration (up to 10 turns, `Stats.hold_person_turns`/`_target`), sets
     `Enemy.paralyzed_turns = 10` + `Enemy.paralyze_save_dc = dc` — a real, dedicated **Paralyzed**
     condition, distinct from Incapacitated (an earlier version approximated Paralyzed as
@@ -1075,9 +1099,21 @@ player-castable level-2 Illusion spell of the same name (`SpellDb._invisibility(
 underlying mechanism, described once here.
 
 - **Duration field**: `Stats.invisibility_turns` (player) / `Enemy._invis_turns` (enemy) — up to
-  600 turns (5e RAW's "1 hour", at 6 seconds/round), NOT a Concentration effect (5e RAW: Invisibility ends on attacking or casting a
-  spell, not on taking damage, so it deliberately doesn't touch `concentration_spell_id`).
-- **Ending early on attack/cast**: the player's own end-check reuses the Stealth system's existing
+  600 turns (5e RAW's "1 hour", at 6 seconds/round). The PLAYER's own Invisibility **is a real
+  Concentration effect** (`concentration_spell_id == "invisibility"`) — mutually exclusive with any
+  other concentration spell (casting one breaks the other, same guard every concentration-granter
+  opens with in `spell_effects.gd`) and breakable by taking damage via the normal
+  `GameState._check_concentration_break()` CON-check chokepoint, exactly like Blade Ward/Witch
+  Bolt/Fog Cloud/Darkness/etc. **Bugfix / reversed design decision**: this codebase used to
+  deliberately deviate from 5e RAW here (Invisibility genuinely IS Concentration in 5e) to avoid a
+  damage-based break — that deviation was reversed on direct request, so a random hit can now end
+  it early just like any other concentration spell. `GameState.end_concentration()`'s
+  `"invisibility"` branch clears `invisibility_turns`; the natural-expiry and attack/cast-ending
+  tick sites (`player.gd`) also clear `concentration_spell_id` back to `""` once the effect is
+  actually gone. The enemy side (`Enemy._invis_turns`) has no analogous Concentration mechanic —
+  only the player's own casting is affected by this.
+- **Ending early on attack/cast** (still an ADDITIONAL end condition on top of Concentration, per
+  5e RAW's own text): the player's own end-check reuses the Stealth system's existing
   `GameState.stealth_check_skip` flag (already set `true` by every attack/spell-cast call site
   right before its own `begin_player_action()`) — `Player._resolve_stealth_check()` checks it
   first, before the flag is used for its own stealth purpose, and zeroes `invisibility_turns` if
@@ -1368,9 +1404,9 @@ targets an enemy).
 | Prone | `Stats.prone` (not turn-counted) | `Enemy.prone` (not turn-counted) | Melee attacks against the prone creature get ADV, ranged attacks get DISADV (threaded via an `is_ranged: bool` param on `Enemy._attack_player()`/`_attack_companion()`, and a `spell.range_tiles` check for player-cast spells). Can't move — any direction key press instead stands up (ends the condition), costing the turn without moving. An enemy auto-stands at the very top of its own `decide_turn()` instead, consuming ONE point of that turn's movement budget (`_moves_this_turn -= 1`) rather than the whole turn, then falls straight through to its normal decision logic — an enemy with spare movement budget (Aggressive's bonus step, an above-baseline `"speed"` entry) can still close distance and/or attack the same turn it stands. |
 | Restrained | `Stats.web_restrained` (persists until the web is destroyed — Spider's Web is still its only source, see "Spider" below) | *(no enemy-side trigger exists yet — infra would mirror the player's, not built until something needs it)* | Speed 0 (already blocked movement pre-conditions-system). ADV on attacks against the restrained creature (any kind, melee or ranged — unlike Prone's kind-split). DISADV on the restrained creature's own attacks (folds into the same `has_disadvantage_condition()`/`poisoned_condition_turns>0` DISADV pool) and DEX checks specifically (`PlayerThiefTools.attempt_disarm()`, the only player-side DEX check today). |
 | Incapacitated | `Stats.incapacitated_turns` | `Enemy.incapacitated_turns` | "Can't take actions" — blocks player movement/bump-attack (`player.gd._try_move()`) and ability/spell activation (`_use_ability_slot()`); **partial coverage** — mouse-click attacks and item/tool use aren't gated (no current trigger source exists for either side, so this wasn't exhaustively wired; extend these two gates if a future ability actually inflicts it). Breaks Concentration immediately (`GameState.apply_player_status()`'s `"incapacitated"` case calls `end_concentration()`). On the enemy side: skips its entire turn (`decide_turn()`'s very first check, same shape Prone used to have before this rework) AND makes every player attack against it a Surprise Attack (`PlayerVfx.has_advantage()`), since "every attack against it is a Surprise Attack" is 5e's own Incapacitated text and this engine's Surprise Attack mechanism already IS exactly that (flat +1 ADV). |
-| Blinded | `GameState.is_blinded(pos)` (positional, no Stats field — see "Fog Cloud" below) | same query, symmetric | ADV on attacks against a Blinded creature, DISADV on its own attacks (both sides, player and enemy). Vision collapses to a flat 1-tile radius (`GameState.effective_fov_radius()`), overriding every other bonus including darkvision. **A Blinded attacker's own reach also collapses to 1 tile (Chebyshev)** for ranged weapons (`PlayerRanged.is_ranged_target_in_range()`), thrown weapons (`PlayerThrowTool._throw_weapon()`), spells (`PlayerSpellcasting._effective_range()`), and the enemy-side mirrors (`Enemy._in_attack_range()`'s `"ranged"` branch, `Enemy._pick_ready_ability()`'s `max_reach`) — a weapon/spell's own longer range is simply unreachable while fighting blind; melee is unaffected (already 1 tile). "Auto-fails sight-based checks" is NOT implemented (no concrete "sight check" mechanic exists in this engine to gate). |
+| Blinded | `GameState.is_blinded(pos)` (positional, no Stats field — see "Fog Cloud" below) | same query, symmetric | ADV on attacks against a Blinded creature, DISADV on its own attacks (both sides, player and enemy). Vision collapses to a flat 1-tile radius (`GameState.effective_fov_radius()`), overriding every other bonus including darkvision — a real 3×3 block (Chebyshev), all 8 neighbors including diagonals, NOT just the 4 cardinals (bugfix: `DungeonFloor._cast_light()`/`get_visible_enemies()`'s shared Euclidean radius-bound check, `dx²+j² <= r²`, mathematically excludes a true diagonal neighbor at `radius=1` since its distance² is 2 > 1 — both now special-case Chebyshev whenever the effective radius is ≤1). **The enemy side is symmetric too**: `Enemy._sight_range()` now also collapses to 1 while the enemy itself stands in a Fog Cloud/Darkness zone (previously it never checked `is_blinded()` at all, so a blinded enemy kept its full normal sight radius), and `Enemy._can_see_entity()`'s own distance check gets the same Chebyshev-at-radius-1 fix. **A Blinded attacker's own reach also collapses to 1 tile (Chebyshev)** for ranged weapons (`PlayerRanged.is_ranged_target_in_range()`), thrown weapons (`PlayerThrowTool._throw_weapon()`), spells (`PlayerSpellcasting._effective_range()`), and the enemy-side mirrors (`Enemy._in_attack_range()`'s `"ranged"` branch, `Enemy._pick_ready_ability()`'s `max_reach`) — a weapon/spell's own longer range is simply unreachable while fighting blind; melee is unaffected (already 1 tile). "Auto-fails sight-based checks" is NOT implemented (no concrete "sight check" mechanic exists in this engine to gate). |
 | Frightened | `Stats.frightened_source: Enemy`/`frightened_turns`/`frightened_save_dc` (live ref, NOT serialized — same precedent as `hunters_mark_target`/`witch_bolt_target`) — only Quasit's Scare inflicts it, always targeting the player | `Enemy.frightened_turns` — a SEPARATE, simplified mirror (no live source-reference tracking exists on the enemy side, unlike the player's own `frightened_source`), only Aasimar's Necrotic Shroud (Celestial Revelation transformation, see "Aasimar" above) inflicts it | Player-side: DISADV on attacks/checks ONLY while the source is in LOS (`Player._frightened_active()` — NOT unconditional like the other three, hence its own helper rather than folding into `has_disadvantage_condition()`). Can't willingly move closer to the source via voluntary movement (`Player._frightened_blocks_move_to()`, checked in both `_try_move()` and the queued-path executor — forced movement like Push/a chasm shove is unaffected since it never calls either). Repeats a WIS save once per real turn (`Player._on_turn_started()`, vs `frightened_save_dc`) — success ends it early, a fail ticks toward the outer ~10-turn "1 minute" cap. Auto-clears if the source dies (`Enemy.die()`). Enemy-side: DISADV on the enemy's own attack rolls only (folded into `_attack_player()`/`_attack_companion()`'s existing `poisoned_condition_turns`-style disadv aggregation) — no can't-approach-the-source movement block, fixed 2-turn duration instead of a repeated save (documented simplification). |
-| Paralyzed | *(no player-side trigger exists yet — infra would mirror the enemy's, not built until something needs it)* | `Enemy.paralyzed_turns`/`paralyze_save_dc` — Hold Person only (Abyssal Tiefling lineage spell, see "Wizard leveled spells" above); its own dedicated condition, NOT an alias of Incapacitated (an earlier version approximated it that way) | Speed 0 (already blocked movement — skips the enemy's ENTIRE turn in `decide_turn()`, same shape as Incapacitated). Auto-fails its own STR and DEX checks/saves (`resist_check_detailed()` forces `passed = false` whenever the resolved stat is STR or DEX, though Legendary Resistance can still override the forced fail afterward). Every attack made against it has Advantage (`PlayerVfx.has_advantage()`). Any HIT made from within 1 tile of it is an automatic critical hit (`player.gd._bump_attack()` — melee is always within 1 tile, so this fires unconditionally there; ranged/thrown/spell attacks from further away are unaffected, matching RAW's own "within 5 feet" text; a natural-1 miss still misses). Repeats a WIS save at the end of each of the enemy's own turns (`decide_turn()`, vs `paralyze_save_dc`) — success ends it early and ends Concentration (`Stats.hold_person_turns`/`_target`); a fail ticks toward the outer 10-turn Concentration backstop. |
+| Paralyzed | *(no player-side trigger exists yet — infra would mirror the enemy's, not built until something needs it)* | `Enemy.paralyzed_turns`/`paralyze_save_dc` — Hold Person only, **Humanoid targets only** (Abyssal Tiefling lineage spell, see "Wizard leveled spells" above); its own dedicated condition, NOT an alias of Incapacitated (an earlier version approximated it that way) | Speed 0 (already blocked movement — skips the enemy's ENTIRE turn in `decide_turn()`, same shape as Incapacitated). Auto-fails its own STR and DEX checks/saves (`resist_check_detailed()` forces `passed = false` whenever the resolved stat is STR or DEX, though Legendary Resistance can still override the forced fail afterward). Every attack made against it has Advantage (`PlayerVfx.has_advantage()`). Any HIT made from within 1 tile of it is an automatic critical hit (`player.gd._bump_attack()` — melee is always within 1 tile, so this fires unconditionally there; ranged/thrown/spell attacks from further away are unaffected, matching RAW's own "within 5 feet" text; a natural-1 miss still misses). Repeats a WIS save at the end of each of the enemy's own turns (`decide_turn()`, vs `paralyze_save_dc`) — success ends it early and ends Concentration (`Stats.hold_person_turns`/`_target`); a fail ticks toward the outer 10-turn Concentration backstop. **Animation freezes while paralyzed**: `Enemy._refresh_paralyzed_visual()` sets `$AnimatedSprite2D.speed_scale = 0.0` whenever `paralyzed_turns > 0` (else `1.0`) — the sprite otherwise only ever plays a single looping `"idle"` clip regardless of turn-system state (no `"run"` animation swap exists anywhere; movement is a position tween), so without this it kept visibly bobbing even while fully paralyzed. Called from every write site (Hold Person's own cast, the repeated-save pass branch, `GameState.end_concentration()`'s external clear) and from every place that rebuilds `sprite_frames` from scratch (`_setup_animations()`/`_setup_sheet_animations()`/`_refresh_shape_shift_visual()`), so a paralyzed shape-shifter that takes damage and reverts form doesn't silently un-freeze. |
 
 **Apply a condition** (mirrors the DoT-status shape above): `GameState.apply_player_status("poisoned_condition"|"prone"|"incapacitated", turns)` (player) or `Enemy.apply_status("prone"|"poisoned_condition"|"incapacitated"|"frightened", turns)` (enemy) — Restrained has no generic apply path since Web sets `web_restrained`/`web_escape_dc` directly (a persistent flag + escape DC, not a turn counter, so it doesn't fit the shared `turns` shape); Frightened has its own dedicated `GameState.apply_player_frightened(source, turns, save_dc)`/`clear_player_frightened()` (needs a live source reference the generic shape can't carry); Paralyzed has no generic apply path either — Hold Person sets `Enemy.paralyzed_turns`/`paralyze_save_dc` directly (needs the DC alongside the turn count, same reason Frightened bypasses the shared shape) — and Blinded has no apply path at all (purely derived from position, see `is_heavily_obscured()`/`is_blinded()`). `"turns"` is ignored for Prone (bool, not counted).
 
@@ -2117,8 +2153,15 @@ own `SpellDb.get_spell(id).icon_path` (purple fallback tint) — so the icon and
 always reflect whichever spell is actually being concentrated on, not a generic fixed icon.
 `StatusTooltips.build_bbcode("concentration")` special-cases the title to read "Concentrating:
 &lt;Spell Name&gt;" by looking up `concentration_spell_id` live, rather than a static `TITLES` entry.
+The tooltip body also appends a turns-remaining line via `Stats.concentration_turns_remaining()`
+— a `match concentration_spell_id` mirroring `end_concentration()`'s own exhaustive match of every
+concentration spell's duration field; any new concentration-granting spell must add itself to
+both.
 
-See "Blade Ward" above and "Witch Bolt" below for each spell's own mechanism.
+See "Blade Ward" above and "Witch Bolt" below for each spell's own mechanism. Concentration spells
+today: Blade Ward, Witch Bolt, Expeditious Retreat, Fog Cloud, Darkness, Detect Magic, Pass Without
+Trace, Hunter's Mark, Ray of Enfeeblement, Hold Person, Faerie Fire, and **Invisibility** (see its
+own section below — a real Concentration effect, including breaking on damage).
 
 ## Wizard leveled spells (spell slots)
 

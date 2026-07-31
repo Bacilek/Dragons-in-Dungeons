@@ -365,6 +365,27 @@ var zealous_presence_turns: int = 0  # Zealot Zealous Presence — Advantage on 
 # spell reuses it, breaking whatever the caster was already concentrating on (5e: only one
 # concentration effect at a time).
 var concentration_spell_id: String = ""
+
+## Turns remaining on whichever spell concentration_spell_id currently names, for the status tray
+## tooltip (scripts/ui/status_tooltips.gd) — mirrors GameState.end_concentration()'s own exhaustive
+## match of every concentration spell's duration field. Returns 0 when not concentrating, or for a
+## (should-never-happen) unmatched id. Any new concentration-granting spell must add itself here
+## too, same maintenance burden as end_concentration().
+func concentration_turns_remaining() -> int:
+	match concentration_spell_id:
+		"blade_ward": return blade_ward_turns
+		"witch_bolt": return witch_bolt_turns
+		"expeditious_retreat": return expeditious_retreat_turns
+		"fog_cloud": return fog_cloud_turns
+		"darkness": return darkness_turns
+		"detect_magic": return detect_magic_turns
+		"pass_without_trace": return pass_without_trace_turns
+		"hunters_mark": return hunters_mark_turns
+		"ray_of_enfeeblement": return ray_of_enfeeblement_turns
+		"hold_person": return hold_person_turns
+		"faerie_fire": return faerie_fire_turns
+		"invisibility": return invisibility_turns
+		_: return 0
 # Blade Ward's own duration — ticks down once per real player turn (player.gd _on_turn_started(),
 # same "if not came_from_revert" block as shield_ac_bonus); reaching 0 ends the effect and clears
 # concentration_spell_id. Also cleared early if a CON concentration-check fails on taking damage
@@ -456,13 +477,15 @@ const PASS_WITHOUT_TRACE_BONUS: int = 10
 var minor_illusion_turns: int = 0
 const MINOR_ILLUSION_BONUS: int = 5
 
-# Invisibility (level-2 spell, touch/self) — NOT a concentration effect (5e RAW: it ends on
-# attacking or casting a spell, not on taking damage, so it doesn't use concentration_spell_id at
-# all). Ticked in player.gd's per-real-turn block; ended early via Player._resolve_stealth_check()
-# reading GameState.stealth_check_skip (the same "this turn was an attack/spell-cast" flag the
-# Stealth-vs-Passive-Perception system already sets at every attack/cast call site — see
-# scripts/entities/CLAUDE.md's "Invisibility" section). Deliberately NOT serialized, same
-# mid-floor-only simplification as witch_bolt_turns/fog_cloud_turns above.
+# Invisibility (level-2 spell, touch/self) — a real Concentration effect (concentration_spell_id
+# == "invisibility"), same mutual-exclusion + damage-based CON-check break as every other
+# concentration spell (GameState._check_concentration_break(), via take_damage_raw()'s tail). Also
+# still ends early on attacking/casting a spell (5e RAW's OWN additional end condition, on top of
+# concentration) via Player._resolve_stealth_check() reading GameState.stealth_check_skip (the
+# same "this turn was an attack/spell-cast" flag the Stealth-vs-Passive-Perception system already
+# sets at every attack/cast call site — see scripts/entities/CLAUDE.md's "Invisibility" section).
+# Ticked in player.gd's per-real-turn block. Deliberately NOT serialized, same mid-floor-only
+# simplification as witch_bolt_turns/fog_cloud_turns above.
 var invisibility_turns: int = 0
 # Set true on cast, consumed (cleared) the first time _resolve_stealth_check() runs afterward —
 # skips ending Invisibility on its OWN casting turn (cast_leveled_self() sets stealth_check_skip

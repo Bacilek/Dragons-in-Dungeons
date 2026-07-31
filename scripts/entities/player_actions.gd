@@ -126,6 +126,8 @@ func do_inspect(pos: Vector2i) -> void:
 			status_suffix += " [color=cyan]Shocked[/color]"
 		if GameState.player_stats.witch_bolt_turns > 0 and GameState.player_stats.witch_bolt_target == enemy:
 			status_suffix += " [color=cyan]Jolted[/color]"
+		if enemy.poisoned_condition_turns > 0:
+			status_suffix += " [color=lime]Poisoned[/color]"
 		if GameState.god_mode:
 			GameState.game_log("[color=orange]%s[/color] — HP: %d/%d  AC: %d  Dmg: %d–%d  EXP: %d%s%s" % [
 				enemy.display_name,

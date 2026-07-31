@@ -455,9 +455,16 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			GameState.player_hp_changed.emit(player.stats.current_hp, player.stats.max_hp)
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — a sickly resilience grants [color=lightblue]%d[/color] Temp HP.[/color]" % [spell.spell_name, total])
 		"invisibility":
-			# NOT concentration (5e RAW: ends on attacking/casting, not on taking damage) — see
-			# Stats.invisibility_turns's own doc comment. invisibility_just_cast skips this same
-			# cast's own stealth_check_skip=true (set above) from immediately ending it.
+			# A real Concentration spell, same as Blade Ward/Witch Bolt/Fog Cloud/Darkness/etc —
+			# mutually exclusive with any other concentration spell, AND breakable by taking damage
+			# via the normal GameState._check_concentration_break() CON-check chokepoint (direct
+			# owner request — this codebase used to deliberately deviate from 5e RAW here to avoid
+			# a damage-based break; that deviation was reversed on request, so it's now identical to
+			# every other concentration effect). invisibility_just_cast still skips this same cast's
+			# own stealth_check_skip=true (set above) from immediately ending it.
+			if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "invisibility":
+				GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+			player.stats.concentration_spell_id = "invisibility"
 			player.stats.invisibility_turns = 600
 			player.stats.invisibility_just_cast = true
 			player._update_invisibility_visual()
@@ -941,6 +948,13 @@ static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_leve
 # with dice_count <= 0 is a pure debuff/condition with no damage roll at all (Hold Person); any
 # other spell deals damage, halved on a successful save (Hellish Rebuke, spell.save_for_half).
 static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	# Hold Person only works on Humanoids (5e RAW) — a targeting restriction, not a resisted
+	# effect, so it's checked before any turn/slot/animation is spent: a Fiend (Big Demon, etc.)
+	# was never a legal target at all, unlike a condition-immune creature (still legally targeted,
+	# just doesn't get the status — see Enemy.apply_status()'s condition_immunities gate).
+	if spell.effect_id == "hold_person" and target.creature_type != "Humanoid":
+		GameState.game_log("[color=gray]%s is unaffected — Hold Person only works on Humanoids.[/color]" % target.display_name)
+		return
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	target.on_disturbed(player.grid_pos)
@@ -978,6 +992,7 @@ static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level:
 				"hold_person":
 					target.paralyzed_turns = 10
 					target.paralyze_save_dc = dc
+					target._refresh_paralyzed_visual()
 					stats.concentration_spell_id = "hold_person"
 					stats.hold_person_target = target
 					stats.hold_person_turns = 10
@@ -1167,7 +1182,9 @@ static func _resolve_faerie_fire(player: Player, spell: Spell, center: Vector2i,
 		if not is_instance_valid(e) or e.stats.is_dead():
 			continue
 		var d: Vector2i = e.grid_pos - center
-		if d.x * d.x + d.y * d.y > r * r:
+		# Faerie Fire is a real 5e cube (Chebyshev/square footprint), not a sphere — a straight
+		# Euclidean radius check used to exclude the cube's own corner tiles.
+		if maxi(absi(d.x), absi(d.y)) > r:
 			continue
 		if not dungeon_floor.has_ranged_los(center, e.grid_pos):
 			continue

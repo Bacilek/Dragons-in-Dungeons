@@ -617,6 +617,21 @@ func die() -> void:
 		GameState.clear_player_frightened()
 	super.die()
 
+# Freezes/resumes the AnimatedSprite2D while Paralyzed (Hold Person) — the sprite otherwise only
+# ever plays a single looping "idle" clip (no "run" animation swap exists; movement is a position
+# tween, not an animation change), so it kept visibly bobbing every engine frame regardless of the
+# turn system even while decide_turn() correctly short-circuits all game logic for a paralyzed
+# enemy. speed_scale = 0 freezes on the current frame with no reset/restart semantics (unlike
+# calling .play() again, which would restart from frame 0) — resumes cleanly via speed_scale = 1.
+# Called from every paralyzed_turns write site (cast, save-pass, external concentration-break) AND
+# from every place that rebuilds sprite_frames from scratch (_setup_animations()/
+# _setup_sheet_animations()/_refresh_shape_shift_visual()'s own play("idle") calls), since those
+# would otherwise silently un-freeze a paralyzed shape-shifter that takes damage and reverts form.
+func _refresh_paralyzed_visual() -> void:
+	if not is_instance_valid(self) or not has_node("AnimatedSprite2D"):
+		return
+	$AnimatedSprite2D.speed_scale = 0.0 if paralyzed_turns > 0 else 1.0
+
 func _setup_animations() -> void:
 	var variants: Array = _type.get("sprite_variants", [])
 	if not variants.is_empty():
@@ -643,6 +658,7 @@ func _setup_animations() -> void:
 	$AnimatedSprite2D.sprite_frames = frames
 	$AnimatedSprite2D.offset = Vector2(0, -8)
 	$AnimatedSprite2D.play("idle")
+	_refresh_paralyzed_visual()
 
 # Filenames are 1-indexed (idle_1.png, idle_2.png, ...), not 0-indexed.
 func _add_anim(frames: SpriteFrames, anim_name: String, path_fmt: String,
@@ -681,6 +697,7 @@ func _setup_sheet_animations(variants: Array) -> void:
 	$AnimatedSprite2D.offset = Vector2(float(offset.get("x", 0)), float(offset.get("y", -8)))
 	$AnimatedSprite2D.scale = Vector2.ONE * float(_type.get("sprite_scale", 1.0))
 	$AnimatedSprite2D.play("idle")
+	_refresh_paralyzed_visual()
 
 func _add_anim_sheet(frames: SpriteFrames, anim_name: String, sheet_path: String,
 					  count: int, fw: int, fh: int, loop: bool, fps: float) -> void:
@@ -725,6 +742,7 @@ func _refresh_shape_shift_visual() -> void:
 	$AnimatedSprite2D.offset = Vector2(0, -8)
 	$AnimatedSprite2D.scale = Vector2.ONE * float(cfg.get("scale", 1.0))
 	$AnimatedSprite2D.play("idle")
+	_refresh_paralyzed_visual()
 
 func _setup_zzz() -> void:
 	_zzz_label = Label.new()
@@ -912,8 +930,13 @@ func _chebyshev_to(e: Node) -> int:
 
 # §10: pool "senses" -> "sight_bonus" is an offset relative to FOV_RADIUS (e.g. +1 = darkvision,
 # +2 = superior darkvision, -1 = weak sight), so changing the default FOV_RADIUS doesn't require
-# re-touching every enemy's authored value. Absent = 0 (FOV_RADIUS unchanged).
+# re-touching every enemy's authored value. Absent = 0 (FOV_RADIUS unchanged). Collapses to 1 while
+# THIS enemy is standing inside a Fog Cloud/Darkness zone (GameState.is_blinded()) — same symmetric
+# treatment as the player's own GameState.effective_fov_radius(), so an enemy caught in a cloud is
+# just as sense-limited as the player would be standing there.
 func _sight_range() -> int:
+	if GameState.is_blinded(grid_pos):
+		return 1
 	return FOV_RADIUS + int(_type.get("senses", {}).get("sight_bonus", 0))
 
 func _can_see_entity(e: Node) -> bool:
@@ -931,7 +954,11 @@ func _can_see_entity(e: Node) -> bool:
 	if _has_trait("web_walker") and e is Player and GameState.player_stats.web_restrained:
 		return true
 	var r: int = _sight_range()
-	return _dist_sq_to(e) <= r * r and _dungeon_floor.has_line_of_sight(nearest_occupied_tile(e.grid_pos), e.grid_pos)
+	# Chebyshev at r<=1 (Blinded) instead of the normal Euclidean _dist_sq_to() bound — a plain
+	# Euclidean check at r=1 would exclude a true diagonal-adjacent target (dist²=2 > 1), leaving a
+	# blinded enemy unable to notice something standing diagonally next to it.
+	var within_radius: bool = (_chebyshev_to(e) <= r) if r <= 1 else (_dist_sq_to(e) <= r * r)
+	return within_radius and _dungeon_floor.has_line_of_sight(nearest_occupied_tile(e.grid_pos), e.grid_pos)
 
 # Adjacency wins first (first to reach range gets attacked); ties broken by lower current HP.
 # Otherwise, whichever candidate is nearer is the one stepped toward / seen.
@@ -1018,6 +1045,7 @@ func decide_turn() -> Dictionary:
 			par_save["die"], par_save["mod"], par_save["floor_bonus"], par_save["prof_label"], par_save["total"], par_save["dc"], par_save["stat"], int(par_save["pass"]), par_save["sliver_penalty"]]
 		if par_save["pass"]:
 			paralyzed_turns = 0
+			_refresh_paralyzed_visual()
 			GameState.game_log("%s [url=%s]breaks free[/url] of the paralysis!" % [display_name, par_meta])
 			if GameState.player_stats.concentration_spell_id == "hold_person" and GameState.player_stats.hold_person_target == self:
 				GameState.end_concentration()
@@ -2006,11 +2034,20 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	# Hellish Rebuke (Infernal Tiefling, see player_tiefling.gd/spell_effects.gd's own
 	# trigger_hellish_rebuke() comment): toggled on, the next enemy the player can see within the
 	# spell's own range that deals ANY damage to the player is engulfed in flames. Consumes the
-	# armed flag only when it actually procs (visible + in range + still alive).
-	if actual > 0 and not stats.is_dead() and GameState.player_stats.character_race == Stats.CharacterRace.TIEFLING \
-			and GameState.player_stats.hellish_rebuke_armed and "hellish_rebuke" in GameState.player_stats.tiefling_legacy_spell_ids:
+	# armed flag only when it actually procs (visible + in range + still alive). Gated only on
+	# "hellish_rebuke" in tiefling_legacy_spell_ids — that's already the correct, sufficient check
+	# (that array only ever contains it via _grant_tiefling_legacy_spell(), a Tiefling-only grant in
+	# normal play); a redundant character_race == TIEFLING clause used to also be required here,
+	# which silently blocked it from ever firing when debug-granted to a non-Tiefling test
+	# character (bugfix — matches "arms but never goes off").
+	if actual > 0 and not stats.is_dead() and GameState.player_stats.hellish_rebuke_armed \
+			and "hellish_rebuke" in GameState.player_stats.tiefling_legacy_spell_ids:
 		var hr_spell: Spell = SpellDb.get_spell("hellish_rebuke")
-		if min_dist_to(_player.grid_pos) <= hr_spell.range_tiles and _dungeon_floor != null and _dungeon_floor.is_tile_visible(grid_pos):
+		# Live LOS check (has_line_of_sight), not the cached _visible_tiles snapshot
+		# (is_tile_visible()) — that snapshot is only refreshed by the PLAYER's own update_fog()
+		# calls, so it can be stale for an enemy that moved into sight and attacked in the same
+		# round (bugfix — a same-round mover's exposure could be silently missed).
+		if min_dist_to(_player.grid_pos) <= hr_spell.range_tiles and _dungeon_floor != null and _dungeon_floor.has_line_of_sight(_player.grid_pos, grid_pos):
 			GameState.player_stats.hellish_rebuke_armed = false
 			SpellEffects.trigger_hellish_rebuke(_player, self, _dungeon_floor)
 	# Rage's 50% DR (take_damage_raw()) was live for this hit whenever the player was raging AND

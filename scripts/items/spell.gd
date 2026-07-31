@@ -46,8 +46,8 @@ enum TargetKind { ENEMY, SELF, TILE }
 # clicked/hovered tile — see SpellEffects.cone_tiles()/PlayerSpellcasting.try_cast_at()'s
 # shape == "cone" special-case (the clicked tile only supplies a direction, not an impact point,
 # so it's exempt from the normal range/LOS gate).
-@export var shape: String = ""         # "" = single target, "sphere" = AoE radius, "cone" = 90° arc
-@export var shape_size: int = 0        # sphere: radius in tiles; cone: length in tiles
+@export var shape: String = ""         # "" = single target, "sphere" = AoE radius (Euclidean), "cone" = 90° arc, "cube" = AoE radius (Chebyshev/square, Faerie Fire)
+@export var shape_size: int = 0        # sphere/cube: radius in tiles; cone: length in tiles
 
 @export var effect_id: String = ""     # "" = pure generic damage; else SpellEffects dispatch
 @export var class_list: Array[String] = []

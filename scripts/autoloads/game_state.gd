@@ -2905,7 +2905,12 @@ func end_concentration(reason_log: String = "") -> void:
 		player_stats.hold_person_turns = 0
 		if is_instance_valid(player_stats.hold_person_target):
 			player_stats.hold_person_target.paralyzed_turns = 0
+			player_stats.hold_person_target._refresh_paralyzed_visual()
 		player_stats.hold_person_target = null
+	elif broken_spell == "faerie_fire":
+		player_stats.faerie_fire_turns = 0
+	elif broken_spell == "invisibility":
+		player_stats.invisibility_turns = 0
 	if reason_log != "":
 		game_log(reason_log)
 

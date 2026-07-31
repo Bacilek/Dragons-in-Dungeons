@@ -641,6 +641,14 @@ func update_fog(player_pos: Vector2i) -> void:
 			if _visible_tiles.has(tile_pos):
 				_explored[tile_pos] = true
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0))
+			elif GameState.is_heavily_obscured(tile_pos) and not _player_blinded and not GameState.player_stats.sees_through_magical_darkness:
+				# A tile inside a Fog Cloud/Darkness zone is never shown via the dimmed "remembered
+				# map" even if it was explored before the cloud appeared there — you can't see into
+				# a heavily-obscured area from outside it, full stop, not even a memory of its
+				# layout. Deliberately doesn't touch _explored, so the tile renders normally again
+				# once the cloud dissipates. A tile just outside the zone's own radius is untouched
+				# by this branch (is_heavily_obscured() only matches strictly inside it).
+				_fog_image.set_pixel(x, y, Color(0, 0, 0, 1.0))
 			elif _explored.get(tile_pos, false) and not _player_blinded:
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0.65))
 			else:
@@ -674,15 +682,20 @@ var _aoe_preview_tex: ImageTexture
 # individual distance from the caster — a splash spell aimed at the LAST valid tile in range still
 # correctly reds out enemies caught in the overhang beyond that range circle, since the blast
 # radius is centered on a legitimately-reachable impact point.
-func show_aoe_preview(center: Vector2i, radius: int, center_in_range: bool = true) -> void:
+func show_aoe_preview(center: Vector2i, radius: int, center_in_range: bool = true, shape: String = "sphere") -> void:
 	var tiles: Array[Vector2i] = []
+	var is_cube: bool = shape == "cube"
 	for dy: int in range(-radius, radius + 1):
 		for dx: int in range(-radius, radius + 1):
-			if dx * dx + dy * dy <= radius * radius:
+			# Cube (Faerie Fire — a real 5e square/Chebyshev footprint) vs. sphere (Fireball — a
+			# real Euclidean blast radius): the preview must match whichever shape the resolver
+			# actually uses, same "shared shape, preview and resolver can never diverge" precedent
+			# as show_cone_preview()'s cone_tiles() reuse below.
+			if (maxi(absi(dx), absi(dy)) <= radius) if is_cube else (dx * dx + dy * dy <= radius * radius):
 				var t: Vector2i = center + Vector2i(dx, dy)
 				if _in_grid_bounds(t):
 					tiles.append(t)
-	_paint_aoe_preview_tiles("sphere,%d,%d,%d,%d" % [center.x, center.y, radius, int(center_in_range)], tiles, center_in_range)
+	_paint_aoe_preview_tiles("%s,%d,%d,%d,%d" % [shape, center.x, center.y, radius, int(center_in_range)], tiles, center_in_range)
 
 # Every tile-preview overlay (blue max-reach backdrop, purple/red sphere footprint, two-tone ranged
 # backdrop) is a raw Euclidean/Chebyshev disc computed from the caster's position with no wall/LOS
@@ -1130,7 +1143,16 @@ func _update_fog_cloud_visual() -> void:
 		for dy: int in range(-radius, radius + 1):
 			for dx: int in range(-radius, radius + 1):
 				if dx * dx + dy * dy <= radius * radius:
-					tile_colors[center + Vector2i(dx, dy)] = tint
+					var t: Vector2i = center + Vector2i(dx, dy)
+					# LOS-filtered from the player's own current viewpoint: a heavily-obscured
+					# zone is impenetrable to sight like a wall (_blocks_los()'s own check), so an
+					# outside viewer should only ever see its near boundary tinted, never the full
+					# shape/extent through walls or around corners. has_line_of_sight() excludes
+					# its own endpoint from the block check, so the boundary tile itself still
+					# renders even though it's heavily obscured — only a tile reached by passing
+					# THROUGH another obscured tile first correctly stays hidden.
+					if has_line_of_sight(_fov_player_pos, t):
+						tile_colors[t] = tint
 	var tiles: Array = tile_colors.keys()
 	while _fog_cloud_sprites.size() < tiles.size():
 		var spr := Sprite2D.new()
@@ -1353,7 +1375,12 @@ func _cast_light(visible: Dictionary, center: Vector2i, radius: int,
 				continue
 			elif end > l_slope:
 				break
-			if dx * dx + j * j <= r2 and x >= 0 and x < _data.width and y >= 0 and y < _data.height:
+			# Euclidean radius bound gives a normal circular FOV at any larger radius, but at
+			# radius<=1 (Blinded — see GameState.effective_fov_radius()) it mathematically excludes
+			# all 4 true diagonal neighbors (dx²+j²=2 > 1) — a groping-blind creature should still
+			# sense all 8 adjacent tiles, not just the 4 cardinals. Chebyshev at radius<=1 only.
+			var within_radius: bool = (maxi(absi(dx), absi(j)) <= radius) if radius <= 1 else (dx * dx + j * j <= r2)
+			if within_radius and x >= 0 and x < _data.width and y >= 0 and y < _data.height:
 				visible[Vector2i(x, y)] = true
 			if blocked:
 				if _blocks_los(x, y):
@@ -1737,7 +1764,10 @@ func get_visible_enemies() -> Array[Enemy]:
 		var near: Vector2i = e.nearest_occupied_tile(_player.grid_pos)
 		var dx: int = near.x - _player.grid_pos.x
 		var dy: int = near.y - _player.grid_pos.y
-		if dx * dx + dy * dy <= r2 and has_line_of_sight(_player.grid_pos, near):
+		# Same Chebyshev-at-radius<=1 fix as _cast_light() above — a plain Euclidean bound would
+		# exclude a true diagonal neighbor while Blinded (dx²+dy²=2 > 1).
+		var within_radius: bool = (maxi(absi(dx), absi(dy)) <= eff_radius) if eff_radius <= 1 else (dx * dx + dy * dy <= r2)
+		if within_radius and has_line_of_sight(_player.grid_pos, near):
 			result.append(e)
 	return result
 

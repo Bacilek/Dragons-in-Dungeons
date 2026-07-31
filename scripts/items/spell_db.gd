@@ -475,7 +475,7 @@ static func _faerie_fire() -> Spell:
 	s.level = 1
 	s.range_tiles = 3
 	s.target_kind = Spell.TargetKind.TILE
-	s.shape = "sphere"
+	s.shape = "cube"
 	s.shape_size = 2
 	s.resolution = Spell.Resolution.SAVE
 	s.save_stat = "DEX"
