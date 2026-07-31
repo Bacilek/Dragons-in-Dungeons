@@ -917,29 +917,13 @@ static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_leve
 				GameState.game_log("[color=cyan]%s is Jolted — crackling energy will keep striking it.[/color]" % target.display_name)
 		"ray_of_sickness":
 			# Abyssal Tiefling lineage spell (level 3 grant): attack roll + damage exactly like
-			# Chromatic Orb, plus a secondary CON save on a landed non-lethal hit — a fail applies
-			# the real Poisoned condition for 2 turns (simplified from RAW's "until the end of your
-			# next turn" — same fixed-duration precedent as Mind Sliver's own documented gap).
+			# Chromatic Orb. On a landed non-lethal hit the target is automatically Poisoned —
+			# no save — approximated as a fixed 2-turn duration (RAW: "until the end of your next
+			# turn", same fixed-duration precedent as Mind Sliver's own documented gap).
 			var res3: Dictionary = _resolve_spell_attack_bolt(player, spell, target, spell.damage_type, dungeon_floor, false)
 			if res3["hit"] and not res3["lethal"]:
-				var dc3: int = _save_dc(player.stats, spell)
-				var save3: Dictionary = target.resist_check_detailed(dc3, true, false, false, false, true)
-				var save_meta3: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
-					save3["die"], save3["mod"], save3["floor_bonus"], save3["prof_label"], save3["total"], save3["dc"], save3["stat"], int(save3["pass"]), save3["sliver_penalty"]]
-				if save3["pass"]:
-					GameState.game_log("%s [url=%s]fights off[/url] the sickness." % [target.display_name, save_meta3])
-				else:
-					target.apply_status("poisoned_condition", 2)
-					GameState.game_log("%s [url=%s]retches and doubles over[/url] — Poisoned!" % [target.display_name, save_meta3])
-		"ray_of_enfeeblement":
-			# Chthonic Tiefling lineage spell (level 5 grant): attack roll for a minor Necrotic
-			# sting, then on a hit the target is Enfeebled — its own physical weapon damage is
-			# halved for 10 turns (Enemy.enfeeble_turns, see enemy.gd's _attack_player()). No repeat
-			# CON save to end it early (same documented simplification as Ray of Sickness above).
-			var res4: Dictionary = _resolve_spell_attack_bolt(player, spell, target, spell.damage_type, dungeon_floor, false)
-			if res4["hit"] and not res4["lethal"]:
-				target.enfeeble_turns = 10
-				GameState.game_log("[color=cyan]%s's muscles wither — its weapon damage is halved![/color]" % target.display_name)
+				target.apply_status("poisoned_condition", 2)
+				GameState.game_log("[color=cyan]%s retches and doubles over — Poisoned![/color]" % target.display_name)
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
@@ -968,16 +952,36 @@ static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level:
 		save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 
 	if spell.dice_count <= 0:
-		if save["pass"]:
+		if save["pass"] and spell.effect_id == "ray_of_enfeeblement":
+			# A successful CON save still leaves a minor one-shot debuff: Disadvantage on the
+			# target's own next attack roll (reuses Grip of the Forest R3's field/consumption
+			# point) — the spell otherwise ends here, no Concentration started.
+			target.disadv_next_attack = true
+			GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s resists[/url], but reels for a moment.[/color]" % [
+				spell.spell_name, target.display_name, save_meta, target.display_name])
+		elif save["pass"]:
 			GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s resists[/url].[/color]" % [
 				spell.spell_name, target.display_name, save_meta, target.display_name])
 		else:
 			GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s fails the save[/url]!" % [
 				spell.spell_name, target.display_name, save_meta, target.display_name])
+			if stats.concentration_spell_id != "" and stats.concentration_spell_id != spell.effect_id:
+				GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 			match spell.effect_id:
 				"hold_person":
-					target.apply_status("incapacitated", 10)
+					target.paralyzed_turns = 10
+					target.paralyze_save_dc = dc
+					stats.concentration_spell_id = "hold_person"
+					stats.hold_person_target = target
+					stats.hold_person_turns = 10
 					GameState.game_log("[color=cyan]%s is paralyzed, unable to act![/color]" % target.display_name)
+				"ray_of_enfeeblement":
+					target.enfeeble_turns = 10
+					target.enfeeble_save_dc = dc
+					stats.concentration_spell_id = "ray_of_enfeeblement"
+					stats.ray_of_enfeeblement_target = target
+					stats.ray_of_enfeeblement_turns = 10
+					GameState.game_log("[color=cyan]%s's muscles wither with enfeeblement![/color]" % target.display_name)
 		if dungeon_floor != null:
 			dungeon_floor.update_fog(player.grid_pos)
 		player._handle_post_attack_turn()

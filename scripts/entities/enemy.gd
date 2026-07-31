@@ -56,7 +56,10 @@ var faerie_fire_color: Color = Color(0.4, 0.7, 1.0)  # the one random color (blu
 var shocked_no_oa: bool = false  # Shocking Grasp — blocks this enemy's next Opportunity Attack exposure, whenever it next happens
 var mind_sliver_penalty_die: bool = false  # Mind Sliver cantrip — the next check this enemy makes (any resist_check_detailed() call) rolls with -1d4. Consumed on that next check; deliberately not turn-expiry-timed against "until the end of your next turn" per the spell text — enemy checks are rare enough that this one-shot-consumed simplification is documented here rather than adding a second timing system for it.
 var frightened_turns: int = 0    # Aasimar Necrotic Shroud (Celestial Revelation) — a failed CHA check frightens this enemy. Simplified vs. the real player-side Frightened (scripts/entities/CLAUDE.md's "Conditions"): DISADV on this enemy's own attack rolls only, no can't-approach-the-source movement block (no enemy-side "source" tracking exists) — ticked once per real turn in decide_turn(), same shape as faerie_fire_turns/enfeeble_turns.
-var enfeeble_turns: int = 0      # Chthonic Tiefling lineage spell Ray of Enfeeblement — this enemy's own weapon (physical: Slashing/Piercing/Bludgeoning) damage is halved while active. Purely a damage modifier, no movement/attack restriction — ticked once per real turn in decide_turn(), same shape as faerie_fire_turns above. Simplified vs. RAW: no repeated CON save to end it early, fixed duration instead (same precedent as mind_sliver_penalty_die's own documented simplification).
+var enfeeble_turns: int = 0      # Chthonic Tiefling lineage spell Ray of Enfeeblement — full-effect duration (set only on a FAILED initial CON save): DISADV on this enemy's own STR-based d20 tests (attack rolls AND resist_check_detailed() checks whose stat is STR) and -1d8 (min 0) subtracted from every damage roll it makes. Repeats a CON save at the end of each of its own turns (decide_turn(), vs enfeeble_save_dc) — success ends the effect early, matching RAW; the outer 10-turn Concentration duration is the backstop (Stats.ray_of_enfeeblement_turns, ticked on the caster's own turn).
+var enfeeble_save_dc: int = 0    # the DC for enfeeble_turns' repeated end-of-turn CON save, set once at cast time
+var paralyzed_turns: int = 0     # Hold Person (Abyssal Tiefling lineage spell) — the real Paralyzed condition: skips this enemy's entire turn (decide_turn(), same shape as incapacitated_turns), auto-fails STR/DEX checks (resist_check_detailed()), every attack against it has Advantage (PlayerVfx.has_advantage()), and a hit made from within 1 tile of it is an automatic critical hit. Repeats a WIS save at the end of each of its own turns (decide_turn(), vs paralyze_save_dc) — success ends the effect early; the outer 10-turn Concentration duration (Stats.hold_person_turns) is the backstop.
+var paralyze_save_dc: int = 0    # the DC for paralyzed_turns' repeated end-of-turn WIS save, set once at cast time
 var embedded_items: Array[Item] = []  # thrown weapons stuck in a non-lethal hit (PlayerThrowTool._throw_weapon) — dropped at 100% chance wherever/whenever this enemy eventually dies, see die() override below
 var escape_turns: int = 0    # Nimble Escape trait (Goblin) — random 1-5 turns fleeing escape_from, set in on_melee_hit()
 var escape_from: Node = null  # entity being fled from; always is_instance_valid()-checked before use (may die/despawn mid-flee)
@@ -531,8 +534,14 @@ func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false
 		prof_label = "Proficiency"
 	var die: int = Rng.roll(20)
 	var magic_resistance_adv: bool = magical and _has_trait("magic_resistance")
-	if magic_resistance_adv:
+	# Ray of Enfeeblement: DISADV on this enemy's own STR-based d20 tests (attack rolls are
+	# handled separately in _attack_player() — this covers resist_check_detailed() checks, e.g.
+	# Grip of the Forest's STR pull).
+	var enfeeble_str_disadv: bool = stat_key == "str" and enfeeble_turns > 0
+	if magic_resistance_adv and not enfeeble_str_disadv:
 		die = maxi(die, Rng.roll(20))
+	elif enfeeble_str_disadv and not magic_resistance_adv:
+		die = mini(die, Rng.roll(20))
 	# Mind Sliver cantrip: the target's next check (any resist_check_detailed() call) rolls with
 	# -1d4 — consumed here regardless of which stat this particular check happens to use.
 	var sliver_penalty: int = 0
@@ -540,7 +549,10 @@ func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false
 		mind_sliver_penalty_die = false
 		sliver_penalty = Rng.roll(4)
 	var total: int = die + bonus + mod - sliver_penalty
-	var passed: bool = total >= dc
+	# Hold Person's Paralyzed condition: auto-fails STR and DEX checks/saves outright (5e RAW),
+	# short-circuiting even Legendary Resistance's would-be save below (a paralyzed creature has
+	# no meaningful STR/DEX to resist with in the first place).
+	var passed: bool = total >= dc and not (paralyzed_turns > 0 and stat_key in ["str", "dex"])
 	# Legendary Resistance (§15, BOSS_POOL only): consumes a charge to force a pass on what would
 	# otherwise be a failed check. Per-life counter — enemies don't rest, so "N/day" = N/life.
 	var legendary_used: bool = false
@@ -978,12 +990,41 @@ func decide_turn() -> Dictionary:
 		faerie_fire_turns -= 1
 		if faerie_fire_turns <= 0:
 			_refresh_faerie_fire_visual()
+	# Ray of Enfeeblement: repeats a CON save at the end of each of this enemy's own turns —
+	# success ends the debuff early (no re-application of the initial-success minor disadv, per
+	# the spell's own text), a fail just keeps the full effect running for the outer Concentration
+	# window (Stats.ray_of_enfeeblement_turns, ticked on the caster's side).
 	if enfeeble_turns > 0:
-		enfeeble_turns -= 1
+		var enf_save: Dictionary = resist_check_detailed(enfeeble_save_dc, true, false, false, false, true)
+		var enf_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+			enf_save["die"], enf_save["mod"], enf_save["floor_bonus"], enf_save["prof_label"], enf_save["total"], enf_save["dc"], enf_save["stat"], int(enf_save["pass"]), enf_save["sliver_penalty"]]
+		if enf_save["pass"]:
+			enfeeble_turns = 0
+			GameState.game_log("%s [url=%s]shakes off[/url] the enfeeblement." % [display_name, enf_meta])
+			if GameState.player_stats.concentration_spell_id == "ray_of_enfeeblement" and GameState.player_stats.ray_of_enfeeblement_target == self:
+				GameState.end_concentration()
+		else:
+			enfeeble_turns -= 1
 	if frightened_turns > 0:
 		frightened_turns -= 1
 	if poisoned_condition_turns > 0:
 		poisoned_condition_turns -= 1
+	# Hold Person's Paralyzed condition: same repeated-end-of-turn-save shape as Ray of
+	# Enfeeblement above, but a WIS save, and skips the ENTIRE turn (like incapacitated_turns)
+	# rather than being a pure stat debuff.
+	if paralyzed_turns > 0:
+		var par_save: Dictionary = resist_check_detailed(paralyze_save_dc, false, false, true, false, true)
+		var par_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+			par_save["die"], par_save["mod"], par_save["floor_bonus"], par_save["prof_label"], par_save["total"], par_save["dc"], par_save["stat"], int(par_save["pass"]), par_save["sliver_penalty"]]
+		if par_save["pass"]:
+			paralyzed_turns = 0
+			GameState.game_log("%s [url=%s]breaks free[/url] of the paralysis!" % [display_name, par_meta])
+			if GameState.player_stats.concentration_spell_id == "hold_person" and GameState.player_stats.hold_person_target == self:
+				GameState.end_concentration()
+		else:
+			paralyzed_turns -= 1
+			GameState.game_log("%s [url=%s]remains paralyzed[/url]." % [display_name, par_meta])
+			return {"type": "idle_tick"}
 	# Incapacitated: "can't take actions" — skips this entire turn outright, same shape the OLD
 	# Prone behavior used to have (see below). Checked before target selection since it doesn't
 	# need one.
@@ -1903,7 +1944,11 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 		# PLAYER's. frightened_turns: Aasimar Necrotic Shroud (Celestial Revelation transformation,
 		# scripts/entities/CLAUDE.md's "Aasimar" section) — simplified vs. real Frightened (no
 		# can't-approach-the-source movement block, DISADV-on-own-attacks only).
-		long_shot or GameState.is_blinded(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0 or frightened_turns > 0)
+		# Ray of Enfeeblement: DISADV on this enemy's own STR-based attacks while enfeebled —
+		# approximated as unconditional here since this engine doesn't track per-attack ability
+		# score usage for enemies (same documented simplification as the damage-reduction block
+		# below and Ray of Enfeeblement's own physical-damage-type approximation elsewhere).
+		long_shot or GameState.is_blinded(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0 or frightened_turns > 0 or enfeeble_turns > 0)
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]
@@ -1922,12 +1967,11 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	var roll_info: Dictionary = CombatMath.roll_flat_range(min_d, max_d)
 	var dmg_roll: int = roll_info["total"] + adv_bonus_roll
 	var dmg: int = dmg_roll * (2 if is_crit else 1)
-	# Ray of Enfeeblement (Chthonic Tiefling lineage spell): this enemy's own physical weapon
-	# damage is halved while enfeebled — same "weapon attacks that use Strength" scope as RAW,
-	# approximated here as any physical damage type since this engine doesn't track per-attack
-	# ability score usage for enemies.
-	if enfeeble_turns > 0 and dmg_type in ["Slashing", "Piercing", "Bludgeoning"]:
-		dmg = maxi(1, dmg / 2)
+	# Ray of Enfeeblement (Chthonic Tiefling lineage spell): subtract 1d8 (min 0) from every
+	# damage roll this enemy makes while enfeebled — applies to all damage types per the spell's
+	# own rework text, not just physical ones.
+	if enfeeble_turns > 0:
+		dmg = maxi(0, dmg - Rng.roll(8))
 	if is_crit:
 		AudioManager.play("crit")
 	else:

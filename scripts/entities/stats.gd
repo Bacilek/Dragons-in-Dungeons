@@ -411,6 +411,20 @@ var darkness_turns: int = 0
 # darkness_turns/fog_cloud_turns above.
 var faerie_fire_turns: int = 0
 
+# Ray of Enfeeblement (Chthonic Tiefling lineage spell, level 2) — same generic
+# concentration_spell_id mechanism ("ray_of_enfeeblement") + live target reference as Witch Bolt,
+# since the ongoing effect (Enemy.enfeeble_turns' full debuff) is per-target, not a self-buff.
+# Deliberately NOT serialized, same precedent as witch_bolt_target/witch_bolt_turns above.
+var ray_of_enfeeblement_target: Enemy = null
+var ray_of_enfeeblement_turns: int = 0
+
+# Hold Person (Abyssal Tiefling lineage spell, level 2) — same generic concentration_spell_id
+# mechanism ("hold_person") + live target reference as Ray of Enfeeblement/Witch Bolt (the ongoing
+# Paralyzed condition lives on Enemy.paralyzed_turns, per-target). Deliberately NOT serialized,
+# same precedent as witch_bolt_target/witch_bolt_turns above.
+var hold_person_target: Enemy = null
+var hold_person_turns: int = 0
+
 # Longstrider (Wood Elf lineage spell, level 3) — NOT Concentration (5e RAW). Reuses the exact
 # same "first move this turn is free" mechanism Expeditious Retreat already has (Player._try_move()
 # checks `expeditious_retreat_turns > 0 or longstrider_turns > 0`) rather than a separate movement-

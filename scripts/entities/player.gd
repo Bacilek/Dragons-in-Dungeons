@@ -342,6 +342,28 @@ func _on_turn_started() -> void:
 		elif stats.hunters_mark_free_recast_pending:
 			stats.hunters_mark_free_recast_pending = false
 			stats.hunters_mark_free_recast_available = true
+		# Ray of Enfeeblement: 10-turn Concentration cap — the target's own repeated end-of-turn
+		# save (Enemy.decide_turn()) usually ends this earlier by clearing enfeeble_turns to 0
+		# directly; this is just the outer duration backstop.
+		if stats.ray_of_enfeeblement_turns > 0:
+			stats.ray_of_enfeeblement_turns -= 1
+			if stats.ray_of_enfeeblement_turns <= 0:
+				if stats.concentration_spell_id == "ray_of_enfeeblement":
+					stats.concentration_spell_id = ""
+				if is_instance_valid(stats.ray_of_enfeeblement_target):
+					stats.ray_of_enfeeblement_target.enfeeble_turns = 0
+				stats.ray_of_enfeeblement_target = null
+				GameState.game_log("[color=gray]Ray of Enfeeblement fades.[/color]")
+		# Hold Person: same 10-turn Concentration cap/backstop as Ray of Enfeeblement above.
+		if stats.hold_person_turns > 0:
+			stats.hold_person_turns -= 1
+			if stats.hold_person_turns <= 0:
+				if stats.concentration_spell_id == "hold_person":
+					stats.concentration_spell_id = ""
+				if is_instance_valid(stats.hold_person_target):
+					stats.hold_person_target.paralyzed_turns = 0
+				stats.hold_person_target = null
+				GameState.game_log("[color=gray]Hold Person fades.[/color]")
 		# Invisibility: 600-turn duration, ticked once per real turn. Usually already ended earlier
 		# this same turn transition via _resolve_stealth_check()'s attack/cast check (which runs
 		# first, from _on_turn_ending()) — this decrement is a no-op whenever that already zeroed
@@ -2294,11 +2316,16 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
 	var roll: int = die + total_hit_bonus
+	var is_nat_one: bool = die == 1
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
+	# Hold Person's Paralyzed condition: any hit made from within 1 tile is an automatic critical
+	# hit (5e RAW) — melee is always within 1 tile of its target, so this is unconditional here,
+	# but a natural-1 miss still misses (the condition only upgrades an actual hit).
+	if not is_crit and not is_nat_one and roll >= enemy.stats.armor_class and enemy.paralyzed_turns > 0:
+		is_crit = true
 	if is_crit:
 		_base_talents.on_crit()
 		_berserker.refresh_on_any_crit()
-	var is_nat_one: bool = die == 1
 
 	# Track that we attacked while raging (for rank 1 countdown pause)
 	if _is_raging and is_str_weapon:

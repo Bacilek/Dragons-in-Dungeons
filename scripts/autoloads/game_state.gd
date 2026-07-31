@@ -2887,6 +2887,16 @@ func end_concentration(reason_log: String = "") -> void:
 		player_stats.hunters_mark_turns = 0
 		player_stats.hunters_mark_target = null
 		player_stats.hunters_mark_fresh = false
+	elif broken_spell == "ray_of_enfeeblement":
+		player_stats.ray_of_enfeeblement_turns = 0
+		if is_instance_valid(player_stats.ray_of_enfeeblement_target):
+			player_stats.ray_of_enfeeblement_target.enfeeble_turns = 0
+		player_stats.ray_of_enfeeblement_target = null
+	elif broken_spell == "hold_person":
+		player_stats.hold_person_turns = 0
+		if is_instance_valid(player_stats.hold_person_target):
+			player_stats.hold_person_target.paralyzed_turns = 0
+		player_stats.hold_person_target = null
 	if reason_log != "":
 		game_log(reason_log)
 

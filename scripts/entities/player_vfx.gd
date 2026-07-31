@@ -32,6 +32,9 @@ func has_advantage(enemy: Enemy) -> bool:
 	# second ADV source, since a Surprise Attack already IS "the defender never saw it coming".
 	if enemy.incapacitated_turns > 0:
 		return true
+	# Hold Person's Paralyzed condition: every attack against it has Advantage (5e RAW).
+	if enemy.paralyzed_turns > 0:
+		return true
 	# Faerie Fire (Drow lineage spell): a failed DEX save outlines the target in light — every
 	# attack roll against it has Advantage for the duration, same chokepoint as Blinded above.
 	# ONLY if the attacker can actually see the target (the spell's own "if you can see it" text) —

@@ -645,7 +645,7 @@ TIEFLING branch:
   toggles `Stats.hellish_rebuke_armed` — the exact same "arm now, spend the charge only when it
   actually procs" shape as Storm Giant Ancestry's own toggle (see "Goliath" above). While armed,
   `enemy.gd._attack_player()` checks right after a landed hit lands (`actual > 0`): if the
-  attacker is within the spell's own `range_tiles` (6) and currently visible
+  attacker is within the spell's own `range_tiles` (3) and currently visible
   (`DungeonFloor.is_tile_visible()`), the armed flag disarms and `SpellEffects.
   trigger_hellish_rebuke(player, attacker, dungeon_floor)` fires — no attack roll of its own, just
   a DEX save (`resist_check_detailed(dc, ..., use_dex=true, magical=true)`) at the same Tiefling
@@ -674,8 +674,9 @@ TIEFLING branch:
     free grant and the normal known-cantrip/Special-slot path are independent and both work
     regardless of how the cantrip was acquired. Reworked off their original spec to a real
     "ranged/melee spell attack" per direct owner correction — **Poison Spray** is now
-    `Resolution.ATTACK_ROLL` (was `SAVE`/CON), range 3 (was 2), otherwise unchanged (1d12 Poison,
-    tier-scaling, no `effect_id` — a plain generic-damage-path cantrip, same shape as Fire Bolt).
+    `Resolution.ATTACK_ROLL` (was `SAVE`/CON), range 2 (was briefly 3, corrected back to 2),
+    otherwise unchanged (1d12 Poison, tier-scaling, no `effect_id` — a plain generic-damage-path
+    cantrip, same shape as Fire Bolt).
     **Chill Touch** is now range 1 (touch, was 6) and 1d10 (was 1d8); `effect_id = "chill_touch"`
     is a new dispatch case in `SpellEffects.cast_spell()` (the shared ATTACK_ROLL cantrip
     resolver) — on a hit, sets `target._regen_blocked_this_round = true`, reusing the exact same
@@ -688,28 +689,51 @@ TIEFLING branch:
     level-0 dispatch generalizes off `spell.resolution == Spell.Resolution.SAVE`/`ATTACK_ROLL`
     rather than a hardcoded id list, so both reworked cantrips route correctly with no dispatch
     changes needed.
-  - **Ray of Sickness** (`cast_leveled_attack_at_enemy()`'s `"ray_of_sickness"` effect_id case):
-    ATTACK_ROLL + damage exactly like Chromatic Orb, then a secondary CON save on a non-lethal hit
-    — a fail applies the real Poisoned condition for 2 turns (fixed duration, not RAW's "until the
-    end of your next turn" — same simplification precedent as Mind Sliver's own penalty die).
-  - **Ray of Enfeeblement** (`"ray_of_enfeeblement"` effect_id case): ATTACK_ROLL + a minor 1d4
-    Necrotic sting, then on a hit sets `Enemy.enfeeble_turns = 10` — **new Enemy field**, ticked
-    once per real enemy turn in `decide_turn()` alongside `faerie_fire_turns` (pure duration
-    counter, no movement/attack restriction of its own). While active, `_attack_player()`'s
-    physical-damage calc (Slashing/Piercing/Bludgeoning only — RAW's "weapon attacks that use
-    Strength" approximated as any physical type, since this engine doesn't track per-attack
-    ability-score usage for enemies) halves `dmg` (floored, min 1) right before crit doubling. No
-    repeated CON save to end it early (documented simplification, same as Ray of Sickness above).
-  - **Hold Person** (`cast_leveled_save_at_enemy()`'s `"hold_person"` effect_id case): a failed WIS
-    save applies `Enemy.apply_status("incapacitated", 10)` — the real bidirectional Incapacitated
-    condition (see "Conditions" below) stands in for RAW's separate Paralyzed condition (no
-    Paralyzed state exists in this engine — Incapacitated's "can't take actions, every attack
-    against it is a Surprise Attack" is the closest fit) and there's no repeated save to end it
-    early, fixed 10-turn duration instead.
-  - **Hellish Rebuke** (`cast_leveled_save_at_enemy()`, damage branch): RAW is a reaction cast the
-    instant a creature hits you; this engine has no reaction-casting framework (only Opportunity
-    Attacks/Retaliation exist), so it's a normal on-demand cast instead — same simplification
-    Shield's own same-turn manual self-cast already established for a spell that's RAW a reaction.
+  - **Ray of Sickness** (`cast_leveled_attack_at_enemy()`'s `"ray_of_sickness"` effect_id case,
+    range 3): ATTACK_ROLL + 2d8 Poison damage exactly like Chromatic Orb; on a non-lethal hit the
+    target is automatically Poisoned — **no save** — approximated as a fixed 2-turn duration (RAW:
+    "until the end of your next turn", same simplification precedent as Mind Sliver's own penalty
+    die). Reworked from an earlier version that gated the Poisoned application behind a secondary
+    CON save — the poison is now unconditional on a hit, per direct owner correction.
+  - **Ray of Enfeeblement** (`cast_leveled_save_at_enemy()`'s `"ray_of_enfeeblement"` effect_id
+    case, range 3): fully reworked from an ATTACK_ROLL-plus-flat-halving spell into a real
+    SAVE/CON, Concentration (up to 10 turns, `Stats.ray_of_enfeeblement_turns`/`_target`, same
+    generic mechanism as Witch Bolt) debuff with **no direct damage roll at all**
+    (`Spell.dice_count = 0`, same "pure debuff" shape as Hold Person). On a successful initial
+    save, the target only suffers a minor one-shot Disadvantage on its own next attack roll
+    (`Enemy.disadv_next_attack = true`, reused from Grip of the Forest R3) and the spell ends
+    there — no Concentration is started. On a failed save, `Enemy.enfeeble_turns = 10` +
+    `Enemy.enfeeble_save_dc = dc` arm the full effect: DISADV on the enemy's own STR-based d20
+    tests (both its attack roll, in `_attack_player()`'s disadvantage aggregation, and any
+    `resist_check_detailed()` call whose resolved stat is STR — both approximated as unconditional
+    since this engine doesn't track per-attack ability-score usage for enemies) and `-1d8` (min 0)
+    subtracted from every damage roll the enemy makes (`_attack_player()`, replacing the old flat
+    "physical damage halved" rule — applies to all damage types now, not just physical).
+    **Repeats a CON save at the end of each of the enemy's own turns** (`Enemy.decide_turn()`, vs
+    `enfeeble_save_dc`) — a pass zeroes `enfeeble_turns` immediately and ends concentration early
+    (no re-application of the initial-success minor disadv); a fail just decrements toward the
+    outer 10-turn Concentration backstop ticked on the caster's side
+    (`player.gd._on_turn_started()`).
+  - **Hold Person** (`cast_leveled_save_at_enemy()`'s `"hold_person"` effect_id case, range 3): a
+    failed WIS save, Concentration (up to 10 turns, `Stats.hold_person_turns`/`_target`), sets
+    `Enemy.paralyzed_turns = 10` + `Enemy.paralyze_save_dc = dc` — a real, dedicated **Paralyzed**
+    condition, distinct from Incapacitated (an earlier version approximated Paralyzed as
+    Incapacitated; this rework gives it its own field and its own effect table): skips the enemy's
+    entire turn (`decide_turn()`, same shape as `incapacitated_turns`), auto-fails its own
+    STR/DEX checks (`resist_check_detailed()` forces `passed = false` outright whenever
+    `stat_key in ["str","dex"]`, though Legendary Resistance can still override afterward),
+    grants Advantage to every attack made against it (`PlayerVfx.has_advantage()`), and turns any
+    HIT made from within 1 tile into an automatic critical hit (`player.gd._bump_attack()` — melee
+    is always within 1 tile of its target, so this fires unconditionally there; a natural-1 miss
+    still misses, the condition only upgrades an actual hit). **Repeats a WIS save at the end of
+    each of the enemy's own turns** (`decide_turn()`, vs `paralyze_save_dc`) — a pass zeroes
+    `paralyzed_turns` and ends concentration early; a fail keeps it paralyzed and decrements
+    toward the outer 10-turn Concentration backstop, same shape as Ray of Enfeeblement above.
+  - **Hellish Rebuke** (`cast_leveled_save_at_enemy()`, damage branch, range 3 — reduced from an
+    earlier 6): RAW is a reaction cast the instant a creature hits you; this engine has no
+    reaction-casting framework (only Opportunity Attacks/Retaliation exist), so it's a normal
+    on-demand cast instead — same simplification Shield's own same-turn manual self-cast already
+    established for a spell that's RAW a reaction.
 
 ## Gnome
 
@@ -1319,14 +1343,15 @@ Mud/Water now shows only the `difficult_terrain` icon while both are active (not
 copies of the same-looking icon) — once the player leaves the terrain, `slowed_turns` alone
 (still ticking down from the trap) takes over showing the `"slowed"` icon.
 
-## Conditions (Poisoned / Prone / Restrained / Incapacitated / Blinded / Frightened)
-Six real 5e-style conditions. The first four are bidirectional (player via `Stats`, enemy via
+## Conditions (Poisoned / Prone / Restrained / Incapacitated / Blinded / Frightened / Paralyzed)
+Seven real 5e-style conditions. The first four are bidirectional (player via `Stats`, enemy via
 `Enemy`'s own fields — same "duplicate implementation, not a unified refactor" convention the DoT
 statuses above already use) and deliberately kept SEPARATE from any same-named damage-over-time
 status — a source that inflicts one doesn't have to inflict the other (Rend inflicts only the
 Poisoned condition, a Poison Potion inflicts only the DoT). Blinded is purely positional/symmetric
 (see "Fog Cloud" below). Frightened is player-only today (its only source, Quasit's Scare, only
-ever targets the player).
+ever targets the player). Paralyzed is enemy-only today (its only source, Hold Person, only ever
+targets an enemy).
 
 | Condition | Player field | Enemy field | Effect |
 |---|---|---|---|
@@ -1336,8 +1361,9 @@ ever targets the player).
 | Incapacitated | `Stats.incapacitated_turns` | `Enemy.incapacitated_turns` | "Can't take actions" — blocks player movement/bump-attack (`player.gd._try_move()`) and ability/spell activation (`_use_ability_slot()`); **partial coverage** — mouse-click attacks and item/tool use aren't gated (no current trigger source exists for either side, so this wasn't exhaustively wired; extend these two gates if a future ability actually inflicts it). Breaks Concentration immediately (`GameState.apply_player_status()`'s `"incapacitated"` case calls `end_concentration()`). On the enemy side: skips its entire turn (`decide_turn()`'s very first check, same shape Prone used to have before this rework) AND makes every player attack against it a Surprise Attack (`PlayerVfx.has_advantage()`), since "every attack against it is a Surprise Attack" is 5e's own Incapacitated text and this engine's Surprise Attack mechanism already IS exactly that (flat +1 ADV). |
 | Blinded | `GameState.is_blinded(pos)` (positional, no Stats field — see "Fog Cloud" below) | same query, symmetric | ADV on attacks against a Blinded creature, DISADV on its own attacks (both sides, player and enemy). Vision collapses to a flat 1-tile radius (`GameState.effective_fov_radius()`), overriding every other bonus including darkvision. **A Blinded attacker's own reach also collapses to 1 tile (Chebyshev)** for ranged weapons (`PlayerRanged.is_ranged_target_in_range()`), thrown weapons (`PlayerThrowTool._throw_weapon()`), spells (`PlayerSpellcasting._effective_range()`), and the enemy-side mirrors (`Enemy._in_attack_range()`'s `"ranged"` branch, `Enemy._pick_ready_ability()`'s `max_reach`) — a weapon/spell's own longer range is simply unreachable while fighting blind; melee is unaffected (already 1 tile). "Auto-fails sight-based checks" is NOT implemented (no concrete "sight check" mechanic exists in this engine to gate). |
 | Frightened | `Stats.frightened_source: Enemy`/`frightened_turns`/`frightened_save_dc` (live ref, NOT serialized — same precedent as `hunters_mark_target`/`witch_bolt_target`) — only Quasit's Scare inflicts it, always targeting the player | `Enemy.frightened_turns` — a SEPARATE, simplified mirror (no live source-reference tracking exists on the enemy side, unlike the player's own `frightened_source`), only Aasimar's Necrotic Shroud (Celestial Revelation transformation, see "Aasimar" above) inflicts it | Player-side: DISADV on attacks/checks ONLY while the source is in LOS (`Player._frightened_active()` — NOT unconditional like the other three, hence its own helper rather than folding into `has_disadvantage_condition()`). Can't willingly move closer to the source via voluntary movement (`Player._frightened_blocks_move_to()`, checked in both `_try_move()` and the queued-path executor — forced movement like Push/a chasm shove is unaffected since it never calls either). Repeats a WIS save once per real turn (`Player._on_turn_started()`, vs `frightened_save_dc`) — success ends it early, a fail ticks toward the outer ~10-turn "1 minute" cap. Auto-clears if the source dies (`Enemy.die()`). Enemy-side: DISADV on the enemy's own attack rolls only (folded into `_attack_player()`/`_attack_companion()`'s existing `poisoned_condition_turns`-style disadv aggregation) — no can't-approach-the-source movement block, fixed 2-turn duration instead of a repeated save (documented simplification). |
+| Paralyzed | *(no player-side trigger exists yet — infra would mirror the enemy's, not built until something needs it)* | `Enemy.paralyzed_turns`/`paralyze_save_dc` — Hold Person only (Abyssal Tiefling lineage spell, see "Wizard leveled spells" above); its own dedicated condition, NOT an alias of Incapacitated (an earlier version approximated it that way) | Speed 0 (already blocked movement — skips the enemy's ENTIRE turn in `decide_turn()`, same shape as Incapacitated). Auto-fails its own STR and DEX checks/saves (`resist_check_detailed()` forces `passed = false` whenever the resolved stat is STR or DEX, though Legendary Resistance can still override the forced fail afterward). Every attack made against it has Advantage (`PlayerVfx.has_advantage()`). Any HIT made from within 1 tile of it is an automatic critical hit (`player.gd._bump_attack()` — melee is always within 1 tile, so this fires unconditionally there; ranged/thrown/spell attacks from further away are unaffected, matching RAW's own "within 5 feet" text; a natural-1 miss still misses). Repeats a WIS save at the end of each of the enemy's own turns (`decide_turn()`, vs `paralyze_save_dc`) — success ends it early and ends Concentration (`Stats.hold_person_turns`/`_target`); a fail ticks toward the outer 10-turn Concentration backstop. |
 
-**Apply a condition** (mirrors the DoT-status shape above): `GameState.apply_player_status("poisoned_condition"|"prone"|"incapacitated", turns)` (player) or `Enemy.apply_status("prone"|"poisoned_condition"|"incapacitated"|"frightened", turns)` (enemy) — Restrained has no generic apply path since Web sets `web_restrained`/`web_escape_dc` directly (a persistent flag + escape DC, not a turn counter, so it doesn't fit the shared `turns` shape); Frightened has its own dedicated `GameState.apply_player_frightened(source, turns, save_dc)`/`clear_player_frightened()` (needs a live source reference the generic shape can't carry) and Blinded has no apply path at all (purely derived from position, see `is_heavily_obscured()`/`is_blinded()`). `"turns"` is ignored for Prone (bool, not counted).
+**Apply a condition** (mirrors the DoT-status shape above): `GameState.apply_player_status("poisoned_condition"|"prone"|"incapacitated", turns)` (player) or `Enemy.apply_status("prone"|"poisoned_condition"|"incapacitated"|"frightened", turns)` (enemy) — Restrained has no generic apply path since Web sets `web_restrained`/`web_escape_dc` directly (a persistent flag + escape DC, not a turn counter, so it doesn't fit the shared `turns` shape); Frightened has its own dedicated `GameState.apply_player_frightened(source, turns, save_dc)`/`clear_player_frightened()` (needs a live source reference the generic shape can't carry); Paralyzed has no generic apply path either — Hold Person sets `Enemy.paralyzed_turns`/`paralyze_save_dc` directly (needs the DC alongside the turn count, same reason Frightened bypasses the shared shape) — and Blinded has no apply path at all (purely derived from position, see `is_heavily_obscured()`/`is_blinded()`). `"turns"` is ignored for Prone (bool, not counted).
 
 **On-hit condition via `"multiattack"`**: a sub-entry's optional `"status"`/`"status_turns"` keys (mirrors the pre-existing `"abilities"` array's own `ab.has("status")` shape) apply generically on a landed hit — `Enemy._attack_player()`'s tail, after the Orc Shaman poison hardcode. First user: Quasit's Rend (`"status": "poisoned_condition", "status_turns": 1`) — see `scripts/world/CLAUDE.md`'s Quasit entry / `dungeon_floor_data.gd`.
 
