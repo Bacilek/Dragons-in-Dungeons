@@ -165,7 +165,7 @@ const ENEMY_POOL: Array = [
 	# thrown at) resolved on the player's next turn after THIS goblin dies, whether or not the
 	# throw actually landed (same generic mechanism Orc Warrior's Javelin below reuses).
 	{"enemy_id": "goblin_minion", "display_name": "Goblin Minion", "sprite": "goblin", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 3,  "hp": 7,  "hp_per_floor": 1, "dmg_min": 3, "dmg_max": 6, "armor": 0, "ac": 12, "exp": 4,
-	 "cr": 0.125, "creature_type": "Fey",
+	 "cr": 0.125, "creature_type": "Fey", "size_category": "Small",
 	 "mods": {"str": -1, "dex": 2, "con": 0, "int": 0, "wis": -1, "cha": -1},
 	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 9,
@@ -188,7 +188,7 @@ const ENEMY_POOL: Array = [
 	 "sprite_frame_size": {"w": 64, "h": 64}, "sprite_scale": 0.35,
 	 "floor_min": 1, "floor_max": 2, "hp": 7, "hp_per_floor": 1, "dmg_min": 4, "dmg_max": 7,
 	 "armor": 0, "ac": 13, "exp": 3,
-	 "cr": 0.125, "creature_type": "Beast",
+	 "cr": 0.125, "creature_type": "Beast", "size_category": "Small",
 	 "mods": {"str": -2, "dex": 3, "con": 0, "int": -4, "wis": 0, "cha": -3},
 	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 10,
@@ -224,7 +224,7 @@ const ENEMY_POOL: Array = [
 	# adjacent, handled by the normal _act_toward_or_ability() dispatch (attacks immediately, no bonus
 	# movement spent) — D&D's own text only grants a movement bonus, never a second attack.
 	{"enemy_id": "orc_warrior",   "display_name": "Orc Warrior", "sprite": "orc_warrior", "idle_frames": 4, "run_frames": 4, "floor_min": 1, "floor_max": 5,  "hp": 15, "hp_per_floor": 2, "dmg_min": 4, "dmg_max": 15, "armor": 0, "ac": 13, "exp": 8,
-	 "cr": 0.5, "creature_type": "Humanoid",
+	 "cr": 0.5, "creature_type": "Humanoid", "size_category": "Medium",
 	 "mods": {"str": 3, "dex": 1, "con": 3, "int": -2, "wis": 0, "cha": 0},
 	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 10,
@@ -250,7 +250,7 @@ const ENEMY_POOL: Array = [
 	# Advantage bonus: whenever this attack (Scimitar included) lands with net Advantage, deals an
 	# extra 1d4 damage — Enemy._advantage_bonus_sides()/_attack_player()/_attack_companion().
 	{"enemy_id": "goblin_warrior", "display_name": "Goblin Warrior", "sprite": "goblin", "idle_frames": 4, "run_frames": 4, "floor_min": 2, "floor_max": 6,  "hp": 10, "hp_per_floor": 2, "dmg_min": 3, "dmg_max": 8, "armor": 0, "ac": 15, "exp": 10,
-	 "cr": 0.25, "creature_type": "Fey",
+	 "cr": 0.25, "creature_type": "Fey", "size_category": "Small",
 	 "mods": {"str": -1, "dex": 2, "con": 0, "int": 0, "wis": -1, "cha": -1},
 	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 9,
@@ -258,9 +258,9 @@ const ENEMY_POOL: Array = [
 	 "traits": [{"id": "nimble_escape"}, {"id": "advantage_bonus", "sides": 4}],
 	 "multiattack": [{"name": "Scimitar", "count": 1, "dmg_min": 3, "dmg_max": 8, "damage_type": "Slashing"}]},
 	{"enemy_id": "orc_shaman",    "display_name": "Orc Shaman",  "sprite": "orc_shaman",  "idle_frames": 4, "run_frames": 4, "floor_min": 3, "floor_max": 6,  "hp": 10, "hp_per_floor": 2, "dmg_min": 2, "dmg_max": 5, "armor": 0, "ac": 10, "exp": 12,
-	 "cr": 0.25, "creature_type": "Humanoid"},
+	 "cr": 0.25, "creature_type": "Humanoid", "size_category": "Medium"},
 	{"enemy_id": "masked_orc",    "display_name": "Masked Orc",  "sprite": "masked_orc",  "idle_frames": 4, "run_frames": 4, "floor_min": 4, "floor_max": 7,  "hp": 12, "hp_per_floor": 2, "dmg_min": 2, "dmg_max": 5, "armor": 1, "ac": 13, "exp": 10,
-	 "cr": 0.25, "creature_type": "Humanoid"},
+	 "cr": 0.25, "creature_type": "Humanoid", "size_category": "Medium"},
 	# Skeleton — Medium Undead, CR 1/4, proficiency +2. HP 13, AC 14 (natural armor).
 	# STR 10 (+0) DEX 14 (+2) CON 15 (+2) INT 6 (-2) WIS 8 (-1) CHA 3 (-4). Speed 1 (default).
 	# Darkvision: +1 to the default enemy notice/LOS radius (Enemy.FOV_RADIUS = 5 -> 6 here).
@@ -276,7 +276,7 @@ const ENEMY_POOL: Array = [
 	# /20, not the /10 used for spell ranges — see scripts/entities/CLAUDE.md's "Ranged distance
 	# scaling convention" note for why shooting ranges get the steeper divisor.
 	{"enemy_id": "skeleton",      "display_name": "Skeleton",    "sprite": "skelet",      "idle_frames": 4, "run_frames": 4, "floor_min": 4, "floor_max": 7,  "hp": 13, "hp_per_floor": 2, "dmg_min": 3, "dmg_max": 8, "armor": 0, "ac": 14, "exp": 9,
-	 "cr": 0.25, "creature_type": "Undead",
+	 "cr": 0.25, "creature_type": "Undead", "size_category": "Medium",
 	 "mods": {"str": 0, "dex": 2, "con": 2, "int": -2, "wis": -1, "cha": -4},
 	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 9,
@@ -352,7 +352,7 @@ const ENEMY_POOL: Array = [
 	# "one hit, multiple damage types" convention). Imp's own Poison IMMUNITY doesn't apply to
 	# damage it DEALS, only damage it takes — no interaction between the two.
 	{"enemy_id": "imp",           "display_name": "Imp",         "sprite": "imp",         "idle_frames": 4, "run_frames": 4, "floor_min": 6, "floor_max": 9,  "hp": 21, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 9, "armor": 0, "ac": 13, "exp": 22,
-	 "cr": 1, "creature_type": "Fiend",
+	 "cr": 1, "creature_type": "Fiend", "size_category": "Tiny",
 	 "mods": {"str": -2, "dex": 3, "con": 1, "int": 0, "wis": 1, "cha": 2},
 	 "senses": {"sight_bonus": 2},
 	 "passive_perception": 11,
@@ -417,7 +417,7 @@ const ENEMY_POOL: Array = [
 	# weapon of its own — closing to melee range falls back to the top-level dmg_min/dmg_max
 	# (a bare improvised scuffle, same fallback every legacy non-multiattack entry already uses).
 	{"enemy_id": "goblin_archer", "display_name": "Goblin Archer", "sprite": "goblin", "idle_frames": 4, "run_frames": 4, "floor_min": 2, "floor_max": 7,  "hp": 10, "hp_per_floor": 2, "dmg_min": 1, "dmg_max": 4, "armor": 0, "ac": 15, "exp": 10,
-	 "cr": 0.25, "creature_type": "Fey",
+	 "cr": 0.25, "creature_type": "Fey", "size_category": "Small",
 	 "mods": {"str": -1, "dex": 2, "con": 0, "int": 0, "wis": -1, "cha": -1},
 	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 9,
