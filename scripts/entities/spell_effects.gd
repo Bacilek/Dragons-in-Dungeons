@@ -433,16 +433,16 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			# Ward just refreshes its own duration; casting a DIFFERENT concentration spell breaks
 			# this one first via GameState.end_concentration(), which also zeroes Blade Ward's own
 			# turn counter (not just the id) so it can't linger after the switch.
-			if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "blade_ward":
-				GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+			if player.stats.concentration_spell_id != "":
+				GameState.end_concentration("" if player.stats.concentration_spell_id == "blade_ward" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 			player.stats.concentration_spell_id = "blade_ward"
 			player.stats.blade_ward_turns = 10
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — attacks against you falter for up to 10 turns.[/color]" % spell.spell_name)
 		"thunderclap":
 			_resolve_thunderclap(player, spell, dungeon_floor)
 		"expeditious_retreat":
-			if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "expeditious_retreat":
-				GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+			if player.stats.concentration_spell_id != "":
+				GameState.end_concentration("" if player.stats.concentration_spell_id == "expeditious_retreat" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 			player.stats.concentration_spell_id = "expeditious_retreat"
 			player.stats.expeditious_retreat_turns = 100
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your reflexes quicken for up to 100 turns.[/color]" % spell.spell_name)
@@ -462,8 +462,8 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			# a damage-based break; that deviation was reversed on request, so it's now identical to
 			# every other concentration effect). invisibility_just_cast still skips this same cast's
 			# own stealth_check_skip=true (set above) from immediately ending it.
-			if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "invisibility":
-				GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+			if player.stats.concentration_spell_id != "":
+				GameState.end_concentration("" if player.stats.concentration_spell_id == "invisibility" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 			player.stats.concentration_spell_id = "invisibility"
 			player.stats.invisibility_turns = 600
 			player.stats.invisibility_just_cast = true
@@ -475,8 +475,8 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			player.stats.longstrider_turns = 600
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your steps quicken for up to 600 turns.[/color]" % spell.spell_name)
 		"pass_without_trace":
-			if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "pass_without_trace":
-				GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+			if player.stats.concentration_spell_id != "":
+				GameState.end_concentration("" if player.stats.concentration_spell_id == "pass_without_trace" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 			player.stats.concentration_spell_id = "pass_without_trace"
 			player.stats.pass_without_trace_turns = 600
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your steps and voice are muffled for up to 100 turns.[/color]" % spell.spell_name)
@@ -536,6 +536,13 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 # `aim_tile` only supplies a direction, not an impact point — it need not itself be in range.
 # LOS-gated from origin (a wall casts a "shadow" through the cone). Origin tile itself never
 # included (forward must be > 0).
+const DIR8: Array[Vector2] = [
+	Vector2(1, 0), Vector2(0.7071067811865476, 0.7071067811865476),
+	Vector2(0, 1), Vector2(-0.7071067811865476, 0.7071067811865476),
+	Vector2(-1, 0), Vector2(-0.7071067811865476, -0.7071067811865476),
+	Vector2(0, -1), Vector2(0.7071067811865476, -0.7071067811865476),
+]  # E, SE, S, SW, W, NW, N, NE (Godot's +Y is down) — exact unit vectors, no cos()/sin() rounding
+
 static func cone_tiles(origin: Vector2i, aim_tile: Vector2i, length: int, dungeon_floor: Node) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
 	var delta: Vector2 = Vector2(aim_tile - origin)
@@ -546,9 +553,17 @@ static func cone_tiles(origin: Vector2i, aim_tile: Vector2i, length: int, dungeo
 	# direct owner request: the cone's orientation should only change when the mouse crosses into a
 	# genuinely different one of the 8 tiles immediately adjacent to the caster, not flicker/reorient
 	# continuously as the cursor drifts anywhere at a slightly different angle further away.
+	# Bugfix: this used to compute dir_v as Vector2(cos(snapped), sin(snapped)) — East (angle 0) is
+	# the only one of the 8 snapped angles cos()/sin() evaluate to EXACTLY (1,0); every other
+	# direction (multiples of PI/2 or PI/4) picks up a tiny (~1e-16) floating-point residue in the
+	# component that should be exactly 0, which was just barely enough to flip a boundary tile's
+	# `lateral <= forward * 0.5` comparison at the cone's far edge — the cone was missing one tile
+	# at max range for every direction except aiming due East. DIR8 is an exact lookup table instead.
 	var step: float = PI / 4.0
-	var snapped: float = round(delta.angle() / step) * step
-	var dir_v: Vector2 = Vector2(cos(snapped), sin(snapped))
+	var idx: int = int(round(delta.angle() / step)) % 8
+	if idx < 0:
+		idx += 8
+	var dir_v: Vector2 = DIR8[idx]
 	for dy: int in range(-length, length + 1):
 		for dx: int in range(-length, length + 1):
 			if dx == 0 and dy == 0:
@@ -929,8 +944,8 @@ static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_leve
 			var res2: Dictionary = _resolve_spell_attack_bolt(player, spell, target, spell.damage_type, dungeon_floor, false)
 			if res2["hit"] and not res2["lethal"]:
 				var stats: Stats = player.stats
-				if stats.concentration_spell_id != "" and stats.concentration_spell_id != "witch_bolt":
-					GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+				if stats.concentration_spell_id != "":
+					GameState.end_concentration("" if stats.concentration_spell_id == "witch_bolt" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 				stats.concentration_spell_id = "witch_bolt"
 				stats.witch_bolt_target = target
 				stats.witch_bolt_turns = 10
@@ -993,8 +1008,8 @@ static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level:
 		else:
 			GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s fails the save[/url]!" % [
 				spell.spell_name, target.display_name, save_meta, target.display_name])
-			if stats.concentration_spell_id != "" and stats.concentration_spell_id != spell.effect_id:
-				GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+			if stats.concentration_spell_id != "":
+				GameState.end_concentration("" if stats.concentration_spell_id == spell.effect_id else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 			match spell.effect_id:
 				"hold_person":
 					target.paralyzed_turns = 10
@@ -1111,8 +1126,8 @@ static func tick_witch_bolt(player: Player, target: Enemy, dungeon_floor: Node) 
 # effect directly. See scripts/entities/CLAUDE.md's "Fog Cloud" section.
 static func _resolve_fog_cloud(player: Player, spell: Spell, center: Vector2i) -> void:
 	var stats: Stats = player.stats
-	if stats.concentration_spell_id != "" and stats.concentration_spell_id != "fog_cloud":
-		GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+	if stats.concentration_spell_id != "":
+		GameState.end_concentration("" if stats.concentration_spell_id == "fog_cloud" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 	stats.concentration_spell_id = "fog_cloud"
 	stats.fog_cloud_turns = 600
 	GameState.fog_cloud_pos = center
@@ -1132,8 +1147,8 @@ static func _resolve_fog_cloud(player: Player, spell: Spell, center: Vector2i) -
 # fixed position+radius like before.
 static func _resolve_darkness(player: Player, spell: Spell, center: Vector2i, dungeon_floor: Node = null) -> void:
 	var stats: Stats = player.stats
-	if stats.concentration_spell_id != "" and stats.concentration_spell_id != "darkness":
-		GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+	if stats.concentration_spell_id != "":
+		GameState.end_concentration("" if stats.concentration_spell_id == "darkness" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 	stats.concentration_spell_id = "darkness"
 	stats.darkness_turns = 100
 	GameState.darkness_pos = center
@@ -1178,8 +1193,12 @@ static func _resolve_faerie_fire(player: Player, spell: Spell, center: Vector2i,
 	if dungeon_floor == null:
 		return
 	var stats: Stats = player.stats
-	if stats.concentration_spell_id != "" and stats.concentration_spell_id != "faerie_fire":
-		GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+	# Unconditional (not just "if switching to a different spell") — recasting Faerie Fire itself
+	# must also fully clear the PREVIOUS cast's outlined enemies first (end_concentration()'s own
+	# "faerie_fire" branch does that un-outlining), or a fresh cast elsewhere left the old cast's
+	# targets permanently debuffed/advantaged since nothing else ever cleared them (bugfix).
+	if stats.concentration_spell_id != "":
+		GameState.end_concentration("" if stats.concentration_spell_id == "faerie_fire" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 	stats.concentration_spell_id = "faerie_fire"
 	stats.faerie_fire_turns = 10
 	var r: int = spell.shape_size
@@ -1209,6 +1228,30 @@ static func _resolve_faerie_fire(player: Player, spell: Spell, center: Vector2i,
 			e.faerie_fire_color = color
 			e._refresh_faerie_fire_visual()
 			GameState.game_log("%s is [url=%s]outlined[/url] in dancing light!" % [e.display_name, save_meta])
+	# Faerie Fire outlines ANY creature caught in the cube, not just enemies — including the caster
+	# themselves, if their own 2x2 footprint happens to include their own tile (e.g. casting it on
+	# their own square). Mirrors the enemy loop above exactly (same footprint check, own DEX save)
+	# but writes to Stats.faerie_fire_outlined_turns (a field distinct from the caster's own
+	# faerie_fire_turns concentration countdown — see that field's own doc comment for why they
+	# can't share one name). Once outlined, enemies get Advantage attacking the player, symmetric to
+	# the existing enemy-side "Advantage against an outlined enemy, if the attacker can see it" rule
+	# — see enemy.gd's _attack_player().
+	var pd: Vector2i = player.grid_pos - center
+	if pd.x >= 0 and pd.x < r and pd.y >= 0 and pd.y < r and dungeon_floor.has_ranged_los(center, player.grid_pos):
+		var pdc: int = _save_dc(stats, spell)
+		var pdex_mod: int = stats.dex_modifier()
+		var pprof: int = stats.proficiency_bonus if stats.check_prof_dex else 0
+		var pdie: int = Rng.roll(20)
+		var ptotal: int = pdie + pdex_mod + pprof
+		var ppass: bool = ptotal >= pdc
+		var psave_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=DEX,pass=%d" % [
+			pdie, pdex_mod, pprof, ptotal, pdc, int(ppass)]
+		if ppass:
+			GameState.game_log("You [url=%s]resist[/url] the light." % psave_meta)
+		else:
+			stats.faerie_fire_outlined_turns = 10
+			stats.faerie_fire_outlined_color = color
+			GameState.game_log("You are [url=%s]outlined[/url] in dancing light!" % psave_meta)
 
 # Detect Magic — a real, lasting sense now (previously a one-shot instant read; that read's own
 # item-qualifying rule — Item.requires_attunement, or a nonzero bonus_ac/bonus_damage — lives on
@@ -1220,8 +1263,8 @@ static func _resolve_faerie_fire(player: Player, spell: Spell, center: Vector2i,
 # magic item within Spell.shape_size (3) tiles of the player (Chebyshev), sight-independent exactly
 # like Tremorsense (works through walls/Blinded).
 static func _resolve_detect_magic(player: Player, spell: Spell) -> void:
-	if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "detect_magic":
-		GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+	if player.stats.concentration_spell_id != "":
+		GameState.end_concentration("" if player.stats.concentration_spell_id == "detect_magic" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 	player.stats.concentration_spell_id = "detect_magic"
 	player.stats.detect_magic_turns = 100
 	GameState.game_log("[color=cyan]You cast [b]%s[/b] — you sense the presence of magic around you.[/color]" % spell.spell_name)

@@ -641,13 +641,20 @@ func update_fog(player_pos: Vector2i) -> void:
 			if _visible_tiles.has(tile_pos):
 				_explored[tile_pos] = true
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0))
-			elif GameState.is_heavily_obscured(tile_pos) and not _player_blinded and not GameState.player_stats.sees_through_magical_darkness:
+			elif GameState.is_heavily_obscured(tile_pos) and not _player_blinded and not GameState.player_stats.sees_through_magical_darkness \
+					and _data.get_tile(x, y) != DungeonData.TileType.WALL:
 				# A tile inside a Fog Cloud/Darkness zone is never shown via the dimmed "remembered
 				# map" even if it was explored before the cloud appeared there — you can't see into
 				# a heavily-obscured area from outside it, full stop, not even a memory of its
 				# layout. Deliberately doesn't touch _explored, so the tile renders normally again
 				# once the cloud dissipates. A tile just outside the zone's own radius is untouched
-				# by this branch (is_heavily_obscured() only matches strictly inside it).
+				# by this branch (is_heavily_obscured() only matches strictly inside it). **WALL
+				# tiles are excluded** — the spell doesn't affect solid rock at all, so a wall that
+				# happens to fall within the zone's raw radius (its Euclidean disc doesn't know
+				# about walls) should keep rendering via the normal explored/dimmed logic instead of
+				# suddenly going fully black (bugfix — a remembered wall shape used to visibly
+				# "vanish" into solid black the instant a cloud's radius overlapped it). Doors are
+				# NOT excluded — they're meant to still be affected, unchanged.
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 1.0))
 			elif _explored.get(tile_pos, false) and not _player_blinded:
 				_fog_image.set_pixel(x, y, Color(0, 0, 0, 0.65))
@@ -834,6 +841,38 @@ func hide_spell_range_preview() -> void:
 	_spell_range_last_key = ""
 	for spr: Sprite2D in _spell_range_rects:
 		spr.visible = false
+
+# Exact-tile variant of the blue backdrop above, for a cone (Burning Hands): since the cone's aim
+# is now snapped to only 8 fixed directions, its true maximum-reach envelope is a finite, exactly
+# computable set — the union of SpellEffects.cone_tiles() over all 8 directions — rather than an
+# approximated disc that either over- or under-represents the wedge's actual shape at its tip.
+# Reuses the same pooled-Sprite2D set/texture as show_spell_range_preview() (mutually exclusive —
+# only one of the two is ever called per frame, gated by spell.shape in the caller).
+func show_spell_range_preview_tiles(tiles: Array[Vector2i]) -> void:
+	var key: String = "conerange," + ",".join(tiles.map(func(t): return "%d_%d" % [t.x, t.y]))
+	if key == _spell_range_last_key:
+		return
+	_spell_range_last_key = key
+	if _spell_range_tex == null:
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		img.fill(Color(1, 1, 1, 1))
+		_spell_range_tex = ImageTexture.create_from_image(img)
+	while _spell_range_rects.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _spell_range_tex
+		spr.centered = false
+		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
+		spr.modulate = SPELL_RANGE_TINT
+		spr.z_index = 1
+		add_child(spr)
+		_spell_range_rects.append(spr)
+	for i: int in _spell_range_rects.size():
+		var spr: Sprite2D = _spell_range_rects[i]
+		if i < tiles.size():
+			spr.position = Vector2(tiles[i].x * TILE_SIZE, tiles[i].y * TILE_SIZE)
+			spr.visible = true
+		else:
+			spr.visible = false
 
 # Ranged-weapon targeting preview (Shift+hover) — two-tone reach backdrop, driven every frame from
 # player.gd's ranged-preview update while Shift is held and a ranged weapon is equipped, no spell
@@ -1188,15 +1227,21 @@ func _update_fog_cloud_visual() -> void:
 ## Light/Torch glows above, rebuilt every update_fog() call — needs no dedicated signal, just
 ## naturally tracks whatever's burning right now (including a barrel/door/grass tile going out).
 func _update_burning_tiles_glow() -> void:
+	# Only shown for a tile the player can actually currently see (_visible_tiles already correctly
+	# excludes anything inside a Fog Cloud/Darkness zone from an outside viewer, per is_blinded()'s
+	# own symmetric rule, while still including the player's own immediate neighbors when they're
+	# the one standing inside the cloud) — bugfix: this used to show unconditionally, so an outside
+	# viewer could tell something was on fire deep inside a cloud they had no actual sight into.
 	var tiles: Array[Vector2i] = []
 	for pos: Vector2i in _barrels.keys():
-		if _barrels[pos]["burning"]:
+		if _barrels[pos]["burning"] and is_tile_visible(pos):
 			tiles.append(pos)
 	for pos: Vector2i in _doors.keys():
-		if _doors[pos].get("burning", false):
+		if _doors[pos].get("burning", false) and is_tile_visible(pos):
 			tiles.append(pos)
 	for pos: Vector2i in _burning_grass.keys():
-		tiles.append(pos)
+		if is_tile_visible(pos):
+			tiles.append(pos)
 	if tiles.is_empty():
 		for spr: Sprite2D in _fire_glow_sprites:
 			spr.visible = false

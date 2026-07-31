@@ -1965,8 +1965,12 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	var target_prone: bool = GameState.player_stats.prone
 	var condition_adv: bool = target_restrained or (target_prone and not is_ranged)
 	var condition_disadv: bool = target_prone and is_ranged
+	# Faerie Fire outlining the PLAYER (symmetric to the enemy-side "Advantage against an outlined
+	# enemy, if the attacker can see it" rule — see SpellEffects._resolve_faerie_fire()).
+	var faerie_fire_adv: bool = GameState.player_stats.faerie_fire_outlined_turns > 0 \
+		and _dungeon_floor != null and _dungeon_floor.is_tile_visible(_player.grid_pos)
 	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, _attack_bonus_for(sub), bw_penalty,
-		fog_adv or pack_tactics_adv or condition_adv,
+		fog_adv or pack_tactics_adv or condition_adv or faerie_fire_adv,
 		# poisoned_condition_turns/frightened_turns here are THIS enemy's own conditions (DISADV on
 		# its own attack) — separate from target_prone/target_restrained above, which are the
 		# PLAYER's. frightened_turns: Aasimar Necrotic Shroud (Celestial Revelation transformation,

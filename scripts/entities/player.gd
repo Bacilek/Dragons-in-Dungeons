@@ -305,6 +305,12 @@ func _on_turn_started() -> void:
 				if stats.concentration_spell_id == "faerie_fire":
 					stats.concentration_spell_id = ""
 				GameState.game_log("[color=gray]Faerie Fire fades — the dancing lights die out.[/color]")
+		# The PLAYER's own "am I outlined" counter — independent of the caster-side duration above
+		# (see Stats.faerie_fire_outlined_turns's own doc comment for why they're separate fields).
+		if stats.faerie_fire_outlined_turns > 0:
+			stats.faerie_fire_outlined_turns -= 1
+			if stats.faerie_fire_outlined_turns <= 0:
+				GameState.game_log("[color=gray]The dancing light outlining you fades.[/color]")
 		# Longstrider: NOT Concentration — 600-turn flat duration (5e RAW's "1 hour").
 		if stats.longstrider_turns > 0:
 			stats.longstrider_turns -= 1
@@ -1067,20 +1073,33 @@ func _update_spell_aoe_preview() -> bool:
 		_dungeon_floor.hide_spell_range_preview()
 		return false
 	# Blue "maximum reach" backdrop — every tile that could possibly be hit from here, shown for
-	# any armed spell (not just AoE shapes). Cone: reach = the cone's own length, INFLATED by
-	# sqrt(1.25) (~1.118×) — the cone's true max-reach envelope (union over every possible aim
-	# angle) extends further than a flat `length`-radius circle: a corner tile at forward=length,
-	# lateral=1 (still legally inside the wedge, `lateral <= forward*0.5`) sits at Euclidean
-	# distance sqrt(length²+1) > length, so a plain `length`-radius circle under-represented the
-	# cone's own actual width right at its tip. The exact multiplier is `1/cos(atan(0.5))` — the
-	# cosine of the wedge's own half-angle — derived by minimizing forward for a fixed off-axis
-	# point while staying inside `lateral <= forward*0.5`. (Cone's origin is always the caster.)
-	# Sphere/cube: reach = how far the blast's own center can be placed, plus the blast's own
-	# radius (the impact point can land at the edge of range and still splash further out).
-	# Everything else (single-target ENEMY/TILE spells): reach = the spell's plain range.
-	const CONE_MAX_REACH_MULTIPLIER: float = 1.1180339887498949  # 1 / cos(atan(0.5)) = sqrt(1.25)
-	var range_radius: int = ceili(spell.shape_size * CONE_MAX_REACH_MULTIPLIER) if spell.shape == "cone" else (spell.range_tiles + spell.shape_size if spell.shape in ["sphere", "cube"] else spell.range_tiles)
-	_dungeon_floor.show_spell_range_preview(grid_pos, range_radius, spell.shape == "cone")
+	# any armed spell (not just AoE shapes). Cone: since its aim is now snapped to only 8 fixed
+	# directions (SpellEffects.DIR8), its true max-reach envelope is a finite, exactly computable
+	# set — the union of SpellEffects.cone_tiles() over all 8 directions — rather than an
+	# approximated disc that either over- or under-represents the wedge's real shape at its tip
+	# (bugfix: a circle of radius `length` under-represents it, since a corner tile at
+	# forward=length,lateral=1 sits at Euclidean distance sqrt(length²+1) > length; a larger circle
+	# then over-represents it elsewhere). Sphere/cube: reach = how far the blast's own center can be
+	# placed, plus the blast's own extent (the impact point can land at the edge of range and still
+	# splash further out — cube's shape_size is a corner-anchored SIDE LENGTH now, not a radius, so
+	# only shape_size-1 extra tiles are actually reachable, not the full shape_size). Everything
+	# else (single-target ENEMY/TILE spells): reach = the spell's plain range.
+	if spell.shape == "cone":
+		var cone_union: Dictionary = {}
+		for dir_v: Vector2 in SpellEffects.DIR8:
+			var aim: Vector2i = grid_pos + Vector2i(roundi(dir_v.x * 100), roundi(dir_v.y * 100))
+			for t: Vector2i in SpellEffects.cone_tiles(grid_pos, aim, spell.shape_size, _dungeon_floor):
+				cone_union[t] = true
+		_dungeon_floor.show_spell_range_preview_tiles(cone_union.keys())
+	else:
+		# Sphere's shape_size is a real radius (Fireball) — full +shape_size reach. Cube's
+		# shape_size is a corner-anchored SIDE LENGTH (Faerie Fire) — only shape_size-1 extra tiles
+		# beyond the impact point are actually reachable in any direction, not the full shape_size
+		# (bugfix: using the sphere formula for cube overstated its reach, e.g. showing radius 5
+		# for a range-3/shape_size-2 spell that can only ever reach out to radius 4).
+		var extra: int = spell.shape_size if spell.shape == "sphere" else (spell.shape_size - 1 if spell.shape == "cube" else 0)
+		var range_radius: int = spell.range_tiles + extra
+		_dungeon_floor.show_spell_range_preview(grid_pos, range_radius, false)
 	var world_mouse: Vector2 = get_global_mouse_position()
 	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
 	# Chebyshev distance to the hovered tile vs the spell's own actual castable range — the same

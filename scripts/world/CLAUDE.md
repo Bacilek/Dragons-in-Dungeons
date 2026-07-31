@@ -140,6 +140,12 @@ viewer's OWN blinded status suppressed this dimming, so a tile inside a cloud th
 explored before the cloud appeared there still rendered as a dimmed remembered floor plan when
 viewed from outside, contradicting "can't see into a heavily-obscured area at all." `_explored`
 itself is left untouched by this branch, so the tile renders normally again once the cloud ends.
+**WALL tiles are excluded from this branch too** (`_data.get_tile(x, y) != DungeonData.TileType.
+WALL`) — the spell doesn't affect solid rock, so a wall tile that happens to fall within the
+zone's raw radius (its Euclidean disc doesn't know about walls) keeps rendering via the normal
+explored/dimmed logic instead of suddenly going fully black (bugfix — a remembered wall shape used
+to visibly "vanish" into solid black the instant a cloud's radius overlapped it; doors are NOT
+excluded, they're still meant to be affected).
 `DungeonFloor._ignore_magical_darkness: bool` — set true only around the player's own
 `_compute_shadowcast()` call inside `update_fog()` when `Stats.sees_through_magical_darkness` is
 true, reset immediately after — is the one bypass hook; nothing grants that flag today (a stub for
@@ -168,16 +174,17 @@ Armor/Shocking Grasp) rendered as visually "out of range" despite being a perfec
 actually-castable target (bugfix — it used to share the sphere-footprint's Euclidean formula,
 which is correct only for that footprint since `_resolve_sphere_aoe()`'s actual blast really is a
 Euclidean circle, not the single-target range gate). **A cone (Burning Hands) is the one
-exception**: `show_spell_range_preview()` takes an `euclidean: bool` 3rd param, set true by
-`player.gd._update_spell_aoe_preview()` whenever `spell.shape == "cone"` — the cone's origin is
-always the caster and its aim direction can point anywhere, so the true union of every possible
-orientation is a EUCLIDEAN disc of radius `shape_size` (aiming straight at any given tile puts it
-on the cone's own zero-lateral-offset center line, reachable out to the cone's full length), not a
-Chebyshev square. **Bugfix**: this backdrop used to always use Chebyshev, so Burning Hands' blue
-max-range preview rendered as a square whose diagonal "corner" tiles (real Euclidean distance
-greater than the cone's length) the actual cone could never reach no matter how it was aimed —
-exactly the tiles a player would expect a `shape_size`-tile cone to cover based on the preview but
-which the real cast could never hit. The purple/red sphere footprint (`show_aoe_preview()`) and
+exception, and no longer an approximated disc at all**: since the cone's aim is now snapped to
+only 8 fixed directions (`SpellEffects.DIR8`), its true max-reach envelope is finite and exactly
+computable — `player.gd._update_spell_aoe_preview()` unions `SpellEffects.cone_tiles()` over all 8
+directions and calls `DungeonFloor.show_spell_range_preview_tiles(tiles)` (a sibling of
+`show_spell_range_preview()`, same pooled-`Sprite2D`/texture, painting an exact tile list instead
+of computing a disc) rather than approximating with a circle. **Bugfix history**: this backdrop
+first always used Chebyshev (a square whose corners the cone could never reach), then a Euclidean
+disc of radius `shape_size` (still under-representing the wedge's real width at its tip — a corner
+tile at `forward=length,lateral=1` sits at Euclidean distance `sqrt(length²+1) > length`); both
+approximations are now moot since 8-direction snapping makes the exact envelope cheap to compute
+directly. The purple/red sphere footprint (`show_aoe_preview()`) and
 the Fog Cloud visual stay Euclidean on purpose — both mirror a real Euclidean-distance game
 mechanic (`_resolve_sphere_aoe()`, `is_heavily_obscured()`), not a Chebyshev range gate.
 `DungeonFloor._in_grid_bounds(pos) -> bool` is the one bounds check `show_aoe_preview()`,
@@ -389,7 +396,12 @@ be modulated per-instance the way a `Sprite2D` can), so this overlay is its only
 Barrel/Door it layers on top of the existing `FIRE_TINT` sprite tint. Not suppressed by
 `fov_bonus_overlay_suppressed` (that flag is specifically for FOV-bonus rings — Torch/darkvision —
 clashing with a spell-targeting preview; this is a different kind of indicator, same as the Fog
-Cloud/Light glows, which also ignore that flag).
+Cloud/Light glows, which also ignore that flag). **Gated on `is_tile_visible(pos)`** — bugfix: this
+used to show unconditionally regardless of visibility, so an outside viewer could tell something
+was burning deep inside a Fog Cloud/Darkness zone they had no actual sight into; `_visible_tiles`
+already correctly excludes anything inside such a zone from an outside viewer (per `is_blinded()`'s
+symmetric rule) while still including the player's own immediate neighbors when they're the one
+standing inside the cloud, so gating on it here covers both cases for free.
 
 **Standing on a burning prop burns the occupant — at the start of THAT creature's own turn, not a
 single global tick**: `DungeonFloor.is_tile_on_fire(pos)` / `tick_fire_damage_for(entity: Entity)`

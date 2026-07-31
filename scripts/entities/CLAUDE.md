@@ -389,6 +389,17 @@ casting for a non-caster).
     the companion query `DungeonFloor._update_enemy_visibility()` reads to render that specific
     case at `modulate.a = 0.4` (forced visible, translucent) instead of the normal fully-opaque
     outlined look — same tint convention as the player's own `Player._update_invisibility_visual()`.
+  - **Also targets the PLAYER, not just enemies**: `_resolve_faerie_fire()`'s footprint check runs
+    against the player too (own DEX save, same shape/LOS gate) — if caught (e.g. casting it on
+    your own tile), sets `Stats.faerie_fire_outlined_turns`/`faerie_fire_outlined_color` (a field
+    deliberately SEPARATE from `Stats.faerie_fire_turns`, which is always the CASTER's own
+    Concentration countdown regardless of who ends up outlined — the two would otherwise collide
+    if you outline yourself while also being the caster). Grants enemies Advantage attacking the
+    player while set, symmetric to the enemy-side Advantage-against-an-outlined-enemy rule above —
+    `Enemy._attack_player()`'s `faerie_fire_adv` local, gated on `is_tile_visible(player.grid_pos)`.
+    Ticked alongside `faerie_fire_turns` in `player.gd`'s per-turn block. No enemy-side caster of
+    this spell exists yet, so this only matters for a self-cast or a future enemy source — a
+    documented scope note, not a current gameplay path.
 
   A small `✦` sparkle (`Enemy._faerie_fire_indicator`, tinted `faerie_fire_color`) shows above an
   outlined enemy while active, toggled by `Enemy._refresh_faerie_fire_visual()` (called on cast and
@@ -2154,7 +2165,13 @@ is the single chokepoint for ending whatever the player currently concentrates o
 id). Every cast site that grants concentration (`SpellEffects.cast_leveled_self()`'s
 `"blade_ward"`/`"expeditious_retreat"` branches, `cast_leveled_attack_at_enemy()`'s `"witch_bolt"`
 branch, `_resolve_fog_cloud()`) calls it first whenever `concentration_spell_id != "" and
-concentration_spell_id != <this spell>`, logging "Casting X breaks your concentration." Fixed bug:
+concentration_spell_id != ""` (unconditionally now, not just when switching to a DIFFERENT spell —
+bugfix: recasting the exact SAME concentration spell used to skip this call entirely since the id
+already matched, so a fresh Faerie Fire cast elsewhere left the PREVIOUS cast's outlined enemies
+permanently debuffed/advantaged with nothing left to ever clear them; every site now always calls
+`end_concentration()` first, passing an empty `reason_log` — no "breaks your concentration" message
+— when recasting itself, and the real message only when actually switching to a different spell),
+logging "Casting X breaks your concentration." Fixed bug:
 previously each site only overwrote `concentration_spell_id` and left the OLD spell's own turn
 counter untouched, so e.g. casting Blade Ward while Witch Bolt was active silently kept ticking
 Witch Bolt's jolt damage forever (its tick only ever checked `witch_bolt_turns`, never
@@ -2540,7 +2557,17 @@ introduces one new mechanic not needed by any earlier spell.
   direction (`lateral <= forward * 0.5`), LOS-gated per-tile from the caster — **not** the original
   90°-pie-slice dot-product-angle test (`angle <= 45°`, equivalent to `lateral <= forward`, i.e.
   full width = 2× the point's distance) that this used at first, which read as too wide/blob-shaped
-  to look like a cone rather than a genuine wedge.
+  to look like a cone rather than a genuine wedge. **Aim is snapped to the nearest of 8 fixed
+  compass directions** (`SpellEffects.DIR8`, same convention as Dragonborn's Breath Weapon Line's
+  own `_line_tiles()` snap) rather than a continuous freely-rotating angle — direct owner request:
+  the cone's orientation should only change when the mouse crosses into a genuinely different one
+  of the 8 adjacent tiles, not flicker/reorient continuously as the cursor drifts. `DIR8` is an
+  exact 8-entry unit-vector lookup table, NOT `Vector2(cos(snapped), sin(snapped))` — **bugfix**:
+  East (angle 0) is the only one of the 8 snapped angles where `cos()`/`sin()` evaluate to exactly
+  `(1,0)`; every other direction (multiples of `PI/2`/`PI/4`) picks up ~1e-16 floating-point
+  residue in the component that should be exactly 0, which was just barely enough to flip the
+  `lateral <= forward*0.5` boundary comparison at the cone's far edge — the cone was missing one
+  tile at max range for every direction except aiming due East.
   called by both the resolver (`_resolve_cone_aoe()`, dispatched from `cast_leveled_at_tile()`) and
   the live preview (`DungeonFloor.show_cone_preview()`, mirroring `show_aoe_preview()`'s pooled-
   Sprite2D convention — see `scripts/world/CLAUDE.md`). Because only the *direction* to the clicked

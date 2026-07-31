@@ -754,7 +754,7 @@ func _on_give_spell(spell_id: String) -> void:
 		GameState._grant_elf_lineage_spell(spell_id)
 		GameState.game_log("[color=lime][DEBUG] Given (lineage grant): %s[/color]" % spell.spell_name)
 		return
-	if SpellDb.TIEFLING_LEGACY_SPELL_IDS.has(spell_id) and not SpellDb.CANTRIP_IDS.has(spell_id):
+	if SpellDb.TIEFLING_LEGACY_SPELL_IDS.has(spell_id) and not SpellDb.CANTRIP_IDS.has(spell_id) and not SpellDb.LEVELED_SPELL_IDS.has(spell_id):
 		GameState._grant_tiefling_legacy_spell(spell_id)
 		GameState.game_log("[color=lime][DEBUG] Given (legacy grant): %s[/color]" % spell.spell_name)
 		return

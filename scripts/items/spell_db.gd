@@ -12,7 +12,7 @@ const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp
 # The Wizard's fixed round-1 starting choice (cantrip_select.gd) — unchanged by the 5 additions
 # above so the premade Jace's "cantrip": "fire_bolt" shortcut and existing save data stay valid.
 const STARTER_CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
-const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud", "invisibility", "darkness", "longstrider", "detect_magic", "pass_without_trace"]
+const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud", "invisibility", "darkness", "longstrider", "detect_magic", "pass_without_trace", "faerie_fire", "ray_of_sickness", "ray_of_enfeeblement", "hold_person"]
 # Ranger (half-caster, scripts/entities/CLAUDE.md's "Ranger class") draws from the same shared
 # `SpellDb` pool as Wizard, but ONLY the subset actually on Ranger's real 5e/5.5e (2024) spell
 # list — direct owner correction: don't just open every `LEVELED_SPELL_IDS` entry up to Ranger
@@ -30,26 +30,33 @@ const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS, "RANGER": RA
 
 # Elf lineage-only spells (see scripts/entities/CLAUDE.md's "Elf" section) — granted exclusively by
 # GameState._grant_elf_lineage_spell(). Originally none of these were learnable via the level-up
-# spellbook-growth picker or any class's known-spell list; that's no longer true for FOUR of the
-# five — "darkness" (Drow, level 5), "longstrider" (Wood Elf, level 3), "detect_magic" (High
-# Elf, level 3), and "pass_without_trace" (Wood Elf, level 5) are ALSO real, independently-
-# learnable LEVELED_SPELL_IDS entries now (their real 5e/5.5e class lists include several classes
-# this codebase doesn't have, so class_list is `["WIZARD"]` for the first three and `["RANGER"]`
-# for Pass Without Trace, its one implemented real-list class) — they're listed here too only
-# because their sub-race also grants them for free at the matching level via the same lineage
-# mechanism `faerie_fire` (still lineage-only, not on LEVELED_SPELL_IDS) uses. The
-# free-cast-per-long-rest economy and the LEVELED_SPELL_IDS/level-up-picker/slot-casting paths are
-# independent of each other and both work regardless of how a spell was acquired. No Scroll of
-# <Spell> exists for faerie_fire (Misty Step, the 6th lineage spell, already has one; darkness/
-# longstrider/detect_magic/pass_without_trace now do too, being real LEVELED_SPELL_IDS entries) —
-# a documented scope cut for the one remaining lineage-only holdout, not an oversight.
+# spellbook-growth picker or any class's known-spell list; that's no longer true for ALL FIVE —
+# "darkness" (Drow, level 5), "longstrider" (Wood Elf, level 3), "detect_magic" (High
+# Elf, level 3), "pass_without_trace" (Wood Elf, level 5), and now "faerie_fire" (Drow, level 3)
+# too are ALSO real, independently-learnable LEVELED_SPELL_IDS entries (their real 5e/5.5e class
+# lists include several classes this codebase doesn't have, so class_list is `["WIZARD"]` for all
+# five except Pass Without Trace's `["RANGER"]`, its one implemented real-list class) — they're
+# listed here too only because their sub-race also grants them for free at the matching level via
+# the same lineage mechanism. The free-cast-per-long-rest economy and the
+# LEVELED_SPELL_IDS/level-up-picker/slot-casting paths are independent of each other and both work
+# regardless of how a spell was acquired. No Scroll of <Spell> exists for faerie_fire yet (Misty
+# Step, darkness/longstrider/detect_magic/pass_without_trace all have one, being real
+# LEVELED_SPELL_IDS entries already) — a remaining content gap now that it's promoted, not a
+# structural blocker.
 const ELF_LINEAGE_SPELL_IDS: Array[String] = ["faerie_fire", "darkness", "detect_magic", "longstrider", "pass_without_trace"]
 
 # Tiefling Fiendish Legacy-only spells (see scripts/entities/CLAUDE.md's "Tiefling" section) —
 # granted exclusively by GameState._grant_tiefling_legacy_spell(), same "never in the level-up
-# picker or any class's known-spell list" exclusion as ELF_LINEAGE_SPELL_IDS above. Fire Bolt
+# picker or any class's known-spell list" exclusion as ELF_LINEAGE_SPELL_IDS above (Fire Bolt
 # (Infernal, level 1), False Life (Chthonic, level 3), and Darkness (Infernal, level 5) reuse the
-# existing Wizard cantrip / Wizard-leveled / Elf-lineage spells verbatim — not listed here.
+# existing Wizard cantrip/Wizard-leveled/Elf-lineage spells verbatim — not listed here). THREE of
+# the six (`ray_of_sickness`, `ray_of_enfeeblement`, `hold_person`) are now ALSO real,
+# independently-learnable LEVELED_SPELL_IDS entries — same "promoted, sub-race grant is just one
+# of two independent acquisition paths" pattern as the Elf lineage spells above (`class_list =
+# ["WIZARD"]`). `poison_spray`/`chill_touch` were already promoted earlier (they're cantrips, see
+# CANTRIP_IDS). `hellish_rebuke` is the one deliberate holdout — it's a reaction-toggle ability
+# (`GameState._build_hellish_rebuke_ability()`), not a normal on-demand cast, so it doesn't fit the
+# level-up-learn/slot-cast shape the other five use.
 const TIEFLING_LEGACY_SPELL_IDS: Array[String] = ["poison_spray", "chill_touch", "ray_of_sickness", "hold_person", "ray_of_enfeeblement", "hellish_rebuke"]
 
 # Gnome Gnomish Lineage-only spells (see scripts/entities/CLAUDE.md's "Gnome" section) — granted
@@ -482,7 +489,7 @@ static func _faerie_fire() -> Spell:
 	s.description = "A 2-tile cube is outlined in a random dancing light (blue, green, or violet). Every creature inside makes a DEX save or is also outlined for 10 turns (Concentration): every attack roll against it has Advantage if the attacker can see it, it sheds its own dim light, and it can't turn invisible — an already-invisible creature that fails the save is instead seen, faintly, at reduced opacity. No damage. Real 5e class list: Bard/Druid. Drow lineage spell."
 	s.icon_path = ""
 	s.effect_id = "faerie_fire"
-	s.class_list = []
+	s.class_list = ["WIZARD"]
 	return s
 
 static func _darkness() -> Spell:
@@ -607,7 +614,7 @@ static func _ray_of_sickness() -> Spell:
 	s.description = "A ray of sickening green energy lashes out at a target within 3 tiles. 2d8 Poison damage; on a hit the target is also Poisoned until the end of your next turn (approximated as a fixed 2-turn duration, same precedent as Mind Sliver's own documented simplification) — no save, it's automatic. Abyssal Tiefling lineage spell."
 	s.icon_path = ""
 	s.effect_id = "ray_of_sickness"
-	s.class_list = []
+	s.class_list = ["WIZARD"]
 	return s
 
 static func _hold_person() -> Spell:
@@ -624,7 +631,7 @@ static func _hold_person() -> Spell:
 	s.description = "A target within 3 tiles, Concentration (up to 10 turns), makes a WIS save or is Paralyzed — a real Paralyzed condition: Speed 0, auto-fails STR/DEX checks, every attack against it has Advantage, and a hit made from within 1 tile of it is an automatic critical hit. Repeats the save at the end of each of its own turns, ending the spell early on a success. Abyssal Tiefling lineage spell."
 	s.icon_path = ""
 	s.effect_id = "hold_person"
-	s.class_list = []
+	s.class_list = ["WIZARD"]
 	return s
 
 static func _ray_of_enfeeblement() -> Spell:
@@ -641,7 +648,7 @@ static func _ray_of_enfeeblement() -> Spell:
 	s.description = "A black ray of enervating energy at a target within 3 tiles, Concentration (up to 10 turns). The target makes a CON save: on a success it merely has Disadvantage on the next attack roll it makes, until the start of your next turn. On a failure, for the duration it has Disadvantage on all its own STR-based d20 tests and subtracts 1d8 from every damage roll it makes. It repeats the save at the end of each of its own turns, ending the spell on a success. Chthonic Tiefling lineage spell."
 	s.icon_path = ""
 	s.effect_id = "ray_of_enfeeblement"
-	s.class_list = []
+	s.class_list = ["WIZARD"]
 	return s
 
 static func _hellish_rebuke() -> Spell:

@@ -431,6 +431,15 @@ var darkness_turns: int = 0
 # scripts/entities/CLAUDE.md's "Elf" section). Deliberately NOT serialized, same as
 # darkness_turns/fog_cloud_turns above.
 var faerie_fire_turns: int = 0
+# Whether the PLAYER THEMSELVES is currently outlined by a (self- or otherwise-)cast Faerie Fire —
+# a separate field from faerie_fire_turns above (that one is always the CASTER's own concentration
+# countdown, regardless of who ends up outlined; this one is "am I, the player, currently lit up").
+# Faerie Fire can catch the caster in their own 2x2 blast just like any other creature there, so the
+# two must never collide/overwrite each other. Mirrors Enemy.faerie_fire_turns/faerie_fire_color.
+# Grants enemies Advantage on attacks against the player while set (enemy.gd's _attack_player()),
+# same rule as the enemy-side "Advantage on attacks against it, if the attacker can see it."
+var faerie_fire_outlined_turns: int = 0
+var faerie_fire_outlined_color: Color = Color.WHITE
 
 # Ray of Enfeeblement (Chthonic Tiefling lineage spell, level 2) — same generic
 # concentration_spell_id mechanism ("ray_of_enfeeblement") + live target reference as Witch Bolt,
