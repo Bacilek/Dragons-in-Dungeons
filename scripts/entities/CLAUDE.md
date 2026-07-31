@@ -78,6 +78,7 @@ behavior refactor — decide/execute split, `attack_profile`, targeting — this
 |---|---|---|
 | `"cr"` | float | Challenge rating. **Drives CR-budgeted spawning** (`DungeonFloor._pick_cr_budgeted_enemies()`, see `scripts/world/CLAUDE.md`'s "Spawning" section and `docs/architecture/cr-budgeted-spawning-design.md`) — floor-linear scaling in `_apply_stats()` is still unchanged and still the only within-band difficulty knob; CR only decides which enemies spawn together, not how strong each one is. Default `0.25` when absent. |
 | `"creature_type"` | string | `"Undead"`/`"Fiend"`/`"Beast"`/... flavor tag, stored on `Enemy.creature_type`. No mechanical effect by itself (reserved for a future type-conditional damage rule or talent synergy). |
+| `"size_category"` | string | D&D size CATEGORY — `"Tiny"`/`"Small"`/`"Medium"`/`"Large"`/`"Huge"`/`"Gargantuan"`, stored on `Enemy.creature_size`. Distinct from the physical `"size":{"w","h"}` footprint below — a 1x1-footprint enemy can still be authored as any category (only Quasit sets `"Tiny"` today; Ogre/Spider set `"Large"` alongside their real 2x2 footprint for schema honesty, though `PlayerHalfling.is_larger_than_halfling()` already treats footprint > 1 tile as large regardless). Default `"Medium"` when absent — every ordinary enemy is "Medium or Large-2x2 at most" per this table's own convention. Sole consumer today: Halfling's Nimbleness ability (`scripts/entities/player_halfling.gd`), which treats any enemy ranked strictly above Small (i.e. Medium+) as a valid slip-through target. |
 | `"mods"` | `{"str":0,"dex":0,"con":0,"int":0,"wis":0,"cha":0}` | Real ability-score modifiers. **Presence of this key switches the enemy's attack roll AND every `resist_check_detailed()` call to the mod+proficiency formula, replacing the legacy `floor_num/3` bonus — never both.** Absent = 100% unchanged legacy behavior (also true of the older `str_mod`/`con_mod`/`dex_mod`/`wis_mod`/`int_mod` single-stat keys, which still work as a fallback and do NOT trigger the mods formula). |
 | `"prof_bonus"` | int | Only read when `"mods"` is present. Default derived from `cr`: `2 + max(0, ceil(cr)-1)/4`. |
 | `"check_profs"` | `["str","con",...]` | Only read when `"mods"` is present — which of the 6 stats add `prof_bonus` to `resist_check_detailed()` (contested checks: Topple, Push, Grip of the Forest, SAVE cantrips/spells). |
@@ -1054,10 +1055,15 @@ race with no darkvision):
   Person's "remains paralyzed").
 - **Halfling Nimbleness** (`"you can move through the space of any creature that is a size larger
   than you"`): **implemented, as an activated ability rather than a move-executor rule** — direct
-  owner request, sidestepping the need for a real named size-category field (see the table below):
-  "larger than a Small Halfling" is approximated as `Enemy.size.x * enemy.size.y > 1` (a real
-  multi-tile footprint — Ogre/Spider's 2×2 today, `PlayerHalfling.is_larger_than_halfling()`)
-  rather than a true 5e size comparison. Ability id `"halfling_nimbleness"`, granted immediately at
+  owner request. Uses a real D&D size-CATEGORY comparison, not just the physical footprint: every
+  `Enemy` now carries `creature_size` (pool key `"size_category"`, see the schema table's own row —
+  default `"Medium"` when an entry doesn't set one, since an ordinary 1x1 enemy is exactly as big as
+  the Player and therefore already one full category above a Small Halfling; Quasit is the one
+  enemy authored as `"Tiny"`, Ogre/Spider `"Large"`). `PlayerHalfling.is_larger_than_halfling(enemy)`
+  qualifies anything ranked strictly above Small (Medium/Large/Huge/Gargantuan) OR with a physical
+  footprint > 1 tile (belt-and-suspenders in case a future Large+ entry forgets to also set
+  `"size_category"`) — so in practice this covers essentially every enemy in the game except Quasit,
+  not just the 2x2-footprint pair. Ability id `"halfling_nimbleness"`, granted immediately at
   race select (`GameState.give_race_starting_items()`'s HALFLING branch); composition child-node
   `scripts/entities/player_halfling.gd` (`PlayerHalfling`, `_halfling` on `player.gd`), same pattern
   as `PlayerDwarf`/`PlayerGoliath`. Free action, capped at once per real round
@@ -1081,11 +1087,11 @@ race with no darkvision):
   activation") is still not implemented — this ability is the whole feature as shipped, not a
   partial stand-in for a later full rework.
 
-**D&D 2024 size categories** (reference table — not yet wired to any code; Halfling Nimbleness
-above approximates "larger" off `Entity.size`'s footprint area instead of this table; for whenever
-entities gain a real size-category field, e.g. a more precise footprint
-system than the current raw w/h `Entity.size`): space/area multiplier relative to a Medium
-creature's 1 tile —
+**D&D 2024 size categories** (reference table — `Enemy.creature_size`/pool `"size_category"` now
+implements the category names themselves, see Halfling Nimbleness above and the schema table's own
+row; this table's area-multiplier column is still unwired to any code, kept for whenever a more
+precise footprint system than the current raw w/h `Entity.size` is needed): space/area multiplier
+relative to a Medium creature's 1 tile —
 
 | Size | Area multiplier |
 |---|---|

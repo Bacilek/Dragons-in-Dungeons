@@ -6,10 +6,13 @@ extends Node
 # scripts/entities/CLAUDE.md's "Halfling" section. Implemented as a free, arm-then-click activated
 # ability rather than a move-executor rule (direct owner request) — activating shows a blue,
 # range-1/8-direction preview around the player (same tile-tint convention as a touch spell); if a
-# tile holds an enemy LARGER than the Halfling (footprint area > 1 — Ogre/Spider today, see root
-# CLAUDE.md's "Multi-tile footprint"), clicking it teleports the player to the tile directly on the
-# far side of that creature. Free action (no turn cost, same as Cloud Giant's Jaunt), capped at
-# once per real round (`used_this_turn`, reset by player.gd's _on_turn_started()).
+# tile holds an enemy LARGER than the Halfling — a real D&D size-category comparison
+# (Enemy.creature_size, pool key "size_category", default "Medium" — every ordinary 1x1 enemy
+# outsizes a Small Halfling, not just a physically-2x2-footprint one like Ogre/Spider — see root
+# CLAUDE.md's "Multi-tile footprint" and Enemy.creature_size's own comment), clicking it teleports
+# the player to the tile directly on the far side of that creature. Free action (no turn cost, same
+# as Cloud Giant's Jaunt), capped at once per real round (`used_this_turn`, reset by player.gd's
+# _on_turn_started()).
 
 var player: Player
 var nimbleness_mode_active: bool = false
@@ -45,8 +48,18 @@ func activate_nimbleness() -> void:
 func cancel() -> void:
 	nimbleness_mode_active = false
 
+# D&D size-category rank, smallest to largest — a Halfling is Small (rank 1); Nimbleness applies
+# to anything strictly larger. A footprint > 1 tile (Ogre/Spider) always counts as larger too, even
+# on the off chance a future Large+ entry forgets to also set "size_category" explicitly.
+const SIZE_RANK: Dictionary = {
+	"Tiny": 0, "Small": 1, "Medium": 2, "Large": 3, "Huge": 4, "Gargantuan": 5,
+}
+const HALFLING_SIZE_RANK: int = 1  # Small
+
 static func is_larger_than_halfling(enemy: Enemy) -> bool:
-	return enemy.size.x * enemy.size.y > 1
+	if enemy.size.x * enemy.size.y > 1:
+		return true
+	return int(SIZE_RANK.get(enemy.creature_size, 2)) > HALFLING_SIZE_RANK
 
 func resolve_nimbleness(clicked: Vector2i) -> void:
 	if player._dungeon_floor == null:

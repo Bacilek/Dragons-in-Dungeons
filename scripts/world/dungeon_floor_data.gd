@@ -389,7 +389,7 @@ const ENEMY_POOL: Array = [
 	# art authored yet for any of the three forms (asset debt, same precedent as Imp's own Raven —
 	# falls back to leaving the true Quasit sprite showing).
 	{"enemy_id": "quasit",        "display_name": "Quasit",      "sprite": "quasit",      "idle_frames": 4, "run_frames": 4, "floor_min": 7, "floor_max": 10, "hp": 25, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 7, "armor": 0, "ac": 13, "exp": 20,
-	 "cr": 1, "creature_type": "Fiend",
+	 "cr": 1, "creature_type": "Fiend", "size_category": "Tiny",
 	 "mods": {"str": -3, "dex": 3, "con": 0, "int": -2, "wis": 0, "cha": 0},
 	 "senses": {"sight_bonus": 2},
 	 "passive_perception": 10,
@@ -455,7 +455,7 @@ const ENEMY_POOL: Array = [
 	# wherever the target stands when this Ogre eventually dies; "random_uses": true — the
 	# recovered Javelin is already partially worn down, not pristine.
 	{"enemy_id": "ogre", "display_name": "Ogre", "sprite": "ogre", "idle_frames": 4, "run_frames": 4, "floor_min": 8, "floor_max": 10, "hp": 59, "hp_per_floor": 4, "dmg_min": 6, "dmg_max": 20, "armor": 0, "ac": 11, "exp": 40,
-	 "cr": 2, "creature_type": "Giant",
+	 "cr": 2, "creature_type": "Giant", "size_category": "Large",
 	 "mods": {"str": 4, "dex": -1, "con": 3, "int": -3, "wis": -2, "cha": -2},
 	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 8,
@@ -510,7 +510,7 @@ const ENEMY_POOL: Array = [
 	{"enemy_id": "spider", "display_name": "Spider", "sprite": "spider",
 	 "sprite_frame_size": {"w": 32, "h": 32}, "sprite_scale": 1.0, "idle_frames": 6, "run_frames": 6,
 	 "floor_min": 4, "floor_max": 8, "hp": 26, "hp_per_floor": 3, "dmg_min": 4, "dmg_max": 11, "armor": 0, "ac": 14, "exp": 22,
-	 "cr": 1, "creature_type": "Beast",
+	 "cr": 1, "creature_type": "Beast", "size_category": "Large",
 	 "mods": {"str": 2, "dex": 3, "con": 1, "int": -4, "wis": 0, "cha": -3},
 	 "senses": {"sight_bonus": 1},
 	 "passive_perception": 10,

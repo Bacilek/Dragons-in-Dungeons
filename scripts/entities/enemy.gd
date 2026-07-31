@@ -89,6 +89,17 @@ const SHAPE_SHIFT_SPRITES: Dictionary = {
 # ── D&D stat-block schema (docs/architecture/enemy-stat-block-design.md) ──────────────────────
 var cr: float = 0.25                             # authored challenge rating, pool key "cr"
 var creature_type: String = "Humanoid"           # pool key "creature_type", flavor/tag only (§7)
+var creature_size: String = "Medium"             # pool key "size_category" — D&D size CATEGORY
+												  # ("Tiny"/"Small"/"Medium"/"Large"/"Huge"/
+												  # "Gargantuan"), distinct from the physical
+												  # w/h footprint below (a Large 2x2 enemy like
+												  # Ogre/Spider should also set "size_category":
+												  # "Large", but the category alone — no footprint
+												  # change — is enough for e.g. Halfling Nimbleness
+												  # to treat a plain 1x1 enemy as "larger than
+												  # Small". Default "Medium" (undocumented enemies
+												  # are ordinary humanoid/beast-sized) — only Quasit
+												  # (Tiny) overrides it today.
 var damage_resistances: Array[String] = []       # ×0.5 — pool "damage_resistances" (fallback: legacy "resist")
 var damage_immunities: Array[String] = []        # ×0   — pool "damage_immunities"
 var damage_vulnerabilities: Array[String] = []   # ×2.0 — pool "damage_vulnerabilities" (fallback: legacy "vuln")
@@ -168,6 +179,7 @@ func _apply_stats() -> void:
 	exp_reward        = _type.get("exp", 5)
 	cr                = float(_type.get("cr", 0.25))
 	creature_type     = String(_type.get("creature_type", "Humanoid"))
+	creature_size     = String(_type.get("size_category", "Medium"))
 	legendary_resistances_remaining = int(_type.get("legendary_resistances", 0))
 
 	# Multi-tile footprint (pool "size": {"w","h"}, e.g. Ogre's Large 2x2) — Entity.size, default
