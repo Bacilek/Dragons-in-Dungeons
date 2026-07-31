@@ -1678,9 +1678,16 @@ regains sight on its own turn), a mid-chase obstacle break (the SPD "ring around
 circling a single vision-blocking obstacle so a chasing enemy repeatedly loses/regains sight, each
 regain re-arming a surprise window; the Opportunity Attack a player takes for stepping out of the
 enemy's threat range mid-circle is the intended balancing friction, unchanged by this system), and
-the target's Invisibility ending while still being actively hunted. Firing this branch also calls
-`_notice_target()` (same golden "?" freeze as any other notice) and returns a `"notice"` intent for
-that round. **`surprise_available` never grants an enemy a bonus against the player** — it is read
+the target's Invisibility ending while still being actively hunted. **Unlike a fresh
+SLEEPING/STATIONARY/ROAMING→CHASING notice, this regain does NOT freeze the round** — no
+`_notice_target()` call, no golden "?", no `"notice"` intent; the enemy was already actively
+hunting the player (CHASING/SEARCHING is itself proof of prior awareness), so re-establishing sight
+isn't a fresh discovery and the enemy acts immediately (moves/attacks) the same turn it regains LOS.
+This was a deliberate fix: freezing every LOS regain mid-chase (e.g. a slower enemy losing sight of
+a fleeing player for a moment, then re-acquiring it through a doorway) played as the enemy
+"forgetting" the player and re-discovering them from scratch, which reads as absurd once you've
+already been spotted and are actively being hunted — the surprise-ADV window is the correct reward
+for a door-camping ambush, a full wasted round is not. **`surprise_available` never grants an enemy a bonus against the player** — it is read
 only by `PlayerVfx.has_advantage()` (player-attacks-enemy), never by any enemy-attack-roll path;
 this holds even for an enemy that momentarily loses/regains sight of an invisible player itself —
 there is no symmetric mechanic and none should ever be added.
@@ -1741,8 +1748,8 @@ there" feel:
 
 **SLEEPING**: shows zzz label. Vs. the Player: no free wake of any kind anymore (neither LOS- nor adjacency-based) — detection is entirely the Stealth-vs-Passive-Perception check's job, see "Stealth & Surprise Attacks" below. Vs. the Companion: true adjacency (Chebyshev ≤ 1) in `_decide_action()` still routes through `_notice_target()` (golden "?", one-round freeze) instead of attacking immediately.
 **ROAMING**: waypoint BFS. `_pick_roam_target()` shuffles `DungeonFloor.get_room_centers()`, picks tile at Chebyshev ≥ 4. Follows `_roam_path: Array[Vector2i]` via `_bfs_to()`. Falls back to `_do_random_step()` if blocked. Vs. the Player: no free wake, same as SLEEPING above. Vs. the Companion: spotting it (`can_see`) still routes through `_notice_target()` — a one-round freeze before it starts actually chasing.
-**CHASING**: follows the selected target directly. Tracks `_had_los_to_player` each decision — the false→true edge (this enemy's own turn regaining sight it had lost, e.g. crossing a door or rounding an obstacle) fires a re-notice (golden "?" + `surprise_available = true`) instead of silently resuming the chase — see "Stealth & Surprise Attacks" above. Records `_search_heading` (direction toward target) each turn target is visible.
-**SEARCHING**: entered when a CHASING enemy reaches `last_known_target_pos` without LOS. Searches for 7 turns in `_search_heading` direction (BFS to `_search_target = last_known_pos + heading * 5`). If the target is spotted → CHASING (same LOS-regain re-notice check as CHASING above). After 7 turns → ROAMING. Fields: `_search_heading: Vector2i`, `_search_turns_remaining: int`, `_search_target: Vector2i`, `_search_path: Array[Vector2i]`.
+**CHASING**: follows the selected target directly. Tracks `_had_los_to_player` each decision — the false→true edge (this enemy's own turn regaining sight it had lost, e.g. crossing a door or rounding an obstacle) sets `surprise_available = true` and acts the same turn (no freeze — see "Stealth & Surprise Attacks" above for why a mid-chase regain doesn't burn a round like a fresh notice does). Records `_search_heading` (direction toward target) each turn target is visible.
+**SEARCHING**: entered when a CHASING enemy reaches `last_known_target_pos` without LOS. Searches for 7 turns in `_search_heading` direction (BFS to `_search_target = last_known_pos + heading * 5`). If the target is spotted → CHASING (same no-freeze LOS-regain rule as CHASING above). After 7 turns → ROAMING. Fields: `_search_heading: Vector2i`, `_search_turns_remaining: int`, `_search_target: Vector2i`, `_search_path: Array[Vector2i]`.
 
 `_roam_path` and `_roam_target` are cleared on state transitions.
 

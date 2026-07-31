@@ -1262,11 +1262,13 @@ func _decide_action() -> Dictionary:
 				# surprise-attack eligibility on the player's very next attack. See "Stealth &
 				# Surprise Attacks" in scripts/entities/CLAUDE.md for why this differs from a
 				# player-triggered stealth-check notice (which never grants this).
+				# Deliberately does NOT freeze the round (no golden "?", no _notice_target()) —
+				# this enemy was already actively hunting the player, so re-establishing sight
+				# isn't a fresh discovery; it acts immediately (chase/attack) the same turn it
+				# regains LOS, only the surprise-ADV window on the player's next attack is granted.
 				if not _had_los_to_player:
 					_had_los_to_player = true
 					surprise_available = true
-					_notice_target(target.grid_pos)
-					return {"type": "notice"}
 				last_known_target_pos = target.grid_pos
 				_search_heading = Vector2i(sign(dx), sign(dy))
 			else:
@@ -1275,12 +1277,12 @@ func _decide_action() -> Dictionary:
 
 		Behavior.SEARCHING:
 			if can_see:
+				# Same no-freeze LOS-regain rule as CHASING above — a SEARCHING enemy is still
+				# actively hunting (just without a current fix on the player), so spotting them
+				# again isn't a fresh discovery either.
 				if not _had_los_to_player:
 					_had_los_to_player = true
 					surprise_available = true
-					behavior = Behavior.CHASING
-					_notice_target(target.grid_pos)
-					return {"type": "notice"}
 				behavior = Behavior.CHASING
 				last_known_target_pos = target.grid_pos
 				_search_heading = Vector2i(sign(dx), sign(dy))
