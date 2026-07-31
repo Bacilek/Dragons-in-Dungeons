@@ -51,3 +51,9 @@ enum TargetKind { ENEMY, SELF, TILE }
 
 @export var effect_id: String = ""     # "" = pure generic damage; else SpellEffects dispatch
 @export var class_list: Array[String] = []
+# Ritual casting (5e): can be cast without expending a spell slot, PROVIDED no enemy is currently
+# hunting the caster (Enemy.Behavior.CHASING/SEARCHING anywhere on the floor — Player.
+# is_being_pursued()). The real rule is "takes 10 extra minutes"; this engine has no clock to hang
+# that on, so it's simplified to "free, but only when not being actively pursued" — see
+# SpellEffects._consume_slot()'s ritual branch. Detect Magic is the first (and so far only) user.
+@export var is_ritual: bool = false

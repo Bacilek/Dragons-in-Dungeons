@@ -363,6 +363,13 @@ static func cast_spell_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 static func _consume_slot(player: Player, spell: Spell, cast_level: int, from_scroll: bool = false) -> void:
 	if from_scroll:
 		return
+	# Ritual casting (Spell.is_ritual — Detect Magic): free, no slot spent, PROVIDED no enemy is
+	# currently hunting the caster. Checked before every other free-cast path since it applies
+	# regardless of caster class (even a non-Wizard reading a ritual-tagged scroll — though no
+	# ritual spell has one today — would still hit the from_scroll early-return above first).
+	if spell.is_ritual and not player.is_being_pursued():
+		GameState.spell_slots_changed.emit()
+		return
 	if player.stats.is_lineage_free_cast_available(spell.spell_id):
 		player.stats.elf_lineage_free_cast_used[spell.spell_id] = true
 		GameState.spell_slots_changed.emit()
@@ -428,15 +435,15 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			# NOT concentration (5e RAW: ends on attacking/casting, not on taking damage) — see
 			# Stats.invisibility_turns's own doc comment. invisibility_just_cast skips this same
 			# cast's own stealth_check_skip=true (set above) from immediately ending it.
-			player.stats.invisibility_turns = 100
+			player.stats.invisibility_turns = 600
 			player.stats.invisibility_just_cast = true
 			player._update_invisibility_visual()
-			GameState.game_log("[color=cyan]You cast [b]%s[/b] — you fade from view for up to 100 turns.[/color]" % spell.spell_name)
+			GameState.game_log("[color=cyan]You cast [b]%s[/b] — you fade from view for up to 600 turns.[/color]" % spell.spell_name)
 		"detect_magic":
-			_resolve_detect_magic(player, spell, dungeon_floor)
+			_resolve_detect_magic(player, spell)
 		"longstrider":
-			player.stats.longstrider_turns = 100
-			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your steps quicken for up to 100 turns.[/color]" % spell.spell_name)
+			player.stats.longstrider_turns = 600
+			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your steps quicken for up to 600 turns.[/color]" % spell.spell_name)
 		"pass_without_trace":
 			if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "pass_without_trace":
 				GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
@@ -1014,14 +1021,17 @@ static func _resolve_fog_cloud(player: Player, spell: Spell, center: Vector2i) -
 	if stats.concentration_spell_id != "" and stats.concentration_spell_id != "fog_cloud":
 		GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 	stats.concentration_spell_id = "fog_cloud"
-	stats.fog_cloud_turns = 100
+	stats.fog_cloud_turns = 600
 	GameState.fog_cloud_pos = center
 	GameState.fog_cloud_radius = spell.shape_size
 	GameState.game_log("[color=cyan]A thick fog billows outward, obscuring the area![/color]")
 
-# Darkness (Drow lineage spell) — a second, independent Heavily Obscured zone, otherwise identical
-# mechanism to Fog Cloud above (see GameState.darkness_pos/darkness_radius and
-# is_heavily_obscured()'s "checks both zones" comment).
+# Darkness (real LEVELED_SPELL_IDS entry, also the Drow lineage spell) — a second, independent
+# Heavily Obscured zone, otherwise identical mechanism to Fog Cloud above (see
+# GameState.darkness_pos/darkness_radius and is_heavily_obscured()'s "checks both zones" comment).
+# Can be cast at a bare point OR at a tile holding an unattended floor object — mechanically the
+# same either way, since the zone is just a position+radius with no live Item reference to track
+# (unlike the Light cantrip, which DOES track its lit object and auto-ends when it's gone).
 static func _resolve_darkness(player: Player, spell: Spell, center: Vector2i) -> void:
 	var stats: Stats = player.stats
 	if stats.concentration_spell_id != "" and stats.concentration_spell_id != "darkness":
@@ -1031,16 +1041,50 @@ static func _resolve_darkness(player: Player, spell: Spell, center: Vector2i) ->
 	GameState.darkness_pos = center
 	GameState.darkness_radius = spell.shape_size
 	GameState.game_log("[color=cyan]Magical darkness pools outward, swallowing the light![/color]")
+	_darkness_dispel_overlapping_light(spell.shape_size, center)
+
+# If this Darkness zone's area overlaps a currently-active Light cantrip's glow (a level-0 spell —
+# "level 2 or lower" per the spell's own text), the light is snuffed out. Two overlapping circles
+# (Darkness's own radius + the Light source's GameState.LIGHT_SOURCE_RADIUS) touch iff the distance
+# between their centers is <= the sum of their radii. Only the Light cantrip counts here — a lit
+# Torch's glow isn't a spell at all, so it's untouched by this check.
+static func _darkness_dispel_overlapping_light(darkness_radius: int, center: Vector2i) -> void:
+	if GameState.light_source_pos == Vector2i(-1, -1):
+		return
+	var d: Vector2i = GameState.light_source_pos - center
+	var reach: int = darkness_radius + GameState.LIGHT_SOURCE_RADIUS
+	if d.x * d.x + d.y * d.y <= reach * reach:
+		GameState.clear_light_source()
+		GameState.game_log("[color=cyan]The darkness swallows the nearby light![/color]")
 
 # Faerie Fire (Drow lineage spell) — every enemy within spell.shape_size tiles (Euclidean, LOS'd
 # from the impact tile — same target-gathering shape as _resolve_sphere_aoe()) makes a DEX save;
-# on a fail, Enemy.faerie_fire_turns is set (100 turns — grants Advantage to every attack against
-# it, see PlayerVfx.has_advantage()). No damage, no friendly fire (the player is never a target).
+# on a fail, Enemy.faerie_fire_turns is set (10 turns — grants Advantage to every attack against
+# it PROVIDED the attacker can see it, see PlayerVfx.has_advantage(); also emanates a small light
+# bubble and forces an invisible failed-save creature visible-but-translucent instead of hidden —
+# see Enemy.is_outlined_while_invisible()/DungeonFloor._update_enemy_visibility()). No damage, no
+# friendly fire (the player is never a target). Objects in the cube are cosmetic-only per the real
+# spell text ("if the object is worn or carried..."); this engine has no generic prop-tinting
+# system to hang a persistent object outline on, so only the creature-side effects are implemented
+# — a documented scope cut, not an oversight. One random color (blue/green/violet) is rolled ONCE
+# per cast and shared by every creature outlined this cast (Enemy.faerie_fire_color), matching "all
+# the same color" — a real 5e spell, Concentration up to 10 turns (the caster's own duration is
+# tracked separately, Stats.faerie_fire_turns, ticked in player.gd's per-turn block).
+const FAERIE_FIRE_COLORS: Array[Color] = [
+	Color(0.35, 0.6, 1.0),   # blue
+	Color(0.4, 0.9, 0.45),   # green
+	Color(0.65, 0.35, 0.95), # violet
+]
 static func _resolve_faerie_fire(player: Player, spell: Spell, center: Vector2i, dungeon_floor: Node) -> void:
 	if dungeon_floor == null:
 		return
 	var stats: Stats = player.stats
+	if stats.concentration_spell_id != "" and stats.concentration_spell_id != "faerie_fire":
+		GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+	stats.concentration_spell_id = "faerie_fire"
+	stats.faerie_fire_turns = 10
 	var r: int = spell.shape_size
+	var color: Color = Rng.pick(FAERIE_FIRE_COLORS)
 	GameState.game_log("[color=cyan]Dancing lights swirl outward, seeking to outline your foes![/color]")
 	for e: Enemy in dungeon_floor.get_all_enemies():
 		if not is_instance_valid(e) or e.stats.is_dead():
@@ -1058,26 +1102,23 @@ static func _resolve_faerie_fire(player: Player, spell: Spell, center: Vector2i,
 		if save["pass"]:
 			GameState.game_log("%s [url=%s]resists[/url] the light." % [e.display_name, save_meta])
 		else:
-			e.faerie_fire_turns = 100
+			e.faerie_fire_turns = 10
+			e.faerie_fire_color = color
+			e._refresh_faerie_fire_visual()
 			GameState.game_log("%s is [url=%s]outlined[/url] in dancing light!" % [e.display_name, save_meta])
 
-# Detect Magic (High Elf lineage spell) — an instant read, not a lasting sense: lists every magic
-# item (Item.requires_attunement, or a nonzero bonus_ac/bonus_damage) currently lying on the floor
-# within spell.shape_size tiles (Chebyshev). Simplified vs. the real 10-minute-duration spell —
-# this engine has no ongoing "detect" UI to hang a lasting sense on.
-static func _resolve_detect_magic(player: Player, spell: Spell, dungeon_floor: Node) -> void:
-	if dungeon_floor == null:
-		GameState.game_log("[color=cyan]You cast [b]%s[/b] but sense nothing nearby.[/color]" % spell.spell_name)
-		return
-	var r: int = spell.shape_size
-	var found: Array[String] = []
-	for dy: int in range(-r, r + 1):
-		for dx: int in range(-r, r + 1):
-			var p: Vector2i = player.grid_pos + Vector2i(dx, dy)
-			for item: Item in dungeon_floor.get_items_at(p):
-				if item.requires_attunement or item.bonus_ac > 0 or item.bonus_damage > 0:
-					found.append(item.item_name)
-	if found.is_empty():
-		GameState.game_log("[color=cyan]You cast [b]%s[/b] — no magic detected nearby.[/color]" % spell.spell_name)
-	else:
-		GameState.game_log("[color=cyan]You cast [b]%s[/b] — you sense: %s.[/color]" % [spell.spell_name, ", ".join(found)])
+# Detect Magic — a real, lasting sense now (previously a one-shot instant read; that read's own
+# item-qualifying rule — Item.requires_attunement, or a nonzero bonus_ac/bonus_damage — lives on
+# unchanged as GameState.is_magic_item(), just reused every fog update instead of once at cast
+# time). Concentration up to 600 turns: Stats.detect_magic_turns, ticked in player.gd alongside
+# every other 100/600-turn buff. While active, DungeonFloor._update_detect_magic_markers() (called
+# from update_fog(), same pooled-Sprite2D convention as Dwarf Stonecunning's own tremorsense ping —
+# scripts/entities/CLAUDE.md's "Dwarf" section) shows a pulsing BLUE dot over every qualifying
+# magic item within Spell.shape_size (3) tiles of the player (Chebyshev), sight-independent exactly
+# like Tremorsense (works through walls/Blinded).
+static func _resolve_detect_magic(player: Player, spell: Spell) -> void:
+	if player.stats.concentration_spell_id != "" and player.stats.concentration_spell_id != "detect_magic":
+		GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+	player.stats.concentration_spell_id = "detect_magic"
+	player.stats.detect_magic_turns = 600
+	GameState.game_log("[color=cyan]You cast [b]%s[/b] — you sense the presence of magic around you.[/color]" % spell.spell_name)

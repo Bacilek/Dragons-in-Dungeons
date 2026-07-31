@@ -34,7 +34,10 @@ func has_advantage(enemy: Enemy) -> bool:
 		return true
 	# Faerie Fire (Drow lineage spell): a failed DEX save outlines the target in light — every
 	# attack roll against it has Advantage for the duration, same chokepoint as Blinded above.
-	if enemy.faerie_fire_turns > 0:
+	# ONLY if the attacker can actually see the target (the spell's own "if you can see it" text) —
+	# an outlined enemy sitting in a tile the player currently can't see into (e.g. behind a wall
+	# corner) grants no Advantage just because it's lit up somewhere off-screen.
+	if enemy.faerie_fire_turns > 0 and player._dungeon_floor != null and player._dungeon_floor.is_tile_visible(enemy.grid_pos):
 		return true
 	return enemy.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
 

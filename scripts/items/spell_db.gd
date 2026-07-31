@@ -12,7 +12,7 @@ const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp
 # The Wizard's fixed round-1 starting choice (cantrip_select.gd) — unchanged by the 5 additions
 # above so the premade Jace's "cantrip": "fire_bolt" shortcut and existing save data stay valid.
 const STARTER_CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
-const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud", "invisibility"]
+const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud", "invisibility", "darkness", "longstrider", "detect_magic"]
 # Ranger (half-caster, scripts/entities/CLAUDE.md's "Ranger class") draws from the same shared
 # `SpellDb` pool as Wizard, but ONLY the subset actually on Ranger's real 5e/5.5e (2024) spell
 # list — direct owner correction: don't just open every `LEVELED_SPELL_IDS` entry up to Ranger
@@ -29,10 +29,19 @@ const RANGER_SPELL_IDS: Array[String] = ["fog_cloud"]
 const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS, "RANGER": RANGER_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
 # Elf lineage-only spells (see scripts/entities/CLAUDE.md's "Elf" section) — granted exclusively by
-# GameState._grant_elf_lineage_spell(), never learnable via the level-up spellbook-growth picker or
-# any class's known-spell list, so these are deliberately NOT added to LEVELED_SPELL_IDS/
-# CLASS_SPELL_LISTS. No Scroll of <Spell> exists for any of the four (Misty Step, the 5th lineage
-# spell, already has one) — a documented scope cut, not an oversight.
+# GameState._grant_elf_lineage_spell(). Originally none of these were learnable via the level-up
+# spellbook-growth picker or any class's known-spell list; that's no longer true for THREE of the
+# five — "darkness" (Drow, level 5), "longstrider" (Wood Elf, level 3), and "detect_magic" (High
+# Elf, level 3) are ALSO real, independently-learnable LEVELED_SPELL_IDS entries now (their real
+# 5e/5.5e class lists include several classes this codebase doesn't have, so class_list stays
+# ["WIZARD"] like every other spell) — they're listed here too only because their sub-race also
+# grants them for free at the matching level via the same lineage mechanism the other two
+# (faerie_fire, pass_without_trace — still lineage-only, not on LEVELED_SPELL_IDS) use. The
+# free-cast-per-long-rest economy and the LEVELED_SPELL_IDS/level-up-picker/slot-casting paths are
+# independent of each other and both work regardless of how a spell was acquired. No Scroll of
+# <Spell> exists for faerie_fire/pass_without_trace (Misty Step, the 6th lineage spell, already has
+# one; darkness/longstrider/detect_magic now do too, being real LEVELED_SPELL_IDS entries) — a
+# documented scope cut for the two lineage-only holdouts, not an oversight.
 const ELF_LINEAGE_SPELL_IDS: Array[String] = ["faerie_fire", "darkness", "detect_magic", "longstrider", "pass_without_trace"]
 
 # Tiefling Fiendish Legacy-only spells (see scripts/entities/CLAUDE.md's "Tiefling" section) —
@@ -236,11 +245,11 @@ static func _magic_missile() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "magic_missile"
 	s.spell_name = "Magic Missile"
-	s.description = "3 darts of magical force strike unerringly — always hits, no attack roll. 1d4+1 Force each. Range: 12 tiles. The darts seek their target: no line of sight needed (they'll find a target around a corner, through grass, past a closed door) — but only if a walkable path to them exists (a route a character could physically take, chasms aside — the darts fly over those). No path, no hit, no matter how close."
+	s.description = "3 darts of magical force strike unerringly — always hits, no attack roll. 1d4+1 Force each. Range: 6 tiles. The darts seek their target: no line of sight needed (they'll find a target around a corner, through grass, past a closed door) — but only if a walkable path to them exists (a route a character could physically take, chasms aside — the darts fly over those). No path, no hit, no matter how close."
 	s.icon_path = "res://icons/spells/1/arcane_missiles.png"  # icon pack names this spell's art "arcane_missiles"
 	s.school = "Evocation"
 	s.level = 1
-	s.range_tiles = 12
+	s.range_tiles = 6
 	s.bypasses_los = true
 	s.target_kind = Spell.TargetKind.ENEMY
 	s.resolution = Spell.Resolution.AUTO_HIT
@@ -461,15 +470,15 @@ static func _faerie_fire() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "faerie_fire"
 	s.spell_name = "Faerie Fire"
-	s.school = "Conjuration"
+	s.school = "Evocation"
 	s.level = 1
-	s.range_tiles = 6
+	s.range_tiles = 3
 	s.target_kind = Spell.TargetKind.TILE
 	s.shape = "sphere"
 	s.shape_size = 2
 	s.resolution = Spell.Resolution.SAVE
 	s.save_stat = "DEX"
-	s.description = "Every creature in a 2-tile sphere makes a DEX save or is outlined in light for up to 100 turns — every attack roll against an outlined creature has Advantage. No damage. Drow lineage spell."
+	s.description = "A 2-tile cube is outlined in a random dancing light (blue, green, or violet). Every creature inside makes a DEX save or is also outlined for 10 turns (Concentration): every attack roll against it has Advantage if the attacker can see it, it sheds its own dim light, and it can't turn invisible — an already-invisible creature that fails the save is instead seen, faintly, at reduced opacity. No damage. Real 5e class list: Bard/Druid. Drow lineage spell."
 	s.icon_path = ""
 	s.effect_id = "faerie_fire"
 	s.class_list = []
@@ -481,15 +490,15 @@ static func _darkness() -> Spell:
 	s.spell_name = "Darkness"
 	s.school = "Evocation"
 	s.level = 2
-	s.range_tiles = 6
+	s.range_tiles = 3
 	s.target_kind = Spell.TargetKind.TILE
 	s.shape = "sphere"
 	s.shape_size = 2
 	s.resolution = Spell.Resolution.AUTO_HIT
-	s.description = "Magical darkness fills a 2-tile sphere for up to 100 turns (Concentration) — anyone inside, you or an enemy, is Heavily Obscured/Blinded exactly like standing in a Fog Cloud. Drow lineage spell."
-	s.icon_path = ""
+	s.description = "A 2nd-level spell. Magical darkness fills a 2-tile sphere for up to 100 turns (Concentration) — anyone inside, you or an enemy, is Heavily Obscured/Blinded exactly like standing in a Fog Cloud. Can also be cast on an unattended floor object, in which case the darkness follows that spot instead of a bare point in the air (mechanically identical either way). If its area overlaps a Light cantrip's glow, the light is snuffed out. Real 5e/5.5e class list: Sorcerer/Warlock/Wizard."
+	s.icon_path = "res://icons/spells/2/darkness.png"
 	s.effect_id = "darkness"
-	s.class_list = []
+	s.class_list = ["WIZARD"]
 	return s
 
 static func _detect_magic() -> Spell:
@@ -499,13 +508,14 @@ static func _detect_magic() -> Spell:
 	s.school = "Divination"
 	s.level = 1
 	s.range_tiles = 0
-	s.shape_size = 6
+	s.shape_size = 3
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
-	s.description = "Sense magic items within 6 tiles — an instant read, not a lasting sense (simplified from the real spell's 10-minute duration; this engine has no ongoing detection UI). High Elf lineage spell."
-	s.icon_path = ""
+	s.is_ritual = true
+	s.description = "Ritual. For up to 600 turns (Concentration) you sense the presence of magic within 3 tiles of yourself — magic items lying on the floor show as a pulsing blue dot, same as Dwarf Stonecunning's tremorsense but for magic instead of creatures. Cast as a Ritual: free (no spell slot spent) as long as no enemy is currently hunting you; costs a real slot the instant one is. Real 5e/5.5e class list: Bard/Cleric/Druid/Paladin/Ranger/Sorcerer/Warlock/Wizard."
+	s.icon_path = "res://icons/spells/1/detect_magic.png"
 	s.effect_id = "detect_magic"
-	s.class_list = []
+	s.class_list = ["WIZARD"]
 	return s
 
 static func _longstrider() -> Spell:
@@ -514,13 +524,13 @@ static func _longstrider() -> Spell:
 	s.spell_name = "Longstrider"
 	s.school = "Transmutation"
 	s.level = 1
-	s.range_tiles = 0
+	s.range_tiles = 1
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
-	s.description = "+10 ft speed for up to 100 turns — once per turn, your first move doesn't cost you your turn (same mechanism as Expeditious Retreat). NOT Concentration. Wood Elf lineage spell."
-	s.icon_path = ""
+	s.description = "Touch. Your speed increases by 1/3 for up to 600 turns — once per turn, your first move doesn't cost you your turn (same mechanism as Expeditious Retreat). NOT Concentration. Real 5e/5.5e class list: Bard/Druid/Ranger/Wizard."
+	s.icon_path = "res://icons/spells/1/longstrider.png"
 	s.effect_id = "longstrider"
-	s.class_list = []
+	s.class_list = ["WIZARD"]
 	return s
 
 static func _pass_without_trace() -> Spell:

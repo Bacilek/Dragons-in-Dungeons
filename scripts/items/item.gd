@@ -79,7 +79,7 @@ enum ArmorCategory { NONE, LIGHT, MEDIUM, HEAVY }
 @export var is_light: bool = false        # Light: pairs with a Light Main Hand weapon in the Off-hand slot to attack with both — see player.gd._try_offhand_attack()
 @export var is_reach: bool = false        # Reach: +1 tile melee range — see CombatMath.melee_reach()
 # Torch: click-to-light while equipped (Main Hand or Off-hand) — see GameState.light_torch(). Once
-# lit, burns for 100 turns (torch_turns_remaining), granting +1 FOV in either hand and +1d4 Fire
+# lit, burns for 600 turns (torch_turns_remaining), granting +1 FOV in either hand and +1d4 Fire
 # damage on the standard melee swing only while wielded in Main Hand. Reaching 0 permanently sets
 # torch_burnt = true and renames the item "Burnt Torch" — it can never be relit.
 @export var is_torch: bool = false

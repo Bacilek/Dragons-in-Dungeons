@@ -40,7 +40,10 @@ func begin_cast(spell_id: String) -> void:
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return
-	if spell.level > 0 and not GameState.invincible and not player.stats.is_lineage_free_cast_available(spell_id):
+	# Ritual casting (Detect Magic): free of the slot-availability gate entirely, as long as no
+	# enemy is currently hunting the caster — see Spell.is_ritual's own comment.
+	var ritual_free: bool = spell.is_ritual and not player.is_being_pursued()
+	if spell.level > 0 and not GameState.invincible and not ritual_free and not player.stats.is_lineage_free_cast_available(spell_id):
 		var caster: SpellcasterState = player.stats.caster
 		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
 			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
@@ -124,6 +127,10 @@ func _cast_level_for(spell: Spell) -> int:
 		return 0
 	if GameState.invincible:
 		return spell.level  # God Mode: never needs (or spends) a slot — see _consume_slot()
+	# Ritual casting (Detect Magic) — free, no slot needed, as long as no enemy is currently
+	# hunting the caster. See Spell.is_ritual's own comment.
+	if spell.is_ritual and not player.is_being_pursued():
+		return spell.level
 	# Elf lineage spell's free-per-long-rest cast — works even for a non-caster class (no
 	# SpellcasterState/slot_pool to read at all), see Stats.is_lineage_free_cast_available().
 	if player.stats.is_lineage_free_cast_available(spell.spell_id):
@@ -155,6 +162,10 @@ func _cast_self(spell: Spell, from_scroll: bool = false) -> void:
 ## mechanism for any future spell that wants "reach = however far you can currently see", e.g. Wild
 ## Heart Eagle's +1 FOV radius).
 func _effective_range(spell: Spell) -> int:
+	# Blinded: every spell's reach collapses to 1 tile (Chebyshev), same rule as ranged weapons/
+	# thrown weapons — see PlayerRanged.is_ranged_target_in_range(). Overrides range_is_fov too.
+	if GameState.is_blinded(player.grid_pos):
+		return 1
 	if spell.range_is_fov:
 		# Matches dungeon_floor.gd's own live FOV radius formula exactly (update_fog()/
 		# _decide_action() visibility checks) — darkvision (Orc/Dwarf) and Wild Heart Eagle's
@@ -176,7 +187,10 @@ func cast_direct(spell_id: String, clicked: Vector2i) -> void:
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	if spell == null:
 		return
-	if spell.level > 0 and not GameState.invincible and not player.stats.is_lineage_free_cast_available(spell_id):
+	# Ritual casting (Detect Magic): free of the slot-availability gate entirely, as long as no
+	# enemy is currently hunting the caster — see Spell.is_ritual's own comment.
+	var ritual_free: bool = spell.is_ritual and not player.is_being_pursued()
+	if spell.level > 0 and not GameState.invincible and not ritual_free and not player.stats.is_lineage_free_cast_available(spell_id):
 		var caster: SpellcasterState = player.stats.caster
 		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
 			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)

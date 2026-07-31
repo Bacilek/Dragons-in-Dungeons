@@ -21,6 +21,11 @@ func is_ranged_target_in_range(weapon: Item, target_pos: Vector2i) -> bool:
 		return false
 	var d: Vector2i = target_pos - player.grid_pos
 	var dist_sq: int = d.x * d.x + d.y * d.y
+	# Blinded: a ranged attack's reach collapses to 1 tile (Chebyshev, so a diagonal-adjacent
+	# target still counts) regardless of the weapon's own range/long_range (Heavily Obscured
+	# terrain — Fog Cloud/Darkness — see GameState.is_blinded()).
+	if GameState.is_blinded(player.grid_pos):
+		return maxi(absi(d.x), absi(d.y)) <= 1
 	var long_r: int = weapon.long_range if weapon.long_range > 0 else DungeonFloor.FOV_RADIUS
 	return dist_sq <= long_r * long_r
 

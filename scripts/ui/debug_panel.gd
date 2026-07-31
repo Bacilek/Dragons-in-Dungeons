@@ -80,6 +80,9 @@ const ALL_ITEMS: Array = [
 	{"name": "Scroll of False Life",   "type": 3, "src": "spells", "icon": "false_life.png",    "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts False Life once, then it crumbles to dust.", "scroll_spell": "false_life", "gold": 60},
 	{"name": "Scroll of Fog Cloud",    "type": 3, "src": "spells", "icon": "fog_cloud.png",     "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Fog Cloud once, then it crumbles to dust.", "scroll_spell": "fog_cloud", "gold": 60},
 	{"name": "Scroll of Invisibility", "type": 3, "src": "spells", "icon": "invisibility.png", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Invisibility once, then it crumbles to dust.", "scroll_spell": "invisibility", "gold": 100},
+	{"name": "Scroll of Darkness",    "type": 3, "src": "spells", "icon": "darkness.png",    "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Darkness once, then it crumbles to dust.", "scroll_spell": "darkness", "gold": 100},
+	{"name": "Scroll of Longstrider", "type": 3, "src": "spells", "icon": "longstrider.png", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Longstrider once, then it crumbles to dust.", "scroll_spell": "longstrider", "gold": 50},
+	{"name": "Scroll of Detect Magic", "type": 3, "src": "spells", "icon": "detect_magic.png", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "desc": "Reading this casts Detect Magic once, then it crumbles to dust.", "scroll_spell": "detect_magic", "gold": 50},
 ]
 
 var _main_panel:    Panel

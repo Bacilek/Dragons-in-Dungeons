@@ -115,6 +115,9 @@ const ITEM_POOL: Array = [
 	{"name": "Scroll of False Life",   "type": 3, "icon": "false_life.png",   "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts False Life once, then it crumbles to dust.", "scroll_spell": "false_life", "gold": 60},
 	{"name": "Scroll of Fog Cloud",    "type": 3, "icon": "fog_cloud.png",    "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts Fog Cloud once, then it crumbles to dust.", "scroll_spell": "fog_cloud", "gold": 60},
 	{"name": "Scroll of Invisibility", "type": 3, "icon": "invisibility.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "Reading this casts Invisibility once, then it crumbles to dust.", "scroll_spell": "invisibility", "gold": 100},
+	{"name": "Scroll of Darkness",    "type": 3, "icon": "darkness.png",    "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "Reading this casts Darkness once, then it crumbles to dust.", "scroll_spell": "darkness", "gold": 100},
+	{"name": "Scroll of Longstrider", "type": 3, "icon": "longstrider.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Longstrider once, then it crumbles to dust.", "scroll_spell": "longstrider", "gold": 50},
+	{"name": "Scroll of Detect Magic", "type": 3, "icon": "detect_magic.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Detect Magic once, then it crumbles to dust.", "scroll_spell": "detect_magic", "gold": 50},
 ]
 
 const BOSS_POOL: Array = [
@@ -332,7 +335,7 @@ const ENEMY_POOL: Array = [
 	# (speed changes, "true form" tracking, damage-triggered revert) but visually a no-op today,
 	# per direct owner decision (asset debt, not a missing feature) — swap in real sprites via
 	# `_setup_animations()`'s sprite-prefix lookup once art exists, no other change needed.
-	# Invisibility (pool "invisibility", cooldown 5 turns, duration up to 100 turns): while CHASING/
+	# Invisibility (pool "invisibility", cooldown 5 turns, duration up to 600 turns): while CHASING/
 	# SEARCHING (pursuing) and NOT yet adjacent to the target, and the cooldown is ready, casts
 	# Invisibility on itself instead of closing distance — costs the turn (a real action, unlike
 	# Nimble Escape's free-form flee). Ends immediately on attacking (Sting) or, per the mirrored
@@ -359,7 +362,7 @@ const ENEMY_POOL: Array = [
 	 "damage_immunities": ["Fire", "Poison"],
 	 "condition_immunities": ["poisoned"],
 	 "traits": [{"id": "magic_resistance"}, {"id": "shape_shift"}],
-	 "invisibility": {"cooldown": 5, "duration": 100},
+	 "invisibility": {"cooldown": 5, "duration": 600},
 	 "multiattack": [{"name": "Sting", "count": 1, "dmg_min": 4, "dmg_max": 9, "damage_type": "Piercing",
 	                  "extra": {"dmg_min": 2, "dmg_max": 12, "damage_type": "Poison"}}]},
 	# Quasit — Tiny Fiend (Demon), Chaotic Evil, CR 1. AC 13 (natural armor). STR 5 (-3) DEX 17 (+3)
@@ -397,7 +400,7 @@ const ENEMY_POOL: Array = [
 	 "traits": [{"id": "magic_resistance"}, {"id": "shape_shift"}],
 	 "shape_shift_forms": ["bat", "centipede", "toad"],
 	 "shape_shift_speed": {"moves": 4, "per": 3},
-	 "invisibility": {"cooldown": 5, "duration": 100},
+	 "invisibility": {"cooldown": 5, "duration": 600},
 	 "scare": {"range": 2, "save_dc": 10},
 	 "multiattack": [{"name": "Rend", "count": 1, "dmg_min": 4, "dmg_max": 7, "damage_type": "Slashing",
 	                  "status": "poisoned_condition", "status_turns": 1}]},

@@ -51,7 +51,8 @@ var disadv_next_attack: bool = false  # World Tree Grip of the Forest R3 — con
 var prone: bool = false          # Maul's Topple mastery — real Prone condition (not turn-counted): auto-stands at the top of this enemy's own next turn, consuming one point of movement budget to do so (see decide_turn()). While it remains prone (i.e. on the PLAYER's turns before then), Player.gd's melee/ranged attack sites grant ADV/DISADV against it directly off this field.
 var poisoned_condition_turns: int = 0  # true 5e Poisoned condition (DISADV on this enemy's own attack rolls/checks) — separate from any future enemy-side damage-over-time status, mirrors Stats.poisoned_condition_turns
 var incapacitated_turns: int = 0       # "can't take actions" — skips this enemy's entire turn (decide_turn() below) and makes every player attack against it a Surprise Attack (PlayerVfx.has_advantage())
-var faerie_fire_turns: int = 0   # Drow lineage spell Faerie Fire — a failed DEX save outlines the target in light: every attack roll against it gets Advantage (PlayerVfx.has_advantage()). Purely a to-hit modifier, no movement/attack restriction of its own — ticked once per real turn in decide_turn().
+var faerie_fire_turns: int = 0   # Drow lineage spell Faerie Fire — a failed DEX save outlines the target in light: every attack roll against it gets Advantage (PlayerVfx.has_advantage()), ONLY if the attacker can actually see it (see PlayerVfx.has_advantage()'s own gate). Purely a to-hit modifier, no movement/attack restriction of its own — ticked once per real turn in decide_turn(). Also emanates a small light bubble (DungeonFloor.update_fog(), TORCH_BURN_LIGHT_RADIUS) and overrides Invisibility's own hidden-sprite behavior (see is_outlined_while_invisible() below).
+var faerie_fire_color: Color = Color(0.4, 0.7, 1.0)  # the one random color (blue/green/violet) rolled once per cast in SpellEffects._resolve_faerie_fire() and shared by every creature outlined that same cast — drives _faerie_fire_indicator's tint below.
 var shocked_no_oa: bool = false  # Shocking Grasp — blocks this enemy's next Opportunity Attack exposure, whenever it next happens
 var mind_sliver_penalty_die: bool = false  # Mind Sliver cantrip — the next check this enemy makes (any resist_check_detailed() call) rolls with -1d4. Consumed on that next check; deliberately not turn-expiry-timed against "until the end of your next turn" per the spell text — enemy checks are rare enough that this one-shot-consumed simplification is documented here rather than adding a second timing system for it.
 var frightened_turns: int = 0    # Aasimar Necrotic Shroud (Celestial Revelation) — a failed CHA check frightens this enemy. Simplified vs. the real player-side Frightened (scripts/entities/CLAUDE.md's "Conditions"): DISADV on this enemy's own attack rolls only, no can't-approach-the-source movement block (no enemy-side "source" tracking exists) — ticked once per real turn in decide_turn(), same shape as faerie_fire_turns/enfeeble_turns.
@@ -127,6 +128,8 @@ var _mark_indicator: Label  # Ranger's Hunter's Mark — small red arrow shown a
 var _mark_tween: Tween
 var _mark_base_y: float = -34.0
 
+var _faerie_fire_indicator: Label  # Faerie Fire — small sparkle shown above an outlined enemy, tinted faerie_fire_color
+
 func configure(type_data: Dictionary) -> void:
 	_type = type_data
 	display_name = type_data.get("display_name", "Enemy")
@@ -141,6 +144,7 @@ func _ready() -> void:
 	_setup_zzz()
 	_setup_notice_mark()
 	_setup_mark_indicator()
+	_setup_faerie_fire_indicator()
 	behavior = initial_behavior
 	if behavior == Behavior.SLEEPING:
 		_start_zzz()
@@ -329,7 +333,12 @@ func _tick_invisibility() -> void:
 			_end_invisibility()
 
 func is_hidden_from_player() -> bool:
-	return _invis_turns > 0
+	return _invis_turns > 0 and faerie_fire_turns <= 0
+
+# Faerie Fire "can't be invisible" clause: an outlined creature that's ALSO invisible is forced
+# visible (rendered translucent) rather than hidden — see DungeonFloor._update_enemy_visibility().
+func is_outlined_while_invisible() -> bool:
+	return _invis_turns > 0 and faerie_fire_turns > 0
 
 # Web ability cooldown (Spider, pool "web"): ticks down every real turn regardless of whether
 # Web is currently ready — same one-line shape as _invis_cooldown_remaining above.
@@ -460,9 +469,11 @@ func _pick_ready_ability(target: Node) -> Dictionary:
 		return {}
 	if _dungeon_floor == null or not _dungeon_floor.has_clear_shot(grid_pos, target.grid_pos):
 		return {}
+	var blinded: bool = GameState.is_blinded(grid_pos)
 	for ab: Dictionary in abilities:
 		var id: String = ab.get("id", "")
-		var max_reach: int = int(ab.get("long_range", ab.get("range", 5)))
+		# Blinded: same 1-tile reach collapse as the ranged attack_profile branch above.
+		var max_reach: int = 1 if blinded else int(ab.get("long_range", ab.get("range", 5)))
 		if id == "" or _chebyshev_to(target) > max_reach:
 			continue
 		if _ability_ready(id, ab):
@@ -777,6 +788,25 @@ func _stop_mark_bob() -> void:
 	if is_instance_valid(_mark_indicator):
 		_mark_indicator.visible = false
 
+func _setup_faerie_fire_indicator() -> void:
+	_faerie_fire_indicator = Label.new()
+	_faerie_fire_indicator.text = "✦"
+	_faerie_fire_indicator.add_theme_font_size_override("font_size", 14)
+	_faerie_fire_indicator.position = Vector2(6, -24)
+	_faerie_fire_indicator.z_index = 10
+	_faerie_fire_indicator.visible = false
+	add_child(_faerie_fire_indicator)
+
+# Called whenever faerie_fire_turns is set or ticked to 0 — updates the sparkle's visibility and
+# tints it faerie_fire_color (the one random color rolled per cast, shared by every creature
+# outlined that cast).
+func _refresh_faerie_fire_visual() -> void:
+	if not is_instance_valid(_faerie_fire_indicator):
+		return
+	_faerie_fire_indicator.visible = faerie_fire_turns > 0
+	if faerie_fire_turns > 0:
+		_faerie_fire_indicator.add_theme_color_override("font_color", faerie_fire_color)
+
 func _process(_delta: float) -> void:
 	if not is_instance_valid(_mark_indicator):
 		return
@@ -946,6 +976,8 @@ func decide_turn() -> Dictionary:
 	_tick_shape_shift()
 	if faerie_fire_turns > 0:
 		faerie_fire_turns -= 1
+		if faerie_fire_turns <= 0:
+			_refresh_faerie_fire_visual()
 	if enfeeble_turns > 0:
 		enfeeble_turns -= 1
 	if frightened_turns > 0:
@@ -1291,7 +1323,9 @@ func _in_attack_range(target: Node) -> bool:
 	var profile: Dictionary = _type.get("attack_profile", {})
 	match profile.get("kind", "melee"):
 		"ranged":
-			var rng: int = profile.get("range", 4)
+			# Blinded: this enemy's own ranged reach collapses to 1 tile — same rule as the
+			# player's ranged/thrown/spell reach, see PlayerRanged.is_ranged_target_in_range().
+			var rng: int = 1 if GameState.is_blinded(grid_pos) else profile.get("range", 4)
 			return _chebyshev_to(target) <= rng and _dungeon_floor.has_clear_shot(nearest_occupied_tile(target.grid_pos), target.grid_pos)
 		_:
 			return _chebyshev_to(target) == 1
@@ -1578,7 +1612,7 @@ func _build_thrown_weapon_item(wpn: Dictionary) -> Item:
 # DungeonFloor.update_fog() via _update_enemy_visibility()) and starts the cooldown; ends early on
 # attacking (_attack_target()'s hook below) or naturally via _tick_invisibility()'s duration countdown.
 func _execute_cast_invisibility(cfg: Dictionary) -> void:
-	_invis_turns = int(cfg.get("duration", 100))
+	_invis_turns = int(cfg.get("duration", 600))
 	_invis_cooldown_remaining = int(cfg.get("cooldown", 5))
 	visible = false
 	GameState.game_log("[color=purple]%s fades from view.[/color]" % display_name)

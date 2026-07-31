@@ -264,7 +264,7 @@ func _on_turn_started() -> void:
 				if stats.concentration_spell_id == "expeditious_retreat":
 					stats.concentration_spell_id = ""
 				GameState.game_log("[color=gray]Expeditious Retreat fades.[/color]")
-		# Fog Cloud: 100-turn duration, ticked once per real turn — also clears the actual cloud
+		# Fog Cloud: 600-turn duration, ticked once per real turn — also clears the actual cloud
 		# position/radius on GameState (unlike Blade Ward/Witch Bolt, which have nothing to clear
 		# beyond their own Stats fields).
 		if stats.fog_cloud_turns > 0:
@@ -282,12 +282,32 @@ func _on_turn_started() -> void:
 					stats.concentration_spell_id = ""
 				GameState.clear_darkness()
 				GameState.game_log("[color=gray]The darkness dissipates.[/color]")
-		# Longstrider (Wood Elf lineage spell): NOT Concentration — same 100-turn flat duration as
-		# Draconic Flight/Invisibility.
+		# Faerie Fire (Drow lineage spell): same 10-turn Concentration pattern as Darkness above —
+		# this only ticks the CASTER's own concentration duration; each outlined enemy's own
+		# faerie_fire_turns (whether it stays lit/outlined) ticks down independently in that
+		# enemy's own decide_turn(), so the effect doesn't retroactively end on already-outlined
+		# enemies just because the caster's concentration expires (documented simplification,
+		# same "no full framework" precedent as every other concentration spell here).
+		if stats.faerie_fire_turns > 0:
+			stats.faerie_fire_turns -= 1
+			if stats.faerie_fire_turns <= 0:
+				if stats.concentration_spell_id == "faerie_fire":
+					stats.concentration_spell_id = ""
+				GameState.game_log("[color=gray]The dancing lights fade.[/color]")
+		# Longstrider: NOT Concentration — 600-turn flat duration (5e RAW's "1 hour").
 		if stats.longstrider_turns > 0:
 			stats.longstrider_turns -= 1
 			if stats.longstrider_turns <= 0:
 				GameState.game_log("[color=gray]Longstrider fades.[/color]")
+		# Detect Magic: same 600-turn Concentration pattern as Fog Cloud/Darkness above — nothing
+		# beyond the Stats field to clear (the blue-dot markers are recomputed live off
+		# detect_magic_turns > 0 every update_fog() call, no position/state to reset).
+		if stats.detect_magic_turns > 0:
+			stats.detect_magic_turns -= 1
+			if stats.detect_magic_turns <= 0:
+				if stats.concentration_spell_id == "detect_magic":
+					stats.concentration_spell_id = ""
+				GameState.game_log("[color=gray]Your sense of magic fades.[/color]")
 		# Pass Without Trace (Wood Elf lineage spell): same 100-turn Concentration pattern as Fog
 		# Cloud/Darkness above.
 		if stats.pass_without_trace_turns > 0:
@@ -301,8 +321,8 @@ func _on_turn_started() -> void:
 			stats.minor_illusion_turns -= 1
 			if stats.minor_illusion_turns <= 0:
 				GameState.game_log("[color=gray]Your minor illusion fades.[/color]")
-		# Hunter's Mark: 100-turn Concentration duration, ticked once per real turn (same pattern
-		# as Blade Ward/Expeditious Retreat/Fog Cloud above).
+		# Hunter's Mark: 600-turn Concentration duration, ticked once per real turn (same pattern
+		# as Blade Ward/Expeditious Retreat/Fog Cloud above, just a longer flat duration).
 		if stats.hunters_mark_turns > 0:
 			stats.hunters_mark_turns -= 1
 			if stats.hunters_mark_turns <= 0:
@@ -321,7 +341,7 @@ func _on_turn_started() -> void:
 		elif stats.hunters_mark_free_recast_pending:
 			stats.hunters_mark_free_recast_pending = false
 			stats.hunters_mark_free_recast_available = true
-		# Invisibility: 100-turn duration, ticked once per real turn. Usually already ended earlier
+		# Invisibility: 600-turn duration, ticked once per real turn. Usually already ended earlier
 		# this same turn transition via _resolve_stealth_check()'s attack/cast check (which runs
 		# first, from _on_turn_ending()) — this decrement is a no-op whenever that already zeroed
 		# it, and only matters for the "never attacked, just wore off" case.
@@ -389,7 +409,7 @@ func _on_turn_started() -> void:
 					stats.frightened_turns -= 1
 					if stats.frightened_turns <= 0:
 						GameState.clear_player_frightened()
-		# Torch: 100-turn duration per lit torch, ticked once per real turn — regardless of
+		# Torch: 600-turn duration per lit torch, ticked once per real turn — regardless of
 		# where it currently is (equipped, quickbar/bag, floor, or embedded in an enemy). Equipped
 		# slots + quickbar/bag are swept here (GameState-only data); floor items and enemy-embedded
 		# items are swept by DungeonFloor.tick_torches() (needs _floor_items/get_all_enemies()).
@@ -645,6 +665,17 @@ func _on_turn_ending() -> void:
 # noticed one flips to CHASING via _notice_target() the same turn _resolve_stealth_check() catches
 # it, so this naturally covers "the sleeper woke up" too, no separate behavior-change tracking
 # needed).
+# Ritual spellcasting's "not being pursued" gate (Spell.is_ritual — see spell.gd's own comment):
+# true if ANY live enemy on the current floor is currently CHASING/SEARCHING, floor-wide (not just
+# _fov_this_turn — an enemy hunting you from just out of sight still counts as "pursued").
+func is_being_pursued() -> bool:
+	if _dungeon_floor == null:
+		return false
+	for e: Enemy in _dungeon_floor.get_all_enemies():
+		if is_instance_valid(e) and not e.stats.is_dead() and e.behavior in [Enemy.Behavior.CHASING, Enemy.Behavior.SEARCHING]:
+			return true
+	return false
+
 func _rest_interrupted() -> bool:
 	for e: Enemy in _fov_this_turn:
 		if not is_instance_valid(e) or e.stats.is_dead():

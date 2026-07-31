@@ -322,7 +322,7 @@ var draconic_flight_used: bool = false
 var hunters_mark_uses_remaining: int = 0
 const HUNTERS_MARK_USES_MAX: int = 3
 const HUNTERS_MARK_RANGE: int = 5
-const HUNTERS_MARK_DURATION: int = 100
+const HUNTERS_MARK_DURATION: int = 600
 
 # The currently marked enemy (Hunter's Mark). Deliberately NOT serialized in to_dict()/from_dict()
 # — a live Enemy node reference can't survive save/load, same precedent as witch_bolt_target
@@ -395,12 +395,27 @@ var fog_cloud_turns: int = 0
 # zone so both spells can be active at once. Deliberately NOT serialized, same as fog_cloud_turns.
 var darkness_turns: int = 0
 
+# Faerie Fire (Drow lineage spell, level 1) — same generic concentration_spell_id mechanism
+# ("faerie_fire"), just the caster's own duration counter (the affected-enemy side of the
+# duration is tracked independently, per-enemy, on Enemy.faerie_fire_turns — see
+# scripts/entities/CLAUDE.md's "Elf" section). Deliberately NOT serialized, same as
+# darkness_turns/fog_cloud_turns above.
+var faerie_fire_turns: int = 0
+
 # Longstrider (Wood Elf lineage spell, level 3) — NOT Concentration (5e RAW). Reuses the exact
 # same "first move this turn is free" mechanism Expeditious Retreat already has (Player._try_move()
 # checks `expeditious_retreat_turns > 0 or longstrider_turns > 0`) rather than a separate movement-
 # speed system — see scripts/entities/CLAUDE.md's "Elf" section. Deliberately NOT serialized, same
 # mid-floor-only simplification as expeditious_retreat_turns.
 var longstrider_turns: int = 0
+
+# Detect Magic (level-1 spell, Ritual, SELF) — same generic concentration_spell_id mechanism
+# ("detect_magic") as Fog Cloud/Darkness. While active, DungeonFloor._update_detect_magic_markers()
+# shows a blue tremorsense-style ping over every magic item within Spell.shape_size (3) tiles of
+# the player — see scripts/entities/CLAUDE.md's "Elf" section (High Elf grant) and
+# scripts/entities/spell_effects.gd's _resolve_detect_magic(). Deliberately NOT serialized, same
+# mid-floor-only simplification as fog_cloud_turns/darkness_turns above.
+var detect_magic_turns: int = 0
 
 # Pass Without Trace (Wood Elf lineage spell, level 5) — same generic concentration_spell_id
 # mechanism ("pass_without_trace"). Grants a flat bonus to the Stealth-vs-Passive-Perception roll

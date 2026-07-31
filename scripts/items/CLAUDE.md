@@ -236,9 +236,11 @@ The only weapons in the game are the Barbarian's starting **Greataxe** (melee, t
 
 **Off-hand equipping without dual-wielding**: `inventory_overlay.gd._fits_slot()`'s `"hand2"` branch special-cases `item.is_torch` to always accept it (same treatment as `Item.is_shield` — see "Shields" below), independent of whether Main Hand holds a Light weapon. Deliberately **not** Light (`is_light == false`): `player.gd._try_offhand_attack()`'s bonus-swing gate checks `main_hand.is_light`/`off_hand.is_light` before ever firing the dual-wield Off-hand attack (see "Dual-wielding" below), so a Torch in either hand never triggers it — it occupies a hand (Main or Off) purely for its light/Fire-bonus mechanics, never as a second weapon.
 
-Once lit, `torch_turns_remaining` starts at 100 and ticks down by 1 once per real player turn
-(`player.gd._on_turn_started()`, same "100-turn duration" shape as Expeditious Retreat/Fog Cloud/
-Invisibility) — **regardless of where the lit Torch currently is**: equipped, sitting in the
+Once lit, `torch_turns_remaining` starts at 600 (5e RAW's "1 hour" burn time, at 6 seconds/round)
+and ticks down by 1 once per real player turn (`player.gd._on_turn_started()`, same "flat-duration
+buff" shape as Expeditious Retreat/Fog Cloud/Invisibility — Fog Cloud/Invisibility are also 600
+turns now, matching their own RAW 1-hour durations; Expeditious Retreat stays 100, RAW's 10
+minutes) — **regardless of where the lit Torch currently is**: equipped, sitting in the
 quickbar/bag, lying on the floor, or embedded in a live enemy all tick down identically. The
 ticker is split across two sweeps run every real turn: `player.gd`'s own block covers
 `GameState.equipment["melee"]`/`["hand2"]` + `GameState.player_quickbar`/`player_inventory`
@@ -586,11 +588,15 @@ cast-resolution walkthroughs.
   section for all 8, including `SpellcasterState.cantrip_max(stats)` — the known-cantrip cap,
   Wizard 3/4/5 at character levels 1/4/10) + `STARTER_CANTRIP_IDS` (the fixed 3-cantrip round-1 pool `cantrip_select.gd`
   always offers — kept separate from `CANTRIP_IDS` so old saves/the premade Jace's
-  `"cantrip": "fire_bolt"` shortcut stay valid) + `LEVELED_SPELL_IDS` (11:
+  `"cantrip": "fire_bolt"` shortcut stay valid) + `LEVELED_SPELL_IDS` (15:
   `magic_missile`/`shield`/`mage_armor`/`misty_step`/`fireball`/`chromatic_orb`/`burning_hands`/
-  `witch_bolt`/`expeditious_retreat`/`false_life`/`fog_cloud` — the last 6 added after the initial
-  pass, see `scripts/entities/CLAUDE.md`'s "More 1st-level spells" and "More 1st-level non-damage
-  spells" sections) + `RANGER_SPELL_IDS` (Ranger's own eligible subset, currently just
+  `witch_bolt`/`expeditious_retreat`/`false_life`/`fog_cloud`/`invisibility`/`darkness`/
+  `longstrider`/`detect_magic` — the last 10 added after the initial pass, see
+  `scripts/entities/CLAUDE.md`'s "More 1st-level spells" and "More 1st-level non-damage spells"
+  sections; `darkness`/`longstrider`/`detect_magic` were each promoted from Elf-lineage-only to a
+  real learnable entry — all three are still ALSO listed in `ELF_LINEAGE_SPELL_IDS` below, since
+  their sub-race's own free grant and normal learn/slot-casting are independent paths to the same
+  spell, see `scripts/entities/CLAUDE.md`'s "Elf" section) + `RANGER_SPELL_IDS` (Ranger's own eligible subset, currently just
   `["fog_cloud"]` — the only `LEVELED_SPELL_IDS` entry whose real 5e/5.5e class list actually
   includes Ranger; every other entry is Sorcerer/Wizard(/Warlock)-only on both rule sets, so it was
   deliberately NOT opened up to Ranger despite reusing the same shared spell pool — a real
@@ -683,11 +689,12 @@ spell." instead). No scroll items use this mechanism in any loot pool yet — se
 `Item.scroll_spell_id: String` (`""` = not this kind of scroll) — a SCROLL item with one spell
 cast baked in, distinct from (and independent of) `taught_spell_id` above: reading it does NOT
 teach the spell, it just casts it once at the spell's base level (no upcasting, no slot spent)
-then crumbles. **Castable by any class**, not just Wizard — the point of this item type. 20 exist
+then crumbles. **Castable by any class**, not just Wizard — the point of this item type. 23 exist
 in `ITEM_POOL`/`debug_panel.ALL_ITEMS` today, one per `SpellDb` spell (`Scroll of Fire Bolt`,
 `Ray of Frost`, `Shocking Grasp`, `Toll the Dead`, `Blade Ward`, `Thunderclap`, `Mind Sliver`,
 `Light`, `Magic Missile`, `Shield`, `Mage Armor`, `Misty Step`, `Fireball`, `Chromatic Orb`,
-`Burning Hands`, `Witch Bolt`, `Expeditious Retreat`, `False Life`, `Fog Cloud`, `Invisibility`); icon reuses the
+`Burning Hands`, `Witch Bolt`, `Expeditious Retreat`, `False Life`, `Fog Cloud`, `Invisibility`,
+`Darkness`, `Longstrider`, `Detect Magic`); icon reuses the
 spell's own `Spell.icon_path` (`"src": "spells"` pool key) — `DungeonFloor._build_floor_item()`
 and `debug_panel._on_give_item()` both resolve it via `SpellDb.get_spell(item.scroll_spell_id).
 icon_path` rather than reconstructing a flat path from the `ITEM_POOL` entry's own `"icon"` key,

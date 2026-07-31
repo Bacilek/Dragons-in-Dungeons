@@ -184,14 +184,20 @@ with real D&D 2024 spell slots are both implemented.** Leveled spells: `Standard
 level-up "pick 1 of 3" spellbook-growth picker (`scripts/ui/spell_learn_picker.gd`), scroll-taught
 spells, and an **R-key Spellbook overlay** (`scripts/ui/spellbook_overlay.gd`) — level tabs,
 hover description, click-to-prepare, drag-and-drop onto a specific ability-bar slot, bottom-right
-"X / Y prepared" counter. 12 leveled spells (Magic Missile, Shield, Mage Armor, Misty Step, Fireball,
+"X / Y prepared" counter. 15 leveled spells (Magic Missile, Shield, Mage Armor, Misty Step, Fireball,
 Chromatic Orb, Burning Hands, Witch Bolt — the last 3 add a leveled ATTACK_ROLL path with a
 one-shot leap-on-doubles mechanic, a directional cone AoE shape, and a second Concentration DoT
 effect alongside Blade Ward, respectively — plus Expeditious Retreat, False Life, Fog Cloud: a
 third/fourth Concentration effect (a free-move-once-per-turn buff and a Blinded status zone
 readable by both player- and enemy-side attack rolls) and a flat Temp HP grant — plus Invisibility,
 a NON-Concentration touch/self buff that makes enemies lose track of the caster entirely, ending
-early on attacking/casting; see `scripts/entities/CLAUDE.md`'s "Invisibility" section). Full
+early on attacking/casting; see `scripts/entities/CLAUDE.md`'s "Invisibility" section — plus
+Darkness (a 2nd-level spell), Longstrider, and Detect Magic, three formerly Elf-lineage-only
+spells now ALSO real learnable entries: Darkness is a second Heavily Obscured zone alongside Fog
+Cloud, distinctly tinted; Detect Magic is Ritual-castable (free unless an enemy is currently
+hunting you) and shows a blue tremorsense-style ping over nearby magic items for its
+600-turn Concentration duration; see `scripts/entities/CLAUDE.md`'s "Elf" section for all three).
+Full
 Concentration support for Blade Ward/Witch Bolt/Expeditious Retreat/Fog Cloud (one slot,
 `Stats.concentration_spell_id`), no reactions, no line/cube AoE (sphere + cone
 only), no upcast slot-level picker (always casts at the cheapest available slot) — see

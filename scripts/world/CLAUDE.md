@@ -91,12 +91,16 @@ so everything below applies to Darkness too, not just Fog Cloud.
 
 `_update_fog_cloud_visual()` (called every `update_fog()`, alongside the Light glow) tints
 `GameState.fog_cloud_pos`/`fog_cloud_radius`'s tiles (and, generalized, `darkness_pos`/
-`darkness_radius`'s) with a persistent **dark** overlay
-(`Color(0.10, 0.10, 0.13, 0.80)` — deliberately dark, not a light haze, since the tile is
-Heavily Obscured) — pooled `Sprite2D`s + shared 1×1 white texture, same convention as
-`_update_light_source_glow()`. A raw Euclidean disc, not LOS-filtered, and it's still painted
-regardless of whether the tile is actually seeable that turn — you always know roughly where the
-fog is, you just can't see what's inside it (below). Doesn't itself union into `_visible_tiles`
+`darkness_radius`'s) with a persistent overlay — pooled `Sprite2D`s + shared 1×1 white texture,
+same convention as `_update_light_source_glow()`. **Each zone gets its own tint** so the two read
+as visually distinct despite being mechanically identical Heavily Obscured terrain:
+`DungeonFloor.DARKNESS_TINT` (`Color(0.10, 0.10, 0.13, 0.80)` — near-black, "true" magical
+darkness) for Darkness, `DungeonFloor.FOG_CLOUD_TINT` (`Color(0.55, 0.55, 0.58, 0.72)` — a lighter
+genuine gray) for Fog Cloud; a tile inside both zones renders with Darkness's tint (it's drawn
+second into the shared `tile_colors` dict `_update_fog_cloud_visual()` builds). A raw Euclidean
+disc per zone, not LOS-filtered, and it's still painted regardless of whether the tile is actually
+seeable that turn — you always know roughly where the fog/darkness is, you just can't see what's
+inside it (below). Doesn't itself union into `_visible_tiles`
 the way Light does — the FOV shrink for a player standing INSIDE the cloud happens through the
 shadowcast radius instead, not a separate visibility union. See `scripts/entities/CLAUDE.md`'s
 "Conditions"/"Fog Cloud" sections for the full mechanic: `GameState.is_heavily_obscured(pos)`/

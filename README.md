@@ -9,7 +9,7 @@ A 2D pixel roguelike built in **Godot 4 (Mono build)** — Pixel Dungeon's gamep
 - **D&D 5.5e (2024) mechanics** — point-buy ability scores, background ASI, modifiers, proficiency bonus, armor class, real D&D Conditions (Poisoned, Prone, Restrained, Incapacitated)
 - **4 playable classes** — Barbarian, Ranger, Wizard, Monk — each with a talent tree, boss-gated Tier 2 subclasses, and class-specific mechanics (Rage, Hunter's Mark, spell slots, martial arts dice)
 - **6 races** — Orc, Human, Halfling, Dwarf, Elf (3 sub-races), Dragonborn — each with distinct traits (darkvision, rest charges, Halfling Lucky reroll, etc.)
-- **Wizard spellcasting** — 8 cantrips + 12 leveled spells with real D&D 2024 spell slots, Concentration, an R-key Spellbook overlay, and Scrolls castable by any class
+- **Wizard spellcasting** — 8 cantrips + 15 leveled spells with real D&D 2024 spell slots, Concentration, an R-key Spellbook overlay, and Scrolls castable by any class
 - **Enemy AI** — Sleeping/Stationary/Roaming/Chasing/Searching states, full D&D-style stat blocks (CR, resistances, multiattack, legendary resistance), CR-budgeted floor spawning, multi-tile Large enemies
 - **Fog of war** — configurable-radius FOV, explored (dim) vs unseen (black), LOS with diagonal shoulder check
 - **Environment variety** — chasms, water/mud (difficult terrain), destructible grass, doors, flammable barrels, fire spread

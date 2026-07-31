@@ -990,7 +990,7 @@ func _give_wizard_starting_items() -> void:
 	torch.uses_remaining = 1
 	torch.gold_value = 10
 	torch.torch_lit = true
-	torch.torch_turns_remaining = 100
+	torch.torch_turns_remaining = 600
 	equipment["hand2"] = torch
 	recalculate_stats()
 	equipment_changed.emit()
@@ -2361,7 +2361,7 @@ func light_torch(item: Item) -> void:
 	if item == null or item.torch_burnt or item.torch_lit:
 		return
 	item.torch_lit = true
-	item.torch_turns_remaining = 100
+	item.torch_turns_remaining = 600
 	game_log("You light the torch.")
 	equipment_changed.emit()
 	ability_bar_changed.emit()
@@ -2860,6 +2860,8 @@ func end_concentration(reason_log: String = "") -> void:
 	elif broken_spell == "darkness":
 		player_stats.darkness_turns = 0
 		clear_darkness()
+	elif broken_spell == "detect_magic":
+		player_stats.detect_magic_turns = 0
 	elif broken_spell == "pass_without_trace":
 		player_stats.pass_without_trace_turns = 0
 	elif broken_spell == "hunters_mark":

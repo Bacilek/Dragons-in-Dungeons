@@ -212,6 +212,10 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var long_r: int = weapon.long_range if weapon.long_range > 0 else DungeonFloor.FOV_RADIUS
 	var in_normal_range: bool = dist_sq <= weapon.range * weapon.range
 	var in_range: bool = in_normal_range or dist_sq <= long_r * long_r
+	# Blinded: a thrown weapon's reach collapses to 1 tile (Chebyshev) regardless of its own
+	# range/long_range — same rule as ranged weapons/spells, see PlayerRanged.is_ranged_target_in_range().
+	if GameState.is_blinded(player.grid_pos):
+		in_range = maxi(absi(d.x), absi(d.y)) <= 1
 	if not in_range:
 		GameState.game_log("[color=gray]Too far to throw %s.[/color]" % weapon.item_name)
 		player._handle_post_attack_turn()

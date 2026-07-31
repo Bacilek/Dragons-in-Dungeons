@@ -104,6 +104,8 @@ var _fire_glow_sprites: Array[Sprite2D] = []  # every currently-burning Barrel/D
 var _fire_glow_tex: ImageTexture
 var _tremor_marker_sprites: Array[Sprite2D] = []  # Dwarf Stonecunning's tremorsense ping — see _update_tremor_markers()
 var _tremor_marker_tex: ImageTexture
+var _detect_magic_marker_sprites: Array[Sprite2D] = []  # Detect Magic's own blue ping — see _update_detect_magic_markers()
+var _detect_magic_marker_tex: ImageTexture
 var _torch_fov_ring_sprites: Array[Sprite2D] = []  # equipped-lit-Torch's +1 FOV ring — see _update_torch_fov_ring_glow()
 var _torch_fov_ring_tex: ImageTexture
 var _celestial_fov_ring_sprites: Array[Sprite2D] = []  # Aasimar Inner Radiance's +2 FOV ring — see _update_celestial_fov_ring_glow()
@@ -601,9 +603,19 @@ func update_fog(player_pos: Vector2i) -> void:
 	for pos: Vector2i in torch_tiles:
 		_visible_tiles[pos] = true
 	_update_torch_light_glow(torch_tiles)
+	# Faerie Fire — an outlined creature (failed DEX save) emanates its own small light bubble,
+	# same radius as a torch embedded in a burning creature (GameState.TORCH_BURN_LIGHT_RADIUS),
+	# recomputed fresh every fog update off each outlined enemy's current grid_pos (moves for free,
+	# no tracking needed) — mechanical FOV push-back only, no dedicated glow tint painted (documented
+	# scope cut — see scripts/entities/CLAUDE.md's "Elf" section, Faerie Fire entry).
+	for enemy: Enemy in get_all_enemies():
+		if enemy.faerie_fire_turns > 0:
+			for lit_pos: Vector2i in _compute_shadowcast(enemy.grid_pos, GameState.TORCH_BURN_LIGHT_RADIUS):
+				_visible_tiles[lit_pos] = true
 	_update_fog_cloud_visual()
 	_update_burning_tiles_glow()
 	_update_tremor_markers(player_pos)
+	_update_detect_magic_markers(player_pos)
 
 	for y: int in _data.height:
 		for x: int in _data.width:
@@ -1056,11 +1068,19 @@ func tick_torches() -> void:
 				remove_enemy(enemy)
 				enemy.die()
 
-# Fog Cloud spell — a persistent gray tint over GameState.fog_cloud_pos/radius (a raw Euclidean
-# disc, same distance check as GameState.is_in_fog_cloud() and show_aoe_preview()'s own preview
-# circle — no LOS filtering, matching a real cloud of fog rather than a line-of-sight effect).
+# Fog Cloud / Darkness spell zones — two persistent, distinctly-tinted Heavily Obscured overlays
+# over GameState.fog_cloud_pos/radius and GameState.darkness_pos/radius (a raw Euclidean disc each,
+# same distance check as GameState.is_in_fog_cloud()/is_in_darkness() and show_aoe_preview()'s own
+# preview circle — no LOS filtering, matching a real cloud/pool rather than a line-of-sight effect).
 # Rebuilt every update_fog() call (cheap — pooled Sprite2Ds, same convention as the light glow
-# above) so it tracks the cloud fading/moving without needing its own dedicated signal.
+# above) so it tracks either zone fading/moving without needing its own dedicated signal.
+# Colors are deliberately swapped from Darkness's original shared tint (Color(0.10, 0.10, 0.13,
+# 0.80)) — Darkness keeps that near-black tone (it's the "true" magical darkness), Fog Cloud now
+# gets a lighter, genuinely gray tone so the two zones read as visually distinct despite both being
+# mechanically identical Heavily Obscured terrain (GameState.is_heavily_obscured() still treats
+# them as equivalent).
+const FOG_CLOUD_TINT := Color(0.55, 0.55, 0.58, 0.72)
+const DARKNESS_TINT := Color(0.10, 0.10, 0.13, 0.80)
 func _update_fog_cloud_visual() -> void:
 	if GameState.fog_cloud_pos == Vector2i(-1, -1) and GameState.darkness_pos == Vector2i(-1, -1):
 		for spr: Sprite2D in _fog_cloud_sprites:
@@ -1070,36 +1090,34 @@ func _update_fog_cloud_visual() -> void:
 		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 		img.fill(Color(1, 1, 1, 1))
 		_fog_cloud_tex = ImageTexture.create_from_image(img)
-	# Darkness (Drow lineage spell) is a second, independent Heavily Obscured zone — painted with
-	# the same dark tint, into the same tile set/pooled sprites, as Fog Cloud (GameState.
-	# is_heavily_obscured() already treats both as equivalent).
-	var tiles: Array[Vector2i] = []
-	var seen: Dictionary = {}
-	for zone: Array in [[GameState.fog_cloud_pos, GameState.fog_cloud_radius], [GameState.darkness_pos, GameState.darkness_radius]]:
+	# A tile inside BOTH zones renders with Darkness's tint (drawn second, below) — Darkness reads
+	# as the "stronger" effect of the two, matching its own dispel-the-lesser-light-source text.
+	var tile_colors: Dictionary = {}  # Vector2i -> Color, insertion order preserved (fog first, darkness overwrites)
+	for zone: Array in [[GameState.fog_cloud_pos, GameState.fog_cloud_radius, FOG_CLOUD_TINT], [GameState.darkness_pos, GameState.darkness_radius, DARKNESS_TINT]]:
 		var center: Vector2i = zone[0]
 		var radius: int = zone[1]
+		var tint: Color = zone[2]
 		if center == Vector2i(-1, -1):
 			continue
 		for dy: int in range(-radius, radius + 1):
 			for dx: int in range(-radius, radius + 1):
 				if dx * dx + dy * dy <= radius * radius:
-					var p: Vector2i = center + Vector2i(dx, dy)
-					if not seen.has(p):
-						seen[p] = true
-						tiles.append(p)
+					tile_colors[center + Vector2i(dx, dy)] = tint
+	var tiles: Array = tile_colors.keys()
 	while _fog_cloud_sprites.size() < tiles.size():
 		var spr := Sprite2D.new()
 		spr.texture = _fog_cloud_tex
 		spr.centered = false
 		spr.scale = Vector2(TILE_SIZE, TILE_SIZE)
-		spr.modulate = Color(0.10, 0.10, 0.13, 0.80)  # Heavily Obscured — dark, not a light haze (see GameState.is_heavily_obscured())
 		spr.z_index = 2
 		add_child(spr)
 		_fog_cloud_sprites.append(spr)
 	for i: int in _fog_cloud_sprites.size():
 		var spr: Sprite2D = _fog_cloud_sprites[i]
 		if i < tiles.size():
-			spr.position = Vector2(tiles[i].x * TILE_SIZE, tiles[i].y * TILE_SIZE)
+			var p: Vector2i = tiles[i]
+			spr.position = Vector2(p.x * TILE_SIZE, p.y * TILE_SIZE)
+			spr.modulate = tile_colors[p]
 			spr.visible = true
 		else:
 			spr.visible = false
@@ -1212,6 +1230,64 @@ func _build_tremor_marker_texture() -> ImageTexture:
 				img.set_pixel(x, y, Color(1.0, 0.1, 0.1, 0.9))
 	return ImageTexture.create_from_image(img)
 
+## Detect Magic's own ping (scripts/entities/CLAUDE.md's "Elf" section, High Elf's level-3 grant —
+## also a real learnable spell now, see SpellDb.LEVELED_SPELL_IDS). While
+## GameState.player_stats.detect_magic_turns > 0, every magic item (Item.requires_attunement, or a
+## nonzero bonus_ac/bonus_damage) lying on the floor within Spell.shape_size (3) tiles of the
+## player (Chebyshev) gets a pulsing BLUE dot — same mechanism/texture-build pattern as Dwarf
+## Stonecunning's tremorsense ping above, just a different color and reading items instead of
+## creatures. Sight-independent by design (never checks _visible_tiles/is_blinded()) — the whole
+## point of a magic-sense is that it isn't eyesight. Rebuilt every update_fog() call.
+const DETECT_MAGIC_RANGE: int = 3
+func _update_detect_magic_markers(player_pos: Vector2i) -> void:
+	var tiles: Array[Vector2i] = []
+	if GameState.player_stats.detect_magic_turns > 0:
+		for dy: int in range(-DETECT_MAGIC_RANGE, DETECT_MAGIC_RANGE + 1):
+			for dx: int in range(-DETECT_MAGIC_RANGE, DETECT_MAGIC_RANGE + 1):
+				var p: Vector2i = player_pos + Vector2i(dx, dy)
+				for item: Item in get_items_at(p):
+					if item.requires_attunement or item.bonus_ac > 0 or item.bonus_damage > 0:
+						tiles.append(p)
+						break
+	if tiles.is_empty():
+		for spr: Sprite2D in _detect_magic_marker_sprites:
+			spr.visible = false
+		return
+	if _detect_magic_marker_tex == null:
+		_detect_magic_marker_tex = _build_detect_magic_marker_texture()
+	while _detect_magic_marker_sprites.size() < tiles.size():
+		var spr := Sprite2D.new()
+		spr.texture = _detect_magic_marker_tex
+		spr.centered = true
+		spr.z_index = 4
+		add_child(spr)
+		_detect_magic_marker_sprites.append(spr)
+		var tw: Tween = create_tween()
+		tw.set_loops()
+		tw.tween_property(spr, "scale", Vector2(1.3, 1.3), 0.3).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(spr, "scale", Vector2(0.8, 0.8), 0.3).set_trans(Tween.TRANS_SINE)
+	for i: int in _detect_magic_marker_sprites.size():
+		var spr2: Sprite2D = _detect_magic_marker_sprites[i]
+		if i < tiles.size():
+			spr2.position = Vector2(tiles[i].x * TILE_SIZE + TILE_SIZE / 2, tiles[i].y * TILE_SIZE + TILE_SIZE / 2)
+			spr2.visible = true
+		else:
+			spr2.visible = false
+
+## Small filled blue circle (10px diameter) — same procedurally-drawn convention as
+## _build_tremor_marker_texture(), just blue for "magic" instead of red for "creature".
+func _build_detect_magic_marker_texture() -> ImageTexture:
+	const D: int = 10
+	var img := Image.create(D, D, false, Image.FORMAT_RGBA8)
+	var r: float = float(D) / 2.0
+	for y: int in D:
+		for x: int in D:
+			var dx: float = float(x) - r + 0.5
+			var dy: float = float(y) - r + 0.5
+			if dx * dx + dy * dy <= r * r:
+				img.set_pixel(x, y, Color(0.25, 0.45, 1.0, 0.9))
+	return ImageTexture.create_from_image(img)
+
 func hide_aoe_preview() -> void:
 	if _aoe_preview_last_key == "":
 		return
@@ -1316,6 +1392,11 @@ func _update_enemy_visibility() -> void:
 	for enemy: Enemy in _enemies:
 		if is_instance_valid(enemy):
 			enemy.visible = _visible_tiles.has(enemy.grid_pos) and not enemy.is_hidden_from_player()
+			# Faerie Fire overrides Invisibility's own visible=false — an outlined creature "can't
+			# be invisible" (Elf lineage spell text): it's forced visible above, rendered at reduced
+			# opacity instead of fully hidden, same translucent-tint convention as the player's own
+			# invisibility visual (Player._update_invisibility_visual()).
+			enemy.modulate.a = 0.4 if enemy.is_outlined_while_invisible() else 1.0
 
 func _blocks_los(bx: int, by: int) -> bool:
 	var t: DungeonData.TileType = _data.get_tile(bx, by)

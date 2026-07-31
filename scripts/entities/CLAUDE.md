@@ -349,25 +349,97 @@ casting for a non-caster).
 | High Elf | Long-rest cantrip swap (below) | Detect Magic | Misty Step (reuses the existing Wizard/Ranger level-2 spell verbatim) |
 | Wood Elf | 35 ft speed (below) | Longstrider | Pass Without Trace |
 
-- **Faerie Fire** (`spell_db.gd`'s `_faerie_fire()`, level 1, TILE target, sphere shape_size 2,
-  SAVE/DEX, no damage): `SpellEffects._resolve_faerie_fire()` — every enemy within the sphere
-  (Euclidean, LOS'd from the impact tile, same target-gathering shape as `_resolve_sphere_aoe()`)
-  rolls a DEX save; on a fail, `Enemy.faerie_fire_turns = 100` — checked in `PlayerVfx.
-  has_advantage()` (same chokepoint as Blinded/Incapacitated) so every attack roll against an
-  outlined enemy has Advantage for the duration. Ticked once per real enemy turn in `decide_turn()`.
-- **Darkness** (`_darkness()`, level 2, TILE, sphere shape_size 2, AUTO_HIT): a second, independent
-  Heavily Obscured zone — `GameState.darkness_pos`/`darkness_radius` mirror `fog_cloud_pos`/
-  `fog_cloud_radius` exactly, and `is_heavily_obscured(pos)` now checks both zones (`is_in_fog_cloud
-  or is_in_darkness`) so Fog Cloud's entire existing ADV/DISADV/`effective_fov_radius()`/
-  cant-see-through-it mechanism (see "Concentration"/Fog Cloud sections below) applies verbatim —
-  no new combat-roll code needed. Concentration id `"darkness"`, `Stats.darkness_turns` (100,
-  ticked like Fog Cloud). Visual reuses `DungeonFloor._update_fog_cloud_visual()`, generalized to
-  paint both zones' tiles into the same pooled-sprite set.
-- **Detect Magic** (`_detect_magic()`, level 1, SELF, AUTO_HIT, `shape_size` reused as a flat
-  Chebyshev radius of 6): `SpellEffects._resolve_detect_magic()` — an instant read, not a lasting
-  sense (documented simplification vs. the real 10-minute duration — this engine has no ongoing
-  "detect" UI to hang a lasting sense on): scans floor items within range and logs the names of any
-  with `requires_attunement` or a nonzero `bonus_ac`/`bonus_damage`.
+- **Faerie Fire** (`spell_db.gd`'s `_faerie_fire()`, real 5e class list Bard/Druid, level 1, range
+  3, TILE target, sphere shape_size 2 approximating the real spell's 2-tile cube, SAVE/DEX,
+  Concentration, no damage): `SpellEffects._resolve_faerie_fire()` — one random color (blue/green/
+  violet, `SpellEffects.FAERIE_FIRE_COLORS`, `Rng.pick()`) is rolled ONCE per cast and shared by
+  every creature outlined that same cast (`Enemy.faerie_fire_color`) — "outlined in a random color,
+  all the same." Every enemy within the sphere (Euclidean, LOS'd from the impact tile, same
+  target-gathering shape as `_resolve_sphere_aoe()`) rolls a DEX save; on a fail, `Enemy.
+  faerie_fire_turns = 10` (the caster's own Concentration duration is a separate field,
+  `Stats.faerie_fire_turns`, ticked in `player.gd`'s per-turn block alongside Darkness — ending it
+  does NOT retroactively un-outline an already-outlined enemy, a documented simplification matching
+  every other concentration spell here). Three effects while outlined:
+  - **Advantage on attacks against it, but only if the attacker can see it**: `PlayerVfx.
+    has_advantage()`'s Faerie Fire branch now additionally requires
+    `player._dungeon_floor.is_tile_visible(enemy.grid_pos)` — an outlined enemy sitting somewhere
+    the player currently can't see into (behind a wall corner) grants no Advantage just because
+    it's lit up off-screen.
+  - **Emanates its own small light**: `DungeonFloor.update_fog()` unions a
+    `GameState.TORCH_BURN_LIGHT_RADIUS` (1) shadowcast around every outlined enemy's current
+    position into `_visible_tiles` (mechanical FOV push-back only — no dedicated glow tint is
+    painted, unlike the Torch/Light glows, a documented scope cut).
+  - **Can't be invisible**: `Enemy.is_hidden_from_player()` returns `false` whenever
+    `faerie_fire_turns > 0`, even if `_invis_turns > 0` — `Enemy.is_outlined_while_invisible()` is
+    the companion query `DungeonFloor._update_enemy_visibility()` reads to render that specific
+    case at `modulate.a = 0.4` (forced visible, translucent) instead of the normal fully-opaque
+    outlined look — same tint convention as the player's own `Player._update_invisibility_visual()`.
+
+  A small `✦` sparkle (`Enemy._faerie_fire_indicator`, tinted `faerie_fire_color`) shows above an
+  outlined enemy while active, toggled by `Enemy._refresh_faerie_fire_visual()` (called on cast and
+  on the enemy's own `decide_turn()` tick reaching 0). Objects in the cube are cosmetic-only per
+  the real spell text and are NOT implemented — this engine has no generic prop-outline system to
+  hang a persistent tint on (documented scope cut, not an oversight).
+- **Darkness** (`_darkness()`, Evocation, level 2, range 3, TILE, sphere shape_size 2, AUTO_HIT,
+  Concentration up to 100 turns): a second, independent Heavily Obscured zone —
+  `GameState.darkness_pos`/`darkness_radius` mirror `fog_cloud_pos`/`fog_cloud_radius` exactly, and
+  `is_heavily_obscured(pos)` now checks both zones (`is_in_fog_cloud or is_in_darkness`) so Fog
+  Cloud's entire existing ADV/DISADV/`effective_fov_radius()`/cant-see-through-it mechanism (see
+  "Concentration"/Fog Cloud sections below) applies verbatim — no new combat-roll code needed.
+  Concentration id `"darkness"`, `Stats.darkness_turns` (100, ticked like Fog Cloud). Visual reuses
+  `DungeonFloor._update_fog_cloud_visual()`, generalized to paint both zones' tiles into the same
+  pooled-sprite set — **each zone gets its own tint** (`DungeonFloor.DARKNESS_TINT`, the original
+  near-black `Color(0.10, 0.10, 0.13, 0.80)`, vs. `DungeonFloor.FOG_CLOUD_TINT`, a lighter genuine
+  gray `Color(0.55, 0.55, 0.58, 0.72)`) so the two zones are visually distinguishable even though
+  they're mechanically identical Heavily Obscured terrain; a tile inside both renders with
+  Darkness's tint (drawn second in the shared `tile_colors` dict).
+  **Real, independently-learnable spell, not lineage-only anymore**: `"darkness"` is now also a
+  `SpellDb.LEVELED_SPELL_IDS` entry (`class_list = ["WIZARD"]` — real 5e/5.5e list is
+  Sorcerer/Warlock/Wizard, but this codebase only has a Wizard caster) — learnable via the normal
+  level-up spellbook-growth picker, castable from real spell slots, and has its own
+  `Scroll of Darkness` (`scripts/items/CLAUDE.md`'s "Scroll of &lt;Spell&gt;"). It's listed in
+  BOTH `LEVELED_SPELL_IDS` and `ELF_LINEAGE_SPELL_IDS` — Drow's own level-5 lineage grant and the
+  normal learn/slot-cast path are independent and both work regardless of how the spell was
+  acquired, same "no separate copy needed" precedent as High Elf's Misty Step/Tiefling's Fire
+  Bolt reuse.
+  **Casting on an object**: 5e RAW lets Darkness be cast on an unattended object instead of a bare
+  point, in which case the darkness follows that object if it's later moved. This engine's zone is
+  a bare position+radius (no live `Item` reference, unlike the Light cantrip's own
+  `light_source_item` tracking) — casting on a tile that happens to hold a floor item works
+  identically to casting on empty ground (the TILE-target mechanism already covers it), it just
+  doesn't follow the object if picked up/moved afterward — a documented scope cut, not a bug.
+  **Dispels overlapping light**: `SpellEffects._darkness_dispel_overlapping_light()` (called from
+  `_resolve_darkness()` right after the zone is placed) checks whether the new Darkness zone's
+  circle overlaps the Light cantrip's own glow (`GameState.light_source_pos`,
+  `GameState.LIGHT_SOURCE_RADIUS`) — a level-0 spell, i.e. "level 2 or lower" per Darkness's own
+  text — and calls `GameState.clear_light_source()` if so. A lit Torch's passive glow is NOT a
+  spell and is therefore untouched by this check.
+- **Detect Magic** (`_detect_magic()`, Divination, level 1, Ritual, SELF, AUTO_HIT, Concentration
+  up to 600 turns, `shape_size` reused as a flat Chebyshev radius of 3): now a real, independently-
+  learnable `SpellDb.LEVELED_SPELL_IDS` entry too (`class_list = ["WIZARD"]` — real 5e/5.5e list is
+  Bard/Cleric/Druid/Paladin/Ranger/Sorcerer/Warlock/Wizard), not just a High Elf lineage-only spell
+  — a real `Scroll of Detect Magic` exists now that it's a normal `LEVELED_SPELL_IDS` entry.
+  **No longer a one-shot instant read** (that version's own item-qualifying rule —
+  `Item.requires_attunement`, or a nonzero `bonus_ac`/`bonus_damage` — is unchanged, just reused
+  continuously instead of once): `SpellEffects._resolve_detect_magic()` sets `stats.
+  concentration_spell_id = "detect_magic"` and `Stats.detect_magic_turns = 600`, ticked in
+  `player.gd`'s per-turn block alongside Fog Cloud/Darkness. While active,
+  `DungeonFloor._update_detect_magic_markers()` (called from `update_fog()`, same pooled-`Sprite2D`
+  convention as Dwarf Stonecunning's tremorsense ping — see "Dwarf" above) shows a pulsing **blue**
+  dot over every qualifying magic item within `DETECT_MAGIC_RANGE` (3) tiles of the player,
+  sight-independent exactly like Tremorsense (works through walls/Blinded — never checks
+  `_visible_tiles`/`is_blinded()`).
+  **Ritual casting**: `Spell.is_ritual` (`scripts/items/spell.gd`) — cast for free, no spell slot
+  spent, PROVIDED no enemy is currently hunting the caster (`Player.is_being_pursued()`, checks
+  every live enemy on the floor for `behavior in [CHASING, SEARCHING]`, not just those in FOV);
+  costs a real slot the instant one is. Real 5e ritual casting also takes 10 extra minutes — this
+  engine has no clock to hang that on, so it's simplified to just the "no slot, unless pursued"
+  half. Checked at three chokepoints: `PlayerSpellcasting.begin_cast()`/`cast_direct()` (skip the
+  slot-availability gate entirely so casting is never blocked by an empty slot pool while
+  ritual-free) and `_cast_level_for()` (returns `spell.level` without touching `slot_pool`) —
+  `SpellEffects._consume_slot()` also short-circuits before ever touching a slot when
+  `spell.is_ritual and not player.is_being_pursued()`, mirroring the Elf/Tiefling/Gnome
+  free-cast-per-long-rest checks' own "check first, before ever touching `caster.slot_pool`" shape.
 - **Misty Step**: no new code — High Elf's level-5 grant is the exact same spell id
   (`"misty_step"`) Wizard/Ranger already cast, just delivered via the lineage-grant path instead of
   learning it normally.
@@ -388,14 +460,19 @@ casting for a non-caster).
   Expeditious Retreat/Longstrider — see the next entry). **Scope limitation**: only wired into
   `_try_move()` (single-step WASD movement), same documented gap as Expeditious Retreat/
   Battlefield Expert R3 — the queued-path/chase-to-target movement functions don't check it.
-- **Longstrider** (`_longstrider()`, level 1, SELF, AUTO_HIT, NOT Concentration): reuses the exact
-  same "first move this turn is free" mechanism Expeditious Retreat already has —
-  `Player._try_move()`'s free-move check now fires on `expeditious_retreat_turns > 0 OR
-  longstrider_turns > 0`, sharing the one `_expeditious_retreat_move_used_this_turn` per-turn flag
-  so only one bonus move is granted no matter how many of the three sources (Expeditious Retreat,
-  Longstrider, Wood Elf's own speed) are active at once. `Stats.longstrider_turns` (100, ticked in
-  `player.gd`'s per-real-turn block, NOT serialized — mid-floor buff state, same precedent as
-  `expeditious_retreat_turns`).
+- **Longstrider** (`_longstrider()`, Transmutation, level 1, touch (`range_tiles = 1`, arm-then-
+  any-click-confirms-on-yourself — same "no ally-buff targeting exists" self-only scope as Mage
+  Armor/Invisibility), AUTO_HIT, NOT Concentration): now a real, independently-learnable
+  `SpellDb.LEVELED_SPELL_IDS` entry too (`class_list = ["WIZARD"]` — real 5e/5.5e list is
+  Bard/Druid/Ranger/Wizard), not just a Wood Elf lineage-only spell — a real
+  `Scroll of Longstrider` exists now. Reuses the exact same "first move this turn is free"
+  mechanism Expeditious Retreat already has — `Player._try_move()`'s free-move check fires on
+  `expeditious_retreat_turns > 0 OR longstrider_turns > 0`, sharing the one
+  `_expeditious_retreat_move_used_this_turn` per-turn flag so only one bonus move is granted no
+  matter how many of the three sources (Expeditious Retreat, Longstrider, Wood Elf's own speed) are
+  active at once. `Stats.longstrider_turns` (600 — 5e RAW's "1 hour", was 100 before this spell was
+  promoted to a real learnable entry — ticked in `player.gd`'s per-real-turn block, NOT serialized
+  — mid-floor buff state, same precedent as `expeditious_retreat_turns`).
 - **Pass Without Trace** (`_pass_without_trace()`, level 2, SELF, AUTO_HIT, Concentration id
   `"pass_without_trace"`): `Stats.pass_without_trace_turns` (100) grants a flat
   `Stats.PASS_WITHOUT_TRACE_BONUS` (+10) to the Stealth-vs-Passive-Perception roll's `total` in
@@ -919,7 +996,7 @@ player-castable level-2 Illusion spell of the same name (`SpellDb._invisibility(
 underlying mechanism, described once here.
 
 - **Duration field**: `Stats.invisibility_turns` (player) / `Enemy._invis_turns` (enemy) — up to
-  100 turns, NOT a Concentration effect (5e RAW: Invisibility ends on attacking or casting a
+  600 turns (5e RAW's "1 hour", at 6 seconds/round), NOT a Concentration effect (5e RAW: Invisibility ends on attacking or casting a
   spell, not on taking damage, so it deliberately doesn't touch `concentration_spell_id`).
 - **Ending early on attack/cast**: the player's own end-check reuses the Stealth system's existing
   `GameState.stealth_check_skip` flag (already set `true` by every attack/spell-cast call site
@@ -1211,7 +1288,7 @@ ever targets the player).
 | Prone | `Stats.prone` (not turn-counted) | `Enemy.prone` (not turn-counted) | Melee attacks against the prone creature get ADV, ranged attacks get DISADV (threaded via an `is_ranged: bool` param on `Enemy._attack_player()`/`_attack_companion()`, and a `spell.range_tiles` check for player-cast spells). Can't move — any direction key press instead stands up (ends the condition), costing the turn without moving. An enemy auto-stands at the very top of its own `decide_turn()` instead, consuming ONE point of that turn's movement budget (`_moves_this_turn -= 1`) rather than the whole turn, then falls straight through to its normal decision logic — an enemy with spare movement budget (Aggressive's bonus step, an above-baseline `"speed"` entry) can still close distance and/or attack the same turn it stands. |
 | Restrained | `Stats.web_restrained` (persists until the web is destroyed — Spider's Web is still its only source, see "Spider" below) | *(no enemy-side trigger exists yet — infra would mirror the player's, not built until something needs it)* | Speed 0 (already blocked movement pre-conditions-system). ADV on attacks against the restrained creature (any kind, melee or ranged — unlike Prone's kind-split). DISADV on the restrained creature's own attacks (folds into the same `has_disadvantage_condition()`/`poisoned_condition_turns>0` DISADV pool) and DEX checks specifically (`PlayerThiefTools.attempt_disarm()`, the only player-side DEX check today). |
 | Incapacitated | `Stats.incapacitated_turns` | `Enemy.incapacitated_turns` | "Can't take actions" — blocks player movement/bump-attack (`player.gd._try_move()`) and ability/spell activation (`_use_ability_slot()`); **partial coverage** — mouse-click attacks and item/tool use aren't gated (no current trigger source exists for either side, so this wasn't exhaustively wired; extend these two gates if a future ability actually inflicts it). Breaks Concentration immediately (`GameState.apply_player_status()`'s `"incapacitated"` case calls `end_concentration()`). On the enemy side: skips its entire turn (`decide_turn()`'s very first check, same shape Prone used to have before this rework) AND makes every player attack against it a Surprise Attack (`PlayerVfx.has_advantage()`), since "every attack against it is a Surprise Attack" is 5e's own Incapacitated text and this engine's Surprise Attack mechanism already IS exactly that (flat +1 ADV). |
-| Blinded | `GameState.is_blinded(pos)` (positional, no Stats field — see "Fog Cloud" below) | same query, symmetric | ADV on attacks against a Blinded creature, DISADV on its own attacks (both sides, player and enemy). Vision collapses to a flat 1-tile radius (`GameState.effective_fov_radius()`), overriding every other bonus including darkvision. "Auto-fails sight-based checks" is NOT implemented (no concrete "sight check" mechanic exists in this engine to gate). |
+| Blinded | `GameState.is_blinded(pos)` (positional, no Stats field — see "Fog Cloud" below) | same query, symmetric | ADV on attacks against a Blinded creature, DISADV on its own attacks (both sides, player and enemy). Vision collapses to a flat 1-tile radius (`GameState.effective_fov_radius()`), overriding every other bonus including darkvision. **A Blinded attacker's own reach also collapses to 1 tile (Chebyshev)** for ranged weapons (`PlayerRanged.is_ranged_target_in_range()`), thrown weapons (`PlayerThrowTool._throw_weapon()`), spells (`PlayerSpellcasting._effective_range()`), and the enemy-side mirrors (`Enemy._in_attack_range()`'s `"ranged"` branch, `Enemy._pick_ready_ability()`'s `max_reach`) — a weapon/spell's own longer range is simply unreachable while fighting blind; melee is unaffected (already 1 tile). "Auto-fails sight-based checks" is NOT implemented (no concrete "sight check" mechanic exists in this engine to gate). |
 | Frightened | `Stats.frightened_source: Enemy`/`frightened_turns`/`frightened_save_dc` (live ref, NOT serialized — same precedent as `hunters_mark_target`/`witch_bolt_target`) — only Quasit's Scare inflicts it, always targeting the player | `Enemy.frightened_turns` — a SEPARATE, simplified mirror (no live source-reference tracking exists on the enemy side, unlike the player's own `frightened_source`), only Aasimar's Necrotic Shroud (Celestial Revelation transformation, see "Aasimar" above) inflicts it | Player-side: DISADV on attacks/checks ONLY while the source is in LOS (`Player._frightened_active()` — NOT unconditional like the other three, hence its own helper rather than folding into `has_disadvantage_condition()`). Can't willingly move closer to the source via voluntary movement (`Player._frightened_blocks_move_to()`, checked in both `_try_move()` and the queued-path executor — forced movement like Push/a chasm shove is unaffected since it never calls either). Repeats a WIS save once per real turn (`Player._on_turn_started()`, vs `frightened_save_dc`) — success ends it early, a fail ticks toward the outer ~10-turn "1 minute" cap. Auto-clears if the source dies (`Enemy.die()`). Enemy-side: DISADV on the enemy's own attack rolls only (folded into `_attack_player()`/`_attack_companion()`'s existing `poisoned_condition_turns`-style disadv aggregation) — no can't-approach-the-source movement block, fixed 2-turn duration instead of a repeated save (documented simplification). |
 
 **Apply a condition** (mirrors the DoT-status shape above): `GameState.apply_player_status("poisoned_condition"|"prone"|"incapacitated", turns)` (player) or `Enemy.apply_status("prone"|"poisoned_condition"|"incapacitated"|"frightened", turns)` (enemy) — Restrained has no generic apply path since Web sets `web_restrained`/`web_escape_dc` directly (a persistent flag + escape DC, not a turn counter, so it doesn't fit the shared `turns` shape); Frightened has its own dedicated `GameState.apply_player_frightened(source, turns, save_dc)`/`clear_player_frightened()` (needs a live source reference the generic shape can't carry) and Blinded has no apply path at all (purely derived from position, see `is_heavily_obscured()`/`is_blinded()`). `"turns"` is ignored for Prone (bool, not counted).
@@ -1602,7 +1679,8 @@ creation like Rage, not talent-gated) — arm-then-click targeting (same UX as G
 hook mode), marks one enemy within `Stats.HUNTERS_MARK_RANGE` (5 tiles, checked in
 `PlayerRangerTalents.commit_mark()`). **Casting time is free** — `commit_mark()` never calls
 `TurnManager.begin_player_action()`/`on_player_action_complete()`, so marking (or re-marking)
-doesn't cost a turn. **Duration**: Concentration, up to `Stats.HUNTERS_MARK_DURATION` (100 turns,
+doesn't cost a turn. **Duration**: Concentration, up to `Stats.HUNTERS_MARK_DURATION` (600 turns —
+5e RAW's "1 hour", at 6 seconds/round —
 `Stats.hunters_mark_turns`, ticked once per real turn in `player.gd._on_turn_started()` alongside
 Blade Ward/Expeditious Retreat/Fog Cloud) — uses the generic `Stats.concentration_spell_id`
 mechanism (`"hunters_mark"`), so a CON-check failure on taking damage
@@ -1674,12 +1752,16 @@ genuinely has none). **Prepared count**: `SpellcasterState.prepared_max()` branc
 actually on Ranger's real 5e/5.5e (2024) spell list — `SpellDb.RANGER_SPELL_IDS` deliberately does
 NOT just open every `LEVELED_SPELL_IDS` entry up to Ranger; each spell's own `class_list` was
 checked against its actual RAW class list (direct owner correction after an earlier pass got this
-wrong). Of the 12 `LEVELED_SPELL_IDS` entries, only **Fog Cloud** is genuinely
-Druid/Ranger/Sorcerer/Wizard — every other one (Magic Missile, Shield, Mage Armor, Misty Step,
-Fireball, Chromatic Orb, Burning Hands, Witch Bolt, Expeditious Retreat, False Life, Invisibility)
-is Sorcerer/Wizard(/Warlock) only on both 2014 and 2024 rules, so `RANGER_SPELL_IDS` is currently
-just `["fog_cloud"]` — a real content gap (this codebase has no nature-flavored spell content of
-its own, e.g. the real 2024 Ranger list's Ensnaring Strike/Goodberry/Zephyr Strike/etc.), not a
+wrong). Of the 15 `LEVELED_SPELL_IDS` entries, **Fog Cloud** (Druid/Ranger/Sorcerer/Wizard),
+**Longstrider** (Bard/Druid/Ranger/Wizard), and **Detect Magic** (Bard/Cleric/Druid/Paladin/
+Ranger/Sorcerer/Warlock/Wizard) are the only three genuinely on Ranger's real list — every other
+one (Magic Missile, Shield, Mage Armor, Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch
+Bolt, Expeditious Retreat, False Life, Invisibility, Darkness) is Sorcerer/Wizard(/Warlock) only on
+both 2014 and 2024 rules. `RANGER_SPELL_IDS` is still just `["fog_cloud"]` today — Longstrider/
+Detect Magic weren't opened up to Ranger in this same pass, a deliberately narrow scope cut, not
+an oversight (extend `RANGER_SPELL_IDS` in a future pass if Ranger's spell list gets a dedicated
+content pass) — a real content gap (this codebase has no nature-flavored spell content of its own,
+e.g. the real 2024 Ranger list's Ensnaring Strike/Goodberry/Zephyr Strike/etc.), not a
 bug; the starting-spell picker below already degrades gracefully to fewer than 3 cards when the
 eligible pool is this thin. `SpellDb.CLASS_SPELL_LISTS["RANGER"]` feeds the level-up spell-learn picker exactly like Wizard's
 own entry — `GameState._roll_spell_learn_choices()` was generalized to look up
@@ -2003,7 +2085,7 @@ impact point rather than stop at the first wall it can't directly see through.
   `give_class_starting_items()`, same dispatch as `_give_barbarian_starting_items()`) only seeds
   the level-1 spell-slot pool — no spells are auto-known anymore (owner-requested: a starting
   Wizard now picks exactly 1 cantrip and 1 level-1 spell, not 2+2). The same function also equips
-  an already-**lit** Torch in the Off-hand (`torch_lit = true`, `torch_turns_remaining = 100`) —
+  an already-**lit** Torch in the Off-hand (`torch_lit = true`, `torch_turns_remaining = 600`) —
   every Wizard starts a run with +1 FOV and the Main-Hand Fire-on-hit bonus inactive (it's sitting
   in Off-hand, not Main Hand) until it burns out or is manually moved — see
   `scripts/items/CLAUDE.md`'s "Torch" section for the mechanic itself. `scripts/ui/cantrip_select.gd`
@@ -2361,14 +2443,15 @@ codebase only has a Wizard caster, so `class_list` stays `["WIZARD"]` like every
   `GameState.player_hp_changed` directly (needed for the HUD's temp-HP strip to refresh — no
   other signal covers a temp_hp-only change).
 - **Fog Cloud** (Conjuration, `effect_id: "fog_cloud"`, AUTO_HIT, TILE, `shape: "sphere"`,
-  `shape_size: 2`, range 6 tiles, **Concentration**, up to 100 turns): the fourth concentration
+  `shape_size: 2`, range 6 tiles, **Concentration**, up to 600 turns — 5e RAW's "1 hour", at 6
+  seconds/round): the fourth concentration
   spell, `"fog_cloud"`. Unlike Blade Ward/Witch Bolt (a self-buff / a live Enemy reference), the
   cloud is a bare **position + radius** — `GameState.fog_cloud_pos: Vector2i`/
   `fog_cloud_radius: int` (`(-1,-1)` = none active), since it needs to make whoever is standing in
   it Heavily Obscured, player or enemy, not a single caster/target pair. `SpellEffects.
   _resolve_fog_cloud()` (dispatched from `cast_leveled_at_tile()`, intercepting before the generic
   `shape == "sphere"` damage path so it never routes into `_resolve_sphere_aoe()`) sets `stats.
-  concentration_spell_id = "fog_cloud"`, `stats.fog_cloud_turns = 100`, `GameState.fog_cloud_pos =
+  concentration_spell_id = "fog_cloud"`, `stats.fog_cloud_turns = 600`, `GameState.fog_cloud_pos =
   center`, `fog_cloud_radius = spell.shape_size` — no damage, no save roll.
 
   **Heavily Obscured / Blinded** (generic conditions, not Fog-Cloud-specific — see "Conditions"
