@@ -669,6 +669,8 @@ func _elf_lineage_spell_for(subrace: int, threshold_level: int) -> String:
 			return "detect_magic" if threshold_level == 3 else "misty_step"
 		Stats.ElfSubrace.WOOD_ELF:
 			return "longstrider" if threshold_level == 3 else "pass_without_trace"
+		_:
+			return ""
 
 ## Fiendish Legacy (scripts/entities/CLAUDE.md's "Tiefling" section): which spell each legacy
 ## grants at character level 1 (cantrip)/3 (1st-level)/5 (2nd-level). Fire Bolt (Infernal, level 1)
@@ -745,6 +747,8 @@ func _build_hellish_rebuke_ability() -> Ability:
 	ab.uses_remaining = 0
 	ab.uses_max = 0
 	return ab
+_:
+	return ""
 
 ## Grants a lineage spell — ALWAYS PREPARED, outside the normal known_spells/prepared_spells/
 ## SpellcasterState bookkeeping entirely (never counts against a caster's known-cantrip or
