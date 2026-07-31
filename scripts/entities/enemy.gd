@@ -1731,11 +1731,16 @@ func _execute_cast_scare(target: Node, cfg: Dictionary) -> void:
 	# only if the player chose WIS as their one Gnomish-Cunning stat (see scripts/entities/CLAUDE.md's
 	# "Gnome" section).
 	var scare_adv: int = 1 if (s.character_race == Stats.CharacterRace.HALFLING or s.gnomish_cunning_grants_adv("wis")) else 0
-	var die: int = CombatMath.roll_with_adv_disadv(scare_adv, 0)["die"]
+	var roll: Dictionary = CombatMath.roll_with_adv_disadv(scare_adv, 0)
+	var die: int = roll["die"]
 	var total: int = die + wis_mod + prof
 	var passed: bool = total >= dc
-	var meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=WIS,pass=%d" % [
-		die, wis_mod, prof, total, dc, int(passed)]
+	# Bugfix: this meta used to omit d1/d2/adv/disadv/lucky entirely, so the tooltip always
+	# rendered a plain "d20 = N" line with no way to see Halfling Brave's Advantage actually
+	# applying (the roll was correct, it just wasn't visible on hover).
+	var meta: String = "save:die=%d,d1=%d,d2=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=WIS,pass=%d,adv=%d,disadv=%d,lucky1=%d,lucky2=%d" % [
+		die, roll["die1"], roll["die2"], wis_mod, prof, total, dc, int(passed),
+		int(roll["adv"]), int(roll["disadv"]), int(roll["lucky1"]), int(roll["lucky2"])]
 	if passed:
 		GameState.game_log("%s shrieks at you, but you [url=%s]hold your nerve[/url]." % [display_name, meta])
 		return

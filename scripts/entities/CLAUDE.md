@@ -1016,7 +1016,13 @@ race with no darkvision):
   `Enemy._execute_cast_scare()` (Quasit's Scare, "avoid" — the only source of Frightened today, see
   "Conditions" above and Quasit's own section). Any future Frightened source that rolls its own
   save should route through the same `roll_with_adv_disadv(1 if HALFLING else 0, 0)` pattern rather
-  than a bare roll, to stay covered by Brave automatically.
+  than a bare roll, to stay covered by Brave automatically. **Bugfix**: both sites' `save:` tooltip
+  meta used to omit `d1`/`d2`/`adv`/`disadv`/`lucky1`/`lucky2` entirely, so hovering the roll always
+  rendered a plain "d20 = N" line with no way to see Advantage actually applying — the roll itself
+  was correct, it just wasn't visible. The repeated end-of-turn save also had no hoverable tooltip
+  or fail-case log line at all before this fix (only a bare success message); it now logs and wraps
+  a `[url=]` breakdown on both outcomes, matching every other repeated-save convention (e.g. Hold
+  Person's "remains paralyzed").
 - **Halfling Nimbleness** (`"you can move through the space of any creature that is a size larger
   than you"`): **specced, not implemented** — direct owner request, deferred until entities carry
   a real named size category (see the table below); `Entity.size` today is only a raw `Vector2i`

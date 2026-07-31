@@ -449,12 +449,22 @@ func _on_turn_started() -> void:
 				# player-side WIS SAVE in the game; search_action()/passive_trap_check() are WIS
 				# CHECKS and deliberately untouched by this trait).
 				var fr_adv: int = 1 if (stats.character_race == Stats.CharacterRace.HALFLING or stats.gnomish_cunning_grants_adv("wis")) else 0
-				var fr_die: int = CombatMath.roll_with_adv_disadv(fr_adv, 0)["die"]
+				var fr_roll: Dictionary = CombatMath.roll_with_adv_disadv(fr_adv, 0)
+				var fr_die: int = fr_roll["die"]
 				var fr_total: int = fr_die + fr_wis_mod + fr_prof
-				if fr_total >= stats.frightened_save_dc:
-					GameState.game_log("[color=lime]You shake off your fear of %s![/color]" % stats.frightened_source.display_name)
+				var fr_pass: bool = fr_total >= stats.frightened_save_dc
+				# Bugfix: this save used to log a bare, non-hoverable line with no roll breakdown at
+				# all — no way to see the d20 result, let alone whether Halfling Brave's Advantage
+				# (two dice, pick higher) actually applied. Now wrapped exactly like every other
+				# save's [url=] tooltip.
+				var fr_meta: String = "save:die=%d,d1=%d,d2=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=WIS,pass=%d,adv=%d,disadv=%d,lucky1=%d,lucky2=%d" % [
+					fr_die, fr_roll["die1"], fr_roll["die2"], fr_wis_mod, fr_prof, fr_total, stats.frightened_save_dc, int(fr_pass),
+					int(fr_roll["adv"]), int(fr_roll["disadv"]), int(fr_roll["lucky1"]), int(fr_roll["lucky2"])]
+				if fr_pass:
+					GameState.game_log("[color=lime]You [url=%s]shake off[/url] your fear of %s![/color]" % [fr_meta, stats.frightened_source.display_name])
 					GameState.clear_player_frightened()
 				else:
+					GameState.game_log("[color=gray]You [url=%s]remain frightened[/url] of %s.[/color]" % [fr_meta, stats.frightened_source.display_name])
 					stats.frightened_turns -= 1
 					if stats.frightened_turns <= 0:
 						GameState.clear_player_frightened()
