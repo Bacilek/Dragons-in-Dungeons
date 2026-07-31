@@ -1090,7 +1090,13 @@ func _update_spell_aoe_preview() -> bool:
 			var aim: Vector2i = grid_pos + Vector2i(roundi(dir_v.x * 100), roundi(dir_v.y * 100))
 			for t: Vector2i in SpellEffects.cone_tiles(grid_pos, aim, spell.shape_size, _dungeon_floor):
 				cone_union[t] = true
-		_dungeon_floor.show_spell_range_preview_tiles(cone_union.keys())
+		# Dictionary.keys() returns a plain untyped Array — show_spell_range_preview_tiles() takes
+		# a typed Array[Vector2i], so it must be rebuilt into one explicitly (bugfix: passing the
+		# untyped keys() result directly crashed with "does not have the same element type as the
+		# expected typed array argument").
+		var cone_tiles_typed: Array[Vector2i] = []
+		cone_tiles_typed.assign(cone_union.keys())
+		_dungeon_floor.show_spell_range_preview_tiles(cone_tiles_typed)
 	else:
 		# Sphere's shape_size is a real radius (Fireball) — full +shape_size reach. Cube's
 		# shape_size is a corner-anchored SIDE LENGTH (Faerie Fire) — only shape_size-1 extra tiles
