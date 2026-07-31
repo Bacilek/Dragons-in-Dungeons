@@ -330,7 +330,12 @@ entries on save/load replay.
 
 **Free cast economy**: each lineage spell gets exactly one free cast per long rest —
 `Stats.elf_lineage_free_cast_used: Dictionary` (spell_id → bool, cleared in `GameState.
-long_rest()`) + `Stats.is_lineage_free_cast_available(spell_id)`, checked BEFORE ever touching a
+long_rest()`) + `Stats.is_lineage_free_cast_available(spell_id)` (checks BOTH
+`elf_lineage_free_cast_used` and `tiefling_legacy_free_cast_used` — a single shared gate,
+since a Tiefling Fiendish Legacy spell is mechanically identical to an Elf lineage one; a
+non-caster class, e.g. a Barbarian Tiefling, has no other way to ever cast its own legacy spell,
+so this gate missing the Tiefling half used to mean "no spell slot available" forever), checked
+BEFORE ever touching a
 real spell slot at every relevant chokepoint: `PlayerSpellcasting.begin_cast()`/`cast_direct()`'s
 slot-availability gate, `_cast_level_for()` (also guards a `null` `Stats.caster` — a non-caster
 class has no `SpellcasterState`/`slot_pool` at all, so the free use is the ONLY cast available to

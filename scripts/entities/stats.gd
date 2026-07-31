@@ -172,8 +172,14 @@ var adrenaline_rush_move_free_pending: bool = false
 var elf_lineage_spell_ids: Array[String] = []
 var elf_lineage_free_cast_used: Dictionary = {}
 
+## Gate helper for player_spellcasting.gd's cast sites — true iff EITHER Elven Lineage OR
+## Tiefling Fiendish Legacy still has a free cast available for this spell (the two pools never
+## overlap on the same spell_id, and spell_effects.gd's _consume_slot() marks the correct one's
+## _free_cast_used flag separately once the cast actually resolves).
 func is_lineage_free_cast_available(spell_id: String) -> bool:
-	return spell_id in elf_lineage_spell_ids and not elf_lineage_free_cast_used.get(spell_id, false)
+	var elf_free: bool = spell_id in elf_lineage_spell_ids and not elf_lineage_free_cast_used.get(spell_id, false)
+	var tiefling_free: bool = spell_id in tiefling_legacy_spell_ids and not tiefling_legacy_free_cast_used.get(spell_id, false)
+	return elf_free or tiefling_free
 
 # ── Tiefling: Fiendish Legacy ─────────────────────────────────────────────────────
 # Exact same shape as Elven Lineage above, just three thresholds instead of two (character levels
