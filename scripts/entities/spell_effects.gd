@@ -163,6 +163,13 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 			"shocking_grasp":
 				target.shocked_no_oa = true
 				GameState.game_log("[color=cyan]%s is Shocked![/color]" % target.display_name)
+			"chill_touch":
+				# Only concrete hook this engine has for "can't regain HP" — blocks the
+				# "regeneration" trait's next tick (see Enemy._tick_regeneration()). Doesn't stop
+				# healing from other sources (potions, Zealot Strike, etc.) — documented
+				# simplification, same tier as Undead-matchup being unimplemented.
+				target._regen_blocked_this_round = true
+				GameState.game_log("[color=cyan]%s is chilled — it can't regenerate until your next turn.[/color]" % target.display_name)
 			_:
 				if dungeon_floor != null and dungeon_floor.get_tile_type(target.grid_pos) == DungeonData.TileType.GRASS:
 					if dungeon_floor.ignite_grass(target.grid_pos):
@@ -397,6 +404,15 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			player.stats.shield_ac_bonus = 5
 			GameState.recalculate_stats()
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — AC +5 until your next turn.[/color]" % spell.spell_name)
+			# Free action (unlike every other cast_leveled_self() spell) — doesn't cost the turn,
+			# so it's live for the rest of THIS turn too (e.g. right before provoking an
+			# Opportunity Attack), not just the next one. Same revert_to_waiting() pattern as
+			# Battlefield Expert R3's free side-step / Berserker's Frenzy.
+			if dungeon_floor != null:
+				dungeon_floor.update_fog(player.grid_pos)
+			player._reverted_this_round = true
+			TurnManager.revert_to_waiting()
+			return
 		"mage_armor":
 			var has_armor: bool = (GameState.equipment.get("armor") as Item) != null
 			if has_armor:

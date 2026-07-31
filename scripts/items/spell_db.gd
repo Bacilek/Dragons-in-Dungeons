@@ -8,7 +8,7 @@ extends RefCounted
 # doc's original 5-spell list to keep SpellShapes to sphere-only for this pass — see that doc's
 # §7 caveat and CLAUDE.md). Full class spell lists remain future content work.
 
-const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp", "toll_the_dead", "blade_ward", "thunderclap", "mind_sliver", "light"]
+const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp", "toll_the_dead", "blade_ward", "thunderclap", "mind_sliver", "light", "poison_spray", "chill_touch"]
 # The Wizard's fixed round-1 starting choice (cantrip_select.gd) — unchanged by the 5 additions
 # above so the premade Jace's "cantrip": "fire_bolt" shortcut and existing save data stay valid.
 const STARTER_CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
@@ -263,7 +263,7 @@ static func _shield() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "shield"
 	s.spell_name = "Shield"
-	s.description = "+5 AC until the start of your next turn. leveled-spells-and-slots-plan.md §7: shipped as a same-turn manual cast, not a reaction (the reaction broker is out of scope for this pass)."
+	s.description = "Free action, self. +5 AC until the start of your next turn — unlike RAW, this isn't a reaction, so it's live during your own turn too (e.g. before provoking an Opportunity Attack). If an enemy tries to cast Magic Missile at you, the missiles simply fail to strike but the caster's spell slot is still spent (Magic Missile itself always hits and ignores AC, but this codebase has no enemy Magic Missile caster yet to exercise that rule against)."
 	s.icon_path = "res://icons/spells/1/shield.png"
 	s.school = "Abjuration"
 	s.level = 1
@@ -561,18 +561,17 @@ static func _poison_spray() -> Spell:
 	s.spell_id = "poison_spray"
 	s.spell_name = "Poison Spray"
 	s.school = "Conjuration"
-	s.range_tiles = 2
+	s.range_tiles = 3
 	s.target_kind = Spell.TargetKind.ENEMY
-	s.resolution = Spell.Resolution.SAVE
-	s.save_stat = "CON"
+	s.resolution = Spell.Resolution.ATTACK_ROLL
 	s.dice_count = 1
 	s.dice_sides = 12
 	s.damage_type = "Poison"
 	s.cantrip_tier_scaling = true
-	s.description = "Extend a hand toward a creature within 2 tiles, and a puff of poison bursts from it. CON save or take 1d12 Poison. Abyssal Tiefling lineage cantrip."
+	s.description = "Extend a hand toward a creature within 3 tiles and unleash a ranged puff of poison. 1d12 Poison damage. Also an Abyssal Tiefling lineage cantrip."
 	s.icon_path = ""
-	s.effect_id = "poison_spray"
-	s.class_list = []
+	s.effect_id = ""
+	s.class_list = ["WIZARD"]
 	return s
 
 static func _chill_touch() -> Spell:
@@ -580,17 +579,17 @@ static func _chill_touch() -> Spell:
 	s.spell_id = "chill_touch"
 	s.spell_name = "Chill Touch"
 	s.school = "Necromancy"
-	s.range_tiles = 6
+	s.range_tiles = 1
 	s.target_kind = Spell.TargetKind.ENEMY
 	s.resolution = Spell.Resolution.ATTACK_ROLL
 	s.dice_count = 1
-	s.dice_sides = 8
+	s.dice_sides = 10
 	s.damage_type = "Necrotic"
 	s.cantrip_tier_scaling = true
-	s.description = "A ghostly, skeletal hand reaches out to a target within 6 tiles. 1d8 Necrotic damage. Chthonic Tiefling lineage cantrip. (Simplified from RAW: doesn't block the target from regaining HP, and grants no bonus against Undead — this engine has no HP-regen-block or Undead-matchup hook to hang either on.)"
+	s.description = "A ghostly, skeletal hand reaches out to a touched target. 1d10 Necrotic damage — on a hit, the target can't regenerate any HP until your next turn. Also a Chthonic Tiefling lineage cantrip. (Simplified from RAW: grants no bonus against Undead — no Undead-matchup hook exists here.)"
 	s.icon_path = ""
-	s.effect_id = ""
-	s.class_list = []
+	s.effect_id = "chill_touch"
+	s.class_list = ["WIZARD"]
 	return s
 
 static func _ray_of_sickness() -> Spell:

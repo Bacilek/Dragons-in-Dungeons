@@ -667,13 +667,27 @@ TIEFLING branch:
     (`spell.save_for_half`) through the same resolver — no current spell exercises that branch
     (Hellish Rebuke used to, before it became a reaction; see above). Wired into
     `PlayerSpellcasting.try_cast_at()`'s `ENEMY`/`SAVE` branch.
-  - **Poison Spray / cast_cantrip_save_at_enemy() generalization**: that function used to hardcode
-    `use_wis = effect_id == "toll_the_dead"` / `use_int = effect_id == "mind_sliver"` — generalized
-    to read `spell.save_stat` directly (backward-compatible: Toll the Dead is WIS, Mind Sliver is
-    INT, unchanged) so Poison Spray's CON save works without another hardcoded branch.
-    `PlayerSpellcasting.try_cast_at()`'s level-0 dispatch was similarly generalized from a hardcoded
-    `"toll_the_dead", "mind_sliver":` id list to `spell.resolution == Spell.Resolution.SAVE` — any
-    future SAVE cantrip Just Works without a matching edit here.
+  - **Poison Spray and Chill Touch are now ALSO real, independently-learnable `SpellDb.CANTRIP_IDS`
+    entries** (`class_list = ["WIZARD"]`), not just Tiefling-lineage-only — same "promoted to a
+    real learnable entry" pattern as Darkness/Detect Magic/Longstrider/Pass Without Trace under
+    "Elf" above; both are still ALSO listed in `TIEFLING_LEGACY_SPELL_IDS`, the sub-race's own
+    free grant and the normal known-cantrip/Special-slot path are independent and both work
+    regardless of how the cantrip was acquired. Reworked off their original spec to a real
+    "ranged/melee spell attack" per direct owner correction — **Poison Spray** is now
+    `Resolution.ATTACK_ROLL` (was `SAVE`/CON), range 3 (was 2), otherwise unchanged (1d12 Poison,
+    tier-scaling, no `effect_id` — a plain generic-damage-path cantrip, same shape as Fire Bolt).
+    **Chill Touch** is now range 1 (touch, was 6) and 1d10 (was 1d8); `effect_id = "chill_touch"`
+    is a new dispatch case in `SpellEffects.cast_spell()` (the shared ATTACK_ROLL cantrip
+    resolver) — on a hit, sets `target._regen_blocked_this_round = true`, reusing the exact same
+    flag `take_typed_damage()`'s `"regeneration"`-trait shutoff check already writes (see the
+    schema's `"traits"` row above) so the target's next `_tick_regeneration()` tick is skipped —
+    the "can't regenerate any HP until your next turn" clause, for the one concrete regen
+    mechanism this engine has. Doesn't block healing from any OTHER source (potions, Zealot
+    Strike, an enemy trait not modeled as `"regeneration"`) — documented simplification, same tier
+    as the pre-existing "no Undead-matchup bonus" note. `PlayerSpellcasting.try_cast_at()`'s
+    level-0 dispatch generalizes off `spell.resolution == Spell.Resolution.SAVE`/`ATTACK_ROLL`
+    rather than a hardcoded id list, so both reworked cantrips route correctly with no dispatch
+    changes needed.
   - **Ray of Sickness** (`cast_leveled_attack_at_enemy()`'s `"ray_of_sickness"` effect_id case):
     ATTACK_ROLL + damage exactly like Chromatic Orb, then a secondary CON save on a non-lethal hit
     — a fail applies the real Poisoned condition for 2 turns (fixed duration, not RAW's "until the
@@ -2218,6 +2232,20 @@ impact point rather than stop at the first wall it can't directly see through.
   hit with a plain click, though a plain click on your own tile has always worked too).
 - **Shield**: `Stats.shield_ac_bonus` (+5, folded into `recalc_ac()`), cleared at the start of the
   caster's next real turn in `player.gd._on_turn_started()`'s `if not came_from_revert:` block.
+  **Free action, not a normal turn-costing cast** (direct owner rework — unlike RAW's reaction,
+  this version is cast on your own turn, so the tradeoff is it can't be triggered reactively at
+  the exact moment an attack lands, but it IS live for the rest of the casting turn itself, e.g.
+  right before deliberately provoking an Opportunity Attack): `SpellEffects.cast_leveled_self()`'s
+  `"shield"` branch sets the buff/logs/updates fog, then returns early via
+  `player._reverted_this_round = true; TurnManager.revert_to_waiting()` instead of falling through
+  to the function's normal `_handle_post_attack_turn()` tail — same free-action pattern as
+  Battlefield Expert R3's side-step / Berserker's Frenzy. The spell slot is still consumed
+  normally (`_consume_slot()` runs before the free-action branch). **Magic Missile interaction**
+  (spec'd, not implemented): if an enemy casts Magic Missile at a Shield-protected player, the
+  missiles should fail to strike but still consume the caster's own spell slot — no enemy Magic
+  Missile caster exists in this codebase yet to exercise this against (same "granted but nothing
+  to hook into yet" precedent as Elf's Fey Ancestry), documented on `Spell.description` for
+  whenever one does.
 - **Mage Armor**: SELF-target, touch range (`range_tiles = 1`), AUTO_HIT — `SpellEffects.
   cast_leveled_self()`'s `"mage_armor"` branch. **Touch buffs don't self-cast on activation** the
   way Shield (range 0) does: `PlayerSpellcasting.begin_cast()`'s SELF branch only instant-casts
