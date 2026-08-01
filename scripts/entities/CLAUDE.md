@@ -2421,7 +2421,10 @@ trigger site.
 block flag added to every input-gate chain in `player.gd`) rather than `talent_picker.gd` — no
 ranks/points to spend, just "pick one from the currently-eligible list"
 (`GameState.eldritch_invocations_eligible()`, filtered on `min_level` + not already known).
-Card-click commits immediately and calls `GameState.learn_invocation(id)`; if
+Icon-focused tile grid, up to 3 per row — same convention as `cantrip_select.gd`/
+`spell_learn_picker.gd`, see `scripts/ui/CLAUDE.md`'s own section on it; `EldritchInvocation.
+icon_path` exists but no art has been sourced for any invocation yet, so every tile currently
+renders with a blank icon area. Tile-click commits immediately and calls `GameState.learn_invocation(id)`; if
 `warlock_invocation_slots_pending` is still > 0 after the pick (multiple slots opened on one
 level-up, e.g. level 2's +2), the picker re-spawns itself for the next pick. If no invocation is
 currently eligible (pending slots outrunning designed content), shows a "no eligible invocations"

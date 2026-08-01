@@ -578,9 +578,15 @@ CanvasLayer, layer = 25. Wizard-only, mandatory pick spawned by `race_select.gd.
 the same slot the Mastery Picker would occupy (Wizard's `mastery_cap()` is already 0, so the two
 branches are mutually exclusive — `elif` off of it). Dim overlay + centered bordered `Panel`,
 `focus_mode = FOCUS_NONE`, non-dismissible (no close button, `_unhandled_input` swallows all keys
-— mirrors `race_select.gd`'s conventions). Unlike the Mastery Picker's toggle-and-Done
-multi-select, each card commits immediately on click (`subclass_select.gd`'s card-click-commits
-style) since there's no multi-select within a round — but there ARE **two rounds**
+— mirrors `race_select.gd`'s conventions). **Icon-focused tile grid, up to 3 per row**
+(`TILE_SIZE`/`TILE_GAP`/`ICON_SIZE`/`COLS` consts, `_build_tile()`) — direct owner request,
+replacing an earlier full-text-card-per-row layout: a tile shows only the spell's icon + name,
+click commits immediately (`subclass_select.gd`'s card-click-commits style, no multi-select within
+a round), and the full structured readout (`SpellTooltip.build_plain(spell)`) is a native hover
+tooltip (`Control.tooltip_text`) instead of always-visible card text. Same tile shape shared (each
+its own duplicated `_build_tile()`, not a common helper — small enough to not force a premature
+abstraction) by `spell_learn_picker.gd` and `invocation_picker.gd` below — see those sections.
+There ARE **two rounds**
 (owner-requested: a starting Wizard picks exactly **one cantrip and one level-1 spell**, not
 two of either): round 1 (`_round = 1`) is "pick 1 of 3" from the fixed `SpellDb.STARTER_CANTRIP_IDS`
 trio (Fire Bolt / Ray of Frost / Shocking Grasp — unchanged pool, so the premade Jace's
@@ -601,13 +607,29 @@ CanvasLayer, layer = 25. Wizard-only, spawned by `hud.gd._on_player_leveled_up()
 `GameState.spell_learn_pending` is true (set by `GameState._roll_spell_learn_choices()` on every
 Wizard level-up, not just even ones — see `scripts/entities/CLAUDE.md`'s "Wizard leveled
 spells"). Modeled directly on `cantrip_select.gd`: dim overlay + centered bordered `Panel`,
-non-dismissible (`_unhandled_input` swallows all keys, no close button), up to 3 cards
-(`GameState.spell_learn_choices`) that commit immediately on click via `GameState.learn_spell(id)`
-— no skip option, matches the owner's framing of this as a mandatory level-up choice. Card count
-can be 1 or 2 instead of 3 when fewer eligible spells remain; the picker never spawns at all if
-zero are eligible (a gray "No new spells available to learn." chat line fires instead) — expected
-and common with only 4 example spells in `SpellDb.LEVELED_SPELL_IDS` (see
-`docs/architecture/leveled-spells-and-slots-plan.md` §7's content-count caveat).
+non-dismissible (`_unhandled_input` swallows all keys, no close button), same icon-tile grid (up
+to 3 per row, hover for the full `SpellTooltip.build_plain()` readout — see `cantrip_select.gd`'s
+own section above) — up to 3 tiles (`GameState.spell_learn_choices`) that commit immediately on
+click via `GameState.learn_spell(id)` — no skip option, matches the owner's framing of this as a
+mandatory level-up choice. Tile count can be 1 or 2 instead of 3 when fewer eligible spells
+remain; the picker never spawns at all if zero are eligible (a gray "No new spells available to
+learn." chat line fires instead) — expected and common with only 4 example spells in
+`SpellDb.LEVELED_SPELL_IDS` (see `docs/architecture/leveled-spells-and-slots-plan.md` §7's
+content-count caveat).
+
+## Eldritch Invocation picker (`invocation_picker.gd`)
+CanvasLayer, layer = 25. Warlock-only, mandatory-per-slot, spawned by `hud.gd` on
+`GameState.invocation_choice_required` — see `scripts/entities/CLAUDE.md`'s "Warlock class"
+section for the slot schedule and grant mechanism. Same icon-tile grid convention as
+`cantrip_select.gd`/`spell_learn_picker.gd` above (up to 3 per row, `_build_tile()`, hover for the
+full name+level+description as a native tooltip) — no icon art exists for any invocation yet
+(`EldritchInvocation.icon_path` stays `""` until sourced), so every tile currently renders with a
+blank icon area, same asset-debt precedent as `mastery_picker.gd`'s icon slots. Click commits
+immediately (`GameState.learn_invocation(id)`), then re-spawns itself if another slot is still
+pending (`GameState.warlock_invocation_slots_pending > 0` — e.g. level 2's +2). If nothing is
+currently eligible (pending slots outrunning designed content), shows a plain message + "Continue"
+button that closes WITHOUT respawning instead — respawning on an empty eligible list would loop
+forever.
 
 ## Spellbook overlay (`spellbook_overlay.gd`)
 CanvasLayer, layer = 25. Wizard-only, opened by pressing **O** (`player.gd._unhandled_input()`,

@@ -27,9 +27,10 @@ extends CanvasLayer
 # until more Ranger-eligible spell content exists — `_roll_ranger_candidates()` already handles any
 # candidate count from 0 upward gracefully, no special-casing needed here.
 
-const PANEL_W: float = 760.0
-const CARD_H: float = 220.0
-const CARD_GAP: float = 16.0
+const TILE_SIZE: float = 168.0
+const TILE_GAP: float = 16.0
+const ICON_SIZE: float = 96.0
+const COLS: int = 3
 const MARGIN: float = 24.0
 const STARTING_SPELL_IDS: Array[String] = ["magic_missile", "shield"]
 const RANGER_ROUND: int = 3   # sentinel _round value — see header comment above
@@ -80,6 +81,9 @@ func _roll_ranger_candidates() -> Array[String]:
 
 func _build_ui() -> void:
 	var vp := get_viewport().get_visible_rect().size
+	var cols: int = mini(COLS, maxi(1, _candidates.size()))
+	var rows: int = ceili(float(_candidates.size()) / float(cols))
+	var panel_w: float = MARGIN * 2.0 + cols * TILE_SIZE + (cols - 1) * TILE_GAP
 
 	var dim := ColorRect.new()
 	dim.color = Color(0.0, 0.0, 0.0, 0.55)
@@ -102,13 +106,13 @@ func _build_ui() -> void:
 	title.add_theme_font_size_override("font_size", 26)
 	title.add_theme_color_override("font_color", Color(1.0, 0.82, 0.22))
 	title.position = Vector2(MARGIN, 14.0)
-	title.size = Vector2(PANEL_W - MARGIN * 2.0, 34.0)
+	title.size = Vector2(panel_w - MARGIN * 2.0, 34.0)
 	_panel.add_child(title)
 
 	_back_btn = Button.new()
 	_back_btn.text = "← Back"
 	_back_btn.size = Vector2(90.0, 28.0)
-	_back_btn.position = Vector2(PANEL_W - MARGIN - 90.0, 16.0)
+	_back_btn.position = Vector2(panel_w - MARGIN - 90.0, 16.0)
 	_back_btn.focus_mode = Control.FOCUS_NONE
 	_back_btn.add_theme_font_size_override("font_size", 13)
 	var back_normal := StyleBoxFlat.new()
@@ -125,58 +129,72 @@ func _build_ui() -> void:
 	_panel.add_child(_back_btn)
 
 	var hint := Label.new()
-	hint.text = "This choice is permanent."
+	hint.text = "This choice is permanent. Hover a tile for details."
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.add_theme_color_override("font_color", Color(0.65, 0.65, 0.70))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.position = Vector2(MARGIN, 50.0)
-	hint.size = Vector2(PANEL_W - MARGIN * 2.0, 24.0)
+	hint.size = Vector2(panel_w - MARGIN * 2.0, 24.0)
 	_panel.add_child(hint)
 
 	var sep := HSeparator.new()
 	sep.position = Vector2(12.0, 80.0)
-	sep.size = Vector2(PANEL_W - 24.0, 2.0)
+	sep.size = Vector2(panel_w - 24.0, 2.0)
 	_panel.add_child(sep)
 
 	var y0: float = 92.0
 	for i: int in _candidates.size():
 		var spell: Spell = SpellDb.get_spell(_candidates[i])
-		var pos := Vector2(MARGIN, y0 + i * (CARD_H + CARD_GAP))
-		_build_card(spell, pos, Vector2(PANEL_W - MARGIN * 2.0, CARD_H))
+		var col: int = i % cols
+		var row: int = i / cols
+		var pos := Vector2(MARGIN + col * (TILE_SIZE + TILE_GAP), y0 + row * (TILE_SIZE + TILE_GAP))
+		_build_tile(spell, pos)
 
-	var panel_h: float = y0 + _candidates.size() * (CARD_H + CARD_GAP) - CARD_GAP + 20.0
-	_panel.size = Vector2(PANEL_W, panel_h)
-	_panel.position = Vector2((vp.x - PANEL_W) * 0.5, (vp.y - panel_h) * 0.5)
+	var panel_h: float = y0 + rows * (TILE_SIZE + TILE_GAP) - TILE_GAP + 20.0
+	_panel.size = Vector2(panel_w, panel_h)
+	_panel.position = Vector2((vp.x - panel_w) * 0.5, (vp.y - panel_h) * 0.5)
 
-func _build_card(spell: Spell, pos: Vector2, card_size: Vector2) -> void:
-	var card := Button.new()
-	card.position = pos
-	card.size = card_size
-	card.focus_mode = Control.FOCUS_NONE
+func _build_tile(spell: Spell, pos: Vector2) -> void:
+	var tile := Button.new()
+	tile.position = pos
+	tile.size = Vector2(TILE_SIZE, TILE_SIZE)
+	tile.focus_mode = Control.FOCUS_NONE
+	tile.tooltip_text = SpellTooltip.build_plain(spell)
 	var normal := StyleBoxFlat.new()
 	normal.bg_color = Color(0.10, 0.11, 0.17)
 	normal.set_border_width_all(2)
 	normal.border_color = Color(0.30, 0.30, 0.38)
 	normal.set_corner_radius_all(6)
-	card.add_theme_stylebox_override("normal", normal)
+	tile.add_theme_stylebox_override("normal", normal)
 	var hover := StyleBoxFlat.new()
 	hover.bg_color = Color(0.10, 0.11, 0.17).lightened(0.08)
 	hover.set_border_width_all(3)
 	hover.border_color = Color(1.0, 0.82, 0.22)
 	hover.set_corner_radius_all(6)
-	card.add_theme_stylebox_override("hover", hover)
-	card.pressed.connect(func() -> void: _on_chosen(spell.spell_id))
-	_panel.add_child(card)
+	tile.add_theme_stylebox_override("hover", hover)
+	tile.pressed.connect(func() -> void: _on_chosen(spell.spell_id))
+	_panel.add_child(tile)
 
-	var blurb_lbl := RichTextLabel.new()
-	blurb_lbl.bbcode_enabled = true
-	blurb_lbl.fit_content = false
-	blurb_lbl.scroll_active = false
-	blurb_lbl.text = SpellTooltip.build(spell, false)
-	blurb_lbl.add_theme_font_size_override("normal_font_size", 13)
-	blurb_lbl.position = Vector2(14.0, 10.0)
-	blurb_lbl.size = Vector2(card_size.x - 28.0, card_size.y - 20.0)
-	blurb_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(blurb_lbl)
+	var icon := TextureRect.new()
+	icon.ignore_texture_size = true
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.position = Vector2((TILE_SIZE - ICON_SIZE) * 0.5, 12.0)
+	icon.size = Vector2(ICON_SIZE, ICON_SIZE)
+	if ResourceLoader.exists(spell.icon_path):
+		icon.texture = load(spell.icon_path)
+	tile.add_child(icon)
+
+	var name_lbl := Label.new()
+	name_lbl.text = spell.spell_name
+	name_lbl.add_theme_font_size_override("font_size", 15)
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_lbl.position = Vector2(6.0, ICON_SIZE + 18.0)
+	name_lbl.size = Vector2(TILE_SIZE - 12.0, TILE_SIZE - ICON_SIZE - 26.0)
+	tile.add_child(name_lbl)
 
 func _on_chosen(spell_id: String) -> void:
 	if _round == 1 and not _is_warlock:

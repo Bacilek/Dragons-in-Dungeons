@@ -9,3 +9,4 @@ extends Resource
 @export var description: String = ""
 @export var min_level: int = 1
 @export var requires_invocation: String = ""   # "" = no prerequisite invocation
+@export var icon_path: String = ""             # "" = no dedicated art yet — invocation_picker.gd's tile renders blank (same asset-debt precedent as mastery_picker.gd's icon slots)
