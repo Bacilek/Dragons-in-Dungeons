@@ -3,8 +3,9 @@ extends CanvasLayer
 # Warlock Eldritch Invocation picker — one-time-per-slot, mandatory, permanent (no respec).
 # Spawned by hud.gd on GameState.invocation_choice_required. Icon-focused tile grid, 3 per row —
 # same "pick one" convention as spell_learn_picker.gd/cantrip_select.gd (direct owner request):
-# the tile only shows the icon + name, the full description is a native hover tooltip
-# (Control.tooltip_text) instead of always-visible card text. No icon art exists for any
+# the tile only shows the icon + name, and hovering shows a styled BBCode popup (same panel/border
+# convention as SpellTooltip's own readouts elsewhere in the game — not a native tooltip_text,
+# which reads too faint/plain to be legible) anchored ABOVE the tile. No icon art exists for any
 # invocation yet (EldritchInvocation.icon_path stays "" until sourced) — tiles render with a blank
 # icon area, same asset-debt precedent as mastery_picker.gd's icon slots.
 # Re-spawns itself (via GameState.invocation_choice_required, re-checked in _ready()) if more than
@@ -16,9 +17,12 @@ const TILE_GAP: float = 16.0
 const ICON_SIZE: float = 96.0
 const COLS: int = 3
 const MARGIN: float = 24.0
+const TOOLTIP_W: float = 240.0
 
 var _panel: Panel
 var _eligible: Array[EldritchInvocation] = []
+var _tooltip: Panel
+var _tooltip_rtl: RichTextLabel
 
 func _ready() -> void:
 	layer = 25
@@ -51,8 +55,8 @@ func _build_ui() -> void:
 	title.text = "Choose an Eldritch Invocation"
 	title.add_theme_font_size_override("font_size", 26)
 	title.add_theme_color_override("font_color", Color(0.80, 0.60, 1.0))
-	title.position = Vector2(MARGIN, 14.0)
-	title.size = Vector2(panel_w - MARGIN * 2.0, 34.0)
+	title.position = Vector2(MARGIN, 16.0)
+	title.size = Vector2(panel_w - MARGIN * 2.0, 36.0)
 	_panel.add_child(title)
 
 	var hint := Label.new()
@@ -60,16 +64,16 @@ func _build_ui() -> void:
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.add_theme_color_override("font_color", Color(0.65, 0.65, 0.70))
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.position = Vector2(MARGIN, 50.0)
-	hint.size = Vector2(panel_w - MARGIN * 2.0, 24.0)
+	hint.position = Vector2(MARGIN, 56.0)
+	hint.size = Vector2(panel_w - MARGIN * 2.0, 28.0)
 	_panel.add_child(hint)
 
 	var sep := HSeparator.new()
-	sep.position = Vector2(12.0, 80.0)
+	sep.position = Vector2(12.0, 96.0)
 	sep.size = Vector2(panel_w - 24.0, 2.0)
 	_panel.add_child(sep)
 
-	var y0: float = 92.0
+	var y0: float = 110.0
 	if _eligible.is_empty():
 		var none_lbl := Label.new()
 		none_lbl.text = "No eligible invocations left to learn at your current level."
@@ -85,7 +89,7 @@ func _build_ui() -> void:
 		skip_btn.focus_mode = Control.FOCUS_NONE
 		skip_btn.pressed.connect(_on_skip)
 		_panel.add_child(skip_btn)
-		var panel_h_empty: float = y0 + 40.0 + 40.0 + 20.0
+		var panel_h_empty: float = y0 + 40.0 + 40.0 + 28.0
 		_panel.size = Vector2(panel_w, panel_h_empty)
 		_panel.position = Vector2((vp.x - panel_w) * 0.5, (vp.y - panel_h_empty) * 0.5)
 		return
@@ -97,16 +101,16 @@ func _build_ui() -> void:
 		var pos := Vector2(MARGIN + col * (TILE_SIZE + TILE_GAP), y0 + row * (TILE_SIZE + TILE_GAP))
 		_build_tile(_eligible[i], pos)
 
-	var panel_h: float = y0 + rows * (TILE_SIZE + TILE_GAP) - TILE_GAP + 20.0
+	var panel_h: float = y0 + rows * (TILE_SIZE + TILE_GAP) - TILE_GAP + 28.0
 	_panel.size = Vector2(panel_w, panel_h)
 	_panel.position = Vector2((vp.x - panel_w) * 0.5, (vp.y - panel_h) * 0.5)
+	_setup_tooltip()
 
 func _build_tile(inv: EldritchInvocation, pos: Vector2) -> void:
 	var tile := Button.new()
 	tile.position = pos
 	tile.size = Vector2(TILE_SIZE, TILE_SIZE)
 	tile.focus_mode = Control.FOCUS_NONE
-	tile.tooltip_text = "%s (lvl %d)\n\n%s" % [inv.invocation_name, inv.min_level, inv.description]
 	var normal := StyleBoxFlat.new()
 	normal.bg_color = Color(0.10, 0.11, 0.17)
 	normal.set_border_width_all(2)
@@ -120,6 +124,9 @@ func _build_tile(inv: EldritchInvocation, pos: Vector2) -> void:
 	hover.set_corner_radius_all(6)
 	tile.add_theme_stylebox_override("hover", hover)
 	tile.pressed.connect(func() -> void: _on_chosen(inv.invocation_id))
+	var tooltip_text: String = "[b]%s[/b] [color=gray](lvl %d)[/color]\n%s" % [inv.invocation_name, inv.min_level, inv.description]
+	tile.mouse_entered.connect(func() -> void: _show_tooltip(tooltip_text, tile))
+	tile.mouse_exited.connect(_hide_tooltip)
 	_panel.add_child(tile)
 
 	var icon := TextureRect.new()
@@ -142,6 +149,51 @@ func _build_tile(inv: EldritchInvocation, pos: Vector2) -> void:
 	name_lbl.position = Vector2(6.0, ICON_SIZE + 18.0)
 	name_lbl.size = Vector2(TILE_SIZE - 12.0, TILE_SIZE - ICON_SIZE - 26.0)
 	tile.add_child(name_lbl)
+
+# ── Hover tooltip (reuses the same styled panel every other spell readout in the game uses,
+# hud.gd's _setup_quickbar_tooltip()'s own bg/border convention — not a native tooltip_text) ──
+
+func _setup_tooltip() -> void:
+	_tooltip = Panel.new()
+	_tooltip.visible = false
+	_tooltip.z_index = 30
+	_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.05, 0.09, 0.97)
+	sb.set_border_width_all(1)
+	sb.border_color = Color(0.55, 0.50, 0.35)
+	sb.set_corner_radius_all(3)
+	_tooltip.add_theme_stylebox_override("panel", sb)
+	_tooltip_rtl = RichTextLabel.new()
+	_tooltip_rtl.bbcode_enabled = true
+	_tooltip_rtl.fit_content = true
+	_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip_rtl.offset_left = 8.0
+	_tooltip_rtl.offset_top = 6.0
+	_tooltip_rtl.offset_right = -8.0
+	_tooltip_rtl.offset_bottom = -6.0
+	_tooltip.add_child(_tooltip_rtl)
+	add_child(_tooltip)
+
+func _show_tooltip(text: String, tile: Control) -> void:
+	_tooltip_rtl.text = text
+	var w: float = TOOLTIP_W
+	_tooltip_rtl.size = Vector2(w, 0)
+	_tooltip.size = Vector2(w + 16.0, 60.0)
+	_tooltip.visible = true
+	var rect := Rect2(tile.global_position, tile.size)
+	var vp: Vector2 = get_viewport().get_visible_rect().size
+	var th: float = maxf(_tooltip.size.y, _tooltip_rtl.get_content_height() + 12.0)
+	var tx: float = clampf(rect.position.x, 4.0, vp.x - (w + 16.0) - 4.0)
+	# Anchored ABOVE the tile — direct owner request (tooltips used to spawn below the icon).
+	var ty: float = rect.position.y - th - 8.0
+	if ty < 4.0:
+		ty = rect.position.y + rect.size.y + 8.0
+	_tooltip.position = Vector2(tx, ty)
+
+func _hide_tooltip() -> void:
+	if _tooltip != null:
+		_tooltip.visible = false
 
 func _on_chosen(id: String) -> void:
 	GameState.learn_invocation(id)
