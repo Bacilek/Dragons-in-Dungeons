@@ -407,7 +407,15 @@ after `apply_class_defaults()` — reusing the same point-buy setter rather than
 mechanism) instead of `apply_class_defaults()`'s own generic per-class defaults: Garrem
 16/14/16/8/10/10, Tish 8/16/14/10/16/10, Grok 10/16/16/8/14/10, Jace 8/14/16/16/10/10, Lil Dorruk
 10/14/16/8/10/16 — no
-point buy or background ASI screen either way, just a different fixed stat block per hero.
+point buy or background ASI screen either way, just a different fixed stat block per hero. Each
+card's own ability-score display (`_make_stats()`) actually applies this `"scores"` dict on top of
+`apply_class_defaults()` via `apply_point_buy_scores()` — it used to silently render the generic
+class-default block instead (the `"scores"` dict was only ever applied for real at
+`_on_premade_selected()` time, never fed into the preview), so any hand-edit to a premade's
+`"scores"` looked like it had no effect until this was fixed. Stats render as a 2-column×3-row grid
+of bordered "chip" boxes (`_add_stat_chip()`, STR/DEX/CON left column, INT/WIS/CHA right column;
+abbreviation left-aligned, `score (+mod)` right-aligned, vertically centered) instead of the
+original unevenly-spaced single-column rows.
 Clicking
 "Custom" (`_on_custom_selected()`) spawns `class_select.gd` unchanged, preserving the full
 **class select → point buy → background ASI → race select → mastery picker** chain for a

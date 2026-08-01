@@ -233,7 +233,7 @@ func _build_premade_card(data: Dictionary, pos: Vector2) -> void:
 	desc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(desc_lbl)
 
-	var s: Stats = _make_stats(data["cls"] as Stats.CharacterClass)
+	var s: Stats = _make_stats(data["cls"] as Stats.CharacterClass, data.get("scores") as Dictionary)
 	var stat_rows: Array = [
 		["STR", s.strength,     s.str_modifier()],
 		["DEX", s.dexterity,    s.dex_modifier()],
@@ -242,18 +242,25 @@ func _build_premade_card(data: Dictionary, pos: Vector2) -> void:
 		["WIS", s.wisdom,       s.wis_modifier()],
 		["CHA", s.charisma,     s.cha_modifier()],
 	]
+	var grid_top := 300.0
+	var col_w := (float(CARD_W) - 24.0) / 2.0
+	var row_h := 32.0
 	for i: int in stat_rows.size():
-		_add_stat_row(card, 300.0 + i * 20.0, stat_rows[i][0], stat_rows[i][1], stat_rows[i][2])
+		var col: int = i % 2
+		var row: int = i / 2
+		var pos := Vector2(12.0 + col * col_w, grid_top + row * row_h)
+		var size := Vector2(col_w - 6.0, row_h - 6.0)
+		_add_stat_chip(card, pos, size, stat_rows[i][0], stat_rows[i][1], stat_rows[i][2], data["color"])
 
 	var sep2 := HSeparator.new()
-	sep2.position = Vector2(12.0, 424.0)
+	sep2.position = Vector2(12.0, grid_top + 3.0 * row_h + 4.0)
 	sep2.size = Vector2(CARD_W - 24.0, 2.0)
 	sep2.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(sep2)
 
 	var btn := Button.new()
 	btn.text = "Play " + (data["name"] as String)
-	btn.position = Vector2(20.0, 428.0)
+	btn.position = Vector2(20.0, grid_top + 3.0 * row_h + 14.0)
 	btn.size = Vector2(CARD_W - 40.0, 28.0)
 	var btn_normal := StyleBoxFlat.new()
 	btn_normal.bg_color = (data["color"] as Color) * 0.35
@@ -338,44 +345,54 @@ func _build_custom_card(pos: Vector2) -> void:
 	btn.pressed.connect(_on_custom_selected)
 	card.add_child(btn)
 
-func _make_stats(cls_idx: Stats.CharacterClass) -> Stats:
+func _make_stats(cls_idx: Stats.CharacterClass, scores: Dictionary) -> Stats:
 	var s := Stats.new()
 	s.character_class = cls_idx
 	s.apply_class_defaults()
+	if not scores.is_empty():
+		s.apply_point_buy_scores(scores)
 	return s
 
-func _add_stat_row(parent: Control, y: float, stat_name: String, score: int, mod_val: int) -> void:
+# Single-row "chip": stat abbreviation left-aligned, "score (+mod)" right-aligned, both
+# vertically centered inside a faint bordered box — replaces the old single-column stat rows,
+# which were unevenly spaced and didn't visually group into anything.
+func _add_stat_chip(parent: Control, pos: Vector2, size: Vector2, stat_name: String, score: int, mod_val: int, accent: Color) -> void:
+	var chip := Panel.new()
+	chip.position = pos
+	chip.size = size
+	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sbox := StyleBoxFlat.new()
+	sbox.bg_color = Color(1.0, 1.0, 1.0, 0.04)
+	sbox.set_border_width_all(1)
+	sbox.border_color = accent * 0.4
+	sbox.set_corner_radius_all(4)
+	chip.add_theme_stylebox_override("panel", sbox)
+	parent.add_child(chip)
+
 	var name_lbl := Label.new()
 	name_lbl.text = stat_name
-	name_lbl.position = Vector2(18.0, y)
-	name_lbl.size = Vector2(40.0, 18.0)
-	name_lbl.add_theme_font_size_override("font_size", 13)
+	name_lbl.position = Vector2(8.0, 0.0)
+	name_lbl.size = Vector2(36.0, size.y)
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_lbl.add_theme_font_size_override("font_size", 12)
 	name_lbl.add_theme_color_override("font_color", Color(0.62, 0.60, 0.56))
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(name_lbl)
+	chip.add_child(name_lbl)
 
-	var score_lbl := Label.new()
-	score_lbl.text = str(score)
-	score_lbl.position = Vector2(68.0, y)
-	score_lbl.size = Vector2(30.0, 18.0)
-	score_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	score_lbl.add_theme_font_size_override("font_size", 13)
-	score_lbl.add_theme_color_override("font_color", Color(0.92, 0.88, 0.72))
-	score_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(score_lbl)
-
-	var mod_lbl := Label.new()
-	mod_lbl.text = "(%+d)" % mod_val
-	mod_lbl.position = Vector2(106.0, y)
-	mod_lbl.size = Vector2(70.0, 18.0)
-	mod_lbl.add_theme_font_size_override("font_size", 13)
+	var value_lbl := Label.new()
+	value_lbl.text = "%d (%+d)" % [score, mod_val]
+	value_lbl.position = Vector2(0.0, 0.0)
+	value_lbl.size = Vector2(size.x - 8.0, size.y)
+	value_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	value_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	value_lbl.add_theme_font_size_override("font_size", 13)
 	var mod_color: Color
 	if mod_val > 0:   mod_color = Color(0.40, 0.85, 0.45)
 	elif mod_val < 0: mod_color = Color(0.85, 0.38, 0.32)
-	else:             mod_color = Color(0.50, 0.50, 0.55)
-	mod_lbl.add_theme_color_override("font_color", mod_color)
-	mod_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(mod_lbl)
+	else:             mod_color = Color(0.85, 0.83, 0.78)
+	value_lbl.add_theme_color_override("font_color", mod_color)
+	value_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	chip.add_child(value_lbl)
 
 # Bypasses class_select -> race_select -> mastery_picker entirely: applies class, race, and
 # (for Barbarian/Ranger) a fixed weapon-mastery loadout directly, mirroring exactly what each
