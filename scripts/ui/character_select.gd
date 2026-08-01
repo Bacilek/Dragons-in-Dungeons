@@ -191,8 +191,8 @@ func _build_premade_card(data: Dictionary, pos: Vector2) -> void:
 		icon.texture = load(sprite_path)
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	icon.position = Vector2(float(CARD_W) / 2.0 - 50.0, 18.0)
-	icon.size = Vector2(100.0, 100.0)
+	icon.position = Vector2(float(CARD_W) / 2.0 - 60.0, 12.0)
+	icon.size = Vector2(120.0, 120.0)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(icon)
 
@@ -201,7 +201,7 @@ func _build_premade_card(data: Dictionary, pos: Vector2) -> void:
 	name_lbl.add_theme_font_size_override("font_size", 18)
 	name_lbl.add_theme_color_override("font_color", data["color"])
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_lbl.position = Vector2(0.0, 124.0)
+	name_lbl.position = Vector2(0.0, 138.0)
 	name_lbl.size = Vector2(CARD_W, 28.0)
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(name_lbl)
@@ -211,13 +211,13 @@ func _build_premade_card(data: Dictionary, pos: Vector2) -> void:
 	subtitle_lbl.add_theme_font_size_override("font_size", 13)
 	subtitle_lbl.add_theme_color_override("font_color", Color(0.62, 0.82, 0.62))
 	subtitle_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle_lbl.position = Vector2(0.0, 156.0)
+	subtitle_lbl.position = Vector2(0.0, 170.0)
 	subtitle_lbl.size = Vector2(CARD_W, 18.0)
 	subtitle_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(subtitle_lbl)
 
 	var sep := HSeparator.new()
-	sep.position = Vector2(12.0, 182.0)
+	sep.position = Vector2(12.0, 196.0)
 	sep.size = Vector2(CARD_W - 24.0, 2.0)
 	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(sep)
@@ -228,8 +228,8 @@ func _build_premade_card(data: Dictionary, pos: Vector2) -> void:
 	desc_lbl.add_theme_color_override("font_color", Color(0.68, 0.68, 0.68))
 	desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc_lbl.position = Vector2(10.0, 194.0)
-	desc_lbl.size = Vector2(CARD_W - 20.0, 100.0)
+	desc_lbl.position = Vector2(10.0, 208.0)
+	desc_lbl.size = Vector2(CARD_W - 20.0, 56.0)
 	desc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(desc_lbl)
 
@@ -242,7 +242,7 @@ func _build_premade_card(data: Dictionary, pos: Vector2) -> void:
 		["WIS", s.wisdom,       s.wis_modifier()],
 		["CHA", s.charisma,     s.cha_modifier()],
 	]
-	var grid_top := 300.0
+	var grid_top := 272.0
 	var col_w := (float(CARD_W) - 24.0) / 2.0
 	var row_h := 32.0
 	for i: int in stat_rows.size():
