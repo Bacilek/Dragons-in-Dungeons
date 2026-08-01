@@ -139,11 +139,12 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 		dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color(spell.damage_type))
 
 	# Fire/Frost/Hill Giant Ancestry: same "next attack that hits" trigger melee already has —
-	# extended to spell attack rolls too, see PlayerGoliath.consume_giant_ancestry_on_hit().
+	# extended to spell attack rolls too, see PlayerGoliath.consume_giant_ancestry_on_hit(). Skipped
+	# if this cast already killed the target — no point rolling bonus damage/Prone on a corpse.
 	var gol_actual: int = 0
 	var gol_inst: Dictionary = {}
 	var gol_type: String = ""
-	if actual > 0:
+	if actual > 0 and not target.stats.is_dead():
 		gol_type = player._goliath.consume_giant_ancestry_on_hit(target)
 		if gol_type != "":
 			var gol_sides: int = 6 if gol_type == "Cold" else 10
@@ -922,10 +923,11 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 
 	# Fire/Frost/Hill Giant Ancestry: same "next attack that hits" trigger melee already has —
 	# extended to leveled spell attack rolls too (not on the leap re-roll — only the primary bolt).
+	# Skipped if this bolt already killed the target — no point rolling bonus damage/Prone on a corpse.
 	var gol_actual: int = 0
 	var gol_inst: Dictionary = {}
 	var gol_type: String = ""
-	if actual > 0 and not is_leap:
+	if actual > 0 and not is_leap and not target.stats.is_dead():
 		gol_type = player._goliath.consume_giant_ancestry_on_hit(target)
 		if gol_type != "":
 			var gol_sides: int = 6 if gol_type == "Cold" else 10

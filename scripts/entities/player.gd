@@ -2737,7 +2737,10 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var gol_actual: int = 0
 	var gol_inst: Dictionary = {}
 	var gol_type: String = ""
-	if actual > 0:
+	# Skip entirely if this hit (or an earlier bonus instance already stacked onto it — Judgement
+	# Day/Torch/Hunter's Mark/Celestial Revelation above) already killed the target: no point
+	# rolling bonus Fire/Cold damage, or knocking a corpse Prone, on something already dead.
+	if actual > 0 and not enemy.stats.is_dead():
 		gol_type = _goliath.consume_giant_ancestry_on_hit(enemy)
 		if gol_type != "":
 			# Fire Giant's Burn is 1d10 Fire; Frost Giant's Chill is 1d6 Cold (real 5e trait text —

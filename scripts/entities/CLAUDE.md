@@ -1017,9 +1017,15 @@ this engine, same "granted but nothing to hook into" precedent as Elf's Fey Ance
     `SpellEffects._resolve_spell_attack_bolt()` (leveled ATTACK_ROLL spells — Chromatic Orb/Witch
     Bolt, primary bolt only, not the leap re-roll) each call `consume_giant_ancestry_on_hit()`
     independently right after their own primary hit lands, same duplicated-per-site pattern as
-    Hunter's Mark's own bonus-instance hook. Still not wired into Off-hand/Cleave/Opportunity
-    Attacks, same documented scope limitation as Torch/Hunter's Mark/Ironwood Bark/Judgement
-    Day/Celestial Revelation's own bonus-instance hooks.
+    Hunter's Mark's own bonus-instance hook. **Skipped outright if the target is already dead by
+    the time this check runs** (`not enemy.stats.is_dead()`/`not target.stats.is_dead()`, direct
+    owner request) — the primary hit itself, or an earlier same-hit bonus instance already stacked
+    on top of it (Judgement Day/Torch/Hunter's Mark/Celestial Revelation, all resolved before this
+    block at every call site), can already have killed the target, and there's no point rolling
+    bonus Fire/Cold damage — or, worse, knocking a corpse Prone — on something already dead; the
+    charge stays unspent in that case (a kill "for free" doesn't cost a Giant Ancestry use). Still
+    not wired into Off-hand/Cleave/Opportunity Attacks, same documented scope limitation as
+    Torch/Hunter's Mark/Ironwood Bark/Judgement Day/Celestial Revelation's own bonus-instance hooks.
   - **Frost Giant** (`Frost's Chill`): same trigger shape as Fire Giant (melee/ranged/spell alike)
     — armed, the next attack that HITS deals a second, independent **1d6 Cold** damage instance
     (`consume_giant_ancestry_on_hit()` returns `"Cold"`, each call site's own `gol_actual`/

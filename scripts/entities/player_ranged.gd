@@ -211,11 +211,13 @@ func ranged_attack(enemy: Enemy) -> void:
 			player._dungeon_floor.show_damage(enemy.position, hm_actual, false, CombatMath.damage_type_color("Force"), 1)
 
 	# Fire/Frost/Hill Giant Ancestry: same "next attack that hits" trigger melee already has —
-	# extended to ranged attacks too, see PlayerGoliath.consume_giant_ancestry_on_hit().
+	# extended to ranged attacks too, see PlayerGoliath.consume_giant_ancestry_on_hit(). Skipped
+	# if this shot (or the Hunter's Mark bonus above) already killed the target — no point rolling
+	# bonus damage/Prone on a corpse.
 	var gol_actual: int = 0
 	var gol_inst: Dictionary = {}
 	var gol_type: String = ""
-	if actual > 0:
+	if actual > 0 and not enemy.stats.is_dead():
 		gol_type = player._goliath.consume_giant_ancestry_on_hit(enemy)
 		if gol_type != "":
 			var gol_sides: int = 6 if gol_type == "Cold" else 10
