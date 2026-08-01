@@ -103,9 +103,11 @@ is a shared 1×1-white `ImageTexture`, built once and reused, so an icon-less en
 renders as a solid tinted square instead of silently nothing; this was invisible for every
 still-art-less entry, including every enemy-condition entry the Inspect Panel shows via
 `EnemyInspect.status_entries()` — see `scripts/entities/CLAUDE.md`'s "Conditions" section),
-and emits `icon_hovered(id)`/`icon_unhovered()` on mouse enter/exit. `hud.gd` connects these to
+and emits `icon_hovered(id, rect)`/`icon_unhovered()` on mouse enter/exit (`rect` is the hovered
+icon's own global rect — `hud.gd` anchors the tooltip to it, see "Tooltip hover chain" below).
+`hud.gd` connects these to
 reuse the existing qbar-tooltip pair (`_qbar_tooltip`/`_qbar_tooltip_rtl`) via
-`_on_status_tray_icon_hovered(id)`, which pulls description text from `status_tooltips.gd`
+`_on_status_tray_icon_hovered(id, rect)`, which pulls description text from `status_tooltips.gd`
 (`StatusTooltips`, static-func-only helper mirroring `tooltip_formatters.gd`'s pattern — one
 `get_text(id)` case per effect id). Sources at launch: `poisoned`/`burning`/`bleeding`/`slowed`
 (`Stats.*_turns`), `difficult_terrain` (`GameState.player_on_difficult_terrain` — live "standing
@@ -350,7 +352,28 @@ helper (`scripts/items/item_interactions.gd`) and the transient popup Control
 (`scripts/ui/item_interaction_menu.gd`, `ItemInteractionMenu`) are both new files this feature
 introduced, reused identically by `hud.gd`'s quickbar RMB handler.
 
-**Ctrl-freeze tooltip**: pressing Ctrl while hovering an item (tooltip visible) freezes the tooltip in place and switches `_inv_tooltip.mouse_filter = MOUSE_FILTER_STOP` + `_inv_tooltip_rtl.mouse_filter = MOUSE_FILTER_PASS`. This allows `meta_hover_started` to fire for `[url=keyword:X]` links (e.g. "Heavy"), showing the glossary popup. Ctrl again or closing inventory unfreezes. `_unfreeze_tooltip()` helper restores MOUSE_FILTER_IGNORE on both AND hides the tooltip. `_on_slot_hover()` returns early when `_tooltip_frozen` so moving mouse to other slots does not overwrite the frozen tooltip. Same Ctrl-freeze feature also implemented for the qbar tooltip in `hud.gd` (`_qbar_tooltip_frozen`, `_unfreeze_qbar_tooltip()`, `_input()` handler). All item tooltips show a small gray "Ctrl: inspect" hint in the bottom-left corner (always the LAST line appended, after Uses/price, so it stays the true bottom-most line).
+**Tooltip hover chain (no Ctrl-freeze)** — direct owner request, 2026-08-01, replacing the earlier
+Ctrl-to-freeze mechanism: every item/ability/spell/status/race-trait tooltip is **always**
+interactive (`STOP`/`PASS`+`bbcode`+`meta_hover` from the moment it's built, never toggled) and
+**anchored to whatever slot/icon triggered it** (`_inv_hover_source_rect` in
+`inventory_overlay.gd`, `_qbar_hover_source_rect` in `hud.gd` — captured once at hover-start via
+`Rect2(slot.global_position, slot.size)`), never following the mouse pixel-by-pixel. This means the
+mouse can always travel from the trigger onto the tooltip box, and from there onto a keyword's own
+glossary popup, without the box drifting out from under the cursor or the chain closing —
+no key press needed anywhere. Each popup level stays open while the mouse is over itself or
+anything nested deeper than it; the outermost tooltip additionally stays open while the mouse is
+back on the original trigger. Backing out one level (mouse moves from a nested popup back onto its
+parent) closes only that nested level; leaving the entire chain (mouse in neither the trigger, the
+tooltip, nor any popup) closes everything. Driven by a per-frame rect-containment check in
+`_process()` — **not** `meta_hover_ended`/`mouse_exited`, since either fires the instant the cursor
+leaves the trigger, even when heading straight into the popup/level it just opened.
+`inventory_overlay.gd`'s own chain is one level deep (`_inv_tooltip` → `_inv_glossary_popup`);
+`hud.gd`'s is up to three (`_qbar_tooltip` → `_glossary_popup` → `_glossary_popup2`, the last only
+ever populated by a race trait with real sub-options — see `scripts/entities/CLAUDE.md`'s "Race
+tooltip format"). All item tooltips still show a small gray "Ctrl: inspect" hint in the bottom-left
+corner (always the LAST line appended, after Uses/price) — that's the unrelated Ctrl+click
+world-Inspect feature (`PlayerActions.do_inspect()`), not this tooltip-freeze mechanism, which no
+longer exists.
 
 ---
 
@@ -382,7 +405,7 @@ straight into the already-loaded floor 1. Each `PREMADE` entry also carries a fi
 dict (`{"str","dex","con","int","wis","cha"}`, applied via `Stats.apply_point_buy_scores()` right
 after `apply_class_defaults()` — reusing the same point-buy setter rather than a separate
 mechanism) instead of `apply_class_defaults()`'s own generic per-class defaults: Garrem
-16/14/16/8/10/10, Tish 8/16/14/10/16/10, Grok 10/16/16/10/14/8, Jace 8/14/16/16/10/10, Lil Dorruk
+16/14/16/8/10/10, Tish 8/16/14/10/16/10, Grok 10/16/16/8/14/10, Jace 8/14/16/16/10/10, Lil Dorruk
 10/14/16/8/10/16 — no
 point buy or background ASI screen either way, just a different fixed stat block per hero.
 Clicking

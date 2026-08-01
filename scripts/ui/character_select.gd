@@ -51,7 +51,7 @@ const PREMADE: Array = [
 		"variant": Stats.DragonbornAncestry.WHITE,
 		"prof":    -1,
 		"masteries": [],
-		"scores":  {"str": 10, "dex": 16, "con": 16, "int": 10, "wis": 14, "cha": 8},
+		"scores":  {"str": 10, "dex": 16, "con": 16, "int": 8, "wis": 14, "cha": 10},
 		"sprite":  CHAR_PATH + "Monk/idle_1.png",
 		"subtitle": "White Dragonborn Monk",
 		"desc":    "A martial artist with\ncold-resistant scales.",
