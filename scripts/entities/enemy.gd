@@ -1384,7 +1384,7 @@ func _execute_action(intent: Dictionary) -> void:
 			if intent.get("chasing", false) and not intent.get("can_see", false) \
 					and last_known_target_pos != Vector2i(-1, -1) and grid_pos == last_known_target_pos:
 				behavior = Behavior.SEARCHING
-				_search_turns_remaining = 7
+				_search_turns_remaining = 20
 				_search_target = last_known_target_pos + _search_heading * 5
 				_search_path.clear()
 				last_known_target_pos = Vector2i(-1, -1)
