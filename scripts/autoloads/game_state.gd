@@ -3347,6 +3347,27 @@ func toggle_mastery(mastery_name: String) -> bool:
 	known_masteries_changed.emit()
 	return true
 
+# Long-rest "blind swap" — mastery_picker.gd's Swap mode (scripts/ui/CLAUDE.md's "Mastery picker"
+# section). Gives up `old_name` and immediately rolls ONE random *unknown* replacement — no choice
+# over what you get, the deliberate roguelike risk/reward beat (direct owner request). `old_name`
+# must be excluded from the replacement pool explicitly: it was just removed from `known`, so a
+# bare "not in known" filter alone would let it reappear as its own replacement, defeating the
+# point of a swap. Returns the new mastery's name ("" if the pool is somehow empty — never happens
+# in practice, max cap is 4 and the pool has 8 entries, but guarded anyway).
+func reroll_mastery(old_name: String) -> String:
+	player_stats.known_weapon_masteries.erase(old_name)
+	var pool: Array[String] = []
+	for m: String in Stats.ALL_WEAPON_MASTERIES:
+		if m != old_name and not player_stats.known_weapon_masteries.has(m):
+			pool.append(m)
+	if pool.is_empty():
+		known_masteries_changed.emit()
+		return ""
+	var new_name: String = Rng.pick(pool)
+	player_stats.known_weapon_masteries.append(new_name)
+	known_masteries_changed.emit()
+	return new_name
+
 # ── Magic item attunement (Item.requires_attunement/is_attuned) ─────────────────────
 # Only ever mutated from scripts/ui/attunement_picker.gd, itself only reachable from the
 # long-rest hub (mastery_reselect_prompt.gd) — "changeable only at a long rest" per direct owner

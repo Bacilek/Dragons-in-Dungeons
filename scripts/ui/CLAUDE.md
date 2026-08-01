@@ -790,9 +790,15 @@ already-applied bonus would double it. `race_select._on_back()` calls
 `player_stats.apply_point_buy_scores(pending_point_buy_scores)` first to reset to the pure
 post-point-buy baseline. `background_select.gd`'s OWN Back (→ point buy) needs no such undo, since
 `apply_background_bonus()` only ever runs from that screen's own Confirm, never before Back can be
-pressed. Race/mastery/cantrip picks have no analogous prefill (re-opening loses the prior pick) —
-race re-selection is cheap/idempotent (`apply_race_defaults()`), and masteries persist on
-`Stats.known_weapon_masteries` directly so re-opening the picker already shows them still selected.
+pressed. Race/cantrip picks have no analogous prefill (re-opening loses the prior pick) — race
+re-selection is cheap/idempotent (`apply_race_defaults()`). **Masteries used to persist on
+`Stats.known_weapon_masteries` directly so re-opening the picker already showed them still
+selected — no longer true** since the tile-pick rework below: `mastery_picker.gd`'s
+`character_creation_mode` now unconditionally WIPES `known_weapon_masteries` on every entry (same
+"wipe on every fresh entry" precedent as `reset_wizard_onboarding_picks()` right below), so
+re-opening in creation mode always redoes a full fresh pick from scratch rather than showing
+anything pre-selected — see "Mastery picker" below for why (its known-vs-cap mode branch would
+otherwise misfire into Swap mode on re-entry).
 
 **Wizard's cantrip/starting-spell re-pick**: `GameState.reset_wizard_onboarding_picks()` wipes
 `caster.known_spells`/`prepared_spells`, their ability-bar entries, and the Special slot —
@@ -824,31 +830,60 @@ Wizard cantrips apply, e.g. Monk) and reopens that screen fresh (setting
 `character_creation_mode = true` again if it's the mastery picker).
 
 ## Mastery picker (`mastery_picker.gd`)
-CanvasLayer, layer = 25. Modeled directly on the talent picker (dim overlay + centered bordered
-`Panel`, `TextureButton` icon grid, `focus_mode = FOCUS_NONE` everywhere). Lets the player choose
-which of `Stats.ALL_WEAPON_MASTERIES` (all 8: Cleave/Graze/Nick/Push/Sap/Slow/Topple/Vex) they
-currently *know* — populates `Stats.known_weapon_masteries`, the array every weapon-mastery
-combat effect already gates on (see `scripts/entities/CLAUDE.md`'s "Weapon mastery ownership").
+CanvasLayer, layer = 25. Lets the player build up `Stats.known_weapon_masteries` (the array every
+weapon-mastery combat effect already gates on — see `scripts/entities/CLAUDE.md`'s "Weapon mastery
+ownership") out of `Stats.ALL_WEAPON_MASTERIES` (all 8: Cleave/Graze/Nick/Push/Sap/Slow/Topple/
+Vex), up to `Stats.mastery_cap()` (per class/level). Sets `GameState.mastery_picker_open = true` on
+open → blocks all player input (same treatment as `talent_picker_open`).
 
-Sets `GameState.mastery_picker_open = true` on open → blocks all player input (same treatment
-as `talent_picker_open`, including the I-key inventory toggle and Tab bar-mode toggle — a
-deliberate deviation from talent-picker parity, since this is a mandatory onboarding step).
-4×2 icon grid (all 8 masteries, alphabetical, always shown regardless of class — only the
-**cap** differs per class/level, `Stats.mastery_cap()`). Click toggles via
-`GameState.toggle_mastery(name)`; hard-blocked at cap (icon dims, click ignored) by
-`GameState.can_select_mastery()`. Counter shows "`known / cap`", gold normally, gray at cap,
-red if ever over cap (never auto-trimmed — see design doc §7.3). No icon assets yet — icons
-render blank (`res://icons/masteries/<name>.png`, none exist) until supplied; the bordered slot
-frame keeps each button visible/clickable regardless.
-**Selected vs. unselected contrast**: `_refresh()` dims every non-selected slot's `TextureButton.modulate` to `Color(0.55,0.55,0.55)` (selectable) or `Color(0.45,0.45,0.45,0.55)` (locked out at cap) so a known mastery's bright gold tint + thick 3px gold border (vs. the dimmed slots' 2px gray border) reads unambiguously at a glance — previously unselected slots rendered full white, which looked visually indistinguishable from "selected" at a glance.
+**Two modes, decided ONCE at open time** in `_ready()` from `known_weapon_masteries.size()` vs
+`mastery_cap()` (never re-derived mid-flow, so finishing Learn mode can never accidentally fall
+through into Swap mode) — direct owner request to make mastery picks "more roguelike," same
+tile+hover-tooltip treatment as `spell_learn_picker.gd`/`cantrip_select.gd`/`invocation_picker.gd`
+above:
 
-**Wired to fire three ways**: right after class selection (`class_select.gd._on_class_selected()`),
-again after any completed long rest if the player opts in — `player.gd` spawns
-`mastery_reselect_prompt.gd` (a Yes/No confirm) right after `GameState.long_rest()` finishes;
-choosing "Yes" spawns this picker fresh, letting the player fully re-pick from scratch (subject
-to the same `mastery_cap()`) — and instantly on any level-up that raises `mastery_cap()` itself
-(currently only Barbarian, at levels 4 and 10 — `Stats.mastery_cap()`). `GameState.gain_exp()`
-snapshots `mastery_cap()` before applying the level-up and sets `mastery_learn_pending = true` if
-it grew; `hud.gd._on_player_leveled_up()` spawns this picker right away when that flag is set
-(same "instant pick" treatment as hit dice/spell slots growing on level-up — see root CLAUDE.md's
-"Talent system"). Never triggered by short rest or floor descent.
+- **Learn mode** (`known < cap` — character creation, or a level-up that raised the cap):
+  sequential "pick 1 of 3" random tile rounds (`TILE_SIZE`/`TILE_GAP`/`ICON_SIZE`/`COLS` consts,
+  same shape as the spell pickers), one round per missing slot, **mandatory** — no skip, Esc
+  swallowed. Each round's 3 candidates are drawn via `Rng.shuffle()` (seeded gameplay stream, never
+  `randi()`) from every currently-unknown mastery. A tile click calls `GameState.toggle_mastery(name)`
+  (guaranteed the "add" branch — under cap, not already known) and either rebuilds for the next
+  round or, once `known.size() >= cap()`, calls `_finish_learn()`.
+- **Swap mode** (`known == cap` — reached only from the long-rest hub's "Weapon Masteries" option,
+  `mastery_reselect_prompt.gd`): a grid of the player's OWN known masteries; clicking one calls
+  `GameState.reroll_mastery(old_name)`, which immediately removes it and rolls ONE random
+  *unknown* replacement — **no choice over what you get**, the deliberate risk/reward beat. An
+  in-panel "Lost X → Gained Y" reveal line appears and the tile grid refreshes in place
+  (`blacksmith_panel.gd`'s own in-place-refresh-and-reveal convention, not a separate screen/
+  confirmation step) so the player can keep swapping or stop via Esc/the always-visible "Done"
+  button — nothing is spent by opening the picker or hovering, only by an actual tile click.
+
+Both modes share one `_build_tile(name, pos, on_click)` (icon + name label, hover → the same
+styled BBCode tooltip popup anchored above the tile as the spell pickers use — `MASTERY_DESCRIPTIONS`
+dict supplies each mastery's one-line body). No icon assets exist yet — icons render blank
+(`res://icons/masteries/<name>.png`, none exist) until supplied; the bordered tile frame keeps
+each button visible/clickable regardless, same asset-debt precedent as before this rework.
+
+**`character_creation_mode: bool`** (set on the instance before `add_child`, default `false`):
+shows a "← Back" button in Learn mode (undoes the last pick this visit via `_session_picks`, or
+exits to `race_select.gd` if nothing's been picked yet) and, once Learn mode finishes, routes
+onward instead of just closing — a caster class (Ranger) spawns `cantrip_select.gd` for its own
+starting-spell pick, everyone else spawns `character_summary.gd`. **Critically, `_ready()`
+unconditionally WIPES `known_weapon_masteries` whenever `character_creation_mode` is true** —
+without this, a re-entry (Ranger's back-nav through `cantrip_select.gd`, `character_summary.gd`'s
+"Take Me Back") would find `known.size() == cap()` already true (masteries were fully picked
+before reaching either of those screens) and misfire into Swap mode instead of letting the player
+redo their picks; the wipe forces creation mode to always run a full fresh Learn flow from empty,
+mirroring `GameState.reset_wizard_onboarding_picks()`'s identical "wipe on every fresh entry"
+precedent for Wizard's own cantrip re-pick right below.
+
+**Wired to fire three ways**: right after class selection (`class_select.gd._on_class_selected()`,
+`character_creation_mode = true`), instantly on any level-up that raises `mastery_cap()` itself
+(currently only Barbarian, at levels 4 and 10) — `GameState.gain_exp()` snapshots `mastery_cap()`
+before applying the level-up and sets `mastery_learn_pending = true` if it grew, `hud.gd.
+_on_player_leveled_up()` spawns this picker right away when that flag is set (same "instant pick"
+treatment as hit dice/spell slots growing on level-up — see root CLAUDE.md's "Talent system"),
+naturally landing in Learn mode since `known < cap` right after the cap just grew — and from the
+long-rest hub's "Weapon Masteries" option (`mastery_reselect_prompt.gd`, see "Long-rest hub"
+above), naturally landing in Swap mode since masteries are already at cap by then. Never triggered
+by short rest or floor descent.

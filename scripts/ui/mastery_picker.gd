@@ -1,10 +1,36 @@
 extends CanvasLayer
 
 # Weapon Mastery Selection overlay — see docs/architecture/weapon-mastery-selection-design.md.
-# Modeled directly on talent_picker.gd (same overlay/icon-grid/refresh patterns).
+# Two modes, decided ONCE at open time from known_weapon_masteries.size() vs mastery_cap() (never
+# re-derived mid-flow, so finishing Learn mode can never accidentally fall through into Swap mode):
+#
+# **Learn mode** (known < cap — character creation, or a level-up that raised the cap): sequential
+# "pick 1 of 3" random tile rounds, one per missing slot, mandatory (no skip/Esc) — same icon-tile
+# grid + styled hover-tooltip popup convention as spell_learn_picker.gd/cantrip_select.gd/
+# invocation_picker.gd (direct owner request — make mastery picks "more roguelike" the same way).
+#
+# **Swap mode** (known == cap — the long-rest hub's "Weapon Masteries" option,
+# mastery_reselect_prompt.gd): a grid of the player's OWN known masteries; click one to give it up,
+# GameState.reroll_mastery() immediately rolls ONE random unknown replacement (no choice over what
+# you get — the roguelike risk/reward beat), an in-panel "Lost X -> Gained Y" reveal line appears
+# (blacksmith_panel.gd's own in-place-refresh-and-reveal convention, not a separate screen), and the
+# tile grid refreshes so the player can keep swapping or stop via Esc/Done.
+#
+# character_creation_mode (set on the instance before add_child, default false) additionally: shows
+# a "<- Back" button and routes onward on completion (Wizard/non-caster -> character_summary.gd,
+# Ranger -> cantrip_select.gd) instead of just closing — same as before this rework. Re-entries in
+# this mode (Ranger's back-nav through cantrip_select.gd, character_summary.gd's "Take Me Back")
+# happen AFTER masteries are already fully picked, which would otherwise misfire into Swap mode —
+# _ready() unconditionally wipes known_weapon_masteries first whenever character_creation_mode is
+# true, so creation mode always runs a full fresh Learn flow from empty (mirrors GameState.
+# reset_wizard_onboarding_picks()'s identical "wipe on every fresh entry" precedent for cantrips).
 
-const PANEL_W: float = 720.0
-const ICON_SIZE: float = 64.0
+const TILE_SIZE: float = 168.0
+const TILE_GAP: float = 16.0
+const ICON_SIZE: float = 96.0
+const COLS: int = 3
+const MARGIN: float = 24.0
+const TOOLTIP_W: float = 240.0
 const MASTERY_ICON_FOLDER := "res://icons/masteries/"
 
 const MASTERY_DESCRIPTIONS: Dictionary = {
@@ -18,29 +44,43 @@ const MASTERY_DESCRIPTIONS: Dictionary = {
 	"Vex": "On a hit, gain Advantage on your next attack this round against the same target (any attack type).",
 }
 
-var _mastery_btns: Dictionary = {}    # mastery_name -> TextureButton
-var _slot_frames: Dictionary = {}     # mastery_name -> Panel
-var _name_labels: Dictionary = {}     # mastery_name -> Label
-var _counter_rtl: RichTextLabel
-var _detail_name: Label
-var _detail_desc: RichTextLabel
-var _selected_id: String = ""
-var _panel: Panel
-var _back_btn: Button
-
-# Set true (before add_child) only when this picker is spawned as part of the Custom character-
-# creation flow (race_select.gd) — shows a Back button and, on Done/Esc, routes to
-# character_summary.gd instead of just closing. Left false for the long-rest reselect flow
-# (mastery_reselect_prompt.gd), which behaves exactly as before.
 var character_creation_mode: bool = false
+
+var _panel: Panel
+var _tooltip: Panel
+var _tooltip_rtl: RichTextLabel
+var _mode: String = ""          # "learn" or "swap", decided once in _ready()
+var _session_picks: Array[String] = []   # Learn mode's Back-undo stack (creation mode only)
+var _tile_row: Array[Control] = []       # Swap mode's tile row — rebuilt in place after a swap
+var _reveal_rtl: RichTextLabel
 
 func _ready() -> void:
 	layer = 25
 	GameState.mastery_picker_open = true
+	if character_creation_mode:
+		# Wipes an already-complete pick from an earlier pass through this screen (Ranger's
+		# back-nav through cantrip_select.gd, character_summary.gd's "Take Me Back") — without
+		# this, known.size() == cap() on re-entry and the picker would misfire into Swap mode
+		# instead of letting the player redo their picks.
+		GameState.player_stats.known_weapon_masteries.clear()
+		GameState.known_masteries_changed.emit()
+	var known: Array[String] = GameState.player_stats.known_weapon_masteries
+	_mode = "learn" if known.size() < GameState.player_stats.mastery_cap() else "swap"
 	_build_ui()
 
 func _build_ui() -> void:
-	var vp := get_viewport().get_visible_rect().size
+	# Hidden before queue_free() (deferred) so a Learn-mode round-to-round rebuild never renders
+	# the old, about-to-be-freed panel for a stray frame underneath the fresh one — same precedent
+	# as cantrip_select.gd's own round-transition teardown.
+	for child: Node in get_children():
+		if child is CanvasItem:
+			(child as CanvasItem).visible = false
+		child.queue_free()
+	_panel = null
+	_tooltip = null
+	_tooltip_rtl = null
+	_reveal_rtl = null
+	_tile_row.clear()
 
 	var dim := ColorRect.new()
 	dim.color = Color(0.0, 0.0, 0.0, 0.55)
@@ -50,7 +90,6 @@ func _build_ui() -> void:
 	add_child(dim)
 
 	_panel = Panel.new()
-	_panel.size = Vector2(PANEL_W, 500.0)  # resized at end
 	var sbox := StyleBoxFlat.new()
 	sbox.bg_color = Color(0.07, 0.08, 0.13, 0.97)
 	sbox.set_border_width_all(3)
@@ -59,175 +98,101 @@ func _build_ui() -> void:
 	_panel.add_theme_stylebox_override("panel", sbox)
 	add_child(_panel)
 
-	# ── Title bar ────────────────────────────────────────────────────────────────
+	if _mode == "learn":
+		_build_learn_ui()
+	else:
+		_build_swap_ui()
+
+	_setup_tooltip()
+
+# ── Learn mode ──────────────────────────────────────────────────────────────────────────────
+
+func _build_learn_ui() -> void:
+	var vp := get_viewport().get_visible_rect().size
+	var known: Array[String] = GameState.player_stats.known_weapon_masteries
+	var unknown: Array[String] = []
+	for m: String in Stats.ALL_WEAPON_MASTERIES:
+		if not known.has(m):
+			unknown.append(m)
+	var pool: Array[String] = unknown.duplicate()
+	Rng.shuffle(pool)
+	var candidates: Array[String] = pool.slice(0, mini(COLS, pool.size()))
+	var cols: int = mini(COLS, maxi(1, candidates.size()))
+	var panel_w: float = MARGIN * 2.0 + cols * TILE_SIZE + (cols - 1) * TILE_GAP
+
 	var title := Label.new()
-	title.text = "Weapon Masteries"
+	title.text = "Choose a Weapon Mastery"
 	title.add_theme_font_size_override("font_size", 26)
 	title.add_theme_color_override("font_color", Color(1.0, 0.82, 0.22))
-	title.position = Vector2(20.0, 14.0)
-	title.size = Vector2(380.0, 34.0)
+	title.position = Vector2(MARGIN, 16.0)
+	title.size = Vector2(panel_w - MARGIN * 2.0, 36.0)
 	_panel.add_child(title)
 
-	_counter_rtl = RichTextLabel.new()
-	_counter_rtl.bbcode_enabled = true
-	_counter_rtl.fit_content = false
-	_counter_rtl.scroll_active = false
-	_counter_rtl.position = Vector2(PANEL_W - 240.0, 18.0)
-	_counter_rtl.size = Vector2(100.0, 30.0)
-	_counter_rtl.add_theme_font_size_override("normal_font_size", 19)
-	_panel.add_child(_counter_rtl)
-
-	var done_btn := Button.new()
-	done_btn.text = "✓  Done  [Esc]"
-	done_btn.size = Vector2(128.0, 34.0)
-	done_btn.position = Vector2(PANEL_W - 144.0, 14.0)
-	done_btn.focus_mode = Control.FOCUS_NONE
-	done_btn.add_theme_font_size_override("font_size", 14)
-	_style_btn(done_btn, Color(0.10, 0.22, 0.10), Color(0.28, 0.65, 0.28))
-	done_btn.pressed.connect(_close)
-	_panel.add_child(done_btn)
-
 	if character_creation_mode:
-		_back_btn = Button.new()
-		_back_btn.text = "← Back"
-		_back_btn.size = Vector2(90.0, 34.0)
-		_back_btn.position = Vector2(PANEL_W - 144.0 - 100.0, 14.0)
-		_back_btn.focus_mode = Control.FOCUS_NONE
-		_back_btn.add_theme_font_size_override("font_size", 13)
-		_style_btn(_back_btn, Color(0.14, 0.12, 0.10), Color(0.5, 0.45, 0.35))
-		_back_btn.pressed.connect(_on_back)
-		_panel.add_child(_back_btn)
+		var back_btn := Button.new()
+		back_btn.text = "← Back"
+		back_btn.size = Vector2(90.0, 28.0)
+		back_btn.position = Vector2(panel_w - MARGIN - 90.0, 18.0)
+		back_btn.focus_mode = Control.FOCUS_NONE
+		back_btn.add_theme_font_size_override("font_size", 13)
+		var back_normal := StyleBoxFlat.new()
+		back_normal.bg_color = Color(0.14, 0.12, 0.10)
+		back_normal.set_border_width_all(1)
+		back_normal.border_color = Color(0.5, 0.45, 0.35)
+		back_normal.set_corner_radius_all(3)
+		back_btn.add_theme_stylebox_override("normal", back_normal)
+		var back_hover := StyleBoxFlat.new()
+		back_hover.bg_color = Color(0.14, 0.12, 0.10).lightened(0.12)
+		back_hover.set_corner_radius_all(3)
+		back_btn.add_theme_stylebox_override("hover", back_hover)
+		back_btn.pressed.connect(_on_learn_back)
+		_panel.add_child(back_btn)
 
-	var sep1 := HSeparator.new()
-	sep1.position = Vector2(12.0, 60.0)
-	sep1.size = Vector2(PANEL_W - 24.0, 2.0)
-	_panel.add_child(sep1)
+	var hint := Label.new()
+	hint.text = "This choice is permanent. Hover a tile for details."
+	hint.add_theme_font_size_override("font_size", 14)
+	hint.add_theme_color_override("font_color", Color(0.65, 0.65, 0.70))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.position = Vector2(MARGIN, 56.0)
+	hint.size = Vector2(panel_w - MARGIN * 2.0, 28.0)
+	_panel.add_child(hint)
 
-	# ── Mastery grid: 4 columns x 2 rows ──────────────────────────────────────────
-	var y: float = 76.0
-	var cols: int = 4
-	var rows: int = 2
-	var slot_w: float = (PANEL_W - 40.0) / cols
-	for i: int in Stats.ALL_WEAPON_MASTERIES.size():
-		var name: String = Stats.ALL_WEAPON_MASTERIES[i]
+	var sep := HSeparator.new()
+	sep.position = Vector2(12.0, 96.0)
+	sep.size = Vector2(panel_w - 24.0, 2.0)
+	_panel.add_child(sep)
+
+	var y0: float = 110.0
+	for i: int in candidates.size():
 		var col: int = i % cols
-		var row: int = i / cols
-		var icon_x: float = 20.0 + col * slot_w + (slot_w - ICON_SIZE) * 0.5
-		var icon_y: float = y + row * (ICON_SIZE + 46.0)
-		_add_mastery_slot(name, Vector2(icon_x, icon_y))
-	y += rows * (ICON_SIZE + 46.0) + 6.0
+		var pos := Vector2(MARGIN + col * (TILE_SIZE + TILE_GAP), y0)
+		_build_tile(candidates[i], pos, _on_learn_chosen)
 
-	var sep2 := HSeparator.new()
-	sep2.position = Vector2(12.0, y)
-	sep2.size = Vector2(PANEL_W - 24.0, 2.0)
-	_panel.add_child(sep2)
-	y += 12.0
+	var panel_h: float = y0 + TILE_SIZE + 28.0
+	_panel.size = Vector2(panel_w, panel_h)
+	_panel.position = Vector2((vp.x - panel_w) * 0.5, (vp.y - panel_h) * 0.5)
 
-	# ── Detail section ────────────────────────────────────────────────────────────
-	_detail_name = Label.new()
-	_detail_name.text = "— select a mastery —"
-	_detail_name.add_theme_font_size_override("font_size", 17)
-	_detail_name.add_theme_color_override("font_color", Color(1.0, 0.82, 0.22))
-	_detail_name.position = Vector2(20.0, y)
-	_detail_name.size = Vector2(PANEL_W - 40.0, 26.0)
-	_panel.add_child(_detail_name)
-
-	_detail_desc = RichTextLabel.new()
-	_detail_desc.bbcode_enabled = true
-	_detail_desc.fit_content = false
-	_detail_desc.scroll_active = false
-	_detail_desc.position = Vector2(20.0, y + 30.0)
-	_detail_desc.size = Vector2(PANEL_W - 40.0, 60.0)
-	_detail_desc.add_theme_font_size_override("normal_font_size", 14)
-	_panel.add_child(_detail_desc)
-	y += 30.0 + 60.0 + 16.0
-
-	_panel.size = Vector2(PANEL_W, y)
-	_panel.position = Vector2((vp.x - PANEL_W) * 0.5, (vp.y - y) * 0.5)
-
-	_refresh()
-
-func _add_mastery_slot(name: String, pos: Vector2) -> void:
-	var frame := Panel.new()
-	frame.size = Vector2(ICON_SIZE, ICON_SIZE)
-	frame.position = pos
-	var fbox := StyleBoxFlat.new()
-	fbox.bg_color = Color(0.12, 0.12, 0.16, 0.9)
-	fbox.set_border_width_all(2)
-	fbox.border_color = Color(0.35, 0.35, 0.35)
-	fbox.set_corner_radius_all(4)
-	frame.add_theme_stylebox_override("panel", fbox)
-	_panel.add_child(frame)
-	_slot_frames[name] = frame
-
-	var btn := TextureButton.new()
-	btn.size = Vector2(ICON_SIZE, ICON_SIZE)
-	btn.position = pos
-	btn.ignore_texture_size = true
-	btn.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
-	btn.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	btn.focus_mode = Control.FOCUS_NONE
-	var icon_path: String = MASTERY_ICON_FOLDER + name.to_lower() + ".png"
-	if ResourceLoader.exists(icon_path):
-		btn.texture_normal = load(icon_path)
-	btn.pressed.connect(func() -> void: _on_slot_pressed(name))
-	_panel.add_child(btn)
-	_mastery_btns[name] = btn
-
-	var name_lbl := Label.new()
-	name_lbl.text = name
-	name_lbl.add_theme_font_size_override("font_size", 15)
-	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_lbl.position = Vector2(pos.x - 12.0, pos.y + ICON_SIZE + 4.0)
-	name_lbl.size = Vector2(ICON_SIZE + 24.0, 22.0)
-	_panel.add_child(name_lbl)
-	_name_labels[name] = name_lbl
-
-func _on_slot_pressed(name: String) -> void:
-	_selected_id = name
+func _on_learn_chosen(name: String) -> void:
 	GameState.toggle_mastery(name)
-	_refresh()
+	_session_picks.append(name)
+	if GameState.player_stats.known_weapon_masteries.size() >= GameState.player_stats.mastery_cap():
+		_finish_learn()
+	else:
+		_build_ui()
 
-# ── Refresh all visuals ───────────────────────────────────────────────────────
+func _on_learn_back() -> void:
+	if _session_picks.is_empty():
+		GameState.mastery_picker_open = false
+		var race_picker = load("res://scripts/ui/race_select.gd").new()
+		get_tree().root.call_deferred("add_child", race_picker)
+		queue_free()
+		return
+	var last: String = _session_picks.pop_back()
+	GameState.player_stats.known_weapon_masteries.erase(last)
+	GameState.known_masteries_changed.emit()
+	_build_ui()
 
-func _refresh() -> void:
-	var known: Array[String] = GameState.player_stats.known_weapon_masteries
-	var cap: int = GameState.player_stats.mastery_cap()
-	var at_cap: bool = known.size() >= cap
-
-	for name: String in Stats.ALL_WEAPON_MASTERIES:
-		var btn: TextureButton = _mastery_btns[name]
-		var frame: Panel = _slot_frames[name]
-		var known_here: bool = name in known
-		var fbox: StyleBoxFlat = frame.get_theme_stylebox("panel") as StyleBoxFlat
-		if known_here:
-			# Selected — bright gold tint + thick gold border, made to pop against the dimmed rest.
-			btn.modulate = Color(1.4, 1.1, 0.4)
-			fbox.border_color = Color(0.95, 0.72, 0.28)
-			fbox.set_border_width_all(3)
-		elif at_cap:
-			# Locked out (cap reached) — heavily dimmed, unmistakably unselectable.
-			btn.modulate = Color(0.45, 0.45, 0.45, 0.55)
-			fbox.border_color = Color(0.28, 0.28, 0.28)
-			fbox.set_border_width_all(2)
-		else:
-			# Selectable but not selected — clearly dimmed relative to a selected slot.
-			btn.modulate = Color(0.55, 0.55, 0.55)
-			fbox.border_color = Color(0.4, 0.4, 0.4)
-			fbox.set_border_width_all(2)
-
-	var count_color: String = "#FFD700"
-	if known.size() > cap:
-		count_color = "#e05050"
-	elif at_cap:
-		count_color = "#888888"
-	_counter_rtl.text = "[right][color=%s]%d / %d[/color][/right]" % [count_color, known.size(), cap]
-
-	if _selected_id != "":
-		_detail_name.text = _selected_id
-		_detail_desc.text = MASTERY_DESCRIPTIONS.get(_selected_id, "")
-
-func _close() -> void:
+func _finish_learn() -> void:
 	GameState.mastery_picker_open = false
 	if character_creation_mode:
 		# A caster class that also has known weapon masteries (currently only Ranger — Wizard's
@@ -245,11 +210,184 @@ func _close() -> void:
 		get_tree().root.call_deferred("add_child", summary)
 	queue_free()
 
-func _on_back() -> void:
+# ── Swap mode ───────────────────────────────────────────────────────────────────────────────
+
+func _build_swap_ui() -> void:
+	var vp := get_viewport().get_visible_rect().size
+	var known: Array[String] = GameState.player_stats.known_weapon_masteries
+	var cols: int = mini(COLS, maxi(1, known.size()))
+	var rows: int = ceili(float(known.size()) / float(cols))
+	var panel_w: float = MARGIN * 2.0 + cols * TILE_SIZE + (cols - 1) * TILE_GAP
+
+	var title := Label.new()
+	title.text = "Reselect a Weapon Mastery"
+	title.add_theme_font_size_override("font_size", 26)
+	title.add_theme_color_override("font_color", Color(1.0, 0.82, 0.22))
+	title.position = Vector2(MARGIN, 16.0)
+	title.size = Vector2(panel_w - MARGIN * 2.0, 36.0)
+	_panel.add_child(title)
+
+	var done_btn := Button.new()
+	done_btn.text = "✓  Done  [Esc]"
+	done_btn.size = Vector2(128.0, 30.0)
+	done_btn.position = Vector2(panel_w - MARGIN - 128.0, 18.0)
+	done_btn.focus_mode = Control.FOCUS_NONE
+	done_btn.add_theme_font_size_override("font_size", 13)
+	_style_btn(done_btn, Color(0.10, 0.22, 0.10), Color(0.28, 0.65, 0.28))
+	done_btn.pressed.connect(_close)
+	_panel.add_child(done_btn)
+
+	var hint := Label.new()
+	hint.text = "Pick one to give up — you'll gain a random new one in return. This can't be undone. Hover a tile for details."
+	hint.add_theme_font_size_override("font_size", 14)
+	hint.add_theme_color_override("font_color", Color(0.65, 0.65, 0.70))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.position = Vector2(MARGIN, 56.0)
+	hint.size = Vector2(panel_w - MARGIN * 2.0, 28.0)
+	_panel.add_child(hint)
+
+	var sep := HSeparator.new()
+	sep.position = Vector2(12.0, 96.0)
+	sep.size = Vector2(panel_w - 24.0, 2.0)
+	_panel.add_child(sep)
+
+	var y0: float = 110.0
+	_build_swap_tile_row(y0, cols)
+
+	_reveal_rtl = RichTextLabel.new()
+	_reveal_rtl.bbcode_enabled = true
+	_reveal_rtl.fit_content = false
+	_reveal_rtl.scroll_active = false
+	_reveal_rtl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_reveal_rtl.add_theme_font_size_override("normal_font_size", 15)
+	_reveal_rtl.position = Vector2(MARGIN, y0 + rows * (TILE_SIZE + TILE_GAP))
+	_reveal_rtl.size = Vector2(panel_w - MARGIN * 2.0, 30.0)
+	_panel.add_child(_reveal_rtl)
+
+	var panel_h: float = y0 + rows * (TILE_SIZE + TILE_GAP) + 30.0 + 28.0
+	_panel.size = Vector2(panel_w, panel_h)
+	_panel.position = Vector2((vp.x - panel_w) * 0.5, (vp.y - panel_h) * 0.5)
+
+func _build_swap_tile_row(y0: float, cols: int) -> void:
+	for t: Control in _tile_row:
+		t.visible = false
+		t.queue_free()
+	_tile_row.clear()
+	var known: Array[String] = GameState.player_stats.known_weapon_masteries
+	for i: int in known.size():
+		var col: int = i % cols
+		var row: int = i / cols
+		var pos := Vector2(MARGIN + col * (TILE_SIZE + TILE_GAP), y0 + row * (TILE_SIZE + TILE_GAP))
+		_tile_row.append(_build_tile(known[i], pos, _on_discard))
+
+func _on_discard(name: String) -> void:
+	var new_name: String = GameState.reroll_mastery(name)
+	if new_name == "":
+		return
+	_hide_tooltip()   # the tile that was just hovered/clicked is about to be freed below
+	_reveal_rtl.text = "[color=#e05050]Lost %s[/color] → [color=#f2c94c]Gained %s![/color]" % [name, new_name]
+	var known: Array[String] = GameState.player_stats.known_weapon_masteries
+	var cols: int = mini(COLS, maxi(1, known.size()))
+	var y0: float = 110.0
+	_build_swap_tile_row(y0, cols)
+
+func _close() -> void:
 	GameState.mastery_picker_open = false
-	var race_picker = load("res://scripts/ui/race_select.gd").new()
-	get_tree().root.call_deferred("add_child", race_picker)
 	queue_free()
+
+# ── Shared tile builder (icon + name, hover tooltip) ───────────────────────────────────────
+
+func _build_tile(name: String, pos: Vector2, on_click: Callable) -> Control:
+	var tile := Button.new()
+	tile.position = pos
+	tile.size = Vector2(TILE_SIZE, TILE_SIZE)
+	tile.focus_mode = Control.FOCUS_NONE
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.10, 0.11, 0.17)
+	normal.set_border_width_all(2)
+	normal.border_color = Color(0.30, 0.30, 0.38)
+	normal.set_corner_radius_all(6)
+	tile.add_theme_stylebox_override("normal", normal)
+	var hover := StyleBoxFlat.new()
+	hover.bg_color = Color(0.10, 0.11, 0.17).lightened(0.08)
+	hover.set_border_width_all(3)
+	hover.border_color = Color(1.0, 0.82, 0.22)
+	hover.set_corner_radius_all(6)
+	tile.add_theme_stylebox_override("hover", hover)
+	tile.pressed.connect(func() -> void: on_click.call(name))
+	var tooltip_text: String = "[b]%s[/b]\n\n%s" % [name, MASTERY_DESCRIPTIONS.get(name, "")]
+	tile.mouse_entered.connect(func() -> void: _show_tooltip(tooltip_text, tile))
+	tile.mouse_exited.connect(_hide_tooltip)
+	_panel.add_child(tile)
+
+	var icon := TextureRect.new()
+	icon.ignore_texture_size = true
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.position = Vector2((TILE_SIZE - ICON_SIZE) * 0.5, 12.0)
+	icon.size = Vector2(ICON_SIZE, ICON_SIZE)
+	var icon_path: String = MASTERY_ICON_FOLDER + name.to_lower() + ".png"
+	if ResourceLoader.exists(icon_path):
+		icon.texture = load(icon_path)
+	tile.add_child(icon)
+
+	var name_lbl := Label.new()
+	name_lbl.text = name
+	name_lbl.add_theme_font_size_override("font_size", 16)
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_lbl.position = Vector2(6.0, ICON_SIZE + 18.0)
+	name_lbl.size = Vector2(TILE_SIZE - 12.0, TILE_SIZE - ICON_SIZE - 26.0)
+	tile.add_child(name_lbl)
+
+	return tile
+
+# ── Hover tooltip (reuses the same styled panel every other spell/mastery readout in the game
+# uses, hud.gd's _setup_quickbar_tooltip()'s own bg/border convention — not a native tooltip_text).
+# Rebuilt every _build_ui() call (Learn mode's round-to-round rebuild tears down the whole tree). ──
+
+func _setup_tooltip() -> void:
+	_tooltip = Panel.new()
+	_tooltip.visible = false
+	_tooltip.z_index = 30
+	_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.05, 0.09, 0.97)
+	sb.set_border_width_all(1)
+	sb.border_color = Color(0.55, 0.50, 0.35)
+	sb.set_corner_radius_all(3)
+	_tooltip.add_theme_stylebox_override("panel", sb)
+	_tooltip_rtl = RichTextLabel.new()
+	_tooltip_rtl.bbcode_enabled = true
+	_tooltip_rtl.fit_content = true
+	_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip_rtl.offset_left = 8.0
+	_tooltip_rtl.offset_top = 6.0
+	_tooltip_rtl.offset_right = -8.0
+	_tooltip_rtl.offset_bottom = -6.0
+	_tooltip.add_child(_tooltip_rtl)
+	add_child(_tooltip)
+
+func _show_tooltip(text: String, tile: Control) -> void:
+	_tooltip_rtl.text = text
+	var w: float = TOOLTIP_W
+	_tooltip_rtl.size = Vector2(w, 0)
+	_tooltip.size = Vector2(w + 16.0, 60.0)
+	_tooltip.visible = true
+	var rect := Rect2(tile.global_position, tile.size)
+	var vp: Vector2 = get_viewport().get_visible_rect().size
+	var th: float = maxf(_tooltip.size.y, _tooltip_rtl.get_content_height() + 12.0)
+	var tx: float = clampf(rect.position.x, 4.0, vp.x - (w + 16.0) - 4.0)
+	# Anchored ABOVE the tile — same convention as the spell/invocation pickers.
+	var ty: float = rect.position.y - th - 8.0
+	if ty < 4.0:
+		ty = rect.position.y + rect.size.y + 8.0
+	_tooltip.position = Vector2(tx, ty)
+
+func _hide_tooltip() -> void:
+	if _tooltip != null:
+		_tooltip.visible = false
 
 func _style_btn(btn: Button, bg: Color, border: Color) -> void:
 	var normal := StyleBoxFlat.new()
@@ -264,6 +402,11 @@ func _style_btn(btn: Button, bg: Color, border: Color) -> void:
 	btn.add_theme_stylebox_override("hover", hover)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _mode == "learn":
+		# Mandatory round, same as every spell-pick picker — swallow all key input, no Esc close.
+		if event is InputEventKey:
+			get_viewport().set_input_as_handled()
+		return
 	if not (event is InputEventKey):
 		return
 	var key := event as InputEventKey
