@@ -248,9 +248,9 @@ func _build_premade_card(data: Dictionary, pos: Vector2) -> void:
 	for i: int in stat_rows.size():
 		var col: int = i % 2
 		var row: int = i / 2
-		var pos := Vector2(12.0 + col * col_w, grid_top + row * row_h)
-		var size := Vector2(col_w - 6.0, row_h - 6.0)
-		_add_stat_chip(card, pos, size, stat_rows[i][0], stat_rows[i][1], stat_rows[i][2], data["color"])
+		var chip_pos := Vector2(12.0 + col * col_w, grid_top + row * row_h)
+		var chip_size := Vector2(col_w - 6.0, row_h - 6.0)
+		_add_stat_chip(card, chip_pos, chip_size, stat_rows[i][0], stat_rows[i][1], stat_rows[i][2], data["color"])
 
 	var sep2 := HSeparator.new()
 	sep2.position = Vector2(12.0, grid_top + 3.0 * row_h + 4.0)
