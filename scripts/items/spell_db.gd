@@ -355,7 +355,7 @@ static func _misty_step() -> Spell:
 	s.target_kind = Spell.TargetKind.TILE
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "misty_step"
-	s.class_list = ["WIZARD"]   # real 5e list: Sorcerer/Warlock/Wizard — not Ranger
+	s.class_list = ["WARLOCK", "WIZARD"]   # real 5e list: Sorcerer/Warlock/Wizard — not Ranger. Also in WARLOCK_SPELL_IDS — BUGFIX: class_list was missing WARLOCK despite the spell already being castable/learnable by one
 	return s
 
 static func _fireball() -> Spell:
@@ -440,7 +440,7 @@ static func _witch_bolt() -> Spell:
 	s.dice_sides = 12
 	s.damage_type = "Lightning"
 	s.effect_id = "witch_bolt"
-	s.class_list = ["WIZARD"]   # real 5e/5.5e list: Sorcerer/Wizard — not Ranger
+	s.class_list = ["WARLOCK", "WIZARD"]   # real 5e/5.5e list: Sorcerer/Warlock/Wizard — not Ranger. BUGFIX: class_list (and this comment) omitted Warlock even though the spell is already in WARLOCK_SPELL_IDS
 	return s
 
 # ── More 1st-level non-damage spells (Expeditious Retreat, False Life, Fog Cloud) ────────────
@@ -466,7 +466,7 @@ static func _expeditious_retreat() -> Spell:
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "expeditious_retreat"
-	s.class_list = ["WIZARD"]   # real 5e/5.5e list: Sorcerer/Warlock/Wizard — not Ranger
+	s.class_list = ["WARLOCK", "WIZARD"]   # real 5e/5.5e list: Sorcerer/Warlock/Wizard — not Ranger. BUGFIX: class_list was missing WARLOCK despite the spell already being in WARLOCK_SPELL_IDS
 	return s
 
 static func _false_life() -> Spell:
@@ -528,7 +528,7 @@ static func _invisibility() -> Spell:
 	s.target_kind = Spell.TargetKind.SELF
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "invisibility"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WARLOCK", "WIZARD"]   # real 5e list: Sorcerer/Warlock/Wizard. BUGFIX: class_list was missing WARLOCK despite the spell already being in WARLOCK_SPELL_IDS
 	return s
 
 # ── Elf lineage spells (Drow/High Elf/Wood Elf) — see scripts/entities/CLAUDE.md's "Elf" section
@@ -576,7 +576,7 @@ static func _darkness() -> Spell:
 	s.description = "Anyone inside, you or an enemy, is Blinded. Can target a floor object instead of a bare point — the darkness follows it. Snuffs out an overlapping Light cantrip."
 	s.icon_path = "res://icons/spells/2/darkness.png"
 	s.effect_id = "darkness"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WARLOCK", "WIZARD"]   # BUGFIX: class_list was missing WARLOCK despite the spell already being in WARLOCK_SPELL_IDS and its own comment above naming Warlock
 	return s
 
 static func _detect_magic() -> Spell:
@@ -663,7 +663,7 @@ static func _poison_spray() -> Spell:
 	s.description = "Ranged spell attack, deals 1d12 Poison damage. Also an Abyssal Tiefling lineage cantrip."
 	s.icon_path = "res://icons/spells/0/poison_spray.png"
 	s.effect_id = ""
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WARLOCK", "WIZARD"]   # real 5e list: Druid/Sorcerer/Warlock/Wizard. Also WARLOCK_STARTER_CANTRIP_IDS — BUGFIX: class_list was missing WARLOCK despite being one of Warlock's own starter cantrip choices
 	return s
 
 static func _chill_touch() -> Spell:
@@ -683,7 +683,7 @@ static func _chill_touch() -> Spell:
 	s.description = "Melee spell attack, deals 1d10 Necrotic damage. On a hit, target can't regenerate any HP. Also a Chthonic Tiefling lineage cantrip."
 	s.icon_path = "res://icons/spells/0/chill_touch.png"
 	s.effect_id = "chill_touch"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WARLOCK", "WIZARD"]   # real 5e list: Sorcerer/Warlock/Wizard (Sorcerer left off, not a playable class here). Also WARLOCK_STARTER_CANTRIP_IDS — BUGFIX: class_list was missing WARLOCK despite being one of Warlock's own starter cantrip choices
 	return s
 
 static func _ray_of_sickness() -> Spell:
@@ -723,7 +723,7 @@ static func _hold_person() -> Spell:
 	s.description = "WIS save or is Paralyzed. Repeats the save each turn, ending early on a success. Abyssal Tiefling lineage spell."
 	s.icon_path = "res://icons/spells/2/hold_person.png"
 	s.effect_id = "hold_person"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WARLOCK", "WIZARD"]   # real 5e list: Bard/Cleric/Druid/Sorcerer/Warlock/Wizard. BUGFIX: class_list was missing WARLOCK despite the spell already being in WARLOCK_SPELL_IDS
 	return s
 
 static func _hideous_laughter() -> Spell:
@@ -767,7 +767,7 @@ static func _ray_of_enfeeblement() -> Spell:
 	s.description = "CON save: success — Disadvantage on next attack only. Failure — Disadvantage on STR checks, -1d8 damage rolls. Repeats each turn, ends on a success. Chthonic Tiefling lineage spell."
 	s.icon_path = "res://icons/spells/2/ray_of_enfeeblement.png"
 	s.effect_id = "ray_of_enfeeblement"
-	s.class_list = ["WIZARD"]
+	s.class_list = ["WARLOCK", "WIZARD"]   # real 5e list: Warlock/Wizard. BUGFIX: class_list was missing WARLOCK despite the spell already being in WARLOCK_SPELL_IDS
 	return s
 
 static func _hellish_rebuke() -> Spell:

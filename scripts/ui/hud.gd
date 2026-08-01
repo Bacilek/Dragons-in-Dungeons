@@ -84,6 +84,11 @@ const CLASS_PORTRAIT: Dictionary = {
 	Stats.CharacterClass.RANGER:    "res://sprites/characters/classes/Ranger/idle_1.png",
 	Stats.CharacterClass.WIZARD:    "res://sprites/characters/classes/Wizard/idle_1.png",
 	Stats.CharacterClass.MONK:      "res://sprites/characters/classes/Monk/idle_1.png",
+	# BUGFIX: Warlock was missing here entirely — _on_class_chosen()'s CLASS_PORTRAIT.get(cls, ...)
+	# silently fell back to the Barbarian portrait default for every Warlock, even though
+	# player.gd._setup_animations() already had a correct WARLOCK case for the actual in-world
+	# sprite (this dict is the separate HUD-portrait mapping, not shared code).
+	Stats.CharacterClass.WARLOCK:   "res://sprites/characters/classes/Warlock/idle_1.png",
 }
 
 func _unhandled_input(event: InputEvent) -> void:

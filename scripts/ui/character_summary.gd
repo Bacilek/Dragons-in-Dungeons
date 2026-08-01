@@ -18,12 +18,16 @@ const CLASS_SPRITE: Dictionary = {
 	Stats.CharacterClass.RANGER: CHAR_PATH + "Ranger/idle_1.png",
 	Stats.CharacterClass.WIZARD: CHAR_PATH + "Wizard/idle_1.png",
 	Stats.CharacterClass.MONK: CHAR_PATH + "Monk/idle_1.png",
+	# BUGFIX: Warlock was missing here — CLASS_SPRITE.get() fell back to "" (blank portrait).
+	Stats.CharacterClass.WARLOCK: CHAR_PATH + "Warlock/idle_1.png",
 }
 const CLASS_NAMES: Dictionary = {
 	Stats.CharacterClass.BARBARIAN: "Barbarian",
 	Stats.CharacterClass.RANGER: "Ranger",
 	Stats.CharacterClass.WIZARD: "Wizard",
 	Stats.CharacterClass.MONK: "Monk",
+	# BUGFIX: Warlock was missing here — CLASS_NAMES.get() fell back to "?" in the summary headline.
+	Stats.CharacterClass.WARLOCK: "Warlock",
 }
 const RACE_NAMES: Dictionary = {
 	Stats.CharacterRace.ORC: "Orc",
