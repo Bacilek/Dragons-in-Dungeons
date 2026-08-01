@@ -1046,28 +1046,34 @@ this engine, same "granted but nothing to hook into" precedent as Elf's Fey Ance
     chronological order**: the Cold damage instance is folded into the main hit line (same segment
     as the primary weapon damage, exactly like Fire Giant's own bonus instance); the "Frost's Chill
     slows X" flavor line is logged separately by `player.gd._bump_attack()` right AFTER that
-    combined hit line (`gol_type == "Cold"` check), not inline inside
-    `consume_giant_ancestry_on_hit()` (which is called and returns before the hit line is even
-    built) — damage first, then the slow flavor, matching the trait's own reading order.
+    combined hit line (`gol_type == "Cold"` check) — damage first, then the slow flavor line.
   - **Hill Giant** (`Hill's Tumble`): same trigger shape, applies the real Prone condition
     (`enemy.apply_status("prone", 1)`, see "Conditions" above) instead of damage — gated on
     `enemy.size.x * enemy.size.y <= 4` ("Large or smaller"; every enemy in this game today is
     Medium or Large-2x2 at most, so this is unconditional in practice, kept for correctness
-    against a future Huge+ enemy). `consume_giant_ancestry_on_hit()` handles this internally too.
-    See "Conditions" above's Prone row for exactly what the condition itself does (melee ADV/ranged
-    DISADV against the target, can't move without standing up first, no full-turn skip).
+    against a future Huge+ enemy). See "Conditions" above's Prone row for exactly what the
+    condition itself does (melee ADV/ranged DISADV against the target, can't move without standing
+    up first, no full-turn skip). **Reordered, direct owner request**: `consume_giant_ancestry_on_hit()`
+    applies the Prone status silently (no log) and returns `"Prone"`; every call site's own
+    "Hill's Tumble knocks X Prone." flavor line is logged AFTER its primary hit line (same
+    `gol_type ==` dispatch pattern as Frost's flavor line above, sitting right next to it as an
+    `elif`) — a bonus/reaction effect must never read as having happened before the attack that
+    triggered it. **Bugfix**: this line used to log from inside `consume_giant_ancestry_on_hit()`,
+    which every call site invokes BEFORE building its own primary hit line — so "X knocked Prone"
+    used to print before "You strike X for N dmg," backwards.
   - **Fire/Frost/Hill's own charge-spend timing** — **redesigned, direct owner request**: all three
     now spend the charge (and clear the toggle) only AFTER their own bonus effect has actually
     resolved, matching Stone/Storm's own "effect first, then spend" order — **bugfix**: all three
     used to disarm + decrement the charge BEFORE their bonus effect ran; for Fire/Frost specifically
-    that meant the charge was gone before the bonus damage number had even been rolled. Hill is
-    self-contained (`consume_giant_ancestry_on_hit()`'s own HILL branch applies Prone, logs it, THEN
-    calls the new private `_spend_giant_ancestry_charge()`); Fire/Frost's actual damage instance is
-    rolled/applied by the CALLER (`player.gd._bump_attack()`, which needs the returned type to pick
-    a 1d10-vs-1d6 die and route it through `Enemy.take_typed_damage()`), so
-    `consume_giant_ancestry_on_hit()` now just returns `"Fire"`/`"Cold"` WITHOUT spending anything,
-    and the caller calls the new `PlayerGoliath.finish_giant_ancestry_bonus_damage()` right after
-    the bonus damage has actually been applied/logged/floater-shown — that's what actually spends
+    that meant the charge was gone before the bonus damage number had even been rolled. All three
+    variants' actual effect (Fire/Frost's damage instance, Hill's Prone status) is applied/rolled by
+    the CALLER (`player.gd._bump_attack()`/`PlayerRanged.ranged_attack()`/`SpellEffects.cast_spell()`/
+    `_resolve_spell_attack_bolt()`, which need the returned type to pick a 1d10-vs-1d6 die and route
+    it through `Enemy.take_typed_damage()`, or just to know Hill fired at all), so
+    `consume_giant_ancestry_on_hit()` itself never spends anything — the caller calls
+    `PlayerGoliath.finish_giant_ancestry_bonus_damage()` right after the bonus damage has actually
+    been applied/logged/floater-shown (Fire/Frost) or right after the Prone status is applied
+    (Hill, its own flavor line still pending until after the hit line) — that's what actually spends
     the charge and clears `Stats.giant_ancestry_armed`.
   - **Stone Giant** (`Stone's Endurance`) — **redesigned, direct owner request**: now a plain
     toggle, same "arm now, roll/spend only on trigger" shape as Fire/Frost/Hill/Storm, not a
@@ -1086,7 +1092,19 @@ this engine, same "granted but nothing to hook into" precedent as Elf's Fey Ance
     `scripts/ui/hud.gd`'s `_format_tooltip()` dispatch) showing the die roll + CON mod breakdown on
     hover — it used to be a bare, non-hoverable number (and a first pass at this wrapped the LABEL
     text instead of the number, inconsistent with every other hoverable damage number in this
-    codebase, which always wraps the number itself — corrected).
+    codebase, which always wraps the number itself — corrected). **Reordered, direct owner
+    request**: `take_damage_raw()` no longer logs the "absorbs N damage" line itself — it can't,
+    since it's invoked from INSIDE whatever attack resolver is still assembling its own "X hits you
+    for N dmg" line (that line hasn't been printed yet), so logging there always printed Stone's
+    reaction BEFORE the hit it reacted to, same class of bug Storm's Thunder/Hellish Rebuke used to
+    have. The message is now stashed in `GameState._pending_stone_endurance_log` and only actually
+    printed by `GameState.flush_stone_endurance_log()`, which every `take_damage_raw()` caller that
+    builds its own hit line must call immediately after logging that line — `enemy.gd
+    ._attack_player()` (right before the Storm Giant block, so the read order is hit line → Stone
+    absorb → Storm reflect), `player_berserker.gd`'s two Frenzy self-damage branches, `spell_effects
+    .gd`'s Fireball self-catch, `dungeon_floor.gd`'s standing-in-fire tick, and `player.gd`'s
+    status-tick block (no hit line there, so this one flushes immediately, same position it always
+    logged from).
   - **Storm Giant** (`Storm's Thunder`): a toggle — `enemy.gd._attack_player()`
     checks `Stats.giant_ancestry_armed` right after damage lands (`actual > 0`), **now also gated
     on the attacker being within 3 tiles** (`min_dist_to(_player.grid_pos) <= 3` — bugfix/redesign,

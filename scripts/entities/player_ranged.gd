@@ -219,7 +219,7 @@ func ranged_attack(enemy: Enemy) -> void:
 	var gol_type: String = ""
 	if actual > 0 and not enemy.stats.is_dead():
 		gol_type = player._goliath.consume_giant_ancestry_on_hit(enemy)
-		if gol_type != "":
+		if gol_type == "Fire" or gol_type == "Cold":
 			var gol_sides: int = 6 if gol_type == "Cold" else 10
 			var gol_rolls: Array[int] = Rng.roll_dice(1, gol_sides)
 			gol_inst = CombatMath.build_damage_instance(gol_rolls, gol_sides, [], is_crit, gol_type)
@@ -232,6 +232,10 @@ func ranged_attack(enemy: Enemy) -> void:
 			if hm_actual > 0: gol_stack_index += 1
 			if player._dungeon_floor != null:
 				player._dungeon_floor.show_damage(enemy.position, gol_actual, false, CombatMath.damage_type_color(gol_type), gol_stack_index)
+			player._goliath.finish_giant_ancestry_bonus_damage()
+		elif gol_type == "Prone":
+			# Hill's Prone was already applied inside consume_giant_ancestry_on_hit() — its flavor
+			# line logs AFTER the primary hit line below, same ordering as Frost's own flavor line.
 			player._goliath.finish_giant_ancestry_bonus_damage()
 
 	var dmg_meta: String = CombatMath.encode_damage_instance(r_inst)
@@ -249,6 +253,12 @@ func ranged_attack(enemy: Enemy) -> void:
 		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]CRIT![/color] You [url=%s]shoot[/url] [color=orange]%s[/color] for %s dmg.%s" % [hit_meta, enemy.display_name, r_dmg_segment, CombatMath.death_suffix(is_lethal)], r["lucky"]))
 	else:
 		GameState.game_log(CombatMath.wrap_halfling_luck("You [url=%s]shoot[/url] [color=orange]%s[/color] for %s dmg.%s" % [hit_meta, enemy.display_name, r_dmg_segment, CombatMath.death_suffix(is_lethal)], r["lucky"]))
+	# Frost/Hill Giant Ancestry flavor lines — always AFTER the primary hit line above, same
+	# ordering as player.gd._bump_attack()'s reference implementation.
+	if gol_type == "Cold" and not enemy.stats.is_dead():
+		GameState.game_log("[color=cyan]Frost's Chill slows %s.[/color]" % enemy.display_name)
+	elif gol_type == "Prone":
+		GameState.game_log("[color=cyan]Hill's Tumble knocks %s Prone.[/color]" % enemy.display_name)
 
 	if is_lethal:
 		# Enemy died to this shot — arrow drop-from-corpse (50% chance) is handled inside

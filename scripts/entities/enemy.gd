@@ -2063,6 +2063,10 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 		GameState.game_log("%s[color=tomato]%s[/color] [url=%s][color=red]CRITICAL HIT![/color][/url] for [url=%s][color=yellow]%d[/color][/url] dmg%s.%s%s" % [bracket_l, atk_label, hit_meta, dmg_meta, actual, extra_suffix, god_suffix, bracket_r])
 	else:
 		GameState.game_log("%s[color=tomato]%s[/color] [url=%s]hits[/url] you for [url=%s][color=yellow]%d[/color][/url] dmg%s.%s%s" % [bracket_l, atk_label, hit_meta, dmg_meta, actual, extra_suffix, god_suffix, bracket_r])
+	# Stone Giant ancestry: if take_damage_raw() (above, or the "extra" second instance) rolled its
+	# absorb this hit, its own log line prints now — AFTER the "hits you for X dmg" line, same
+	# reaction-logs-after-the-attack ordering as Storm's Thunder right below.
+	GameState.flush_stone_endurance_log()
 	# Storm Giant ancestry (Goliath, see player_goliath.gd): toggled on, the next entity that deals
 	# ANY damage to the player FROM WITHIN 3 TILES takes 1d8 Thunder back. Consumes the armed flag +
 	# a charge only when it actually procs — logged AFTER the "hits you for X dmg" line above

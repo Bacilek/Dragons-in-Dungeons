@@ -2805,6 +2805,13 @@ var player_attacked_this_turn: bool = false
 # instant the target (or any other enemy) notices the player, not just once it actually swings.
 var enemy_noticed_player_this_turn: bool = false
 
+# Stone Giant Ancestry's "X absorbs N damage" line — set by take_damage_raw() the instant the
+# reduction rolls (right when damage lands) but deliberately NOT logged there: take_damage_raw()
+# is called from inside whatever attack resolver is building its own "you take N dmg" line, and
+# that line hasn't been logged yet at this point — see flush_stone_endurance_log()'s own comment
+# for why this is deferred rather than logged inline like every other combat-math side effect.
+var _pending_stone_endurance_log: String = ""
+
 # Synced by player.gd each turn so HUD can display remaining rage turns on the ability slot.
 var rage_turns_remaining: int = 0
 
@@ -2874,7 +2881,12 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 		_sync_ability_uses()
 		final_amount = maxi(0, final_amount - reduction)
 		var stone_meta: String = "stonedr:die=%d,con=%d,total=%d" % [stone_die, stone_con, reduction]
-		game_log("[color=cyan]Stone's Endurance[/color] absorbs [url=%s][color=yellow]%d[/color][/url] damage." % [stone_meta, reduction])
+		# Deliberately NOT logged here — this is a reaction to the hit currently being resolved by
+		# the caller, whose own "X hits you for N dmg" line hasn't been printed yet at this point.
+		# Stashed instead and flushed by flush_stone_endurance_log(), called by every caller right
+		# after its own hit line — same "reaction logs after the attack it reacted to" ordering as
+		# Storm's Thunder/Hellish Rebuke (see enemy.gd._attack_player()).
+		_pending_stone_endurance_log = "[color=cyan]Stone's Endurance[/color] absorbs [url=%s][color=yellow]%d[/color][/url] damage." % [stone_meta, reduction]
 	# DR can reduce damage to 0 — skip Stats.take_damage() which floors at 1.
 	if final_amount <= 0:
 		if is_physical and not ignore_rage:
@@ -2891,6 +2903,18 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 	_check_concentration_break(actual)
 	check_player_death()
 	return actual
+
+## Logs Stone's Endurance's "absorbs N damage" line if take_damage_raw() just stashed one (i.e.
+## the toggle was armed and fired on the hit that was just resolved) — a no-op otherwise. Callers
+## that build their own "you take N dmg" line around a take_damage_raw() call must call this
+## immediately after logging that line, so the reaction reads as happening AFTER the attack it
+## reacted to (same ordering rule as Storm's Thunder/Hellish Rebuke) — see enemy.gd._attack_player(),
+## spell_effects.gd's Fireball self-catch, and player_berserker.gd's Frenzy self-damage.
+func flush_stone_endurance_log() -> void:
+	if _pending_stone_endurance_log.is_empty():
+		return
+	game_log(_pending_stone_endurance_log)
+	_pending_stone_endurance_log = ""
 
 # Blade Ward cantrip (and any future concentration spell): taking damage forces a CON check —
 # DC = max(10, damage taken), 5e's concentration-save shape but without the usual "half rounded

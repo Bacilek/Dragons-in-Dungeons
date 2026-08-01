@@ -84,6 +84,7 @@ func execute_frenzy(enemy: Enemy) -> void:
 		var dmg_meta: String = "dmg:roll=%d,dmin=%d,dmax=%d,wpn=%d,str=%d,bonus=%s,crit=0,final=%d" % [
 			weapon_dice, w_dmin, w_dmax, w_enh, dmg_mod, bonus_sources_self, self_dmg]
 		GameState.game_log("[color=red][url=%s]Frenzy misses![/url] You tear into yourself for [url=%s][color=orange]%d[/color][/url]%s damage.[/color]" % [attack_meta, dmg_meta, self_dmg, type_tag])
+		GameState.flush_stone_endurance_log()
 		_note_self_damage()
 		GameState.check_player_death()
 		player._try_graze(enemy, is_str_weapon, dmg_mod)
@@ -124,6 +125,7 @@ func execute_frenzy(enemy: Enemy) -> void:
 			weapon_dice, w_dmin, w_dmax, w_enh, dmg_mod, bonus_sources_self, self_dmg2]
 		var is_lethal: bool = enemy.stats.is_dead()
 		GameState.game_log("[color=red][url=%s]Frenzy![/url] %s takes [url=%s][color=orange]%d[/color][/url]%s damage — you take [url=%s][color=orange]%d[/color][/url]%s back.%s[/color]" % [attack_meta, enemy.display_name, dmg_meta, actual2, type_tag, self_meta, self_dmg2, type_tag, CombatMath.death_suffix(is_lethal)])
+		GameState.flush_stone_endurance_log()
 		_note_self_damage()
 		GameState.check_player_death()
 		if melee != null and melee.weapon_mastery == "Vex" and stats.knows_mastery("Vex"):

@@ -125,21 +125,19 @@ func activate_giant_ancestry() -> void:
 			else:
 				GameState.game_log("[color=gray]%s stood down.[/color]" % GameState._giant_ancestry_name(player.stats.race_variant))
 
-# Called from player.gd._bump_attack() right after the primary hit lands (actual > 0). Handles
-# Hill's Prone directly (no damage instance of its own) — applies it, logs it, THEN spends the
-# charge, same "effect first, spend after" order Stone's Endurance/Storm's Thunder both use — and
-# returns "" for it. Returns "Fire"/"Cold" for Fire/Frost Giant WITHOUT spending the charge yet —
-# unlike Hill, their actual damage instance is rolled/applied by the CALLER (player.gd, which needs
-# the type to pick a 1d10 vs 1d6 die and route it through take_typed_damage()), so the charge can
-# only be spent once that's actually happened: the caller must call
-# finish_giant_ancestry_bonus_damage(enemy, type) right after applying that damage — see its own
-# comment below. **Bugfix/redesign, direct owner request**: all three of Fire/Frost/Hill used to
-# spend the charge (and disarm the toggle) BEFORE their own bonus effect was actually resolved —
-# for Fire/Frost specifically, that meant the charge was gone before the bonus damage number had
-# even been rolled. Frost's own damage itself was ALSO a bugfix: this used to apply ONLY the Slowed
-# status with no damage instance at all, contradicting the real trait text ("the target takes 1d6
-# cold damage and its speed is reduced"). A miss never reaches this function at all, so a charge is
-# only ever spent on a landed hit, matching "misses don't spend charges".
+# Called from player.gd._bump_attack() right after the primary hit lands (actual > 0). Returns
+# "Fire"/"Cold" for Fire/Frost Giant (a damage instance, merged onto the SAME chat line as the
+# primary hit — see each call site's own gol_actual/gol_inst block) or "Prone" for Hill Giant (no
+# damage of its own — the caller logs a separate "Hill's Tumble knocks X Prone." line, but only
+# AFTER its own primary-hit log line has already been printed, direct owner request: this ability
+# is a bonus/reaction to an attack, not part of narrating the attack itself, so it must never read
+# as having happened before the hit that triggered it). Applies Hill's Prone status right here
+# (silent — no log, no charge spend yet) so the condition is live immediately; the charge itself is
+# only spent once the caller actually logs the effect — every call site does this via
+# finish_giant_ancestry_bonus_damage(), called AFTER its own damage instance (Fire/Cold) or flavor
+# line (Prone) is resolved, same "effect first, spend after" order Stone's Endurance/Storm's
+# Thunder both use. A miss never reaches this function at all, so a charge is only ever spent on a
+# landed hit, matching "misses don't spend charges".
 func consume_giant_ancestry_on_hit(enemy: Enemy) -> String:
 	if player.stats.character_race != Stats.CharacterRace.GOLIATH or not player.stats.giant_ancestry_armed:
 		return ""
@@ -155,8 +153,7 @@ func consume_giant_ancestry_on_hit(enemy: Enemy) -> String:
 			# for correctness against any future Huge+ enemy.
 			if enemy.size.x * enemy.size.y <= 4:
 				enemy.apply_status("prone", 1)
-				GameState.game_log("[color=cyan]Hill's Tumble knocks %s Prone.[/color]" % enemy.display_name)
-				_spend_giant_ancestry_charge()
+				return "Prone"
 	return ""
 
 func _spend_giant_ancestry_charge() -> void:

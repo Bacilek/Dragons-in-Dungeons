@@ -146,7 +146,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	var gol_type: String = ""
 	if actual > 0 and not target.stats.is_dead():
 		gol_type = player._goliath.consume_giant_ancestry_on_hit(target)
-		if gol_type != "":
+		if gol_type == "Fire" or gol_type == "Cold":
 			var gol_sides: int = 6 if gol_type == "Cold" else 10
 			var gol_rolls: Array[int] = Rng.roll_dice(1, gol_sides)
 			gol_inst = CombatMath.build_damage_instance(gol_rolls, gol_sides, [], is_crit, gol_type)
@@ -157,6 +157,10 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 			target.update_hp_bar()
 			if dungeon_floor != null:
 				dungeon_floor.show_damage(target.position, gol_actual, false, CombatMath.damage_type_color(gol_type), 1)
+			player._goliath.finish_giant_ancestry_bonus_damage()
+		elif gol_type == "Prone":
+			# Hill's Prone was already applied inside consume_giant_ancestry_on_hit() — its flavor
+			# line logs AFTER the primary hit line below, same ordering as Frost's own flavor line.
 			player._goliath.finish_giant_ancestry_bonus_damage()
 
 	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
@@ -170,6 +174,11 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	var verb: String = "CRIT! " if is_crit else ""
 	GameState.game_log(CombatMath.wrap_halfling_luck("%sYou [url=%s]cast[/url] [color=cyan]%s[/color] at [color=orange]%s[/color] for %s dmg.%s" % [
 		verb, hit_meta, spell.spell_name, target.display_name, dmg_segment, CombatMath.death_suffix(is_lethal)], r["lucky"]))
+	# Frost/Hill Giant Ancestry flavor lines — always AFTER the primary hit line above.
+	if gol_type == "Cold" and not target.stats.is_dead():
+		GameState.game_log("[color=cyan]Frost's Chill slows %s.[/color]" % target.display_name)
+	elif gol_type == "Prone":
+		GameState.game_log("[color=cyan]Hill's Tumble knocks %s Prone.[/color]" % target.display_name)
 
 	if is_lethal:
 		player._finish_kill(target)
@@ -754,6 +763,7 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, 
 		var reduced_note: String = "" if actual_p == pdmg else " [color=gray](%d before your own reductions)[/color]" % pdmg
 		GameState.game_log("[color=orange]You are [url=%s]%s[/url] in your own blast for [url=%s]%d[/url] Fire dmg%s.[/color]" % [
 			psave_meta, "caught" if not pass_save else "singed", pdmg_meta, actual_p, reduced_note])
+		GameState.flush_stone_endurance_log()
 
 ## Groups a dart-target descriptor (see PlayerSpellcasting._resolve_multi_target_at()) into a
 ## unique string key so repeated picks of the same target focus multiple darts onto it instead of
@@ -929,7 +939,7 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	var gol_type: String = ""
 	if actual > 0 and not is_leap and not target.stats.is_dead():
 		gol_type = player._goliath.consume_giant_ancestry_on_hit(target)
-		if gol_type != "":
+		if gol_type == "Fire" or gol_type == "Cold":
 			var gol_sides: int = 6 if gol_type == "Cold" else 10
 			var gol_rolls: Array[int] = Rng.roll_dice(1, gol_sides)
 			gol_inst = CombatMath.build_damage_instance(gol_rolls, gol_sides, [], is_crit, gol_type)
@@ -940,6 +950,10 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 			target.update_hp_bar()
 			if dungeon_floor != null:
 				dungeon_floor.show_damage(target.position, gol_actual, false, CombatMath.damage_type_color(gol_type), 1)
+			player._goliath.finish_giant_ancestry_bonus_damage()
+		elif gol_type == "Prone":
+			# Hill's Prone was already applied inside consume_giant_ancestry_on_hit() — its flavor
+			# line logs AFTER the primary hit line below, same ordering as Frost's own flavor line.
 			player._goliath.finish_giant_ancestry_bonus_damage()
 
 	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
@@ -958,6 +972,11 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 		hit_line = "%sYou [url=%s]cast[/url] [color=cyan]%s[/color] at [color=orange]%s[/color] for %s dmg.%s" % [
 			verb, hit_meta, spell.spell_name, target.display_name, dmg_segment, CombatMath.death_suffix(is_lethal)]
 	GameState.game_log(CombatMath.wrap_halfling_luck(hit_line, r["lucky"]))
+	# Frost/Hill Giant Ancestry flavor lines — always AFTER the primary hit line above.
+	if gol_type == "Cold" and not target.stats.is_dead():
+		GameState.game_log("[color=cyan]Frost's Chill slows %s.[/color]" % target.display_name)
+	elif gol_type == "Prone":
+		GameState.game_log("[color=cyan]Hill's Tumble knocks %s Prone.[/color]" % target.display_name)
 
 	if is_lethal:
 		player._finish_kill(target)

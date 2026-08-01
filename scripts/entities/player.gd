@@ -677,6 +677,7 @@ func _on_turn_started() -> void:
 	var status_dmg: int = GameState.player_stats.tick_status()
 	if status_dmg > 0:
 		GameState.take_damage_raw(status_dmg)
+		GameState.flush_stone_endurance_log()
 		if _dungeon_floor != null:
 			_dungeon_floor.show_damage(position, status_dmg, true)
 		GameState.player_status_changed.emit()
@@ -2742,7 +2743,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# rolling bonus Fire/Cold damage, or knocking a corpse Prone, on something already dead.
 	if actual > 0 and not enemy.stats.is_dead():
 		gol_type = _goliath.consume_giant_ancestry_on_hit(enemy)
-		if gol_type != "":
+		if gol_type == "Fire" or gol_type == "Cold":
 			# Fire Giant's Burn is 1d10 Fire; Frost Giant's Chill is 1d6 Cold (real 5e trait text —
 			# bugfix, Frost used to deal no damage instance at all, see consume_giant_ancestry_on_hit()).
 			var gol_sides: int = 6 if gol_type == "Cold" else 10
@@ -2763,6 +2764,12 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			# The Fire/Frost bonus damage instance has now actually been dealt — only NOW does the
 			# charge get spent and the toggle clear (matches Hill/Stone/Storm's own "effect first,
 			# spend after" order — see PlayerGoliath.finish_giant_ancestry_bonus_damage()'s comment).
+			_goliath.finish_giant_ancestry_bonus_damage()
+		elif gol_type == "Prone":
+			# Hill's Prone was already applied inside consume_giant_ancestry_on_hit() — its own flavor
+			# line logs AFTER the primary hit line below (direct owner request: a reaction/bonus effect
+			# must never narrate as happening before the attack that triggered it). Spend the charge
+			# now — the effect has already landed, only the log line is deferred.
 			_goliath.finish_giant_ancestry_bonus_damage()
 
 	var is_lethal: bool = enemy.stats.is_dead()
@@ -2796,6 +2803,10 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# instance above) — correct chronological order, damage first, then the slow flavor line.
 	if gol_type == "Cold" and not enemy.stats.is_dead():
 		GameState.game_log("[color=cyan]Frost's Chill slows %s.[/color]" % enemy.display_name)
+	# Hill Giant's Tumble: same "reaction/bonus, not part of the attack itself" ordering as Frost's
+	# own flavor line above — logged strictly after the hit line, never merged into it (no damage).
+	elif gol_type == "Prone":
+		GameState.game_log("[color=cyan]Hill's Tumble knocks %s Prone.[/color]" % enemy.display_name)
 
 	# Branching Strike R3: push the target 1 tile away on a hit with a Heavy/Versatile melee weapon.
 	if GameState.get_talent_rank("branching_strike") >= 3 and is_str_weapon and not enemy.stats.is_dead() \

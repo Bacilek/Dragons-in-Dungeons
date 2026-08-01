@@ -3182,6 +3182,7 @@ func tick_fire_damage_for(entity: Entity) -> void:
 		var dmg_meta: String = CombatMath.encode_damage_instance(inst)
 		show_damage(entity.position, actual, true, CombatMath.damage_type_color("Fire"))
 		GameState.game_log("[color=orange]You are burned by the flames for [url=%s][color=yellow]%d[/color][/url] Fire dmg.[/color]" % [dmg_meta, actual])
+		GameState.flush_stone_endurance_log()
 		GameState.check_player_death()
 	elif entity is Enemy:
 		var e: Enemy = entity
