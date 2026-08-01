@@ -381,6 +381,13 @@ TurnManager.register_enemy(enemy)       # call in enemy _ready()
 TurnManager.clear_enemies()             # call in DungeonFloor before floor reload
 TurnManager.revert_to_waiting()         # Rager talent only — skips enemy phase, returns to WAITING_FOR_INPUT
                                         # DO NOT generalize: this is not a general action-economy system
+TurnManager.enemy_actions_this_round    # int, default 1, auto-reset by _process_enemies() — set to 2/0
+                                        # right before on_player_action_complete() to grant every enemy
+                                        # two actions / zero actions for THIS ONE round (Slowed / a free
+                                        # move) without ever calling begin/complete a second time — see
+                                        # scripts/entities/CLAUDE.md's "Player movement-speed visual
+                                        # consistency". Same "narrow, don't generalize" spirit as
+                                        # revert_to_waiting() above.
 ```
 
 ### Signals
@@ -405,7 +412,10 @@ fire at the end of a turn rather than the start of the next one.
    enemy's decision was already locked in. `Enemy`/`Companion.take_turn()` still exists as a thin
    `await execute_turn(decide_turn())` wrapper for any other caller. See `scripts/entities/CLAUDE.md`'s
    "Enemy behavior states" section for `decide_turn()`'s exact contract (reads state + mutates only
-   this entity's own fields — never the world).
+   this entity's own fields — never the world). If `enemy_actions_this_round > 1` (Slowed), step 3
+   repeats that many times back-to-back via `_process_enemy_round()`/`_advance_round_or_end()`
+   before moving on — still inside this same single `_process_enemies()` call, so steps 1/2/4 each
+   still happen exactly once no matter how many enemy rounds resolve in between.
 4. Phase = WAITING_FOR_INPUT → `player_turn_started` signal fires
 
 Each turn: `Stats.tick_status()` deals status damage. Hunger has been removed — see "Rest system" above.

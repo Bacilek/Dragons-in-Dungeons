@@ -15,8 +15,11 @@ var _inv_tooltip_rtl: RichTextLabel = null
 var _inv_glossary_popup: Panel = null
 var _inv_glossary_rtl: RichTextLabel = null
 
-# Tooltip freeze state (Ctrl to freeze, enabling keyword link hover)
-var _tooltip_frozen: bool = false
+# Global-space rect of whatever slot/box is currently showing _inv_tooltip — the tooltip is
+# anchored to this (computed once at hover-start) rather than tracking the mouse, and hovering
+# this rect (even after the tooltip itself covers the cursor) keeps the whole chain alive. See
+# "Tooltip hover chain (no Ctrl-freeze)" in _process().
+var _inv_hover_source_rect: Rect2 = Rect2()
 
 # Drag state (manual drag — no Godot built-in drag API)
 var _dragging:       bool    = false
@@ -46,13 +49,11 @@ func _safe_refresh() -> void:
 	if visible:
 		_refresh()
 
-func _unfreeze_tooltip() -> void:
-	_tooltip_frozen = false
+func _hide_tooltip_chain() -> void:
 	if _inv_tooltip != null:
-		_inv_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_inv_tooltip.visible = false
-	if _inv_tooltip_rtl != null: _inv_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if _inv_glossary_popup != null: _inv_glossary_popup.visible = false
+	if _inv_glossary_popup != null:
+		_inv_glossary_popup.visible = false
 
 func _input(event: InputEvent) -> void:
 	if not visible:
@@ -61,21 +62,20 @@ func _input(event: InputEvent) -> void:
 		return
 	var key := event as InputEventKey
 	if key.pressed and not key.echo:
-		if key.physical_keycode == KEY_CTRL:
-			if _tooltip_frozen:
-				_unfreeze_tooltip()
-			elif _inv_tooltip != null and _inv_tooltip.visible:
-				_tooltip_frozen = true
-				_inv_tooltip.mouse_filter     = Control.MOUSE_FILTER_STOP
-				_inv_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_PASS
-			get_viewport().set_input_as_handled()
-			return
 		if key.physical_keycode == KEY_I or key.physical_keycode == KEY_ESCAPE:
-			_unfreeze_tooltip()
+			_hide_tooltip_chain()
 			get_viewport().set_input_as_handled()
 			visible = false
 			GameState.inventory_open = false
 
+## Tooltip hover chain (no Ctrl-freeze — direct owner request, 2026-08-01): the tooltip is
+## anchored to whatever slot/box triggered it (_inv_hover_source_rect, set once at hover-start —
+## see _on_slot_hover()/_show_special_slot_tooltip()), not the mouse, so it never drifts as the
+## cursor moves. It stays open as long as the mouse is anywhere in the hover chain (source slot ∪
+## tooltip ∪ glossary popup) — leaving the glossary popup back onto the tooltip closes only the
+## glossary; leaving the whole chain closes everything. This mirrors hud.gd's identical chain (see
+## that file's own "Race trait hover" section) — inventory only ever nests one level deep (no
+## race-trait-style level-2 popup here), so the check is simpler.
 func _process(_delta: float) -> void:
 	if visible and _dragging:
 		if _drag_icon != null:
@@ -87,27 +87,23 @@ func _process(_delta: float) -> void:
 		var th: float = _inv_tooltip_rtl.get_content_height() + 14.0
 		_inv_tooltip_rtl.size = Vector2(tw - 16.0, th - 14.0)
 		_inv_tooltip.size = Vector2(tw, th)
-		var tx: float
-		var ty: float
-		if not _tooltip_frozen:
-			var mp: Vector2 = get_viewport().get_mouse_position()
-			var vp: Vector2 = get_viewport().get_visible_rect().size
-			tx = clampf(mp.x - tw * 0.5, 4.0, vp.x - tw - 4.0)
-			ty = mp.y - th - 14.0
-			if ty < 4.0:
-				ty = mp.y + 18.0
-			_inv_tooltip.position = Vector2(tx, ty)
-		else:
-			tx = _inv_tooltip.position.x
-			ty = _inv_tooltip.position.y
 		if _inv_glossary_popup != null and _inv_glossary_popup.visible:
 			var vp: Vector2 = get_viewport().get_visible_rect().size
 			var gw: float = _inv_glossary_popup.size.x
 			var gh: float = _inv_glossary_rtl.get_content_height() + 14.0
 			_inv_glossary_rtl.size = Vector2(gw - 16.0, gh - 14.0)
 			_inv_glossary_popup.size = Vector2(gw, gh)
-			var gx: float = clampf(tx + tw + 4.0, 4.0, vp.x - gw - 4.0)
-			_inv_glossary_popup.position = Vector2(gx, ty)
+			var gx: float = clampf(_inv_tooltip.position.x + _inv_tooltip.size.x + 4.0, 4.0, vp.x - gw - 4.0)
+			_inv_glossary_popup.position = Vector2(gx, _inv_tooltip.position.y)
+	if _inv_tooltip != null and (_inv_tooltip.visible or (_inv_glossary_popup != null and _inv_glossary_popup.visible)):
+		var mp: Vector2 = get_viewport().get_mouse_position()
+		var over_source: bool = _inv_hover_source_rect.has_point(mp)
+		var over_tooltip: bool = _inv_tooltip.visible and Rect2(_inv_tooltip.position, _inv_tooltip.size).has_point(mp)
+		var over_glossary: bool = _inv_glossary_popup != null and _inv_glossary_popup.visible and Rect2(_inv_glossary_popup.position, _inv_glossary_popup.size).has_point(mp)
+		if _inv_glossary_popup != null and _inv_glossary_popup.visible and not over_tooltip and not over_glossary:
+			_inv_glossary_popup.visible = false
+		if _inv_tooltip.visible and not over_source and not over_tooltip and not over_glossary:
+			_inv_tooltip.visible = false
 
 # ── UI construction ───────────────────────────────────────────────────────────
 
@@ -120,7 +116,7 @@ func _build_ui() -> void:
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	dim.gui_input.connect(func(ev: InputEvent):
 		if ev is InputEventMouseButton and (ev as InputEventMouseButton).pressed:
-			_unfreeze_tooltip()
+			_hide_tooltip_chain()
 			visible = false
 			GameState.inventory_open = false
 	)
@@ -153,7 +149,7 @@ func _build_ui() -> void:
 	_inv_tooltip = Panel.new()
 	_inv_tooltip.visible = false
 	_inv_tooltip.z_index = 20
-	_inv_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_inv_tooltip.mouse_filter = Control.MOUSE_FILTER_STOP
 	var tsb := StyleBoxFlat.new()
 	tsb.bg_color = Color(0.05, 0.05, 0.09, 0.97)
 	tsb.set_border_width_all(1); tsb.border_color = Color(0.55, 0.50, 0.35)
@@ -164,16 +160,17 @@ func _build_ui() -> void:
 	_inv_tooltip_rtl.fit_content = true
 	_inv_tooltip_rtl.offset_left = 8.0; _inv_tooltip_rtl.offset_top = 6.0
 	_inv_tooltip_rtl.offset_right = -8.0; _inv_tooltip_rtl.offset_bottom = -6.0
-	_inv_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_inv_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_PASS
 	_inv_tooltip_rtl.meta_hover_started.connect(_on_inv_meta_hover_started)
 	_inv_tooltip_rtl.meta_hover_ended.connect(_on_inv_meta_hover_ended)
 	_inv_tooltip.add_child(_inv_tooltip_rtl)
 	add_child(_inv_tooltip)
-	# Keyword glossary popup
+	# Keyword glossary popup — always interactive (STOP/PASS) so the mouse can travel onto it
+	# without closing the chain; see "Tooltip hover chain" above _process().
 	_inv_glossary_popup = Panel.new()
 	_inv_glossary_popup.visible = false
 	_inv_glossary_popup.z_index = 22
-	_inv_glossary_popup.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_inv_glossary_popup.mouse_filter = Control.MOUSE_FILTER_STOP
 	var igsb := StyleBoxFlat.new()
 	igsb.bg_color = Color(0.08, 0.07, 0.04, 0.97)
 	igsb.set_border_width_all(1)
@@ -185,7 +182,7 @@ func _build_ui() -> void:
 	_inv_glossary_rtl.fit_content = true
 	_inv_glossary_rtl.offset_left = 8.0; _inv_glossary_rtl.offset_top = 6.0
 	_inv_glossary_rtl.offset_right = -8.0; _inv_glossary_rtl.offset_bottom = -6.0
-	_inv_glossary_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_inv_glossary_rtl.mouse_filter = Control.MOUSE_FILTER_PASS
 	_inv_glossary_popup.add_child(_inv_glossary_rtl)
 	add_child(_inv_glossary_popup)
 
@@ -461,7 +458,7 @@ func _right_click(slot: Control) -> void:
 
 func _dispatch_item_interaction(item: Item, id: String) -> void:
 	if ItemInteractions.needs_world_targeting(id, item):
-		_unfreeze_tooltip()
+		_hide_tooltip_chain()
 		visible = false
 		GameState.inventory_open = false
 	match id:
@@ -479,11 +476,22 @@ func _dispatch_item_interaction(item: Item, id: String) -> void:
 		_:
 			GameState.use_item(item)  # read / drink / prime
 
+## Anchors _inv_tooltip beside `rect` (above by default, below if there's no room) instead of
+## following the mouse — see "Tooltip hover chain" above _process().
+func _position_tooltip_near(rect: Rect2) -> void:
+	var vp: Vector2 = get_viewport().get_visible_rect().size
+	var tw: float = _inv_tooltip.size.x
+	var th: float = maxf(_inv_tooltip.size.y, _inv_tooltip_rtl.get_content_height() + 14.0)
+	var tx: float = clampf(rect.position.x, 4.0, vp.x - tw - 4.0)
+	var ty: float = rect.position.y - th - 6.0
+	if ty < 4.0:
+		ty = rect.position.y + rect.size.y + 6.0
+	_inv_tooltip.position = Vector2(tx, ty)
+
 func _on_slot_hover(slot: Control) -> void:
-	if _tooltip_frozen:
-		return
 	if _inv_tooltip == null:
 		return
+	_inv_hover_source_rect = Rect2(slot.global_position, slot.size)
 	if slot.get_meta("source", "") == "special_display":
 		_show_special_slot_tooltip()
 		return
@@ -522,6 +530,7 @@ func _on_slot_hover(slot: Control) -> void:
 	_inv_tooltip_rtl.size = Vector2(tw, 0)
 	_inv_tooltip.size = Vector2(tw + 8.0, 60)
 	_inv_tooltip.visible = true
+	_position_tooltip_near(_inv_hover_source_rect)
 
 func _show_special_slot_tooltip() -> void:
 	var sid: String = GameState.special_slot_spell_id
@@ -532,19 +541,19 @@ func _show_special_slot_tooltip() -> void:
 	if spell == null:
 		_inv_tooltip.visible = false
 		return
-	var text: String = "[b]%s[/b]\n[color=gray]%s[/color]\n[color=#888]Alt+click a target to cast. Right-click to clear.[/color]" % [spell.spell_name, spell.description]
+	var text: String = "%s\n[color=#888]Alt+click a target to cast. Right-click to clear.[/color]" % SpellTooltip.build(spell)
 	_inv_tooltip_rtl.text = text
-	_inv_tooltip_rtl.size = Vector2(172.0, 0)
-	_inv_tooltip.size = Vector2(180.0, 60)
+	var itw: float = maxf(172.0, SpellTooltip.required_width(spell, 15))
+	_inv_tooltip_rtl.size = Vector2(itw, 0)
+	_inv_tooltip.size = Vector2(itw + 8.0, 140)
 	_inv_tooltip.visible = true
+	_position_tooltip_near(_inv_hover_source_rect)
 
+## Hiding is driven entirely by _process()'s hover-chain rect check now (no Ctrl-freeze to
+## respect) — this stays connected to mouse_exited only so a future non-tooltip side effect has
+## somewhere to hook; it deliberately does nothing to the tooltip/glossary popups themselves.
 func _on_slot_hover_end() -> void:
-	if _tooltip_frozen:
-		return
-	if _inv_tooltip != null:
-		_inv_tooltip.visible = false
-	if _inv_glossary_popup != null:
-		_inv_glossary_popup.visible = false
+	pass
 
 func _on_inv_meta_hover_started(meta: Variant) -> void:
 	var m: String = str(meta)
@@ -557,8 +566,7 @@ func _on_inv_meta_hover_started(meta: Variant) -> void:
 			_inv_glossary_popup.visible = true
 
 func _on_inv_meta_hover_ended(_meta: Variant) -> void:
-	if _inv_glossary_popup != null:
-		_inv_glossary_popup.visible = false
+	pass
 
 func _slot_item(slot: Control) -> Item:
 	match slot.get_meta("source", ""):

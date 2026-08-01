@@ -12,8 +12,8 @@ extends RefCounted
 # either generic across every item type (description, Attunement, Ctrl hint) or already
 # per-caller-positioned (Uses:), so they stay outside this weapon-only builder.
 
-# The single shared [url=keyword:X] glossary for hud.gd/inventory_overlay.gd's Ctrl-freeze popup
-# (scripts/ui/CLAUDE.md's "Ctrl-freeze tooltip") — grown beyond weapon-only keywords to also cover
+# The single shared [url=keyword:X] glossary for hud.gd/inventory_overlay.gd's hover-chain popups
+# (scripts/ui/CLAUDE.md's "Tooltip hover chain") — grown beyond weapon-only keywords to also cover
 # general D&D condition/terrain terms (Heavily Obscured, Blinded, Frightened, Poisoned/Prone/
 # Restrained/Incapacitated — see scripts/entities/CLAUDE.md's "Conditions" section) since this is
 # the game's one glossary mechanism, not something weapon-specific.
@@ -45,7 +45,44 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"restrained": "Restrained (condition).\nSpeed 0. Attacks against\nyou have Advantage, your\nown attacks and DEX checks\nhave Disadvantage.",
 	"incapacitated": "Incapacitated (condition).\nCan't take actions —\nmovement, attacks, ability/\nspell use all blocked.\nBreaks Concentration.",
 	"stealth_disadv": "Stealth Disadvantage.\nWhile worn, adds a\nDisadvantage source to the\nStealth-vs-Passive-\nPerception check that\ndecides whether an enemy\nnotices you.",
+	"cantrip_upgrade_dice": "Cantrip Upgrade.\nDamage dice scale up\n(×tier) at character\nlevels 5, 11, and 17.",
+	"cantrip_upgrade_beams": "Cantrip Upgrade.\nGains one additional,\nindependently-targetable\nbeam at character levels\n5, 11, and 17.",
+	"shocked": "Shocked (status).\nBlocks the target's next\nOpportunity Attack\nagainst you.",
+	"jolted": "Jolted (status).\nTakes lightning damage\nagain at the end of your\nlater turns while you\nconcentrate on the spell.",
+	"paralyzed": "Paralyzed (condition).\nSpeed 0, auto-fails\nSTR/DEX checks. Attacks\nagainst it have\nAdvantage; a hit from\nwithin 1 tile is an\nautomatic critical.",
+	"outlined": "Outlined (status).\nAttack rolls against it\nhave Advantage (if you\ncan see it). Sheds dim\nlight, can't turn\ninvisible — an already-\ninvisible creature is\ninstead seen faintly.",
 }
+
+# Any status/condition NAME appearing in a description (as this exact capitalized word) is turned
+# into a hoverable keyword instead of being explained inline — shared by SpellTooltip/RaceTooltip
+# so a spell/race-trait description only needs to name the effect, the glossary popup above
+# carries the explanation. Add an entry here (+ a matching KEYWORD_GLOSSARY body) whenever new
+# content introduces a status/condition.
+const CONDITION_KEYWORDS: Dictionary = {
+	"Shocked": "shocked",
+	"Jolted": "jolted",
+	"Poisoned": "poisoned_condition",
+	"Paralyzed": "paralyzed",
+	"Blinded": "blinded",
+	"Frightened": "frightened",
+	"Prone": "prone",
+	"Restrained": "restrained",
+	"Incapacitated": "incapacitated",
+	"Outlined": "outlined",
+}
+
+## Replaces each whole-word occurrence of a CONDITION_KEYWORDS name with a colored keyword —
+## interactive wraps it in a [url=keyword:...] link (glossary popup), non-interactive just colors
+## it (no clickable link where nothing wires up meta_hover).
+static func linkify_conditions(text: String, interactive: bool = true) -> String:
+	var result: String = text
+	for word: String in CONDITION_KEYWORDS:
+		var kw_id: String = CONDITION_KEYWORDS[word]
+		var replacement: String = ("[color=#c9a227][url=keyword:%s]%s[/url][/color]" % [kw_id, word]) if interactive else ("[color=#c9a227]%s[/color]" % word)
+		var reg := RegEx.new()
+		reg.compile("\\b%s\\b" % word)
+		result = reg.sub(result, replacement, true)
+	return result
 
 # "" = unpriced (both gold_value and silver_value are 0) — caller should skip the price line
 # entirely in that case. "Xg Ysp" / "Xg" / "Ysp" otherwise (see Item.silver_value).

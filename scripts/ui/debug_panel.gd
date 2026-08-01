@@ -533,6 +533,8 @@ func _make_spell_row(spell_id: String) -> Control:
 	desc_lbl.custom_minimum_size = Vector2(SPELLS_SW - 130.0, 0.0)
 	info.add_child(desc_lbl)
 
+	row.tooltip_text = SpellTooltip.build_plain(spell) if spell != null else ""
+
 	var give_btn := _make_btn("Give", Color(0.65, 0.45, 0.95))
 	give_btn.custom_minimum_size = Vector2(54.0, 0.0)
 	give_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER

@@ -28,7 +28,7 @@ extends CanvasLayer
 # candidate count from 0 upward gracefully, no special-casing needed here.
 
 const PANEL_W: float = 760.0
-const CARD_H: float = 160.0
+const CARD_H: float = 220.0
 const CARD_GAP: float = 16.0
 const MARGIN: float = 24.0
 const STARTING_SPELL_IDS: Array[String] = ["magic_missile", "shield"]
@@ -167,22 +167,14 @@ func _build_card(spell: Spell, pos: Vector2, card_size: Vector2) -> void:
 	card.pressed.connect(func() -> void: _on_chosen(spell.spell_id))
 	_panel.add_child(card)
 
-	var name_lbl := Label.new()
-	name_lbl.text = spell.spell_name
-	name_lbl.add_theme_font_size_override("font_size", 19)
-	name_lbl.add_theme_color_override("font_color", Color(1.0, 0.82, 0.22))
-	name_lbl.position = Vector2(14.0, 10.0)
-	name_lbl.size = Vector2(card_size.x - 28.0, 28.0)
-	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(name_lbl)
-
-	var blurb_lbl := Label.new()
-	blurb_lbl.text = spell.description
-	blurb_lbl.add_theme_font_size_override("font_size", 13)
-	blurb_lbl.add_theme_color_override("font_color", Color(0.72, 0.72, 0.76))
-	blurb_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	blurb_lbl.position = Vector2(14.0, 42.0)
-	blurb_lbl.size = Vector2(card_size.x - 28.0, card_size.y - 56.0)
+	var blurb_lbl := RichTextLabel.new()
+	blurb_lbl.bbcode_enabled = true
+	blurb_lbl.fit_content = false
+	blurb_lbl.scroll_active = false
+	blurb_lbl.text = SpellTooltip.build(spell, false)
+	blurb_lbl.add_theme_font_size_override("normal_font_size", 13)
+	blurb_lbl.position = Vector2(14.0, 10.0)
+	blurb_lbl.size = Vector2(card_size.x - 28.0, card_size.y - 20.0)
 	blurb_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(blurb_lbl)
 

@@ -6,7 +6,7 @@ extends CanvasLayer
 # ability bar exactly as cantrips already do — this overlay only manages what's prepared.
 
 const PANEL_W: float = 760.0
-const PANEL_H: float = 620.0
+const PANEL_H: float = 690.0
 const TILE_W: float = 84.0
 const TILE_H: float = 96.0
 const TILE_GAP: float = 10.0
@@ -195,9 +195,9 @@ func _build_ui() -> void:
 	_detail_desc = RichTextLabel.new()
 	_detail_desc.bbcode_enabled = true
 	_detail_desc.fit_content = false
-	_detail_desc.scroll_active = false
+	_detail_desc.scroll_active = true
 	_detail_desc.position = Vector2(20.0, detail_y + 30.0)
-	_detail_desc.size = Vector2(PANEL_W - 40.0, 70.0)
+	_detail_desc.size = Vector2(PANEL_W - 40.0, 150.0)
 	_detail_desc.add_theme_font_size_override("normal_font_size", 14)
 	_panel.add_child(_detail_desc)
 
@@ -206,7 +206,7 @@ func _build_ui() -> void:
 	hint.add_theme_font_size_override("font_size", 12)
 	hint.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.position = Vector2(20.0, detail_y + 30.0 + 70.0 + 6.0)
+	hint.position = Vector2(20.0, detail_y + 30.0 + 150.0 + 6.0)
 	hint.size = Vector2(PANEL_W - 40.0, 32.0)
 	_panel.add_child(hint)
 
@@ -214,7 +214,7 @@ func _build_ui() -> void:
 	# Assigned here (not in inventory_overlay.gd — that overlay and this one are mutually
 	# exclusive, see root CLAUDE.md's onboarding notes / player.gd's O-key guard), displayed
 	# read-only next to Ranged in the Inventory overlay, cast with Alt+click in player.gd.
-	var special_y: float = detail_y + 30.0 + 70.0 + 6.0 + 32.0 + 6.0
+	var special_y: float = detail_y + 30.0 + 150.0 + 6.0 + 32.0 + 6.0
 	var special_label := Label.new()
 	special_label.text = "Special Slot — drag a spell here, Alt+click a target to cast it:"
 	special_label.add_theme_font_size_override("font_size", 12)
@@ -397,8 +397,8 @@ func _build_row(spell_id: String) -> void:
 	row.gui_input.connect(_on_row_press.bind(spell_id))
 
 func _on_row_hover(spell: Spell) -> void:
-	_detail_name.text = spell.spell_name
-	_detail_desc.text = spell.description
+	_detail_name.text = ""
+	_detail_desc.text = SpellTooltip.build(spell, false)
 
 func _on_row_press(event: InputEvent, spell_id: String) -> void:
 	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT and (event as InputEventMouseButton).pressed:

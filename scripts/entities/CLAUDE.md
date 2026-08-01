@@ -199,6 +199,52 @@ one file shared by `race_select.gd`'s tile grid (`scripts/ui/CLAUDE.md`'s "Race 
 HUD's always-on `race_bonus` status-tray icon (`StatusTooltips.race_portrait_icon_path()`,
 `scripts/ui/status_tooltips.gd`), so both surfaces show the identical art.
 
+**Race tooltip format** (same structured-tooltip pass as spells — `scripts/items/CLAUDE.md`'s
+"Unified spell tooltip format"): hovering the HUD's `race_bonus` status-tray icon shows
+`RaceTooltip.build(stats)`
+(`scripts/entities/race_tooltip.gd`) instead of the old flat prose block:
+```
+[b]Race Name[/b]
+Creature Type: X
+Size: X
+Speed: X
+Darkvision: None/Normal/Superior
+
+<trait name>          — one hoverable [url=race_trait:id] line per trait
+<trait name>
+...
+```
+Trait data (`RaceDb.build(stats)`, `scripts/entities/race_db.gd`) is built fresh from the live
+`Stats` instance every call (variant-dependent traits — Elf sub-race, Tiefling legacy, Dragonborn
+ancestry, Gnome lineage, Goliath ancestry — read `stats.race_variant`/`darkvision_bonus` directly,
+same "no separate cache to keep in sync" precedent as `SpellDb.get_spell()`). Hovering a trait name
+opens a level-1 glossary popup with its own terse description (`RaceTooltip.build_trait_detail()`)
+— status/condition names inside that description (Frightened, Charmed, etc.) are themselves
+hoverable via the shared `WeaponTooltip.linkify_conditions()` helper (moved there from
+`SpellTooltip` once race traits needed the identical behavior — see `scripts/items/CLAUDE.md`).
+Hovering one of THOSE condition keywords (not just a `race_sub:` sub-option link) also opens the
+level-2 popup — `hud.gd._on_glossary_meta_hover_started()` handles both link kinds a trait
+description can contain (e.g. Halfling's Brave links "Frightened" this way, with no sub-options at
+all).
+
+**A trait with sub-options gets a real second hover level**, not a flat inline list — currently
+only Aasimar's Celestial Revelation (Heavenly Wings/Inner Radiance/Necrotic Shroud). The level-1
+popup's own description ends with each sub-option as a further `[url=race_sub:trait_id:sub_id]`
+link; hovering one opens a level-2 popup (`RaceTooltip.build_sub_detail()`) with that sub-option's
+own description — a genuine nested hover chain, not the flat single-level glossary every other
+keyword uses. This required `hud.gd`'s `_glossary_popup`/`_glossary_rtl` (previously a plain,
+non-interactive display panel) to become interactive itself — `STOP`/`PASS`+`bbcode`+`meta_hover`
+wiring, same shape as the top-level qbar tooltip — plus a brand-new terminal `_glossary_popup2`/
+`_glossary_rtl2` pair for the level-2 popup. Hiding the chain is NOT driven by `meta_hover_ended`
+(that fires the instant the cursor leaves the trigger link, even when heading INTO the popup it
+just opened) — `hud.gd._process()` instead hides `_glossary_popup`/`_glossary_popup2` (and the base
+qbar tooltip itself) once the mouse is outside every rect in the chain (source icon ∪ qbar tooltip
+∪ glossary popup ∪ glossary popup2), checked every frame — no Ctrl needed anywhere, the whole chain
+is always live-hoverable (see `scripts/ui/CLAUDE.md`'s "Tooltip hover chain (no Ctrl-freeze)").
+Adding a new nested trait: give it `subs: Array[{id,name,desc}]` in its `RaceDb.build()` entry —
+`RaceTooltip.build_trait_detail()`/the hud.gd popup chain need no changes, they're already generic
+over any trait's `subs` list.
+
 ## Dragonborn
 
 Humanoid, Medium (5-7 ft), Speed 1 tile/turn (baseline).

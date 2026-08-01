@@ -57,6 +57,17 @@ enum TargetKind { ENEMY, SELF, TILE }
 
 @export var effect_id: String = ""     # "" = pure generic damage; else SpellEffects dispatch
 @export var class_list: Array[String] = []
+
+# ── Structured tooltip fields (SpellTooltip.build(), scripts/items/spell_tooltip.gd) ──────────
+# Casting Time: this engine only distinguishes "Action" (costs the player's real turn) and "Free"
+# (doesn't) — no bonus-action/reaction tier exists, so a RAW reaction (Hellish Rebuke) or bonus
+# action (Misty Step) is approximated to whichever of the two fits its actual implementation.
+@export var casting_time: String = "Action"
+# 0 = instantaneous (no Duration line shown at all). A positive value is the real turn count the
+# effect persists for (Concentration or not, see is_concentration below) — was previously only
+# ever stated as prose inside `description`.
+@export var duration_turns: int = 0
+@export var is_concentration: bool = false
 # Ritual casting (5e): can be cast without expending a spell slot, PROVIDED no enemy is currently
 # hunting the caster (Enemy.Behavior.CHASING/SEARCHING anywhere on the floor — Player.
 # is_being_pursued()). The real rule is "takes 10 extra minutes"; this engine has no clock to hang

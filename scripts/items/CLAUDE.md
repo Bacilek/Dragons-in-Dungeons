@@ -568,6 +568,73 @@ Cantrips (`docs/architecture/spellcasting-design.md`) plus leveled spells + spel
 "Wizard spellcasting (cantrips)" and "Wizard leveled spells (spell slots)" sections for the full
 cast-resolution walkthroughs.
 
+**Unified spell tooltip format** (`SpellTooltip.build(spell, interactive: bool = true) -> String`,
+`scripts/items/spell_tooltip.gd`, `SpellTooltip extends RefCounted`, static-func-only — same
+"single shared builder" pattern as `WeaponTooltip`/`ArmorTooltip`): every spell readout in the
+game (Spellbook overlay, cantrip/level-up pickers, ability-bar hover for a spell-backed `Ability`,
+the Special quick-cast slot tooltip, debug panel's "Give Spell..." row) renders through this one
+function so the format can never drift apart between call sites. Fixed line order, generated
+purely from `Spell` fields:
+```
+[b]Name[/b]
+School, Level (Classes)              — "Cantrip" for level 0, "Nth Level" otherwise; the
+                                        parenthetical is omitted when class_list is empty
+Casting Time: Action | Free
+Range: N | Self                      — "Self" only for a 0-range TargetKind.SELF spell
+Area: N-tile cone/sphere/cube        — only if shape != ""
+Duration: Concentration, N turns | N turns   — omitted entirely when duration_turns == 0 (instant)
+<description>
+Cantrip Upgrade                      — only if cantrip_tier_scaling or multi_beam_scaling is set
+```
+`interactive` (default true) wraps the "Cantrip Upgrade" line in a `[url=keyword:...]` link into
+`WeaponTooltip.KEYWORD_GLOSSARY` (`cantrip_upgrade_dice`/`cantrip_upgrade_beams` entries) — only
+meaningful where a glossary-popup `meta_hover` handler already exists (`hud.gd`'s qbar tooltip,
+`inventory_overlay.gd`'s item tooltip); every other caller (Spellbook detail panel, cantrip/spell-
+learn picker cards, debug panel) passes `interactive = false` for a plain non-clickable line
+instead — none of those RichTextLabels are wired to a glossary popup. `SpellTooltip.build_plain(spell)`
+strips all BBCode via regex for native `Control.tooltip_text` consumers (debug panel's spell-row
+hover), which can't render BBCode at all. `GameState._build_spell_ability()`/
+`_build_hellish_rebuke_ability()` bake `SpellTooltip.build(spell)`'s full BBCode output directly
+into `Ability.description` — `hud.gd`'s ability-bar tooltip detects `ability_id.begins_with("spell:")`
+(or `== "hellish_rebuke_toggle"`) and prints that description as-is instead of wrapping it in the
+generic `"[b]Name[/b]\n%s"` template every other ability uses (which would double-print the name).
+
+**Named status/condition effects are hoverable keywords, never explained inline in `description`**:
+`SpellTooltip.CONDITION_KEYWORDS` (capitalized status word → `WeaponTooltip.KEYWORD_GLOSSARY` key)
++ `_linkify_conditions()` auto-replace every whole-word match in `description` with a colored
+keyword (clickable when `interactive`) — a spell's own text should just NAME the effect ("target
+is Shocked"/"is Jolted"/"is Paralyzed"), never restate what it mechanically does; that's the
+glossary popup's job. Add both a `CONDITION_KEYWORDS` entry and a `KEYWORD_GLOSSARY` body whenever
+a new spell introduces one.
+
+**Fixed lines never word-wrap — only `description` may** (direct owner requirement): every fixed
+line (name/header/casting-time/range/area/duration) is glued together with non-breaking spaces
+(U+00A0) inside `build()`, so it renders as one unbreakable run no matter how long. Any caller
+showing this inside a narrow, fixed-width popup must size that box to fit instead of letting a long
+fixed line clip — `SpellTooltip.required_width(spell, font_size) -> float` measures the widest
+fixed line via `ThemeDB.fallback_font.get_string_size()` (character-length/font-measurement
+heuristic, same precedent as `inspect_panel.gd`'s own "estimated line count" sizing) and returns
+the pixel width needed. `hud.gd`'s qbar tooltip (`_on_qbar_slot_hover()`) and
+`inventory_overlay.gd`'s Special-slot tooltip (`_show_special_slot_tooltip()`) both do
+`maxf(default_width, SpellTooltip.required_width(spell, font_size))` before sizing their popup.
+Wide fixed-panel callers (Spellbook overlay's detail box, cantrip/spell-learn picker cards — all
+several hundred px wide already) don't need this, only the ~172px quickbar-style popups do.
+
+**Adding a new spell — apply this format whenever the owner hands you one of their own "stat
+blocks" in this same layout**: fill in `casting_time`/`duration_turns`/`is_concentration` on the
+`Spell` alongside every other field, and trim `description` down to just the mechanic that ISN'T
+already conveyed by the structured lines (school/level/range/area/duration/casting-time restated
+in prose is redundant and should go; anything else — secondary effects, mechanic caveats,
+simplification notes — stays, even if that keeps `description` multi-sentence). Lead `description`
+with the roll itself, not narrative flavor — `"Ranged/Melee spell attack, deals NdM <Type> damage"`
+for `ATTACK_ROLL` spells, `"<STAT> save or take NdM <Type> damage[, half on a save]"` for
+`SAVE`-resolution damage spells, then a second sentence for any secondary effect (status, terrain
+ignition, etc.); buff/utility (`AUTO_HIT`) spells skip this template and just lead with the effect
+itself. For a spell whose `class_list` is still empty (a lineage/legacy-only grant, e.g.
+Elf/Tiefling/Gnome racial spells the owner hasn't given a real class list for yet) — leave the
+`(Classes)` parenthetical off; only add a real `class_list` once the owner explicitly supplies one
+for that spell.
+
 - **`Spell`** (`Resource`) — `spell_id`, `spell_name`, `description`, `icon_path`, `level` (0 =
   cantrip, 1-9 = leveled), `school`, `range_tiles`, `resolution` (enum: `ATTACK_ROLL`/`SAVE`/
   `AUTO_HIT`), `target_kind` (enum: `ENEMY`/`SELF`/`TILE`), `dice_count`, `dice_sides`,
@@ -578,9 +645,12 @@ cast-resolution walkthroughs.
   pure generic damage path; else dispatched in `SpellEffects`), `class_list`, `bypasses_los: bool`
   (Magic Missile only today — BG3-style "seeking dart" targeting: skips `has_ranged_los()` entirely
   and requires `DungeonFloor.has_walkable_route_ignoring_chasms()` instead, see
-  `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" → Magic Missile entry). Still missing
-  concentration/reaction/component fields from the full design doc's `Spell` shape — add if a
-  future spell needs them.
+  `scripts/entities/CLAUDE.md`'s "Wizard leveled spells" → Magic Missile entry), `casting_time:
+  String` ("Action"/"Free" — this engine only distinguishes those two, no bonus-action/reaction
+  tier; a RAW reaction like Hellish Rebuke or bonus action like Misty Step is approximated to
+  whichever fits its actual implementation), `duration_turns: int` (`0` = instantaneous, no
+  Duration line at all), `is_concentration: bool`. Still missing reaction/component fields from the
+  full design doc's `Spell` shape — add if a future spell needs them.
 - **`SpellDb`** (static factory, `RefCounted`) — `get_spell(id) -> Spell` builds all spells in
   code, same "no `.tres` files" convention as `Talent`/`SpriteFrames`. `CANTRIP_IDS` (8 cantrips:
   the original `fire_bolt`/`ray_of_frost`/`shocking_grasp` plus `toll_the_dead`/`blade_ward`/

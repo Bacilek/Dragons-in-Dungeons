@@ -102,6 +102,13 @@ of those systems exist elsewhere in this codebase either; scope is the ability-s
 only, per direct owner request). Premade heroes skip this screen too (fixed stat blocks).
 
 ### Race system
+Hovering the HUD's `race_bonus` status-tray icon (Ctrl-freeze, same gesture as every other
+hoverable keyword) shows a structured tooltip — Creature Type/Size/Speed/Darkvision, then each
+trait as its own hoverable keyword, with genuine two-level nested hover for a trait with real
+sub-options (Aasimar's Celestial Revelation) — built by `RaceTooltip`/`RaceDb`
+(`scripts/entities/race_tooltip.gd`/`race_db.gd`). Full format spec:
+`scripts/entities/CLAUDE.md`'s "Race tooltip format" section.
+
 Onboarding order (Custom path): **class select → point buy → background ASI → race select →
 mastery picker → game starts**. `race_select.gd` is a one-time blocking overlay spawned right
 after the background picker confirms (mirrors `subclass_select.gd`'s pattern), and itself spawns
@@ -172,6 +179,13 @@ preview, teleport to the far side) rather than a move-executor rule — see
 `Ability` (`scripts/items/ability.gd`) — resource with `ability_id`, `ability_name`, `description`, `icon_path`, `uses_remaining`, `uses_max`, `is_active`. `uses_max == 0` means infinite/passive. `GameState.player_ability_bar: Array` holds 9 slots (parallel to `player_quickbar`). `Tab` toggles HUD between item bar and ability bar. `GameState.add_ability(ability)` places in first empty slot. Ability activation dispatched in `player.gd._use_ability_slot(idx)` by `ability_id`. New abilities are granted by `GameState._apply_talent_rank()` and `GameState._apply_monk_level_features(level)`.
 
 ### Spellcasting
+Every spell readout in the game (Spellbook overlay, cantrip/level-up pickers, ability-bar hover,
+Special quick-cast slot, debug "Give Spell...") shares one structured tooltip format — name /
+school+level(classes) / Casting Time / Range / Area / Duration / description / an optional
+hoverable "Cantrip Upgrade" keyword line — built by `SpellTooltip.build()`. Full format spec and
+the `Spell.casting_time`/`duration_turns`/`is_concentration` fields it reads: `scripts/items/CLAUDE.md`'s
+"Unified spell tooltip format" section.
+
 **Wizard cantrips** (free, at-will — 8 total: the original attack-roll trio Fire Bolt / Ray of
 Frost / Shocking Grasp, plus 5 more adding SAVE-resolution and SELF-target/AoE cantrips —
 Toll the Dead, Blade Ward (the one cantrip with a real, minimal Concentration mechanic), Thunderclap,

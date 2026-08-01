@@ -61,9 +61,14 @@ var _log_tooltip_visible: bool = false
 # ── Quickbar slot hover tooltip ────────────────────────────────────────────────
 var _qbar_tooltip: Panel = null
 var _qbar_tooltip_rtl: RichTextLabel = null
-var _qbar_tooltip_frozen: bool = false
+# Global-space rect of whatever slot/icon is currently showing _qbar_tooltip — the tooltip is
+# anchored to this (computed once at hover-start), not the mouse; hovering this rect keeps the
+# whole popup chain alive. See "Quickbar hover tooltip" section near _setup_quickbar_tooltip().
+var _qbar_hover_source_rect: Rect2 = Rect2()
 var _glossary_popup: Panel = null
 var _glossary_rtl: RichTextLabel = null
+var _glossary_popup2: Panel = null
+var _glossary_rtl2: RichTextLabel = null
 
 # ── Extra popup labels (added programmatically to expand the stats popup) ─────
 var _popup_prof_label: Label = null
@@ -470,8 +475,19 @@ func _update_status_icons() -> void:
 		entries.append({"id": "weapon_mastery", "icon_path": "res://icons/status/weapon_mastery.png", "fallback_color": Color(0.80, 0.65, 0.20)})
 	_status_tray.refresh(entries)
 
-func _on_status_tray_icon_hovered(id: String) -> void:
+func _on_status_tray_icon_hovered(id: String, rect: Rect2) -> void:
 	if _qbar_tooltip == null:
+		return
+	_qbar_hover_source_rect = rect
+	if id == "race_bonus":
+		var text: String = RaceTooltip.build(GameState.player_stats)
+		if text.is_empty():
+			return
+		_qbar_tooltip_rtl.text = text
+		_qbar_tooltip_rtl.size = Vector2(220.0, 0)
+		_qbar_tooltip.size = Vector2(228.0, 60)
+		_qbar_tooltip.visible = true
+		_position_qbar_tooltip_near(rect)
 		return
 	var text: String = StatusTooltips.build_bbcode(id)
 	if text.is_empty():
@@ -480,6 +496,7 @@ func _on_status_tray_icon_hovered(id: String) -> void:
 	_qbar_tooltip_rtl.size = Vector2(172.0, 0)
 	_qbar_tooltip.size = Vector2(180.0, 60)
 	_qbar_tooltip.visible = true
+	_position_qbar_tooltip_near(rect)
 
 func _on_class_chosen(cls: Stats.CharacterClass) -> void:
 	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/classes/Barbarian/idle_1.png")
@@ -960,36 +977,18 @@ func _refresh_popup() -> void:
 		_popup_prof_label.text = "Prof: +%d" % s.proficiency_bonus
 
 # ── Quickbar hover tooltip ─────────────────────────────────────────────────────
-
-func _unfreeze_qbar_tooltip() -> void:
-	_qbar_tooltip_frozen = false
-	if _qbar_tooltip != null:
-		_qbar_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_qbar_tooltip.visible = false
-	if _qbar_tooltip_rtl != null:
-		_qbar_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if _glossary_popup != null:
-		_glossary_popup.visible = false
-
-func _input(event: InputEvent) -> void:
-	if not (event is InputEventKey):
-		return
-	var key := event as InputEventKey
-	if key.pressed and not key.echo and key.physical_keycode == KEY_CTRL:
-		if _qbar_tooltip_frozen:
-			_unfreeze_qbar_tooltip()
-			get_viewport().set_input_as_handled()
-		elif _qbar_tooltip != null and _qbar_tooltip.visible:
-			_qbar_tooltip_frozen = true
-			_qbar_tooltip.mouse_filter     = Control.MOUSE_FILTER_STOP
-			_qbar_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_PASS
-			get_viewport().set_input_as_handled()
+# No Ctrl-freeze (direct owner request, 2026-08-01) — the tooltip is always interactive and
+# anchored to whatever triggered it (_qbar_hover_source_rect), never following the mouse. Hiding
+# is driven entirely by _process()'s per-frame hover-chain rect check (see the bottom of
+# _process()), never an explicit call — see "Race trait hover (nested glossary)" below for the
+# full mechanism this shares with the race-trait popups, and inventory_overlay.gd's identical
+# (simpler, one-level) chain.
 
 func _setup_quickbar_tooltip() -> void:
 	_qbar_tooltip = Panel.new()
 	_qbar_tooltip.visible = false
 	_qbar_tooltip.z_index = 30
-	_qbar_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_qbar_tooltip.mouse_filter = Control.MOUSE_FILTER_STOP
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.05, 0.05, 0.09, 0.97)
 	sb.set_border_width_all(1)
@@ -1003,16 +1002,20 @@ func _setup_quickbar_tooltip() -> void:
 	_qbar_tooltip_rtl.offset_top = 6.0
 	_qbar_tooltip_rtl.offset_right = -8.0
 	_qbar_tooltip_rtl.offset_bottom = -6.0
-	_qbar_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_qbar_tooltip_rtl.mouse_filter = Control.MOUSE_FILTER_PASS
 	_qbar_tooltip_rtl.meta_hover_started.connect(_on_qbar_meta_hover_started)
 	_qbar_tooltip_rtl.meta_hover_ended.connect(_on_qbar_meta_hover_ended)
 	_qbar_tooltip.add_child(_qbar_tooltip_rtl)
 	add_child(_qbar_tooltip)
-	# Keyword glossary popup (shared by qbar tooltip)
+	# Keyword glossary popup (shared by qbar tooltip). Level 1 of the nested-hover chain — see
+	# "Race trait hover (nested glossary)" below: interactive (STOP on the panel, PASS+bbcode+
+	# meta_hover on the RichTextLabel) so a race-trait popup's own [url=race_sub:...] links can be
+	# hovered in turn, opening a level-2 popup (_glossary_popup2). Plain weapon-mastery keyword
+	# popups never contain further links, so this is a no-op for them.
 	_glossary_popup = Panel.new()
 	_glossary_popup.visible = false
 	_glossary_popup.z_index = 32
-	_glossary_popup.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_glossary_popup.mouse_filter = Control.MOUSE_FILTER_STOP
 	var gsb := StyleBoxFlat.new()
 	gsb.bg_color = Color(0.08, 0.07, 0.04, 0.97)
 	gsb.set_border_width_all(1)
@@ -1026,19 +1029,54 @@ func _setup_quickbar_tooltip() -> void:
 	_glossary_rtl.offset_top = 6.0
 	_glossary_rtl.offset_right = -8.0
 	_glossary_rtl.offset_bottom = -6.0
-	_glossary_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_glossary_rtl.mouse_filter = Control.MOUSE_FILTER_PASS
+	_glossary_rtl.meta_hover_started.connect(_on_glossary_meta_hover_started)
+	_glossary_rtl.meta_hover_ended.connect(_on_glossary_meta_hover_ended)
 	_glossary_popup.add_child(_glossary_rtl)
 	add_child(_glossary_popup)
+	# Level 2 of the nested-hover chain — a sub-option's own description (e.g. Heavenly Wings under
+	# Celestial Revelation). Terminal: no further links, so its RichTextLabel needs no meta_hover.
+	_glossary_popup2 = Panel.new()
+	_glossary_popup2.visible = false
+	_glossary_popup2.z_index = 33
+	_glossary_popup2.mouse_filter = Control.MOUSE_FILTER_STOP
+	var gsb2 := StyleBoxFlat.new()
+	gsb2.bg_color = Color(0.08, 0.07, 0.04, 0.97)
+	gsb2.set_border_width_all(1)
+	gsb2.border_color = Color(0.75, 0.65, 0.20)
+	gsb2.set_corner_radius_all(3)
+	_glossary_popup2.add_theme_stylebox_override("panel", gsb2)
+	_glossary_rtl2 = RichTextLabel.new()
+	_glossary_rtl2.bbcode_enabled = true
+	_glossary_rtl2.fit_content = true
+	_glossary_rtl2.offset_left = 8.0
+	_glossary_rtl2.offset_top = 6.0
+	_glossary_rtl2.offset_right = -8.0
+	_glossary_rtl2.offset_bottom = -6.0
+	_glossary_rtl2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_glossary_popup2.add_child(_glossary_rtl2)
+	add_child(_glossary_popup2)
 	# Connect hover signals on each item slot
 	for i: int in SLOT_COUNT:
 		_item_slots[i].mouse_entered.connect(_on_qbar_slot_hover.bind(i))
 		_item_slots[i].mouse_exited.connect(_on_qbar_slot_hover_end)
 
+## Anchors _qbar_tooltip beside `rect` (above by default, below if there's no room) instead of
+## following the mouse — see the "Quickbar hover tooltip" section comment above.
+func _position_qbar_tooltip_near(rect: Rect2) -> void:
+	var vp: Vector2 = get_viewport().get_visible_rect().size
+	var tw: float = _qbar_tooltip.size.x
+	var th: float = maxf(_qbar_tooltip.size.y, _qbar_tooltip_rtl.get_content_height() + 14.0)
+	var tx: float = clampf(rect.position.x, 4.0, vp.x - tw - 4.0)
+	var ty: float = rect.position.y - th - 6.0
+	if ty < 4.0:
+		ty = rect.position.y + rect.size.y + 6.0
+	_qbar_tooltip.position = Vector2(tx, ty)
+
 func _on_qbar_slot_hover(idx: int) -> void:
-	if _qbar_tooltip_frozen:
-		return
 	if _qbar_tooltip == null:
 		return
+	_qbar_hover_source_rect = get_action_slot_global_rect(idx)
 	var bar: Array = GameState.player_ability_bar if _ability_bar_mode else GameState.player_quickbar
 	var item_or_ability: Variant = bar[idx] if idx < bar.size() else null
 	# Thrown-item range preview: hovering a thrown weapon in the item bar shows its range/
@@ -1053,7 +1091,14 @@ func _on_qbar_slot_hover(idx: int) -> void:
 		var ab := item_or_ability as Ability
 		if ab == null:
 			return
-		text = "[b]%s[/b]\n%s" % [ab.ability_name, ab.description]
+		# Spell-backed abilities already carry the full structured SpellTooltip.build() output
+		# (name/school/range/etc.) in their own description — see GameState._build_spell_ability()/
+		# _build_hellish_rebuke_ability() — so they skip the generic "[b]Name[/b]\n" wrap here to
+		# avoid double-printing the name.
+		if ab.ability_id.begins_with("spell:") or ab.ability_id == "hellish_rebuke_toggle":
+			text = ab.description
+		else:
+			text = "[b]%s[/b]\n%s" % [ab.ability_name, ab.description]
 	else:
 		var item := item_or_ability as Item
 		if item == null:
@@ -1085,19 +1130,32 @@ func _on_qbar_slot_hover(idx: int) -> void:
 	var hover_item: Item = item_or_ability as Item if not _ability_bar_mode else null
 	var is_weapon_tooltip: bool = hover_item != null and (hover_item.item_type == Item.Type.WEAPON or ArmorTooltip.is_armor_item(hover_item))
 	var qtw: float = 210.0 if is_weapon_tooltip else 172.0
+	if _ability_bar_mode:
+		var hover_ab := item_or_ability as Ability
+		if hover_ab != null and (hover_ab.ability_id.begins_with("spell:") or hover_ab.ability_id == "hellish_rebuke_toggle"):
+			var hover_sid: String = hover_ab.ability_id.trim_prefix("spell:") if hover_ab.ability_id.begins_with("spell:") else "hellish_rebuke"
+			var hover_spell: Spell = SpellDb.get_spell(hover_sid)
+			if hover_spell != null:
+				qtw = maxf(qtw, SpellTooltip.required_width(hover_spell, 15))
 	_qbar_tooltip_rtl.size = Vector2(qtw, 0)
 	_qbar_tooltip.size = Vector2(qtw + 8.0, 60)
 	_qbar_tooltip.visible = true
+	_position_qbar_tooltip_near(_qbar_hover_source_rect)
 
+## Hiding is driven entirely by _process()'s hover-chain rect check now — this stays connected to
+## mouse_exited only to clear the unrelated thrown-item range preview.
 func _on_qbar_slot_hover_end() -> void:
 	GameState.quickbar_hover_thrown_item = null
-	if _qbar_tooltip_frozen:
-		return
-	if _qbar_tooltip != null:
-		_qbar_tooltip.visible = false
-	if _glossary_popup != null:
-		_glossary_popup.visible = false
 
+## Race trait hover (nested glossary): a "race_trait:<id>" link (RaceTooltip.build()'s per-trait
+## line, only shown by the "race_bonus" status-tray icon — see _on_status_tray_icon_hovered())
+## opens this SAME level-1 popup a plain weapon-mastery "keyword:" link already uses, just with
+## RaceTooltip.build_trait_detail()'s body instead of a flat KEYWORD_GLOSSARY string. That body may
+## itself contain further [url=race_sub:...] links (Celestial Revelation's 3 forms) — the popup's
+## own RichTextLabel is interactive (PASS+meta_hover, set up in _ready()) precisely so hovering one
+## of THOSE opens a level-2 popup via _on_glossary_meta_hover_started() below. Hiding is NOT done
+## here on meta_hover_ended (that would fire the instant the cursor leaves the trigger link, even
+## if heading toward the popup itself) — see _process()'s rect-containment check instead.
 func _on_qbar_meta_hover_started(meta: Variant) -> void:
 	var m: String = str(meta)
 	if m.begins_with("keyword:") and _glossary_popup != null:
@@ -1107,10 +1165,53 @@ func _on_qbar_meta_hover_started(meta: Variant) -> void:
 			_glossary_rtl.size = Vector2(160.0, 0)
 			_glossary_popup.size = Vector2(168.0, 60)
 			_glossary_popup.visible = true
+	elif m.begins_with("race_trait:") and _glossary_popup != null:
+		var trait_id: String = m.substr(11)
+		var t: Dictionary = RaceTooltip.find_trait(GameState.player_stats, trait_id)
+		if not t.is_empty():
+			_glossary_rtl.text = RaceTooltip.build_trait_detail(t)
+			_glossary_rtl.size = Vector2(190.0, 0)
+			_glossary_popup.size = Vector2(198.0, 60)
+			_glossary_popup.visible = true
 
 func _on_qbar_meta_hover_ended(_meta: Variant) -> void:
-	if _glossary_popup != null:
-		_glossary_popup.visible = false
+	pass
+
+## Level-2 popup: a link inside the level-1 glossary popup's own RichTextLabel opens this
+## terminal popup — either a "race_sub:<trait_id>:<sub_id>" link (e.g. "Heavenly Wings" under
+## Celestial Revelation) OR a plain "keyword:<id>" condition link (e.g. "Frightened" inside
+## Halfling's Brave description, auto-linkified by WeaponTooltip.linkify_conditions()) — a trait
+## description can contain either kind, sometimes both in different traits, so this must handle
+## both instead of only the race_sub case (bugfix: it used to silently no-op on a plain keyword
+## link, e.g. hovering "Frightened" inside Brave's popup showed nothing).
+func _on_glossary_meta_hover_started(meta: Variant) -> void:
+	var m: String = str(meta)
+	if _glossary_popup2 == null:
+		return
+	if m.begins_with("keyword:"):
+		var kw: String = m.substr(8)
+		if not WeaponTooltip.KEYWORD_GLOSSARY.has(kw):
+			return
+		_glossary_rtl2.text = WeaponTooltip.KEYWORD_GLOSSARY[kw]
+		_glossary_rtl2.size = Vector2(160.0, 0)
+		_glossary_popup2.size = Vector2(168.0, 60)
+		_glossary_popup2.visible = true
+		return
+	if not m.begins_with("race_sub:"):
+		return
+	var parts: PackedStringArray = m.substr(9).split(":", true, 1)
+	if parts.size() != 2:
+		return
+	var sub: Dictionary = RaceTooltip.find_sub(GameState.player_stats, parts[0], parts[1])
+	if sub.is_empty():
+		return
+	_glossary_rtl2.text = RaceTooltip.build_sub_detail(sub)
+	_glossary_rtl2.size = Vector2(190.0, 0)
+	_glossary_popup2.size = Vector2(198.0, 60)
+	_glossary_popup2.visible = true
+
+func _on_glossary_meta_hover_ended(_meta: Variant) -> void:
+	pass
 
 # ── Log tooltip ───────────────────────────────────────────────────────────────
 
@@ -1154,17 +1255,16 @@ func _process(_delta: float) -> void:
 		if ty < 4.0:
 			ty = mp.y + 18.0
 		_log_tooltip.position = Vector2(tx, ty)
-	# Quickbar tooltip positioning
+	# Quickbar tooltip positioning — always anchored to _qbar_hover_source_rect (the slot/icon that
+	# triggered it), never the mouse, so the mouse can travel onto it to hover keyword links
+	# without the box drifting away. Recomputed every frame (idempotent, since the source rect
+	# doesn't change) purely to track content-height changes (a live use-count, etc.).
 	if _qbar_tooltip != null and _qbar_tooltip.visible:
 		var qw: float = _qbar_tooltip.size.x
 		var qh: float = _qbar_tooltip_rtl.get_content_height() + 14.0
 		_qbar_tooltip_rtl.size = Vector2(qw - 16.0, qh - 14.0)
 		_qbar_tooltip.size = Vector2(qw, qh)
-		var tx: float = clampf(mp.x - qw * 0.5, 4.0, vp.x - qw - 4.0)
-		var ty: float = mp.y - qh - 14.0
-		if ty < 4.0:
-			ty = mp.y + 18.0
-		_qbar_tooltip.position = Vector2(tx, ty)
+		_position_qbar_tooltip_near(_qbar_hover_source_rect)
 	# Glossary popup positioning (appears beside qbar tooltip)
 	if _glossary_popup != null and _glossary_popup.visible:
 		var gw: float = _glossary_popup.size.x
@@ -1174,6 +1274,31 @@ func _process(_delta: float) -> void:
 		var qpos: Vector2 = _qbar_tooltip.position if _qbar_tooltip != null and _qbar_tooltip.visible else mp
 		var gx: float = clampf(qpos.x + _qbar_tooltip.size.x + 4.0, 4.0, vp.x - gw - 4.0)
 		_glossary_popup.position = Vector2(gx, qpos.y)
+	# Level-2 glossary popup (race-trait sub-option, e.g. Celestial Revelation's 3 forms) —
+	# appears beside the level-1 popup that opened it.
+	if _glossary_popup2 != null and _glossary_popup2.visible and _glossary_popup != null:
+		var gw2: float = _glossary_popup2.size.x
+		var gh2: float = _glossary_rtl2.get_content_height() + 14.0
+		_glossary_rtl2.size = Vector2(gw2 - 16.0, gh2 - 14.0)
+		_glossary_popup2.size = Vector2(gw2, gh2)
+		var gx2: float = clampf(_glossary_popup.position.x + _glossary_popup.size.x + 4.0, 4.0, vp.x - gw2 - 4.0)
+		_glossary_popup2.position = Vector2(gx2, _glossary_popup.position.y)
+	# Hover chain (source slot/icon → qbar tooltip → glossary popup → glossary popup2) hides one
+	# level at a time as the mouse backs out, closing everything once it leaves the whole chain —
+	# meta_hover_ended/mouse_exited alone can't drive this, since moving from a trigger INTO the
+	# popup/level it opened must not hide it. Each level stays open while the mouse is over itself
+	# or anything nested deeper than it; the outermost (the tooltip) additionally stays open while
+	# the mouse is back on the original source trigger.
+	var _over_source: bool = _qbar_hover_source_rect.has_point(mp)
+	var _over_qbar: bool = _qbar_tooltip != null and _qbar_tooltip.visible and Rect2(_qbar_tooltip.position, _qbar_tooltip.size).has_point(mp)
+	var _over_glossary: bool = _glossary_popup != null and _glossary_popup.visible and Rect2(_glossary_popup.position, _glossary_popup.size).has_point(mp)
+	var _over_glossary2: bool = _glossary_popup2 != null and _glossary_popup2.visible and Rect2(_glossary_popup2.position, _glossary_popup2.size).has_point(mp)
+	if _glossary_popup2 != null and _glossary_popup2.visible and not _over_glossary and not _over_glossary2:
+		_glossary_popup2.visible = false
+	if _glossary_popup != null and _glossary_popup.visible and not _over_qbar and not _over_glossary and not _over_glossary2:
+		_glossary_popup.visible = false
+	if _qbar_tooltip != null and _qbar_tooltip.visible and not _over_source and not _over_qbar and not _over_glossary and not _over_glossary2:
+		_qbar_tooltip.visible = false
 
 func _on_log_meta_hover_started(meta: Variant) -> void:
 	if _log_tooltip == null:

@@ -775,7 +775,7 @@ func _build_hellish_rebuke_ability() -> Ability:
 	var ab := Ability.new()
 	ab.ability_id = "hellish_rebuke_toggle"
 	ab.ability_name = spell.spell_name if spell != null else "Hellish Rebuke"
-	ab.description = spell.description if spell != null else ""
+	ab.description = SpellTooltip.build(spell) if spell != null else ""
 	ab.icon_path = spell.icon_path if spell != null else ""
 	ab.uses_remaining = 0
 	ab.uses_max = 0
@@ -1027,7 +1027,7 @@ func _build_spell_ability(spell_id: String) -> Ability:
 	var ab := Ability.new()
 	ab.ability_id = "spell:" + spell_id
 	ab.ability_name = spell.spell_name if spell != null else spell_id
-	ab.description = spell.description if spell != null else ""
+	ab.description = SpellTooltip.build(spell) if spell != null else ""
 	ab.icon_path = spell.icon_path if spell != null else ""
 	ab.uses_remaining = 0
 	ab.uses_max = 0

@@ -7,7 +7,7 @@ extends Control
 # hands it to refresh() — new effect sources are a one-line addition at the call site, no new
 # node/UI code here. See docs/architecture/status-icon-tray-design.md.
 
-signal icon_hovered(id: String)
+signal icon_hovered(id: String, rect: Rect2)
 signal icon_unhovered()
 
 const ICON_SIZE: float = 28.0
@@ -66,4 +66,4 @@ func _make_icon_node() -> Control:
 	return rect
 
 func _on_icon_hover(node: Control) -> void:
-	icon_hovered.emit(str(node.get_meta("status_id", "")))
+	icon_hovered.emit(str(node.get_meta("status_id", "")), Rect2(node.global_position, node.size))
