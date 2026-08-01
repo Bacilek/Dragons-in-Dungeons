@@ -193,7 +193,11 @@ mirroring `icons/classes/<class>/`'s convention (root `CLAUDE.md`'s Sprite Asset
 its own file (no shared resolver like `talent_icon_path()`, since each race grants a fixed, small
 set of abilities with no rank-gradient icons to resolve). Goliath's Giant Ancestry is the one
 multi-icon case: `GameState._giant_ancestry_icon_path(variant)` maps `Stats.GiantAncestry` to
-`icons/races/goliath/giant_ancestry/{cloud,fire,frost,hill,stone,storm}.png`.
+`icons/races/goliath/giant_ancestry/{cloud,fire,frost,hill,stone,storm}.png`. Each race folder
+also holds a `portrait.png` (a race-representative bust, distinct from any ability icon) — the
+one file shared by `race_select.gd`'s tile grid (`scripts/ui/CLAUDE.md`'s "Race select") and the
+HUD's always-on `race_bonus` status-tray icon (`StatusTooltips.race_portrait_icon_path()`,
+`scripts/ui/status_tooltips.gd`), so both surfaces show the identical art.
 
 ## Dragonborn
 
@@ -2263,8 +2267,13 @@ The level-1 grant is a special case: `gain_exp()`'s threshold-crossing check nev
 character's OWN starting level (no level-up ever crosses "old < 1, new >= 1"), so
 `_give_warlock_starting_items()` grants it directly and idempotently. **Schedule slots beyond the
 8 designed invocations (levels 12/15/18) sit pending with nothing yet to spend them on** — same
-Tier-2-pending precedent as `talent_points`; a natural place for more Invocations later (Pact-Boon-
-gated ones especially, once Pact Boon exists — not implemented this pass).
+Tier-2-pending precedent as `talent_points`; a natural place for more Invocations later, including
+**Pact of the Blade/Chain/Tome** — 2024/5.5e rules (this project's ruleset, see root `CLAUDE.md`'s
+opening line) folded the old 2014 5e "separate Pact Boon step" into three ordinary,
+level-3-unlocked Invocations, so they'll simply be 3 more entries in `eldritch_invocation_list()`
+whenever they're built, not a parallel character-creation step. Deliberately not implemented yet
+(more invocation content is planned incrementally, per direct owner request) — do not build a
+separate Pact Boon picker/field for these.
 
 **8 invocations shipped this pass** (`GameState.eldritch_invocation_list()`):
 - **Agonizing Blast** (lvl 1) — Eldritch Blast hits add CHA mod damage. Folded into
@@ -2319,10 +2328,11 @@ mid-character-creation, well before that flag is set) and re-checked from `_on_c
 to actually open it for a fresh character).
 
 **Not implemented this pass** (documented scope cuts, matching this codebase's own "narrow case,
-not the full system" precedent): **Pact Boon** (Blade/Chain/Tome — no chosen-boon field, no
-familiar, no pact weapon); true 5e multi-beam/multi-target Eldritch Blast; player-chosen upcast
-slot level (Pact Magic's own upcast is automatic-to-max only, no picker); Invocations beyond the
-8 above (levels 12/15/18's schedule slots sit pending).
+not the full system" precedent): **Pact of the Blade/Chain/Tome** (3 more Invocation entries to
+add later, NOT a separate Pact Boon step — see the schedule note above); true 5e multi-beam/
+multi-target Eldritch Blast; player-chosen upcast slot level (Pact Magic's own upcast is
+automatic-to-max only, no picker); Invocations beyond the 8 above (levels 12/15/18's schedule
+slots sit pending, meant to absorb Pact of the Blade/Chain/Tome and future additions).
 
 ## Wizard spellcasting (cantrips)
 
