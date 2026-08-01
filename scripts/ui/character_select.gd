@@ -72,6 +72,21 @@ const PREMADE: Array = [
 		"desc":    "Frail but brilliant,\nlucky in a pinch.",
 		"color":   Color(0.50, 0.65, 1.00),
 	},
+	{
+		"name":    "Lil Dorruk",
+		"cls":     Stats.CharacterClass.WARLOCK,
+		"race":    Stats.CharacterRace.GOLIATH,
+		"variant": Stats.GiantAncestry.FIRE,
+		"prof":    -1,
+		"masteries": [],
+		"scores":  {"str": 10, "dex": 14, "con": 16, "int": 8, "wis": 10, "cha": 16},
+		"cantrip": "eldritch_blast",
+		"spell1":  "mage_armor",
+		"sprite":  CHAR_PATH + "Warlock/idle_1.png",
+		"subtitle": "Fire Goliath Warlock",
+		"desc":    "Small name, big blasts.\nEldritch Blast and a Fire Giant's heart.",
+		"color":   Color(0.90, 0.45, 0.25),
+	},
 ]
 
 func _ready() -> void:

@@ -368,19 +368,22 @@ the shared `_reload()` (was the old `_on_new_game()` body).
 
 ## Character select (`character_select.gd`)
 CanvasLayer, layer = 20. **The actual first screen of a new run** — `hud.gd._ready()` now spawns
-this instead of `class_select.gd` directly. Shows 5 cards side by side: 4 premade characters
+this instead of `class_select.gd` directly. Shows 6 cards side by side: 5 premade characters
 (`PREMADE` const — Garrem Ogar/Orc Barbarian/Cleave+Graze, Tish/Wood Elf Ranger/Slow+Nick, Grok
-the White/White Dragonborn Monk, Jace/Halfling Wizard/Fire Bolt) plus a 5th "Custom" card. Clicking a
+the White/White Dragonborn Monk, Jace/Halfling Wizard/Fire Bolt, Lil Dorruk/Fire Goliath Warlock/
+Eldritch Blast) plus a 6th "Custom" card. Clicking a
 premade card (`_on_premade_selected()`) applies class + `GameState.give_class_starting_items()` +
 `GameState.choose_race(race, variant, prof_ability)` + (for Barbarian/Ranger) directly populates
-`Stats.known_weapon_masteries` and emits `known_masteries_changed` + (for Wizard) a `"cantrip"` key
+`Stats.known_weapon_masteries` and emits `known_masteries_changed` + (for Wizard/Warlock) a
+`"cantrip"` key
 in the `PREMADE` entry calls `GameState.choose_cantrip(id)` directly — bypassing class_select/
 point_buy_select/background_select/race_select/mastery_picker/cantrip_select entirely and dropping
 straight into the already-loaded floor 1. Each `PREMADE` entry also carries a fixed `"scores"`
 dict (`{"str","dex","con","int","wis","cha"}`, applied via `Stats.apply_point_buy_scores()` right
 after `apply_class_defaults()` — reusing the same point-buy setter rather than a separate
 mechanism) instead of `apply_class_defaults()`'s own generic per-class defaults: Garrem
-16/14/16/8/10/10, Tish 8/16/14/10/16/10, Grok 10/16/16/10/14/8, Jace 8/14/16/16/10/10 — no
+16/14/16/8/10/10, Tish 8/16/14/10/16/10, Grok 10/16/16/10/14/8, Jace 8/14/16/16/10/10, Lil Dorruk
+10/14/16/8/10/16 — no
 point buy or background ASI screen either way, just a different fixed stat block per hero.
 Clicking
 "Custom" (`_on_custom_selected()`) spawns `class_select.gd` unchanged, preserving the full
@@ -388,9 +391,15 @@ Clicking
 from-scratch build. Also
 owns the "Continue Saved Run" button (moved here from `class_select.gd` since this is now the true
 entry point) — same behavior as before, see `scripts/autoloads/CLAUDE.md`'s SaveManager
-"Continue flow" section. Jace's card also carries a `"spell1": "magic_missile"` key, applied via
+"Continue flow" section. Jace's/Lil Dorruk's cards also carry a `"spell1"` key (`"magic_missile"`/
+`"mage_armor"` respectively), applied via
 `GameState.choose_starting_spell()` right after the `"cantrip"` key's `choose_cantrip()` call —
-premade heroes get their fixed cantrip + level-1 spell without ever seeing `cantrip_select.gd`.
+premade casters get their fixed cantrip + level-1 spell without ever seeing `cantrip_select.gd`.
+**Lil Dorruk** (`Stats.CharacterClass.WARLOCK`, `Stats.CharacterRace.GOLIATH`,
+`variant: Stats.GiantAncestry.FIRE`, `prof: -1` — Goliath has no ability-proficiency sub-choice,
+same as every non-Human/Gnome race) is the first premade to use a race with a `sub_kind`
+(`"giant_ancestry"`) entirely through the fixed `PREMADE` dict — `GameState.choose_race()` takes
+the ancestry directly as `variant`, no `race_select.gd` UI involved.
 
 ## Class select (`class_select.gd`)
 The **Custom** path only now (see `character_select.gd` above) — no longer spawned directly by
