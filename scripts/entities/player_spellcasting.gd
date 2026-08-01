@@ -43,7 +43,7 @@ func begin_cast(spell_id: String) -> void:
 	# Ritual casting (Detect Magic): free of the slot-availability gate entirely, as long as no
 	# enemy is currently hunting the caster — see Spell.is_ritual's own comment.
 	var ritual_free: bool = spell.is_ritual and not player.is_being_pursued()
-	if spell.level > 0 and not GameState.invincible and not ritual_free and not player.stats.is_lineage_free_cast_available(spell_id):
+	if spell.level > 0 and not GameState.invincible and not ritual_free and not player.stats.is_lineage_free_cast_available(spell_id) and not GameState.warlock_invocation_free_cast(spell_id):
 		var caster: SpellcasterState = player.stats.caster
 		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
 			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
@@ -135,6 +135,10 @@ func _cast_level_for(spell: Spell) -> int:
 	# SpellcasterState/slot_pool to read at all), see Stats.is_lineage_free_cast_available().
 	if player.stats.is_lineage_free_cast_available(spell.spell_id):
 		return spell.level
+	# Warlock Invocation at-will free cast (Armor of Shadows/Fiendish Vigor/Eldritch Sight/
+	# Ascendant Step) — genuinely unlimited, no counter to check.
+	if GameState.warlock_invocation_free_cast(spell.spell_id):
+		return spell.level
 	var caster: SpellcasterState = player.stats.caster
 	if caster == null or caster.slot_pool == null:
 		return -1
@@ -190,7 +194,7 @@ func cast_direct(spell_id: String, clicked: Vector2i) -> void:
 	# Ritual casting (Detect Magic): free of the slot-availability gate entirely, as long as no
 	# enemy is currently hunting the caster — see Spell.is_ritual's own comment.
 	var ritual_free: bool = spell.is_ritual and not player.is_being_pursued()
-	if spell.level > 0 and not GameState.invincible and not ritual_free and not player.stats.is_lineage_free_cast_available(spell_id):
+	if spell.level > 0 and not GameState.invincible and not ritual_free and not player.stats.is_lineage_free_cast_available(spell_id) and not GameState.warlock_invocation_free_cast(spell_id):
 		var caster: SpellcasterState = player.stats.caster
 		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
 			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)

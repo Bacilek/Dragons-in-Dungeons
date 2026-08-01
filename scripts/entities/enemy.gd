@@ -1780,7 +1780,7 @@ func _execute_cast_scare(target: Node, cfg: Dictionary) -> void:
 	# Halfling Brave: ADV on saves to avoid the Frightened condition. Gnomish Cunning: same ADV,
 	# only if the player chose WIS as their one Gnomish-Cunning stat (see scripts/entities/CLAUDE.md's
 	# "Gnome" section).
-	var scare_adv: int = 1 if (s.character_race == Stats.CharacterRace.HALFLING or s.gnomish_cunning_grants_adv("wis")) else 0
+	var scare_adv: int = 1 if (s.character_race == Stats.CharacterRace.HALFLING or s.gnomish_cunning_grants_adv("wis") or GameState.knows_invocation("beguiling_defenses")) else 0
 	var roll: Dictionary = CombatMath.roll_with_adv_disadv(scare_adv, 0)
 	var die: int = roll["die"]
 	var total: int = die + wis_mod + prof

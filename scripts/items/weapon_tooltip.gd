@@ -109,10 +109,10 @@ static func build(item: Item) -> String:
 			dmg_line += " [color=gray]%s[/color]" % item.damage_type
 		lines.append(dmg_line)
 
-	# Range — ranged weapons only, plain "normal/long", no extra text.
+	# Range — ranged weapons only, "range: normal/long".
 	if item.is_ranged:
 		var long_r: int = item.long_range if item.long_range > 0 else item.range
-		lines.append("%d/%d" % [item.range, long_r])
+		lines.append("range: %d/%d" % [item.range, long_r])
 
 	# Properties — alphabetical, one per line. Ammo(<name>) and Versatile(1dN) are the two
 	# properties with a value baked into the tag itself. Heavy lives in Requirements above, not

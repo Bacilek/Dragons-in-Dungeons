@@ -8,10 +8,16 @@ extends RefCounted
 # doc's original 5-spell list to keep SpellShapes to sphere-only for this pass — see that doc's
 # §7 caveat and CLAUDE.md). Full class spell lists remain future content work.
 
-const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp", "toll_the_dead", "blade_ward", "thunderclap", "mind_sliver", "light", "poison_spray", "chill_touch"]
+const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp", "toll_the_dead", "blade_ward", "thunderclap", "mind_sliver", "light", "poison_spray", "chill_touch", "eldritch_blast"]
 # The Wizard's fixed round-1 starting choice (cantrip_select.gd) — unchanged by the 5 additions
 # above so the premade Jace's "cantrip": "fire_bolt" shortcut and existing save data stay valid.
 const STARTER_CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
+# Warlock's own round-1 starting-cantrip choice (see scripts/entities/CLAUDE.md's "Warlock class").
+# Eldritch Blast is Warlock's signature attack cantrip — implemented as a normal single-target
+# ATTACK_ROLL cantrip (1d10 Force, cantrip_tier_scaling) rather than true 5e multi-beam/
+# multi-target, since SpellEffects has no multi-roll-per-cast resolution shape today; see
+# _eldritch_blast() below.
+const WARLOCK_STARTER_CANTRIP_IDS: Array[String] = ["eldritch_blast", "chill_touch", "poison_spray"]
 const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud", "invisibility", "darkness", "longstrider", "detect_magic", "pass_without_trace", "faerie_fire", "ray_of_sickness", "ray_of_enfeeblement", "hold_person"]
 # Ranger (half-caster, scripts/entities/CLAUDE.md's "Ranger class") draws from the same shared
 # `SpellDb` pool as Wizard, but ONLY the subset actually on Ranger's real 5e/5.5e (2024) spell
@@ -26,7 +32,11 @@ const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor
 # from the real 2024 Ranger list). No cantrips for Ranger either way (`cantrip_max()` stays 0 for
 # every non-Wizard class, matching both rule sets — Rangers don't get cantrips).
 const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace"]
-const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS, "RANGER": RANGER_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
+# Warlock's real 5e/2024 Pact Magic list overlap with the shared SpellDb pool (scripts/entities/
+# CLAUDE.md's "Warlock class") — all seven are genuinely on Warlock's actual class list, no
+# reflavoring needed, unlike Ranger's thinner/approximated subset above.
+const WARLOCK_SPELL_IDS: Array[String] = ["witch_bolt", "expeditious_retreat", "darkness", "hold_person", "invisibility", "misty_step", "ray_of_enfeeblement"]
+const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS, "RANGER": RANGER_SPELL_IDS, "WARLOCK": WARLOCK_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
 # Elf lineage-only spells (see scripts/entities/CLAUDE.md's "Elf" section) — granted exclusively by
 # GameState._grant_elf_lineage_spell(). Originally none of these were learnable via the level-up
@@ -85,6 +95,7 @@ static func get_spell(id: String) -> Spell:
 		"thunderclap": return _thunderclap()
 		"mind_sliver": return _mind_sliver()
 		"light": return _light()
+		"eldritch_blast": return _eldritch_blast()
 		"magic_missile": return _magic_missile()
 		"shield": return _shield()
 		"mage_armor": return _mage_armor()
@@ -127,6 +138,22 @@ static func _fire_bolt() -> Spell:
 	s.cantrip_tier_scaling = true
 	s.effect_id = ""
 	s.class_list = ["WIZARD"]
+	return s
+
+static func _eldritch_blast() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "eldritch_blast"
+	s.spell_name = "Eldritch Blast"
+	s.description = "A beam of crackling energy streaks toward a target within 6 tiles. 1d10 Force damage."
+	s.icon_path = "res://icons/spells/0/eldritch_blast.png"
+	s.school = "Evocation"
+	s.range_tiles = 6
+	s.dice_count = 1
+	s.dice_sides = 10
+	s.damage_type = "Force"
+	s.cantrip_tier_scaling = true
+	s.effect_id = ""
+	s.class_list = ["WARLOCK"]
 	return s
 
 static func _ray_of_frost() -> Spell:

@@ -125,7 +125,13 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 	var tier: int = _cantrip_tier(stats.character_level) if spell.cantrip_tier_scaling else 1
 	var dice_count: int = spell.dice_count * tier
 	var rolls: Array[int] = Rng.roll_dice(dice_count, spell.dice_sides)
-	var inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], is_crit, spell.damage_type)
+	# Agonizing Blast (Eldritch Invocation): +CHA mod damage on Eldritch Blast hits — folded in as
+	# a same-type flat_mods entry per the damage-stacking rule (scripts/entities/CLAUDE.md), not a
+	# second instance.
+	var flat_mods: Array = []
+	if spell.spell_id == "eldritch_blast" and GameState.knows_invocation("agonizing_blast"):
+		flat_mods.append({"name": "Agonizing Blast", "amount": stats.cha_modifier(), "color": Color(0.80, 0.60, 1.0)})
+	var inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, flat_mods, is_crit, spell.damage_type)
 	if is_crit:
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))
 		GameState.screen_shake.emit(5.0)
@@ -210,6 +216,12 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 						GameState.game_log("[color=orange]The grass catches fire![/color]")
 				elif dungeon_floor != null:
 					dungeon_floor.ignite_flammable(target.grid_pos)
+		# Repelling Blast (Eldritch Invocation): unconditional 1-tile push on a non-lethal Eldritch
+		# Blast hit — no save, unlike the Heavy Crossbow's Push weapon mastery.
+		if spell.spell_id == "eldritch_blast" and GameState.knows_invocation("repelling_blast") and dungeon_floor != null:
+			var away_dir: Vector2i = Vector2i(sign(target.grid_pos.x - player.grid_pos.x), sign(target.grid_pos.y - player.grid_pos.y))
+			if away_dir != Vector2i.ZERO:
+				await dungeon_floor.resolve_push(target, away_dir)
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
@@ -434,6 +446,10 @@ static func _consume_slot(player: Player, spell: Spell, cast_level: int, from_sc
 	if player.stats.is_gnome_lineage_free_cast_available(spell.spell_id):
 		if not GameState.invincible:
 			player.stats.gnome_lineage_free_casts_remaining[spell.spell_id] = player.stats.gnome_lineage_free_casts_remaining.get(spell.spell_id, 0) - 1
+		GameState.spell_slots_changed.emit()
+		return
+	# Warlock Invocation at-will free cast — genuinely unlimited, nothing to decrement.
+	if GameState.warlock_invocation_free_cast(spell.spell_id):
 		GameState.spell_slots_changed.emit()
 		return
 	if cast_level > 0 and not GameState.invincible:

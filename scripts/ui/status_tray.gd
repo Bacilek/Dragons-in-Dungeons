@@ -15,6 +15,21 @@ const GUTTER: float = 3.0
 
 var _icon_nodes: Array[Control] = []  # pooled TextureRect/ColorRect, reused across refreshes
 
+# Shared 1x1-white texture for icon-less entries — a TextureRect with texture == null draws
+# NOTHING at all regardless of modulate (bugfix: the old fallback path set tr.texture = null and
+# relied on modulate alone to show a "tinted placeholder square", which is invisible in practice —
+# every id with no icons/status/ art yet, e.g. race_bonus/weapon_mastery/tactician/psycho_adv here
+# and every enemy condition in enemy_inspect.gd's Inspect Panel entries, silently rendered as
+# nothing). Solid white so modulate's tint is the only thing that shows through.
+static var _fallback_tex: ImageTexture
+
+static func _get_fallback_tex() -> ImageTexture:
+	if _fallback_tex == null:
+		var img := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+		img.fill(Color.WHITE)
+		_fallback_tex = ImageTexture.create_from_image(img)
+	return _fallback_tex
+
 func refresh(entries: Array) -> void:
 	while _icon_nodes.size() < entries.size():
 		_icon_nodes.append(_make_icon_node())
@@ -34,7 +49,7 @@ func refresh(entries: Array) -> void:
 				tr.texture = load(icon_path)
 				tr.modulate = Color.WHITE
 			else:
-				tr.texture = null
+				tr.texture = _get_fallback_tex()
 				tr.modulate = entry.get("fallback_color", Color.WHITE)
 
 func _make_icon_node() -> Control:

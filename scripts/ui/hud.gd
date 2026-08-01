@@ -142,6 +142,7 @@ func _ready() -> void:
 	GameState.player_exp_changed.connect(_on_player_exp_changed)
 	GameState.player_leveled_up.connect(_on_player_leveled_up)
 	GameState.subclass_choice_required.connect(_on_subclass_choice_required)
+	GameState.invocation_choice_required.connect(_on_invocation_choice_required)
 	GameState.player_died.connect(_on_player_died)
 	GameState.player_won.connect(_on_player_won)
 	GameState.combat_message.connect(_on_combat_message)
@@ -484,6 +485,10 @@ func _on_class_chosen(cls: Stats.CharacterClass) -> void:
 	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/classes/Barbarian/idle_1.png")
 	portrait.texture_normal = load(path)
 	_update_hit_dice_label()
+	# class_chosen re-fires from character_summary.gd's final confirm, right after class_selected
+	# is set true — this is the first point in the Custom-path onboarding chain it's safe to spawn
+	# the Invocation picker for a fresh Warlock's level-1 grant (see _on_invocation_choice_required).
+	_on_invocation_choice_required()
 
 func _on_gold_changed(new_amount: int) -> void:
 	if _gold_label == null:
@@ -561,6 +566,23 @@ func _on_subclass_choice_required() -> void:
 	if GameState.subclass_picker_open:
 		return
 	var picker = load("res://scripts/ui/subclass_select.gd").new()
+	get_tree().root.add_child(picker)
+
+func _on_invocation_choice_required() -> void:
+	# Warlock Eldritch Invocation slot(s) opened (level 1 grant, or a later level-up threshold).
+	# Guarded on class_selected — the level-1 grant fires from _give_warlock_starting_items()
+	# mid-character-creation, well before the Custom-path onboarding chain (point buy/background/
+	# race/cantrip/summary) finishes; spawning here immediately would collide with those blocking
+	# overlays. character_summary.gd's final confirm re-emits class_chosen right after setting
+	# class_selected = true, which is what actually triggers the first pick for a fresh character —
+	# see the class_chosen connection below.
+	if not GameState.class_selected:
+		return
+	if GameState.warlock_invocation_slots_pending <= 0:
+		return
+	if GameState.invocation_picker_open:
+		return
+	var picker = load("res://scripts/ui/invocation_picker.gd").new()
 	get_tree().root.add_child(picker)
 
 func _on_player_died() -> void:

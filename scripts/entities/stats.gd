@@ -1036,6 +1036,13 @@ func apply_class_defaults() -> void:
 			check_prof_cha = true
 			proficient_simple_weapons = true
 			proficient_light_armor = true
+			# Full-caster role (CLASS_ROLE above) — CHA-based, Pact Magic (PactSlotPool: few slots,
+			# always at the highest available level, short-rest recharge instead of long-rest) —
+			# see scripts/entities/CLAUDE.md's "Warlock class".
+			caster = SpellcasterState.new()
+			caster.spellcasting_ability = "CHA"
+			caster.slot_pool = PactSlotPool.new()
+			caster.slot_pool.owner_stats = self
 	current_hp = max_hp
 	# Barbarian and Monk start unarmored — apply unarmored defense formulas.
 	recalc_ac(false)

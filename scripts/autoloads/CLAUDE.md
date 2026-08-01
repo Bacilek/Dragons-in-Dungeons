@@ -13,13 +13,20 @@ current_rager_form, current_sleeper_form)`. `GameState.talent_icon_path(id, rank
 1-line delegator to it — every other file already only ever called that function, never the dicts
 directly, so no other call site anywhere needed to change. Second piece: `equip_requirements.gd`
 (`EquipRequirements`) holds the pure equip-gating checks — `can_equip_shield(item, stats,
-equipment)`, `can_equip_armor(item, stats)`, `armor_change_turns(new_item, old_item)`, and the
+equipment)`, `can_equip_armor(item, stats)`, `can_equip_weapon(item, stats)`,
+`armor_change_turns(new_item, old_item)`, and the
 `ARMOR_CHANGE_TURNS` table itself. `GameState.can_equip_shield()`/`can_equip_armor()`/
-`_armor_change_turns()` are 1-line delegators; `GameState.ARMOR_CHANGE_TURNS` is kept as a const
+`can_equip_weapon()`/`_armor_change_turns()` are 1-line delegators; `GameState.ARMOR_CHANGE_TURNS` is kept as a const
 alias (`= EquipRequirements.ARMOR_CHANGE_TURNS`) since `ArmorTooltip.build()` reads it directly —
 same "no external call site needs to change" bar as the icon extraction. The log-emitting wrappers
-(`log_shield_equip_blocked()`/`log_armor_equip_blocked()`) stayed on `GameState` since they need
+(`log_shield_equip_blocked()`/`log_armor_equip_blocked()`/`log_weapon_equip_blocked()`) stayed on `GameState` since they need
 its `combat_message` signal, which a pure static-func class deliberately doesn't have access to.
+`can_equip_weapon(item, stats)` hard-blocks equipping a `weapon_category` "Simple"/"Martial" weapon
+(into Main Hand, Ranged, OR Off-hand) without the matching `Stats.proficient_simple_weapons`/
+`proficient_martial_weapons` flag — checked at every equip entry point (`GameState.equip()`,
+`move_item()`, and `inventory_overlay.gd`'s `_fits_slot()` drag-preview gate), same hard-block
+shape as `can_equip_shield()` (unlike the attack-roll proficiency bonus in
+`CombatMath.weapon_prof_bonus()`, which only drops a bonus rather than blocking the equip).
 Third piece: `talent_tiers.gd` (`TalentTiers`) holds `TIER_LEVEL_RANGES` +
 `tier_for_level(lv)`/`tier_unlocked(tier, tier2_unlocked, tier3_selected_class, character_level)`
 — `GameState.tier_for_level()`/`tier_unlocked()` are 1-line delegators, `GameState.

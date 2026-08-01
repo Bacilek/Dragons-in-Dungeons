@@ -93,7 +93,13 @@ Dragonborn"`) via `build_bbcode()`'s own `id == "race_bonus"` special case (same
 `concentration`'s dynamic spell-name title). See `scripts/entities/CLAUDE.md`'s per-race sections
 for the mechanical detail this tooltip text summarizes. `StatusTray` pools `TextureRect` icon nodes
 (`ignore_texture_size = true` per the rule above), tints them with `fallback_color` when
-`icon_path` doesn't resolve via `ResourceLoader.exists()` (no separate `ColorRect` fallback type),
+`icon_path` doesn't resolve via `ResourceLoader.exists()` (no separate `ColorRect` fallback type —
+**bugfix**: the fallback used to set `tr.texture = null`, which draws nothing at all regardless of
+`modulate` — a `TextureRect` with no texture has nothing to tint. `StatusTray._get_fallback_tex()`
+is a shared 1×1-white `ImageTexture`, built once and reused, so an icon-less entry now actually
+renders as a solid tinted square instead of silently nothing; this was invisible for every
+still-art-less entry, including every enemy-condition entry the Inspect Panel shows via
+`EnemyInspect.status_entries()` — see `scripts/entities/CLAUDE.md`'s "Conditions" section),
 and emits `icon_hovered(id)`/`icon_unhovered()` on mouse enter/exit. `hud.gd` connects these to
 reuse the existing qbar-tooltip pair (`_qbar_tooltip`/`_qbar_tooltip_rtl`) via
 `_on_status_tray_icon_hovered(id)`, which pulls description text from `status_tooltips.gd`
@@ -153,6 +159,40 @@ Implemented in `compass.gd` (`Compass` component, see above). Hidden at floor st
 Triggered by `GameState.stairs_discovered` signal (emitted by `DungeonFloor.update_fog()` or See All debug).
 
 ---
+
+## Inspect Panel (`inspect_panel.gd`)
+CanvasLayer, layer = 25. `InspectPanel` (`class_name`), spawned by `PlayerActions.
+do_inspect()`/`_open_inspect_panel()` (`scripts/entities/player_actions.gd`) on every RMB/Ctrl+LMB
+Inspect — replaced the old plain chat-log line for every inspect target (enemy, revealed trap,
+floor item, tile). SPD-style full-value summary card, deliberately **non-blocking**: no
+`GameState.*_open` input-gate flag, no full-screen dim — it's a read-only glance, not a decision,
+so gameplay keeps running underneath. Closes on Esc, its own Close button, or automatically the
+next time the player takes any real or free action (`TurnManager.player_turn_started`, which fires
+on both — see `scripts/autoloads/CLAUDE.md`). Re-inspecting replaces the currently-open panel
+(`PlayerActions._inspect_panel` tracks the live instance, `queue_free()`s the old one first).
+
+**Enemy view** (`open_enemy(enemy)`): name (+ `[BOSS]` tag) header, AC subtitle, a portrait
+(the enemy's own `AnimatedSprite2D`'s first `"idle"` frame, blank if none), an HP bar
+(green/yellow/red by ratio), an auto-generated one-line description ("Medium Undead, CR 1/4" —
+`EnemyInspect.description_line()`, `scripts/entities/enemy_inspect.gd`), and a live status-icon
+row that **reuses `status_tray.gd` (`StatusTray`) verbatim** — same pooled-`TextureRect`/
+hover-emits-id contract as the HUD's own buff tray, just fed a per-enemy entry list instead of
+`GameState.player_stats`. `EnemyInspect.status_entries(enemy)` aggregates every currently-active
+enemy-side condition into that entry shape: Shocked (Shocking Grasp), Jolted (Witch Bolt target),
+Poisoned (the `poisoned_condition` condition), Outlined (Faerie Fire), Prone, Incapacitated,
+Frightened, Paralyzed, and Blinded (`GameState.is_blinded(enemy.grid_pos)`, positional) — see
+`scripts/entities/CLAUDE.md`'s "Conditions" section for what each one mechanically does. Hover
+text comes from `EnemyInspect.build_bbcode(id)` — a `TITLES`/`get_text()`/`build_bbcode()` static
+helper mirroring `status_tooltips.gd`'s own "UI copy, not game data" pattern, generalized to not
+require a live `GameState.player_stats` reference (an `Enemy`'s own fields are read directly by
+`status_entries()` instead). God Mode appends the old Dmg/EXP numbers as a plain gray chat-log
+line alongside opening the panel (kept as text, not worth its own panel field).
+
+**Simple view** (`open_simple(title, subtitle, desc)`): a revealed trap, a floor item stack (name
++ "on the floor (+N more)" + the `Item.description` field), or a tile (name + a short flavor
+line) — no portrait/HP bar/status row, just title + subtitle + description text sized to an
+estimated line count (character-length heuristic, not `RichTextLabel.get_content_height()`, since
+that needs a layout pass to settle and would read stale immediately after setting `.text`).
 
 ## Talent picker (`talent_picker.gd`)
 CanvasLayer, layer = 25. Opened by `PlayerActions.open_talent_picker()` (`scripts/entities/player_actions.gd`) via **T key** (bypasses phase gate). Does NOT auto-open on level-up.

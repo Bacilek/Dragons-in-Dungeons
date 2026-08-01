@@ -83,9 +83,12 @@ func prepared_leveled_count() -> int:
 # How many cantrips this caster can know at once, by class + character level. Wizard: 3 (levels
 # 1-3), 4 (levels 4-9), 5 (levels 10+) — direct owner spec. Not derived generically since other
 # classes are expected to get their own progression later; add a branch here when they do.
+# Warlock reuses the exact same numbers (real 5e Warlock cantrip cap differs slightly, 2/3/4, but
+# this project already takes this "reuse Wizard's shape" liberty elsewhere — see scripts/entities/
+# CLAUDE.md's "Warlock class").
 func cantrip_max(stats: Stats) -> int:
 	match stats.character_class:
-		Stats.CharacterClass.WIZARD:
+		Stats.CharacterClass.WIZARD, Stats.CharacterClass.WARLOCK:
 			if stats.character_level >= 10:
 				return 5
 			if stats.character_level >= 4:

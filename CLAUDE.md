@@ -17,7 +17,7 @@ After every feature, fix, or refactor that changes architecture, adds a system, 
 
 Open `project.godot` in **Godot 4.6 (Mono build)**. Press **F5** to run. No CLI build commands.
 
-**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait (also forfeits Extra Attack). **R = open rest menu** (short/long tabs). RMB on world (no tool primed) = instant Inspect on the clicked tile/enemy; a quick second RMB (within 0.5s) instead performs a full-area Search. **Ctrl+left-click anywhere = instant Inspect** (same info as RMB Inspect, just via Ctrl+LMB instead). 1–9 = use active quickbar slot 0–8. **Tab = toggle between item bar and ability bar**. I = open inventory. **O = open Wizard Spellbook** (choose prepared leveled spells; no-op for non-casters). Left-click enemy = chase+attack (melee). Shift+left-click enemy/tile = ranged attack (if ranged weapon equipped and in range). Alt+left-click enemy/tile = cast whichever spell is in the Special quick-cast slot (if one is assigned — see Spellbook overlay). Left-click floor = pathfind. LMB (click, not drag) on a Weapon/Armor item in the quickbar or bag = equip it. RMB on any other item (quickbar or bag) = its non-equip interaction(s), always including Throw and Drop (drops the item's whole stack on your current tile, costs a turn) — pops a small clickable menu (see `scripts/items/CLAUDE.md`'s "Item interaction menu"). RMB on food = same menu (food's own eat action does nothing useful today, so it's just Throw/Drop). Esc = cancel throw/tool. **Thief Tools keyboard**: prime via quickbar hotkey → WASD into open/closed door = lock attempt; WASD into locked door = pick/unlock attempt; RMB while primed also completes the same action without moving. Note: F key no longer opens doors.
+**Controls:** Arrow keys/WASD = move (cardinal). Q/E/Z/C or Numpad diagonals = diagonal move. Space/./Numpad5 = wait (also forfeits Extra Attack). **R = open rest menu** (short/long tabs). RMB on world (no tool primed) = instant Inspect on the clicked tile/enemy — opens a full-value Inspect Panel (portrait/HP bar/AC/status icons for an enemy, a title+description card for anything else), see `scripts/ui/CLAUDE.md`'s "Inspect Panel"; a quick second RMB (within 0.5s) instead performs a full-area Search. **Ctrl+left-click anywhere = instant Inspect** (same panel as RMB Inspect, just via Ctrl+LMB instead). 1–9 = use active quickbar slot 0–8. **Tab = toggle between item bar and ability bar**. I = open inventory. **O = open Wizard Spellbook** (choose prepared leveled spells; no-op for non-casters). Left-click enemy = chase+attack (melee). Shift+left-click enemy/tile = ranged attack (if ranged weapon equipped and in range). Alt+left-click enemy/tile = cast whichever spell is in the Special quick-cast slot (if one is assigned — see Spellbook overlay). Left-click floor = pathfind. LMB (click, not drag) on a Weapon/Armor item in the quickbar or bag = equip it. RMB on any other item (quickbar or bag) = its non-equip interaction(s), always including Throw and Drop (drops the item's whole stack on your current tile, costs a turn) — pops a small clickable menu (see `scripts/items/CLAUDE.md`'s "Item interaction menu"). RMB on food = same menu (food's own eat action does nothing useful today, so it's just Throw/Drop). Esc = cancel throw/tool. **Thief Tools keyboard**: prime via quickbar hotkey → WASD into open/closed door = lock attempt; WASD into locked door = pick/unlock attempt; RMB while primed also completes the same action without moving. Note: F key no longer opens doors.
 
 ## Architecture
 
@@ -64,7 +64,7 @@ Opportunity Attacks (movement out of threat range provokes a free reactive melee
 Stealth & Surprise Attacks (5e-style Stealth-vs-Passive-Perception check deciding whether a SLEEPING/STATIONARY/ROAMING enemy notices the player, rolled once per real player turn; corrected surprise-ADV trigger table; debug-only "Show Stealth Checks" reveal toggle): **`scripts/entities/CLAUDE.md`**'s "Stealth & Surprise Attacks" section.
 
 ### D&D stats (`scripts/entities/stats.gd`)
-`Stats` extends `Resource`. `modifier(score)` = `floor((score-10)/2)`. `apply_class_defaults()` sets scores, derives `max_hp`, and calls `recalc_ac(has_armor)`. Playable classes: BARBARIAN (d12, STR/CON check prof), RANGER (d10, STR/DEX), WIZARD (d6, INT/WIS), MONK (d8, STR/DEX). Barbarian and Monk both get unarmored-defense AC formulas — see `scripts/entities/CLAUDE.md` for the full combat-roll table, proficiency scaling, and class-specific mechanics. **8 more classes (BARD, CLERIC, DRUID, FIGHTER, PALADIN, ROGUE, SORCERER, WARLOCK) have a real base D&D stat block** (ability scores/HP/check-and-weapon-and-armor proficiency) in `apply_class_defaults()` — but are **not yet selectable or playable** (no character-select/starting-items/spellcasting wiring): `scripts/entities/CLAUDE.md`'s "Locked classes — base D&D stat blocks only" section.
+`Stats` extends `Resource`. `modifier(score)` = `floor((score-10)/2)`. `apply_class_defaults()` sets scores, derives `max_hp`, and calls `recalc_ac(has_armor)`. Playable classes: BARBARIAN (d12, STR/CON check prof), RANGER (d10, STR/DEX), WIZARD (d6, INT/WIS), MONK (d8, STR/DEX), and **WARLOCK** (d8, WIS/CHA — CHA-based Pact Magic spellcasting + Eldritch Invocations, see `scripts/entities/CLAUDE.md`'s "Warlock class" section). Barbarian and Monk both get unarmored-defense AC formulas — see `scripts/entities/CLAUDE.md` for the full combat-roll table, proficiency scaling, and class-specific mechanics. **7 more classes (BARD, CLERIC, DRUID, FIGHTER, PALADIN, ROGUE, SORCERER) have a real base D&D stat block** (ability scores/HP/check-and-weapon-and-armor proficiency) in `apply_class_defaults()` — but are **not yet selectable or playable** (no character-select/starting-items/spellcasting wiring): `scripts/entities/CLAUDE.md`'s "Locked classes — base D&D stat blocks only" section.
 
 ### Character select
 The very first screen of a new run is `scripts/ui/character_select.gd` (`hud.gd` spawns it, not
@@ -263,9 +263,11 @@ Hunger has been removed. `Alt` opens a tabbed rest panel (`scripts/ui/short_rest
   character/class prefix and no `_anim_f` suffix, since the folder itself already identifies the
   character):
   - **`classes/`** — every player class, implemented or not: `Barbarian/`, `Ranger/`, `Wizard/`,
-    `Monk/` (the 4 real, selectable classes — `Player.KNIGHT_PATH`/`character_select.gd`'s/
-    `class_select.gd`'s/`character_summary.gd`'s own `CHAR_PATH` all point here) plus
-    `Bard/`, `Cleric/`, `Druid/`, `Fighter/`, `Rogue/`, `Warlock/` (locked/not-yet-implemented
+    `Monk/`, `Warlock/` (the 5 real, selectable classes — `Player.KNIGHT_PATH`/`character_select.gd`'s/
+    `class_select.gd`'s/`character_summary.gd`'s own `CHAR_PATH` all point here — Warlock's own
+    `_setup_animations()` case was added alongside Ranger/Wizard/Monk's, previously falling through
+    to the Barbarian default) plus
+    `Bard/`, `Cleric/`, `Druid/`, `Fighter/`, `Rogue/` (locked/not-yet-implemented
     classes with sourced art but no gameplay — see "Locked-class art" below). Paladin/Sorcerer have
     no folder yet.
   - **`enemies/`** — every enemy/boss identity: `BigDemon/`, `Necromancer/`, `Goblin/` (shared by
@@ -303,17 +305,21 @@ Hunger has been removed. `Alt` opens a tabbed rest panel (`scripts/ui/short_rest
   holds the idle pose, no swing frame) until a real matching hit frame is sourced, at which point
   flip that class back into `has_real_hit_art` and drop the `hit_1.png` placeholder file.
   **Locked-class art (sourced, not yet implemented classes)**: `classes/Bard/`, `Cleric/`, `Druid/`,
-  `Fighter/`, `Rogue/`, `Warlock/` each hold a real `idle_1..4.png`/`run_1..4.png` set now (sourced
+  `Fighter/`, `Rogue/` each hold a real `idle_1..4.png`/`run_1..4.png` set now (sourced
   from Superdark's CC0 16×16 packs, same style/size as the base 0x72 tileset), read by
   `scripts/ui/class_select.gd`'s `_build_locked_card()` to show a dimmed portrait instead of a "?"
-  glyph on that class's still-locked tile. None of these six are wired into
+  glyph on that class's still-locked tile. None of these five are wired into
   `Stats.CharacterClass`/`_setup_animations()`'s match statement or any gameplay path — the art
   exists, the class mechanics don't, same "Coming Soon" status as before. **Paladin/Sorcerer still
-  have no folder/art** and keep the plain "?" fallback. Three of the six (`Warlock/`, `Cleric/`,
-  `Druid/`) only had a single shared 4-frame "idle+walk" animation in the sourced pack (no separate
-  walk cycle) — their `idle_N.png`/`run_N.png` are therefore byte-identical duplicates of the same 4
-  frames, not two distinct animations; re-export a real run cycle later if that becomes worth doing.
-  None of the six have a `hit_N.png` — harmless today since nothing loads one for a non-implemented
+  have no folder/art** and keep the plain "?" fallback. **Warlock's `classes/Warlock/` folder is no
+  longer in this locked-art group** — it's a real, implemented class now (`scripts/entities/
+  CLAUDE.md`'s "Warlock class"), same "sourced from the same CC0 pack, single shared 4-frame
+  idle+walk animation (no separate run cycle, `idle_N.png`/`run_N.png` are byte-identical
+  duplicates)" art as before, and it still has **no `hit_N.png`** — `_setup_animations()`'s
+  `has_real_hit_art` list stays `["Wizard", "Monk"]` (Warlock deliberately excluded), so it plays a
+  static idle frame on attack instead, same placeholder treatment as Barbarian/Ranger. `Cleric/`/
+  `Druid/` (still locked) share the same single-shared-4-frame-animation trait as Warlock's own art
+  did. None of the remaining five locked classes have a `hit_N.png` — harmless today since nothing loads one for a non-implemented
   class.
 - `sprites/tiles/` — `floor/1.png`, `wall/mid.png` (**not** `wall/top_mid.png`, which sits unused in `_unused/`), `floor_stairs.png`, `hole.png`, `water_rock_dirt.png`, `grass.png`. Same snake_case + `_unused/` convention as `sprites/items/` above; numbered/variant tile sets (`floor/`, `wall/`) grouped into their own subfolder, one-off tiles kept flat.
 - `sprites/objects/` — props (crate, doors/, etc.), same snake_case + `_unused/` convention as `sprites/items/` above.

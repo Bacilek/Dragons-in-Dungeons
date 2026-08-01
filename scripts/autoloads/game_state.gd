@@ -41,6 +41,9 @@ signal subclass_choice_required
 # to run the Tier 2 unlock gate; future systems can also connect.
 signal boss_defeated(boss_id: String)
 signal known_masteries_changed
+# Fired when a Warlock's Eldritch Invocation schedule opens a new pending slot.
+# hud.gd listens and spawns scripts/ui/invocation_picker.gd — GameState never instantiates UI.
+signal invocation_choice_required
 signal gold_changed(new_amount: int)
 signal long_rest_completed()
 # Bruiser R3: fired instead of player_died when the revive triggers. player.gd connects this to
@@ -169,6 +172,15 @@ const TIER2_BASE_ABILITY_ID: Dictionary = {
 	"Wild Heart": "animal_form",
 	"Zealot": "zealot_strike",
 }
+# Warlock Eldritch Invocations (scripts/entities/CLAUDE.md's "Warlock class") — cumulative
+# known-count schedule, permanent picks (no respec, matching talent investment permanence).
+# Points earned before enough level-appropriate content exists sit pending (same precedent as
+# Tier-2 talent points pending on the boss-kill gate).
+var warlock_invocations_known: Array[String] = []
+var warlock_invocation_slots_pending: int = 0
+var invocation_picker_open: bool = false  # blocks ALL player input while invocation_picker.gd is visible
+const WARLOCK_INVOCATION_SCHEDULE: Dictionary = {1: 1, 2: 3, 5: 5, 7: 6, 9: 7, 12: 8, 15: 9, 18: 10}
+
 var short_rest_active: bool = false
 var short_rest_turns_remaining: int = 0
 var short_rest_pending_heal: int = 0
@@ -323,6 +335,9 @@ func start_new_run() -> void:
 	spell_learn_picker_open = false
 	spellbook_open = false
 	mastery_learn_pending = false
+	invocation_picker_open = false
+	warlock_invocations_known = []
+	warlock_invocation_slots_pending = 0
 	light_source_pos = Vector2i(-1, -1)
 	light_source_item = null
 	talent_points = {1: 0, 2: 0, 3: 0, 4: 0}
@@ -510,6 +525,8 @@ func reset_for_class_reselect() -> void:
 	special_slot_spell_id = ""
 	pending_point_buy_scores = {}
 	pending_background_bonus = {}
+	warlock_invocations_known = []
+	warlock_invocation_slots_pending = 0
 	_give_starting_items()
 
 # Wipes a Wizard's onboarding cantrip/starting-spell pick (known/prepared spells, their ability-bar
@@ -542,6 +559,8 @@ func give_class_starting_items() -> void:
 			_give_monk_starting_items()
 		Stats.CharacterClass.WIZARD:
 			_give_wizard_starting_items()
+		Stats.CharacterClass.WARLOCK:
+			_give_warlock_starting_items()
 
 # One-time, permanent race choice — called by race_select.gd's confirm button, fired between
 # class selection and the Mastery Picker. Mirrors choose_subclass()'s shape: sets the choice on
@@ -1052,6 +1071,40 @@ func _give_wizard_starting_items() -> void:
 	equipment["hand2"] = torch
 	recalculate_stats()
 	equipment_changed.emit()
+
+## Warlock's starting gear + Pact Magic slot seeding — mirrors _give_ranger_starting_items()'s
+## half-caster pattern (see scripts/entities/CLAUDE.md's "Warlock class"): a Dagger (Main Hand) +
+## Leather Armor, then seeds the freshly-built PactSlotPool the same way Wizard's own
+## BUGFIX-seeding comment above does (slot_pool.remaining otherwise stays {} until the first
+## short/long rest or level-up).
+func _give_warlock_starting_items() -> void:
+	equipment["melee"] = _build_ranger_dagger()
+
+	var armor := Item.new()
+	armor.item_name = "Leather Armor"
+	armor.item_type = Item.Type.ARMOR
+	armor.icon_path = "res://sprites/items/materials/plate/iron.png"
+	armor.description = ""
+	armor.armor_category = Item.ArmorCategory.LIGHT
+	armor.base_ac = 11
+	armor.dex_cap = -1
+	armor.gold_value = 10
+	equipment["armor"] = armor
+
+	recalculate_stats()
+	equipment_changed.emit()
+
+	if player_stats.caster != null and player_stats.caster.slot_pool != null:
+		player_stats.caster.slot_pool.remaining = player_stats.caster.slot_pool.max_slots().duplicate()
+		spell_slots_changed.emit()
+
+	# Level 1's own Eldritch Invocation slot — gain_exp()'s threshold-crossing grant only fires on
+	# a level-UP (old_level < N and new >= N), which never covers the character's starting level 1
+	# itself. Idempotent (character_creation_snapshot's "Try Again" replay calls this again).
+	if warlock_invocation_slots_pending == 0 and warlock_invocations_known.is_empty():
+		warlock_invocation_slots_pending = WARLOCK_INVOCATION_SCHEDULE.get(1, 0)
+		if warlock_invocation_slots_pending > 0:
+			invocation_choice_required.emit()
 
 ## Wizard's one-time starting level-1 spell pick (cantrip_select.gd's round 2, or a premade
 ## hero's fixed "spell1" key in character_select.gd) — learns AND prepares it in one call, since
@@ -1653,7 +1706,10 @@ func is_blinded(pos: Vector2i) -> bool:
 ## 1-tile radius regardless of every other bonus, INCLUDING darkvision — a blinded creature is
 ## blind, darkvision doesn't help.
 func effective_fov_radius(pos: Vector2i) -> int:
-	if is_blinded(pos):
+	# Devil's Sight (Eldritch Invocation): ignores the vision-collapse-to-1 penalty specifically
+	# from standing inside Fog Cloud/Darkness — every other Blinded source (and every other
+	# combat-roll ADV/DISADV effect of being Blinded) still applies normally.
+	if is_blinded(pos) and not knows_invocation("devils_sight"):
 		return 1
 	return DungeonFloor.FOV_RADIUS + fov_radius_bonus + celestial_radiance_fov_bonus() + player_stats.darkvision_bonus + (1 if has_lit_torch_equipped() else 0)
 
@@ -1919,6 +1975,11 @@ func _on_short_rest_completed() -> void:
 		owtn.uses_remaining = 1
 		ability_bar_changed.emit()
 		game_log("[color=lime]One with Nature: companion charge refreshed.[/color]")
+	# Warlock Pact Magic — recharges on a completed SHORT rest, not long rest (the opposite of
+	# every other caster's slot pool) — see scripts/items/pact_slot_pool.gd.
+	if player_stats.caster != null and player_stats.caster.slot_pool is PactSlotPool:
+		player_stats.caster.slot_pool.on_short_rest()
+		spell_slots_changed.emit()
 
 ## Never Back Down (Zealot): +1/+2/+4 max Hit Dice by rank (non-cumulative — matches every other
 ## Barbarian talent's "higher rank replaces, doesn't stack with" convention).
@@ -2071,6 +2132,10 @@ func gain_exp(amount: int) -> void:
 				_grant_tiefling_legacy_spell(_tiefling_legacy_spell_for(player_stats.race_variant, 3))
 			if old_level < 5 and player_stats.character_level >= 5:
 				_grant_tiefling_legacy_spell(_tiefling_legacy_spell_for(player_stats.race_variant, 5))
+		# Eldritch Invocations: schedule-driven pending-slot grant (see WARLOCK_INVOCATION_SCHEDULE
+		# above) — scripts/entities/CLAUDE.md's "Warlock class".
+		if player_stats.character_class == Stats.CharacterClass.WARLOCK:
+			_grant_invocation_slots_for_level(old_level, player_stats.character_level)
 		# Celestial Revelation unlocks the instant character_level reaches 3 (same
 		# "give_race_starting_items() re-run is idempotent" pattern as Dragonborn's Draconic Flight
 		# unlocking at level 5).
@@ -2189,6 +2254,13 @@ func log_shield_equip_blocked(item: Item) -> void:
 	else:
 		combat_message.emit("[color=red]Cannot equip a Shield while wielding a two-handed weapon.[/color]")
 
+# ── Weapons (Item.Type.WEAPON, category proficiency) ────────────────────────────
+func can_equip_weapon(item: Item) -> bool:
+	return EquipRequirements.can_equip_weapon(item, player_stats)
+
+func log_weapon_equip_blocked(item: Item) -> void:
+	combat_message.emit("[color=red]You lack proficiency with %s weapons.[/color]" % item.weapon_category.to_lower())
+
 # ── Body armor (Item.Type.ARMOR, is_shield == false) ───────────────────────────
 func can_equip_armor(item: Item) -> bool:
 	return EquipRequirements.can_equip_armor(item, player_stats)
@@ -2305,6 +2377,9 @@ func equip(item: Item, slot_name: String = "") -> void:
 		return
 	if item.is_shield and not can_equip_shield(item):
 		log_shield_equip_blocked(item)
+		return
+	if item.item_type == Item.Type.WEAPON and not can_equip_weapon(item):
+		log_weapon_equip_blocked(item)
 		return
 
 	if slot_name == "armor":
@@ -2483,6 +2558,14 @@ func move_item(src: String, src_idx: int, src_slot: String,
 		return
 	var src_item: Item  = _get_slot_item(src, src_idx, src_slot)
 	var dest_item: Item = _get_slot_item(dest, dest_idx, dest_slot)
+	# Weapon category proficiency (Simple/Martial) — mirrors can_equip_shield()'s own hard-block
+	# shape below. Melee, Ranged, AND Off-hand (dual-wield) all gate on it — an unproficient
+	# character can't equip the weapon into any hand.
+	var entering_weapon: bool = dest == "equipment" and dest_slot in ["melee", "ranged", "hand2"] \
+		and src_item != null and src_item.item_type == Item.Type.WEAPON
+	if entering_weapon and not can_equip_weapon(src_item):
+		log_weapon_equip_blocked(src_item)
+		return
 	# Body armor (Item.Type.ARMOR, non-shield) landing in or leaving "armor" takes real turns
 	# instead of the instant swap below — see begin_armor_change(). Neither item is physically
 	# moved here; complete_armor_change() does that once the turn countdown finishes.
@@ -3125,6 +3208,118 @@ func invest_talent(id: String) -> void:
 	AudioManager.play("talent_point_spent")
 	talent_invested.emit(id, new_rank)
 	talent_points_changed.emit(talent_points_available)
+
+# ── Eldritch Invocations (Warlock only) ───────────────────────────────────────
+# scripts/items/eldritch_invocation.gd's EldritchInvocation is a simpler, pick-once cousin of
+# Talent — no ranks. Built in code like Talent/SpellDb, no .tres files, via a static func rather
+# than a const (a Resource .new() isn't a valid const expression) — mirrors SpellDb.get_spell()'s
+# "build fresh every call" convention rather than caching one shared array. 8 entries for this pass
+# (levels 12/15/18's schedule slots sit pending with nothing yet to spend them on — same
+# Tier-2-pending precedent as talent_points). See scripts/entities/CLAUDE.md's "Warlock class".
+static func eldritch_invocation_list() -> Array[EldritchInvocation]:
+	var list: Array[EldritchInvocation] = []
+	var defs: Array = [
+		{"id": "agonizing_blast", "name": "Agonizing Blast", "lvl": 1,
+			"desc": "Add your Charisma modifier to the damage of your Eldritch Blast hits."},
+		{"id": "repelling_blast", "name": "Repelling Blast", "lvl": 1,
+			"desc": "A creature you hit with Eldritch Blast is pushed 1 tile directly away from you."},
+		{"id": "armor_of_shadows", "name": "Armor of Shadows", "lvl": 1,
+			"desc": "Cast Mage Armor on yourself at will, without expending a spell slot."},
+		{"id": "fiendish_vigor", "name": "Fiendish Vigor", "lvl": 1,
+			"desc": "Cast False Life on yourself at will, without expending a spell slot."},
+		{"id": "eldritch_sight", "name": "Eldritch Sight", "lvl": 1,
+			"desc": "Cast Detect Magic at will, without expending a spell slot."},
+		{"id": "devils_sight", "name": "Devil's Sight", "lvl": 5,
+			"desc": "You ignore the vision penalty of standing inside a Fog Cloud or Darkness zone."},
+		{"id": "beguiling_defenses", "name": "Beguiling Defenses", "lvl": 5,
+			"desc": "You have Advantage on saving throws to avoid or end the Frightened condition."},
+		{"id": "ascendant_step", "name": "Ascendant Step", "lvl": 9,
+			"desc": "Cast Misty Step on yourself at will, without expending a spell slot."},
+	]
+	for d: Dictionary in defs:
+		var inv := EldritchInvocation.new()
+		inv.invocation_id = d["id"]
+		inv.invocation_name = d["name"]
+		inv.description = d["desc"]
+		inv.min_level = d["lvl"]
+		list.append(inv)
+	return list
+
+func eldritch_invocations_eligible() -> Array[EldritchInvocation]:
+	var out: Array[EldritchInvocation] = []
+	for inv: EldritchInvocation in eldritch_invocation_list():
+		if player_stats.character_level >= inv.min_level and not warlock_invocations_known.has(inv.invocation_id):
+			out.append(inv)
+	return out
+
+func knows_invocation(id: String) -> bool:
+	return warlock_invocations_known.has(id)
+
+## Armor of Shadows/Fiendish Vigor/Eldritch Sight/Ascendant Step — genuinely unlimited at-will
+## casts (unlike the Elf/Tiefling lineage's proficiency_bonus-per-long-rest counter), gated purely
+## on knowing the matching invocation. Checked at every chokepoint the Elf/Tiefling free-cast check
+## already is (begin_cast()'s slot-availability gate, _cast_level_for(), _consume_slot()).
+const WARLOCK_INVOCATION_SPELL_GRANT: Dictionary = {
+	"mage_armor": "armor_of_shadows",
+	"false_life": "fiendish_vigor",
+	"detect_magic": "eldritch_sight",
+	"misty_step": "ascendant_step",
+}
+func warlock_invocation_free_cast(spell_id: String) -> bool:
+	var inv_id: String = WARLOCK_INVOCATION_SPELL_GRANT.get(spell_id, "")
+	return inv_id != "" and knows_invocation(inv_id)
+
+## Called by invocation_picker.gd's confirm — permanent, no respec.
+func learn_invocation(id: String) -> void:
+	if warlock_invocations_known.has(id):
+		return
+	var inv: EldritchInvocation = null
+	for i: EldritchInvocation in eldritch_invocation_list():
+		if i.invocation_id == id:
+			inv = i
+			break
+	if inv == null:
+		return
+	warlock_invocations_known.append(id)
+	warlock_invocation_slots_pending = maxi(0, warlock_invocation_slots_pending - 1)
+	match id:
+		"armor_of_shadows":
+			add_ability(_build_invocation_spell_ability("mage_armor", "armor_of_shadows"))
+		"fiendish_vigor":
+			add_ability(_build_invocation_spell_ability("false_life", "fiendish_vigor"))
+		"eldritch_sight":
+			add_ability(_build_invocation_spell_ability("detect_magic", "eldritch_sight"))
+		"ascendant_step":
+			add_ability(_build_invocation_spell_ability("misty_step", "ascendant_step"))
+		# Agonizing Blast / Repelling Blast / Devil's Sight / Beguiling Defenses are pure passive
+		# flags read directly via knows_invocation() at their trigger site (spell_effects.gd,
+		# GameState.is_heavily_obscured() callers, the Frightened save site) — no ability granted.
+	game_log("[color=cyan]You gain the %s invocation.[/color]" % inv.invocation_name)
+
+## An at-will free-cast Invocation grants an always-available ability-bar entry for an existing
+## spell — same "always prepared, outside known_spells/prepared_spells bookkeeping" shape as an
+## Elf/Tiefling lineage spell (see scripts/entities/CLAUDE.md's "Elf" section), just gated on
+## knows_invocation(invocation_id) instead of a free-cast-per-long-rest counter (genuinely
+## unlimited, per RAW).
+func _build_invocation_spell_ability(spell_id: String, invocation_id: String) -> Ability:
+	var ab: Ability = _build_spell_ability(spell_id)
+	ab.description += " (Invocation: at will, no spell slot.)"
+	return ab
+
+## Called from gain_exp()'s level-up block — grants any newly-opened schedule slots and, if any
+## opened, tells hud.gd to spawn the picker (invocation_choice_required).
+func _grant_invocation_slots_for_level(old_level: int, new_level: int) -> void:
+	var old_known: int = 0
+	var new_known: int = 0
+	for threshold: int in WARLOCK_INVOCATION_SCHEDULE:
+		if old_level >= threshold:
+			old_known = maxi(old_known, WARLOCK_INVOCATION_SCHEDULE[threshold])
+		if new_level >= threshold:
+			new_known = maxi(new_known, WARLOCK_INVOCATION_SCHEDULE[threshold])
+	var delta: int = new_known - old_known
+	if delta > 0:
+		warlock_invocation_slots_pending += delta
+		invocation_choice_required.emit()
 
 ## Weapon mastery selection (Mastery Picker, scripts/ui/mastery_picker.gd) —
 ## see docs/architecture/weapon-mastery-selection-design.md.

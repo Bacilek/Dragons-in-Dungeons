@@ -412,14 +412,16 @@ func _do_move(dest: Control) -> void:
 	if dest_src == "equipment" and not _fits_slot(_drag_item, dest_sname):
 		if dest_sname == "hand2" and _drag_item != null and _drag_item.is_shield:
 			GameState.log_shield_equip_blocked(_drag_item)
+		elif _drag_item != null and _drag_item.item_type == Item.Type.WEAPON and not GameState.can_equip_weapon(_drag_item):
+			GameState.log_weapon_equip_blocked(_drag_item)
 		return
 	GameState.move_item(_drag_src, _drag_src_idx, _drag_src_sname,
 						dest_src,  dest_idx,       dest_sname)
 
 func _fits_slot(item: Item, slot_name: String) -> bool:
 	match slot_name:
-		"melee":  return item.item_type == Item.Type.WEAPON and not item.is_ranged
-		"ranged": return item.item_type == Item.Type.WEAPON and item.is_ranged
+		"melee":  return item.item_type == Item.Type.WEAPON and not item.is_ranged and GameState.can_equip_weapon(item)
+		"ranged": return item.item_type == Item.Type.WEAPON and item.is_ranged and GameState.can_equip_weapon(item)
 		"armor":                   return item.item_type == Item.Type.ARMOR
 		# Off-hand: a Light melee weapon may only be dual-wielded here if Main Hand also holds
 		# a Light weapon (5e Two-Weapon Fighting rule); non-weapon items are always accepted.
@@ -433,6 +435,8 @@ func _fits_slot(item: Item, slot_name: String) -> bool:
 				return true
 			if item.is_torch:
 				return true
+			if not GameState.can_equip_weapon(item):
+				return false
 			var main_hand: Item = GameState.equipped_weapon
 			return not item.is_ranged and item.is_light and main_hand != null and main_hand.is_light
 		_:                         return false

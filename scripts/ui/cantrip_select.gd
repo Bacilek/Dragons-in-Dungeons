@@ -39,11 +39,18 @@ var _round: int = 1
 var _candidates: Array[String] = []
 var _back_btn: Button
 var _is_ranger: bool = false
+# Warlock (FULL_CASTER, mastery_cap() == 0 like Wizard — spawned by the same race_select.gd
+# branch): a single round, "pick 1 of 3" from SpellDb.WARLOCK_STARTER_CANTRIP_IDS via
+# GameState.choose_cantrip(), then closes straight to the summary screen — no round-2 level-1
+# spell pick (Warlock's leveled spells grow via the normal level-up spell-learn picker instead,
+# same as Ranger — see scripts/entities/CLAUDE.md's "Warlock class").
+var _is_warlock: bool = false
 
 func _ready() -> void:
 	layer = 25
 	GameState.cantrip_picker_open = true
 	_is_ranger = GameState.player_stats.character_class == Stats.CharacterClass.RANGER
+	_is_warlock = GameState.player_stats.character_class == Stats.CharacterClass.WARLOCK
 	# Wipes any previous cantrip/starting-spell pick from an earlier pass through this screen —
 	# covers both being re-opened fresh via character_summary.gd's "Take me back" and this
 	# instance's own round-2-back-to-round-1 rebuild (see _on_back()). No-op on a truly first-ever
@@ -53,6 +60,8 @@ func _ready() -> void:
 	if _is_ranger:
 		_round = RANGER_ROUND
 		_candidates = _roll_ranger_candidates()
+	elif _is_warlock:
+		_candidates = SpellDb.WARLOCK_STARTER_CANTRIP_IDS.duplicate()
 	else:
 		_candidates = SpellDb.STARTER_CANTRIP_IDS.duplicate()
 	_build_ui()
@@ -178,7 +187,7 @@ func _build_card(spell: Spell, pos: Vector2, card_size: Vector2) -> void:
 	card.add_child(blurb_lbl)
 
 func _on_chosen(spell_id: String) -> void:
-	if _round == 1:
+	if _round == 1 and not _is_warlock:
 		GameState.choose_cantrip(spell_id)
 		# Round 2: the fixed level-1 starting pair — reuse this same script/scene rather than a
 		# second file, just re-seed round/_candidates and rebuild.
@@ -194,7 +203,10 @@ func _on_chosen(spell_id: String) -> void:
 		_panel = null
 		_build_ui()
 		return
-	GameState.choose_starting_spell(spell_id)
+	if _is_warlock:
+		GameState.choose_cantrip(spell_id)
+	else:
+		GameState.choose_starting_spell(spell_id)
 	GameState.cantrip_picker_open = false
 	GameState.pending_summary_return_scene = "res://scripts/ui/cantrip_select.gd"
 	var summary = load("res://scripts/ui/character_summary.gd").new()

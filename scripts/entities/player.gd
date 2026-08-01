@@ -455,7 +455,7 @@ func _on_turn_started() -> void:
 				# (see scripts/entities/CLAUDE.md's "Gnome" section — this is the only existing
 				# player-side WIS SAVE in the game; search_action()/passive_trap_check() are WIS
 				# CHECKS and deliberately untouched by this trait).
-				var fr_adv: int = 1 if (stats.character_race == Stats.CharacterRace.HALFLING or stats.gnomish_cunning_grants_adv("wis")) else 0
+				var fr_adv: int = 1 if (stats.character_race == Stats.CharacterRace.HALFLING or stats.gnomish_cunning_grants_adv("wis") or GameState.knows_invocation("beguiling_defenses")) else 0
 				var fr_roll: Dictionary = CombatMath.roll_with_adv_disadv(fr_adv, 0)
 				var fr_die: int = fr_roll["die"]
 				var fr_total: int = fr_die + fr_wis_mod + fr_prof
@@ -902,6 +902,7 @@ func _setup_animations() -> void:
 		Stats.CharacterClass.RANGER:  char_folder = "Ranger"
 		Stats.CharacterClass.WIZARD:  char_folder = "Wizard"
 		Stats.CharacterClass.MONK:    char_folder = "Monk"
+		Stats.CharacterClass.WARLOCK: char_folder = "Warlock"
 		_:                            char_folder = "Barbarian"   # BARBARIAN default
 	var base: String = KNIGHT_PATH + char_folder + "/"
 	var frames := SpriteFrames.new()
@@ -936,6 +937,7 @@ func _process(_delta: float) -> void:
 	if GameState.is_game_over or GameState.inventory_open or GameState.short_rest_open \
 			or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
 			or GameState.background_select_open or GameState.blacksmith_panel_open or GameState.shop_open \
+			or GameState.invocation_picker_open \
 			or not GameState.class_selected:
 		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
@@ -1379,7 +1381,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			or GameState.talent_picker_open or GameState.mastery_picker_open \
 			or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
 			or GameState.background_select_open or GameState.blacksmith_panel_open or GameState.shop_open \
-			or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open):
+			or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open \
+			or GameState.invocation_picker_open):
 		return
 	if event is InputEventKey:
 		var key := event as InputEventKey
@@ -1392,7 +1395,8 @@ func _unhandled_input(event: InputEvent) -> void:
 					and not GameState.point_buy_open and not GameState.background_select_open \
 					and not GameState.cantrip_picker_open and not GameState.blacksmith_panel_open \
 					and not GameState.shop_open \
-					and not GameState.spell_learn_picker_open and not GameState.spellbook_open:
+					and not GameState.spell_learn_picker_open and not GameState.spellbook_open \
+					and not GameState.invocation_picker_open:
 				GameState.inventory_toggle.emit()
 			return
 		# T key opens talent screen regardless of turn phase; bypasses phase gate
@@ -1404,7 +1408,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					and not GameState.background_select_open and not GameState.blacksmith_panel_open \
 					and not GameState.shop_open \
 					and not GameState.cantrip_picker_open and not GameState.spell_learn_picker_open \
-					and not GameState.spellbook_open:
+					and not GameState.spellbook_open and not GameState.invocation_picker_open:
 				_actions.open_talent_picker()
 				get_viewport().set_input_as_handled()
 			return
@@ -1418,7 +1422,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					and not GameState.background_select_open and not GameState.blacksmith_panel_open \
 					and not GameState.shop_open \
 					and not GameState.cantrip_picker_open and not GameState.spell_learn_picker_open \
-					and not GameState.spellbook_open:
+					and not GameState.spellbook_open and not GameState.invocation_picker_open:
 				var picker = load("res://scripts/ui/spellbook_overlay.gd").new()
 				get_tree().root.add_child(picker)
 				get_viewport().set_input_as_handled()
@@ -1427,7 +1431,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				or GameState.talent_picker_open or GameState.mastery_picker_open \
 				or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
 				or GameState.background_select_open or GameState.blacksmith_panel_open or GameState.shop_open \
-				or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open:
+				or GameState.cantrip_picker_open or GameState.spell_learn_picker_open or GameState.spellbook_open \
+				or GameState.invocation_picker_open:
 			return
 		if key.physical_keycode == KEY_ESCAPE:
 			if _throw_item != null:

@@ -53,6 +53,19 @@ static func can_equip_armor(item: Item, stats: Stats) -> bool:
 		return false
 	return true
 
+# Weapon proficiency gate: a WEAPON item whose weapon_category is "Simple"/"Martial" requires the
+# matching Stats.proficient_simple_weapons/proficient_martial_weapons flag to be equipped at all —
+# unlike the attack-roll proficiency bonus (CombatMath.weapon_prof_bonus()), which just drops a
+# bonus, an unproficient character can't wield the weapon in the first place. Returns true for any
+# non-weapon item, or a weapon with no category ("" = n/a), same no-op-gate shape as the others.
+static func can_equip_weapon(item: Item, stats: Stats) -> bool:
+	if item == null or item.item_type != Item.Type.WEAPON:
+		return true
+	match item.weapon_category:
+		"Simple":  return stats.proficient_simple_weapons
+		"Martial": return stats.proficient_martial_weapons
+		_: return true
+
 static func armor_change_turns(new_item: Item, old_item: Item) -> int:
 	var worst: int = int(Item.ArmorCategory.NONE)
 	if new_item != null:

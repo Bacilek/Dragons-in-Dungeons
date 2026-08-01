@@ -70,13 +70,29 @@ const CLASS_DATA: Array = [
 			"starting_equipment": "",
 		},
 	},
+	{
+		"cls":    11,  # Stats.CharacterClass.WARLOCK
+		"name":   "Warlock",
+		"sprite": CHAR_PATH + "Warlock/idle_1.png",
+		"hd":     "d8 Hit Die",
+		"desc":   "Wields eldritch\npower through a pact.",
+		"color":  Color(0.65, 0.35, 0.85),
+		"info": {
+			"primary_ability": "CHA",
+			"hit_die": "d8",
+			"check_profs": "WIS, CHA",
+			"weapon_profs": "Simple",
+			"armor_training": "Light",
+			"starting_equipment": "",
+		},
+	},
 ]
 
 # Classes with no implementation yet — shown as locked silhouette tiles so the
 # grid reads as the full 5e class roster and new classes can slot in later.
 const LOCKED_CLASSES: Array = [
 	"Bard", "Cleric", "Druid", "Fighter",
-	"Paladin", "Rogue", "Sorcerer", "Warlock",
+	"Paladin", "Rogue", "Sorcerer",
 ]
 
 func _ready() -> void:

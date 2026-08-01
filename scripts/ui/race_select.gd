@@ -285,7 +285,7 @@ func _on_confirm() -> void:
 		var picker = load("res://scripts/ui/mastery_picker.gd").new()
 		picker.character_creation_mode = true
 		get_tree().root.call_deferred("add_child", picker)
-	elif GameState.player_stats.character_class == Stats.CharacterClass.WIZARD:
+	elif GameState.player_stats.character_class in [Stats.CharacterClass.WIZARD, Stats.CharacterClass.WARLOCK]:
 		var cantrip_picker = load("res://scripts/ui/cantrip_select.gd").new()
 		get_tree().root.call_deferred("add_child", cantrip_picker)
 	else:

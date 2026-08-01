@@ -59,7 +59,7 @@ TOOL   = 7
 | `is_light` | bool | Light weapon: the only kind of weapon (besides non-weapon items) allowed in the Off-hand (`"hand2"`) equipment slot, and only when Main Hand also holds a Light weapon — `inventory_overlay.gd._fits_slot()`. Shown as hoverable "Light" keyword in tooltips. Dual-wielding two Light weapons fires a bonus Off-hand attack on every melee swing — see "Equipment slots" and "Dual-wielding" below |
 | `is_reach` | bool | Reach weapon: +1 tile melee range, folded into `CombatMath.melee_reach(weapon, branching_strike_rank)` alongside Branching Strike's own reach bonus (additive, unlike Branching Strike's own ranks which replace each other) — used by the chase-to-attack range check in `player.gd._execute_queued_path()` and `_try_cleave()`'s target-gathering radius. Shown as hoverable "Reach" keyword in tooltips; melee tooltip's "range: N tile(s)" line reflects it |
 | `weapon_mastery` | String | One signature effect per weapon (e.g. "Cleave"); `""` = none. Shown as `(Mastery)` next to the item name in tooltips, hoverable via the same keyword-glossary popup (lowercased mastery name as the key) |
-| `weapon_category` | String | "Simple", "Martial", or `""` = n/a. Gates whether `Stats.proficient_simple_weapons`/`proficient_martial_weapons` grants the proficiency bonus on the attack roll (`CombatMath.weapon_prof_bonus()` in `scripts/entities/combat_math.gd`); shown right under the damage line in tooltips, red when the class lacks that proficiency |
+| `weapon_category` | String | "Simple", "Martial", or `""` = n/a. Gates whether `Stats.proficient_simple_weapons`/`proficient_martial_weapons` grants the proficiency bonus on the attack roll (`CombatMath.weapon_prof_bonus()` in `scripts/entities/combat_math.gd`); shown right under the damage line in tooltips, red when the class lacks that proficiency. **Also hard-blocks equipping the weapon at all** (Main Hand, Ranged, or Off-hand) without the matching proficiency flag — `EquipRequirements.can_equip_weapon()`/`GameState.can_equip_weapon()`, checked at `equip()`, `move_item()`, and `inventory_overlay.gd`'s drag-preview gate (`scripts/autoloads/CLAUDE.md`) |
 | `ammo_item_name` | String | Name of the Item this ranged weapon consumes per shot (e.g. `"Arrow"`); `""` = no named ammo (falls back to `consumes_on_ranged` on the weapon's own stack, or infinite). See "Ammo items" below |
 | `is_thrown` | bool | Thrown weapon (currently only Spear): can be primed via RMB (same UX as quickbar food throw) then thrown at a tile with LMB — see "Thrown weapons" below |
 | `uses_max`/`uses_remaining` | int | Thrown weapons only: durability. `uses_remaining` starts at `uses_max` and ticks down per throw (see "Thrown weapons"); reaching 0 breaks the weapon |
@@ -677,6 +677,19 @@ cast-resolution walkthroughs.
   "duplicate rather than force a premature abstraction" call `StandardSlotPool`'s own comment used
   to justify staying singular, now that a genuine second table exists; add a real `SpellSlotPool`
   base class back only if a THIRD distinct progression (e.g. a Pact Magic-style pool) shows up.
+- **`PactSlotPool`** (`Resource`, `scripts/items/pact_slot_pool.gd`) — Warlock's own bookkeeper,
+  the THIRD distinct progression the note above predicted. Still a deliberate duplicate rather
+  than a shared base class, but with real behavioral differences, not just a different table:
+  `max_slots()` always has exactly ONE key (the current pact slot level, from `SLOT_LEVEL_TABLE` —
+  1/3/5/7/9 → slot levels 1-5) mapped to a count (`SLOT_COUNT_TABLE` — 1/2/11/17 → 1/2/3/4 slots).
+  `available_level(spell)` returns the CURRENT PACT SLOT LEVEL (not `spell.level`) whenever a known
+  spell's own level is at or below it and a charge remains — every Pact Magic spell auto-upcasts to
+  the single current slot level, the opposite of `StandardSlotPool`'s explicit no-upcasting rule
+  (see that entry above) — correctly isolated to this pool class, so that rejection doesn't carry
+  over. Recharges on a SHORT rest, not long — `on_short_rest()` (a method neither other pool
+  implements) is the real recharge path (`GameState._on_short_rest_completed()`); `on_long_rest()`
+  is kept as a harmless full-refill fallback. See `scripts/entities/CLAUDE.md`'s "Warlock class"
+  section for the full slot table and mechanism.
 
 ## Scroll-taught spells
 

@@ -2183,6 +2183,147 @@ ranged weapon to be useful):
   the player (`Enemy._attack_player()` suppresses the Fog-Cloud ADV source when the attacker IS
   the mark — the only enemy-side ADV source that exists today).
 
+## Warlock class
+
+The 5th real playable class (previously locked art only). `Stats.apply_class_defaults()`'s
+WARLOCK branch: CHA 16/CON 14/DEX 12/WIS 10/INT 10/STR 8, d8 HD, WIS+CHA check proficiency, Simple
+weapons, Light armor. Starting gear (`GameState._give_warlock_starting_items()`): a Dagger (Main
+Hand) + Leather Armor. Character-select entry: `scripts/ui/class_select.gd`'s `CLASS_DATA` (index
+`Stats.CharacterClass.WARLOCK` = 11) — Warlock was removed from `LOCKED_CLASSES`.
+
+**Pact Magic** (`caster.slot_pool` is a `PactSlotPool`, `scripts/items/pact_slot_pool.gd`,
+`spellcasting_ability = "CHA"`) — the THIRD distinct spell-slot progression alongside Wizard's
+`StandardSlotPool`/Ranger's `HalfCasterSlotPool` (see `scripts/items/CLAUDE.md`'s spellcasting
+section for the shared interface). Real 5e Pact Magic shape: very few slots, but ALWAYS at the
+highest available level, refreshing on a SHORT rest instead of long rest:
+
+| Character level | Slot count | Slot level |
+|---|---|---|
+| 1 | 1 | 1 |
+| 2 | 2 | 1 |
+| 3 | 2 | 2 |
+| 5 | 2 | 3 |
+| 7 | 2 | 4 |
+| 9 | 2 | 5 |
+| 11 | 3 | 5 |
+| 17 | 4 | 5 |
+
+`PactSlotPool.max_slots()` always returns exactly ONE key (unlike the other two pools' multi-level
+dicts). **Automatic upcast**: `available_level(spell)` returns the CURRENT pact slot level (not
+`spell.level`) whenever a known spell's own level is at or below it and a charge remains — every
+Pact Magic spell is always cast at the single current slot level. This reintroduces auto-upcast,
+which Wizard's own `StandardSlotPool` explicitly rejected (see that file's comment) — Warlock is a
+correctly-isolated pool class, so that rejection doesn't carry over; no other file needed to
+change, since `PlayerSpellcasting._cast_level_for()` already just forwards whatever
+`available_level()` returns straight into `SpellEffects.cast_*()`. **Recharge**: `on_short_rest()`
+(a method the other two pools don't implement) is the real recharge path, called from
+`GameState._on_short_rest_completed()`; `on_long_rest()` is kept as a harmless full-refill
+fallback (a long rest also grants everything a short rest would).
+
+**Spell list** (`SpellDb.WARLOCK_SPELL_IDS`, real 5e 2024 Warlock overlap with the shared
+`SpellDb` pool — all genuinely on Warlock's actual class list, no reflavoring): `witch_bolt`,
+`expeditious_retreat`, `darkness`, `hold_person`, `invisibility`, `misty_step`,
+`ray_of_enfeeblement` — all 7 already existed as Wizard entries, zero new spell content needed.
+**Cantrips**: starter pick 1 of 3 (`SpellDb.WARLOCK_STARTER_CANTRIP_IDS` — `eldritch_blast`
+(new), `chill_touch`, `poison_spray`) via the generalized `cantrip_select.gd` (see below).
+`SpellcasterState.cantrip_max()` gained a `WARLOCK` case reusing Wizard's exact numbers (3/4/5
+known cantrips at levels 1/4/10 — real 5e Warlock cap differs slightly, 2/3/4, but this project
+already takes this "reuse Wizard's shape" liberty elsewhere). `prepared_max()` needed no Warlock
+branch — its existing default (`character_level`) already covers any non-Ranger class.
+
+**Eldritch Blast** (`SpellDb._eldritch_blast()`, new cantrip, Evocation): implemented as a normal
+single-target `ATTACK_ROLL` cantrip — 1d10 Force, `cantrip_tier_scaling = true` (scales to
+2d10/3d10/4d10 at tiers 5/11/17) — **not** true 5e multi-beam/multi-target (`SpellEffects` has no
+multi-roll-per-cast resolution shape). Same "approximate the multi-instance RAW mechanic with the
+existing single-roll path" convention already used for Greatsword's 2d6.
+
+**Onboarding**: `race_select.gd`'s confirm branch (`mastery_cap() > 0` → Mastery Picker, elif
+class is WIZARD or WARLOCK → `cantrip_select.gd`) now includes Warlock alongside Wizard.
+`cantrip_select.gd` gained an `_is_warlock: bool` branch (mirrors the existing `_is_ranger`
+branch): a SINGLE round, "pick 1 of 3" from `WARLOCK_STARTER_CANTRIP_IDS` via
+`GameState.choose_cantrip()` — no round-2 level-1-spell pick (Warlock's leveled spellbook grows
+via the normal level-up spell-learn picker instead, `SpellDb.CLASS_SPELL_LISTS["WARLOCK"] =
+WARLOCK_SPELL_IDS`, same mechanism Ranger already uses).
+
+### Eldritch Invocations
+
+A growing pool of feat-like picks, permanent once taken (no respec — matches talent investment
+permanence). `scripts/items/eldritch_invocation.gd`'s `EldritchInvocation` is a simpler, pick-once
+cousin of `Talent` (no ranks): `invocation_id`, `invocation_name`, `description`, `min_level`,
+`requires_invocation` (unused by any of the 8 entries shipped this pass). Built in code via
+`GameState.eldritch_invocation_list()` (static func, not a const — a `Resource.new()` isn't a
+valid const expression), same "build fresh every call" convention as `SpellDb.get_spell()`.
+
+**Cumulative known-count schedule** (`GameState.WARLOCK_INVOCATION_SCHEDULE`, direct owner spec):
+level 1→1, 2→3, 5→5, 7→6, 9→7, 12→8, 15→9, 18→10. `GameState.warlock_invocation_slots_pending`
+tracks unfilled slots; `GameState._grant_invocation_slots_for_level(old, new)` (called from
+`gain_exp()`'s level-up block) diffs the schedule's highest-threshold-crossed value and adds the
+delta — same `old_level < N and new >= N` threshold-crossing shape Elf/Tiefling lineage spells use.
+The level-1 grant is a special case: `gain_exp()`'s threshold-crossing check never fires for a
+character's OWN starting level (no level-up ever crosses "old < 1, new >= 1"), so
+`_give_warlock_starting_items()` grants it directly and idempotently. **Schedule slots beyond the
+8 designed invocations (levels 12/15/18) sit pending with nothing yet to spend them on** — same
+Tier-2-pending precedent as `talent_points`; a natural place for more Invocations later (Pact-Boon-
+gated ones especially, once Pact Boon exists — not implemented this pass).
+
+**8 invocations shipped this pass** (`GameState.eldritch_invocation_list()`):
+- **Agonizing Blast** (lvl 1) — Eldritch Blast hits add CHA mod damage. Folded into
+  `SpellEffects.cast_spell()`'s `flat_mods` array (same-type stacking, per the damage-stacking
+  rule) via a `spell.spell_id == "eldritch_blast" and GameState.knows_invocation("agonizing_blast")`
+  check right before `build_damage_instance()`.
+- **Repelling Blast** (lvl 1) — a non-lethal Eldritch Blast hit pushes the target 1 tile directly
+  away, no save (unlike the Heavy Crossbow's Push weapon mastery) — reuses
+  `DungeonFloor.resolve_push()` verbatim, called from `cast_spell()`'s effect-dispatch tail.
+- **Armor of Shadows** (lvl 1) — Mage Armor castable at will, no spell slot.
+- **Fiendish Vigor** (lvl 1) — False Life castable at will, no spell slot.
+- **Eldritch Sight** (lvl 1) — Detect Magic castable at will, no spell slot.
+- **Devil's Sight** (lvl 5) — ignores the vision-collapse-to-1 penalty from standing inside a Fog
+  Cloud/Darkness zone (`GameState.effective_fov_radius()`'s Blinded branch checks
+  `not knows_invocation("devils_sight")`) — every other Blinded effect (ADV/DISADV on attack
+  rolls) still applies normally.
+- **Beguiling Defenses** (lvl 5) — Advantage on saves to avoid/end Frightened — reflavored from
+  RAW's Charm immunity (no Charmed condition exists in this engine, same gap as Elf's Fey
+  Ancestry); mirrors Halfling Brave's own ADV term exactly, added to both Frightened-save sites
+  (`Player._on_turn_started()`'s repeated end-of-turn save, `Enemy._execute_cast_scare()`'s
+  initial save).
+- **Ascendant Step** (lvl 9) — Misty Step castable at will, no spell slot.
+
+**At-will free-cast mechanism** (Armor of Shadows/Fiendish Vigor/Eldritch Sight/Ascendant Step):
+`GameState.WARLOCK_INVOCATION_SPELL_GRANT` maps spell_id → invocation_id;
+`GameState.warlock_invocation_free_cast(spell_id) -> bool` is checked at every chokepoint the
+Elf/Tiefling lineage free-cast check already is —
+`PlayerSpellcasting.begin_cast()`'s slot-availability gate, `_cast_level_for()`, and
+`SpellEffects._consume_slot()` — genuinely unlimited (no counter to decrement, unlike the lineage
+spells' `proficiency_bonus`-per-long-rest counter). Learning one of these four invocations
+(`GameState.learn_invocation()`) grants an always-available ability-bar entry via
+`_build_invocation_spell_ability()` → `_build_spell_ability()` + `add_ability()`, same "always
+prepared, outside `known_spells`/`prepared_spells` bookkeeping" shape as an Elf/Tiefling lineage
+spell. The other four invocations (Agonizing Blast/Repelling Blast/Devil's Sight/Beguiling
+Defenses) grant no ability at all — pure passive flags read via `knows_invocation()` at their
+trigger site.
+
+**Picker UI**: `scripts/ui/invocation_picker.gd` — a fork of `subclass_select.gd`'s pattern
+(non-dismissible dim overlay + centered bordered `Panel`, `GameState.invocation_picker_open` input-
+block flag added to every input-gate chain in `player.gd`) rather than `talent_picker.gd` — no
+ranks/points to spend, just "pick one from the currently-eligible list"
+(`GameState.eldritch_invocations_eligible()`, filtered on `min_level` + not already known).
+Card-click commits immediately and calls `GameState.learn_invocation(id)`; if
+`warlock_invocation_slots_pending` is still > 0 after the pick (multiple slots opened on one
+level-up, e.g. level 2's +2), the picker re-spawns itself for the next pick. If no invocation is
+currently eligible (pending slots outrunning designed content), shows a "no eligible invocations"
+message with a Continue button that closes WITHOUT respawning — respawning-on-empty would loop
+forever. Spawned by `hud.gd._on_invocation_choice_required()` on `GameState.
+invocation_choice_required` — guarded on `GameState.class_selected` (the level-1 grant fires
+mid-character-creation, well before that flag is set) and re-checked from `_on_class_chosen()`
+(which `class_chosen` re-fires from `character_summary.gd`'s final confirm, the first safe point
+to actually open it for a fresh character).
+
+**Not implemented this pass** (documented scope cuts, matching this codebase's own "narrow case,
+not the full system" precedent): **Pact Boon** (Blade/Chain/Tome — no chosen-boon field, no
+familiar, no pact weapon); true 5e multi-beam/multi-target Eldritch Blast; player-chosen upcast
+slot level (Pact Magic's own upcast is automatic-to-max only, no picker); Invocations beyond the
+8 above (levels 12/15/18's schedule slots sit pending).
+
 ## Wizard spellcasting (cantrips)
 
 A deliberately-scoped slice of `docs/architecture/spellcasting-design.md`: at-will, free-to-cast
@@ -2929,7 +3070,9 @@ Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: ST
 ## Locked classes — base D&D stat blocks only
 
 `Stats.CharacterClass` gained 8 new enum entries — `BARD`, `CLERIC`, `DRUID`, `FIGHTER`,
-`PALADIN`, `ROGUE`, `SORCERER`, `WARLOCK` — each with a real `apply_class_defaults()` branch
+`PALADIN`, `ROGUE`, `SORCERER`, `WARLOCK` (WARLOCK has since been fully implemented — see
+"Warlock class" above — this section now covers the remaining 7) — each with a real
+`apply_class_defaults()` branch
 (ability scores, HP via hit die + CON mod, `check_prof_*` flags, `proficient_simple_weapons`/
 `proficient_martial_weapons`, `proficient_shields`, `proficient_light_armor`/`medium`/`heavy`) plus
 matching `point_buy_hit_die_base()` and `hp_per_level_breakdown()` entries. **Not selectable or

@@ -9,6 +9,7 @@ var player: Player
 
 var _last_search_request: float = -999.0
 var _traps_in_proximity: Array[Vector2i] = []
+var _inspect_panel: InspectPanel = null
 
 func open_short_rest() -> void:
 	GameState.short_rest_open = true
@@ -121,50 +122,41 @@ func do_inspect(pos: Vector2i) -> void:
 		return
 	var enemy: Enemy = player._dungeon_floor.get_enemy_at(pos)
 	if enemy != null and enemy.visible:
-		var status_suffix: String = ""
-		if enemy.shocked_no_oa:
-			status_suffix += " [color=cyan]Shocked[/color]"
-		if GameState.player_stats.witch_bolt_turns > 0 and GameState.player_stats.witch_bolt_target == enemy:
-			status_suffix += " [color=cyan]Jolted[/color]"
-		if enemy.poisoned_condition_turns > 0:
-			status_suffix += " [color=lime]Poisoned[/color]"
-		if enemy.faerie_fire_turns > 0:
-			status_suffix += " [color=magenta]Outlined[/color]"
+		_open_inspect_panel().open_enemy(enemy)
 		if GameState.god_mode:
-			GameState.game_log("[color=orange]%s[/color] — HP: %d/%d  AC: %d  Dmg: %d–%d  EXP: %d%s%s" % [
-				enemy.display_name,
-				enemy.stats.current_hp, enemy.stats.max_hp,
-				enemy.stats.armor_class,
-				enemy.stats.min_damage, enemy.stats.max_damage,
-				enemy.exp_reward,
-				"  [color=red]BOSS[/color]" if enemy.is_boss else "",
-				status_suffix])
-		else:
-			GameState.game_log("[color=orange]%s[/color] — HP: %d/%d, AC: %d%s" % [enemy.display_name, enemy.stats.current_hp, enemy.stats.max_hp, enemy.stats.armor_class, status_suffix])
+			GameState.game_log("[color=gray](Dmg: %d–%d  EXP: %d)[/color]" % [enemy.stats.min_damage, enemy.stats.max_damage, enemy.exp_reward])
 		return
 	var trap: Dictionary = player._dungeon_floor.get_trap_at(pos)
 	if not trap.is_empty() and trap.get("revealed", false):
-		GameState.game_log("[color=orange]%s[/color] — revealed trap" % trap.get("name", "Trap"))
+		_open_inspect_panel().open_simple(trap.get("name", "Trap"), "Revealed trap", "A mechanical hazard. Disarm it with Thief Tools, or step around it.")
 		return
 	var floor_stack: Array[Item] = player._dungeon_floor.get_items_at(pos)
 	if not floor_stack.is_empty():
 		var floor_item: Item = floor_stack.back()
-		var extra: String = " (+%d more)" % (floor_stack.size() - 1) if floor_stack.size() > 1 else ""
-		GameState.game_log("[color=cyan]%s[/color] — on the floor%s" % [floor_item.get_display_name(), extra])
+		var extra: String = " (+%d more on this tile)" % (floor_stack.size() - 1) if floor_stack.size() > 1 else ""
+		_open_inspect_panel().open_simple(floor_item.get_display_name(), "On the floor%s" % extra, floor_item.description)
 		return
 	var tile_t: DungeonData.TileType = player._dungeon_floor.get_tile_type(pos)
 	var tile_name: String
+	var tile_desc: String
 	match tile_t:
-		DungeonData.TileType.FLOOR:          tile_name = "Stone floor"
-		DungeonData.TileType.WALL:           tile_name = "Stone wall"
-		DungeonData.TileType.STAIRS_DOWN:    tile_name = "Stairs leading down"
-		DungeonData.TileType.CHASM:          tile_name = "Chasm — deadly fall"
-		DungeonData.TileType.WATER:          tile_name = "Water — slows movement"
-		DungeonData.TileType.MUD:            tile_name = "Mud — slows movement"
-		DungeonData.TileType.GRASS:          tile_name = "Tall grass — blocks line of sight"
-		DungeonData.TileType.TRAMPLED_GRASS: tile_name = "Trampled grass"
-		_:                                   tile_name = "Unknown"
-	GameState.game_log("[color=gray]%s.[/color]" % tile_name)
+		DungeonData.TileType.FLOOR:          tile_name = "Stone floor";          tile_desc = ""
+		DungeonData.TileType.WALL:           tile_name = "Stone wall";           tile_desc = ""
+		DungeonData.TileType.STAIRS_DOWN:    tile_name = "Stairs leading down";  tile_desc = "Descends to the next floor."
+		DungeonData.TileType.CHASM:          tile_name = "Chasm";                tile_desc = "A deadly fall — stepping in costs HP and drops you a floor."
+		DungeonData.TileType.WATER:          tile_name = "Water";                tile_desc = "Difficult terrain — moving through costs 2 turns instead of 1."
+		DungeonData.TileType.MUD:            tile_name = "Mud";                  tile_desc = "Difficult terrain — moving through costs 2 turns instead of 1."
+		DungeonData.TileType.GRASS:          tile_name = "Tall grass";           tile_desc = "Blocks line of sight. Tramples down after being walked through."
+		DungeonData.TileType.TRAMPLED_GRASS: tile_name = "Trampled grass";       tile_desc = ""
+		_:                                   tile_name = "Unknown";              tile_desc = ""
+	_open_inspect_panel().open_simple(tile_name, "Terrain", tile_desc)
+
+func _open_inspect_panel() -> InspectPanel:
+	if is_instance_valid(_inspect_panel):
+		_inspect_panel.queue_free()
+	_inspect_panel = InspectPanel.new()
+	player.get_tree().root.add_child(_inspect_panel)
+	return _inspect_panel
 
 func passive_trap_check() -> void:
 	if player._dungeon_floor == null:
