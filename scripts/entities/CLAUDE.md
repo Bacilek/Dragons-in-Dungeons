@@ -1915,6 +1915,18 @@ notice). Expires — cleared in `_execute_action()`'s expiry guard — the momen
 one further REAL action (non-`"notice"` intent) without the player having consumed it via
 `has_advantage()`, so the window is exactly "one round after the regain event, or until the enemy
 next acts, whichever the player misses first."
+**BUGFIX (`_surprise_before_decide`)**: the expiry guard used to snapshot `surprise_available`
+at the *top of `_execute_action()`* — but `decide_turn()` (which can set the flag true on a fresh
+regain) always runs immediately before `execute_turn()`/`_execute_action()` for the same enemy in
+the same round (`take_turn()` = `execute_turn(decide_turn())`), so the snapshot always saw the
+flag as "already true," and the guard wiped it back to false in the very same round it was set —
+before the player ever got a turn to attack with it. A door-camping ambush (or any other regain)
+was therefore silently never rewarding the surprise-ADV it was supposed to. Fixed by snapshotting
+`surprise_available` into `_surprise_before_decide` at the very TOP of `decide_turn()` (before that
+call can mutate it) and having the expiry guard read that snapshot instead of the live,
+already-mutated value — only a flag that was already true going into decide_turn() (i.e. survived
+a full round unconsumed) expires; a flag freshly set this round survives into the player's next
+turn as intended.
 **Call-order rule (BUGFIX — this used to be dead code)**: every attack site must read
 `has_advantage(enemy)` (and any `enemy.behavior`-based DISADV exemption, e.g. the ranged/thrown
 melee-range penalty's "unaware target" carve-out) **before** calling `enemy.on_disturbed(...)` —

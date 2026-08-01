@@ -43,6 +43,13 @@ var surprise_available: bool = false
 # true edge is what fires the regain-notice above. Set true unconditionally by _notice_target()/
 # on_disturbed() so the round right after a fresh notice never double-fires a regain.
 var _had_los_to_player: bool = false
+# Snapshot of surprise_available taken at the very top of decide_turn(), BEFORE that same call can
+# set it true (a fresh regain this round). _execute_action()'s expiry guard reads this instead of
+# the live value — otherwise a flag set by decide_turn() this round would be seen as "already true"
+# by execute_action() moments later (same round, same enemy) and get wiped before the player ever
+# gets a turn to use it. Only a flag that was ALREADY true going into this round (survived a full
+# round unconsumed) should expire here.
+var _surprise_before_decide: bool = false
 var passive_perception: int = 10  # docs/architecture/stealth-and-surprise-attacks-design.md §3.2 — static DC (pool key "passive_perception", default 10 + WIS mod, derived in _apply_stats())
 var oa_used_this_round: bool = false  # Opportunity Attack reaction cap — reset at the top of take_turn()
 var slowed_turns: int = 0
@@ -1069,6 +1076,7 @@ func take_turn() -> void:
 # only cross-entity/world mutation is deferred to execute_turn().
 func decide_turn() -> Dictionary:
 	oa_used_this_round = false
+	_surprise_before_decide = surprise_available
 	if _dungeon_floor == null:
 		return {"type": "wait"}
 	# Standing on a burning door tile — checked at the very top of THIS enemy's own turn (direct
@@ -1382,11 +1390,12 @@ func _execute_action(intent: Dictionary) -> void:
 	# chasing/attacking. "notice" itself is handled by its own case below (label stays up).
 	if intent.get("type", "wait") != "notice":
 		_hide_notice_mark()
-	# surprise_available expiry: snapshot BEFORE dispatch so a flag set THIS round (a regain-notice
-	# just decided above, or door-ambush-equivalent) is never immediately wiped by the guard below —
-	# only a flag that already survived a full round unconsumed gets cleared once this enemy takes a
-	# real (non-"notice") action. See "Stealth & Surprise Attacks" in scripts/entities/CLAUDE.md.
-	var had_surprise_before: bool = surprise_available
+	# surprise_available expiry: use the snapshot taken at the TOP of decide_turn() (before that same
+	# call could have just set it true) so a flag set THIS round (a regain-notice just decided above,
+	# or door-ambush-equivalent) is never immediately wiped by the guard below — only a flag that
+	# already survived a full round unconsumed gets cleared once this enemy takes a real
+	# (non-"notice") action. See "Stealth & Surprise Attacks" in scripts/entities/CLAUDE.md.
+	var had_surprise_before: bool = _surprise_before_decide
 	match intent.get("type", "wait"):
 		"notice":
 			await get_tree().create_timer(0.04 if TurnManager.fast_mode else 0.08).timeout
