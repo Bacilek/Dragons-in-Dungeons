@@ -197,6 +197,8 @@ multi-icon case: `GameState._giant_ancestry_icon_path(variant)` maps `Stats.Gian
 
 ## Dragonborn
 
+Humanoid, Medium (5-7 ft), Speed 1 tile/turn (baseline).
+
 Composition child-node `player_dragonborn.gd` (`PlayerDragonborn`), instantiated as `_dragonborn`
 in `player.gd._ready()` — same pattern as `PlayerZealot`/`PlayerBerserker`. Two race abilities,
 both granted by `GameState.give_race_starting_items()` (idempotent — safe to re-run; `choose_race()`
@@ -281,6 +283,8 @@ Weapon isn't cast through the spell system at all.
 
 ## Dwarf
 
+Humanoid, Medium (4-5 ft), Speed 1 tile/turn (baseline).
+
 Composition child-node `player_dwarf.gd` (`PlayerDwarf`), instantiated as `_dwarf` in
 `player.gd._ready()` — same pattern as `PlayerDragonborn`. Two race features, on top of the
 pre-existing superior darkvision (+2) and Dwarven Toughness (+1 max HP/level, including level 1):
@@ -331,6 +335,8 @@ pre-existing superior darkvision (+2) and Dwarven Toughness (+1 max HP/level, in
   owner described, all pre-existing behavior once Tremorsense makes the target visible at all.
 
 ## Elf
+
+Humanoid, Medium (5-6 ft), Speed 1 tile/turn (baseline).
 
 3 traits, always on, plus the sub-race's own Elven Lineage. `Stats.apply_race_defaults()`'s ELF
 branch:
