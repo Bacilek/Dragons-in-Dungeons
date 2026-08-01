@@ -13,9 +13,11 @@ const CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp
 # above so the premade Jace's "cantrip": "fire_bolt" shortcut and existing save data stay valid.
 const STARTER_CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocking_grasp"]
 # Warlock's own round-1 starting-cantrip choice (see scripts/entities/CLAUDE.md's "Warlock class").
-# Eldritch Blast is Warlock's signature attack cantrip — implemented as a normal single-target
-# ATTACK_ROLL cantrip (1d10 Force, cantrip_tier_scaling) rather than true 5e multi-beam/
-# multi-target, since SpellEffects has no multi-roll-per-cast resolution shape today; see
+# Eldritch Blast is Warlock's signature attack cantrip — real 5e multi-beam/multi-target: 1d10
+# Force per beam, one beam at level 1, +1 independently-targetable beam at levels 5/11/17
+# (Spell.multi_beam_scaling, resolved via the generalized multi-target flow — see
+# PlayerSpellcasting._multi_target_beam_count()/SpellEffects.cast_multi_beam_cantrip() — the same
+# click-to-pick-a-target-per-instance UX Magic Missile's darts already used). See
 # _eldritch_blast() below.
 const WARLOCK_STARTER_CANTRIP_IDS: Array[String] = ["eldritch_blast", "chill_touch", "poison_spray"]
 const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud", "invisibility", "darkness", "longstrider", "detect_magic", "pass_without_trace", "faerie_fire", "ray_of_sickness", "ray_of_enfeeblement", "hold_person"]
@@ -144,14 +146,14 @@ static func _eldritch_blast() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "eldritch_blast"
 	s.spell_name = "Eldritch Blast"
-	s.description = "A beam of crackling energy streaks toward a target within 6 tiles. 1d10 Force damage."
+	s.description = "A beam of crackling energy streaks toward a target within 6 tiles. 1d10 Force damage. At levels 5/11/17 you fire an additional beam (each its own attack roll, targetable independently) instead of adding damage dice."
 	s.icon_path = "res://icons/spells/0/eldritch_blast.png"
 	s.school = "Evocation"
 	s.range_tiles = 6
 	s.dice_count = 1
 	s.dice_sides = 10
 	s.damage_type = "Force"
-	s.cantrip_tier_scaling = true
+	s.multi_beam_scaling = true
 	s.effect_id = ""
 	s.class_list = ["WARLOCK"]
 	return s

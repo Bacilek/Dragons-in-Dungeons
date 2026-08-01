@@ -18,20 +18,40 @@ var _armed_spell_id: String = ""
 var _casting_from_scroll: bool = false
 var _armed_scroll_item: Item = null
 
-# Magic Missile multi-target state — Spell.effect_id == "magic_missile" is intercepted before the
-# normal single-click ENEMY flow (begin_cast()/cast_direct()/on_scroll_primed()) and instead
-# collects exactly 3 dart picks (one click each, repeats allowed — see try_cast_at()'s _mm_active
-# branch and SpellEffects.cast_magic_missile()). Esc (cancel()) at any point during collection
-# refunds nothing because nothing was ever spent yet — the slot/turn are only consumed once all 3
-# darts are assigned. See scripts/entities/CLAUDE.md's Magic Missile entry.
+# Multi-target/multi-beam collection state — shared by Magic Missile (Spell.effect_id ==
+# "magic_missile", exactly 3 AUTO_HIT darts, barrel/door valid) and Eldritch Blast
+# (Spell.multi_beam_scaling, 1-4 ATTACK_ROLL beams depending on character level, enemies only).
+# Both are intercepted before the normal single-click ENEMY flow
+# (begin_cast()/cast_direct()/on_scroll_primed()) and instead collect one target pick per
+# instance (repeats allowed — see try_cast_at()'s _mm_active branch and
+# SpellEffects.cast_magic_missile()/cast_multi_beam_cantrip()). Esc (cancel()) at any point during
+# collection refunds nothing because nothing was ever spent yet — the slot/turn are only consumed
+# once every instance is assigned. See scripts/entities/CLAUDE.md's Magic Missile/Eldritch Blast
+# entries.
 var _mm_active: bool = false
 var _mm_targets: Array[Dictionary] = []
+var _mm_count: int = 3
+var _mm_enemies_only: bool = false
 
 # A Shield (Item.is_shield) in the Off-hand blocks all spellcasting while equipped — 5e's
 # "shield blocks somatic components" rule, applied uniformly regardless of caster hand.
 func _shield_blocks_casting() -> bool:
 	var hand2: Item = GameState.equipment.get("hand2") as Item
 	return hand2 != null and hand2.is_shield
+
+## Whether `spell` needs the multi-target click-collection flow instead of a normal single click.
+func _uses_multi_target_flow(spell: Spell) -> bool:
+	return spell.effect_id == "magic_missile" or spell.multi_beam_scaling
+
+## How many target picks to collect — Magic Missile is always exactly 3 darts; a multi_beam_scaling
+## cantrip (Eldritch Blast) scales with character level via the same tier table cantrip_tier_scaling
+## damage dice use, just applied to beam COUNT instead of dice count (1/2/3/4 at levels 1/5/11/17).
+func _multi_target_beam_count(spell: Spell) -> int:
+	if spell.effect_id == "magic_missile":
+		return 3
+	if spell.multi_beam_scaling:
+		return SpellEffects.cantrip_tier(player.stats.character_level)
+	return 1
 
 func begin_cast(spell_id: String) -> void:
 	if _shield_blocks_casting():
@@ -53,7 +73,7 @@ func begin_cast(spell_id: String) -> void:
 	if spell_id in player.stats.gnome_lineage_spell_ids and not GameState.invincible and not player.stats.is_gnome_lineage_free_cast_available(spell_id):
 		GameState.game_log("[color=gray]You have no uses of %s left this long rest.[/color]" % spell.spell_name)
 		return
-	if spell.effect_id == "magic_missile":
+	if _uses_multi_target_flow(spell):
 		_begin_multi_target(spell_id, false, null)
 		return
 
@@ -92,7 +112,7 @@ func on_scroll_primed(item: Item) -> void:
 		_consume_scroll(item)
 		await _cast_self(spell, true)
 		return
-	if spell.effect_id == "magic_missile":
+	if _uses_multi_target_flow(spell):
 		_begin_multi_target(item.scroll_spell_id, true, item)
 		return
 	_armed_spell_id = item.scroll_spell_id
@@ -113,6 +133,8 @@ func cancel() -> void:
 	_armed_scroll_item = null
 	_mm_active = false
 	_mm_targets = []
+	_mm_count = 3
+	_mm_enemies_only = false
 
 ## Currently armed spell while targeting is active, or null — lets player.gd's per-frame AoE
 ## preview (dungeon_floor.gd's show_aoe_preview()/hide_aoe_preview()) read the spell's shape
@@ -202,7 +224,7 @@ func cast_direct(spell_id: String, clicked: Vector2i) -> void:
 	if spell.target_kind == Spell.TargetKind.SELF:
 		_cast_self(spell)
 		return
-	if spell.effect_id == "magic_missile":
+	if _uses_multi_target_flow(spell):
 		_begin_multi_target(spell_id, false, null)
 		_handle_multi_target_click(clicked)
 		return
@@ -302,15 +324,16 @@ func try_cast_at(clicked: Vector2i) -> void:
 		_:
 			pass
 
-# ── Magic Missile multi-target ("seeking darts", up to 3 independent picks) ──────────────────
-# Arms exactly like any other spell (spell_targeting_active stays true across all 3 clicks so
-# player.gd's existing dispatch keeps routing every click into try_cast_at(), which forwards here
-# whenever _mm_active is set) but doesn't resolve on the first click — collects one dart-target
-# per click (repeats allowed, focusing more than one dart onto the same target) until 3 are
-# gathered, then resolves the whole volley in a single turn/slot-consumption via
-# SpellEffects.cast_magic_missile(). Esc (cancel()) at any point clears _mm_active/_mm_targets
-# with nothing spent, since the slot/turn are only touched once all 3 picks are in.
-## Whether Magic Missile is currently mid-collection (some or none of its 3 dart picks made yet) —
+# ── Multi-target/multi-beam collection (Magic Missile's 3 darts, Eldritch Blast's 1-4 beams) ──
+# Arms exactly like any other spell (spell_targeting_active stays true across all _mm_count clicks
+# so player.gd's existing dispatch keeps routing every click into try_cast_at(), which forwards
+# here whenever _mm_active is set) but doesn't resolve on the first click — collects one
+# target-per-instance (repeats allowed, focusing more than one dart/beam onto the same target)
+# until _mm_count are gathered, then resolves the whole volley in a single turn/slot-consumption
+# via SpellEffects.cast_magic_missile()/cast_multi_beam_cantrip(). Esc (cancel()) at any point
+# clears _mm_active/_mm_targets with nothing spent, since the slot/turn are only touched once
+# every pick is in.
+## Whether a multi-target cast is currently mid-collection (some or none of its picks made yet) —
 ## lets player.gd's RMB handler special-case "undo last pick" over its normal RMB behavior.
 func is_collecting_multi_target() -> bool:
 	return _mm_active
@@ -322,19 +345,28 @@ func is_collecting_multi_target() -> bool:
 func undo_last_multi_target_pick() -> void:
 	if not _mm_active or _mm_targets.is_empty():
 		return
+	var spell: Spell = SpellDb.get_spell(_armed_spell_id)
+	var noun: String = "dart" if spell != null and spell.effect_id == "magic_missile" else "beam"
 	var removed: Dictionary = _mm_targets.pop_back()
-	var remaining: int = 3 - _mm_targets.size()
-	GameState.game_log("[color=gray]Un-locked the dart aimed at %s. Choose %d more target%s. [Esc] to cancel.[/color]" % [
-		removed.get("label", "that target"), remaining, "s" if remaining != 1 else ""])
+	var remaining: int = _mm_count - _mm_targets.size()
+	GameState.game_log("[color=gray]Un-locked the %s aimed at %s. Choose %d more target%s. [Esc] to cancel.[/color]" % [
+		noun, removed.get("label", "that target"), remaining, "s" if remaining != 1 else ""])
 
 func _begin_multi_target(spell_id: String, from_scroll: bool, scroll_item: Item) -> void:
+	var spell: Spell = SpellDb.get_spell(spell_id)
 	_armed_spell_id = spell_id
 	spell_targeting_active = true
 	_casting_from_scroll = from_scroll
 	_armed_scroll_item = scroll_item
 	_mm_active = true
 	_mm_targets = []
-	GameState.game_log("[color=lime]Magic Missile — choose up to 3 targets (1 dart each; click the same target again to focus more darts on it). Enemies, barrels, and doors are all valid. [Esc] to cancel.[/color]")
+	_mm_count = _multi_target_beam_count(spell)
+	_mm_enemies_only = spell.effect_id != "magic_missile"
+	if spell.effect_id == "magic_missile":
+		GameState.game_log("[color=lime]Magic Missile — choose up to 3 targets (1 dart each; click the same target again to focus more darts on it). Enemies, barrels, and doors are all valid. [Esc] to cancel.[/color]")
+	else:
+		GameState.game_log("[color=lime]%s — choose %d target%s (1 beam each; click the same target again to focus more beams onto it). Enemies only. [Esc] to cancel.[/color]" % [
+			spell.spell_name, _mm_count, "s" if _mm_count != 1 else ""])
 
 ## Resolves whatever's at `pos` into a dart-target descriptor, or `{}` if nothing valid is there.
 ## Enemy first (matches every other spell's targeting priority), then the two destructible-prop
@@ -346,6 +378,8 @@ func _resolve_multi_target_at(pos: Vector2i) -> Dictionary:
 	var enemy: Enemy = dungeon_floor.get_targetable_enemy_at(pos)
 	if enemy != null:
 		return {"kind": "enemy", "enemy": enemy, "label": enemy.display_name}
+	if _mm_enemies_only:
+		return {}
 	if dungeon_floor.has_barrel_at(pos):
 		return {"kind": "barrel", "pos": pos, "label": "the barrel"}
 	if dungeon_floor.has_door_at(pos):
@@ -378,10 +412,11 @@ func _handle_multi_target_click(clicked: Vector2i) -> void:
 		return
 
 	_mm_targets.append(desc)
-	var remaining: int = 3 - _mm_targets.size()
+	var remaining: int = _mm_count - _mm_targets.size()
 	if remaining > 0:
-		GameState.game_log("[color=lime]Dart %d locked onto %s. Choose %d more target%s (or click it again). [Esc] to cancel.[/color]" % [
-			_mm_targets.size(), desc["label"], remaining, "s" if remaining != 1 else ""])
+		var noun: String = "Dart" if spell.effect_id == "magic_missile" else "Beam"
+		GameState.game_log("[color=lime]%s %d locked onto %s. Choose %d more target%s (or click it again). [Esc] to cancel.[/color]" % [
+			noun, _mm_targets.size(), desc["label"], remaining, "s" if remaining != 1 else ""])
 		return
 
 	var from_scroll: bool = _casting_from_scroll
@@ -403,4 +438,7 @@ func _handle_multi_target_click(clicked: Vector2i) -> void:
 	if from_scroll:
 		_consume_scroll(scroll_item)
 
-	await SpellEffects.cast_magic_missile(player, spell, lvl, targets, player._dungeon_floor, from_scroll)
+	if spell.effect_id == "magic_missile":
+		await SpellEffects.cast_magic_missile(player, spell, lvl, targets, player._dungeon_floor, from_scroll)
+	else:
+		await SpellEffects.cast_multi_beam_cantrip(player, spell, targets, player._dungeon_floor, from_scroll)

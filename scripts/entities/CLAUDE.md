@@ -1489,6 +1489,31 @@ from Orc Warrior's Aggressive trait (a flat +1-step bonus gated on target visibi
 cycle) — the two stack rather than reusing one mechanism, since Aggressive is conditional and
 `"speed"` isn't.
 
+**Player movement-speed visual consistency (PERMANENT RULE)**: whatever affects the PLAYER's own
+movement speed (difficult terrain/Slowed → slower, Expeditious Retreat/Longstrider/Wood Elf/Large
+Form/Battlefield Expert's free side-step/Adrenaline Rush → faster) must NEVER change the visual
+tween itself — `Entity.move_to()` is always the same fixed duration regardless of speed status.
+The only thing allowed to differ is the turn economy: how many actions the environment (enemies)
+gets for that one player move. `TurnManager.enemy_actions_this_round: int` (default 1, always
+consumed/reset back to 1 at the top of `_process_enemies()`) is the single knob — set it to `2`
+right before the move's own `on_player_action_complete()` call for a Slowed move (enemies get two
+full decide-then-execute rounds inside that ONE cycle, via `_process_enemy_round()`/
+`_advance_round_or_end()`), or skip `on_player_action_complete()` entirely via
+`TurnManager.revert_to_waiting()` for a free move (enemies get zero). **Never call
+`begin_player_action()`/`on_player_action_complete()` a second time for the same move** — that
+used to be how Slowed was implemented (an extra full begin/complete pair after the first), which
+double-fired `player_turn_ending` (double Witch Bolt tick, double Stealth-vs-Passive-Perception
+roll on a single slowed step) and visibly flashed the phase back to `WAITING_FOR_INPUT` mid-move,
+reading as the player's own character stuttering/freezing rather than "the environment moved
+twice." `Player._take_free_move_beat()` (`FREE_MOVE_BEAT_SEC`, 0.08s) is awaited before every
+free-move `revert_to_waiting()` for the opposite reason — skipping the enemy phase entirely means
+the very next input is available almost instantly, and several free moves in a row without this
+beat would visibly warp/jitter across multiple tiles instead of reading as a normally-paced walk
+with an invisible opponent. Both `_try_move()` (WASD) and `_execute_queued_path()` (click-to-move
++ enemy-chase, via the shared `_apply_queued_step_speed(next_pos)` helper) apply the Slowed half of
+this consistently; the free-move half (Expeditious Retreat etc.) is still `_try_move()`-only, same
+pre-existing scope limitation as those talents' own entries above.
+
 ---
 
 ## Stats (`stats.gd`)
@@ -2235,11 +2260,23 @@ known cantrips at levels 1/4/10 — real 5e Warlock cap differs slightly, 2/3/4,
 already takes this "reuse Wizard's shape" liberty elsewhere). `prepared_max()` needed no Warlock
 branch — its existing default (`character_level`) already covers any non-Ranger class.
 
-**Eldritch Blast** (`SpellDb._eldritch_blast()`, new cantrip, Evocation): implemented as a normal
-single-target `ATTACK_ROLL` cantrip — 1d10 Force, `cantrip_tier_scaling = true` (scales to
-2d10/3d10/4d10 at tiers 5/11/17) — **not** true 5e multi-beam/multi-target (`SpellEffects` has no
-multi-roll-per-cast resolution shape). Same "approximate the multi-instance RAW mechanic with the
-existing single-roll path" convention already used for Greatsword's 2d6.
+**Eldritch Blast** (`SpellDb._eldritch_blast()`, cantrip, Evocation): real 5e multi-beam/
+multi-target — 1d10 Force per beam, `Spell.multi_beam_scaling = true` instead of
+`cantrip_tier_scaling` (which grows dice count on a single roll; this instead grows beam COUNT,
+each beam its own independent attack roll, at the same tier-1/5/11/17 breakpoints — 1/2/3/4
+beams). Reuses Magic Missile's click-to-pick-a-target-per-instance multi-target collection flow
+(`PlayerSpellcasting._uses_multi_target_flow()`/`_multi_target_beam_count()`/
+`_begin_multi_target()`/`_handle_multi_target_click()`, `scripts/entities/player_spellcasting.gd`)
+generalized to also handle an ATTACK_ROLL cantrip, not just Magic Missile's AUTO_HIT darts:
+`_mm_enemies_only` restricts beam targets to real enemies (no barrel/door — those have no AC),
+`_mm_count` replaces the old hardcoded literal `3`. Each beam can be aimed at a different enemy
+(same "click the same target again to focus more onto it" UX as darts). Resolution:
+`SpellEffects.cast_multi_beam_cantrip()` calls a shared per-target helper,
+`SpellEffects._resolve_cantrip_hit()` (factored out of `cast_spell()`, which now just wraps it for
+the single-target case) once per collected beam — so Agonizing Blast's +CHA-mod-per-hit and
+Repelling Blast's 1-tile push (both Eldritch Invocations, gated `spell.spell_id ==
+"eldritch_blast"` inside the helper) correctly apply independently to EACH beam that hits, not
+once for the whole cast.
 
 **Onboarding**: `race_select.gd`'s confirm branch (`mastery_cap() > 0` → Mastery Picker, elif
 class is WIZARD or WARLOCK → `cantrip_select.gd`) now includes Warlock alongside Wizard.

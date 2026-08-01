@@ -93,6 +93,12 @@ var _hover_last_icon_path: String = ""
 var _hover_last_texture: Texture2D = null
 const HOVER_ICON_TARGET_PX: float = 12.0  # ~16px weapon/ranged art at the old flat 0.75 scale
 
+# Movement-speed consistency (scripts/entities/CLAUDE.md's "Movement speed scaling",
+# TurnManager.enemy_actions_this_round): a free move runs zero enemy actions, so without an
+# artificial beat the very next input becomes available almost instantly - several free moves in
+# a row would visibly warp/jitter across tiles instead of reading as "opponents just don't act."
+const FREE_MOVE_BEAT_SEC: float = 0.08
+
 # ── Rage state ────────────────────────────────────────────────────────────────
 # Baseline: lasts 1 turn, refreshed to 1 by attacking or being attacked (unconditional).
 # _rage_attacked_this_turn: set in _bump_attack when raging + STR weapon; cleared at turn start.
@@ -1586,9 +1592,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		var clicked: Vector2i = Vector2i(int(world_pos.x / TILE_SIZE), int(world_pos.y / TILE_SIZE))
 
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
-			# Magic Missile multi-target picking: RMB undoes the most recently locked-in dart
-			# instead of whatever RMB would normally do (Inspect/tool-complete/etc.) — takes
-			# priority over everything else below while a dart pick is in progress.
+			# Multi-target/multi-beam picking (Magic Missile/Eldritch Blast): RMB undoes the most
+			# recently locked-in pick instead of whatever RMB would normally do
+			# (Inspect/tool-complete/etc.) — takes priority over everything else below while a
+			# pick is in progress.
 			if _spellcasting.is_collecting_multi_target():
 				if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing:
 					_spellcasting.undo_last_multi_target_pick()
@@ -1822,6 +1829,7 @@ func _execute_queued_path() -> void:
 			if GameState.is_game_over:
 				_target_enemy = null
 				break
+			_apply_queued_step_speed(next)
 			TurnManager.begin_player_action()
 			$AnimatedSprite2D.flip_h = dir.x < 0
 			$AnimatedSprite2D.play("run")
@@ -1911,6 +1919,7 @@ func _execute_queued_path() -> void:
 		if GameState.is_game_over:
 			_queued_path.clear()
 			break
+		_apply_queued_step_speed(next)
 		TurnManager.begin_player_action()
 		$AnimatedSprite2D.flip_h = dir.x < 0
 		$AnimatedSprite2D.play("run")
@@ -1947,25 +1956,12 @@ func _execute_queued_path() -> void:
 			_queued_path.clear()
 			break
 
-		# Difficult terrain or slowed: costs 2 turns — stop queued path and waste a turn
-		# (Trailblazer R1 ignores Mud/Water entirely, same as Draconic Flight — same bypasses as
-		# _try_move()'s.)
-		var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(grid_pos)
-		if (tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD) \
-				and GameState.get_talent_rank("trailblazer") < 1 \
-				and GameState.player_stats.draconic_flight_turns <= 0:
-			GameState.apply_player_status("slowed", maxi(1, GameState.player_stats.slowed_turns))
-		if tile_t == DungeonData.TileType.WATER and GameState.player_stats.burning_turns > 0:
-			GameState.player_stats.burning_turns = 0
-			GameState.player_status_changed.emit()
-			GameState.game_log("[color=cyan]The water extinguishes your flames![/color]")
+		# Difficult terrain / Slowed: stop the queued path so the player consciously decides
+		# whether to keep walking through it — the extra enemy-round cost itself was already
+		# applied pre-move by _apply_queued_step_speed() (before this step's own
+		# on_player_action_complete() call above), never a second begin/complete pair here.
 		if GameState.player_stats.slowed_turns > 0 and GameState.get_talent_rank("trailblazer") < 1:
 			_queued_path.clear()
-			if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
-				await TurnManager.player_turn_started
-			TurnManager.begin_player_action()
-			_dungeon_floor.update_fog(grid_pos)
-			TurnManager.on_player_action_complete()
 			break
 
 		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT:
@@ -1973,6 +1969,27 @@ func _execute_queued_path() -> void:
 
 	TurnManager.fast_mode = false
 	_path_executing = false
+
+# Movement-speed consistency (see FREE_MOVE_BEAT_SEC / TurnManager.enemy_actions_this_round) for
+# queued-path movement (mouse click / enemy-chase): mirrors _try_move()'s WATER/MUD difficult-
+# terrain check, but evaluated on the tile ABOUT TO be stepped onto — before the move — so
+# TurnManager.enemy_actions_this_round is set before THIS step's own on_player_action_complete()
+# call, never via a second begin_player_action()/on_player_action_complete() pair afterward (that
+# used to fire player_turn_ending twice — double Witch Bolt tick, double Stealth check — and flash
+# the phase back to WAITING_FOR_INPUT mid-move). Doesn't check the Natural Sleeper Panther/Salmon
+# bypasses _try_move() has — pre-existing asymmetry between the two movement paths, unchanged here.
+func _apply_queued_step_speed(next_pos: Vector2i) -> void:
+	var tile_t: DungeonData.TileType = _dungeon_floor.get_tile_type(next_pos)
+	if (tile_t == DungeonData.TileType.WATER or tile_t == DungeonData.TileType.MUD) \
+			and GameState.get_talent_rank("trailblazer") < 1 \
+			and GameState.player_stats.draconic_flight_turns <= 0:
+		GameState.apply_player_status("slowed", maxi(1, GameState.player_stats.slowed_turns))
+	if tile_t == DungeonData.TileType.WATER and GameState.player_stats.burning_turns > 0:
+		GameState.player_stats.burning_turns = 0
+		GameState.player_status_changed.emit()
+		GameState.game_log("[color=cyan]The water extinguishes your flames![/color]")
+	if GameState.player_stats.slowed_turns > 0 and GameState.get_talent_rank("trailblazer") < 1:
+		TurnManager.enemy_actions_this_round = 2
 
 func _has_new_enemy_in_fov(snapshot: Array[Enemy]) -> bool:
 	if _dungeon_floor == null or GameState.noclip:
@@ -2282,12 +2299,14 @@ func _try_move(dir: Vector2i) -> void:
 			GameState.recalculate_stats()
 	if _free_sidestep:
 		GameState.game_log("[color=cyan]Battlefield Expert: that side-step didn't cost you your turn.[/color]")
+		await _take_free_move_beat()
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return
 	if stats.adrenaline_rush_move_free_pending:
 		stats.adrenaline_rush_move_free_pending = false
 		GameState.game_log("[color=cyan]Adrenaline Rush: that move didn't cost you your turn.[/color]")
+		await _take_free_move_beat()
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return
@@ -2306,12 +2325,14 @@ func _try_move(dir: Vector2i) -> void:
 	var _large_form_free_step: bool = _goliath.consume_large_form_free_move()
 	if _large_form_free_step:
 		GameState.game_log("[color=cyan]Large Form: your giant stride carries you further at no cost.[/color]")
+		await _take_free_move_beat()
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return
 	if stats.expeditious_retreat_turns > 0 and not _expeditious_retreat_move_used_this_turn:
 		_expeditious_retreat_move_used_this_turn = true
 		GameState.game_log("[color=cyan]Expeditious Retreat: that move didn't cost you your turn.[/color]")
+		await _take_free_move_beat()
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return
@@ -2319,21 +2340,29 @@ func _try_move(dir: Vector2i) -> void:
 		# Deliberately silent — no game_log() here. This fires roughly every 3rd move for the
 		# whole ~600-turn duration; the status-tray icon/tooltip already communicates the effect
 		# continuously, so a chat line every 3rd step was pure log spam.
+		await _take_free_move_beat()
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return
 	elif _wood_elf_free_step:
 		GameState.game_log("[color=cyan]Wood Elf: your swift steps carry you further at no cost.[/color]")
+		await _take_free_move_beat()
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return
-	TurnManager.on_player_action_complete()
-	# Slowed extra turn cost (skip if Panther/Salmon/Trailblazer bypassed the terrain penalty)
+	# Slowed extra turn cost (skip if Panther/Salmon/Trailblazer bypassed the terrain penalty):
+	# opponents get 2 actions for this 1 move, resolved inside the SAME enemy-phase cycle as the
+	# move itself — never a second begin_player_action()/on_player_action_complete() pair, which
+	# used to fire player_turn_ending twice (double Witch Bolt tick, double Stealth check) and
+	# flash the phase back to WAITING_FOR_INPUT mid-move. See TurnManager.enemy_actions_this_round.
 	if GameState.player_stats.slowed_turns > 0 and not _panther_bypass and not _salmon_bypass and not _trailblazer_bypass:
-		await TurnManager.player_turn_started
-		TurnManager.begin_player_action()
-		_dungeon_floor.update_fog(grid_pos)
-		TurnManager.on_player_action_complete()
+		TurnManager.enemy_actions_this_round = 2
+	TurnManager.on_player_action_complete()
+
+# See FREE_MOVE_BEAT_SEC's own comment — inserted before every free-move revert_to_waiting() so
+# chained free moves read as a normal, paced walk rather than an instant multi-tile warp.
+func _take_free_move_beat() -> void:
+	await get_tree().create_timer(FREE_MOVE_BEAT_SEC).timeout
 
 # ── Rage helpers ─────────────────────────────────────────────────────────────
 

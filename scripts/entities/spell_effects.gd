@@ -46,18 +46,63 @@ static func _cantrip_tier(character_level: int) -> int:
 			tier = i + 1
 	return tier
 
+## Public wrapper — lets PlayerSpellcasting._multi_target_beam_count() derive Eldritch Blast's
+## beam count (1/2/3/4 at character levels 1/5/11/17) without duplicating the tier table.
+static func cantrip_tier(character_level: int) -> int:
+	return _cantrip_tier(character_level)
+
 static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
-	# Captured BEFORE on_disturbed() wakes the target — has_advantage() reads pre-attack
-	# behavior/surprise_available state, which on_disturbed() immediately mutates away.
-	var was_surprised: bool = player._vfx.has_advantage(target)
-	target.on_disturbed(player.grid_pos)
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
 	sprite.play("hit")
 	await sprite.animation_finished
 	sprite.play("idle")
+
+	await _resolve_cantrip_hit(player, spell, target, dungeon_floor)
+
+	if dungeon_floor != null:
+		dungeon_floor.update_fog(player.grid_pos)
+	player._handle_post_attack_turn()
+
+# Multi-beam cantrip (Eldritch Blast): one independent ATTACK_ROLL hit per collected target,
+# gathered click-by-click in PlayerSpellcasting._handle_multi_target_click() exactly like Magic
+# Missile's darts (any combination of repeats — focusing more than one beam on the same enemy is
+# legal, unlike Magic Missile there's no auto-hit grouping since each beam needs its own d20).
+# Barrel/door target descriptors are skipped outright (no AC to roll an attack against).
+static func cast_multi_beam_cantrip(player: Player, spell: Spell, targets: Array[Dictionary], dungeon_floor: Node, from_scroll: bool = false) -> void:
+	GameState.stealth_check_skip = true
+	TurnManager.begin_player_action()
+	var first_pos: Vector2i = _mm_target_pos(targets[0])
+	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
+	sprite.flip_h = first_pos.x < player.grid_pos.x
+	sprite.play("hit")
+	await sprite.animation_finished
+	sprite.play("idle")
+
+	for t: Dictionary in targets:
+		if t["kind"] != "enemy":
+			continue
+		var target: Enemy = t["enemy"]
+		if not is_instance_valid(target) or target.stats.is_dead():
+			continue
+		await _resolve_cantrip_hit(player, spell, target, dungeon_floor)
+
+	if dungeon_floor != null:
+		dungeon_floor.update_fog(player.grid_pos)
+	player._handle_post_attack_turn()
+
+# Single-target attack-roll resolution shared by cast_spell() (one target) and
+# cast_multi_beam_cantrip() (one call per beam) — everything from the pre-attack ADV/DISADV state
+# capture through the post-hit effect_id dispatch, EXCLUDING the swing animation and the
+# turn/fog/post-attack-turn envelope, which the two callers own themselves (once per cast, not
+# once per beam).
+static func _resolve_cantrip_hit(player: Player, spell: Spell, target: Enemy, dungeon_floor: Node) -> void:
+	# Captured BEFORE on_disturbed() wakes the target — has_advantage() reads pre-attack
+	# behavior/surprise_available state, which on_disturbed() immediately mutates away.
+	var was_surprised: bool = player._vfx.has_advantage(target)
+	target.on_disturbed(player.grid_pos)
 
 	# Reuses has_advantage()'s own result for the melee-range DISADV exemption below, rather than
 	# re-deriving "unaware" from behavior — so a freshly re-sighted (surprise_available) target
@@ -111,9 +156,6 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 		if is_nat_one:
 			GameState.crit_banner.emit("CRITICAL FAIL!", Color(0.9, 0.1, 0.1))
 			GameState.screen_shake.emit(2.5)
-		if dungeon_floor != null:
-			dungeon_floor.update_fog(player.grid_pos)
-		player._handle_post_attack_turn()
 		return
 
 	if is_crit: AudioManager.play_crit(null)
@@ -222,10 +264,6 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 			var away_dir: Vector2i = Vector2i(sign(target.grid_pos.x - player.grid_pos.x), sign(target.grid_pos.y - player.grid_pos.y))
 			if away_dir != Vector2i.ZERO:
 				await dungeon_floor.resolve_push(target, away_dir)
-
-	if dungeon_floor != null:
-		dungeon_floor.update_fog(player.grid_pos)
-	player._handle_post_attack_turn()
 
 # Single-target SAVE-resolution cantrips (Toll the Dead, Mind Sliver) — no attack roll, the target
 # just makes a save. Mirrors cast_spell()'s turn envelope/animation but skips the hit-roll block

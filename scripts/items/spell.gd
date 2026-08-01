@@ -36,6 +36,12 @@ enum TargetKind { ENEMY, SELF, TILE }
 @export var dice_sides: int = 6
 @export var damage_type: String = ""
 @export var cantrip_tier_scaling: bool = false   # dice_count × tier at character levels 1/5/11/17
+# Eldritch Blast-style scaling: instead of growing dice_count per tier (cantrip_tier_scaling
+# above), the cast gains one extra independently-targetable beam per tier (1/2/3/4 beams at
+# character levels 1/5/11/17), each its own attack roll at dice_count/dice_sides. Mutually
+# exclusive with cantrip_tier_scaling in practice (no spell sets both). See
+# PlayerSpellcasting._multi_target_beam_count() / SpellEffects.cast_multi_beam_cantrip().
+@export var multi_beam_scaling: bool = false
 
 # SAVE resolution only
 @export var save_stat: String = ""     # "STR"/"DEX"/"CON"/"INT"/"WIS"/"CHA"
