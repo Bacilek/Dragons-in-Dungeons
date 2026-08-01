@@ -165,4 +165,5 @@ func _burst_necrotic_shroud() -> void:
 			GameState.game_log("%s [url=%s]resists[/url] your necrotic shroud." % [e.display_name, save_meta])
 		else:
 			e.apply_status("frightened", 2)
+			e.frightened_source = player
 			GameState.game_log("%s is [url=%s]frightened[/url] by your necrotic shroud!" % [e.display_name, save_meta])

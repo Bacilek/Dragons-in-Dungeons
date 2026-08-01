@@ -55,7 +55,8 @@ var faerie_fire_turns: int = 0   # Drow lineage spell Faerie Fire — a failed D
 var faerie_fire_color: Color = Color(0.4, 0.7, 1.0)  # the one random color (blue/green/violet) rolled once per cast in SpellEffects._resolve_faerie_fire() and shared by every creature outlined that same cast — drives _faerie_fire_indicator's tint below.
 var shocked_no_oa: bool = false  # Shocking Grasp — blocks this enemy's next Opportunity Attack exposure, whenever it next happens
 var mind_sliver_penalty_die: bool = false  # Mind Sliver cantrip — the next check this enemy makes (any resist_check_detailed() call) rolls with -1d4. Consumed on that next check; deliberately not turn-expiry-timed against "until the end of your next turn" per the spell text — enemy checks are rare enough that this one-shot-consumed simplification is documented here rather than adding a second timing system for it.
-var frightened_turns: int = 0    # Aasimar Necrotic Shroud (Celestial Revelation) — a failed CHA check frightens this enemy. Simplified vs. the real player-side Frightened (scripts/entities/CLAUDE.md's "Conditions"): DISADV on this enemy's own attack rolls only, no can't-approach-the-source movement block (no enemy-side "source" tracking exists) — ticked once per real turn in decide_turn(), same shape as faerie_fire_turns/enfeeble_turns.
+var frightened_turns: int = 0    # Aasimar Necrotic Shroud (Celestial Revelation) — a failed CHA check frightens this enemy. Now a real mirror of the player-side Frightened (scripts/entities/CLAUDE.md's "Conditions"): DISADV on this enemy's own attack rolls/checks ONLY while `frightened_source` is in LOS (`_frightened_active()`), plus a can't-willingly-move-closer-to-the-source movement block (`_frightened_blocks_step()`, wired into `_act_toward_single_step()`'s greedy+BFS stepping) — ticked once per real turn in decide_turn(), same shape as faerie_fire_turns/enfeeble_turns. Fixed 2-turn duration, not a repeated save (same documented simplification as before).
+var frightened_source: Player = null  # the entity this enemy fears — set alongside frightened_turns by whatever inflicts it (only Necrotic Shroud today, always the player). NOT serialized, same precedent as Stats.frightened_source/hunters_mark_target — a live node reference can't survive save/load.
 var enfeeble_turns: int = 0      # Chthonic Tiefling lineage spell Ray of Enfeeblement — full-effect duration (set only on a FAILED initial CON save): DISADV on this enemy's own STR-based d20 tests (attack rolls AND resist_check_detailed() checks whose stat is STR) and -1d8 (min 0) subtracted from every damage roll it makes. Repeats a CON save at the end of each of its own turns (decide_turn(), vs enfeeble_save_dc) — success ends the effect early, matching RAW; the outer 10-turn Concentration duration is the backstop (Stats.ray_of_enfeeblement_turns, ticked on the caster's own turn).
 var enfeeble_save_dc: int = 0    # the DC for enfeeble_turns' repeated end-of-turn CON save, set once at cast time
 var paralyzed_turns: int = 0     # Hold Person (Abyssal Tiefling lineage spell) — the real Paralyzed condition: skips this enemy's entire turn (decide_turn(), same shape as incapacitated_turns), auto-fails STR/DEX checks (resist_check_detailed()), every attack against it has Advantage (PlayerVfx.has_advantage()), and a hit made from within 1 tile of it is an automatic critical hit. Repeats a WIS save at the end of each of its own turns (decide_turn(), vs paralyze_save_dc) — success ends the effect early; the outer 10-turn Concentration duration (Stats.hold_person_turns) is the backstop.
@@ -293,6 +294,28 @@ func apply_status(condition: String, turns: int) -> bool:
 		"incapacitated": incapacitated_turns = maxi(incapacitated_turns, turns)
 		"frightened": frightened_turns = maxi(frightened_turns, turns)
 	return true
+
+# Frightened (enemy-side mirror of Player._frightened_active() — see scripts/entities/CLAUDE.md's
+# "Conditions"): DISADV on this enemy's own attack rolls/checks ONLY while the fear source is in
+# sight — NOT unconditional like frightened_turns > 0 used to be treated.
+func _frightened_active() -> bool:
+	if frightened_turns <= 0 or frightened_source == null or not is_instance_valid(frightened_source) \
+			or frightened_source.stats.is_dead() or _dungeon_floor == null:
+		return false
+	return _dungeon_floor.has_line_of_sight(grid_pos, frightened_source.grid_pos)
+
+# Frightened's "can't willingly move closer to the source of fear" — mirrors
+# Player._frightened_blocks_move_to() exactly, just for the enemy side. True when stepping onto
+# `next_pos` would strictly decrease the (squared) distance to the fear source. Forced movement
+# (Push, a chasm shove) never calls this — only _act_toward_single_step()'s voluntary greedy/BFS
+# stepping does.
+func _frightened_blocks_step(next_pos: Vector2i) -> bool:
+	if frightened_turns <= 0 or frightened_source == null or not is_instance_valid(frightened_source) \
+			or frightened_source.stats.is_dead():
+		return false
+	var cur_d2: int = (grid_pos - frightened_source.grid_pos).length_squared()
+	var new_d2: int = (next_pos - frightened_source.grid_pos).length_squared()
+	return new_d2 < cur_d2
 
 # Nimble Escape (Goblin trait): after taking damage from a MELEE attack, the enemy's next action(s)
 # become fleeing the attacker for a random 1-5 turns instead of acting normally — see the
@@ -550,9 +573,15 @@ func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false
 	# handled separately in _attack_player() — this covers resist_check_detailed() checks, e.g.
 	# Grip of the Forest's STR pull).
 	var enfeeble_str_disadv: bool = stat_key == "str" and enfeeble_turns > 0
-	if magic_resistance_adv and not enfeeble_str_disadv:
+	# Frightened: DISADV on this enemy's own checks (not just attack rolls) while the fear source
+	# is in LOS — see _frightened_active(). Nets against Magic Resistance's ADV like every other
+	# ADV/DISADV pair in this codebase, rather than a separate elif branch.
+	var frightened_disadv: bool = _frightened_active()
+	var adv_sources: int = 1 if magic_resistance_adv else 0
+	var disadv_sources: int = (1 if enfeeble_str_disadv else 0) + (1 if frightened_disadv else 0)
+	if adv_sources > disadv_sources:
 		die = maxi(die, Rng.roll(20))
-	elif enfeeble_str_disadv and not magic_resistance_adv:
+	elif disadv_sources > adv_sources:
 		die = mini(die, Rng.roll(20))
 	# Mind Sliver cantrip: the target's next check (any resist_check_detailed() call) rolls with
 	# -1d4 — consumed here regardless of which stat this particular check happens to use.
@@ -1046,6 +1075,8 @@ func decide_turn() -> Dictionary:
 			enfeeble_turns -= 1
 	if frightened_turns > 0:
 		frightened_turns -= 1
+		if frightened_turns <= 0:
+			frightened_source = null
 	if poisoned_condition_turns > 0:
 		poisoned_condition_turns -= 1
 	# Hold Person's Paralyzed condition: same repeated-end-of-turn-save shape as Ray of
@@ -1533,6 +1564,11 @@ func _act_toward_single_step(target: Node) -> bool:
 
 	for step: Vector2i in _preferred_steps(tdx, tdy):
 		var next_pos: Vector2i = grid_pos + step
+		# Frightened: never willingly step closer to the fear source — same rule as Player's own
+		# _frightened_blocks_move_to(). A candidate step that would close distance is simply skipped,
+		# same as an unwalkable one; the loop still tries every other preferred direction.
+		if _frightened_blocks_step(next_pos):
+			continue
 		if _dungeon_floor.has_door_at(next_pos) and not _dungeon_floor.is_door_open(next_pos):
 			_dungeon_floor.open_door(next_pos)
 		if _footprint_walkable(next_pos):
@@ -1545,7 +1581,7 @@ func _act_toward_single_step(target: Node) -> bool:
 	# enemy previously made TurnManager burn through the enemy phase with zero elapsed time,
 	# which looked like an empty/cleared floor even with TurnManager.fast_mode == false).
 	var bfs_path: Array[Vector2i] = _bfs_to(dest)
-	if not bfs_path.is_empty():
+	if not bfs_path.is_empty() and not _frightened_blocks_step(bfs_path[0]):
 		var next_pos: Vector2i = bfs_path[0]
 		var step: Vector2i = next_pos - grid_pos
 		if _dungeon_floor.has_door_at(next_pos) and not _dungeon_floor.is_door_open(next_pos):
@@ -1990,16 +2026,16 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 		and _dungeon_floor != null and _dungeon_floor.is_tile_visible(_player.grid_pos)
 	var r: Dictionary = _resolve_attack_roll(GameState.player_stats.armor_class, _attack_bonus_for(sub), bw_penalty,
 		fog_adv or pack_tactics_adv or condition_adv or faerie_fire_adv,
-		# poisoned_condition_turns/frightened_turns here are THIS enemy's own conditions (DISADV on
-		# its own attack) — separate from target_prone/target_restrained above, which are the
-		# PLAYER's. frightened_turns: Aasimar Necrotic Shroud (Celestial Revelation transformation,
-		# scripts/entities/CLAUDE.md's "Aasimar" section) — simplified vs. real Frightened (no
-		# can't-approach-the-source movement block, DISADV-on-own-attacks only).
+		# poisoned_condition_turns/frightened here are THIS enemy's own conditions (DISADV on its
+		# own attack) — separate from target_prone/target_restrained above, which are the PLAYER's.
+		# Frightened (Aasimar Necrotic Shroud, scripts/entities/CLAUDE.md's "Aasimar" section): now
+		# LOS-gated via _frightened_active(), matching the real player-side rule — NOT unconditional
+		# on frightened_turns > 0 alone.
 		# Ray of Enfeeblement: DISADV on this enemy's own STR-based attacks while enfeebled —
 		# approximated as unconditional here since this engine doesn't track per-attack ability
 		# score usage for enemies (same documented simplification as the damage-reduction block
 		# below and Ray of Enfeeblement's own physical-damage-type approximation elsewhere).
-		long_shot or GameState.is_blinded(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0 or frightened_turns > 0 or enfeeble_turns > 0)
+		long_shot or GameState.is_blinded(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0 or _frightened_active() or enfeeble_turns > 0)
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]
@@ -2144,7 +2180,7 @@ func _attack_companion(companion: Companion, sub: Dictionary = {}, long_shot: bo
 				break
 	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, _attack_bonus_for(sub), 0,
 		GameState.is_blinded(companion.grid_pos) or pack_tactics_adv,
-		long_shot or GameState.is_blinded(grid_pos) or poisoned_condition_turns > 0 or frightened_turns > 0)
+		long_shot or GameState.is_blinded(grid_pos) or poisoned_condition_turns > 0 or _frightened_active())
 	if not r["is_hit"]:
 		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [atk_label, companion.animal_name])
 		return
