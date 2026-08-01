@@ -50,15 +50,18 @@ static func fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 	lines.append("= [color=yellow]%d[/color] vs AC %d  →  %s" % [total, ac, vs])
 	return "\n".join(lines)
 
-# Wizard cantrip spell attack roll — same shape as fmt_hit_tooltip but always labels the ability
-# mod "INT" (the only spellcasting_ability Wizard uses in this slice — see
-# scripts/items/spellcaster_state.gd). Kept as its own small function rather than threading a
-# third stat-label mode through fmt_hit_tooltip.
+# Spellcasting attack roll (cantrips + leveled ATTACK_ROLL spells) — same shape as fmt_hit_tooltip
+# but labels the ability mod off the caster's own real spellcasting_ability (`stat=` meta field:
+# INT/WIS/CHA, WARLOCK=CHA, RANGER=WIS, WIZARD/non-caster fallback=INT, a Tiefling casting their
+# own Fiendish Legacy spell = whichever of INT/WIS/CHA is highest) instead of always "INT" — see
+# SpellEffects._cast_ability_label(). Kept as its own small function rather than threading a third
+# stat-label mode through fmt_hit_tooltip.
 static func fmt_sphit_tooltip(p: Dictionary) -> String:
 	var die: int    = int(p.get("die", "0"))
 	var d1: int     = int(p.get("d1", str(die)))
 	var d2: int     = int(p.get("d2", str(die)))
 	var stat_mod: int = int(p.get("int", "0"))
+	var stat_label: String = p.get("stat", "INT")
 	var prof: int   = int(p.get("prof", "0"))
 	var total: int  = int(p.get("total", "0"))
 	var ac: int     = int(p.get("ac", "0"))
@@ -81,7 +84,7 @@ static func fmt_sphit_tooltip(p: Dictionary) -> String:
 	if lucky2:
 		lines.append("[color=#2e8b3d]☘ Halfling Luck: [s]1[/s] → %d[/color]" % d2)
 	if stat_mod != 0:
-		lines.append("[color=lightblue]%+d[/color]  (INT mod)" % stat_mod)
+		lines.append("[color=lightblue]%+d[/color]  (%s mod)" % [stat_mod, stat_label])
 	if prof != 0:
 		lines.append("[color=lightblue]+%d[/color]  (Proficiency)" % prof)
 	lines.append("─────────────────")

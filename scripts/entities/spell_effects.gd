@@ -39,6 +39,19 @@ static func _cast_ability_mod(stats: Stats, spell: Spell = null) -> int:
 		return stats.caster._ability_mod(stats)
 	return stats.int_modifier()
 
+## Which stat label _cast_ability_mod() actually used — for the "sphit" hit tooltip, which used to
+## hardcode "INT" (true back when Wizard was the only caster; wrong for Warlock's CHA, Ranger's
+## WIS, and a Tiefling's highest-of-three Fiendish Legacy cast). Mirrors _cast_ability_mod()'s own
+## branches exactly, including tiefling_best_ability_mod()'s maxi(int, maxi(wis, cha)) tie order.
+static func _cast_ability_label(stats: Stats, spell: Spell = null) -> String:
+	if spell != null and stats.character_race == Stats.CharacterRace.TIEFLING and spell.spell_id in stats.tiefling_legacy_spell_ids:
+		if stats.int_modifier() >= stats.wis_modifier() and stats.int_modifier() >= stats.cha_modifier(): return "INT"
+		if stats.wis_modifier() >= stats.cha_modifier(): return "WIS"
+		return "CHA"
+	if stats.caster != null:
+		return stats.caster.spellcasting_ability
+	return "INT"
+
 static func _cantrip_tier(character_level: int) -> int:
 	var tier: int = 1
 	for i: int in TIER_LEVELS.size():
@@ -144,10 +157,10 @@ static func _resolve_cantrip_hit(player: Player, spell: Spell, target: Enemy, du
 		player._berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 
-	var hit_meta: String = "sphit:die=%d,d1=%d,d2=%d,int=%d,prof=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
+	var hit_meta: String = "sphit:die=%d,d1=%d,d2=%d,int=%d,prof=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,stat=%s" % [
 		die, die1, die2, _cast_ability_mod(stats, spell), stats.proficiency_bonus, roll, target.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
-		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
+		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0, _cast_ability_label(stats, spell)]
 
 	if not is_crit and (is_nat_one or roll < target.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
@@ -947,10 +960,10 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 		player._berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 
-	var hit_meta: String = "sphit:die=%d,d1=%d,d2=%d,int=%d,prof=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
+	var hit_meta: String = "sphit:die=%d,d1=%d,d2=%d,int=%d,prof=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,stat=%s" % [
 		die, die1, die2, _cast_ability_mod(stats, spell), stats.proficiency_bonus, roll, target.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
-		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
+		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0, _cast_ability_label(stats, spell)]
 
 	if not is_crit and (is_nat_one or roll < target.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
