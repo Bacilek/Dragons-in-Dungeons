@@ -61,6 +61,7 @@ var enfeeble_turns: int = 0      # Chthonic Tiefling lineage spell Ray of Enfeeb
 var enfeeble_save_dc: int = 0    # the DC for enfeeble_turns' repeated end-of-turn CON save, set once at cast time
 var paralyzed_turns: int = 0     # Hold Person (Abyssal Tiefling lineage spell) — the real Paralyzed condition: skips this enemy's entire turn (decide_turn(), same shape as incapacitated_turns), auto-fails STR/DEX checks (resist_check_detailed()), every attack against it has Advantage (PlayerVfx.has_advantage()), and a hit made from within 1 tile of it is an automatic critical hit. Repeats a WIS save at the end of each of its own turns (decide_turn(), vs paralyze_save_dc) — success ends the effect early; the outer 10-turn Concentration duration (Stats.hold_person_turns) is the backstop.
 var paralyze_save_dc: int = 0    # the DC for paralyzed_turns' repeated end-of-turn WIS save, set once at cast time
+var hideous_laughter_save_dc: int = 0  # Tasha's Hideous Laughter — the DC for the repeated WIS save (both the end-of-turn one in decide_turn() and the on-hit one in take_typed_damage()), set once at cast time
 var embedded_items: Array[Item] = []  # thrown weapons stuck in a non-lethal hit (PlayerThrowTool._throw_weapon) — dropped at 100% chance wherever/whenever this enemy eventually dies, see die() override below
 var escape_turns: int = 0    # Nimble Escape trait (Goblin) — random 1-5 turns fleeing escape_from, set in on_melee_hit()
 var escape_from: Node = null  # entity being fled from; always is_instance_valid()-checked before use (may die/despawn mid-flee)
@@ -269,6 +270,13 @@ func take_typed_damage(amount: int, damage_type: String, is_crit: bool = false) 
 	var actual: int = stats.take_damage(effective)
 	if actual > 0:
 		_hits_taken += 1
+	# Tasha's Hideous Laughter: any landed damage instance re-rolls the WIS save WITH Advantage —
+	# per the spell's own text, multiple hits from the same spell (Magic Missile's 3 darts,
+	# Eldritch Blast's beams) each trigger their own throw when they land on separate
+	# take_typed_damage() calls (a single grouped instance, e.g. darts stacked on one target, only
+	# triggers once — see _resolve_hideous_laughter_save()'s own comment).
+	if actual > 0 and incapacitated_turns > 0 and GameState.player_stats.concentration_spell_id == "hideous_laughter" and GameState.player_stats.hideous_laughter_target == self:
+		_resolve_hideous_laughter_save(true)
 	# Shape Shift (Imp): any actual damage taken (an immune hit deals 0 and returned earlier above,
 	# so this never fires from those) reverts a shape-shifted enemy to its true form immediately.
 	if actual > 0 and _shifted_form != "":
@@ -316,6 +324,27 @@ func _frightened_blocks_step(next_pos: Vector2i) -> bool:
 	var cur_d2: int = (grid_pos - frightened_source.grid_pos).length_squared()
 	var new_d2: int = (next_pos - frightened_source.grid_pos).length_squared()
 	return new_d2 < cur_d2
+
+# Tasha's Hideous Laughter — shared WIS-save resolver for both the end-of-turn repeat (no ADV,
+# called from decide_turn()) and the on-hit repeat (ADV — called from take_typed_damage() below,
+# once per landed damage instance; a single attack that groups multiple hits into one damage
+# instance, e.g. Magic Missile's darts on the same target, only triggers this once per instance,
+# not once per die — documented simplification, same tier as Mind Sliver's own timing note). A
+# pass ends the Incapacitated half early (and the caster's Concentration with it); Prone is left
+# completely untouched either way, per the spell's own text — it clears itself normally the next
+# time this enemy's own turn lets it stand up. Returns whether the save passed.
+func _resolve_hideous_laughter_save(with_adv: bool) -> bool:
+	var save: Dictionary = resist_check_detailed(hideous_laughter_save_dc, false, false, true, false, true, false, with_adv)
+	var meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+		save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
+	if save["pass"]:
+		incapacitated_turns = 0
+		GameState.game_log("%s [url=%s]stops laughing[/url] and regains its composure." % [display_name, meta])
+		if GameState.player_stats.concentration_spell_id == "hideous_laughter" and GameState.player_stats.hideous_laughter_target == self:
+			GameState.end_concentration()
+	else:
+		GameState.game_log("%s [url=%s]keeps laughing[/url] uncontrollably." % [display_name, meta])
+	return bool(save["pass"])
 
 # Nimble Escape (Goblin trait): after taking damage from a MELEE attack, the enemy's next action(s)
 # become fleeing the attacker for a random 1-5 turns instead of acting normally — see the
@@ -540,7 +569,7 @@ func resist_check(dc: int, use_con: bool = false) -> bool:
 # Mind Sliver, Thunderclap, Fireball) — NOT a weapon-mastery save (Push/Topple/Grip of the Forest/
 # Branching Strike), which aren't spells and never pass this. Combined with the "magic_resistance"
 # trait (Imp), rolls the d20 with Advantage (max of two rolls) — Magic Resistance's real D&D text.
-func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false, use_wis: bool = false, use_int: bool = false, magical: bool = false, use_cha: bool = false) -> Dictionary:
+func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false, use_wis: bool = false, use_int: bool = false, magical: bool = false, use_cha: bool = false, force_adv: bool = false) -> Dictionary:
 	var mod: int
 	var stat_name: String
 	var stat_key: String
@@ -577,7 +606,9 @@ func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false
 	# is in LOS — see _frightened_active(). Nets against Magic Resistance's ADV like every other
 	# ADV/DISADV pair in this codebase, rather than a separate elif branch.
 	var frightened_disadv: bool = _frightened_active()
-	var adv_sources: int = 1 if magic_resistance_adv else 0
+	# force_adv: a one-off ADV source for a specific check, not tied to any trait (Tasha's Hideous
+	# Laughter's on-hit repeat save — see take_typed_damage() below).
+	var adv_sources: int = (1 if magic_resistance_adv else 0) + (1 if force_adv else 0)
 	var disadv_sources: int = (1 if enfeeble_str_disadv else 0) + (1 if frightened_disadv else 0)
 	if adv_sources > disadv_sources:
 		die = maxi(die, Rng.roll(20))
@@ -1095,6 +1126,14 @@ func decide_turn() -> Dictionary:
 		else:
 			paralyzed_turns -= 1
 			GameState.game_log("%s [url=%s]remains paralyzed[/url]." % [display_name, par_meta])
+			return {"type": "idle_tick"}
+	# Tasha's Hideous Laughter: repeats a WIS save (no ADV) at the end of this enemy's own turn —
+	# same repeated-end-of-turn-save shape as Ray of Enfeeblement/Hold Person above. A pass zeroes
+	# incapacitated_turns via the resolver, so the generic incapacitated block right below no
+	# longer applies this same round; a fail decrements it here and skips the turn like normal.
+	if incapacitated_turns > 0 and GameState.player_stats.concentration_spell_id == "hideous_laughter" and GameState.player_stats.hideous_laughter_target == self:
+		if not _resolve_hideous_laughter_save(false):
+			incapacitated_turns -= 1
 			return {"type": "idle_tick"}
 	# Incapacitated: "can't take actions" — skips this entire turn outright, same shape the OLD
 	# Prone behavior used to have (see below). Checked before target selection since it doesn't

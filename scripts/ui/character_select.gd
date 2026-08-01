@@ -81,7 +81,7 @@ const PREMADE: Array = [
 		"masteries": [],
 		"scores":  {"str": 10, "dex": 14, "con": 16, "int": 8, "wis": 10, "cha": 16},
 		"cantrip": "eldritch_blast",
-		"spell1":  "mage_armor",
+		"spell1":  "hideous_laughter",
 		"sprite":  CHAR_PATH + "Warlock/idle_1.png",
 		"subtitle": "Fire Goliath Warlock",
 		"desc":    "Small name, big blasts.\nEldritch Blast and a Fire Giant's heart.",

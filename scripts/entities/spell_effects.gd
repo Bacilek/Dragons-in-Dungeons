@@ -1179,6 +1179,14 @@ static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level:
 					stats.ray_of_enfeeblement_target = target
 					stats.ray_of_enfeeblement_turns = 10
 					GameState.game_log("[color=cyan]%s's muscles wither with enfeeblement![/color]" % target.display_name)
+				"hideous_laughter":
+					target.apply_status("prone", 1)
+					target.incapacitated_turns = 10
+					target.hideous_laughter_save_dc = dc
+					stats.concentration_spell_id = "hideous_laughter"
+					stats.hideous_laughter_target = target
+					stats.hideous_laughter_turns = 10
+					GameState.game_log("[color=cyan]%s collapses in a fit of uncontrollable laughter![/color]" % target.display_name)
 		if dungeon_floor != null:
 			dungeon_floor.update_fog(player.grid_pos)
 		player._handle_post_attack_turn()

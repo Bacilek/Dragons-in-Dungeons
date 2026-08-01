@@ -423,7 +423,8 @@ from-scratch build. Also
 owns the "Continue Saved Run" button (moved here from `class_select.gd` since this is now the true
 entry point) — same behavior as before, see `scripts/autoloads/CLAUDE.md`'s SaveManager
 "Continue flow" section. Jace's/Lil Dorruk's cards also carry a `"spell1"` key (`"magic_missile"`/
-`"mage_armor"` respectively), applied via
+`"hideous_laughter"` respectively — Lil Dorruk's own was originally `"mage_armor"`, corrected once
+it was noticed Mage Armor isn't on the real Warlock spell list), applied via
 `GameState.choose_starting_spell()` right after the `"cantrip"` key's `choose_cantrip()` call —
 premade casters get their fixed cantrip + level-1 spell without ever seeing `cantrip_select.gd`.
 **Lil Dorruk** (`Stats.CharacterClass.WARLOCK`, `Stats.CharacterRace.GOLIATH`,

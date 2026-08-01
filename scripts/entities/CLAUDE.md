@@ -2298,7 +2298,29 @@ fallback (a long rest also grants everything a short rest would).
 **Spell list** (`SpellDb.WARLOCK_SPELL_IDS`, real 5e 2024 Warlock overlap with the shared
 `SpellDb` pool — all genuinely on Warlock's actual class list, no reflavoring): `witch_bolt`,
 `expeditious_retreat`, `darkness`, `hold_person`, `invisibility`, `misty_step`,
-`ray_of_enfeeblement` — all 7 already existed as Wizard entries, zero new spell content needed.
+`ray_of_enfeeblement`, `hideous_laughter` — the first 7 already existed as Wizard entries, zero
+new spell content needed; **Tasha's Hideous Laughter** (`class_list = ["WARLOCK", "WIZARD"]`,
+also real on Bard's list — not listed there since Bard isn't a playable class) is a genuinely new
+1st-level Enchantment/SAVE/WIS spell, 2-tile range, Concentration up to 10 turns: a failed save
+knocks the target Prone AND Incapacitated (`Enemy.apply_status("prone", 1)` +
+`Enemy.incapacitated_turns = 10`, dispatched via `SpellEffects.cast_leveled_save_at_enemy()`'s
+`"hideous_laughter"` case, same `dice_count <= 0` pure-debuff shape as Hold Person/Ray of
+Enfeeblement above). The target repeats the WIS save at the end of each of its own turns
+(`Enemy.decide_turn()`, no Advantage) AND again, with Advantage, on every landed damage instance
+(`Enemy.take_typed_damage()`) — both routed through the shared `Enemy._resolve_hideous_laughter_save(with_adv)`
+resolver (`resist_check_detailed()` gained a generic `force_adv: bool` param for this one-off ADV
+source). A pass ends the Incapacitated half early (and the caster's Concentration with it, via
+`Stats.hideous_laughter_target`/`hideous_laughter_turns`, same live-reference-not-serialized
+precedent as `hold_person_target`) — **Prone is deliberately left untouched either way**, per the
+spell's own text; it clears itself normally the next time the target's own turn lets it stand up.
+**Documented simplification**: a single grouped damage instance (e.g. Magic Missile's 3 darts
+landing on the same target, which sum into ONE `take_typed_damage()` call — see
+`scripts/entities/CLAUDE.md`'s Magic Missile entry) only triggers one on-hit repeat, not one per
+die, unlike separately-resolved hits (Eldritch Blast's independent beams) which each trigger their
+own. **Upcast (+1 target per spell slot level above 1st) is not implemented** — this codebase has
+no upcasting at all (`StandardSlotPool.available_level()`'s own "no upcasting" rule) — the spell
+always resolves single-target regardless of which slot level it's cast at, same documented scope
+cut as every other spell's upcast text in this game.
 **Cantrips**: starter pick 1 of 3 (`SpellDb.WARLOCK_STARTER_CANTRIP_IDS` — `eldritch_blast`
 (new), `chill_touch`, `poison_spray`) via the generalized `cantrip_select.gd` (see below).
 `SpellcasterState.cantrip_max()` gained a `WARLOCK` case reusing Wizard's exact numbers (3/4/5

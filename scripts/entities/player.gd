@@ -390,6 +390,19 @@ func _on_turn_started() -> void:
 					stats.hold_person_target.paralyzed_turns = 0
 				stats.hold_person_target = null
 				GameState.game_log("[color=gray]Hold Person fades.[/color]")
+		# Tasha's Hideous Laughter: same 10-turn Concentration cap/backstop as Hold Person above
+		# — the target's own repeated saves (Enemy.decide_turn(), and on-hit in
+		# take_typed_damage()) usually end this earlier by clearing incapacitated_turns to 0
+		# directly. Prone is left untouched either way (see end_concentration()'s own comment).
+		if stats.hideous_laughter_turns > 0:
+			stats.hideous_laughter_turns -= 1
+			if stats.hideous_laughter_turns <= 0:
+				if stats.concentration_spell_id == "hideous_laughter":
+					stats.concentration_spell_id = ""
+				if is_instance_valid(stats.hideous_laughter_target):
+					stats.hideous_laughter_target.incapacitated_turns = 0
+				stats.hideous_laughter_target = null
+				GameState.game_log("[color=gray]Tasha's Hideous Laughter fades.[/color]")
 		# Invisibility: 600-turn duration, ticked once per real turn. Usually already ended earlier
 		# this same turn transition via _resolve_stealth_check()'s attack/cast check (which runs
 		# first, from _on_turn_ending()) — this decrement is a no-op whenever that already zeroed

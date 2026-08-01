@@ -3065,6 +3065,14 @@ func end_concentration(reason_log: String = "") -> void:
 			player_stats.hold_person_target.paralyzed_turns = 0
 			player_stats.hold_person_target._refresh_paralyzed_visual()
 		player_stats.hold_person_target = null
+	elif broken_spell == "hideous_laughter":
+		player_stats.hideous_laughter_turns = 0
+		# Prone is deliberately left alone — it clears itself normally the next time this enemy's
+		# own turn lets it stand up (see the Enemy.prone field's own comment), not tied to
+		# Concentration at all. Only the Incapacitated half ends here.
+		if is_instance_valid(player_stats.hideous_laughter_target):
+			player_stats.hideous_laughter_target.incapacitated_turns = 0
+		player_stats.hideous_laughter_target = null
 	elif broken_spell == "faerie_fire":
 		player_stats.faerie_fire_turns = 0
 		# Faerie Fire is Concentration too, and losing it should retroactively un-outline every

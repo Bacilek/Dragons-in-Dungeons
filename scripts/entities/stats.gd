@@ -391,6 +391,7 @@ func concentration_turns_remaining() -> int:
 		"hunters_mark": return hunters_mark_turns
 		"ray_of_enfeeblement": return ray_of_enfeeblement_turns
 		"hold_person": return hold_person_turns
+		"hideous_laughter": return hideous_laughter_turns
 		"faerie_fire": return faerie_fire_turns
 		"invisibility": return invisibility_turns
 		_: return 0
@@ -462,6 +463,13 @@ var ray_of_enfeeblement_turns: int = 0
 # same precedent as witch_bolt_target/witch_bolt_turns above.
 var hold_person_target: Enemy = null
 var hold_person_turns: int = 0
+
+# Tasha's Hideous Laughter (Bard/Warlock/Wizard, level 1) — same generic concentration_spell_id
+# mechanism ("hideous_laughter") + live target reference as Hold Person (the ongoing Prone +
+# Incapacitated condition lives on Enemy.prone/incapacitated_turns, per-target). Deliberately NOT
+# serialized, same precedent as witch_bolt_target/witch_bolt_turns above.
+var hideous_laughter_target: Enemy = null
+var hideous_laughter_turns: int = 0
 
 # Longstrider (Wood Elf lineage spell, level 3) — NOT Concentration (5e RAW). +1/3 movement speed
 # via the same duty-cycle mechanism as Wood Elf's 35ft speed / Goliath's Large Form (Player.

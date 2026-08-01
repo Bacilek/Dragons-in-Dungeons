@@ -20,7 +20,7 @@ const STARTER_CANTRIP_IDS: Array[String] = ["fire_bolt", "ray_of_frost", "shocki
 # click-to-pick-a-target-per-instance UX Magic Missile's darts already used). See
 # _eldritch_blast() below.
 const WARLOCK_STARTER_CANTRIP_IDS: Array[String] = ["eldritch_blast", "chill_touch", "poison_spray"]
-const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud", "invisibility", "darkness", "longstrider", "detect_magic", "pass_without_trace", "faerie_fire", "ray_of_sickness", "ray_of_enfeeblement", "hold_person"]
+const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor", "misty_step", "fireball", "chromatic_orb", "burning_hands", "witch_bolt", "expeditious_retreat", "false_life", "fog_cloud", "invisibility", "darkness", "longstrider", "detect_magic", "pass_without_trace", "faerie_fire", "ray_of_sickness", "ray_of_enfeeblement", "hold_person", "hideous_laughter"]
 # Ranger (half-caster, scripts/entities/CLAUDE.md's "Ranger class") draws from the same shared
 # `SpellDb` pool as Wizard, but ONLY the subset actually on Ranger's real 5e/5.5e (2024) spell
 # list — direct owner correction: don't just open every `LEVELED_SPELL_IDS` entry up to Ranger
@@ -37,7 +37,7 @@ const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace"]
 # Warlock's real 5e/2024 Pact Magic list overlap with the shared SpellDb pool (scripts/entities/
 # CLAUDE.md's "Warlock class") — all seven are genuinely on Warlock's actual class list, no
 # reflavoring needed, unlike Ranger's thinner/approximated subset above.
-const WARLOCK_SPELL_IDS: Array[String] = ["witch_bolt", "expeditious_retreat", "darkness", "hold_person", "invisibility", "misty_step", "ray_of_enfeeblement"]
+const WARLOCK_SPELL_IDS: Array[String] = ["witch_bolt", "expeditious_retreat", "darkness", "hold_person", "invisibility", "misty_step", "ray_of_enfeeblement", "hideous_laughter"]
 const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS, "RANGER": RANGER_SPELL_IDS, "WARLOCK": WARLOCK_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
 # Elf lineage-only spells (see scripts/entities/CLAUDE.md's "Elf" section) — granted exclusively by
@@ -119,6 +119,7 @@ static func get_spell(id: String) -> Spell:
 		"chill_touch": return _chill_touch()
 		"ray_of_sickness": return _ray_of_sickness()
 		"hold_person": return _hold_person()
+		"hideous_laughter": return _hideous_laughter()
 		"ray_of_enfeeblement": return _ray_of_enfeeblement()
 		"hellish_rebuke": return _hellish_rebuke()
 		"minor_illusion": return _minor_illusion()
@@ -723,6 +724,30 @@ static func _hold_person() -> Spell:
 	s.icon_path = "res://icons/spells/2/hold_person.png"
 	s.effect_id = "hold_person"
 	s.class_list = ["WIZARD"]
+	return s
+
+static func _hideous_laughter() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "hideous_laughter"
+	s.spell_name = "Tasha's Hideous Laughter"
+	s.school = "Enchantment"
+	s.casting_time = "Action"
+	s.duration_turns = 10
+	s.is_concentration = true
+	s.level = 1
+	s.range_tiles = 2
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.SAVE
+	s.save_stat = "WIS"
+	s.dice_count = 0
+	# Upcast (1 additional target per spell slot level above 1st) is not implemented — this
+	# codebase has no upcasting at all (see "Wizard leveled spells"'s own "no upcasting"
+	# permanent simplification), so casting always affects a single target regardless of which
+	# slot level it's cast at.
+	s.description = "WIS save or is knocked Prone and Incapacitated. Repeats the save at the end of its turns, and again with Advantage whenever it takes damage (multiple hits from the same spell each get their own throw). A success ends the Incapacitated half; Prone lingers until it stands up normally. Upcast: +1 target per spell slot level above 1st (not yet implemented — always single-target)."
+	s.icon_path = "res://icons/spells/1/hideous_laughter.png"
+	s.effect_id = "hideous_laughter"
+	s.class_list = ["WARLOCK", "WIZARD"]
 	return s
 
 static func _ray_of_enfeeblement() -> Spell:
