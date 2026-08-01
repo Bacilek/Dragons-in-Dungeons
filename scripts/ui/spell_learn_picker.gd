@@ -20,6 +20,7 @@ const TOOLTIP_W: float = 240.0
 var _panel: Panel
 var _tooltip: Panel
 var _tooltip_rtl: RichTextLabel
+var _hover_source_rect: Rect2 = Rect2()   # last-shown tile's global rect, for _process()'s hover-chain check
 
 func _ready() -> void:
 	layer = 25
@@ -105,7 +106,6 @@ func _build_tile(spell: Spell, pos: Vector2) -> void:
 	tile.add_theme_stylebox_override("hover", hover)
 	tile.pressed.connect(func() -> void: _on_chosen(spell.spell_id))
 	tile.mouse_entered.connect(func() -> void: _show_tooltip(SpellTooltip.build(spell, false), spell, tile))
-	tile.mouse_exited.connect(_hide_tooltip)
 	_panel.add_child(tile)
 
 	var icon := TextureRect.new()
@@ -158,20 +158,38 @@ func _show_tooltip(text: String, spell: Spell, tile: Control) -> void:
 	_tooltip_rtl.text = text
 	var w: float = maxf(TOOLTIP_W, SpellTooltip.required_width(spell, 14))
 	_tooltip_rtl.size = Vector2(w, 0)
-	_tooltip.size = Vector2(w + 16.0, 60.0)
-	_tooltip.visible = true
-	var rect := Rect2(tile.global_position, tile.size)
+	_hover_source_rect = Rect2(tile.global_position, tile.size)
 	var vp: Vector2 = get_viewport().get_visible_rect().size
-	var th: float = maxf(_tooltip.size.y, _tooltip_rtl.get_content_height() + 12.0)
-	var tx: float = clampf(rect.position.x, 4.0, vp.x - (w + 16.0) - 4.0)
+	# BUGFIX: th was computed for the position calc below but never actually applied to
+	# _tooltip.size — the panel stayed pinned at its 60px placeholder height regardless of how
+	# tall the text actually was, so a long description visibly overflowed/got clipped by its own
+	# background box.
+	var th: float = maxf(60.0, _tooltip_rtl.get_content_height() + 12.0)
+	_tooltip.size = Vector2(w + 16.0, th)
+	_tooltip.visible = true
+	var tx: float = clampf(_hover_source_rect.position.x, 4.0, vp.x - (w + 16.0) - 4.0)
 	# Anchored ABOVE the tile — direct owner request (tooltips used to spawn below the icon).
-	var ty: float = rect.position.y - th - 8.0
+	var ty: float = _hover_source_rect.position.y - th - 8.0
 	if ty < 4.0:
-		ty = rect.position.y + rect.size.y + 8.0
+		ty = _hover_source_rect.position.y + _hover_source_rect.size.y + 8.0
 	_tooltip.position = Vector2(tx, ty)
 
 func _hide_tooltip() -> void:
 	if _tooltip != null:
+		_tooltip.visible = false
+
+## Hiding is driven entirely by this per-frame hover-chain check, not mouse_exited — a tile's own
+## mouse_exited fires the instant the cursor leaves it, even when heading straight up INTO the
+## tooltip that sits just above it, which used to make the popup disappear before the mouse could
+## ever reach it. Keeping it open while the mouse is over either the source tile OR the tooltip
+## itself (same "hover chain" convention as hud.gd's own qbar tooltip) also means a longer
+## description that needs scanning won't vanish out from under the cursor.
+func _process(_delta: float) -> void:
+	if _tooltip == null or not _tooltip.visible:
+		return
+	var mp: Vector2 = get_viewport().get_mouse_position()
+	var over_tooltip := Rect2(_tooltip.global_position, _tooltip.size).has_point(mp)
+	if not _hover_source_rect.has_point(mp) and not over_tooltip:
 		_tooltip.visible = false
 
 func _on_chosen(spell_id: String) -> void:

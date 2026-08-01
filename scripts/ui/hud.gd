@@ -799,10 +799,25 @@ func _refresh_item_bar() -> void:
 
 ## Returns the free-casts-remaining counter for a spell_id granted by Elven Lineage, Fiendish
 ## Legacy, or Gnomish Lineage — or null if spell_id belongs to none of the three (a normal known/
-## prepared Wizard/Ranger spell, which has no such counter). Used by _refresh_ability_bar()'s
-## racial-lineage badge branch above.
+## prepared Wizard/Ranger spell, which has no such counter) OR is a cantrip granted by Elven
+## Lineage/Fiendish Legacy specifically (genuinely infinite, no badge — Gnomish Lineage's own
+## cantrips are the deliberate exception, see this function's body). Used by
+## _refresh_ability_bar()'s racial-lineage badge branch above.
 func _racial_lineage_spell_counter(spell_id: String) -> Variant:
 	var stats: Stats = GameState.player_stats
+	# Cantrips (level 0) granted by Elven Lineage/Fiendish Legacy are genuinely infinite — the
+	# free-cast counter only matters for a LEVELED lineage spell, which falls back to a real spell
+	# slot once its counter runs out (Stats.is_lineage_free_cast_available()); a cantrip has no
+	# such fallback and PlayerSpellcasting._cast_level_for()/begin_cast() never even consult the
+	# counter for one (both gate on spell.level > 0), so showing a "X/Y" badge on it is misleading
+	# — it implies the cantrip stops working once exhausted, which it never does. BUGFIX: no badge
+	# at all for a level-0 Elf/Tiefling grant (e.g. Tiefling's own level-1 cantrip — Poison Spray/
+	# Chill Touch/Fire Bolt). Gnomish Lineage is the one deliberate exception — all three of its
+	# grants are cantrips too, but the owner explicitly wants THOSE capped per long rest (see
+	# scripts/entities/CLAUDE.md's "Gnome" section) — its own branch below is untouched.
+	var spell: Spell = SpellDb.get_spell(spell_id)
+	if spell != null and spell.level == 0 and (spell_id in stats.elf_lineage_spell_ids or spell_id in stats.tiefling_legacy_spell_ids):
+		return null
 	if spell_id in stats.elf_lineage_spell_ids:
 		return stats.elf_lineage_free_casts_remaining.get(spell_id, 0)
 	if spell_id in stats.tiefling_legacy_spell_ids:

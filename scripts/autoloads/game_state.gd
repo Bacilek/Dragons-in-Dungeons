@@ -866,7 +866,15 @@ func _build_adrenaline_rush_ability() -> Ability:
 	var ab := Ability.new()
 	ab.ability_id = "adrenaline_rush"
 	ab.ability_name = "Adrenaline Rush"
-	ab.description = "Gain temporary HP equal to your proficiency bonus (%d) and your next move doesn't cost you a turn. Free action, %d uses — refills on short rest AND long rest." % [player_stats.proficiency_bonus, player_stats.proficiency_bonus]
+	# BUGFIX: this used to bake the CURRENT proficiency_bonus straight into the description text
+	# ("2 uses") at grant time — _sync_ability_uses() keeps ab.uses_max itself live on every
+	# proficiency-bonus level-up crossing, but never regenerates ab.description, so the hover
+	# tooltip's own copy of the number went stale the moment proficiency_bonus grew (levels 5/9/
+	# 13/17). Rule text now describes the SCALING rule instead of a snapshot number — same
+	# "describe the rule, not a number" pattern _build_breath_weapon_ability()/
+	# _build_stonecunning_ability() already use, and the ability-bar's own "X/Y" badge (which reads
+	# uses_remaining/uses_max live) already shows the actual current numbers regardless.
+	ab.description = "Gain temporary HP equal to your proficiency bonus and your next move doesn't cost you a turn. Free action, uses = your proficiency bonus — refills on short rest AND long rest."
 	ab.icon_path = "res://icons/races/orc/adrenaline_rush.png"
 	ab.uses_remaining = player_stats.adrenaline_rush_uses_remaining
 	ab.uses_max = player_stats.proficiency_bonus
