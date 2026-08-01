@@ -83,8 +83,11 @@ Fully data-driven: `hud.gd._update_status_icons()` builds a fresh `Array[Diction
 `TurnManager.player_turn_started`, `GameState.player_status_changed`, `GameState.ability_bar_changed`)
 and calls `_status_tray.refresh(entries)`. **`race_bonus` is always the FIRST entry appended**,
 unconditionally (every other entry is gated on a live game-state flag; this one never is) — a
-permanent, always-visible reference icon for the player's chosen race's full trait kit, gold
-placeholder tint (`res://icons/status/race_bonus.png`, no art yet). Hover text is built by
+permanent, always-visible reference icon for the player's chosen race's full trait kit. Its icon
+is the same portrait `race_select.gd`'s tile grid shows — `StatusTooltips.
+race_portrait_icon_path(stats)` resolves `res://icons/races/<id>/portrait.png` (`id` = the
+lowercase `RACE_NAMES` display name), so the HUD buff icon and the onboarding tile are the
+identical asset, not two separate files to keep in sync. Hover text is built by
 `StatusTooltips.race_bonus_text(stats)`/`race_display_name(stats)` (`status_tooltips.gd`) — a
 `match stats.character_race` returning every trait that race grants in plain English (Elf/
 Dragonborn branch further on `race_variant` for their sub-race/ancestry-specific lines), title
@@ -485,24 +488,42 @@ deliberately just the ability-score increase.
 
 ## Race select (`race_select.gd`)
 CanvasLayer, layer = 25. One-time, mandatory choice spawned by `background_select.gd._on_confirm()`
-(Custom path) — see "Background select" above. Modeled directly on
-`subclass_select.gd`'s conventions (dim overlay + centered bordered `Panel`, `focus_mode =
-FOCUS_NONE` everywhere, `race_picker_open` input-gate flag, non-dismissible — no close button,
-`_unhandled_input` swallows Esc/keys). 10 race cards (Orc/Human/Halfling/Dwarf/Elf/Dragonborn/
-Tiefling/Aasimar/Gnome/Goliath); Human/Elf/Dragonborn/Tiefling/Gnome/Goliath additionally show an
-inline sub-choice row (ability-score proficiency / sub-race / ancestry / legacy / a combined
-lineage+stat pick / Giant Ancestry) that must be picked before Confirm enables. Goliath's own
-sub-choice (`sub_kind: "giant_ancestry"`, 6 flat options — Cloud/Fire/Frost/Hill/Stone/Storm) is
-the simplest of the bunch, decoded exactly like Dragonborn's ancestry/Tiefling's legacy (`variant
-= _selected_sub` directly, no combined-index decoding needed) — see
-`scripts/entities/CLAUDE.md`'s "Goliath" section. **Gnome is the one race with two independent sub-choices**
-(a Gnomish Lineage AND a Gnomish Cunning stat, see `scripts/entities/CLAUDE.md`'s "Gnome" section)
-— rather than build a second parallel sub-choice UI, its `sub_options` just lists all 6
-combinations ("Forest (INT)"/"Forest (WIS)"/"Forest (CHA)"/"Rock (INT)"/"Rock (WIS)"/"Rock (CHA)")
-through the exact same single-`sub_kind` grid every other race uses; `_on_confirm()`'s `"gnome"`
-match arm decodes the picked index back into `variant = idx / 3` (lineage) and
-`prof_ability = 3 + idx % 3` (3/4/5 = INT/WIS/CHA, reusing Human's own ability-index convention
-instead of adding a second field). Confirm calls
+(Custom path) — see "Background select" above. `race_picker_open` input-gate flag, non-dismissible
+(no close button, `_unhandled_input` swallows Esc/keys).
+
+**Tile-grid layout** (mirrors `class_select.gd`'s square-tile convention, redesigned from an
+earlier wide-description-card layout — direct owner request to visually match the class-select
+screen): 10 square `TILE_SIZE` (170px) tiles in a `GRID_COLUMNS` (5) × 2 grid inside the bordered
+`Panel`, each showing a portrait (`icons/races/<id>/portrait.png` — falls back to a gray "?" glyph
+if missing, same convention as `class_select.gd`'s locked-class silhouette; same file the HUD's
+`race_bonus` status-tray icon reuses, see `scripts/entities/CLAUDE.md`'s "Race-granted ability
+icons"), the race name in a per-race accent color, a 2-line flavor blurb (`short_desc`), and a
+small "i" info badge (top-right, `_build_info_icon()` — same `mouse_filter = STOP`/native-tooltip
+shape as `class_select.gd`'s own info icon, but the blurb text is hard word-wrapped first via
+`_wrap_text(text, WRAP_COLS=46)` — **bugfix**: Godot's native `Control.tooltip_text` rendered
+these ~300-char blurbs as one barely-legible run-on line with no font-size override worth fighting,
+so the string itself is now pre-wrapped into short lines before ever reaching `tooltip_text`)
+whose hover tooltip shows the race's full mechanical rundown (the `blurb` field — same text the
+old wide cards used to show inline). A race with a `sub_kind` also shows a small "choose…" hint
+label at the tile's bottom edge.
+
+**Sub-choice selection** (Human/Elf/Dragonborn/Tiefling/Gnome/Goliath — ability-score proficiency /
+sub-race / ancestry / legacy / a combined lineage+stat pick / Giant Ancestry): a small tile has no
+room for the old inline sub-choice row, so selecting a race with a `sub_kind` reveals a **shared**
+sub-choice button row BELOW the grid (`_sub_label`/`_sub_container`, rebuilt fresh on every
+`_select()` call — only ever shows the currently-selected race's own options, not one row per
+race) instead of a per-card row. Must be picked before Confirm enables. Goliath's own sub-choice
+(`sub_kind: "giant_ancestry"`, 6 flat options — Cloud/Fire/Frost/Hill/Stone/Storm) is the simplest
+of the bunch, decoded exactly like Dragonborn's ancestry/Tiefling's legacy (`variant =
+_selected_sub` directly, no combined-index decoding needed) — see `scripts/entities/CLAUDE.md`'s
+"Goliath" section. **Gnome is the one race with two independent sub-choices** (a Gnomish Lineage
+AND a Gnomish Cunning stat, see `scripts/entities/CLAUDE.md`'s "Gnome" section) — rather than build
+a second parallel sub-choice UI, its `sub_options` just lists all 6 combinations ("Forest (INT)"/
+"Forest (WIS)"/"Forest (CHA)"/"Rock (INT)"/"Rock (WIS)"/"Rock (CHA)") through the exact same
+single-`sub_kind` row every other race uses; `_on_confirm()`'s `"gnome"` match arm decodes the
+picked index back into `variant = idx / 3` (lineage) and `prof_ability = 3 + idx % 3` (3/4/5 =
+INT/WIS/CHA, reusing Human's own ability-index convention instead of adding a second field).
+Confirm calls
 `GameState.choose_race(race, variant, prof_ability)`, then spawns `mastery_picker.gd` itself
 (same `mastery_cap() > 0` gate class_select used to apply) before `queue_free()` — so the full
 onboarding order for the Custom path is **class select → point buy → background ASI → race

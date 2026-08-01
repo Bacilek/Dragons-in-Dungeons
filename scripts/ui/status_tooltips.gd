@@ -116,6 +116,14 @@ static func get_text(id: String) -> String:
 # Race display name (e.g. "High Elf", "Red Dragonborn") — mirrors
 # character_summary.gd's own _race_display_name(), duplicated locally per this file's
 # "static-func helper, UI copy not game data" convention (see file header).
+# Race portrait — same art race_select.gd's tile grid shows (icons/races/<id>/portrait.png,
+# id = the lowercase RACE_NAMES display name, e.g. "Dragonborn" -> "dragonborn") — reused directly
+# for the always-first "race_bonus" status-tray entry so the HUD buff icon and the onboarding
+# tile show the identical portrait, not two separate art assets to keep in sync.
+static func race_portrait_icon_path(stats: Stats) -> String:
+	var id: String = RACE_NAMES.get(stats.character_race, "").to_lower()
+	return "res://icons/races/%s/portrait.png" % id if id != "" else ""
+
 static func race_display_name(stats: Stats) -> String:
 	var base_name: String = RACE_NAMES.get(stats.character_race, "")
 	match stats.character_race:
