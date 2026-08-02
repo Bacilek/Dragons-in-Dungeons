@@ -123,6 +123,23 @@ const ITEM_POOL: Array = [
 	{"name": "Scroll of Longstrider", "type": 3, "icon": "longstrider.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Longstrider once, then it crumbles to dust.", "scroll_spell": "longstrider", "gold": 50},
 	{"name": "Scroll of Detect Magic", "type": 3, "icon": "detect_magic.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Detect Magic once, then it crumbles to dust.", "scroll_spell": "detect_magic", "gold": 50},
 	{"name": "Scroll of Pass Without Trace", "type": 3, "icon": "pass_without_trace.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts Pass Without Trace once, then it crumbles to dust.", "scroll_spell": "pass_without_trace", "gold": 60},
+	# Full spell-coverage pass: every remaining SpellDb.get_spell() id (lineage/legacy-only grants
+	# included) now has a matching scroll — see scripts/items/CLAUDE.md's "Scroll of <Spell>" for
+	# why these were previously missing (lineage-only spells were deliberately excluded). Only
+	# "hellish_rebuke" stays without one — it's a reaction-toggle ability
+	# (GameState._build_hellish_rebuke_ability()), not a normal on-demand cast, so it can't go
+	# through the generic on_scroll_primed()/begin_cast() flow every other scroll uses.
+	{"name": "Scroll of Eldritch Blast", "type": 3, "icon": "eldritch_blast.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Eldritch Blast once, then it crumbles to dust.", "scroll_spell": "eldritch_blast", "gold": 25},
+	{"name": "Scroll of Faerie Fire", "type": 3, "icon": "faerie_fire.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts Faerie Fire once, then it crumbles to dust.", "scroll_spell": "faerie_fire", "gold": 60},
+	{"name": "Scroll of Poison Spray", "type": 3, "icon": "poison_spray.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Poison Spray once, then it crumbles to dust.", "scroll_spell": "poison_spray", "gold": 25},
+	{"name": "Scroll of Chill Touch", "type": 3, "icon": "chill_touch.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Chill Touch once, then it crumbles to dust.", "scroll_spell": "chill_touch", "gold": 25},
+	{"name": "Scroll of Ray of Sickness", "type": 3, "icon": "ray_of_sickness.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts Ray of Sickness once, then it crumbles to dust.", "scroll_spell": "ray_of_sickness", "gold": 60},
+	{"name": "Scroll of Hold Person", "type": 3, "icon": "hold_person.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "Reading this casts Hold Person once, then it crumbles to dust.", "scroll_spell": "hold_person", "gold": 100},
+	{"name": "Scroll of Tasha's Hideous Laughter", "type": 3, "icon": "hideous_laughter.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Reading this casts Tasha's Hideous Laughter once, then it crumbles to dust.", "scroll_spell": "hideous_laughter", "gold": 60},
+	{"name": "Scroll of Ray of Enfeeblement", "type": 3, "icon": "ray_of_enfeeblement.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 3, "fmax": 10, "desc": "Reading this casts Ray of Enfeeblement once, then it crumbles to dust.", "scroll_spell": "ray_of_enfeeblement", "gold": 100},
+	{"name": "Scroll of Minor Illusion", "type": 3, "icon": "minor_illusion.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Minor Illusion once, then it crumbles to dust.", "scroll_spell": "minor_illusion", "gold": 25},
+	{"name": "Scroll of Speak with Animals", "type": 3, "icon": "speak_with_animals.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Speak with Animals once, then it crumbles to dust.", "scroll_spell": "speak_with_animals", "gold": 25},
+	{"name": "Scroll of Mending", "type": 3, "icon": "mending.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Mending once, then it crumbles to dust.", "scroll_spell": "mending", "gold": 25},
 ]
 
 const BOSS_POOL: Array = [

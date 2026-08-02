@@ -51,10 +51,9 @@ const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS, "RANGER": RA
 # listed here too only because their sub-race also grants them for free at the matching level via
 # the same lineage mechanism. The free-cast-per-long-rest economy and the
 # LEVELED_SPELL_IDS/level-up-picker/slot-casting paths are independent of each other and both work
-# regardless of how a spell was acquired. No Scroll of <Spell> exists for faerie_fire yet (Misty
-# Step, darkness/longstrider/detect_magic/pass_without_trace all have one, being real
-# LEVELED_SPELL_IDS entries already) — a remaining content gap now that it's promoted, not a
-# structural blocker.
+# regardless of how a spell was acquired. A Scroll of Faerie Fire now exists too (full
+# spell-coverage pass, scripts/items/CLAUDE.md's "Scroll of <Spell>") — every ELF_LINEAGE_SPELL_IDS
+# entry has a scroll now, not just the four that were already real LEVELED_SPELL_IDS entries.
 const ELF_LINEAGE_SPELL_IDS: Array[String] = ["faerie_fire", "darkness", "detect_magic", "longstrider", "pass_without_trace"]
 
 # Tiefling Fiendish Legacy-only spells (see scripts/entities/CLAUDE.md's "Tiefling" section) —
@@ -73,8 +72,9 @@ const TIEFLING_LEGACY_SPELL_IDS: Array[String] = ["poison_spray", "chill_touch",
 
 # Gnome Gnomish Lineage-only spells (see scripts/entities/CLAUDE.md's "Gnome" section) — granted
 # exclusively by GameState._grant_gnome_lineage_spells(), same "never in the level-up picker or any
-# class's known-spell list" exclusion as ELF_LINEAGE_SPELL_IDS/TIEFLING_LEGACY_SPELL_IDS above. No
-# Scroll of <Spell> exists for any of the three — same documented scope cut as the Elf lineage set.
+# class's known-spell list" exclusion as ELF_LINEAGE_SPELL_IDS/TIEFLING_LEGACY_SPELL_IDS above. All
+# three got a Scroll of <Spell> in the full spell-coverage pass (scripts/items/CLAUDE.md's
+# "Scroll of <Spell>") despite never being learnable/slot-castable otherwise.
 const GNOME_LINEAGE_SPELL_IDS: Array[String] = ["minor_illusion", "speak_with_animals", "mending"]
 
 ## Shared level-name formatter — "Cantrips" for level 0, "1st"/"2nd"/"3rd"/"Nth" otherwise.
