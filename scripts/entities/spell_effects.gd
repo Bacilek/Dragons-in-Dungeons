@@ -198,6 +198,8 @@ static func _resolve_cantrip_hit(player: Player, spell: Spell, target: Enemy, du
 	target.update_hp_bar()
 	if dungeon_floor != null:
 		dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color(spell.damage_type))
+		if spell.spell_id == "fire_bolt":
+			dungeon_floor.play_impact_vfx(target.position, "explosion_small")
 
 	# Fire/Frost/Hill Giant Ancestry: same "next attack that hits" trigger melee already has —
 	# extended to spell attack rolls too, see PlayerGoliath.consume_giant_ancestry_on_hit(). Skipped
@@ -453,6 +455,8 @@ static func cast_spell_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 			GameState.game_log("[color=orange]The grass catches fire![/color]")
 	elif spell.effect_id == "" and dungeon_floor != null:
 		dungeon_floor.ignite_flammable(tile_pos)
+	if spell.spell_id == "fire_bolt" and dungeon_floor != null:
+		dungeon_floor.play_impact_vfx(Vector2(tile_pos.x * DungeonFloor.TILE_SIZE + 8, tile_pos.y * DungeonFloor.TILE_SIZE + 8), "explosion_small")
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
@@ -772,6 +776,7 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, 
 
 	GameState.game_log("[color=orange]A sphere of fire erupts![/color]")
 	if dungeon_floor != null:
+		dungeon_floor.play_impact_vfx(Vector2(center.x * DungeonFloor.TILE_SIZE + 8, center.y * DungeonFloor.TILE_SIZE + 8), "explosion_large", float(2 * r + 1) * DungeonFloor.TILE_SIZE)
 		for dy: int in range(-r, r + 1):
 			for dx: int in range(-r, r + 1):
 				if dx * dx + dy * dy > r * r:
@@ -1124,7 +1129,7 @@ static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_leve
 # other spell deals damage, halved on a successful save (Hellish Rebuke, spell.save_for_half).
 static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
 	# Hold Person only works on Humanoids (5e RAW) — a targeting restriction, not a resisted
-	# effect, so it's checked before any turn/slot/animation is spent: a Fiend (Big Demon, etc.)
+	# effect, so it's checked before any turn/slot/animation is spent: a Fiend (the Bearded Devil, etc.)
 	# was never a legal target at all, unlike a condition-immune creature (still legally targeted,
 	# just doesn't get the status — see Enemy.apply_status()'s condition_immunities gate).
 	if spell.effect_id == "hold_person" and target.creature_type != "Humanoid":

@@ -494,6 +494,42 @@ func _on_turn_started() -> void:
 					stats.frightened_turns -= 1
 					if stats.frightened_turns <= 0:
 						GameState.clear_player_frightened()
+			# Bearded Devil's Beard attack: repeats a CON save once per real turn to end the
+			# Poisoned condition early — mirrors Frightened's own repeated-save shape above, just
+			# CON instead of WIS and gated on poisoned_condition_save_dc > 0 (a plain Tripwire/Rend
+			# Poisoned application, save_dc == 0, only ever decays via Stats.tick_status(), never
+			# rolls this). tick_status() (below) still decrements poisoned_condition_turns by 1
+			# every real turn regardless — this save is just an extra way to end it early.
+			if stats.poisoned_condition_turns > 0 and stats.poisoned_condition_save_dc > 0:
+				var pc_mod: int = stats.con_modifier()
+				var pc_prof: int = stats.proficiency_bonus if stats.check_prof_con else 0
+				var pc_roll: Dictionary = CombatMath.roll_with_adv_disadv(0, 0)
+				var pc_die: int = pc_roll["die"]
+				var pc_total: int = pc_die + pc_mod + pc_prof
+				var pc_pass: bool = pc_total >= stats.poisoned_condition_save_dc
+				var pc_meta: String = "save:die=%d,d1=%d,d2=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=CON,pass=%d,adv=0,disadv=0,lucky1=%d,lucky2=%d" % [
+					pc_die, pc_roll["die1"], pc_roll["die2"], pc_mod, pc_prof, pc_total, stats.poisoned_condition_save_dc, int(pc_pass),
+					int(pc_roll["lucky1"]), int(pc_roll["lucky2"])]
+				if pc_pass:
+					GameState.game_log("[color=lime]You [url=%s]fight off[/url] the venom![/color]" % pc_meta)
+					stats.poisoned_condition_turns = 0
+					stats.poisoned_condition_save_dc = 0
+					GameState.player_status_changed.emit()
+				else:
+					GameState.game_log("[color=gray]You [url=%s]remain poisoned[/url].[/color]" % pc_meta)
+			# Infernal Wound (Bearded Devil's Glaive attack): infernal_wound_dice d10 Necrotic at
+			# the start of every real turn while active — see Stats.infernal_wound_active's own
+			# comment for how it ends (any healing, GameState.heal()'s tail).
+			if stats.infernal_wound_active:
+				var iw_rolls: Array[int] = Rng.roll_dice(stats.infernal_wound_dice, 10)
+				var iw_inst: Dictionary = CombatMath.build_damage_instance(iw_rolls, 10, [], false, "Necrotic")
+				var iw_actual: int = GameState.take_damage_raw(iw_inst["subtotal"], false, "Necrotic")
+				iw_inst["final"] = iw_actual
+				GameState.flush_stone_endurance_log()
+				if _dungeon_floor != null:
+					_dungeon_floor.show_damage(position, iw_actual, true, CombatMath.damage_type_color("Necrotic"))
+				var iw_meta: String = CombatMath.encode_damage_instance(iw_inst)
+				GameState.game_log("[color=orange]The infernal wound tears at you for [url=%s][color=yellow]%d[/color][/url] Necrotic dmg.[/color]" % [iw_meta, iw_actual])
 		# Torch: 600-turn duration per lit torch, ticked once per real turn — regardless of
 		# where it currently is (equipped, quickbar/bag, floor, or embedded in an enemy). Equipped
 		# slots + quickbar/bag are swept here (GameState-only data); floor items and enemy-embedded

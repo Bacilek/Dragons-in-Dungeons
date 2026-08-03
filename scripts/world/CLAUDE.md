@@ -12,6 +12,20 @@ When adding a new trap type, subsystem, or floor event, **immediately update thi
 ## Damage floaters
 `show_damage(world_pos, amount, is_player_hit, color_override: Color = Color(0,0,0,0), stack_index: int = 0)` — `color_override` (alpha 0 = unset, keeps the old red/yellow default) lets a typed damage source (see `scripts/entities/CLAUDE.md`'s "Damage types / resistances") tint the floater by damage type (`CombatMath.damage_type_color()`); `stack_index` offsets spawn x by 10px per index so two simultaneous instances from one attack (e.g. Slashing + Radiant) don't fully overlap.
 
+## Spell-impact VFX
+`play_impact_vfx(world_pos: Vector2, kind: String, target_px: float = 32.0)` — one-shot animated
+burst (`sprites/vfx/<kind>.png`, a single-row sheet of `VFX_FRAME_SIZE` (192px) square frames,
+sourced from a CC0 Tiny Swords particle pack), spawned as a throwaway `AnimatedSprite2D` +
+generated `SpriteFrames` (sliced via `AtlasTexture`, 24 fps, non-looping), scaled down to
+`target_px` on-screen, `queue_free()`d when the animation finishes. Fire-and-forget — callers
+don't `await` it, so it never blocks turn resolution. Two kinds exist today:
+`explosion_small` (Explosion_01, 8 frames) for Fire Bolt's impact (both the enemy-hit path in
+`SpellEffects._resolve_cantrip_hit()` and the empty-tile path in `cast_spell_at_tile()`,
+`scripts/entities/spell_effects.gd`) and `explosion_large` (Explosion_02, 10 frames) for
+Fireball's blast center in `_resolve_sphere_aoe()`, scaled to the blast's own `shape_size` radius
+(`(2r+1) * TILE_SIZE` px, so the visual roughly spans the actual AoE footprint). Purely cosmetic —
+no gameplay hook reads anything back from it.
+
 ## Key query methods
 ```gdscript
 dungeon_floor.is_tile_visible(pos: Vector2i) -> bool        # O(1) dict, use for visibility
@@ -737,4 +751,4 @@ Drinking any POTION adds an `Empty Bottle` (TOOL type, `sprites/items/materials/
 Right-click food item in HUD quickbar → `GameState.player_throw_primed.emit(item)` → player enters throw mode. Left-click target tile → `_do_throw(pos)`. Rotten Meat + Fire Trap = Cooked Meat (see "Floor items" above). Throwing any other item onto a trap tile activates it instead of just dropping — see "Traps" above's `throw_item_onto_trap()`. Esc cancels.
 
 ## Boss floors
-`DungeonData.boss_room: Rect2i` set on floors divisible by 5. `_spawn_boss()` spawns from `DungeonFloorData.BOSS_POOL`. Floor 5: Big Demon (hp=80). Floor 10: Necromancer (hp=120). Boss dies → `drop_boss_loot(pos)`. `enemy.is_boss: bool`. `ENEMY_POOL`/`BOSS_POOL` entries carry stable `"enemy_id"`/`"boss_id"` keys (see `scripts/entities/CLAUDE.md`'s "Enemy/boss pool ids") and may carry an `"attack_profile"` key for ranged enemies (see that file's "Attack profiles" section) — both are read generically by `Enemy`, no `dungeon_floor.gd` changes needed.
+`DungeonData.boss_room: Rect2i` set on floors divisible by 5. `_spawn_boss()` spawns from `DungeonFloorData.BOSS_POOL`. Floor 5: Bearded Devil (`boss_id` stays `"big_demon"` — see `scripts/entities/CLAUDE.md`'s "Bearded Devil" section, hp=52). Floor 10: Necromancer (hp=120). Boss dies → `drop_boss_loot(pos)`. `enemy.is_boss: bool`. `ENEMY_POOL`/`BOSS_POOL` entries carry stable `"enemy_id"`/`"boss_id"` keys (see `scripts/entities/CLAUDE.md`'s "Enemy/boss pool ids") and may carry an `"attack_profile"` key for ranged enemies (see that file's "Attack profiles" section) — both are read generically by `Enemy`, no `dungeon_floor.gd` changes needed.

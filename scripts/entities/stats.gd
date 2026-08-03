@@ -540,8 +540,29 @@ var web_escape_dc: int = 13
 # Deliberately NOT serialized, same mid-floor-only simplification as web_restrained/
 # invisibility_turns/fog_cloud_turns above — combat conditions simply end on save/load.
 var poisoned_condition_turns: int = 0
+# Repeat-save DC for THIS Poisoned application (0 = a source with no repeat save/no-heal clause,
+# e.g. Tripwire/Quasit's Rend — those just tick down via tick_status() like before). Set only by
+# a source that grants a repeated end-of-turn CON save to end early (Bearded Devil's Beard attack,
+# see scripts/entities/CLAUDE.md's "Bearded Devil" section) — mirrors frightened_save_dc's own
+# per-application DC field. While > 0, GameState.heal() also refuses to heal the player at all
+# (that attack's own "can't regain any HP while poisoned" clause) — a deliberate generalization of
+# the real 5e Poisoned condition (which normally has no such clause) scoped to only fire for a
+# source that explicitly sets this DC, so Tripwire/Rend's plain poisoned_condition_turns is unaffected.
+var poisoned_condition_save_dc: int = 0
 var prone: bool = false                # persists until stood up (Player._try_move()'s redirect), not turn-counted
 var incapacitated_turns: int = 0
+
+# Infernal Wound (Bearded Devil's Glaive attack, scripts/entities/CLAUDE.md's "Bearded Devil"
+# section) — a DoT that deals infernal_wound_dice d10 Necrotic damage at the start of the player's
+# own turn, escalating by +1 die every subsequent Glaive hit while already active. Ends the instant
+# ANY healing lands (GameState.heal()'s tail clears both fields) — approximates the real stat
+# block's "closes automatically after receiving magical healing" clause; the "stanch it yourself
+# with a DC 12 WIS check, as an action" half is NOT implemented (documented gap, same tier as Elf's
+# Fey Ancestry/Dwarf's poisoned-check half above — no generic "spend your action on a check" verb
+# exists in this engine to hang it on). Deliberately NOT serialized, same mid-floor-only
+# simplification as poisoned_condition_turns/web_restrained/witch_bolt_turns above.
+var infernal_wound_active: bool = false
+var infernal_wound_dice: int = 0
 
 # Frightened — unlike the three above, tied to a SPECIFIC source creature (5e: "DISADV on checks/
 # attacks while the source is in sight" + "can't willingly move closer to it"), not a bare turn

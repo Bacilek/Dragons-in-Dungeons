@@ -2027,6 +2027,12 @@ func check_player_death() -> void:
 		player_died.emit()
 
 func heal(amount: int) -> int:
+	# Bearded Devil's Beard attack: "can't regain any HPs while poisoned" — see
+	# Stats.poisoned_condition_save_dc's own comment for why this is gated on the DC field, not
+	# just poisoned_condition_turns > 0 (Tripwire/Rend's plain Poisoned application is unaffected).
+	if player_stats.poisoned_condition_turns > 0 and player_stats.poisoned_condition_save_dc > 0:
+		game_log("[color=gray]The poison courses through you — you can't regain any HP.[/color]")
+		return 0
 	var final_amount: int = amount
 	# Bruiser R1: +1d4 to any incoming heal while Bloodied. Returned so callers can name it as
 	# its own bonus source in the heal tooltip, instead of it silently vanishing into the total.
@@ -2038,6 +2044,12 @@ func heal(amount: int) -> int:
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 	if get_talent_rank("bruiser") >= 2:
 		recalculate_stats()
+	# Any landed healing closes an active Infernal Wound (Bearded Devil's Glaive attack — see
+	# Stats.infernal_wound_active's own comment; "magical healing" simplified to "any healing").
+	if player_stats.infernal_wound_active:
+		player_stats.infernal_wound_active = false
+		player_stats.infernal_wound_dice = 0
+		game_log("[color=lime]The infernal wound closes as your wounds mend.[/color]")
 	return bruiser_bonus
 
 func gain_exp(amount: int) -> void:
@@ -3103,7 +3115,7 @@ func end_concentration(reason_log: String = "") -> void:
 		game_log(reason_log)
 
 
-func apply_player_status(type: String, turns: int) -> bool:
+func apply_player_status(type: String, turns: int, save_dc: int = 0) -> bool:
 	# Only emit when a counter-based status' value actually increases — re-applying (e.g. every
 	# Mud/Water step re-calling "slowed" with maxi()) is otherwise a same-value no-op that still
 	# unconditionally emitted, which could flash a duplicate identical-looking status-tray icon
@@ -3125,9 +3137,16 @@ func apply_player_status(type: String, turns: int) -> bool:
 			player_stats.slowed_turns = maxi(player_stats.slowed_turns, turns)
 		# Poisoned CONDITION (DISADV on attacks/checks — Stats.has_disadvantage_condition()) —
 		# deliberately separate from "poison" above (the pre-existing damage-over-time counter).
+		# `save_dc` (optional 3rd param, default 0): when a source explicitly sets it (Bearded
+		# Devil's Beard attack), the condition also grants a repeated end-of-turn CON save to end
+		# early (Player._on_turn_started()) and blocks GameState.heal() entirely — see
+		# Stats.poisoned_condition_save_dc's own comment. A plain 0 (Tripwire/Rend) leaves both of
+		# those effects off, unchanged from before this param existed.
 		"poisoned_condition":
 			_changed = turns > player_stats.poisoned_condition_turns
 			player_stats.poisoned_condition_turns = maxi(player_stats.poisoned_condition_turns, turns)
+			if save_dc > 0:
+				player_stats.poisoned_condition_save_dc = save_dc
 		# Prone — not turn-counted (see Stats.prone's own comment); "turns" is ignored, stays
 		# Prone until Player._try_move()'s stand-up redirect fires.
 		"prone":

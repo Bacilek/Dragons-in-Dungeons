@@ -298,6 +298,15 @@ func apply_status(condition: String, turns: int) -> bool:
 	if condition in condition_immunities:
 		GameState.game_log("[color=gray]%s is unaffected.[/color]" % display_name)
 		return false
+	# Steadfast (Bearded Devil, trait "steadfast" — "can't be frightened while a friendly
+	# creature is within 5 feet of it"): checked only for "frightened", against any other living
+	# Enemy within Chebyshev 1 — no in-game concept of "friendly to a devil" beyond "another enemy"
+	# exists, same simplification Pack Tactics' own "any other enemy" ally check already uses.
+	if condition == "frightened" and _has_trait("steadfast") and _dungeon_floor != null:
+		for other: Enemy in _dungeon_floor.get_all_enemies():
+			if other != self and is_instance_valid(other) and not other.stats.is_dead() and other.min_dist_to(grid_pos) <= 1:
+				GameState.game_log("[color=gray]%s stands steadfast, unafraid.[/color]" % display_name)
+				return false
 	match condition:
 		"slowed":   slowed_turns = maxi(slowed_turns, turns)
 		"rooted":   rooted_turns = maxi(rooted_turns, turns)
@@ -1014,7 +1023,11 @@ func _chebyshev_to(e: Node) -> int:
 # treatment as the player's own GameState.effective_fov_radius(), so an enemy caught in a cloud is
 # just as sense-limited as the player would be standing there.
 func _sight_range() -> int:
-	if GameState.is_blinded(grid_pos):
+	# Devil's Sight (Bearded Devil, trait "devils_sight" — "magical darkness doesn't impede its
+	# vision"): this engine's only source of "magical darkness" is the Fog Cloud/Darkness spell
+	# zone GameState.is_blinded() checks, so an enemy with this trait is simply exempt from its
+	# sight-collapse-to-1 penalty — everything else about standing in the zone is unaffected.
+	if GameState.is_blinded(grid_pos) and not _has_trait("devils_sight"):
 		return 1
 	return FOV_RADIUS + int(_type.get("senses", {}).get("sight_bonus", 0))
 
@@ -2212,6 +2225,55 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 		if GameState.apply_player_status(String(sub["status"]), cond_turns):
 			var cond_label: String = String(sub["status"]).replace("_condition", "").capitalize()
 			GameState.game_log("[color=lime]You are %s! (%d turn%s)[/color]" % [cond_label, cond_turns, "" if cond_turns == 1 else "s"])
+	# Save-resisted on-hit status (Bearded Devil's Beard — see scripts/entities/CLAUDE.md's
+	# "Bearded Devil" section): unlike the unconditional "status" block above, the condition only
+	# applies if the target FAILS a save — a pool "on_hit_save" sub-key ({"stat","dc","status",
+	# "turns"}). Player-only today (Companion has no equivalent check yet, same documented gap as
+	# every other Companion-side simplification in this file).
+	if sub.has("on_hit_save") and actual > 0 and not invincible and is_instance_valid(_player) and not _player.stats.is_dead():
+		var sv: Dictionary = sub["on_hit_save"]
+		var sv_dc: int = int(sv.get("dc", 10))
+		var sv_stat: String = String(sv.get("stat", "con"))
+		var sv_mod: int = GameState.player_stats.wis_modifier() if sv_stat == "wis" else GameState.player_stats.con_modifier()
+		var sv_prof_ok: bool = GameState.player_stats.check_prof_wis if sv_stat == "wis" else GameState.player_stats.check_prof_con
+		var sv_prof: int = GameState.player_stats.proficiency_bonus if sv_prof_ok else 0
+		var sv_roll: int = Rng.roll(20)
+		var sv_total: int = sv_roll + sv_mod + sv_prof
+		var sv_pass: bool = sv_total >= sv_dc
+		var sv_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=%s,pass=%d,sliver=0" % [
+			sv_roll, sv_mod, sv_prof, sv_total, sv_dc, sv_stat.to_upper(), int(sv_pass)]
+		if sv_pass:
+			GameState.game_log("You [url=%s]resist[/url] the venom." % sv_meta)
+		else:
+			var sv_turns: int = int(sv.get("turns", 1))
+			var sv_status: String = String(sv.get("status", "poisoned_condition"))
+			GameState.apply_player_status(sv_status, sv_turns, sv_dc)
+			GameState.game_log("[color=orange]You are [url=%s]poisoned[/url]! (%d turns)[/color]" % [sv_meta, sv_turns])
+	# Infernal Wound (Bearded Devil's Glaive attack): a pool "infernal_wound" sub-key ({"dc"}).
+	# First hit rolls a CON save; a fail arms Stats.infernal_wound_active with 1 die. Every
+	# SUBSEQUENT Glaive hit while already wounded adds another die unconditionally, per the real
+	# stat block's own text ("each time the devil hits the wounded creature... increases by 1d10")
+	# — no repeat save needed once it's already active.
+	if sub.has("infernal_wound") and actual > 0 and not invincible and is_instance_valid(_player) and not _player.stats.is_dead():
+		var iw: Dictionary = sub["infernal_wound"]
+		if not GameState.player_stats.infernal_wound_active:
+			var iw_dc: int = int(iw.get("dc", 12))
+			var iw_mod: int = GameState.player_stats.con_modifier()
+			var iw_prof: int = GameState.player_stats.proficiency_bonus if GameState.player_stats.check_prof_con else 0
+			var iw_roll: int = Rng.roll(20)
+			var iw_total: int = iw_roll + iw_mod + iw_prof
+			var iw_pass: bool = iw_total >= iw_dc
+			var iw_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=CON,pass=%d,sliver=0" % [
+				iw_roll, iw_mod, iw_prof, iw_total, iw_dc, int(iw_pass)]
+			if iw_pass:
+				GameState.game_log("You [url=%s]avoid[/url] the infernal wound." % iw_meta)
+			else:
+				GameState.player_stats.infernal_wound_active = true
+				GameState.player_stats.infernal_wound_dice = 1
+				GameState.game_log("[color=orange]An infernal wound tears open! [url=%s](DC %d CON)[/url][/color]" % [iw_meta, iw_dc])
+		else:
+			GameState.player_stats.infernal_wound_dice += 1
+			GameState.game_log("[color=orange]The infernal wound deepens![/color]")
 
 # Companion (Wild Heart summon) as attack target — see docs/architecture/enemy_system_architecture.md §5.
 # No invincible/poison/Retaliation hooks: those are player-only systems. Companion.take_damage_from_enemy()

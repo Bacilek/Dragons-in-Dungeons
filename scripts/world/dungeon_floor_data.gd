@@ -143,8 +143,29 @@ const ITEM_POOL: Array = [
 ]
 
 const BOSS_POOL: Array = [
-	{"boss_id": "big_demon",   "display_name": "Big Demon",   "sprite": "big_demon",   "idle_frames": 4, "run_frames": 4, "floor": 5,  "hp": 80,  "hp_per_floor": 0, "dmg_min": 8,  "dmg_max": 14, "armor": 3, "ac": 16, "exp": 100,
-	 "cr": 5, "creature_type": "Fiend", "legendary_resistances": 3},
+	# Bearded Devil — Medium Fiend (lawful evil), CR 3. Real 5e stat block, given directly by the
+	# project owner (see scripts/entities/CLAUDE.md's "Bearded Devil" section for the full
+	# mechanism, including "on_hit_save"/"infernal_wound" — two new generic multiattack sub-keys
+	# introduced for this monster). `boss_id` stays "big_demon" (the old identity this replaced)
+	# since GameState.TIER2_GATING_BOSS_ID and every save keys off it — only display_name/sprite
+	# reuse is cosmetic-old, the stat block itself is entirely new.
+	{"boss_id": "big_demon",   "display_name": "Bearded Devil",   "sprite": "big_demon",   "idle_frames": 4, "run_frames": 4, "floor": 5,  "hp": 52,  "hp_per_floor": 0, "dmg_min": 8,  "dmg_max": 14, "armor": 0, "ac": 13, "exp": 100,
+	 "cr": 3, "creature_type": "Fiend", "size_category": "Medium", "passive_perception": 10,
+	 "mods": {"str": 3, "dex": 2, "con": 2, "int": -1, "wis": 0, "cha": 0},
+	 "senses": {"sight_bonus": 2},
+	 # "Nonmagical/non-silvered weapons" qualifier isn't modeled (Enemy.take_typed_damage() has no
+	 # "was this attack magical" concept) — same documented simplification Skeleton's own unqualified
+	 # Piercing resistance already uses; the resistance just always applies.
+	 "damage_resistances": ["Cold", "Bludgeoning", "Piercing", "Slashing"],
+	 "damage_immunities": ["Fire", "Poison"],
+	 "condition_immunities": ["poisoned", "poisoned_condition"],
+	 "traits": [{"id": "magic_resistance"}, {"id": "devils_sight"}, {"id": "steadfast"}],
+	 "multiattack": [
+	  {"name": "Beard", "count": 1, "dmg_min": 3, "dmg_max": 10, "damage_type": "Piercing",
+	   "on_hit_save": {"stat": "con", "dc": 12, "status": "poisoned_condition", "turns": 10}},
+	  {"name": "Glaive", "count": 1, "dmg_min": 4, "dmg_max": 13, "damage_type": "Slashing",
+	   "infernal_wound": {"dc": 12}},
+	 ]},
 	{"boss_id": "necromancer", "display_name": "Necromancer", "sprite": "necromancer", "idle_frames": 4, "run_frames": 4, "floor": 10, "hp": 120, "hp_per_floor": 0, "dmg_min": 10, "dmg_max": 18, "armor": 4, "ac": 13, "exp": 200,
 	 "cr": 8, "creature_type": "Humanoid",
 	 "idle_fmt": "res://sprites/characters/enemies/Necromancer/anim_%d.png",
