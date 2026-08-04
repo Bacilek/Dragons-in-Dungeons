@@ -13,3 +13,7 @@ mono_crash.*.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Raw/unused vendor art packs — never referenced by game code, only cropped/recombined by hand
+# into sprites/. Keep these local, not committed (see root CLAUDE.md's "Sprite Assets" section).
+not-used-packs/
