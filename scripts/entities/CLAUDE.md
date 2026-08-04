@@ -2415,17 +2415,19 @@ Enfeeblement above). The target repeats the WIS save at the end of each of its o
 (`Enemy.take_typed_damage()`) — both routed through the shared `Enemy._resolve_hideous_laughter_save(with_adv)`
 resolver (`resist_check_detailed()` gained a generic `force_adv: bool` param for this one-off ADV
 source). A pass ends the Incapacitated half early (and the caster's Concentration with it, via
-`Stats.hideous_laughter_target`/`hideous_laughter_turns`, same live-reference-not-serialized
-precedent as `hold_person_target`) — **Prone is deliberately left untouched either way**, per the
-spell's own text; it clears itself normally the next time the target's own turn lets it stand up.
+`Stats.hideous_laughter_target`/`hideous_laughter_turns`, same live-reference-array-not-serialized
+precedent as `hold_person_target` — both `Array[Enemy]`, not a single `Enemy`) — **Prone is
+deliberately left untouched either way**, per the spell's own text; it clears itself normally the
+next time the target's own turn lets it stand up.
 **Documented simplification**: a single grouped damage instance (e.g. Magic Missile's 3 darts
 landing on the same target, which sum into ONE `take_typed_damage()` call — see
 `scripts/entities/CLAUDE.md`'s Magic Missile entry) only triggers one on-hit repeat, not one per
 die, unlike separately-resolved hits (Eldritch Blast's independent beams) which each trigger their
-own. **Upcast (+1 target per spell slot level above 1st) is not implemented** — this codebase has
-no upcasting at all (`StandardSlotPool.available_level()`'s own "no upcasting" rule) — the spell
-always resolves single-target regardless of which slot level it's cast at, same documented scope
-cut as every other spell's upcast text in this game.
+own. **Upcast (+1 target per spell slot level above 1st) IS implemented** — a Warlock casting this
+above its base level (Pact Magic auto-upcast) can pick additional ENEMY targets, each with its own
+save, via the generalized multi-target click flow — see this file's own "Spell upcasting" section
+below for the full mechanism (`Stats.hideous_laughter_target` being an `Array` is exactly what this
+needed).
 **Cantrips**: starter pick 1 of 3 (`SpellDb.WARLOCK_STARTER_CANTRIP_IDS` — `eldritch_blast`
 (new), `chill_touch`, `poison_spray`) via the generalized `cantrip_select.gd` (see below).
 `SpellcasterState.cantrip_max()` gained a `WARLOCK` case reusing Wizard's exact numbers (3/4/5
@@ -2458,6 +2460,100 @@ branch): a SINGLE round, "pick 1 of 3" from `WARLOCK_STARTER_CANTRIP_IDS` via
 `GameState.choose_cantrip()` — no round-2 level-1-spell pick (Warlock's leveled spellbook grows
 via the normal level-up spell-learn picker instead, `SpellDb.CLASS_SPELL_LISTS["WARLOCK"] =
 WARLOCK_SPELL_IDS`, same mechanism Ranger already uses).
+
+### Spell upcasting (Warlock Pact Magic only)
+
+Real per-spell upcast benefits are implemented, but the mechanism that makes them ever actually
+apply is `PactSlotPool.available_level()`'s own auto-upcast rule (`scripts/items/CLAUDE.md`) —
+Wizard's `StandardSlotPool` and Ranger's `HalfCasterSlotPool` both explicitly never upcast a cast
+above the spell's own level, so `cast_level == spell.level` always for those two, and every upcast
+field below is silently a no-op for them. Only a Warlock casting a known spell while their single
+current pact slot level is higher than that spell's own level ever produces `cast_level >
+spell.level` — at which point every extra slot level above base applies the spell's own upcast
+benefit that many times (D&D 2024's "for each slot level above Nth" convention — casting a 1st-
+level spell with a 3rd-level pact slot applies the bonus **twice**, not once).
+
+Three generic `Spell` fields (`scripts/items/spell.gd`) drive this — `SpellEffects.
+_upcast_extra_levels(spell, cast_level) -> int` (`maxi(0, cast_level - spell.level)`) is read at
+every cast entry point (`cast_leveled_attack_at_enemy()`, `cast_leveled_self()`,
+`cast_leveled_at_tile()`) and multiplied by whichever field the spell sets:
+
+- **`upcast_dice_count`** — extra dice (of the spell's own `dice_sides`) per extra level, added
+  straight into `spell.dice_count` before the roll (the `Spell` instance is fresh-built per cast
+  by `SpellDb.get_spell()`, so mutating it in place is safe — nothing else holds a reference).
+  Chromatic Orb (+1d8), Burning Hands (+1d6), Witch Bolt (+1d12 — **only the initial attack roll**,
+  never `SpellEffects.tick_witch_bolt()`'s own separate flat-1d12-per-turn tick, which reads no
+  `Spell` field at all), Ray of Sickness (+1d8), Fireball (+1d6), Hellish Rebuke (+1d10 — field set
+  for consistency, but dead in practice: Hellish Rebuke is only ever granted via Tiefling's fixed-
+  level free lineage grant, `trigger_hellish_rebuke()`, which always consumes exactly
+  `spell.level`, never a higher slot).
+- **`upcast_flat_amount`** — a flat number per extra level, meaning is per-`effect_id`: False Life
+  (+5 Temp HP, folded into `cast_leveled_self()`'s roll-total base) and Fog Cloud (+2 tile radius,
+  `_resolve_fog_cloud(player, spell, center, extra_levels)`'s own new 4th param).
+- **`upcast_extra_targets`** — see the two shapes below, since "an extra target" means something
+  structurally different for an ENEMY/SAVE spell than for a SELF/touch spell.
+
+**Chromatic Orb's leap count** doesn't use any of the three fields above — it's `cast_level`
+directly (RAW: "the orb can leap a maximum number of times equal to the level of the slot
+expended, and a creature can be targeted only once by each casting"). `cast_leveled_attack_at_enemy()`'s
+`"chromatic_orb"` case now loops (`leaps_done < max_leaps`, `max_leaps = cast_level`) instead of
+firing at most one leap, tracking every enemy already hit this cast (`used_targets: Array[Enemy]`)
+so `_pick_chromatic_orb_leap_target()` never re-targets one of them.
+
+**Extra ENEMY targets (Hold Person, Hideous Laughter)** — real multi-target collection, reusing
+Magic Missile/Eldritch Blast's existing click-to-pick-a-target-per-instance flow
+(`PlayerSpellcasting._begin_multi_target()`/`_handle_multi_target_click()`,
+`scripts/entities/CLAUDE.md`'s Magic Missile entry), generalized with a third dispatch kind:
+`_uses_multi_target_flow(spell, from_scroll)` now also returns true for a SAVE-resolution ENEMY
+spell with `upcast_extra_targets > 0` currently castable ABOVE its own base level (never true for a
+Scroll of `<Spell>` — `from_scroll` short-circuits it, since a scroll always casts at the spell's
+own base level regardless of the reader's own live pact slot) — `_multi_target_beam_count()` then
+collects `1 + upcast_extra_targets × extra_levels` targets instead of Magic Missile's fixed 3 or
+Eldritch Blast's tier count. **`[Space]` resolves early** with fewer than the max
+(`PlayerSpellcasting.finish_multi_target_early()`, wired in `player.gd`'s key-input handler ahead
+of the normal Space-key-waits binding, gated on `is_collecting_multi_target()`) — casting Hold
+Person with a 3rd-level pact slot offers up to 2 targets, but pressing Space after locking in just
+1 casts immediately with only that one, since the base cast is always a legal single target on its
+own. `SpellEffects.cast_leveled_save_at_enemy()` gained a 6th param, `also_targets: Array[Enemy]`
+(empty for every pre-existing single-target call site, so the base spell is unchanged) — every
+target (primary + extras) rolls its own independent save under ONE shared turn/slot/animation; the
+Concentration switch-check (breaking a currently-different concentration spell) fires at most ONCE
+for the whole cast, and only if at least one target's save actually fails, matching the original
+single-target "a whiffed cast never disturbs an unrelated concentration effect" behavior.
+`Stats.hold_person_target`/`hideous_laughter_target` are `Array[Enemy]`, not a single `Enemy`, for
+exactly this reason — a target that saves off early is removed individually
+(`GameState.remove_hold_person_target(enemy)`/`remove_hideous_laughter_target(enemy)`, called from
+`Enemy.decide_turn()`'s repeated-save branch and `_resolve_hideous_laughter_save()`), and the whole
+spell (Concentration) only actually ends once the array empties out; `GameState.end_concentration()`
+and `player.gd`'s own duration-backstop tick both loop the array instead of clearing one reference.
+
+**Touch-target upcast (Invisibility, Longstrider)** — both are SELF-target touch spells with no
+general ally-targeting system (`scripts/entities/CLAUDE.md`'s "Wizard leveled spells" → Mage
+Armor's own "No ally-buff targeting exists" note); their upcast ("+1 creature you touch") is scoped
+to the one other valid touch target this engine has, the Companion — same "self, or the Companion"
+click pattern `PlayerAasimar.resolve_healing_hands()` already established for Healing Hands.
+`PlayerSpellcasting._cast_self(spell, from_scroll, clicked)` gained a 3rd param (default sentinel
+`Vector2i(-1,-1)`, threaded from `try_cast_at()`/`cast_direct()`'s own `clicked`) forwarded to
+`SpellEffects.cast_leveled_self(..., clicked)` — the base self-cast is completely unaffected by
+where you click (any click still confirms on yourself, unchanged), but if `extra_levels > 0` and
+the click landed exactly on the Companion's own tile, the upcast ALSO reaches it:
+- **Invisibility**: `Companion.invisibility_turns` (new field — `Enemy._can_see_entity()`/
+  `_target_is_untouchable()` both already had a "or a future invisible companion" comment
+  anticipating exactly this; both now check it identically to `Stats.invisibility_turns`). Shares
+  the caster's own Concentration/duration — `player.gd`'s per-turn tick and
+  `GameState.end_concentration()`'s `"invisibility"` branch both clear it the instant the caster's
+  own invisibility ends, for any reason (natural expiry, a broken concentration check, casting a
+  different concentration spell).
+- **Longstrider**: flavor-only log line, no mechanical speed bonus — this engine has no movement-
+  speed-scaling concept for `Companion` at all (no per-round "extra move" hook exists the way
+  `Player._longstrider_move_counter`'s duty cycle has for the player), a documented scope cut
+  rather than a half-built mechanic, same tier as Speak with Animals' own flavor-only cantrip.
+
+**No upcast benefit is intentionally set** for Misty Step, Expeditious Retreat, Darkness, and Ray
+of Enfeeblement — all four genuinely have no "At Higher Levels" text in real 5e/2024 rules, so
+their `Spell` entries simply leave every upcast field at its `0` default; a Warlock upcasting one
+of these still gets the automatic Pact Magic slot-level bump (nothing wasted — the higher slot is
+still spent), just no extra mechanical effect from it, matching RAW exactly.
 
 ### Eldritch Invocations
 
@@ -2780,13 +2876,17 @@ own section below — a real Concentration effect, including breaking on damage)
 Implements the leveled-spells-and-slots plan (design doc shipped and was deleted from
 `docs/architecture/` — this section is now authoritative) on top of the cantrip slice
 above. **Simplifications vs. the original plan** (time-boxed for the first implementation pass, flagged
-here rather than silently diverging): **no upcasting at all** — a spell only ever casts using a
-slot that matches its own `level` exactly (`StandardSlotPool.available_level()`); if that specific
-slot level has none remaining, the cast fails outright (`"No spell slot available for X."`), even
-if a higher slot level is free. (An earlier version auto-promoted to the lowest available slot
-ABOVE the spell's own level, which produced unrequested/surprising upcasts — e.g. Chromatic Orb
-silently casting at a 5th-level slot with bonus dice — and was removed along with every
-`Spell.upcast_dice_per_level`/extra-dice code path per direct owner correction.) AoE is
+here rather than silently diverging): **no upcasting at all for Wizard** — a spell only ever casts
+using a slot that matches its own `level` exactly (`StandardSlotPool.available_level()`); if that
+specific slot level has none remaining, the cast fails outright (`"No spell slot available for
+X."`), even if a higher slot level is free. (An earlier version auto-promoted to the lowest
+available slot ABOVE the spell's own level, which produced unrequested/surprising upcasts — e.g.
+Chromatic Orb silently casting at a 5th-level slot with bonus dice — and was removed along with
+every `Spell.upcast_dice_per_level`/extra-dice code path per direct owner correction at the time.
+**Real upcasting was reintroduced later, Warlock-only** — `Spell.upcast_dice_count`/
+`upcast_extra_targets`/`upcast_flat_amount`, exercised only by `PactSlotPool`'s own genuine
+auto-upcast, see this file's "Spell upcasting" section — `StandardSlotPool.available_level()`'s own
+no-upcasting rule for Wizard is completely unaffected by that later addition.) AoE is
 **sphere or cone only**, no line/cube. `LEVELED_SPELL_IDS` (8): Magic Missile, Shield, Mage Armor,
 Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch Bolt (the last 3 added after the initial
 pass — see "More 1st-level spells" below, including Burning Hands' cone AoE, originally cut from

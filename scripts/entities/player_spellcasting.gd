@@ -40,17 +40,37 @@ func _shield_blocks_casting() -> bool:
 	return hand2 != null and hand2.is_shield
 
 ## Whether `spell` needs the multi-target click-collection flow instead of a normal single click.
-func _uses_multi_target_flow(spell: Spell) -> bool:
-	return spell.effect_id == "magic_missile" or spell.multi_beam_scaling
+## Third case (beyond Magic Missile/Eldritch Blast): a SAVE-resolution ENEMY spell with a real
+## upcast_extra_targets, currently being cast ABOVE its own base level (Warlock Pact Magic
+## auto-upcast — see PactSlotPool/_upcast_extra_levels()'s own comments) — Hold Person/Hideous
+## Laughter. A non-upcast cast of the same spell (cast_level == spell.level, or no caster at all)
+## never enters this branch, so the base single-target flow is unchanged. `from_scroll` (Scroll of
+## <Spell>) ALWAYS casts at the spell's own base level regardless of the reader's own live pact
+## slot — never multi-target, even if the reader happens to be a Warlock with a higher slot up.
+func _uses_multi_target_flow(spell: Spell, from_scroll: bool = false) -> bool:
+	if spell.effect_id == "magic_missile" or spell.multi_beam_scaling:
+		return true
+	if from_scroll:
+		return false
+	if spell.upcast_extra_targets > 0 and spell.resolution == Spell.Resolution.SAVE and spell.target_kind == Spell.TargetKind.ENEMY:
+		var lvl: int = _cast_level_for(spell)
+		return lvl > spell.level
+	return false
 
 ## How many target picks to collect — Magic Missile is always exactly 3 darts; a multi_beam_scaling
 ## cantrip (Eldritch Blast) scales with character level via the same tier table cantrip_tier_scaling
-## damage dice use, just applied to beam COUNT instead of dice count (1/2/3/4 at levels 1/5/11/17).
+## damage dice use, just applied to beam COUNT instead of dice count (1/2/3/4 at levels 1/5/11/17);
+## an upcast SAVE spell (Hold Person/Hideous Laughter) gets 1 (the base cast) + upcast_extra_targets
+## per slot level actually cast above the spell's own base level.
 func _multi_target_beam_count(spell: Spell) -> int:
 	if spell.effect_id == "magic_missile":
 		return 3
 	if spell.multi_beam_scaling:
 		return SpellEffects.cantrip_tier(player.stats.character_level)
+	if spell.upcast_extra_targets > 0:
+		var lvl: int = _cast_level_for(spell)
+		var extra: int = maxi(0, lvl - spell.level) if lvl > 0 else 0
+		return 1 + spell.upcast_extra_targets * extra
 	return 1
 
 func begin_cast(spell_id: String) -> void:
@@ -112,7 +132,7 @@ func on_scroll_primed(item: Item) -> void:
 		_consume_scroll(item)
 		await _cast_self(spell, true)
 		return
-	if _uses_multi_target_flow(spell):
+	if _uses_multi_target_flow(spell, true):
 		_begin_multi_target(item.scroll_spell_id, true, item)
 		return
 	_armed_spell_id = item.scroll_spell_id
@@ -166,12 +186,17 @@ func _cast_level_for(spell: Spell) -> int:
 		return -1
 	return caster.slot_pool.available_level(spell)
 
-func _cast_self(spell: Spell, from_scroll: bool = false) -> void:
+## `clicked`: the world tile that confirmed the cast, `Vector2i(-1,-1)` (the default sentinel) when
+## none is meaningful (Shield's instant no-target activation, a scroll). Only read by
+## SpellEffects.cast_leveled_self() for the upcast touch-target spells (Invisibility/Longstrider) —
+## clicking the Companion's own tile additionally touches it, mirroring Healing Hands' own
+## self-vs-companion click (PlayerAasimar.resolve_healing_hands()). Every other spell ignores it.
+func _cast_self(spell: Spell, from_scroll: bool = false, clicked: Vector2i = Vector2i(-1, -1)) -> void:
 	var lvl: int = spell.level if from_scroll else _cast_level_for(spell)
 	if not from_scroll and spell.level > 0 and lvl == -1:
 		GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
 		return
-	await SpellEffects.cast_leveled_self(player, spell, lvl, player._dungeon_floor, from_scroll)
+	await SpellEffects.cast_leveled_self(player, spell, lvl, player._dungeon_floor, from_scroll, clicked)
 
 # Called from player.gd's LMB dispatch when spell_targeting_active is true. Consumes the armed
 # state regardless of outcome (same one-shot pattern as Grip of the Forest's hook mode).
@@ -222,7 +247,7 @@ func cast_direct(spell_id: String, clicked: Vector2i) -> void:
 			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
 			return
 	if spell.target_kind == Spell.TargetKind.SELF:
-		_cast_self(spell)
+		_cast_self(spell, false, clicked)
 		return
 	if _uses_multi_target_flow(spell):
 		_begin_multi_target(spell_id, false, null)
@@ -252,7 +277,7 @@ func try_cast_at(clicked: Vector2i) -> void:
 	if spell.target_kind == Spell.TargetKind.SELF:
 		if from_scroll:
 			_consume_scroll(scroll_item)
-		await _cast_self(spell, from_scroll)
+		await _cast_self(spell, from_scroll, clicked)
 		return
 	# Cone-shaped spells (Burning Hands) are self-centered — the clicked tile only supplies an aim
 	# DIRECTION from the caster, not an impact point, so it's exempt from the normal range/LOS
@@ -342,11 +367,19 @@ func is_collecting_multi_target() -> bool:
 ## cast (that's still Esc/cancel()'s job). No-op if nothing's been picked yet (RMB before any dart
 ## is locked in has nothing to undo, and the mode is still active so a further LMB pick still
 ## works normally).
+## True for the third multi-target kind — an upcast SAVE spell (Hold Person/Hideous Laughter),
+## neither Magic Missile's darts nor a multi_beam_scaling cantrip's beams.
+func _is_save_multi_target(spell: Spell) -> bool:
+	return spell.effect_id != "magic_missile" and not spell.multi_beam_scaling
+
 func undo_last_multi_target_pick() -> void:
 	if not _mm_active or _mm_targets.is_empty():
 		return
 	var spell: Spell = SpellDb.get_spell(_armed_spell_id)
-	var noun: String = "dart" if spell != null and spell.effect_id == "magic_missile" else "beam"
+	var noun: String = "target"
+	if spell != null:
+		if spell.effect_id == "magic_missile": noun = "dart"
+		elif spell.multi_beam_scaling: noun = "beam"
 	var removed: Dictionary = _mm_targets.pop_back()
 	var remaining: int = _mm_count - _mm_targets.size()
 	GameState.game_log("[color=gray]Un-locked the %s aimed at %s. Choose %d more target%s. [Esc] to cancel.[/color]" % [
@@ -364,8 +397,14 @@ func _begin_multi_target(spell_id: String, from_scroll: bool, scroll_item: Item)
 	_mm_enemies_only = spell.effect_id != "magic_missile"
 	if spell.effect_id == "magic_missile":
 		GameState.game_log("[color=lime]Magic Missile — choose up to 3 targets (1 dart each; click the same target again to focus more darts on it). Enemies, barrels, and doors are all valid. [Esc] to cancel.[/color]")
-	else:
+	elif spell.multi_beam_scaling:
 		GameState.game_log("[color=lime]%s — choose %d target%s (1 beam each; click the same target again to focus more beams onto it). Enemies only. [Esc] to cancel.[/color]" % [
+			spell.spell_name, _mm_count, "s" if _mm_count != 1 else ""])
+	else:
+		# Upcast SAVE spell (Hold Person/Hideous Laughter) — [Space] resolves early with fewer than
+		# the max, since every target beyond the first is purely optional (the base cast is always
+		# legal with just 1).
+		GameState.game_log("[color=lime]%s — choose up to %d target%s (each makes its own save). [Space] to cast now with fewer. [Esc] to cancel.[/color]" % [
 			spell.spell_name, _mm_count, "s" if _mm_count != 1 else ""])
 
 ## Resolves whatever's at `pos` into a dart-target descriptor, or `{}` if nothing valid is there.
@@ -414,11 +453,32 @@ func _handle_multi_target_click(clicked: Vector2i) -> void:
 	_mm_targets.append(desc)
 	var remaining: int = _mm_count - _mm_targets.size()
 	if remaining > 0:
-		var noun: String = "Dart" if spell.effect_id == "magic_missile" else "Beam"
-		GameState.game_log("[color=lime]%s %d locked onto %s. Choose %d more target%s (or click it again). [Esc] to cancel.[/color]" % [
-			noun, _mm_targets.size(), desc["label"], remaining, "s" if remaining != 1 else ""])
+		var noun: String = "Target"
+		if spell.effect_id == "magic_missile": noun = "Dart"
+		elif spell.multi_beam_scaling: noun = "Beam"
+		var extra_hint: String = " [Space] to cast now with fewer." if _is_save_multi_target(spell) else ""
+		GameState.game_log("[color=lime]%s %d locked onto %s. Choose %d more target%s (or click it again).%s [Esc] to cancel.[/color]" % [
+			noun, _mm_targets.size(), desc["label"], remaining, "s" if remaining != 1 else "", extra_hint])
 		return
 
+	await _resolve_multi_target_collection(spell)
+
+## [Space] during a SAVE-multi-target collection (Hold Person/Hideous Laughter's upcast) resolves
+## the cast immediately with whatever's been picked so far (minimum 1 — the base cast is always a
+## legal single target). No-op for Magic Missile/Eldritch Blast, which always need their full fixed
+## count, and a no-op before any pick is locked in.
+func finish_multi_target_early() -> void:
+	if not _mm_active or _mm_targets.is_empty():
+		return
+	var spell: Spell = SpellDb.get_spell(_armed_spell_id)
+	if spell == null or not _is_save_multi_target(spell):
+		return
+	await _resolve_multi_target_collection(spell)
+
+## Shared tail — consumes the collected `_mm_targets` (whatever's in it, whether the full `_mm_count`
+## was reached or [Space] cut it short) and resolves the actual cast. Clears every armed-state field
+## first so a re-entrant call (e.g. another click landing before the await resumes) can't double-fire.
+func _resolve_multi_target_collection(spell: Spell) -> void:
 	var from_scroll: bool = _casting_from_scroll
 	var scroll_item: Item = _armed_scroll_item
 	var targets: Array[Dictionary] = _mm_targets
@@ -440,5 +500,20 @@ func _handle_multi_target_click(clicked: Vector2i) -> void:
 
 	if spell.effect_id == "magic_missile":
 		await SpellEffects.cast_magic_missile(player, spell, lvl, targets, player._dungeon_floor, from_scroll)
-	else:
+	elif spell.multi_beam_scaling:
 		await SpellEffects.cast_multi_beam_cantrip(player, spell, targets, player._dungeon_floor, from_scroll)
+	else:
+		# Upcast SAVE spell (Hold Person/Hideous Laughter) — dedupe by unique enemy (repeated
+		# clicks on the same target are a no-op here, unlike Magic Missile's dart-focusing) and
+		# split into the primary target + any additional upcast-collected ones.
+		var enemies: Array[Enemy] = []
+		for t: Dictionary in targets:
+			if t["kind"] == "enemy":
+				var e: Enemy = t["enemy"]
+				if is_instance_valid(e) and not e.stats.is_dead() and not enemies.has(e):
+					enemies.append(e)
+		if enemies.is_empty():
+			return
+		var primary: Enemy = enemies[0]
+		var extra: Array[Enemy] = enemies.slice(1)
+		await SpellEffects.cast_leveled_save_at_enemy(player, spell, lvl, primary, player._dungeon_floor, from_scroll, extra)

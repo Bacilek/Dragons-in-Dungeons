@@ -464,17 +464,22 @@ var ray_of_enfeeblement_target: Enemy = null
 var ray_of_enfeeblement_turns: int = 0
 
 # Hold Person (Abyssal Tiefling lineage spell, level 2) — same generic concentration_spell_id
-# mechanism ("hold_person") + live target reference as Ray of Enfeeblement/Witch Bolt (the ongoing
-# Paralyzed condition lives on Enemy.paralyzed_turns, per-target). Deliberately NOT serialized,
-# same precedent as witch_bolt_target/witch_bolt_turns above.
-var hold_person_target: Enemy = null
+# mechanism ("hold_person") + live target reference(s) as Ray of Enfeeblement/Witch Bolt (the
+# ongoing Paralyzed condition lives on Enemy.paralyzed_turns, per-target). An Array, not a single
+# Enemy, since the upcast (+1 Humanoid target per slot level above 2nd, Warlock Pact Magic) can
+# hold multiple targets under ONE casting's shared Concentration — a target that saves off early is
+# removed from the array individually (see Enemy.decide_turn()'s repeated-save branch); the whole
+# spell only ends (GameState.end_concentration()) once the array is empty. Deliberately NOT
+# serialized, same precedent as witch_bolt_target/witch_bolt_turns above.
+var hold_person_target: Array[Enemy] = []
 var hold_person_turns: int = 0
 
 # Tasha's Hideous Laughter (Bard/Warlock/Wizard, level 1) — same generic concentration_spell_id
-# mechanism ("hideous_laughter") + live target reference as Hold Person (the ongoing Prone +
-# Incapacitated condition lives on Enemy.prone/incapacitated_turns, per-target). Deliberately NOT
-# serialized, same precedent as witch_bolt_target/witch_bolt_turns above.
-var hideous_laughter_target: Enemy = null
+# mechanism ("hideous_laughter") + live target reference(s) as Hold Person (the ongoing Prone +
+# Incapacitated condition lives on Enemy.prone/incapacitated_turns, per-target). An Array for the
+# same multi-target-upcast reason as hold_person_target above (+1 target per slot level above 1st).
+# Deliberately NOT serialized, same precedent as witch_bolt_target/witch_bolt_turns above.
+var hideous_laughter_target: Array[Enemy] = []
 var hideous_laughter_turns: int = 0
 
 # Longstrider (Wood Elf lineage spell, level 3) — NOT Concentration (5e RAW). +1/3 movement speed

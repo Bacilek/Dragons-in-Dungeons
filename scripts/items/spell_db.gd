@@ -307,6 +307,7 @@ static func _magic_missile() -> Spell:
 	s.damage_type = "Force"
 	s.effect_id = "magic_missile"
 	s.class_list = ["WIZARD"]   # real 5e list: Sorcerer/Wizard — not Ranger
+	s.upcast_extra_targets = 1  # +1 dart per slot level above 1st (never triggers today — Wizard's StandardSlotPool never upcasts)
 	return s
 
 static func _shield() -> Spell:
@@ -378,6 +379,7 @@ static func _fireball() -> Spell:
 	s.dice_sides = 6
 	s.damage_type = "Fire"
 	s.class_list = ["WIZARD"]   # real 5e list: Sorcerer/Wizard — not Ranger
+	s.upcast_dice_count = 1   # +1d6 per slot level above 3rd
 	return s
 
 static func _chromatic_orb() -> Spell:
@@ -397,6 +399,7 @@ static func _chromatic_orb() -> Spell:
 	s.damage_type = ""   # rolled per-cast from SpellEffects.CHROMATIC_ORB_TYPES — see effect_id
 	s.effect_id = "chromatic_orb"
 	s.class_list = ["WIZARD"]   # real 5e/5.5e list: Sorcerer/Wizard — not Ranger
+	s.upcast_dice_count = 1   # +1d8 damage per slot level above 1st; leap count is handled separately (= cast_level, see SpellEffects)
 	return s
 
 static func _burning_hands() -> Spell:
@@ -420,6 +423,7 @@ static func _burning_hands() -> Spell:
 	s.damage_type = "Fire"
 	s.effect_id = "burning_hands"
 	s.class_list = ["WIZARD"]   # real 5e/5.5e list: Sorcerer/Wizard — not Ranger
+	s.upcast_dice_count = 1   # +1d6 per slot level above 1st
 	return s
 
 static func _witch_bolt() -> Spell:
@@ -441,6 +445,7 @@ static func _witch_bolt() -> Spell:
 	s.damage_type = "Lightning"
 	s.effect_id = "witch_bolt"
 	s.class_list = ["WARLOCK", "WIZARD"]   # real 5e/5.5e list: Sorcerer/Warlock/Wizard — not Ranger. BUGFIX: class_list (and this comment) omitted Warlock even though the spell is already in WARLOCK_SPELL_IDS
+	s.upcast_dice_count = 1   # +1d12 per slot level above 1st — only to the initial Lightning hit, never the ongoing per-turn jolt tick (SpellEffects.tick_witch_bolt() always rolls a flat 1d12)
 	return s
 
 # ── More 1st-level non-damage spells (Expeditious Retreat, False Life, Fog Cloud) ────────────
@@ -485,6 +490,7 @@ static func _false_life() -> Spell:
 	s.dice_sides = 4
 	s.effect_id = "false_life"
 	s.class_list = ["WIZARD"]   # real 5e/5.5e list: Sorcerer/Wizard — not Ranger
+	s.upcast_flat_amount = 5   # +5 Temp HP per slot level above 1st
 	return s
 
 static func _fog_cloud() -> Spell:
@@ -505,6 +511,7 @@ static func _fog_cloud() -> Spell:
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "fog_cloud"
 	s.class_list = ["WIZARD", "RANGER"]   # real 5e/5.5e list: Druid/Ranger/Sorcerer/Wizard
+	s.upcast_flat_amount = 2   # +2 tile radius per slot level above 1st
 	return s
 
 # Real 5e class list is Bard/Druid/Sorcerer/Warlock/Wizard — this codebase only has a Wizard
@@ -529,6 +536,7 @@ static func _invisibility() -> Spell:
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.effect_id = "invisibility"
 	s.class_list = ["WARLOCK", "WIZARD"]   # real 5e list: Sorcerer/Warlock/Wizard. BUGFIX: class_list was missing WARLOCK despite the spell already being in WARLOCK_SPELL_IDS
+	s.upcast_extra_targets = 1   # +1 creature you touch (in range) per slot level above 2nd — see SpellEffects' touch-target flow (self, or also the Companion)
 	return s
 
 # ── Elf lineage spells (Drow/High Elf/Wood Elf) — see scripts/entities/CLAUDE.md's "Elf" section
@@ -617,6 +625,7 @@ static func _longstrider() -> Spell:
 	s.icon_path = "res://icons/spells/1/longstrider.png"
 	s.effect_id = "longstrider"
 	s.class_list = ["WIZARD"]
+	s.upcast_extra_targets = 1   # +1 additional creature you touch per slot level above 1st
 	return s
 
 static func _pass_without_trace() -> Spell:
@@ -704,6 +713,7 @@ static func _ray_of_sickness() -> Spell:
 	s.icon_path = "res://icons/spells/1/ray_of_sickness.png"
 	s.effect_id = "ray_of_sickness"
 	s.class_list = ["WIZARD"]
+	s.upcast_dice_count = 1   # +1d8 per slot level above 1st
 	return s
 
 static func _hold_person() -> Spell:
@@ -724,6 +734,7 @@ static func _hold_person() -> Spell:
 	s.icon_path = "res://icons/spells/2/hold_person.png"
 	s.effect_id = "hold_person"
 	s.class_list = ["WARLOCK", "WIZARD"]   # real 5e list: Bard/Cleric/Druid/Sorcerer/Warlock/Wizard. BUGFIX: class_list was missing WARLOCK despite the spell already being in WARLOCK_SPELL_IDS
+	s.upcast_extra_targets = 1   # +1 additional Humanoid target per slot level above 2nd
 	return s
 
 static func _hideous_laughter() -> Spell:
@@ -744,10 +755,11 @@ static func _hideous_laughter() -> Spell:
 	# codebase has no upcasting at all (see "Wizard leveled spells"'s own "no upcasting"
 	# permanent simplification), so casting always affects a single target regardless of which
 	# slot level it's cast at.
-	s.description = "WIS save or is knocked Prone and Incapacitated. Repeats the save at the end of its turns, and again with Advantage whenever it takes damage (multiple hits from the same spell each get their own throw). A success ends the Incapacitated half; Prone lingers until it stands up normally. Upcast: +1 target per spell slot level above 1st (not yet implemented — always single-target)."
+	s.description = "WIS save or is knocked Prone and Incapacitated. Repeats the save at the end of its turns, and again with Advantage whenever it takes damage (multiple hits from the same spell each get their own throw). A success ends the Incapacitated half; Prone lingers until it stands up normally."
 	s.icon_path = "res://icons/spells/1/hideous_laughter.png"
 	s.effect_id = "hideous_laughter"
 	s.class_list = ["WARLOCK", "WIZARD"]
+	s.upcast_extra_targets = 1   # +1 target per slot level above 1st
 	return s
 
 static func _ray_of_enfeeblement() -> Spell:
@@ -791,6 +803,7 @@ static func _hellish_rebuke() -> Spell:
 	s.icon_path = "res://icons/spells/1/hellish_rebuke.png"
 	s.effect_id = "hellish_rebuke"
 	s.class_list = []
+	s.upcast_dice_count = 1   # +1d10 per slot level above 1st (never triggers today — only reachable via Tiefling's fixed-level free grant, not a real slot cast)
 	return s
 
 # ── Gnome Gnomish Lineage spells (Forest/Rock) — see scripts/entities/CLAUDE.md's "Gnome" section

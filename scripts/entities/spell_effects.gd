@@ -52,6 +52,12 @@ static func _cast_ability_label(stats: Stats, spell: Spell = null) -> String:
 		return stats.caster.spellcasting_ability
 	return "INT"
 
+# Warlock Pact Magic upcast (PactSlotPool.available_level() always returns the current pact slot
+# level, so cast_level can exceed spell.level — see scripts/items/CLAUDE.md's PactSlotPool entry).
+# Wizard/Ranger's own slot pools never upcast, so this is 0 for every cast through those.
+static func _upcast_extra_levels(spell: Spell, cast_level: int) -> int:
+	return maxi(0, cast_level - spell.level)
+
 static func _cantrip_tier(character_level: int) -> int:
 	var tier: int = 1
 	for i: int in TIER_LEVELS.size():
@@ -511,11 +517,14 @@ static func _consume_slot(player: Player, spell: Spell, cast_level: int, from_sc
 		player.stats.caster.slot_pool.consume(cast_level)
 	GameState.spell_slots_changed.emit()
 
-# SELF target (Shield) — no targeting, no attack roll, resolves on activation.
-static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dungeon_floor: Node, from_scroll: bool = false) -> void:
+# SELF target (Shield) — no targeting, no attack roll, resolves on activation. `clicked` (default
+# sentinel Vector2i(-1,-1) = "no touch-target choice to make") is only read by the "invisibility"/
+# "longstrider" upcast branches below — see their own comments.
+static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dungeon_floor: Node, from_scroll: bool = false, clicked: Vector2i = Vector2i(-1, -1)) -> void:
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	_consume_slot(player, spell, cast_level, from_scroll)
+	var extra_levels: int = _upcast_extra_levels(spell, cast_level)
 	match spell.effect_id:
 		"shield":
 			player.stats.shield_ac_bonus = 5
@@ -558,7 +567,7 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your reflexes quicken for up to 100 turns.[/color]" % spell.spell_name)
 		"false_life":
 			var rolls: Array[int] = Rng.roll_dice(spell.dice_count, spell.dice_sides)
-			var total: int = 4
+			var total: int = 4 + spell.upcast_flat_amount * extra_levels
 			for v: int in rolls:
 				total += v
 			player.stats.temp_hp = maxi(player.stats.temp_hp, total)
@@ -579,11 +588,31 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			player.stats.invisibility_just_cast = true
 			player._update_invisibility_visual()
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — you fade from view for up to 600 turns.[/color]" % spell.spell_name)
+			# Upcast (+1 creature you touch, per slot level above 2nd — Warlock Pact Magic only,
+			# see Spell.upcast_extra_targets' own comment): this engine's only other valid touch
+			# target is the Companion (same "self, or the Companion" scope as Healing Hands, no
+			# general ally-targeting system exists) — clicking its own tile also turns it invisible,
+			# sharing the caster's own Concentration/duration (see player.gd's turn-tick and
+			# GameState.end_concentration()'s "invisibility" branch, both of which clear it too).
+			if extra_levels > 0 and spell.upcast_extra_targets > 0 and clicked != Vector2i(-1, -1):
+				var comp: Companion = GameState.player_companion
+				if comp != null and is_instance_valid(comp) and comp.grid_pos == clicked:
+					comp.invisibility_turns = 600
+					GameState.game_log("[color=cyan]%s fades from view too.[/color]" % comp.animal_name)
 		"detect_magic":
 			_resolve_detect_magic(player, spell)
 		"longstrider":
 			player.stats.longstrider_turns = 600
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your steps quicken for up to 600 turns.[/color]" % spell.spell_name)
+			# Upcast (+1 creature you touch, per slot level above 1st — Warlock Pact Magic only):
+			# same "self, or the Companion" touch-target scope as Invisibility above. No movement-
+			# speed-scaling system exists for Companion (its own decide/execute turn has no "extra
+			# move" concept to grant) — flavor-only, a documented simplification, same tier as
+			# Speak with Animals having no mechanical effect.
+			if extra_levels > 0 and spell.upcast_extra_targets > 0 and clicked != Vector2i(-1, -1):
+				var comp2: Companion = GameState.player_companion
+				if comp2 != null and is_instance_valid(comp2) and comp2.grid_pos == clicked:
+					GameState.game_log("[color=cyan]%s feels the same swiftness (flavor only — no mechanical speed system exists for companions).[/color]" % comp2.animal_name)
 		"pass_without_trace":
 			if player.stats.concentration_spell_id != "":
 				GameState.end_concentration("" if player.stats.concentration_spell_id == "pass_without_trace" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
@@ -613,6 +642,9 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	_consume_slot(player, spell, cast_level, from_scroll)
+	var extra_levels: int = _upcast_extra_levels(spell, cast_level)
+	if extra_levels > 0 and spell.upcast_dice_count > 0:
+		spell.dice_count += spell.upcast_dice_count * extra_levels
 	if dungeon_floor != null:
 		dungeon_floor.try_shoot_tripwire(tile_pos)
 	match spell.effect_id:
@@ -623,7 +655,7 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 		"burning_hands":
 			_resolve_cone_aoe(player, spell, tile_pos, dungeon_floor)
 		"fog_cloud":
-			_resolve_fog_cloud(player, spell, tile_pos)
+			_resolve_fog_cloud(player, spell, tile_pos, extra_levels)
 		"faerie_fire":
 			_resolve_faerie_fire(player, spell, tile_pos, dungeon_floor)
 		"darkness":
@@ -1055,13 +1087,15 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	return {"hit": true, "lethal": is_lethal, "rolls": rolls}
 
 # Picks a random OTHER alive enemy visible to the player (Chromatic Orb's leap target) — never the
-# player, a companion, or the original target. Returns null if no other visible enemy exists.
-static func _pick_chromatic_orb_leap_target(dungeon_floor: Node, exclude: Enemy) -> Enemy:
+# player, a companion, or any target already hit this cast (`exclude` — "a creature can be
+# targeted only once by each casting", real for the upcast's chained-leap case). Returns null if no
+# other visible enemy exists.
+static func _pick_chromatic_orb_leap_target(dungeon_floor: Node, exclude: Array[Enemy]) -> Enemy:
 	if dungeon_floor == null:
 		return null
 	var candidates: Array[Enemy] = []
 	for e: Enemy in dungeon_floor.get_visible_enemies():
-		if e == exclude or not is_instance_valid(e) or e.stats.is_dead():
+		if e in exclude or not is_instance_valid(e) or e.stats.is_dead():
 			continue
 		candidates.append(e)
 	if candidates.is_empty():
@@ -1078,26 +1112,40 @@ static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_leve
 	await sprite.animation_finished
 	sprite.play("idle")
 	_consume_slot(player, spell, cast_level, from_scroll)
+	var extra_levels: int = _upcast_extra_levels(spell, cast_level)
+	if extra_levels > 0 and spell.upcast_dice_count > 0:
+		spell.dice_count += spell.upcast_dice_count * extra_levels
 
 	match spell.effect_id:
 		"chromatic_orb":
 			# Damage type is rolled once per cast, before the attack roll — a leap (if triggered)
 			# reuses the same type rather than re-rolling, like the orb's energy carrying over.
+			# Upcast: "the orb can leap a maximum number of times equal to the level of the slot
+			# expended, and a creature can be targeted only once by each casting" — so a leap can
+			# now chain repeatedly (up to cast_level total leaps) instead of firing at most once,
+			# each leap excluding every target already hit this cast.
 			var dtype: String = Rng.pick(CHROMATIC_ORB_TYPES)
-			var res: Dictionary = _resolve_spell_attack_bolt(player, spell, target, dtype, dungeon_floor, false)
-			if res["hit"] and not res["lethal"]:
-				var rolls: Array = res["rolls"]
+			var used_targets: Array[Enemy] = [target]
+			var cur_res: Dictionary = _resolve_spell_attack_bolt(player, spell, target, dtype, dungeon_floor, false)
+			var leaps_done: int = 0
+			var max_leaps: int = cast_level
+			while cur_res["hit"] and not cur_res["lethal"] and leaps_done < max_leaps:
+				var rolls: Array = cur_res["rolls"]
 				var seen: Dictionary = {}
 				var has_pair: bool = false
 				for v: int in rolls:
 					seen[v] = seen.get(v, 0) + 1
 					if seen[v] >= 2:
 						has_pair = true
-				if has_pair:
-					var leap_target: Enemy = _pick_chromatic_orb_leap_target(dungeon_floor, target)
-					if leap_target != null:
-						GameState.game_log("[color=cyan]The orb crackles and leaps toward a new target![/color]")
-						_resolve_spell_attack_bolt(player, spell, leap_target, dtype, dungeon_floor, true)
+				if not has_pair:
+					break
+				var leap_target: Enemy = _pick_chromatic_orb_leap_target(dungeon_floor, used_targets)
+				if leap_target == null:
+					break
+				GameState.game_log("[color=cyan]The orb crackles and leaps toward a new target![/color]")
+				cur_res = _resolve_spell_attack_bolt(player, spell, leap_target, dtype, dungeon_floor, true)
+				used_targets.append(leap_target)
+				leaps_done += 1
 		"witch_bolt":
 			var res2: Dictionary = _resolve_spell_attack_bolt(player, spell, target, spell.damage_type, dungeon_floor, false)
 			if res2["hit"] and not res2["lethal"]:
@@ -1123,11 +1171,16 @@ static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_leve
 		dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()
 
-# Single-target SAVE-resolution LEVELED spells (Hold Person, Hellish Rebuke — the leveled
+# Single-target SAVE-resolution LEVELED spells (Hold Person, Hideous Laughter — the leveled
 # counterpart to cast_cantrip_save_at_enemy() above, with real spell-slot consumption). A spell
 # with dice_count <= 0 is a pure debuff/condition with no damage roll at all (Hold Person); any
-# other spell deals damage, halved on a successful save (Hellish Rebuke, spell.save_for_half).
-static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
+# other spell deals damage, halved on a successful save (spell.save_for_half).
+# `also_targets`: additional enemies the Warlock Pact Magic upcast collected (Spell.
+# upcast_extra_targets, see PlayerSpellcasting._begin_multi_target()'s generalized SAVE-multi-target
+# flow) — each rolls its own independent save under this ONE cast's shared turn/slot/Concentration.
+# Empty for a normal, non-upcast single-target cast (every existing call site), so this parameter
+# changes nothing about the base spell's behavior.
+static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false, also_targets: Array[Enemy] = []) -> void:
 	# Hold Person only works on Humanoids (5e RAW) — a targeting restriction, not a resisted
 	# effect, so it's checked before any turn/slot/animation is spent: a Fiend (the Bearded Devil, etc.)
 	# was never a legal target at all, unlike a condition-immune creature (still legally targeted,
@@ -1146,57 +1199,93 @@ static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level:
 	_consume_slot(player, spell, cast_level, from_scroll)
 
 	var stats: Stats = player.stats
-	var dc: int = _save_dc(stats, spell)
-	var save: Dictionary = target.resist_check_detailed(dc,
-		spell.save_stat == "CON", spell.save_stat == "DEX", spell.save_stat == "WIS", spell.save_stat == "INT", true)
-	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
-		save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 
 	if spell.dice_count <= 0:
-		if save["pass"] and spell.effect_id == "ray_of_enfeeblement":
-			# A successful CON save still leaves a minor one-shot debuff: Disadvantage on the
-			# target's own next attack roll (reuses Grip of the Forest R3's field/consumption
-			# point) — the spell otherwise ends here, no Concentration started.
-			target.disadv_next_attack = true
-			GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s resists[/url], but reels for a moment.[/color]" % [
-				spell.spell_name, target.display_name, save_meta, target.display_name])
-		elif save["pass"]:
-			GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s resists[/url].[/color]" % [
-				spell.spell_name, target.display_name, save_meta, target.display_name])
-		else:
-			GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s fails the save[/url]!" % [
-				spell.spell_name, target.display_name, save_meta, target.display_name])
+		# Every enemy this cast actually affects — the primary target plus any upcast-collected
+		# extras (a non-Humanoid extra against Hold Person is skipped, same targeting-restriction
+		# rule as the primary's own gate above). Each rolls an independent save; the Concentration
+		# switch-check (breaking a DIFFERENT already-active spell) only fires ONCE for the whole
+		# cast, and only if at least one target's save actually fails — a whiffed cast never touches
+		# an existing unrelated concentration effect, matching the original single-target behavior.
+		var all_targets: Array[Enemy] = [target]
+		for e: Enemy in also_targets:
+			if not is_instance_valid(e) or e.stats.is_dead() or e == target:
+				continue
+			if spell.effect_id == "hold_person" and e.creature_type != "Humanoid":
+				GameState.game_log("[color=gray]%s is unaffected — Hold Person only works on Humanoids.[/color]" % e.display_name)
+				continue
+			e.on_disturbed(player.grid_pos)
+			all_targets.append(e)
+
+		var failed: Array[Dictionary] = []  # {"enemy": Enemy, "dc": int}
+		for e: Enemy in all_targets:
+			var dc: int = _save_dc(stats, spell)
+			var save: Dictionary = e.resist_check_detailed(dc,
+				spell.save_stat == "CON", spell.save_stat == "DEX", spell.save_stat == "WIS", spell.save_stat == "INT", true)
+			var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+				save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
+			if save["pass"] and spell.effect_id == "ray_of_enfeeblement":
+				# A successful CON save still leaves a minor one-shot debuff: Disadvantage on the
+				# target's own next attack roll (reuses Grip of the Forest R3's field/consumption
+				# point) — the spell otherwise ends here, no Concentration started.
+				e.disadv_next_attack = true
+				GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s resists[/url], but reels for a moment.[/color]" % [
+					spell.spell_name, e.display_name, save_meta, e.display_name])
+			elif save["pass"]:
+				GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s resists[/url].[/color]" % [
+					spell.spell_name, e.display_name, save_meta, e.display_name])
+			else:
+				GameState.game_log("You cast [color=cyan]%s[/color] at %s — [url=%s]%s fails the save[/url]!" % [
+					spell.spell_name, e.display_name, save_meta, e.display_name])
+				failed.append({"enemy": e, "dc": dc})
+
+		if not failed.is_empty():
 			if stats.concentration_spell_id != "":
 				GameState.end_concentration("" if stats.concentration_spell_id == spell.effect_id else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 			match spell.effect_id:
 				"hold_person":
-					target.paralyzed_turns = 10
-					target.paralyze_save_dc = dc
-					target._refresh_paralyzed_visual()
 					stats.concentration_spell_id = "hold_person"
-					stats.hold_person_target = target
 					stats.hold_person_turns = 10
-					GameState.game_log("[color=cyan]%s is paralyzed, unable to act![/color]" % target.display_name)
+					for f: Dictionary in failed:
+						var e2: Enemy = f["enemy"]
+						e2.paralyzed_turns = 10
+						e2.paralyze_save_dc = f["dc"]
+						e2._refresh_paralyzed_visual()
+						stats.hold_person_target.append(e2)
+						GameState.game_log("[color=cyan]%s is paralyzed, unable to act![/color]" % e2.display_name)
 				"ray_of_enfeeblement":
-					target.enfeeble_turns = 10
-					target.enfeeble_save_dc = dc
+					# No upcast target (Spell.upcast_extra_targets == 0) — always exactly 1 entry.
+					var f0: Dictionary = failed[0]
+					var e3: Enemy = f0["enemy"]
+					e3.enfeeble_turns = 10
+					e3.enfeeble_save_dc = f0["dc"]
 					stats.concentration_spell_id = "ray_of_enfeeblement"
-					stats.ray_of_enfeeblement_target = target
+					stats.ray_of_enfeeblement_target = e3
 					stats.ray_of_enfeeblement_turns = 10
-					GameState.game_log("[color=cyan]%s's muscles wither with enfeeblement![/color]" % target.display_name)
+					GameState.game_log("[color=cyan]%s's muscles wither with enfeeblement![/color]" % e3.display_name)
 				"hideous_laughter":
-					target.apply_status("prone", 1)
-					target.incapacitated_turns = 10
-					target.hideous_laughter_save_dc = dc
 					stats.concentration_spell_id = "hideous_laughter"
-					stats.hideous_laughter_target = target
 					stats.hideous_laughter_turns = 10
-					GameState.game_log("[color=cyan]%s collapses in a fit of uncontrollable laughter![/color]" % target.display_name)
+					for f: Dictionary in failed:
+						var e4: Enemy = f["enemy"]
+						e4.apply_status("prone", 1)
+						e4.incapacitated_turns = 10
+						e4.hideous_laughter_save_dc = f["dc"]
+						stats.hideous_laughter_target.append(e4)
+						GameState.game_log("[color=cyan]%s collapses in a fit of uncontrollable laughter![/color]" % e4.display_name)
 		if dungeon_floor != null:
 			dungeon_floor.update_fog(player.grid_pos)
 		player._handle_post_attack_turn()
 		return
 
+	# Damage-dealing SAVE spells (dice_count > 0) are single-target only — no current spell reaches
+	# this branch with also_targets non-empty (only Hold Person/Hideous Laughter, both pure debuffs
+	# with dice_count <= 0, ever collect extra targets today).
+	var dc: int = _save_dc(stats, spell)
+	var save: Dictionary = target.resist_check_detailed(dc,
+		spell.save_stat == "CON", spell.save_stat == "DEX", spell.save_stat == "WIS", spell.save_stat == "INT", true)
+	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+		save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
 	var rolls: Array[int] = Rng.roll_dice(spell.dice_count, spell.dice_sides)
 	var inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], false, spell.damage_type)
 	var roll_total: int = int(inst["subtotal"])
@@ -1291,14 +1380,14 @@ static func tick_witch_bolt(player: Player, target: Enemy, dungeon_floor: Node) 
 # player_vfx.gd's has_advantage(), the disadv_count block at every player attack-roll site, and
 # enemy.gd._resolve_attack_roll()'s extra_adv/extra_disadv params — nothing here applies a status
 # effect directly. See scripts/entities/CLAUDE.md's "Fog Cloud" section.
-static func _resolve_fog_cloud(player: Player, spell: Spell, center: Vector2i) -> void:
+static func _resolve_fog_cloud(player: Player, spell: Spell, center: Vector2i, extra_levels: int = 0) -> void:
 	var stats: Stats = player.stats
 	if stats.concentration_spell_id != "":
 		GameState.end_concentration("" if stats.concentration_spell_id == "fog_cloud" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
 	stats.concentration_spell_id = "fog_cloud"
 	stats.fog_cloud_turns = 600
 	GameState.fog_cloud_pos = center
-	GameState.fog_cloud_radius = spell.shape_size
+	GameState.fog_cloud_radius = spell.shape_size + spell.upcast_flat_amount * extra_levels
 	GameState.game_log("[color=cyan]A thick fog billows outward, obscuring the area![/color]")
 
 # Darkness (real LEVELED_SPELL_IDS entry, also the Drow lineage spell) — a second, independent

@@ -649,7 +649,11 @@ for that spell.
   String` ("Action"/"Free" — this engine only distinguishes those two, no bonus-action/reaction
   tier; a RAW reaction like Hellish Rebuke or bonus action like Misty Step is approximated to
   whichever fits its actual implementation), `duration_turns: int` (`0` = instantaneous, no
-  Duration line at all), `is_concentration: bool`. Still missing reaction/component fields from the
+  Duration line at all), `is_concentration: bool`, `upcast_dice_count`/`upcast_extra_targets`/
+  `upcast_flat_amount: int` (per-extra-slot-level upcast benefit — generic fields on every `Spell`,
+  but only Warlock's `PactSlotPool` ever actually casts a spell ABOVE its own base level, so these
+  are a no-op for Wizard/Ranger; see `scripts/entities/CLAUDE.md`'s "Spell upcasting" section for
+  the full mechanism and per-spell values). Still missing reaction/component fields from the
   full design doc's `Spell` shape — add if a future spell needs them.
 - **`SpellDb`** (static factory, `RefCounted`) — `get_spell(id) -> Spell` builds all spells in
   code, same "no `.tres` files" convention as `Talent`/`SpriteFrames`. `CANTRIP_IDS` (8 cantrips:
@@ -756,7 +760,9 @@ for that spell.
   spell's own level is at or below it and a charge remains — every Pact Magic spell auto-upcasts to
   the single current slot level, the opposite of `StandardSlotPool`'s explicit no-upcasting rule
   (see that entry above) — correctly isolated to this pool class, so that rejection doesn't carry
-  over. Recharges on a SHORT rest, not long — `on_short_rest()` (a method neither other pool
+  over. This auto-upcast is what actually exercises every `Spell.upcast_dice_count`/
+  `upcast_extra_targets`/`upcast_flat_amount` field — see `scripts/entities/CLAUDE.md`'s "Spell
+  upcasting" section. Recharges on a SHORT rest, not long — `on_short_rest()` (a method neither other pool
   implements) is the real recharge path (`GameState._on_short_rest_completed()`); `on_long_rest()`
   is kept as a harmless full-refill fallback. See `scripts/entities/CLAUDE.md`'s "Warlock class"
   section for the full slot table and mechanism.

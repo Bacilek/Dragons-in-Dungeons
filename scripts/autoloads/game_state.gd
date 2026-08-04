@@ -3159,18 +3159,20 @@ func end_concentration(reason_log: String = "") -> void:
 		player_stats.ray_of_enfeeblement_target = null
 	elif broken_spell == "hold_person":
 		player_stats.hold_person_turns = 0
-		if is_instance_valid(player_stats.hold_person_target):
-			player_stats.hold_person_target.paralyzed_turns = 0
-			player_stats.hold_person_target._refresh_paralyzed_visual()
-		player_stats.hold_person_target = null
+		for e: Enemy in player_stats.hold_person_target:
+			if is_instance_valid(e):
+				e.paralyzed_turns = 0
+				e._refresh_paralyzed_visual()
+		player_stats.hold_person_target = []
 	elif broken_spell == "hideous_laughter":
 		player_stats.hideous_laughter_turns = 0
 		# Prone is deliberately left alone — it clears itself normally the next time this enemy's
 		# own turn lets it stand up (see the Enemy.prone field's own comment), not tied to
 		# Concentration at all. Only the Incapacitated half ends here.
-		if is_instance_valid(player_stats.hideous_laughter_target):
-			player_stats.hideous_laughter_target.incapacitated_turns = 0
-		player_stats.hideous_laughter_target = null
+		for e: Enemy in player_stats.hideous_laughter_target:
+			if is_instance_valid(e):
+				e.incapacitated_turns = 0
+		player_stats.hideous_laughter_target = []
 	elif broken_spell == "faerie_fire":
 		player_stats.faerie_fire_turns = 0
 		# Faerie Fire is Concentration too, and losing it should retroactively un-outline every
@@ -3189,8 +3191,27 @@ func end_concentration(reason_log: String = "") -> void:
 				p._refresh_faerie_fire_visual()
 	elif broken_spell == "invisibility":
 		player_stats.invisibility_turns = 0
+		if player_companion != null and is_instance_valid(player_companion) and player_companion.invisibility_turns > 0:
+			player_companion.invisibility_turns = 0
 	if reason_log != "":
 		game_log(reason_log)
+
+# Removes ONE Enemy from a multi-target Hold Person/Hideous Laughter cast's own target array
+# (its individual repeated-save success — Enemy.decide_turn() — already zeroed that enemy's own
+# status field before calling this) WITHOUT touching any other still-held target. Concentration
+# itself (and the whole spell) only actually ends once every target has escaped. Caller passes
+# `spell_id` ("hold_person"/"hideous_laughter") so this stays correct if the player has since
+# started concentrating on something else entirely (a stale repeated-save tick from an enemy whose
+# effect already ended some other way).
+func remove_hold_person_target(enemy: Enemy) -> void:
+	player_stats.hold_person_target.erase(enemy)
+	if player_stats.hold_person_target.is_empty() and player_stats.concentration_spell_id == "hold_person":
+		end_concentration()
+
+func remove_hideous_laughter_target(enemy: Enemy) -> void:
+	player_stats.hideous_laughter_target.erase(enemy)
+	if player_stats.hideous_laughter_target.is_empty() and player_stats.concentration_spell_id == "hideous_laughter":
+		end_concentration()
 
 
 func apply_player_status(type: String, turns: int, save_dc: int = 0) -> bool:

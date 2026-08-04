@@ -74,3 +74,16 @@ enum TargetKind { ENEMY, SELF, TILE }
 # that on, so it's simplified to "free, but only when not being actively pursued" — see
 # SpellEffects._consume_slot()'s ritual branch. Detect Magic is the first (and so far only) user.
 @export var is_ritual: bool = false
+
+# ── Upcasting (Warlock Pact Magic only — PactSlotPool.available_level() auto-upcasts every cast to
+# the caster's single current pact slot level, unlike Wizard/Ranger's own pools which never upcast
+# at all; see scripts/items/CLAUDE.md's PactSlotPool entry) ──────────────────────────────────────
+# `extra_levels = cast_level - spell.level` (SpellEffects._upcast_extra_levels()) drives all three
+# — each is applied ONCE PER extra level above the spell's own base level, D&D 2024 "for each slot
+# level above Nth" convention. A spell with none of these three set simply has no upcast benefit
+# (matches real 5e/5.5e RAW for several spells here — Misty Step, Expeditious Retreat, Darkness,
+# Ray of Enfeeblement all genuinely have no "At Higher Levels" text). Generic fields usable by any
+# slot pool; only PactSlotPool ever actually produces cast_level > spell.level today.
+@export var upcast_dice_count: int = 0     # extra dice (of this spell's own dice_sides) per level above base
+@export var upcast_extra_targets: int = 0  # extra target per level above base (Magic Missile darts, Hideous Laughter/Invisibility/Hold Person/Longstrider targets)
+@export var upcast_flat_amount: int = 0    # flat amount per level above base — meaning is per-effect_id (False Life Temp HP, Fog Cloud radius)

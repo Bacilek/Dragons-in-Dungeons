@@ -395,9 +395,11 @@ func _on_turn_started() -> void:
 			if stats.hold_person_turns <= 0:
 				if stats.concentration_spell_id == "hold_person":
 					stats.concentration_spell_id = ""
-				if is_instance_valid(stats.hold_person_target):
-					stats.hold_person_target.paralyzed_turns = 0
-				stats.hold_person_target = null
+				for e: Enemy in stats.hold_person_target:
+					if is_instance_valid(e):
+						e.paralyzed_turns = 0
+						e._refresh_paralyzed_visual()
+				stats.hold_person_target = []
 				GameState.game_log("[color=gray]Hold Person fades.[/color]")
 		# Tasha's Hideous Laughter: same 10-turn Concentration cap/backstop as Hold Person above
 		# — the target's own repeated saves (Enemy.decide_turn(), and on-hit in
@@ -408,9 +410,10 @@ func _on_turn_started() -> void:
 			if stats.hideous_laughter_turns <= 0:
 				if stats.concentration_spell_id == "hideous_laughter":
 					stats.concentration_spell_id = ""
-				if is_instance_valid(stats.hideous_laughter_target):
-					stats.hideous_laughter_target.incapacitated_turns = 0
-				stats.hideous_laughter_target = null
+				for e: Enemy in stats.hideous_laughter_target:
+					if is_instance_valid(e):
+						e.incapacitated_turns = 0
+				stats.hideous_laughter_target = []
 				GameState.game_log("[color=gray]Tasha's Hideous Laughter fades.[/color]")
 		# Invisibility: 600-turn duration, ticked once per real turn. Usually already ended earlier
 		# this same turn transition via _resolve_stealth_check()'s attack/cast check (which runs
@@ -422,6 +425,9 @@ func _on_turn_started() -> void:
 				if stats.concentration_spell_id == "invisibility":
 					stats.concentration_spell_id = ""
 				GameState.game_log("[color=gray]You fade back into view.[/color]")
+				var _comp: Companion = GameState.player_companion
+				if _comp != null and is_instance_valid(_comp) and _comp.invisibility_turns > 0:
+					_comp.invisibility_turns = 0
 		# Unconditional sync, every real turn, regardless of the branch above — Invisibility being
 		# a real Concentration effect now means it can also end via a completely different code
 		# path (GameState._check_concentration_break()'s damage-based CON check, or casting a
@@ -1532,6 +1538,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Tab toggles between item bar and ability bar (valid any time except game over)
 		if key.physical_keycode == KEY_TAB:
 			GameState.player_action_requested.emit("toggle_ability_bar")
+			return
+		# [Space] during an upcast SAVE spell's multi-target collection (Hold Person/Hideous
+		# Laughter) resolves the cast now with whatever's picked so far, instead of falling through
+		# to the normal Space=wait binding below — see PlayerSpellcasting.finish_multi_target_early().
+		if key.physical_keycode == KEY_SPACE and _spellcasting.is_collecting_multi_target():
+			_spellcasting.finish_multi_target_early()
 			return
 		if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing:
 			return

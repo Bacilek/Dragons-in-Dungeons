@@ -14,6 +14,14 @@ var _dungeon_floor: DungeonFloor
 var _sprite: Sprite2D
 var oa_used_this_round: bool = false  # Opportunity Attack reaction cap — reset at the top of take_turn()
 
+# Invisibility's touch-target upcast (Warlock Pact Magic, +1 creature you touch per slot level
+# above 2nd — scripts/entities/CLAUDE.md's "Invisibility" section) can extend the spell onto the
+# Companion, not just the caster — Enemy._can_see_entity()/_target_is_untouchable() both already
+# anticipated this exact field (see their own "or a future invisible companion" comments). Ticked
+# in player.gd's per-turn block alongside Stats.invisibility_turns; not serialized (a Companion
+# itself isn't serialized across floors either — same tier as every other mid-floor buff field).
+var invisibility_turns: int = 0
+
 func configure(d: Dictionary) -> void:
 	_config = d
 	animal_name = d.get("animal", "Squirrel")

@@ -282,7 +282,7 @@ func take_typed_damage(amount: int, damage_type: String, is_crit: bool = false) 
 	# Eldritch Blast's beams) each trigger their own throw when they land on separate
 	# take_typed_damage() calls (a single grouped instance, e.g. darts stacked on one target, only
 	# triggers once — see _resolve_hideous_laughter_save()'s own comment).
-	if actual > 0 and incapacitated_turns > 0 and GameState.player_stats.concentration_spell_id == "hideous_laughter" and GameState.player_stats.hideous_laughter_target == self:
+	if actual > 0 and incapacitated_turns > 0 and GameState.player_stats.concentration_spell_id == "hideous_laughter" and GameState.player_stats.hideous_laughter_target.has(self):
 		_resolve_hideous_laughter_save(true)
 	# Shape Shift (Imp): any actual damage taken (an immune hit deals 0 and returned earlier above,
 	# so this never fires from those) reverts a shape-shifted enemy to its true form immediately.
@@ -356,8 +356,8 @@ func _resolve_hideous_laughter_save(with_adv: bool) -> bool:
 	if save["pass"]:
 		incapacitated_turns = 0
 		GameState.game_log("%s [url=%s]stops laughing[/url] and regains its composure." % [display_name, meta])
-		if GameState.player_stats.concentration_spell_id == "hideous_laughter" and GameState.player_stats.hideous_laughter_target == self:
-			GameState.end_concentration()
+		if GameState.player_stats.concentration_spell_id == "hideous_laughter" and GameState.player_stats.hideous_laughter_target.has(self):
+			GameState.remove_hideous_laughter_target(self)
 	else:
 		GameState.game_log("%s [url=%s]keeps laughing[/url] uncontrollably." % [display_name, meta])
 	return bool(save["pass"])
@@ -1039,6 +1039,8 @@ func _can_see_entity(e: Node) -> bool:
 	# vanished, searches briefly, then gives up").
 	if e is Player and GameState.player_stats.invisibility_turns > 0:
 		return false
+	if e is Companion and (e as Companion).invisibility_turns > 0:
+		return false
 	# Web Walker (Spider trait "web_walker"): "knows the location of any creature in contact with
 	# the same web" — a target currently Restrained by THIS spider's Web is never lost track of,
 	# regardless of distance/LOS (mirrors the invisibility short-circuit above, just the opposite
@@ -1142,8 +1144,8 @@ func decide_turn() -> Dictionary:
 			paralyzed_turns = 0
 			_refresh_paralyzed_visual()
 			GameState.game_log("%s [url=%s]breaks free[/url] of the paralysis!" % [display_name, par_meta])
-			if GameState.player_stats.concentration_spell_id == "hold_person" and GameState.player_stats.hold_person_target == self:
-				GameState.end_concentration()
+			if GameState.player_stats.concentration_spell_id == "hold_person" and GameState.player_stats.hold_person_target.has(self):
+				GameState.remove_hold_person_target(self)
 		else:
 			paralyzed_turns -= 1
 			GameState.game_log("%s [url=%s]remains paralyzed[/url]." % [display_name, par_meta])
@@ -1152,7 +1154,7 @@ func decide_turn() -> Dictionary:
 	# same repeated-end-of-turn-save shape as Ray of Enfeeblement/Hold Person above. A pass zeroes
 	# incapacitated_turns via the resolver, so the generic incapacitated block right below no
 	# longer applies this same round; a fail decrements it here and skips the turn like normal.
-	if incapacitated_turns > 0 and GameState.player_stats.concentration_spell_id == "hideous_laughter" and GameState.player_stats.hideous_laughter_target == self:
+	if incapacitated_turns > 0 and GameState.player_stats.concentration_spell_id == "hideous_laughter" and GameState.player_stats.hideous_laughter_target.has(self):
 		if not _resolve_hideous_laughter_save(false):
 			incapacitated_turns -= 1
 			return {"type": "idle_tick"}
@@ -1490,7 +1492,9 @@ func _execute_action(intent: Dictionary) -> void:
 # CLAUDE.md). Movement already can't land ON the player's tile (is_walkable_for_enemy() always
 # blocks it), so this only ever matters for the "already adjacent" attack-without-moving case.
 func _target_is_untouchable(target: Node) -> bool:
-	return target is Player and GameState.player_stats.invisibility_turns > 0
+	if target is Player and GameState.player_stats.invisibility_turns > 0:
+		return true
+	return target is Companion and (target as Companion).invisibility_turns > 0
 
 func _in_attack_range(target: Node) -> bool:
 	if _target_is_untouchable(target):
