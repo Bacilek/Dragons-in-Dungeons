@@ -151,6 +151,15 @@ var _expeditious_retreat_move_used_this_turn: bool = false
 # check below, independent of and stacking with Expeditious Retreat/Longstrider.
 var _wood_elf_move_counter: int = 0
 
+# Exhaustion's -1/6 movement speed per level: a duty-cycle mechanism in the opposite direction
+# from Wood Elf/Longstrider above (those make some moves free; exhaustion makes some moves cost
+# double, same TurnManager.enemy_actions_this_round=2 knob Slowed already uses — see
+# scripts/entities/CLAUDE.md's "Player movement-speed visual consistency" permanent rule: the
+# visual tween never changes, only the turn economy). Out of every 6 real moves,
+# Stats.exhaustion_level of them are penalized, spread evenly across the cycle rather than
+# front-loaded. Not serialized — mid-floor bookkeeping, same tier as _wood_elf_move_counter.
+var _exhaustion_move_counter: int = 0
+
 # Longstrider (scripts/entities/CLAUDE.md's "Elf" section, promoted to a real LEVELED_SPELL_IDS
 # entry): RAW is a flat +10 ft speed buff, i.e. +1/3 over the 30 ft baseline this grid assumes —
 # NOT "double movement," which is Expeditious Retreat's own (correct) Dash-as-bonus-action shape.
@@ -477,7 +486,7 @@ func _on_turn_started() -> void:
 				var fr_adv: int = 1 if (stats.character_race == Stats.CharacterRace.HALFLING or stats.gnomish_cunning_grants_adv("wis") or GameState.knows_invocation("beguiling_defenses")) else 0
 				var fr_roll: Dictionary = CombatMath.roll_with_adv_disadv(fr_adv, 0)
 				var fr_die: int = fr_roll["die"]
-				var fr_total: int = fr_die + fr_wis_mod + fr_prof
+				var fr_total: int = fr_die + fr_wis_mod + fr_prof + CombatMath.exhaustion_penalty()
 				var fr_pass: bool = fr_total >= stats.frightened_save_dc
 				# Bugfix: this save used to log a bare, non-hoverable line with no roll breakdown at
 				# all — no way to see the d20 result, let alone whether Halfling Brave's Advantage
@@ -505,7 +514,7 @@ func _on_turn_started() -> void:
 				var pc_prof: int = stats.proficiency_bonus if stats.check_prof_con else 0
 				var pc_roll: Dictionary = CombatMath.roll_with_adv_disadv(0, 0)
 				var pc_die: int = pc_roll["die"]
-				var pc_total: int = pc_die + pc_mod + pc_prof
+				var pc_total: int = pc_die + pc_mod + pc_prof + CombatMath.exhaustion_penalty()
 				var pc_pass: bool = pc_total >= stats.poisoned_condition_save_dc
 				var pc_meta: String = "save:die=%d,d1=%d,d2=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=CON,pass=%d,adv=0,disadv=0,lucky1=%d,lucky2=%d" % [
 					pc_die, pc_roll["die1"], pc_roll["die2"], pc_mod, pc_prof, pc_total, stats.poisoned_condition_save_dc, int(pc_pass),
@@ -882,7 +891,7 @@ func _resolve_stealth_check() -> void:
 			die = maxi(die1, die2) if obs_net > 0 else mini(die1, die2)
 		if heroic:
 			die = 20
-		var total: int = die + dex_mod + prof
+		var total: int = die + dex_mod + prof + CombatMath.exhaustion_penalty()
 		# Pass Without Trace (Wood Elf/Ranger spell) and Minor Illusion (Forest Gnome lineage
 		# cantrip) both grant a flat bonus to the stealth roll while active — stbonus/stbonus_id
 		# below carry whichever is active into the tooltip breakdown (fmt_stealth_tooltip()),
@@ -989,7 +998,7 @@ func _process(_delta: float) -> void:
 	var ranged_preview_active: bool = _update_ranged_range_preview()
 	if _dungeon_floor != null:
 		_dungeon_floor.set_fov_bonus_overlay_suppressed(spell_preview_active or ranged_preview_active)
-	if GameState.is_game_over or GameState.inventory_open or GameState.short_rest_open \
+	if (GameState.is_game_over or GameState.is_dying) or GameState.inventory_open or GameState.short_rest_open \
 			or GameState.subclass_picker_open or GameState.race_picker_open or GameState.point_buy_open \
 			or GameState.background_select_open or GameState.blacksmith_panel_open or GameState.shop_open \
 			or GameState.invocation_picker_open \
@@ -1091,7 +1100,7 @@ func _update_hover_indicator() -> void:
 	if _hover_indicator == null or _dungeon_floor == null:
 		return
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing \
-			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over \
+			or GameState.short_rest_open or GameState.inventory_open or (GameState.is_game_over or GameState.is_dying) \
 			or GameState.blacksmith_panel_open or GameState.shop_open:
 		_hover_indicator.visible = false
 		return
@@ -1164,7 +1173,7 @@ func _update_spell_aoe_preview() -> bool:
 	if _dungeon_floor == null:
 		return false
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing \
-			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over \
+			or GameState.short_rest_open or GameState.inventory_open or (GameState.is_game_over or GameState.is_dying) \
 			or GameState.blacksmith_panel_open or GameState.shop_open:
 		_dungeon_floor.hide_aoe_preview()
 		_dungeon_floor.hide_spell_range_preview()
@@ -1329,7 +1338,7 @@ func _update_ranged_range_preview() -> bool:
 	if _dungeon_floor == null:
 		return false
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or _path_executing \
-			or GameState.short_rest_open or GameState.inventory_open or GameState.is_game_over \
+			or GameState.short_rest_open or GameState.inventory_open or (GameState.is_game_over or GameState.is_dying) \
 			or GameState.blacksmith_panel_open or GameState.shop_open:
 		_dungeon_floor.hide_ranged_range_preview()
 		return false
@@ -1424,7 +1433,7 @@ func _input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if GameState.is_game_over or not GameState.class_selected:
+	if (GameState.is_game_over or GameState.is_dying) or not GameState.class_selected:
 		return
 	# BUGFIX: mouse events reaching here were never gated by ANY blocking overlay (only keyboard
 	# input was, further below) — a mouse-button release landing over the game world while a
@@ -1875,7 +1884,7 @@ func _execute_queued_path() -> void:
 			var dir: Vector2i = next - grid_pos
 			var prev_c: Vector2i = grid_pos
 			_resolve_enemy_opportunity_attacks(prev_c, next)
-			if GameState.is_game_over:
+			if (GameState.is_game_over or GameState.is_dying):
 				_target_enemy = null
 				break
 			_apply_queued_step_speed(next)
@@ -1965,7 +1974,7 @@ func _execute_queued_path() -> void:
 		var prev_p: Vector2i = grid_pos
 
 		_resolve_enemy_opportunity_attacks(prev_p, next)
-		if GameState.is_game_over:
+		if (GameState.is_game_over or GameState.is_dying):
 			_queued_path.clear()
 			break
 		_apply_queued_step_speed(next)
@@ -2039,6 +2048,20 @@ func _apply_queued_step_speed(next_pos: Vector2i) -> void:
 		GameState.game_log("[color=cyan]The water extinguishes your flames![/color]")
 	if GameState.player_stats.slowed_turns > 0 and GameState.get_talent_rank("trailblazer") < 1:
 		TurnManager.enemy_actions_this_round = 2
+	if _exhaustion_move_penalizes():
+		TurnManager.enemy_actions_this_round = 2
+
+# Exhaustion's -1/6 movement speed per level, spread evenly across a 6-move cycle rather than
+# front-loaded (e.g. level 3 penalizes exactly 3 of every 6 moves = 50% slower, matching -15 ft of
+# the 30 ft baseline). Increments the counter and returns whether THIS move should cost double
+# (TurnManager.enemy_actions_this_round = 2, same knob Slowed uses) — never touches the visual
+# tween itself, per the "Player movement-speed visual consistency" permanent rule.
+func _exhaustion_move_penalizes() -> bool:
+	if GameState.player_stats.exhaustion_level <= 0:
+		return false
+	var slot: int = _exhaustion_move_counter % 6
+	_exhaustion_move_counter += 1
+	return slot < GameState.player_stats.exhaustion_level
 
 func _has_new_enemy_in_fov(snapshot: Array[Enemy]) -> bool:
 	if _dungeon_floor == null or GameState.noclip:
@@ -2103,7 +2126,7 @@ func _resolve_enemy_opportunity_attacks(prev: Vector2i, next: Vector2i) -> void:
 			continue
 		e.oa_used_this_round = true
 		e._attack_player(self)
-		if GameState.is_game_over:
+		if (GameState.is_game_over or GameState.is_dying):
 			return
 	if evaded_any:
 		GameState.game_log("[color=gray]Eagle Form: you slip past their reach.[/color]")
@@ -2289,7 +2312,7 @@ func _try_move(dir: Vector2i) -> void:
 
 	var prev_pos: Vector2i = grid_pos
 	_resolve_enemy_opportunity_attacks(prev_pos, target)
-	if GameState.is_game_over:
+	if (GameState.is_game_over or GameState.is_dying):
 		return
 	# Battlefield Expert R3: captured here (right after side-step detection) since
 	# consume_free_sidestep() clears sidestep_detected_this_move — used at the end of this move.
@@ -2405,6 +2428,8 @@ func _try_move(dir: Vector2i) -> void:
 	# used to fire player_turn_ending twice (double Witch Bolt tick, double Stealth check) and
 	# flash the phase back to WAITING_FOR_INPUT mid-move. See TurnManager.enemy_actions_this_round.
 	if GameState.player_stats.slowed_turns > 0 and not _panther_bypass and not _salmon_bypass and not _trailblazer_bypass:
+		TurnManager.enemy_actions_this_round = 2
+	if _exhaustion_move_penalizes():
 		TurnManager.enemy_actions_this_round = 2
 	TurnManager.on_player_action_complete()
 
@@ -2577,7 +2602,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var is_finesse_weapon: bool = not is_unarmed and GameState.equipped_weapon.is_finesse
 	# Monk unarmed uses DEX; Finesse weapons use max(STR, DEX); everyone else uses STR for melee attack roll.
 	var attack_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
-	var total_hit_bonus: int = attack_mod + prof + weapon_bonus
+	var total_hit_bonus: int = attack_mod + prof + weapon_bonus + CombatMath.exhaustion_penalty()
 	# Advantage/Disadvantage sources are counted, but CombatMath.roll_with_adv_disadv() applies the
 	# standard 5e cancel rule: any ADV source together with any DISADV source is a flat roll — e.g.
 	# two ADV sources + one DISADV is still a flat roll, not ADV.
@@ -3006,7 +3031,7 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + str_mod + prof + weapon_bonus
+	var roll: int = die + str_mod + prof + weapon_bonus + CombatMath.exhaustion_penalty()
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		_base_talents.on_crit()
@@ -3105,7 +3130,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + attack_mod + prof + weapon_bonus
+	var roll: int = die + attack_mod + prof + weapon_bonus + CombatMath.exhaustion_penalty()
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		_base_talents.on_crit()
@@ -3227,7 +3252,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + attack_mod + prof + weapon_bonus
+	var roll: int = die + attack_mod + prof + weapon_bonus + CombatMath.exhaustion_penalty()
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		_base_talents.on_crit()

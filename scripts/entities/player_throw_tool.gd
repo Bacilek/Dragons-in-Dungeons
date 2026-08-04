@@ -304,7 +304,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + total_hit_bonus
+	var roll: int = die + total_hit_bonus + CombatMath.exhaustion_penalty()
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		player._base_talents.on_crit()

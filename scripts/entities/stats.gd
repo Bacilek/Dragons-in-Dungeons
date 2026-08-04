@@ -364,6 +364,12 @@ var poison_turns: int = 0
 var burning_turns: int = 0
 var bleeding_turns: int = 0
 var slowed_turns: int = 0
+# D&D 2024 Exhaustion, 0-6 levels. Pure debuff scaffold — no source in this codebase grants it yet
+# (scripts/entities/CLAUDE.md's "Exhaustion" section). Each level: -2 to every player d20 test
+# (CombatMath.roll_with_adv_disadv()'s "exhaustion_penalty" field) and -1/6 movement speed (a
+# duty-cycle penalty, same mechanism family as Wood Elf's 35ft speed — see Player._exhaustion_move_counter).
+# Removes exactly 1 level per completed long rest (GameState.long_rest()).
+var exhaustion_level: int = 0
 var temp_hp: int = 0  # Natural Sleeper R2 — consumed before regular HP damage
 var zealous_presence_turns: int = 0  # Zealot Zealous Presence — Advantage on attacks/checks while > 0
 
@@ -779,6 +785,7 @@ func to_dict() -> Dictionary:
 		"burning_turns": burning_turns,
 		"bleeding_turns": bleeding_turns,
 		"slowed_turns": slowed_turns,
+		"exhaustion_level": exhaustion_level,
 		"zealous_presence_turns": zealous_presence_turns,
 		"mage_armor_active": mage_armor_active,
 		"concentration_spell_id": concentration_spell_id,
@@ -834,6 +841,7 @@ func from_dict(d: Dictionary) -> void:
 	burning_turns = int(d.get("burning_turns", 0))
 	bleeding_turns = int(d.get("bleeding_turns", 0))
 	slowed_turns = int(d.get("slowed_turns", 0))
+	exhaustion_level = int(d.get("exhaustion_level", 0))
 	zealous_presence_turns = int(d.get("zealous_presence_turns", 0))
 	mage_armor_active = bool(d.get("mage_armor_active", false))
 	concentration_spell_id = String(d.get("concentration_spell_id", ""))

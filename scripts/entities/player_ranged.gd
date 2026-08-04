@@ -134,7 +134,7 @@ func ranged_attack(enemy: Enemy) -> void:
 	var disadv: bool = r["disadv"]
 	if vex_triggered:
 		player._vex_adv_target = null
-	var roll: int = die + dex_mod + weapon_bonus
+	var roll: int = die + dex_mod + weapon_bonus + CombatMath.exhaustion_penalty()
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		player._base_talents.on_crit()

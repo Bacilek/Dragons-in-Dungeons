@@ -150,7 +150,7 @@ static func _resolve_cantrip_hit(player: Player, spell: Spell, target: Enemy, du
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + attack_bonus
+	var roll: int = die + attack_bonus + CombatMath.exhaustion_penalty()
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		player._base_talents.on_crit()
@@ -958,7 +958,7 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + attack_bonus
+	var roll: int = die + attack_bonus + CombatMath.exhaustion_penalty()
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		player._base_talents.on_crit()

@@ -1993,6 +1993,50 @@ rather than re-deriving it from `behavior` separately, so a freshly re-sighted
 turn right after the main-hand swing already consumed the surprise, so the target is already
 `CHASING` by the time it runs (correct: only the first attack of an engagement surprises).
 
+## Exhaustion
+
+D&D 2024's simplified Exhaustion track — `Stats.exhaustion_level: int` (0-6, serialized) — is
+implemented as a **pure debuff scaffold**: every mechanical consequence works, but no trap/spell/
+status/mechanic anywhere in this codebase currently sets `exhaustion_level` above 0, and there's
+no UI to view/set it outside the debug panel's raw field access. It exists so a future exhaustion
+source (a starvation mechanic, a boss curse, a specific trap) only needs to write the field —
+every consequence below already fires automatically.
+
+- **-2 to every player d20 test per level**: `CombatMath.exhaustion_penalty() -> int` (`-2 *
+  exhaustion_level`) is a flat modifier added into the caller's own bonus-total sum at every
+  identified player d20 roll site — **never** folded into `CombatMath.roll_with_adv_disadv()`'s
+  returned `die` itself, since `die` also drives nat-20 crit / nat-1 fumble detection at every one
+  of those sites; corrupting it would silently break crit detection under exhaustion. Wired into
+  all 6 player attack-roll sites (melee/cleave/off-hand/OA in `player.gd`, ranged in
+  `player_ranged.gd`, thrown in `player_throw_tool.gd`), both cantrip/leveled-spell ATTACK_ROLL
+  casts (`spell_effects.gd`), the two Stealth-vs-Passive-Perception-check-adjacent player saves in
+  `player.gd`'s `_on_turn_started()` (Frightened, the Bearded Devil Poisoned-condition-end save),
+  Quasit's Scare save (`enemy.gd._execute_cast_scare()`, a player save despite living in `enemy.gd`),
+  the Stealth check itself (`player.gd._resolve_stealth_check()`), and Thief Tools' disarm/lock-pick
+  checks (`player_thief_tools.gd`). `roll_with_adv_disadv()` also returns the penalty value as its
+  own `"exhaustion_penalty"` dict key (self-documenting for any future call site) for callers that
+  already destructure the returned dict rather than calling `CombatMath.exhaustion_penalty()`
+  directly. **No player-side death-save mechanic exists yet** (root `CLAUDE.md`'s Rest system —
+  0 HP is currently instant death, no Dying state) — "death saves" in the field's own doc comment
+  is aspirational, wiring it in is a future pass once that system exists.
+- **-1/6 movement speed per level**: reuses the exact same `TurnManager.enemy_actions_this_round =
+  2` knob Slowed (Mud/Water) already drives — see root `CLAUDE.md`'s "Player movement-speed visual
+  consistency" permanent rule: the move tween itself never changes, only how many actions the
+  environment gets for that one move. `Player._exhaustion_move_counter` (not serialized, same tier
+  as `_wood_elf_move_counter`) is a 6-slot duty cycle — `Player._exhaustion_move_penalizes()`
+  increments it and returns true for exactly `exhaustion_level` out of every 6 real moves, spread
+  evenly across the cycle rather than front-loaded (level 3 penalizes 3 of every 6 moves = 50%
+  slower, matching -15 ft of the 30 ft baseline exactly). Wired into both `_try_move()` (WASD) and
+  `_apply_queued_step_speed()` (click-to-move/enemy-chase), alongside their existing Slowed checks
+  — same "both movement paths" coverage Slowed itself has. A free move (Expeditious
+  Retreat/Longstrider/Wood Elf/Battlefield Expert's side-step/Adrenaline Rush) returns before
+  reaching this check, so it doesn't advance the duty-cycle counter either — a documented
+  simplification, not a bug (matches every other per-round-cap field's own reset-on-revert
+  precedent).
+- **Removal**: `GameState.long_rest()` decrements `exhaustion_level` by exactly 1 (floored at 0) —
+  matches D&D 2024's own "long rest removes 1 level" rule. No other removal path exists (no
+  per-level-6-death rule either, since nothing can currently reach level 6).
+
 ## Multi-turn action interrupts (short rest / armor change / scroll learn)
 
 `Player._rest_interrupted()` (`scripts/entities/player.gd`) is the single interrupt check shared

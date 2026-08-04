@@ -125,6 +125,9 @@ Rng.get_state() / Rng.set_state(s)  # exact stream position (int64) for save/loa
 | `spell_slots_changed` | — | Wizard spell-slot pool mutated (`consume()`, `on_long_rest()`, level-up grant) or a spell prepared/unprepared — see "Leveled spells / spellbook" below |
 | `special_slot_changed` | — | `set_special_slot()`/`clear_special_slot()` — the Special quick-cast slot's assigned spell changed |
 | `light_source_changed` | — | `set_light_source()`/`clear_light_source()` (Light cantrip) — `dungeon_floor.gd` connects this to force an immediate `update_fog()` call |
+| `death_save_started` | — | a 0-HP hit enters the death-save sequence — `hud.gd` spawns `scripts/ui/death_save_overlay.gd` |
+| `death_save_rolled` | `die: int, result: String, successes: int, failures: int` | each ~1s death-save roll — see "Death save sequence" below |
+| `death_save_finished` | `revived: bool` | sequence resolved — overlay frees itself; `player_died` already fired first if not revived |
 
 ---
 
@@ -310,6 +313,56 @@ character that never activated it. `start_new_run()` now explicitly resets all o
 the pre-existing Wild Heart/terrain resets.
 
 **Rage DR**: `take_damage_raw(amount, ignore_rage, damage_type: String) -> int` — returns actual damage after DR. Physical types ("Slashing"/"Piercing"/"Bludgeoning") are always reduced 50% while raging (baked-in baseline, no longer talent-gated — see `scripts/entities/CLAUDE.md`'s Barbarian class section). Scarred Warrior's Born in Blood talent applies an additional Bloodied-based modifier afterward. All callers must pass `damage_type`; missing/empty type bypasses DR. **`invincible` still sets `player_was_hit_this_turn`**: the function's `invincible` branch returns 0 without touching HP, but (if the hit was physical) still flips `player_was_hit_this_turn` — every caller (currently only `enemy.gd._attack_player()`, which now always calls this function rather than short-circuiting to 0 itself) is only ever invoked on a connecting hit, so this is safe and keeps turn-based triggers keyed off that flag (e.g. Battlefield Expert R3's free Side Step — `scripts/entities/CLAUDE.md`) working in God Mode instead of silently never firing.
+
+### Death save sequence
+
+`GameState.check_player_death()` is still the single chokepoint every player-damage path funnels
+through (`take_damage_raw()`'s tail, plus the handful of direct callers in `dungeon_floor.gd`/
+`player_berserker.gd`) — but a 0-HP hit no longer sets `is_game_over` immediately. Bruiser R3's
+"refuse to fall" and Orc Relentless Endurance still intercept first, exactly as before (both are
+guaranteed 1-HP holds, unaffected by this feature). Past those, `begin_death_save_sequence()` runs
+instead of instant death:
+
+- **`GameState.is_dying: bool`** — set `true` for the whole sequence. Threaded into every one of
+  `player.gd`'s `is_game_over` input-gate guard chains as `(GameState.is_game_over or
+  GameState.is_dying)` (a blanket find/replace across the file — every site that already refused
+  input/aborted a chase/OA loop on game-over now does the same the instant HP hits 0, not just
+  after the sequence resolves negatively) plus `hud.gd`'s Tab-toggle guard. Since no further
+  player action can begin, `TurnManager` never starts another round either — the turn economy
+  stalls for free, no `TurnManager` changes needed beyond one extra guard in
+  `_advance_round_or_end()` (stops a Slowed-queued 2nd enemy round from still running once the
+  player's already down mid-1st). **Known limitation**: an enemy's own decide/execute coroutine
+  already IN FLIGHT when the killing blow lands finishes normally rather than being interrupted
+  mid-animation (this engine's turn coroutines aren't designed to be preemptible) — the full-screen
+  overlay covers it visually either way, and no NEW round can ever start once it's covered.
+- **The roll**: `_run_death_save_sequence()` (an async `GameState` function, fired-and-forgotten
+  from `begin_death_save_sequence()` — GameState is an autoload `Node`, so `await
+  get_tree().create_timer(...)` works the same as anywhere else) rolls a bare, **unmodified**
+  `Rng.roll(20)` every ~1.1s (`DEATH_SAVE_ROLL_INTERVAL`, first roll after `DEATH_SAVE_FIRST_DELAY`
+  = 0.9s) until the verdict is known: nat 1 → 2 failures, 2-9 → 1 failure, 10-19 → 1 success, nat
+  20 → instant revive regardless of the accumulated count. First to 3 (successes or failures) wins
+  otherwise. **Deliberately no modifiers** — no ability mod (5e RAW death saves have none by
+  default), no Halfling Luck reroll, no Heroic Inspiration, no Exhaustion penalty (see root
+  CLAUDE.md's "Exhaustion") — the outcome bands are exact raw-die ranges by design; adding a flat
+  modifier would need to shift the DC-10-equivalent split without touching the nat-1/nat-20
+  special cases, which RAW itself never does either. `Rng`, not global random, per the project's
+  own randomness rule.
+- **Resolution**: `_end_death_save_sequence(revived)` clears `is_dying` first (both branches), then
+  either sets `current_hp = 1` + logs a survival line (revived, no teleport — same tile, same
+  floor, play resumes normally) or runs the exact same `is_game_over = true` / `AudioManager.play`/
+  `player_died.emit()` tail `check_player_death()` used to run directly (not revived — the normal
+  Game Over flow, `SaveManager`'s permadeath delete-on-`player_died` hook included, fires
+  unchanged).
+- **Signals** (`death_save_started`/`death_save_rolled(die, result, successes, failures)`/
+  `death_save_finished(revived)`) are the only three GameState exposes for this — `scripts/ui/
+  death_save_overlay.gd` (`hud.gd._on_death_save_started()` spawns it, no `.tscn`, built in code
+  like `subclass_select.gd`) is their sole listener: full-screen dark dim (screen "greys"), a big
+  color-coded rolling d20 number, a BG3-style pulsing "?" placeholder between rolls, and two
+  3-pip success/failure rows (green/red filled circles) mirroring a 5e character sheet's own death
+  save checkboxes. Frees itself on `death_save_finished` — `player_died` (spawning `game_over.tscn`
+  underneath, layer 10 vs. this overlay's layer 30) fires from inside `_end_death_save_sequence()`
+  BEFORE `death_save_finished`, so Game Over is already present by the time this overlay clears out
+  of its way.
 
 ### Equipment slots
 `GameState.equipment` dict: keys `"melee"` (Main Hand), `"hand2"` (Off-hand), `"ranged"`, `"armor"`, `"boots"`, `"gloves"`, `"head"`, `"trinket"`.

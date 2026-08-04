@@ -49,6 +49,11 @@ signal long_rest_completed()
 # Bruiser R3: fired instead of player_died when the revive triggers. player.gd connects this to
 # _end_rage() since Rage state lives there, not on GameState.
 signal force_rage_end()
+# Death save sequence (see check_player_death()/begin_death_save_sequence() below) —
+# scripts/ui/death_save_overlay.gd is the sole listener/spawner, driven entirely off these three.
+signal death_save_started
+signal death_save_rolled(die: int, result: String, successes: int, failures: int)  # result: "critfail"/"fail"/"success"/"critsuccess"
+signal death_save_finished(revived: bool)
 
 const QUICKBAR_SIZE: int = 9
 const ABILITY_BAR_SIZE: int = 9
@@ -78,6 +83,15 @@ var current_floor: int = 1
 var player_stats: Stats
 var run_seed: int = 0
 var is_game_over: bool = false
+# Death save sequence — a hit that would drop the player to 0 HP (and isn't caught by Bruiser R3 /
+# Relentless Endurance) enters this state instead of setting is_game_over immediately. Blocks ALL
+# player input (threaded into player.gd's is_game_over guard chains — see check_player_death()/
+# begin_death_save_sequence() below) and stalls the turn economy (no further player action means
+# TurnManager never starts another round) while scripts/ui/death_save_overlay.gd runs the dramatic
+# rolling animation. Not serialized — combat-transient, same tier as is_game_over itself.
+var is_dying: bool = false
+var death_save_successes: int = 0
+var death_save_failures: int = 0
 var inventory_open: bool = false
 var class_selected: bool = false
 # Custom character-creation Back-navigation state (scripts/ui/CLAUDE.md's "Custom character
@@ -318,6 +332,9 @@ func start_new_run() -> void:
 	shop_open = false
 	current_floor = 1
 	is_game_over = false
+	is_dying = false
+	death_save_successes = 0
+	death_save_failures = 0
 	inventory_open = false
 	class_selected = false
 	invincible = false
@@ -1840,6 +1857,7 @@ func long_rest() -> void:
 	player_stats.burning_turns = 0
 	player_stats.bleeding_turns = 0
 	player_stats.slowed_turns = 0
+	player_stats.exhaustion_level = maxi(0, player_stats.exhaustion_level - 1)
 	player_status_changed.emit()
 	player_stats.rage_uses_remaining = player_stats.rage_uses_max
 	player_stats.hunters_mark_uses_remaining = Stats.HUNTERS_MARK_USES_MAX
@@ -2008,7 +2026,7 @@ func hit_die_sides() -> int:
 		_:                              return 8  # Bard/Cleric/Druid/Rogue/Warlock: d8
 
 func check_player_death() -> void:
-	if player_stats.is_dead() and not is_game_over and not invincible:
+	if player_stats.is_dead() and not is_game_over and not is_dying and not invincible:
 		if get_talent_rank("bruiser") >= 3 and is_raging and not bruiser_revive_used_this_floor:
 			bruiser_revive_used_this_floor = true
 			player_stats.current_hp = 1
@@ -2022,9 +2040,69 @@ func check_player_death() -> void:
 			player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 			game_log("[color=orange]Relentless Endurance holds you at 1 HP![/color]")
 			return
+		begin_death_save_sequence()
+
+# Dramatic, BG3-style death-save sequence — replaces the old instant-death-on-0-HP behavior.
+# `is_dying` blocks all player input (threaded into player.gd's is_game_over guard chains) and
+# stalls the turn economy (no player input means TurnManager never starts another round), so play
+# is effectively frozen on whatever's already mid-animation while scripts/ui/death_save_overlay.gd
+# (the sole listener of the three death_save_* signals) runs the roll animation full-screen.
+# Known limitation: an enemy round already IN FLIGHT when the killing blow lands (its own
+# decide/execute coroutine, already started before this function ran) finishes normally rather
+# than being interrupted mid-animation — the full-screen overlay covers it visually either way,
+# and no NEW round can ever start afterward since player input stays blocked the whole time.
+# Deliberately a bare, unmodified d20 (no ability mod, no Halfling Luck reroll, no Heroic
+# Inspiration, no Exhaustion penalty) — matches 5e RAW's own death save (no modifiers apply to it
+# by default) and keeps the outcome bands exactly the raw-die ranges they were designed around.
+const DEATH_SAVE_FIRST_DELAY: float = 0.9
+const DEATH_SAVE_ROLL_INTERVAL: float = 1.1
+const DEATH_SAVE_END_DELAY: float = 1.2
+
+func begin_death_save_sequence() -> void:
+	is_dying = true
+	death_save_successes = 0
+	death_save_failures = 0
+	death_save_started.emit()
+	_run_death_save_sequence()
+
+func _run_death_save_sequence() -> void:
+	await get_tree().create_timer(DEATH_SAVE_FIRST_DELAY).timeout
+	while true:
+		var die: int = Rng.roll(20)
+		var result: String
+		if die == 1:
+			death_save_failures += 2
+			result = "critfail"
+		elif die <= 9:
+			death_save_failures += 1
+			result = "fail"
+		elif die <= 19:
+			death_save_successes += 1
+			result = "success"
+		else:
+			result = "critsuccess"
+		death_save_rolled.emit(die, result, death_save_successes, death_save_failures)
+		if result == "critsuccess" or death_save_successes >= 3:
+			await get_tree().create_timer(DEATH_SAVE_END_DELAY).timeout
+			_end_death_save_sequence(true)
+			return
+		if death_save_failures >= 3:
+			await get_tree().create_timer(DEATH_SAVE_END_DELAY).timeout
+			_end_death_save_sequence(false)
+			return
+		await get_tree().create_timer(DEATH_SAVE_ROLL_INTERVAL).timeout
+
+func _end_death_save_sequence(revived: bool) -> void:
+	is_dying = false
+	if revived:
+		player_stats.current_hp = 1
+		player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
+		game_log("[color=lime]You cling to life and rise with 1 HP![/color]")
+	else:
 		is_game_over = true
 		AudioManager.play("player_die")
 		player_died.emit()
+	death_save_finished.emit(revived)
 
 func heal(amount: int) -> int:
 	# Bearded Devil's Beard attack: "can't regain any HPs while poisoned" — see
@@ -3202,6 +3280,7 @@ func _apply_monk_level_features(level: int) -> void:
 
 func debug_jump_to_floor(n: int) -> void:
 	is_game_over = false
+	is_dying = false
 	current_floor = n
 	floor_changed.emit(current_floor)
 	debug_jump_floor.emit(n)

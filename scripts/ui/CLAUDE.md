@@ -377,6 +377,18 @@ longer exists.
 
 ---
 
+## Death save overlay (`death_save_overlay.gd`)
+CanvasLayer, layer = 30 — the highest layer in the game, above Debug Panel/every blocking picker
+(25) and Game Over (10), so it genuinely reads as "everything else stopped." No `.tscn` — built
+entirely in code (`subclass_select.gd`'s convention), spawned by `hud.gd._on_death_save_started()`
+on `GameState.death_save_started` (never a hotkey). Full mechanism, signal contract, and the
+`GameState.is_dying` input/turn-freeze it rides on: `scripts/autoloads/CLAUDE.md`'s "Death save
+sequence" section. Purely reactive to `GameState.death_save_rolled`/`death_save_finished` — full
+dim + a big color-coded rolling d20 number (a pulsing "?" placeholder between rolls) + two 3-pip
+success/failure rows (green/red filled circles, 5e character-sheet style). Frees itself on
+`death_save_finished` regardless of outcome — `GameState._end_death_save_sequence()` already fires
+`player_died` (spawning `game_over.tscn` underneath) BEFORE that signal when the sequence fails.
+
 ## Game over (`game_over.gd`)
 CanvasLayer, layer = 10. Spawned by `hud.gd._on_player_died()`. Two buttons: **"Try Again"**
 (only visible when `GameState.character_creation_snapshot` isn't empty — see

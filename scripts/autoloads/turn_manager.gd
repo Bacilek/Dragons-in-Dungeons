@@ -105,7 +105,10 @@ func _process_enemy_round() -> void:
 
 func _advance_round_or_end() -> void:
 	_rounds_remaining -= 1
-	if _rounds_remaining > 0:
+	# Death save sequence (Slowed's "opponents get 2 actions for my 1 move" can queue a 2nd
+	# enemy round that would otherwise still run after the player's already gone down mid-1st —
+	# see GameState.begin_death_save_sequence()'s own "known limitation" comment).
+	if _rounds_remaining > 0 and not GameState.is_dying and not GameState.is_game_over:
 		_process_enemy_round()
 	else:
 		_end_turn()

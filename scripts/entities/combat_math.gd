@@ -44,11 +44,14 @@ static func consume_heroic_inspiration() -> bool:
 # when ADV/DISADV is active — nat 1 on die1 does NOT skip it. Each d20 individually goes through
 # halfling_reroll() (a Halfling attacking with Advantage can get BOTH dice rerolled if both come
 # up 1).
-# Returns {die1, die2, die, adv, disadv, lucky1, lucky2, lucky, heroic} — die1/die2 are the
-# (post-reroll) rolls, die is the resolved value (max for ADV, min for DISADV, die1 otherwise,
-# then forced to 20 if Heroic Inspiration fired), adv/disadv are the resolved booleans,
-# lucky1/lucky2 flag which die (if any) was Halfling-rerolled, lucky is their OR (convenience for
-# callers that don't care which die), heroic flags whether Heroic Inspiration forced this roll.
+# Returns {die1, die2, die, adv, disadv, lucky1, lucky2, lucky, heroic, exhaustion_penalty} —
+# die1/die2 are the (post-reroll) rolls, die is the resolved value (max for ADV, min for DISADV,
+# die1 otherwise, then forced to 20 if Heroic Inspiration fired), adv/disadv are the resolved
+# booleans, lucky1/lucky2 flag which die (if any) was Halfling-rerolled, lucky is their OR
+# (convenience for callers that don't care which die), heroic flags whether Heroic Inspiration
+# forced this roll, exhaustion_penalty is a flat (always <= 0) modifier every caller must add into
+# its own total-bonus sum (NEVER into `die` itself — that would corrupt nat-20/nat-1 detection,
+# see exhaustion_penalty()'s own comment below).
 static func roll_with_adv_disadv(adv_count: int, disadv_count: int) -> Dictionary:
 	var adv: bool = adv_count > 0 and disadv_count == 0
 	var disadv: bool = disadv_count > 0 and adv_count == 0
@@ -72,7 +75,18 @@ static func roll_with_adv_disadv(adv_count: int, disadv_count: int) -> Dictionar
 	if heroic:
 		die = 20
 	return {"die1": die1, "die2": die2, "die": die, "adv": adv, "disadv": disadv,
-		"lucky1": lucky1, "lucky2": lucky2, "lucky": lucky1 or lucky2, "heroic": heroic}
+		"lucky1": lucky1, "lucky2": lucky2, "lucky": lucky1 or lucky2, "heroic": heroic,
+		"exhaustion_penalty": exhaustion_penalty()}
+
+# Exhaustion (D&D 2024): -2 to every d20 test (attack roll, check, save/death save) per level,
+# up to 6. A flat modifier applied AFTER the d20 is resolved — never rolled into `die` itself,
+# since `die` also drives nat-20 crit / nat-1 fumble detection at every call site. Player-only
+# (baked in here the same way halfling_reroll()/consume_heroic_inspiration() are) — no source
+# grants this yet (scripts/entities/CLAUDE.md's "Exhaustion" section), it's pure debuff scaffold.
+static func exhaustion_penalty() -> int:
+	if GameState.player_stats == null:
+		return 0
+	return -2 * GameState.player_stats.exhaustion_level
 
 # Weapon proficiency: unarmed strikes are always proficient. A Simple/Martial weapon only adds
 # proficiency_bonus to the attack roll if the matching proficiency flag is set — lacking

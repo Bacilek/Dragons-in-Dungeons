@@ -95,7 +95,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		var key := event as InputEventKey
 		if key.pressed and not key.echo and key.physical_keycode == KEY_TAB:
-			if not GameState.is_game_over and GameState.class_selected and not GameState.mastery_picker_open \
+			if not GameState.is_game_over and not GameState.is_dying and GameState.class_selected and not GameState.mastery_picker_open \
 					and not GameState.subclass_picker_open and not GameState.race_picker_open \
 					and not GameState.point_buy_open and not GameState.background_select_open:
 				_toggle_ability_bar()
@@ -154,6 +154,7 @@ func _ready() -> void:
 	GameState.subclass_choice_required.connect(_on_subclass_choice_required)
 	GameState.invocation_choice_required.connect(_on_invocation_choice_required)
 	GameState.player_died.connect(_on_player_died)
+	GameState.death_save_started.connect(_on_death_save_started)
 	GameState.player_won.connect(_on_player_won)
 	GameState.combat_message.connect(_on_combat_message)
 	GameState.inventory_changed.connect(_refresh_inventory)
@@ -582,6 +583,13 @@ func _on_player_leveled_up(level: int) -> void:
 		GameState.mastery_learn_pending = false
 		var mastery_picker = load("res://scripts/ui/mastery_picker.gd").new()
 		get_tree().root.add_child(mastery_picker)
+
+func _on_death_save_started() -> void:
+	# 0-HP hit that isn't caught by Bruiser R3 / Relentless Endurance — see
+	# GameState.begin_death_save_sequence(). The overlay drives its own lifetime entirely off
+	# GameState.death_save_rolled/death_save_finished, so nothing else needs wiring here.
+	var overlay = load("res://scripts/ui/death_save_overlay.gd").new()
+	get_tree().root.add_child(overlay)
 
 func _on_subclass_choice_required() -> void:
 	# One-time Tier 2 subclass choice (gating boss defeated) — spawn the blocking overlay.

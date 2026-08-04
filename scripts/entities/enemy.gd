@@ -1844,7 +1844,7 @@ func _execute_cast_scare(target: Node, cfg: Dictionary) -> void:
 	var scare_adv: int = 1 if (s.character_race == Stats.CharacterRace.HALFLING or s.gnomish_cunning_grants_adv("wis") or GameState.knows_invocation("beguiling_defenses")) else 0
 	var roll: Dictionary = CombatMath.roll_with_adv_disadv(scare_adv, 0)
 	var die: int = roll["die"]
-	var total: int = die + wis_mod + prof
+	var total: int = die + wis_mod + prof + CombatMath.exhaustion_penalty()
 	var passed: bool = total >= dc
 	# Bugfix: this meta used to omit d1/d2/adv/disadv/lucky entirely, so the tooltip always
 	# rendered a plain "d20 = N" line with no way to see Halfling Brave's Advantage actually
