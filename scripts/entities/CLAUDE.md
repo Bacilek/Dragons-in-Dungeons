@@ -852,18 +852,32 @@ TIEFLING branch:
   instant a creature you can see hits you, using your reaction; this engine has no
   reaction-casting framework, so `_grant_tiefling_legacy_spell()` special-cases it to grant a
   distinct `"hellish_rebuke_toggle"` ability (`GameState._build_hellish_rebuke_ability()`) instead
-  of the usual `"spell:hellish_rebuke"` on-demand-cast ability every other legacy grant gets.
+  of the usual `"spell:hellish_rebuke"` on-demand-cast ability every other legacy grant gets — now
+  shared verbatim with a Warlock who's simply learned the spell normally (`_build_spell_ability()`
+  itself special-cases the id, see the "Warlock class" section above). `PlayerTiefling` is
+  class-agnostic despite its name — it only ever reads `player.stats` directly, so a non-Tiefling
+  Warlock routes through the exact same code.
   Activating it (`PlayerTiefling.activate_hellish_rebuke()`, `scripts/entities/player_tiefling.gd`)
   toggles `Stats.hellish_rebuke_armed` — the exact same "arm now, spend the charge only when it
   actually procs" shape as Storm Giant Ancestry's own toggle (see "Goliath" above). **Can't be
   armed with nothing to fuel it**: `PlayerTiefling.can_activate_hellish_rebuke()` (bugfix — arming
-  used to have no gate at all, so toggling it on with zero free casts AND zero 1st-level spell
+  used to have no gate at all, so toggling it on with zero free casts AND zero available spell
   slots left it lit forever, since `trigger_hellish_rebuke()` would just log "no charge left" every
   time an attack tried to fire it) requires either a free Fiendish Legacy cast still remaining
-  this long rest OR (Wizard/Ranger casters only) a real 1st-level slot
-  (`caster.slot_pool.remaining.get(1, 0) > 0`) — checked only when ARMING (turning it OFF is always
-  allowed for free); `GameState.is_ability_usable()`'s `"hellish_rebuke_toggle"` case grays the
-  ability-bar slot the same way. While armed,
+  this long rest (Tiefling only) OR the caster's own `slot_pool.can_cast(spell)` — **bugfix**: this
+  used to hardcode `caster.slot_pool.remaining.get(1, 0) > 0`, which only works for a slot pool
+  that keys level 1 by the literal key `1` (true for Wizard/Ranger, but a Warlock's `PactSlotPool`
+  only ever has ONE key — the CURRENT pact slot level, which climbs well past 1 — so this silently
+  read as "never any charge" for any Warlock past their first pact-level bump); `can_cast()` is the
+  correct, pool-agnostic query every other slot check already uses. Checked only when ARMING
+  (turning it OFF is always allowed for free); `GameState.is_ability_usable()`'s
+  `"hellish_rebuke_toggle"` case grays the ability-bar slot the same way (same `can_cast()` fix
+  applied there too). **`trigger_hellish_rebuke()` itself has the matching fix on the consume side**:
+  it now reads `caster.slot_pool.available_level(spell)` for the actual level to
+  consume/upcast-scale from, rather than hardcoding `spell.level` (1) into `consume()` — the same
+  wrong-key bug the arming checks had, just on the spend path; Pact Magic's own upcast (see this
+  file's "Spell upcasting" section) applies to this reaction exactly like any other Warlock cast.
+  While armed,
   `enemy.gd._attack_player()` checks right after a landed hit lands (`actual > 0`): if the
   attacker is within the spell's own `range_tiles` (3) and currently visible
   (`DungeonFloor.has_line_of_sight()` — a live geometry check, not the cached `is_tile_visible()`
@@ -2403,8 +2417,16 @@ fallback (a long rest also grants everything a short rest would).
 **Spell list** (`SpellDb.WARLOCK_SPELL_IDS`, real 5e 2024 Warlock overlap with the shared
 `SpellDb` pool — all genuinely on Warlock's actual class list, no reflavoring): `witch_bolt`,
 `expeditious_retreat`, `darkness`, `hold_person`, `invisibility`, `misty_step`,
-`ray_of_enfeeblement`, `hideous_laughter` — the first 7 already existed as Wizard entries, zero
-new spell content needed; **Tasha's Hideous Laughter** (`class_list = ["WARLOCK", "WIZARD"]`,
+`ray_of_enfeeblement`, `hideous_laughter`, `hellish_rebuke` — the first 7 already existed as Wizard
+entries, zero new spell content needed; **Hellish Rebuke** was promoted from a Tiefling-legacy-only
+grant to a real, independently-learnable entry (`class_list = ["WARLOCK"]`, deliberately NOT also
+in `LEVELED_SPELL_IDS`/Wizard's own list — real 5e/2024 Hellish Rebuke is Warlock-only) — see its
+own bullet further down for the mechanism, which is identical either way it's acquired (still a
+toggle-armed reaction, not a normal on-demand cast — `_build_spell_ability()` special-cases
+`spell_id == "hellish_rebuke"` to build the toggle ability regardless of the acquisition path); a
+Tiefling of any class still gets it free via Fiendish Legacy too, same "two independent paths to
+the same spell" pattern every other promoted lineage/legacy spell in this codebase uses; **Tasha's
+Hideous Laughter** (`class_list = ["WARLOCK", "WIZARD"]`,
 also real on Bard's list — not listed there since Bard isn't a playable class) is a genuinely new
 1st-level Enchantment/SAVE/WIS spell, 2-tile range, Concentration up to 10 turns: a failed save
 knocks the target Prone AND Incapacitated (`Enemy.apply_status("prone", 1)` +

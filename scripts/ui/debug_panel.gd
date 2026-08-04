@@ -388,7 +388,14 @@ func _build_spells_sub() -> void:
 	# for a non-caster class, and handles special cases like Hellish Rebuke's reaction-toggle
 	# ability automatically).
 	var _seen_spell_ids: Dictionary = {}
-	for _sid: String in (SpellDb.CANTRIP_IDS + SpellDb.LEVELED_SPELL_IDS):
+	# WARLOCK_SPELL_IDS included here too (not just LEVELED_SPELL_IDS/Wizard's own class list) —
+	# Hellish Rebuke is real 5e Warlock-only (never added to LEVELED_SPELL_IDS, since Wizard/Ranger
+	# don't get it), so without this it would only be reachable via the Tiefling-legacy loop below,
+	# which routes "Give" through the wrong grant function for a Warlock tester (see _on_give_spell()).
+	# Deduped like everything else — every other WARLOCK_SPELL_IDS entry already overlaps LEVELED_SPELL_IDS.
+	for _sid: String in (SpellDb.CANTRIP_IDS + SpellDb.LEVELED_SPELL_IDS + SpellDb.WARLOCK_SPELL_IDS):
+		if _seen_spell_ids.has(_sid):
+			continue
 		_seen_spell_ids[_sid] = true
 		vbox.add_child(_make_spell_row(_sid))
 	for _sid: String in (SpellDb.ELF_LINEAGE_SPELL_IDS + SpellDb.TIEFLING_LEGACY_SPELL_IDS + SpellDb.GNOME_LINEAGE_SPELL_IDS):
@@ -768,7 +775,7 @@ func _on_give_spell(spell_id: String) -> void:
 		GameState._grant_elf_lineage_spell(spell_id)
 		GameState.game_log("[color=lime][DEBUG] Given (lineage grant): %s[/color]" % spell.spell_name)
 		return
-	if SpellDb.TIEFLING_LEGACY_SPELL_IDS.has(spell_id) and not SpellDb.CANTRIP_IDS.has(spell_id) and not SpellDb.LEVELED_SPELL_IDS.has(spell_id):
+	if SpellDb.TIEFLING_LEGACY_SPELL_IDS.has(spell_id) and not SpellDb.CANTRIP_IDS.has(spell_id) and not SpellDb.LEVELED_SPELL_IDS.has(spell_id) and not SpellDb.WARLOCK_SPELL_IDS.has(spell_id):
 		GameState._grant_tiefling_legacy_spell(spell_id)
 		GameState.game_log("[color=lime][DEBUG] Given (legacy grant): %s[/color]" % spell.spell_name)
 		return

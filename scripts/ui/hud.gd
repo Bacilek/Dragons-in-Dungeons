@@ -877,12 +877,15 @@ func _refresh_ability_bar() -> void:
 					var hm_remaining: int = GameState.player_stats.hunters_mark_uses_remaining
 					use_lbl.text = "%d/%d" % [hm_remaining, Stats.HUNTERS_MARK_USES_MAX]
 					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if hm_remaining > 0 else Color(0.5, 0.5, 0.5))
-				elif ab.ability_id == "hellish_rebuke_toggle":
+				elif ab.ability_id == "hellish_rebuke_toggle" and "hellish_rebuke" in GameState.player_stats.tiefling_legacy_spell_ids:
 					# Hellish Rebuke's free-cast counter lives on Stats.tiefling_legacy_free_casts_remaining
 					# ("hellish_rebuke" key), not the Ability itself (uses_max stays 0/0, same
 					# free-base-ability convention as Hunter's Mark above) — max is the character's
 					# live proficiency_bonus (the same value long_rest() refills every racial
-					# lineage/legacy free-cast counter to).
+					# lineage/legacy free-cast counter to). Tiefling only — a Warlock who simply
+					# LEARNED this spell normally has no such counter at all (real spell slots are
+					# the only resource, same as every other spell ability), so it falls through to
+					# the blank uses_max==0 branch below instead, exactly like any other spell.
 					var hr_remaining: int = GameState.player_stats.tiefling_legacy_free_casts_remaining.get("hellish_rebuke", 0)
 					var hr_max: int = GameState.player_stats.proficiency_bonus
 					use_lbl.text = "%d/%d" % [hr_remaining, hr_max]

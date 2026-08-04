@@ -1308,27 +1308,37 @@ static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level:
 		dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()
 
-# Hellish Rebuke as a REACTION (Infernal Tiefling only — scripts/entities/CLAUDE.md's "Tiefling"
-# section): armed via the ability bar toggle (PlayerTiefling.activate_hellish_rebuke(), mirrors
-# Storm Giant Ancestry's own arm/consume-on-proc shape) rather than cast on demand. Called from
-# enemy.gd._attack_player() right after a landed hit — no TurnManager envelope (fires mid-enemy-
-# turn, not a player action) and no attack roll of its own; the attacker just makes a DEX save.
-# Consumes the same free-cast-per-long-rest economy every other Fiendish Legacy spell uses, falling
-# back to a real spell slot (Wizard/Ranger casters only) once that's spent — if neither is
-# available the reaction simply can't fire yet (stays armed for the next opportunity).
+# Hellish Rebuke as a REACTION (a real learnable Warlock spell, and still the Infernal Tiefling's
+# free legacy grant — scripts/entities/CLAUDE.md's "Tiefling"/"Warlock class" sections): armed via
+# the ability bar toggle (PlayerTiefling.activate_hellish_rebuke(), mirrors Storm Giant Ancestry's
+# own arm/consume-on-proc shape) rather than cast on demand. Called from enemy.gd._attack_player()
+# right after a landed hit — no TurnManager envelope (fires mid-enemy-turn, not a player action)
+# and no attack roll of its own; the attacker just makes a DEX save. Consumes the free-cast-per-
+# long-rest economy every other Fiendish Legacy spell uses first (Tiefling only — a non-Tiefling
+# Warlock never has this counter), falling back to a real spell slot once that's spent/absent — if
+# neither is available the reaction simply can't fire yet (stays armed for the next opportunity).
 static func trigger_hellish_rebuke(player: Player, attacker: Enemy, dungeon_floor: Node) -> void:
 	var spell: Spell = SpellDb.get_spell("hellish_rebuke")
 	var stats: Stats = player.stats
+	# The actual slot level this reaction fires at — spell.level (1) for the free-cast/God-Mode
+	# paths, or whatever the caster's own slot_pool would actually cast it at otherwise (for a
+	# Warlock's PactSlotPool, this can be ABOVE 1 — auto-upcast — so it must be read via
+	# available_level(), never hardcoded to spell.level, or the wrong slot key gets consumed).
+	var cast_level: int = spell.level
 	if stats.is_tiefling_legacy_free_cast_available("hellish_rebuke"):
 		if not GameState.invincible:
 			stats.tiefling_legacy_free_casts_remaining["hellish_rebuke"] = stats.tiefling_legacy_free_casts_remaining.get("hellish_rebuke", 0) - 1
-	elif stats.caster != null and (GameState.invincible or stats.caster.slot_pool.can_cast(spell)):
+	elif stats.caster != null and stats.caster.slot_pool != null and (GameState.invincible or stats.caster.slot_pool.can_cast(spell)):
 		if not GameState.invincible:
-			stats.caster.slot_pool.consume(spell.level)
+			cast_level = stats.caster.slot_pool.available_level(spell)
+			stats.caster.slot_pool.consume(cast_level)
 	else:
 		GameState.game_log("[color=gray]Hellish Rebuke has no charge left to fuel it.[/color]")
 		return
 	GameState.spell_slots_changed.emit()
+	var extra_levels: int = _upcast_extra_levels(spell, cast_level)
+	if extra_levels > 0 and spell.upcast_dice_count > 0:
+		spell.dice_count += spell.upcast_dice_count * extra_levels
 
 	var dc: int = _save_dc(stats, spell)
 	var save: Dictionary = attacker.resist_check_detailed(dc, false, true, false, false, true)

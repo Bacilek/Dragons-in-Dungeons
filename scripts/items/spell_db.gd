@@ -35,9 +35,17 @@ const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor
 # every non-Wizard class, matching both rule sets — Rangers don't get cantrips).
 const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace"]
 # Warlock's real 5e/2024 Pact Magic list overlap with the shared SpellDb pool (scripts/entities/
-# CLAUDE.md's "Warlock class") — all seven are genuinely on Warlock's actual class list, no
-# reflavoring needed, unlike Ranger's thinner/approximated subset above.
-const WARLOCK_SPELL_IDS: Array[String] = ["witch_bolt", "expeditious_retreat", "darkness", "hold_person", "invisibility", "misty_step", "ray_of_enfeeblement", "hideous_laughter"]
+# CLAUDE.md's "Warlock class") — all nine are genuinely on Warlock's actual class list, no
+# reflavoring needed, unlike Ranger's thinner/approximated subset above. hellish_rebuke is
+# deliberately NOT also in LEVELED_SPELL_IDS (Wizard's own class-list alias) — real 5e/2024 Hellish
+# Rebuke is Warlock-only, not Sorcerer/Wizard, so opening it up to Wizard's level-up learn picker
+# would be wrong (same "each spell's actual RAW class list matters" discipline Ranger's own subset
+# above follows). It's ALSO still in TIEFLING_LEGACY_SPELL_IDS below — a Tiefling of any class still
+# gets it free via Infernal legacy, same "two independent acquisition paths" pattern as every other
+# promoted lineage/legacy spell (see that section's own header comment) — both share the exact same
+# toggle-armed-reaction mechanism (_build_hellish_rebuke_ability()/PlayerTiefling.
+# activate_hellish_rebuke(), scripts/entities/CLAUDE.md's "Tiefling"/"Warlock class" sections).
+const WARLOCK_SPELL_IDS: Array[String] = ["witch_bolt", "expeditious_retreat", "darkness", "hold_person", "invisibility", "misty_step", "ray_of_enfeeblement", "hideous_laughter", "hellish_rebuke"]
 const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS, "RANGER": RANGER_SPELL_IDS, "WARLOCK": WARLOCK_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
 # Elf lineage-only spells (see scripts/entities/CLAUDE.md's "Elf" section) — granted exclusively by
@@ -65,9 +73,14 @@ const ELF_LINEAGE_SPELL_IDS: Array[String] = ["faerie_fire", "darkness", "detect
 # independently-learnable LEVELED_SPELL_IDS entries — same "promoted, sub-race grant is just one
 # of two independent acquisition paths" pattern as the Elf lineage spells above (`class_list =
 # ["WIZARD"]`). `poison_spray`/`chill_touch` were already promoted earlier (they're cantrips, see
-# CANTRIP_IDS). `hellish_rebuke` is the one deliberate holdout — it's a reaction-toggle ability
-# (`GameState._build_hellish_rebuke_ability()`), not a normal on-demand cast, so it doesn't fit the
-# level-up-learn/slot-cast shape the other five use.
+# CANTRIP_IDS). `hellish_rebuke` is ALSO now a real, independently-learnable `WARLOCK_SPELL_IDS`
+# entry (`class_list = ["WARLOCK"]`, real 5e/2024 list — Warlock-only, deliberately NOT added to
+# `LEVELED_SPELL_IDS`/Wizard's own class list) — same "promoted, legacy grant is just one of two
+# acquisition paths" pattern as the other three, it just happens to still be a reaction-toggle
+# ability (`GameState._build_hellish_rebuke_ability()`/`PlayerTiefling.activate_hellish_rebuke()`)
+# rather than a normal on-demand cast either way it's acquired — `_build_spell_ability()` special-
+# cases `spell_id == "hellish_rebuke"` to build the toggle instead of a plain "spell:"-id cast
+# ability regardless of which path granted it.
 const TIEFLING_LEGACY_SPELL_IDS: Array[String] = ["poison_spray", "chill_touch", "ray_of_sickness", "hold_person", "ray_of_enfeeblement", "hellish_rebuke"]
 
 # Gnome Gnomish Lineage-only spells (see scripts/entities/CLAUDE.md's "Gnome" section) — granted
@@ -799,11 +812,11 @@ static func _hellish_rebuke() -> Spell:
 	s.dice_count = 2
 	s.dice_sides = 10
 	s.damage_type = "Fire"
-	s.description = "Toggle to arm — the next enemy that damages you takes 2d10 Fire (DEX save for half). Infernal Tiefling lineage spell."
+	s.description = "Toggle to arm — the next enemy that damages you takes 2d10 Fire (DEX save for half). Real Warlock spell; also the Infernal Tiefling lineage's free grant."
 	s.icon_path = "res://icons/spells/1/hellish_rebuke.png"
 	s.effect_id = "hellish_rebuke"
-	s.class_list = []
-	s.upcast_dice_count = 1   # +1d10 per slot level above 1st (never triggers today — only reachable via Tiefling's fixed-level free grant, not a real slot cast)
+	s.class_list = ["WARLOCK"]
+	s.upcast_dice_count = 1   # +1d10 per slot level above 1st — now real: a Warlock's Pact Magic auto-upcast applies to this reaction exactly like any other known spell (see trigger_hellish_rebuke())
 	return s
 
 # ── Gnome Gnomish Lineage spells (Forest/Rock) — see scripts/entities/CLAUDE.md's "Gnome" section

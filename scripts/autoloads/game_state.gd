@@ -556,7 +556,7 @@ func reset_wizard_onboarding_picks() -> void:
 	if player_stats.caster == null:
 		return
 	for id: String in player_stats.caster.known_spells.duplicate():
-		_remove_ability_by_id("spell:" + id)
+		_remove_ability_by_id(_spell_ability_id(id))
 	player_stats.caster.known_spells.clear()
 	player_stats.caster.prepared_spells.clear()
 	special_slot_spell_id = ""
@@ -1047,7 +1047,26 @@ func choose_cantrip(spell_id: String, silent: bool = false) -> void:
 ## _give_wizard_starting_items(), set_spell_prepared(), place_spell_in_slot(), and save replay.
 ## uses_max stays 0 for every spell (cantrips are free/infinite; leveled-spell slot state lives on
 ## SpellcasterState.slot_pool, never in Ability.uses_remaining — see leveled-spells-and-slots-plan.md §5.3).
+## Maps a known spell id to its actual ability-bar id — "spell:X" for every normal on-demand-cast
+## spell, except Hellish Rebuke, a toggle-armed reaction (see _build_hellish_rebuke_ability() and
+## scripts/entities/CLAUDE.md's "Warlock class"/"Tiefling" sections), which keeps its own fixed
+## "hellish_rebuke_toggle" id instead. Now a genuinely learnable Warlock spell (not just a Tiefling
+## legacy grant), so every "spell:" + id lookup/removal site needs this, not just the Tiefling-
+## specific grant path that already special-cased it directly.
+func _spell_ability_id(spell_id: String) -> String:
+	return "hellish_rebuke_toggle" if spell_id == "hellish_rebuke" else "spell:" + spell_id
+
+## Inverse of _spell_ability_id() — "" if `ability_id` isn't a spell-backed ability at all.
+func _spell_id_from_ability_id(ability_id: String) -> String:
+	if ability_id == "hellish_rebuke_toggle":
+		return "hellish_rebuke"
+	if ability_id.begins_with("spell:"):
+		return ability_id.trim_prefix("spell:")
+	return ""
+
 func _build_spell_ability(spell_id: String) -> Ability:
+	if spell_id == "hellish_rebuke":
+		return _build_hellish_rebuke_ability()
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	var ab := Ability.new()
 	ab.ability_id = "spell:" + spell_id
@@ -1469,13 +1488,13 @@ func _rebuild_spell_ability_bar() -> void:
 			set_spell_prepared(sid, true)
 	for i: int in ABILITY_BAR_SIZE:
 		var ab: Ability = player_ability_bar[i] as Ability
-		if ab == null or not ab.ability_id.begins_with("spell:"):
+		if ab == null:
 			continue
-		var sid: String = ab.ability_id.trim_prefix("spell:")
-		if not caster.prepared_spells.has(sid):
+		var sid: String = _spell_id_from_ability_id(ab.ability_id)
+		if sid != "" and not caster.prepared_spells.has(sid):
 			player_ability_bar[i] = null
 	for sid: String in caster.prepared_spells:
-		if _find_ability_by_id("spell:" + sid) == null:
+		if _find_ability_by_id(_spell_ability_id(sid)) == null:
 			add_ability(_build_spell_ability(sid))
 	ability_bar_changed.emit()
 
@@ -1539,7 +1558,7 @@ func set_spell_prepared(spell_id: String, prepared: bool) -> bool:
 		if not caster.prepared_spells.has(spell_id):
 			return true
 		caster.prepared_spells.erase(spell_id)
-		_remove_ability_by_id("spell:" + spell_id)
+		_remove_ability_by_id(_spell_ability_id(spell_id))
 	spell_slots_changed.emit()
 	return true
 
@@ -1565,7 +1584,7 @@ func place_spell_in_slot(spell_id: String, index: int) -> bool:
 		if count >= cap:
 			return false
 		caster.prepared_spells.append(spell_id)
-	var existing: Ability = _find_ability_by_id("spell:" + spell_id)
+	var existing: Ability = _find_ability_by_id(_spell_ability_id(spell_id))
 	var displaced: Ability = player_ability_bar[index] as Ability
 	if existing != null:
 		var old_idx: int = player_ability_bar.find(existing)
@@ -1607,6 +1626,12 @@ var quickbar_hover_thrown_item: Item = null  # transient, not serialized — set
 func set_special_slot(spell_id: String) -> bool:
 	var caster: SpellcasterState = player_stats.caster
 	if caster == null or not caster.known_spells.has(spell_id):
+		return false
+	# Hellish Rebuke is a toggle-armed reaction (hellish_rebuke_toggle ability), not a normal
+	# on-demand cast — PlayerSpellcasting.cast_direct() (the Special slot's Alt+click resolver)
+	# only knows how to arm-then-target a spell the normal way, which would bypass the toggle
+	# entirely. Its own ability-bar slot (via the Spellbook/level-up learn) is the only way to use it.
+	if spell_id == "hellish_rebuke":
 		return false
 	special_slot_spell_id = spell_id
 	special_slot_changed.emit()
@@ -1978,7 +2003,11 @@ func is_ability_usable(ab: Ability) -> bool:
 				return true
 			if player_stats.is_tiefling_legacy_free_cast_available("hellish_rebuke"):
 				return true
-			return player_stats.caster != null and player_stats.caster.slot_pool != null and player_stats.caster.slot_pool.remaining.get(1, 0) > 0
+			# Warlock's PactSlotPool only ever has ONE key (the current pact slot level, which can
+			# be well above 1) — can_cast() is the generic "does this pool have any charge this
+			# spell could use" check, unlike the old hardcoded remaining.get(1, 0) look-up, which
+			# only ever worked for a Wizard/Ranger whose slot table still keys level 1 by "1".
+			return player_stats.caster != null and player_stats.caster.slot_pool != null and player_stats.caster.slot_pool.can_cast(SpellDb.get_spell("hellish_rebuke"))
 	return true
 
 # Triggered on short rest completion. Heals companion (if alive) AND restores One with Nature charge.
