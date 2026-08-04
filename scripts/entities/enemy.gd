@@ -622,10 +622,16 @@ func resist_check_detailed(dc: int, use_con: bool = false, use_dex: bool = false
 	# is in LOS — see _frightened_active(). Nets against Magic Resistance's ADV like every other
 	# ADV/DISADV pair in this codebase, rather than a separate elif branch.
 	var frightened_disadv: bool = _frightened_active()
+	# Hex (Warlock): DISADV on any check using the one ability score randomly chosen at cast time —
+	# this codebase's "all defensive rolls are checks" convention (root CLAUDE.md) means this
+	# applies to both real ability checks AND save-shaped resist checks alike, a deliberate
+	# approximation since there's no separate saves/checks distinction to gate on (see
+	# scripts/entities/CLAUDE.md's "Warlock class" → "Hex" section).
+	var hex_disadv: bool = GameState.player_stats.hex_target == self and GameState.player_stats.hex_ability == stat_key
 	# force_adv: a one-off ADV source for a specific check, not tied to any trait (Tasha's Hideous
 	# Laughter's on-hit repeat save — see take_typed_damage() below).
 	var adv_sources: int = (1 if magic_resistance_adv else 0) + (1 if force_adv else 0)
-	var disadv_sources: int = (1 if enfeeble_str_disadv else 0) + (1 if frightened_disadv else 0)
+	var disadv_sources: int = (1 if enfeeble_str_disadv else 0) + (1 if frightened_disadv else 0) + (1 if hex_disadv else 0)
 	if adv_sources > disadv_sources:
 		die = maxi(die, Rng.roll(20))
 	elif disadv_sources > adv_sources:
@@ -697,6 +703,16 @@ func die() -> void:
 	# Bloodhound R3: if this was the Hunter's Mark target, re-mark the nearest visible enemy for free.
 	if _dungeon_floor != null and _dungeon_floor._player != null:
 		_dungeon_floor._player._ranger_talents.try_bloodhound_remark(self)
+	# Hex (Warlock): if this was the hexed target and the curse's Concentration is still active,
+	# the caster's NEXT Hex cast (any target) is free — consumed in SpellEffects._resolve_hex().
+	# The curse itself just ends here (no re-attach like Bloodhound's own kill hook — Hex has no
+	# such talent-driven upgrade), same "clear the live reference on death" precedent as
+	# hold_person_target/hideous_laughter_target's own per-target removal.
+	if GameState.player_stats.hex_target == self:
+		GameState.player_stats.hex_target = null
+		if GameState.player_stats.hex_turns > 0 and GameState.player_stats.concentration_spell_id == "hex":
+			GameState.player_stats.hex_free_recast_pending = true
+			GameState.game_log("[color=cyan]Hex: your cursed quarry has fallen — your next Hex costs no spell slot.[/color]")
 	# Frightened: if this enemy was the fear source, the condition would otherwise sit inert
 	# (DISADV/can't-approach both already no-op once the source is invalid) until its own timer
 	# or repeat-save clears it — cleared immediately instead, for a status tray that doesn't keep

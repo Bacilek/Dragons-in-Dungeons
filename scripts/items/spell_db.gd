@@ -35,17 +35,19 @@ const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor
 # every non-Wizard class, matching both rule sets — Rangers don't get cantrips).
 const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace"]
 # Warlock's real 5e/2024 Pact Magic list overlap with the shared SpellDb pool (scripts/entities/
-# CLAUDE.md's "Warlock class") — all nine are genuinely on Warlock's actual class list, no
-# reflavoring needed, unlike Ranger's thinner/approximated subset above. hellish_rebuke is
+# CLAUDE.md's "Warlock class") — all ten are genuinely on Warlock's actual class list, no
+# reflavoring needed, unlike Ranger's thinner/approximated subset above. hellish_rebuke and hex are
 # deliberately NOT also in LEVELED_SPELL_IDS (Wizard's own class-list alias) — real 5e/2024 Hellish
-# Rebuke is Warlock-only, not Sorcerer/Wizard, so opening it up to Wizard's level-up learn picker
-# would be wrong (same "each spell's actual RAW class list matters" discipline Ranger's own subset
-# above follows). It's ALSO still in TIEFLING_LEGACY_SPELL_IDS below — a Tiefling of any class still
-# gets it free via Infernal legacy, same "two independent acquisition paths" pattern as every other
-# promoted lineage/legacy spell (see that section's own header comment) — both share the exact same
-# toggle-armed-reaction mechanism (_build_hellish_rebuke_ability()/PlayerTiefling.
-# activate_hellish_rebuke(), scripts/entities/CLAUDE.md's "Tiefling"/"Warlock class" sections).
-const WARLOCK_SPELL_IDS: Array[String] = ["witch_bolt", "expeditious_retreat", "darkness", "hold_person", "invisibility", "misty_step", "ray_of_enfeeblement", "hideous_laughter", "hellish_rebuke"]
+# Rebuke and Hex are both Warlock-only, not Sorcerer/Wizard, so opening either up to Wizard's
+# level-up learn picker would be wrong (same "each spell's actual RAW class list matters"
+# discipline Ranger's own subset above follows). hellish_rebuke is ALSO still in
+# TIEFLING_LEGACY_SPELL_IDS below — a Tiefling of any class still gets it free via Infernal legacy,
+# same "two independent acquisition paths" pattern as every other promoted lineage/legacy spell
+# (see that section's own header comment) — both share the exact same toggle-armed-reaction
+# mechanism (_build_hellish_rebuke_ability()/PlayerTiefling.activate_hellish_rebuke(),
+# scripts/entities/CLAUDE.md's "Tiefling"/"Warlock class" sections). hex has no such second path —
+# Warlock-learned only.
+const WARLOCK_SPELL_IDS: Array[String] = ["witch_bolt", "expeditious_retreat", "darkness", "hold_person", "invisibility", "misty_step", "ray_of_enfeeblement", "hideous_laughter", "hellish_rebuke", "hex"]
 const CLASS_SPELL_LISTS: Dictionary = {"WIZARD": LEVELED_SPELL_IDS, "RANGER": RANGER_SPELL_IDS, "WARLOCK": WARLOCK_SPELL_IDS}   # cantrips excluded — never offered by the level-up picker
 
 # Elf lineage-only spells (see scripts/entities/CLAUDE.md's "Elf" section) — granted exclusively by
@@ -135,6 +137,7 @@ static func get_spell(id: String) -> Spell:
 		"hideous_laughter": return _hideous_laughter()
 		"ray_of_enfeeblement": return _ray_of_enfeeblement()
 		"hellish_rebuke": return _hellish_rebuke()
+		"hex": return _hex()
 		"minor_illusion": return _minor_illusion()
 		"speak_with_animals": return _speak_with_animals()
 		"mending": return _mending()
@@ -817,6 +820,29 @@ static func _hellish_rebuke() -> Spell:
 	s.effect_id = "hellish_rebuke"
 	s.class_list = ["WARLOCK"]
 	s.upcast_dice_count = 1   # +1d10 per slot level above 1st — now real: a Warlock's Pact Magic auto-upcast applies to this reaction exactly like any other known spell (see trigger_hellish_rebuke())
+	return s
+
+# Hex — real Warlock-only 1st-level Enchantment. No art sourced yet (icon_path points at a file
+# that doesn't exist, same "renders blank until added" precedent as false_life/fog_cloud when they
+# were first added) — see scripts/entities/CLAUDE.md's "Warlock class" → "Hex" section for the
+# full curse/bonus-damage/disadvantage/free-recast-on-kill mechanism.
+static func _hex() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "hex"
+	s.spell_name = "Hex"
+	s.school = "Enchantment"
+	s.casting_time = "Free"
+	s.level = 1
+	s.range_tiles = 5
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.duration_turns = 600
+	s.is_concentration = true
+	s.description = "Curse an enemy you can see. While cursed, every attack (weapon, cantrip, or spell) you land against it deals an extra 1d6 Necrotic damage, and it has Disadvantage on checks using one randomly chosen ability score. If the target dies while the curse is still active, your next casting of Hex costs no spell slot."
+	s.icon_path = "res://icons/spells/1/hex.png"
+	s.effect_id = "hex"
+	s.class_list = ["WARLOCK"]
+	s.upcast_flat_amount = 600   # +600 turns (1 hour) of duration per slot level above 1st — a duration bump, not the usual dice/target upcast shape (see SpellEffects._resolve_hex())
 	return s
 
 # ── Gnome Gnomish Lineage spells (Forest/Rock) — see scripts/entities/CLAUDE.md's "Gnome" section

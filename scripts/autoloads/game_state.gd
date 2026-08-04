@@ -3222,6 +3222,10 @@ func end_concentration(reason_log: String = "") -> void:
 		player_stats.invisibility_turns = 0
 		if player_companion != null and is_instance_valid(player_companion) and player_companion.invisibility_turns > 0:
 			player_companion.invisibility_turns = 0
+	elif broken_spell == "hex":
+		player_stats.hex_turns = 0
+		player_stats.hex_target = null
+		player_stats.hex_ability = ""
 	if reason_log != "":
 		game_log(reason_log)
 

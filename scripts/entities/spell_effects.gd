@@ -207,6 +207,23 @@ static func _resolve_cantrip_hit(player: Player, spell: Spell, target: Enemy, du
 		if spell.spell_id == "fire_bolt":
 			dungeon_floor.play_impact_vfx(target.position, "explosion_small")
 
+	# Hex (Warlock): a hit against the hexed target with ANY attack — including a cantrip attack
+	# roll, per the spell's own "weapon, cantrip, or spell attack" text — deals a second,
+	# independent Necrotic damage instance, same shape as Hunter's Mark's Force bonus.
+	var hex_actual: int = 0
+	var hex_inst: Dictionary = {}
+	var hex_die: int = player._warlock.hex_bonus_die(target)
+	if hex_die > 0:
+		var hex_rolls: Array[int] = [hex_die]
+		hex_inst = CombatMath.build_damage_instance(hex_rolls, 6, [], is_crit, "Necrotic")
+		var hex_result: Dictionary = target.take_typed_damage(hex_inst["subtotal"], "Necrotic", is_crit)
+		hex_inst["final"] = hex_result["actual"]
+		hex_inst["resist_mul"] = hex_result["mul"]
+		hex_actual = hex_result["actual"]
+		target.update_hp_bar()
+		if dungeon_floor != null:
+			dungeon_floor.show_damage(target.position, hex_actual, false, CombatMath.damage_type_color("Necrotic"), 1)
+
 	# Fire/Frost/Hill Giant Ancestry: same "next attack that hits" trigger melee already has —
 	# extended to spell attack rolls too, see PlayerGoliath.consume_giant_ancestry_on_hit(). Skipped
 	# if this cast already killed the target — no point rolling bonus damage/Prone on a corpse.
@@ -224,8 +241,10 @@ static func _resolve_cantrip_hit(player: Player, spell: Spell, target: Enemy, du
 			gol_inst["resist_mul"] = gol_result["mul"]
 			gol_actual = gol_result["actual"]
 			target.update_hp_bar()
+			var gol_stack_index: int = 1
+			if hex_actual > 0: gol_stack_index += 1
 			if dungeon_floor != null:
-				dungeon_floor.show_damage(target.position, gol_actual, false, CombatMath.damage_type_color(gol_type), 1)
+				dungeon_floor.show_damage(target.position, gol_actual, false, CombatMath.damage_type_color(gol_type), gol_stack_index)
 			player._goliath.finish_giant_ancestry_bonus_damage()
 		elif gol_type == "Prone":
 			# Hill's Prone was already applied inside consume_giant_ancestry_on_hit() — its flavor
@@ -236,6 +255,9 @@ static func _resolve_cantrip_hit(player: Player, spell: Spell, target: Enemy, du
 	var type_tag: String = " [color=gray]%s[/color]" % spell.damage_type
 	var is_lethal: bool = target.stats.is_dead()
 	var dmg_segment: String = "[url=%s][color=yellow]%d[/color][/url]%s" % [dmg_meta, actual, type_tag]
+	if hex_actual > 0:
+		var hex_meta: String = CombatMath.encode_damage_instance(hex_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Necrotic[/color]" % [hex_meta, hex_actual]
 	if gol_actual > 0:
 		var gol_meta: String = CombatMath.encode_damage_instance(gol_inst)
 		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [gol_meta, gol_actual, gol_type]
@@ -1035,6 +1057,24 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	if dungeon_floor != null:
 		dungeon_floor.show_damage(target.position, actual, false, CombatMath.damage_type_color(dtype))
 
+	# Hex (Warlock): a hit against the hexed target with ANY attack — including a leveled spell
+	# attack roll (Chromatic Orb/Witch Bolt/Ray of Sickness), per the spell's own "weapon, cantrip,
+	# or spell attack" text — deals a second, independent Necrotic damage instance. Fires on the
+	# leap re-roll too (a leap can land on the hexed target just as easily as the primary bolt).
+	var hex_actual: int = 0
+	var hex_inst: Dictionary = {}
+	var hex_die: int = player._warlock.hex_bonus_die(target)
+	if hex_die > 0:
+		var hex_rolls: Array[int] = [hex_die]
+		hex_inst = CombatMath.build_damage_instance(hex_rolls, 6, [], is_crit, "Necrotic")
+		var hex_result: Dictionary = target.take_typed_damage(hex_inst["subtotal"], "Necrotic", is_crit)
+		hex_inst["final"] = hex_result["actual"]
+		hex_inst["resist_mul"] = hex_result["mul"]
+		hex_actual = hex_result["actual"]
+		target.update_hp_bar()
+		if dungeon_floor != null:
+			dungeon_floor.show_damage(target.position, hex_actual, false, CombatMath.damage_type_color("Necrotic"), 1)
+
 	# Fire/Frost/Hill Giant Ancestry: same "next attack that hits" trigger melee already has —
 	# extended to leveled spell attack rolls too (not on the leap re-roll — only the primary bolt).
 	# Skipped if this bolt already killed the target — no point rolling bonus damage/Prone on a corpse.
@@ -1052,8 +1092,10 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 			gol_inst["resist_mul"] = gol_result["mul"]
 			gol_actual = gol_result["actual"]
 			target.update_hp_bar()
+			var gol_stack_index: int = 1
+			if hex_actual > 0: gol_stack_index += 1
 			if dungeon_floor != null:
-				dungeon_floor.show_damage(target.position, gol_actual, false, CombatMath.damage_type_color(gol_type), 1)
+				dungeon_floor.show_damage(target.position, gol_actual, false, CombatMath.damage_type_color(gol_type), gol_stack_index)
 			player._goliath.finish_giant_ancestry_bonus_damage()
 		elif gol_type == "Prone":
 			# Hill's Prone was already applied inside consume_giant_ancestry_on_hit() — its flavor
@@ -1064,6 +1106,9 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	var type_tag: String = " [color=gray]%s[/color]" % dtype
 	var is_lethal: bool = target.stats.is_dead()
 	var dmg_segment: String = "[url=%s][color=yellow]%d[/color][/url]%s" % [dmg_meta, actual, type_tag]
+	if hex_actual > 0:
+		var hex_meta: String = CombatMath.encode_damage_instance(hex_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Necrotic[/color]" % [hex_meta, hex_actual]
 	if gol_actual > 0:
 		var gol_meta: String = CombatMath.encode_damage_instance(gol_inst)
 		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [gol_meta, gol_actual, gol_type]
@@ -1307,6 +1352,59 @@ static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level:
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
 	player._handle_post_attack_turn()
+
+const HEX_ABILITIES: Array[String] = ["str", "dex", "con", "int", "wis", "cha"]
+
+# AUTO_HIT ENEMY target (Hex — the only spell using this shape today; Magic Missile is AUTO_HIT too
+# but is intercepted earlier via the multi-target flow, never reaches this function). No attack
+# roll, no save — placing the curse always succeeds against any visible in-range target. Free
+# casting time (RAW: bonus action) — ends via the same revert_to_waiting() free-action pattern as
+# Shield, instead of player._handle_post_attack_turn().
+static func cast_leveled_auto_hit_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	GameState.stealth_check_skip = true
+	TurnManager.begin_player_action()
+	target.on_disturbed(player.grid_pos)
+	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
+	sprite.flip_h = target.grid_pos.x < player.grid_pos.x
+	sprite.play("hit")
+	await sprite.animation_finished
+	sprite.play("idle")
+
+	match spell.effect_id:
+		"hex":
+			_resolve_hex(player, spell, cast_level, target, from_scroll)
+		_:
+			_consume_slot(player, spell, cast_level, from_scroll)
+
+	if dungeon_floor != null:
+		dungeon_floor.update_fog(player.grid_pos)
+	player._reverted_this_round = true
+	TurnManager.revert_to_waiting()
+
+# Hex (Warlock, level 1) — places a curse: every landed attack (weapon, cantrip, or spell — see
+# PlayerWarlock.hex_bonus_die(), wired into every ATTACK_ROLL damage site) against the target deals
+# an extra 1d6 Necrotic, and the target has Disadvantage on any check using one randomly-chosen
+# ability score (Enemy.resist_check_detailed()'s own hex_disadv term). Real Concentration, up to
+# 600 turns (+600 more per upcast slot level above 1st — a DURATION bump, unlike every other
+# upcast spell's dice/target-count shape, see Spell.upcast_flat_amount's own comment). If the
+# hexed target dies while this Concentration is still active, Enemy.die() arms
+# Stats.hex_free_recast_pending — consumed here, before the generic slot-consumption chokepoint, so
+# the very next Hex cast (any target) costs no slot at all.
+static func _resolve_hex(player: Player, spell: Spell, cast_level: int, target: Enemy, from_scroll: bool) -> void:
+	var stats: Stats = player.stats
+	if stats.hex_free_recast_pending and not from_scroll:
+		stats.hex_free_recast_pending = false
+		GameState.game_log("[color=cyan]Hex: your fallen quarry lets you recast for free.[/color]")
+	else:
+		_consume_slot(player, spell, cast_level, from_scroll)
+	if stats.concentration_spell_id != "":
+		GameState.end_concentration("" if stats.concentration_spell_id == "hex" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+	stats.concentration_spell_id = "hex"
+	var extra_levels: int = _upcast_extra_levels(spell, cast_level)
+	stats.hex_turns = spell.duration_turns + spell.upcast_flat_amount * extra_levels
+	stats.hex_target = target
+	stats.hex_ability = Rng.pick(HEX_ABILITIES)
+	GameState.game_log("[color=cyan]You curse %s with Hex — it falters whenever its %s is tested.[/color]" % [target.display_name, stats.hex_ability.to_upper()])
 
 # Hellish Rebuke as a REACTION (a real learnable Warlock spell, and still the Infernal Tiefling's
 # free legacy grant — scripts/entities/CLAUDE.md's "Tiefling"/"Warlock class" sections): armed via

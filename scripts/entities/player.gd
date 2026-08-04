@@ -32,6 +32,7 @@ var _aasimar: PlayerAasimar
 var _goliath: PlayerGoliath
 var _tiefling: PlayerTiefling
 var _halfling: PlayerHalfling
+var _warlock: PlayerWarlock
 
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
@@ -199,6 +200,7 @@ func _ready() -> void:
 	_goliath = PlayerGoliath.new(); _goliath.player = self; add_child(_goliath)
 	_tiefling = PlayerTiefling.new(); _tiefling.player = self; add_child(_tiefling)
 	_halfling = PlayerHalfling.new(); _halfling.player = self; add_child(_halfling)
+	_warlock = PlayerWarlock.new(); _warlock.player = self; add_child(_warlock)
 
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
@@ -377,6 +379,19 @@ func _on_turn_started() -> void:
 		elif stats.hunters_mark_free_recast_pending:
 			stats.hunters_mark_free_recast_pending = false
 			stats.hunters_mark_free_recast_available = true
+		# Hex: 600-turn Concentration cap (+600/upcast level — see Spell.upcast_flat_amount's own
+		# comment). No repeated-save early-end exists for this one (unlike Ray of Enfeeblement/Hold
+		# Person/Hideous Laughter below) — the curse only ever ends via this duration backstop, a
+		# damage-based concentration break, casting a different concentration spell, or the hexed
+		# target dying (Enemy.die(), which also arms hex_free_recast_pending).
+		if stats.hex_turns > 0:
+			stats.hex_turns -= 1
+			if stats.hex_turns <= 0:
+				if stats.concentration_spell_id == "hex":
+					stats.concentration_spell_id = ""
+				stats.hex_target = null
+				stats.hex_ability = ""
+				GameState.game_log("[color=gray]Hex fades.[/color]")
 		# Ray of Enfeeblement: 10-turn Concentration cap — the target's own repeated end-of-turn
 		# save (Enemy.decide_turn()) usually ends this earlier by clearing enfeeble_turns to 0
 		# directly; this is just the outer duration backstop.
@@ -2827,6 +2842,27 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		if _dungeon_floor != null:
 			_dungeon_floor.show_damage(enemy.position, hm_actual, false, CombatMath.damage_type_color("Force"), hm_stack_index)
 
+	# Hex (Warlock): a hit against the hexed target deals a second, independent Necrotic damage
+	# instance — same "one hit, two damage types" shape as Hunter's Mark above, just usable by any
+	# attack type (weapon/cantrip/spell), not just weapons.
+	var hex_actual: int = 0
+	var hex_inst: Dictionary = {}
+	var hex_die: int = _warlock.hex_bonus_die(enemy)
+	if hex_die > 0:
+		var hex_rolls: Array[int] = [hex_die]
+		hex_inst = CombatMath.build_damage_instance(hex_rolls, 6, [], is_crit, "Necrotic")
+		var hex_result: Dictionary = enemy.take_typed_damage(hex_inst["subtotal"], "Necrotic", is_crit)
+		hex_inst["final"] = hex_result["actual"]
+		hex_inst["resist_mul"] = hex_result["mul"]
+		hex_actual = hex_result["actual"]
+		enemy.update_hp_bar()
+		var hex_stack_index: int = 1
+		if jd_actual > 0: hex_stack_index += 1
+		if torch_actual > 0: hex_stack_index += 1
+		if hm_actual > 0: hex_stack_index += 1
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(enemy.position, hex_actual, false, CombatMath.damage_type_color("Necrotic"), hex_stack_index)
+
 	# Aasimar Celestial Revelation: the FIRST damage dealt each turn while active gets a bonus
 	# instance equal to proficiency bonus, Radiant or Necrotic depending on the chosen
 	# transformation — same "one hit, two damage types" shape as Judgement Day/Torch/Hunter's Mark
@@ -2848,6 +2884,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		if jd_actual > 0: cr_stack_index += 1
 		if torch_actual > 0: cr_stack_index += 1
 		if hm_actual > 0: cr_stack_index += 1
+		if hex_actual > 0: cr_stack_index += 1
 		if _dungeon_floor != null:
 			_dungeon_floor.show_damage(enemy.position, cr_actual, false, CombatMath.damage_type_color(cr_type), cr_stack_index)
 
@@ -2878,6 +2915,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 			if jd_actual > 0: gol_stack_index += 1
 			if torch_actual > 0: gol_stack_index += 1
 			if hm_actual > 0: gol_stack_index += 1
+			if hex_actual > 0: gol_stack_index += 1
 			if cr_actual > 0: gol_stack_index += 1
 			if _dungeon_floor != null:
 				_dungeon_floor.show_damage(enemy.position, gol_actual, false, CombatMath.damage_type_color(gol_type), gol_stack_index)
@@ -2907,6 +2945,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	if hm_actual > 0:
 		var hm_meta: String = CombatMath.encode_damage_instance(hm_inst)
 		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Force[/color]" % [hm_meta, hm_actual]
+	if hex_actual > 0:
+		var hex_meta: String = CombatMath.encode_damage_instance(hex_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Necrotic[/color]" % [hex_meta, hex_actual]
 	if cr_actual > 0:
 		var cr_meta: String = CombatMath.encode_damage_instance(cr_inst)
 		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [cr_meta, cr_actual, cr_type]
@@ -3209,6 +3250,21 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 		if _dungeon_floor != null:
 			_dungeon_floor.show_damage(enemy.position, hm_actual, false, CombatMath.damage_type_color("Force"), 1)
 
+	# Hex: same as above, extended to the Off-hand/Nick swing too.
+	var hex_actual: int = 0
+	var hex_inst: Dictionary = {}
+	var hex_die: int = _warlock.hex_bonus_die(enemy)
+	if hex_die > 0:
+		var hex_rolls: Array[int] = [hex_die]
+		hex_inst = CombatMath.build_damage_instance(hex_rolls, 6, [], is_crit, "Necrotic")
+		var hex_result: Dictionary = enemy.take_typed_damage(hex_inst["subtotal"], "Necrotic", is_crit)
+		hex_inst["final"] = hex_result["actual"]
+		hex_inst["resist_mul"] = hex_result["mul"]
+		hex_actual = hex_result["actual"]
+		enemy.update_hp_bar()
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(enemy.position, hex_actual, false, CombatMath.damage_type_color("Necrotic"), 1 if hm_actual <= 0 else 2)
+
 	var dmg_meta: String = CombatMath.encode_damage_instance(inst)
 	var type_tag: String = " [color=gray]%s[/color]" % dmg_type
 	var is_lethal: bool = enemy.stats.is_dead()
@@ -3216,6 +3272,9 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	if hm_actual > 0:
 		var hm_meta: String = CombatMath.encode_damage_instance(hm_inst)
 		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Force[/color]" % [hm_meta, hm_actual]
+	if hex_actual > 0:
+		var hex_meta: String = CombatMath.encode_damage_instance(hex_inst)
+		dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Necrotic[/color]" % [hex_meta, hex_actual]
 	GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]%s:[/color] you [url=%s]strike[/url] [color=orange]%s[/color] for %s dmg.%s" % [label, hit_meta, enemy.display_name, dmg_segment, CombatMath.death_suffix(is_lethal)], r["lucky"]))
 	if is_lethal:
 		_finish_kill(enemy)

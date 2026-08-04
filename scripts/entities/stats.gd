@@ -400,6 +400,7 @@ func concentration_turns_remaining() -> int:
 		"hideous_laughter": return hideous_laughter_turns
 		"faerie_fire": return faerie_fire_turns
 		"invisibility": return invisibility_turns
+		"hex": return hex_turns
 		_: return 0
 # Blade Ward's own duration — ticks down once per real player turn (player.gd _on_turn_started(),
 # same "if not came_from_revert" block as shield_ac_bonus); reaching 0 ends the effect and clears
@@ -481,6 +482,23 @@ var hold_person_turns: int = 0
 # Deliberately NOT serialized, same precedent as witch_bolt_target/witch_bolt_turns above.
 var hideous_laughter_target: Array[Enemy] = []
 var hideous_laughter_turns: int = 0
+
+# Hex (Warlock, level 1) — same generic concentration_spell_id mechanism ("hex") + live target
+# reference as Witch Bolt/Ray of Enfeeblement (single target only — no upcast_extra_targets, the
+# upcast instead extends duration, see Spell.upcast_flat_amount's own comment). `hex_ability` is
+# the ONE ability score (lowercase "str"/"dex"/"con"/"int"/"wis"/"cha") rolled at cast time — the
+# hexed target has Disadvantage on any Enemy.resist_check_detailed() call whose own stat matches
+# it (this codebase's "all defensive rolls are checks" convention means this covers both real
+# ability checks AND saving throws, a deliberate approximation — see scripts/entities/CLAUDE.md's
+# "Warlock class" → Hex section). `hex_free_recast_pending`: if the hexed target dies while
+# Concentration is still active, the caster's NEXT Hex cast is free (no slot spent) — consumed the
+# instant that next cast happens, cleared otherwise only by... nothing else, it persists until
+# used (RAW has no expiry on this). Deliberately NOT serialized, same precedent as
+# witch_bolt_target/witch_bolt_turns above.
+var hex_target: Enemy = null
+var hex_turns: int = 0
+var hex_ability: String = ""
+var hex_free_recast_pending: bool = false
 
 # Longstrider (Wood Elf lineage spell, level 3) — NOT Concentration (5e RAW). +1/3 movement speed
 # via the same duty-cycle mechanism as Wood Elf's 35ft speed / Goliath's Large Form (Player.

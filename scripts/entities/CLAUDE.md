@@ -2417,7 +2417,7 @@ fallback (a long rest also grants everything a short rest would).
 **Spell list** (`SpellDb.WARLOCK_SPELL_IDS`, real 5e 2024 Warlock overlap with the shared
 `SpellDb` pool — all genuinely on Warlock's actual class list, no reflavoring): `witch_bolt`,
 `expeditious_retreat`, `darkness`, `hold_person`, `invisibility`, `misty_step`,
-`ray_of_enfeeblement`, `hideous_laughter`, `hellish_rebuke` — the first 7 already existed as Wizard
+`ray_of_enfeeblement`, `hideous_laughter`, `hellish_rebuke`, `hex` — the first 7 already existed as Wizard
 entries, zero new spell content needed; **Hellish Rebuke** was promoted from a Tiefling-legacy-only
 grant to a real, independently-learnable entry (`class_list = ["WARLOCK"]`, deliberately NOT also
 in `LEVELED_SPELL_IDS`/Wizard's own list — real 5e/2024 Hellish Rebuke is Warlock-only) — see its
@@ -2425,7 +2425,10 @@ own bullet further down for the mechanism, which is identical either way it's ac
 toggle-armed reaction, not a normal on-demand cast — `_build_spell_ability()` special-cases
 `spell_id == "hellish_rebuke"` to build the toggle ability regardless of the acquisition path); a
 Tiefling of any class still gets it free via Fiendish Legacy too, same "two independent paths to
-the same spell" pattern every other promoted lineage/legacy spell in this codebase uses; **Tasha's
+the same spell" pattern every other promoted lineage/legacy spell in this codebase uses;
+**Hex** (`class_list = ["WARLOCK"]` only — real 5e/2024 Hex has no Wizard/Sorcerer access either)
+is a genuinely new 1st-level Enchantment/AUTO_HIT/ENEMY spell — see its own "Hex" section further
+down for the full curse/bonus-damage/disadvantage/free-recast-on-kill mechanism; **Tasha's
 Hideous Laughter** (`class_list = ["WARLOCK", "WIZARD"]`,
 also real on Bard's list — not listed there since Bard isn't a playable class) is a genuinely new
 1st-level Enchantment/SAVE/WIS spell, 2-tile range, Concentration up to 10 turns: a failed save
@@ -2576,6 +2579,70 @@ of Enfeeblement — all four genuinely have no "At Higher Levels" text in real 5
 their `Spell` entries simply leave every upcast field at its `0` default; a Warlock upcasting one
 of these still gets the automatic Pact Magic slot-level bump (nothing wasted — the higher slot is
 still spent), just no extra mechanical effect from it, matching RAW exactly.
+
+### Hex
+
+Real Warlock-only 1st-level Enchantment (`SpellDb._hex()`, `class_list = ["WARLOCK"]`, never added
+to `LEVELED_SPELL_IDS`/Wizard's own class list — same "each spell's actual RAW class list matters"
+discipline as Hellish Rebuke). `resolution = AUTO_HIT`, `target_kind = ENEMY` — the ONE leveled
+spell besides Magic Missile with this shape, and unlike Magic Missile it's genuinely single-target
+(no multi-target collection flow), so `PlayerSpellcasting.try_cast_at()`'s `ENEMY` dispatch gained
+a real `Resolution.AUTO_HIT` branch (previously dead code — every AUTO_HIT ENEMY cast used to be
+Magic Missile, always intercepted earlier) routing to a new `SpellEffects.
+cast_leveled_auto_hit_at_enemy()`. **Free casting time** (RAW: bonus action) — ends via the same
+`player._reverted_this_round = true; TurnManager.revert_to_waiting()` free-action pattern Shield
+uses, instead of `player._handle_post_attack_turn()`.
+
+`SpellEffects._resolve_hex()` places the curse: sets `Stats.concentration_spell_id = "hex"`,
+`Stats.hex_target = target` (single `Enemy`, not an `Array` — no `upcast_extra_targets`, see
+below), `Stats.hex_turns = 600 + upcast_flat_amount × extra_levels` (the upcast is a **duration**
+bump, +600 turns/level — the one spell whose upcast shape is neither dice nor targets), and rolls
+`Stats.hex_ability` — one of `"str"/"dex"/"con"/"int"/"wis"/"cha"`, uniform random
+(`SpellEffects.HEX_ABILITIES`, `Rng.pick()`) — fresh on every cast, including a recast on the same
+target.
+
+Three ongoing effects while the curse holds:
+- **+1d6 Necrotic on every landed attack** — `PlayerWarlock.hex_bonus_die(enemy)`
+  (`scripts/entities/player_warlock.gd`, a new always-instantiated composition child-node, `_warlock`
+  on `player.gd`) returns a fresh `Rng.roll(6)` whenever `enemy == Stats.hex_target`, else `0`. Per
+  the spell's own "weapon, cantrip, or spell attack" text, this is wired into **every** ATTACK_ROLL
+  damage site, not just weapons like Hunter's Mark (`scripts/entities/CLAUDE.md`'s Ranger section)
+  — `player.gd._bump_attack()` (primary melee) and `_resolve_offhand_attack()` (Off-hand/Nick),
+  `PlayerRanged.ranged_attack()`, `PlayerThrowTool._throw_weapon()`, `SpellEffects.
+  _resolve_cantrip_hit()` (cantrip attack rolls — Fire Bolt, Eldritch Blast, etc.), and
+  `SpellEffects._resolve_spell_attack_bolt()` (leveled ATTACK_ROLL spells — Chromatic Orb, Witch
+  Bolt, Ray of Sickness, including Chromatic Orb's own leap re-roll). Each site follows the exact
+  "second, independent same-hit damage instance" shape the damage-stacking rule requires (own
+  `take_typed_damage()` call, own floater with a stack-index offset past whatever other bonus
+  instances already fired that hit, own `dmg:`-tagged segment folded into the SAME log line) —
+  never wired into Cleave/Opportunity Attacks, matching Hunter's Mark's own documented scope limit.
+- **Disadvantage on checks using the cursed ability** — `Enemy.resist_check_detailed()` gained a
+  `hex_disadv` term (`GameState.player_stats.hex_target == self and ...hex_ability == stat_key`),
+  netted into `disadv_sources` alongside `enfeeble_str_disadv`/`frightened_disadv` like every other
+  DISADV source in that function. Since this codebase has no separate saves-vs-checks distinction
+  (root `CLAUDE.md`: "all defensive rolls are checks"), this is a deliberate approximation that also
+  reaches SAVE-resolution spell resistance checks (Ray of Frost, Fireball, etc.) when the stat
+  matches — not just genuine ability checks (Push/Topple/Grip of the Forest) — accepted as the most
+  faithful implementation available given the engine's own unified-roll convention. Enemy attack
+  ROLLS are untouched (the spell's own "attacks don't count" carve-out) — this term only ever feeds
+  `resist_check_detailed()`, never `_resolve_attack_roll()`.
+- **Free recast on kill**: `Enemy.die()` — if the dying enemy was `Stats.hex_target`, clears the
+  reference and, if the curse's Concentration was still active, arms
+  `Stats.hex_free_recast_pending`. `SpellEffects._resolve_hex()` checks and consumes this flag
+  BEFORE the generic `_consume_slot()` chokepoint on its very next Hex cast (any target, not just
+  a re-cast on a new enemy) — no spell slot spent that time. Mirrors Hunter's Mark/Bloodhound's own
+  "target died, don't waste it" economy, just a flat free-cast instead of a re-mark. The curse's own
+  Concentration is NOT force-ended by the kill (matching Hunter's Mark's identical choice — see that
+  section) — it keeps ticking down `hex_turns` in a targetless state until it naturally expires, a
+  damage-based concentration check fails, or a different concentration spell is cast; only THOSE
+  three ways of losing the curse forfeit it for real — a kill is explicitly compensated by the free
+  recast per the spell's own design intent.
+
+`Stats.hex_target`/`hex_turns`/`hex_ability`/`hex_free_recast_pending` are all deliberately NOT
+serialized (live `Enemy` reference, same precedent as `witch_bolt_target`/`hunters_mark_target`).
+No art sourced yet (`icon_path` points at `res://icons/spells/1/hex.png`, renders blank until
+added, same precedent as Fog Cloud/False Life when they first shipped). No Scroll of Hex exists
+yet — a documented gap, not a deliberate holdout like Hellish Rebuke's reaction shape.
 
 ### Eldritch Invocations
 

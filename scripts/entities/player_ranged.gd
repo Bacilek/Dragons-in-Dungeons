@@ -210,6 +210,21 @@ func ranged_attack(enemy: Enemy) -> void:
 		if player._dungeon_floor != null:
 			player._dungeon_floor.show_damage(enemy.position, hm_actual, false, CombatMath.damage_type_color("Force"), 1)
 
+	# Hex (Warlock): second, independent Necrotic damage instance on a hit against the hexed target.
+	var hex_actual: int = 0
+	var hex_inst: Dictionary = {}
+	var hex_die: int = player._warlock.hex_bonus_die(enemy)
+	if hex_die > 0:
+		var hex_rolls: Array[int] = [hex_die]
+		hex_inst = CombatMath.build_damage_instance(hex_rolls, 6, [], is_crit, "Necrotic")
+		var hex_result: Dictionary = enemy.take_typed_damage(hex_inst["subtotal"], "Necrotic", is_crit)
+		hex_inst["final"] = hex_result["actual"]
+		hex_inst["resist_mul"] = hex_result["mul"]
+		hex_actual = hex_result["actual"]
+		enemy.update_hp_bar()
+		if player._dungeon_floor != null:
+			player._dungeon_floor.show_damage(enemy.position, hex_actual, false, CombatMath.damage_type_color("Necrotic"), 1 if hm_actual <= 0 else 2)
+
 	# Fire/Frost/Hill Giant Ancestry: same "next attack that hits" trigger melee already has —
 	# extended to ranged attacks too, see PlayerGoliath.consume_giant_ancestry_on_hit(). Skipped
 	# if this shot (or the Hunter's Mark bonus above) already killed the target — no point rolling
@@ -230,6 +245,7 @@ func ranged_attack(enemy: Enemy) -> void:
 			enemy.update_hp_bar()
 			var gol_stack_index: int = 1
 			if hm_actual > 0: gol_stack_index += 1
+			if hex_actual > 0: gol_stack_index += 1
 			if player._dungeon_floor != null:
 				player._dungeon_floor.show_damage(enemy.position, gol_actual, false, CombatMath.damage_type_color(gol_type), gol_stack_index)
 			player._goliath.finish_giant_ancestry_bonus_damage()
@@ -245,6 +261,9 @@ func ranged_attack(enemy: Enemy) -> void:
 	if hm_actual > 0:
 		var hm_meta: String = CombatMath.encode_damage_instance(hm_inst)
 		r_dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Force[/color]" % [hm_meta, hm_actual]
+	if hex_actual > 0:
+		var hex_meta: String = CombatMath.encode_damage_instance(hex_inst)
+		r_dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]Necrotic[/color]" % [hex_meta, hex_actual]
 	if gol_actual > 0:
 		var gol_meta: String = CombatMath.encode_damage_instance(gol_inst)
 		r_dmg_segment += " and [url=%s][color=yellow]%d[/color][/url] [color=gray]%s[/color]" % [gol_meta, gol_actual, gol_type]

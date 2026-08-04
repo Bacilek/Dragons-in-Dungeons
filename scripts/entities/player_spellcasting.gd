@@ -335,10 +335,11 @@ func try_cast_at(clicked: Vector2i) -> void:
 		Spell.TargetKind.TILE:
 			await SpellEffects.cast_leveled_at_tile(player, spell, lvl, clicked, player._dungeon_floor, from_scroll)
 		Spell.TargetKind.ENEMY:
-			# Magic Missile (the only AUTO_HIT ENEMY-target leveled spell) is intercepted earlier
-			# via _begin_multi_target() before it ever reaches this dispatch — so every spell that
-			# actually resolves here is ATTACK_ROLL (Chromatic Orb/Witch Bolt/Ray of Sickness/Ray of
-			# Enfeeblement) or SAVE (Hold Person/Hellish Rebuke — Tiefling Fiendish Legacy grants).
+			# Magic Missile (still AUTO_HIT) is intercepted earlier via _begin_multi_target() before
+			# it ever reaches this dispatch. Hex is also AUTO_HIT + ENEMY but single-target (no
+			# multi-target flow), so it needs its own branch here — every other spell resolving here
+			# is ATTACK_ROLL (Chromatic Orb/Witch Bolt/Ray of Sickness/Ray of Enfeeblement) or SAVE
+			# (Hold Person/Hideous Laughter/Hellish Rebuke).
 			var target: Enemy = player._dungeon_floor.get_targetable_enemy_at(clicked)
 			if target == null:
 				GameState.game_log("[color=gray]%s needs a target.[/color]" % spell.spell_name)
@@ -346,6 +347,8 @@ func try_cast_at(clicked: Vector2i) -> void:
 				await SpellEffects.cast_leveled_attack_at_enemy(player, spell, lvl, target, player._dungeon_floor, from_scroll)
 			elif spell.resolution == Spell.Resolution.SAVE:
 				await SpellEffects.cast_leveled_save_at_enemy(player, spell, lvl, target, player._dungeon_floor, from_scroll)
+			elif spell.resolution == Spell.Resolution.AUTO_HIT:
+				await SpellEffects.cast_leveled_auto_hit_at_enemy(player, spell, lvl, target, player._dungeon_floor, from_scroll)
 		_:
 			pass
 
