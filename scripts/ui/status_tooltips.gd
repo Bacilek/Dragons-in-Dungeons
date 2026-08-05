@@ -25,6 +25,7 @@ const TITLES: Dictionary = {
 	"weapon_mastery": "Weapon Masteries",
 	"blinded": "Blinded",
 	"frightened": "Frightened",
+	"risen_from_dead": "Risen from the Dead",
 }
 
 static func get_text(id: String) -> String:
@@ -52,6 +53,8 @@ static func get_text(id: String) -> String:
 			return "Battlefield Expert: your next attack this turn is made with Advantage."
 		"psycho_adv":
 			return "Psycho: your next attack this turn is made with Advantage."
+		"risen_from_dead":
+			return "You just cheated death. Completely invulnerable to all damage until your next turn begins."
 		"concentration":
 			return "You can only concentrate on one spell at a time — casting another concentration spell ends this one immediately, and taking damage forces a CON check to keep it up."
 		"torch":

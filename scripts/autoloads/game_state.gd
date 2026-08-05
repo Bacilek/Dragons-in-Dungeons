@@ -92,6 +92,12 @@ var is_game_over: bool = false
 var is_dying: bool = false
 var death_save_successes: int = 0
 var death_save_failures: int = 0
+# "Risen from the Dead" buff: granted on a successful death-save revive. Total invulnerability
+# (no damage from ANY source — attacks, OAs, status ticks, traps, even self-inflicted) through the
+# rest of the round the player revives into plus the following enemy round, clearing the instant
+# the player's NEXT real round begins — cleared from player.gd's _on_turn_started() (see that
+# file's own comment). Not serialized — combat-transient, same tier as is_raging.
+var risen_from_dead_active: bool = false
 var inventory_open: bool = false
 var class_selected: bool = false
 # Custom character-creation Back-navigation state (scripts/ui/CLAUDE.md's "Custom character
@@ -2127,6 +2133,9 @@ func _end_death_save_sequence(revived: bool) -> void:
 		player_stats.current_hp = 1
 		player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 		game_log("[color=lime]You cling to life and rise with 1 HP![/color]")
+		risen_from_dead_active = true
+		game_log("[color=cyan]Risen from the Dead: you are invulnerable until your next turn![/color]")
+		player_status_changed.emit()
 	else:
 		is_game_over = true
 		AudioManager.play("player_die")
@@ -3035,7 +3044,7 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 	const ELEMENTAL_TYPES: Array = ["Fire", "Cold", "Lightning", "Thunder", "Acid", "Poison"]
 	const MAGICAL_TYPES: Array = ["Radiant", "Necrotic", "Force"]
 	var is_physical: bool = damage_type in PHYSICAL_TYPES
-	if invincible:
+	if invincible or risen_from_dead_active:
 		# Skip the actual HP change, but still register "the player was hit this turn" so
 		# god-mode play doesn't silently break turn-based triggers that key off it (e.g.
 		# Battlefield Expert R3's free Side Step charge — see player_base_talents.gd).

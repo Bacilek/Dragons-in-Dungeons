@@ -258,6 +258,12 @@ func _on_turn_started() -> void:
 	# Per-round caps only reset on REAL turns (after enemies resolve).
 	# On reverted turns, Eagle's free-move flag persists so it can't fire again this round.
 	if not came_from_revert:
+		# Risen from the Dead (see GameState.risen_from_dead_active's own comment): protects the
+		# revive round itself plus the enemy round right after it, then clears the instant the
+		# FOLLOWING real player round begins — this is exactly that clear point.
+		if GameState.risen_from_dead_active:
+			GameState.risen_from_dead_active = false
+			GameState.player_status_changed.emit()
 		_eagle_free_move_used = false
 		_grip_used_this_turn = false
 		_vex_adv_target = null

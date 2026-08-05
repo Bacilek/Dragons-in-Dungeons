@@ -1834,6 +1834,40 @@ func show_damage(world_pos: Vector2, amount: int, is_player_hit: bool, color_ove
 	tw.parallel().tween_property(lbl, "modulate:a", 0.0, 0.9)
 	tw.tween_callback(lbl.queue_free)
 
+## Spell-impact particle effects (`sprites/vfx/`) — a one-shot animated burst played at a world
+## position, then freed. Frame sheets are laid out as a single row of `VFX_FRAME_SIZE`-square
+## frames; `target_px` is the desired on-screen footprint (native frames are much larger than a
+## 16px tile, so this always scales down). Fire-and-forget: callers don't await this.
+const VFX_PATH: String = "res://sprites/vfx/"
+const VFX_FRAME_SIZE: int = 192
+
+func play_impact_vfx(world_pos: Vector2, kind: String, target_px: float = 32.0) -> void:
+	var path: String = VFX_PATH + kind + ".png"
+	if not ResourceLoader.exists(path):
+		return
+	var tex: Texture2D = load(path)
+	var frame_count: int = int(tex.get_width() / VFX_FRAME_SIZE)
+	if frame_count <= 0:
+		return
+	var frames := SpriteFrames.new()
+	frames.add_animation("play")
+	frames.set_animation_loop("play", false)
+	frames.set_animation_speed("play", 24.0)
+	for i: int in frame_count:
+		var atlas := AtlasTexture.new()
+		atlas.atlas = tex
+		atlas.region = Rect2(i * VFX_FRAME_SIZE, 0, VFX_FRAME_SIZE, VFX_FRAME_SIZE)
+		frames.add_frame("play", atlas)
+	var sprite := AnimatedSprite2D.new()
+	sprite.sprite_frames = frames
+	sprite.position = world_pos
+	sprite.z_index = 5
+	sprite.scale = Vector2.ONE * (target_px / float(VFX_FRAME_SIZE))
+	$Entities.add_child(sprite)
+	sprite.play("play")
+	await sprite.animation_finished
+	sprite.queue_free()
+
 func get_visible_enemies() -> Array[Enemy]:
 	var result: Array[Enemy] = []
 	if _player == null:
@@ -2687,6 +2721,9 @@ func _apply_trap_damage(entity: Node2D, damage: int, msg: String) -> void:
 		if GameState.invincible:
 			GameState.game_log("[color=red]%s[/color] [color=gray](invincible)[/color]" % msg)
 			return
+		if GameState.risen_from_dead_active:
+			GameState.game_log("[color=red]%s[/color] [color=cyan](Risen from the Dead)[/color]" % msg)
+			return
 		var actual: int = GameState.player_stats.take_damage(damage)
 		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 		GameState.game_log("[color=red]%s[/color] You take [color=yellow]%d[/color] damage!" % [msg, actual])
@@ -2755,6 +2792,9 @@ func force_move_entity(entity: Node2D, direction: Vector2i, max_distance: int, d
 		push_dmg += 4
 	var wall_str: String = " into a wall" if hit_wall else ""
 	if entity is Player:
+		if GameState.risen_from_dead_active:
+			GameState.game_log("[color=cyan]You are blasted%s but shrug it off (Risen from the Dead).[/color]" % wall_str)
+			return tiles_moved
 		var actual: int = GameState.player_stats.take_damage(push_dmg)
 		GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 		GameState.game_log("[color=red]You are blasted%s for [color=yellow]%d[/color] damage![/color]" % [wall_str, actual])

@@ -353,6 +353,23 @@ instead of instant death:
   `player_died.emit()` tail `check_player_death()` used to run directly (not revived — the normal
   Game Over flow, `SaveManager`'s permadeath delete-on-`player_died` hook included, fires
   unchanged).
+- **"Risen from the Dead" buff (revived branch only)**: `GameState.risen_from_dead_active = true` —
+  total invulnerability (no damage from ANY source: melee/ranged/spell attacks, Opportunity
+  Attacks, status-tick DoT, traps, forced-movement wall-slam, even self-inflicted damage like a
+  Fireball catching the caster) through the rest of the round the player revives into plus the
+  following enemy round, clearing the instant the player's NEXT real round begins.
+  `GameState.take_damage_raw()` gates on it exactly like `invincible` (early-return before
+  `Stats.take_damage()`, still flips `player_was_hit_this_turn` for turn-based triggers) — this
+  alone covers every attack/OA/self-damage/status-tick path, since they all funnel through that one
+  chokepoint. The two `dungeon_floor.gd` functions that bypass it entirely (`_apply_trap_damage()`,
+  `force_move_entity()`'s wall-slam damage) each carry their own explicit gate. Cleared from
+  `player.gd`'s `_on_turn_started()`, inside the `if not came_from_revert:` block — the flag is set
+  AFTER the current WAITING_FOR_INPUT round's own `player_turn_started` already fired (death-save
+  revival always completes asynchronously, well after `TurnManager` already flipped back to
+  WAITING_FOR_INPUT the instant `is_dying` was seen), so the very next real `_on_turn_started()`
+  firing genuinely IS "the round after the protected one" and is the correct clear point — not
+  serialized, combat-transient like `is_raging`. Status-tray icon `"risen_from_dead"`
+  (`hud.gd`/`status_tooltips.gd`).
 - **Signals** (`death_save_started`/`death_save_rolled(die, result, successes, failures)`/
   `death_save_finished(revived)`) are the only three GameState exposes for this — `scripts/ui/
   death_save_overlay.gd` (`hud.gd._on_death_save_started()` spawns it, no `.tscn`, built in code
