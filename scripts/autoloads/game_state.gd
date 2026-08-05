@@ -2050,6 +2050,11 @@ func is_ability_usable(ab: Ability) -> bool:
 			return hit_dice > 0
 		"grip_of_the_forest":
 			return is_raging
+		"hunters_mark":
+			# Bonus-action cooldown (Stats.hunters_mark_cast_this_round) — see
+			# player_ranger_talents.gd's commit_mark(). Greys the slot for the round, matching
+			# Frenzy's own cooldown-greying treatment.
+			return not player_stats.hunters_mark_cast_this_round
 		"draconic_flight":
 			return player_stats.character_level >= 5 and not player_stats.draconic_flight_used
 		"hellish_rebuke_toggle":

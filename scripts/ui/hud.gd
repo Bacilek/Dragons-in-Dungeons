@@ -898,11 +898,16 @@ func _refresh_ability_bar() -> void:
 			var frenzy_cooldown_turns: int = -1
 			if ab.ability_id == "frenzy" and GameState.berserker_frenzy_used and GameState.get_talent_rank("frenzied_killer") >= 3:
 				frenzy_cooldown_turns = maxi(0, 3 - GameState.berserker_turns_since_frenzy)
+			# Hunter's Mark's own one-cast-per-round cooldown (5e: bonus action) — same big-number
+			# countdown treatment as Frenzy's above, since it's the same "can't use this again yet"
+			# shape: 1 turn left until it clears (it's a flat 1-round cooldown, never counts past 1).
+			if ab.ability_id == "hunters_mark" and GameState.player_stats.hunters_mark_cast_this_round:
+				frenzy_cooldown_turns = 1
 			if _slot_use_labels.size() > i:
 				var use_lbl: Label = _slot_use_labels[i]
 				use_lbl.visible = true
 				if frenzy_cooldown_turns >= 0:
-					# Frenzied Killer R3: visible countdown until Frenzy auto-refreshes.
+					# Frenzied Killer R3 / Hunter's Mark: visible countdown until usable again.
 					use_lbl.text = "%dt" % frenzy_cooldown_turns
 					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
 				elif ab.ability_id == "hunters_mark":
