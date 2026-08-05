@@ -10,11 +10,17 @@ extends CanvasLayer
 # invocation_picker.gd (direct owner request — make mastery picks "more roguelike" the same way).
 #
 # **Swap mode** (known == cap — the long-rest hub's "Weapon Masteries" option,
-# mastery_reselect_prompt.gd): a grid of the player's OWN known masteries; click one to give it up,
-# GameState.reroll_mastery() immediately rolls ONE random unknown replacement (no choice over what
-# you get — the roguelike risk/reward beat), an in-panel "Lost X -> Gained Y" reveal line appears
-# (blacksmith_panel.gd's own in-place-refresh-and-reveal convention, not a separate screen), and the
-# tile grid refreshes so the player can keep swapping or stop via Esc/Done.
+# mastery_reselect_prompt.gd): TWO steps, tracked by `_swap_step`.
+#   1. "discard" — a grid of the player's OWN known masteries; Done/Esc both work here since
+#      nothing's been given up yet. Clicking one calls GameState.discard_mastery(name), which just
+#      removes it, then advances to step 2.
+#   2. "pick" — a mandatory "pick 1 of 3" round (same tile shape as Learn mode, Esc/Done swallowed
+#      — once you've given up a mastery you must pick its replacement) drawn from every mastery
+#      that's neither the one just discarded nor still known. Clicking one calls
+#      GameState.toggle_mastery(new_name) (the "add" branch — always legal here, since discarding
+#      first guarantees known.size() < cap). An in-panel "Lost X -> Gained Y" reveal line appears
+#      (blacksmith_panel.gd's own in-place-refresh-and-reveal convention, not a separate screen),
+#      then the picker returns to step 1 so the player can keep swapping or stop via Esc/Done.
 #
 # character_creation_mode (set on the instance before add_child, default false): this is the
 # POST-SPAWN onboarding pick — spawned by character_summary.gd's "Yes, I'm Ready!" once the
@@ -50,9 +56,14 @@ var _panel: Panel
 var _tooltip: Panel
 var _tooltip_rtl: RichTextLabel
 var _mode: String = ""          # "learn" or "swap", decided once in _ready()
-var _tile_row: Array[Control] = []       # Swap mode's tile row — rebuilt in place after a swap
 var _reveal_rtl: RichTextLabel
 var _hover_source_rect: Rect2 = Rect2()   # last-shown tile's global rect, for _process()'s hover-chain check
+
+# Swap mode's two steps — see header comment above.
+var _swap_step: String = "discard"       # "discard" or "pick"
+var _swap_discarded: String = ""         # the mastery just given up, excluded from the pick pool
+var _swap_candidates: Array[String] = [] # rolled once on entering "pick", stays fixed for that round
+var _last_reveal_text: String = ""       # "Lost X -> Gained Y" line, persists across the two steps
 
 func _ready() -> void:
 	layer = 25
@@ -79,7 +90,6 @@ func _build_ui() -> void:
 	_tooltip = null
 	_tooltip_rtl = null
 	_reveal_rtl = null
-	_tile_row.clear()
 
 	var dim := ColorRect.new()
 	dim.color = Color(0.0, 0.0, 0.0, 0.55)
@@ -179,6 +189,12 @@ func _finish_learn() -> void:
 # ── Swap mode ───────────────────────────────────────────────────────────────────────────────
 
 func _build_swap_ui() -> void:
+	if _swap_step == "discard":
+		_build_swap_discard_ui()
+	else:
+		_build_swap_pick_ui()
+
+func _build_swap_discard_ui() -> void:
 	var vp := get_viewport().get_visible_rect().size
 	var known: Array[String] = GameState.player_stats.known_weapon_masteries
 	var cols: int = mini(COLS, maxi(1, known.size()))
@@ -204,7 +220,7 @@ func _build_swap_ui() -> void:
 	_panel.add_child(done_btn)
 
 	var hint := Label.new()
-	hint.text = "Pick one to give up — you'll gain a random new one in return. This can't be undone. Hover a tile for details."
+	hint.text = "Pick one to give up — you'll then choose its replacement from 3 random options. Hover a tile for details."
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.add_theme_color_override("font_color", Color(0.65, 0.65, 0.70))
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -218,7 +234,11 @@ func _build_swap_ui() -> void:
 	_panel.add_child(sep)
 
 	var y0: float = 110.0
-	_build_swap_tile_row(y0, cols)
+	for i: int in known.size():
+		var col: int = i % cols
+		var row: int = i / cols
+		var pos := Vector2(MARGIN + col * (TILE_SIZE + TILE_GAP), y0 + row * (TILE_SIZE + TILE_GAP))
+		_build_tile(known[i], pos, _on_swap_discard_chosen)
 
 	_reveal_rtl = RichTextLabel.new()
 	_reveal_rtl.bbcode_enabled = true
@@ -226,6 +246,7 @@ func _build_swap_ui() -> void:
 	_reveal_rtl.scroll_active = false
 	_reveal_rtl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_reveal_rtl.add_theme_font_size_override("normal_font_size", 15)
+	_reveal_rtl.text = _last_reveal_text
 	_reveal_rtl.position = Vector2(MARGIN, y0 + rows * (TILE_SIZE + TILE_GAP))
 	_reveal_rtl.size = Vector2(panel_w - MARGIN * 2.0, 30.0)
 	_panel.add_child(_reveal_rtl)
@@ -234,28 +255,61 @@ func _build_swap_ui() -> void:
 	_panel.size = Vector2(panel_w, panel_h)
 	_panel.position = Vector2((vp.x - panel_w) * 0.5, (vp.y - panel_h) * 0.5)
 
-func _build_swap_tile_row(y0: float, cols: int) -> void:
-	for t: Control in _tile_row:
-		t.visible = false
-		t.queue_free()
-	_tile_row.clear()
-	var known: Array[String] = GameState.player_stats.known_weapon_masteries
-	for i: int in known.size():
-		var col: int = i % cols
-		var row: int = i / cols
-		var pos := Vector2(MARGIN + col * (TILE_SIZE + TILE_GAP), y0 + row * (TILE_SIZE + TILE_GAP))
-		_tile_row.append(_build_tile(known[i], pos, _on_discard))
+func _on_swap_discard_chosen(name: String) -> void:
+	GameState.discard_mastery(name)
+	_swap_discarded = name
+	var pool: Array[String] = []
+	for m: String in Stats.ALL_WEAPON_MASTERIES:
+		if m != name and not GameState.player_stats.known_weapon_masteries.has(m):
+			pool.append(m)
+	Rng.shuffle(pool)
+	_swap_candidates = pool.slice(0, mini(COLS, pool.size()))
+	_swap_step = "pick"
+	_build_ui()
 
-func _on_discard(name: String) -> void:
-	var new_name: String = GameState.reroll_mastery(name)
-	if new_name == "":
-		return
-	_hide_tooltip()   # the tile that was just hovered/clicked is about to be freed below
-	_reveal_rtl.text = "[color=#e05050]Lost %s[/color] → [color=#f2c94c]Gained %s![/color]" % [name, new_name]
-	var known: Array[String] = GameState.player_stats.known_weapon_masteries
-	var cols: int = mini(COLS, maxi(1, known.size()))
+func _build_swap_pick_ui() -> void:
+	var vp := get_viewport().get_visible_rect().size
+	var cols: int = mini(COLS, maxi(1, _swap_candidates.size()))
+	var panel_w: float = MARGIN * 2.0 + cols * TILE_SIZE + (cols - 1) * TILE_GAP
+
+	var title := Label.new()
+	title.text = "Choose a Replacement"
+	title.add_theme_font_size_override("font_size", 26)
+	title.add_theme_color_override("font_color", Color(1.0, 0.82, 0.22))
+	title.position = Vector2(MARGIN, 16.0)
+	title.size = Vector2(panel_w - MARGIN * 2.0, 36.0)
+	_panel.add_child(title)
+
+	var hint := Label.new()
+	hint.text = "This choice is permanent. Hover a tile for details."
+	hint.add_theme_font_size_override("font_size", 14)
+	hint.add_theme_color_override("font_color", Color(0.65, 0.65, 0.70))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.position = Vector2(MARGIN, 56.0)
+	hint.size = Vector2(panel_w - MARGIN * 2.0, 28.0)
+	_panel.add_child(hint)
+
+	var sep := HSeparator.new()
+	sep.position = Vector2(12.0, 96.0)
+	sep.size = Vector2(panel_w - 24.0, 2.0)
+	_panel.add_child(sep)
+
 	var y0: float = 110.0
-	_build_swap_tile_row(y0, cols)
+	for i: int in _swap_candidates.size():
+		var col: int = i % cols
+		var pos := Vector2(MARGIN + col * (TILE_SIZE + TILE_GAP), y0)
+		_build_tile(_swap_candidates[i], pos, _on_swap_pick_chosen)
+
+	var panel_h: float = y0 + TILE_SIZE + 28.0
+	_panel.size = Vector2(panel_w, panel_h)
+	_panel.position = Vector2((vp.x - panel_w) * 0.5, (vp.y - panel_h) * 0.5)
+
+func _on_swap_pick_chosen(new_name: String) -> void:
+	GameState.toggle_mastery(new_name)
+	_last_reveal_text = "[color=#e05050]Lost %s[/color] → [color=#f2c94c]Gained %s![/color]" % [_swap_discarded, new_name]
+	_swap_discarded = ""
+	_swap_step = "discard"
+	_build_ui()
 
 func _close() -> void:
 	GameState.mastery_picker_open = false
@@ -354,10 +408,6 @@ func _show_tooltip(text: String, tile: Control) -> void:
 		ty = _hover_source_rect.position.y + _hover_source_rect.size.y + 8.0
 	_tooltip.position = Vector2(tx, ty)
 
-func _hide_tooltip() -> void:
-	if _tooltip != null:
-		_tooltip.visible = false
-
 ## Hiding is driven entirely by this per-frame hover-chain check, not mouse_exited — a tile's own
 ## mouse_exited fires the instant the cursor leaves it, even when heading straight up INTO the
 ## tooltip that sits just above it, which used to make the popup disappear before the mouse could
@@ -386,8 +436,10 @@ func _style_btn(btn: Button, bg: Color, border: Color) -> void:
 	btn.add_theme_stylebox_override("hover", hover)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _mode == "learn":
+	if _mode == "learn" or (_mode == "swap" and _swap_step == "pick"):
 		# Mandatory round, same as every spell-pick picker — swallow all key input, no Esc close.
+		# (Swap mode's "pick" step is just as mandatory as Learn mode: once a mastery's been given
+		# up, its replacement must be chosen — no bailing out mid-swap.)
 		if event is InputEventKey:
 			get_viewport().set_input_as_handled()
 		return

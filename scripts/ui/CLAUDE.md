@@ -880,13 +880,23 @@ above:
   (guaranteed the "add" branch — under cap, not already known) and either rebuilds for the next
   round or, once `known.size() >= cap()`, calls `_finish_learn()`.
 - **Swap mode** (`known == cap` — reached only from the long-rest hub's "Weapon Masteries" option,
-  `mastery_reselect_prompt.gd`): a grid of the player's OWN known masteries; clicking one calls
-  `GameState.reroll_mastery(old_name)`, which immediately removes it and rolls ONE random
-  *unknown* replacement — **no choice over what you get**, the deliberate risk/reward beat. An
-  in-panel "Lost X → Gained Y" reveal line appears and the tile grid refreshes in place
-  (`blacksmith_panel.gd`'s own in-place-refresh-and-reveal convention, not a separate screen/
-  confirmation step) so the player can keep swapping or stop via Esc/the always-visible "Done"
-  button — nothing is spent by opening the picker or hovering, only by an actual tile click.
+  `mastery_reselect_prompt.gd`): **two steps**, tracked by `_swap_step` (`"discard"`/`"pick"`) —
+  reworked from an earlier "click one, get one random replacement" design that a direct owner
+  correction called out as conceptually broken (an unlimited-use blind reroll, since nothing
+  actually stopped repeating it). **Step 1 ("discard")**: a grid of the player's OWN known
+  masteries, plus the always-visible "Done"/Esc — nothing is spent by opening the picker or just
+  looking. Clicking one calls `GameState.discard_mastery(old_name)` (removes it, no replacement
+  rolled yet) and advances to step 2. **Step 2 ("pick")**: a mandatory "pick 1 of 3" tile round —
+  same shape/mechanism as Learn mode (`Rng.shuffle()`, no skip, Esc swallowed by
+  `_unhandled_input()`'s `_swap_step == "pick"` branch) — drawn from every mastery that is neither
+  the one just discarded nor still known, so the discarded mastery can never reappear as its own
+  replacement and an already-known one can never be picked twice. Clicking a candidate calls
+  `GameState.toggle_mastery(new_name)` (always the "add" branch here, since discarding first
+  guarantees `known.size() < cap()`), shows an in-panel "Lost X → Gained Y" reveal line
+  (`blacksmith_panel.gd`'s own reveal-line convention; `_last_reveal_text` persists it across the
+  full `_build_ui()` rebuild back to step 1, since — unlike the old design — every step transition
+  now tears down and rebuilds the whole panel rather than patching one tile row in place), and
+  returns to step 1 so the player can keep swapping or stop via Done/Esc.
 
 Both modes share one `_build_tile(name, pos, on_click)` (icon + name label, hover → the same
 styled BBCode tooltip popup anchored above the tile as the spell pickers use — `MASTERY_DESCRIPTIONS`
