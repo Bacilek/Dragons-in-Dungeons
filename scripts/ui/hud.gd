@@ -907,8 +907,10 @@ func _refresh_ability_bar() -> void:
 				var use_lbl: Label = _slot_use_labels[i]
 				use_lbl.visible = true
 				if frenzy_cooldown_turns >= 0:
-					# Frenzied Killer R3 / Hunter's Mark: visible countdown until usable again.
-					use_lbl.text = "%dt" % frenzy_cooldown_turns
+					# Frenzied Killer R3: visible countdown until Frenzy auto-refreshes. Hunter's
+					# Mark's own cooldown shows just the bare number, no "t" suffix (direct owner
+					# request) — it's always exactly 1, so the unit would be redundant noise.
+					use_lbl.text = "%d" % frenzy_cooldown_turns if ab.ability_id == "hunters_mark" else "%dt" % frenzy_cooldown_turns
 					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
 				elif ab.ability_id == "hunters_mark":
 					# Uses live on Stats.hunters_mark_uses_remaining, not the Ability itself
