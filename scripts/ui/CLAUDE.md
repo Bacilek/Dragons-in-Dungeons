@@ -132,7 +132,9 @@ frame; see `scripts/entities/CLAUDE.md`'s "Status effects" section), `raging` (`
 `unarmored_defense` (Barbarian/Monk with no armor equipped — reads the live AC formula),
 `tactician` (`GameState.battlefield_adv_pending`, Battlefield Expert R1's pending-Advantage
 window — see `scripts/entities/CLAUDE.md`'s Barbarian Tier 1 talents), `psycho_adv`
-(`GameState.psycho_adv_pending`, Psycho's identical pending-Advantage window), `concentration`
+(`GameState.psycho_adv_pending`, Psycho's identical pending-Advantage window), `hunters_mark_free_recast` (`Stats.hunters_mark_free_recast_available` — Ranger's Hunter's Mark
+death-triggered free-recast window, see `scripts/entities/CLAUDE.md`'s "Ranger class" section;
+icon reuses the ability's own `GameState.talent_icon_path("hunters_mark", 1)`), `concentration`
 (`Stats.concentration_spell_id != ""` — icon is that spell's OWN `SpellDb.get_spell(id).icon_path`,
 not a fixed art asset, since it must reflect whichever of Blade Ward/Witch Bolt/Expeditious
 Retreat/Fog Cloud is actually active; `StatusTooltips.build_bbcode("concentration")`

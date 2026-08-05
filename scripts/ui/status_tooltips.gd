@@ -15,6 +15,7 @@ const TITLES: Dictionary = {
 	"unarmored_defense": "Unarmored Defense",
 	"tactician": "Tactician",
 	"psycho_adv": "Psycho",
+	"hunters_mark_free_recast": "Hunter's Mark: Free Re-mark",
 	"torch": "Torch Lit",
 	"longstrider": "Longstrider",
 	"faerie_fire_outlined": "Outlined (Faerie Fire)",
@@ -53,6 +54,8 @@ static func get_text(id: String) -> String:
 			return "Battlefield Expert: your next attack this turn is made with Advantage."
 		"psycho_adv":
 			return "Psycho: your next attack this turn is made with Advantage."
+		"hunters_mark_free_recast":
+			return "Your quarry has fallen — mark a new target this turn for free (no use or spell slot spent). Expires the moment you start your next turn without using it."
 		"risen_from_dead":
 			return "You just cheated death. Completely invulnerable to all damage until your next turn begins."
 		"concentration":
