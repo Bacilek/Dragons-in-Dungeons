@@ -2290,14 +2290,32 @@ one real free case). **Once free uses run out**, marking a new target automatica
 1st-level Ranger spell slot instead (Hunter's Mark is a real 1st-level spell in 5e —
 `commit_mark()` checks `Stats.caster.slot_pool.remaining.get(1, 0)` directly and calls
 `slot_pool.consume(1)`, same as any other leveled-spell cast); with neither a free use nor a slot
-available, marking is blocked with a chat-log message. **Free re-mark on kill**: if the Marked
+available, marking is blocked with a chat-log message. **One cast per round**: `Stats.
+hunters_mark_cast_this_round` — set the instant `commit_mark()` actually resolves a mark (any
+resource: free use, spell slot, or the free-recast window below), refuses a second cast with a gray
+log line while set, cleared every real round in `player.gd._on_turn_started()`'s
+`if not came_from_revert:` block — matches 5e's own "Hunter's Mark is a bonus action, only one per
+turn" rule (direct owner correction; nothing previously stopped spamming re-marks within the same
+round, since casting itself never costs a turn). **The Marked target dying ALWAYS ends Hunter's
+Mark's concentration immediately** (`stats.hunters_mark_turns = 0`, `concentration_spell_id = ""`
+— it used to just null the target and otherwise decay naturally over the rest of
+`hunters_mark_turns`, direct owner correction). **Free re-mark on kill**: in exchange, if the Marked
 target dies while Concentration is still active, `PlayerRangerTalents.try_bloodhound_remark()`
 (called unconditionally from `Enemy.die()`, not just for Bloodhound) arms
 `Stats.hunters_mark_free_recast_pending` — the following `_on_turn_started()` promotes it to
 `hunters_mark_free_recast_available` for exactly that one real turn (consumed for free by
 `commit_mark()` if used, otherwise cleared as expired at the NEXT `_on_turn_started()`) — "next
 turn only, never later" per direct owner spec. Bloodhound R3 (see below) supersedes this baseline
-entirely: it re-marks the nearest visible enemy instantly instead of arming the window. **Not yet
+entirely: it re-marks the nearest visible enemy instantly instead of arming the window — its own
+re-mark now also restarts `hunters_mark_turns`/`concentration_spell_id` to a genuine fresh cast
+(bugfix: it used to leave both cleared/at-zero from the death above, so the "instant re-mark" was
+mechanically already-expired concentration). **UI staleness bugfix**: `commit_mark()` and
+`try_bloodhound_remark()` now explicitly emit `GameState.ability_bar_changed` after mutating
+`hunters_mark_uses_remaining`/the free-recast flags — neither used to emit anything on the
+free-use-spent path, so the ability-bar use-count badge only visibly updated whenever some
+unrelated action happened to trigger a HUD refresh, which read as "uses only decrement at the end
+of the round" and let the spell-slots row (which DOES emit its own `spell_slots_changed` on the
+slot-fallback path) appear to update before the uses badge did. **Not yet
 implemented**: the 5e "Advantage on a Wisdom (Perception/Survival) check to find the Marked
 target" clause — this codebase has no player-side "find a creature" WIS-check mechanic to hook it
 into (`player_actions.gd`'s `search_action()` is for traps/secret doors and already always rolls

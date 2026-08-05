@@ -39,6 +39,9 @@ func commit_mark(enemy: Enemy) -> void:
 	if dist_sq > Stats.HUNTERS_MARK_RANGE * Stats.HUNTERS_MARK_RANGE:
 		GameState.game_log("[color=gray]Hunter's Mark: target is out of range (%d tiles).[/color]" % Stats.HUNTERS_MARK_RANGE)
 		return
+	if stats.hunters_mark_cast_this_round:
+		GameState.game_log("[color=gray]Hunter's Mark: already cast this round.[/color]")
+		return
 	var already_this_target: bool = stats.hunters_mark_target == enemy and stats.hunters_mark_target != null and is_instance_valid(stats.hunters_mark_target)
 	if not already_this_target:
 		if stats.hunters_mark_free_recast_available:
@@ -64,9 +67,15 @@ func commit_mark(enemy: Enemy) -> void:
 	stats.hunters_mark_turns = Stats.HUNTERS_MARK_DURATION
 	stats.hunters_mark_target = enemy
 	stats.hunters_mark_fresh = true
+	stats.hunters_mark_cast_this_round = true
 	GameState.game_log("[color=cyan]You mark %s as your quarry.[/color]" % enemy.display_name)
 	if player._dungeon_floor != null:
 		player._dungeon_floor.update_fog(player.grid_pos)
+	# Uses/slot/free-recast-window state all just changed — the ability-bar use-count badge and
+	# the always-visible spell-slots row otherwise only refresh on ability_bar_changed/
+	# spell_slots_changed, neither of which this function fired for the "spend a free use" branch,
+	# so the badge used to look stale until some unrelated action happened to trigger a refresh.
+	GameState.ability_bar_changed.emit()
 
 # Rolls Hunter's Mark's bonus Force damage die for a hit against the marked target — a SECOND,
 # independent damage instance (Judgement-Day pattern, scripts/entities/CLAUDE.md's damage-stacking
@@ -101,16 +110,23 @@ func twin_fang_r2_active(enemy: Enemy) -> bool:
 # the nearest visible enemy (no use spent). Called from Enemy.die() — see scripts/entities/CLAUDE.md.
 # Baseline (no talent needed): if concentration is still active and R3 doesn't auto-remark, arm a
 # one-turn free-recast window (Stats.hunters_mark_free_recast_pending) — see markdowns/ranger_base.md.
+# The target dying ALWAYS ends the current concentration immediately, R3 or not — it never just
+# decays naturally over the rest of hunters_mark_turns.
 func try_bloodhound_remark(dead_enemy: Enemy) -> void:
 	var stats: Stats = GameState.player_stats
 	if stats.hunters_mark_target != dead_enemy:
 		return
+	var was_concentrating: bool = stats.hunters_mark_turns > 0 and stats.concentration_spell_id == "hunters_mark"
 	stats.hunters_mark_target = null
 	stats.hunters_mark_fresh = false
+	stats.hunters_mark_turns = 0
+	if stats.concentration_spell_id == "hunters_mark":
+		stats.concentration_spell_id = ""
 	if GameState.get_talent_rank("bloodhound") < 3 or player == null or player._dungeon_floor == null:
-		if stats.hunters_mark_turns > 0 and stats.concentration_spell_id == "hunters_mark":
+		if was_concentrating:
 			stats.hunters_mark_free_recast_pending = true
 			GameState.game_log("[color=cyan]Hunter's Mark: your quarry has fallen — mark a new target for free on your next turn.[/color]")
+		GameState.ability_bar_changed.emit()
 		return
 	var best: Enemy = null
 	var best_dist_sq: int = -1
@@ -125,4 +141,7 @@ func try_bloodhound_remark(dead_enemy: Enemy) -> void:
 	if best != null:
 		stats.hunters_mark_target = best
 		stats.hunters_mark_fresh = true
+		stats.hunters_mark_turns = Stats.HUNTERS_MARK_DURATION
+		stats.concentration_spell_id = "hunters_mark"
 		GameState.game_log("[color=cyan]Bloodhound: Hunter's Mark shifts to %s.[/color]" % best.display_name)
+	GameState.ability_bar_changed.emit()

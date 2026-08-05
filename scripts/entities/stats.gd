@@ -339,14 +339,19 @@ var draconic_flight_turns: int = 0
 var draconic_flight_used: bool = false
 
 # Hunter's Mark uses (Ranger only) — baseline level-1 ability, not talent-gated, same
-# "granted directly, resource-limited" shape as Rage. A use is spent only when establishing a
-# mark on a target from having none (retargeting an already-active mark is free — 5e "move
-# Hunter's Mark for free"); refilled to max in GameState.long_rest(). Flat, doesn't scale by
-# level (unlike Rage) — simple to start, tune later.
+# "granted directly, resource-limited" shape as Rage. A use is spent every time the mark moves
+# onto a different enemy (re-clicking the SAME already-marked target is the only free case);
+# refilled to max in GameState.long_rest(). Flat, doesn't scale by level (unlike Rage) — simple
+# to start, tune later.
 var hunters_mark_uses_remaining: int = 0
 const HUNTERS_MARK_USES_MAX: int = 3
 const HUNTERS_MARK_RANGE: int = 5
 const HUNTERS_MARK_DURATION: int = 600
+# 5e's own Hunter's Mark is a bonus action — only one bonus action per turn — so PlayerRangerTalents.
+# commit_mark() refuses a second cast in the same round once this is set, regardless of which
+# resource (free use/slot/free-recast window) would have paid for it. Reset every real round in
+# player.gd's _on_turn_started(). Combat-transient, not serialized.
+var hunters_mark_cast_this_round: bool = false
 
 # The currently marked enemy (Hunter's Mark). Deliberately NOT serialized in to_dict()/from_dict()
 # — a live Enemy node reference can't survive save/load, same precedent as witch_bolt_target
@@ -359,11 +364,12 @@ var hunters_mark_fresh: bool = false
 # Expeditious Retreat) — 0 = not currently marking. Not serialized (mid-floor concentration state,
 # same precedent as witch_bolt_turns/expeditious_retreat_turns).
 var hunters_mark_turns: int = 0
-# Free-recast window (markdowns/ranger_base.md): if the Marked target dies while concentration is
-# still active, the player gets ONE free re-mark (no use spent) — but only during their very next
-# real turn, never later. `_pending` is armed the instant the target dies; the following
-# `_on_turn_started()` promotes it to `_available` for that single turn, then clears it at the turn
-# after that if unused. Both transient, not serialized.
+# Free-recast window (markdowns/ranger_base.md): the Marked target dying ALWAYS ends Hunter's
+# Mark's concentration immediately (PlayerRangerTalents.try_bloodhound_remark(), not left to decay
+# naturally over the rest of hunters_mark_turns) — but the player gets ONE free re-mark (no use/slot
+# spent) in exchange, usable only during their very next real turn, never later. `_pending` is armed
+# the instant the target dies; the following `_on_turn_started()` promotes it to `_available` for
+# that single turn, then clears it at the turn after that if unused. Both transient, not serialized.
 var hunters_mark_free_recast_pending: bool = false
 var hunters_mark_free_recast_available: bool = false
 

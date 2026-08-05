@@ -144,31 +144,24 @@ var _oa_used_this_round: bool = false
 # functions don't check it, same documented scope limitation as Battlefield Expert R3's own
 # free side-step.
 var _expeditious_retreat_move_used_this_turn: bool = false
-# Wood Elf's 35 ft speed (vs. the 30 ft baseline every other race/the engine's own 1-tile/turn
-# grid assumes) — approximated as a duty cycle rather than a distance, same reasoning as Enemy's
-# own "speed" pool key (scripts/entities/CLAUDE.md's "Movement speed scaling"): every 6th real
-# move this Wood Elf makes doesn't cost a turn. Counted (not serialized — mid-floor combat
-# bookkeeping, same tier as _expeditious_retreat_move_used_this_turn) in _try_move()'s free-move
-# check below, independent of and stacking with Expeditious Retreat/Longstrider.
-var _wood_elf_move_counter: int = 0
+# Shared duty-cycle bookkeeping for every player-side movement-speed modifier that works as an
+# "every Nth real move" gate — Wood Elf's 35 ft speed, Longstrider's +1/3 speed, and Exhaustion's
+# -1/6-per-level movement penalty (Large Form's own +1/3 counter stays local to PlayerGoliath,
+# see player_goliath.gd, since it's a single implementation, not a duplicate). Replaces what used
+# to be three separate hand-rolled int counters (`_wood_elf_move_counter`/
+# `_exhaustion_move_counter`/`_longstrider_move_counter`) with one id-keyed accumulator dict, ticked
+# via CombatMath.tick_duty_cycle() (the same Bresenham-style math Enemy._tick_speed_gate() uses for
+# its "speed" pool key) through `_consume_duty_cycle()` below — see scripts/entities/CLAUDE.md's
+# "Movement speed scaling". Not serialized — mid-floor combat bookkeeping, same tier as
+# `_expeditious_retreat_move_used_this_turn`.
+var _speed_gate_accum: Dictionary = {}
 
-# Exhaustion's -1/6 movement speed per level: a duty-cycle mechanism in the opposite direction
-# from Wood Elf/Longstrider above (those make some moves free; exhaustion makes some moves cost
-# double, same TurnManager.enemy_actions_this_round=2 knob Slowed already uses — see
-# scripts/entities/CLAUDE.md's "Player movement-speed visual consistency" permanent rule: the
-# visual tween never changes, only the turn economy). Out of every 6 real moves,
-# Stats.exhaustion_level of them are penalized, spread evenly across the cycle rather than
-# front-loaded. Not serialized — mid-floor bookkeeping, same tier as _wood_elf_move_counter.
-var _exhaustion_move_counter: int = 0
-
-# Longstrider (scripts/entities/CLAUDE.md's "Elf" section, promoted to a real LEVELED_SPELL_IDS
-# entry): RAW is a flat +10 ft speed buff, i.e. +1/3 over the 30 ft baseline this grid assumes —
-# NOT "double movement," which is Expeditious Retreat's own (correct) Dash-as-bonus-action shape.
-# Longstrider used to incorrectly share Expeditious Retreat's "first move each turn is free"
-# check, which grants far more than +1/3. Reworked to the same duty-cycle mechanism as Wood Elf's
-# 35 ft speed / Goliath's Large Form +1/3 movement: every 3rd real move this turn-counter-tracked
-# step doesn't cost a turn. Not serialized — mid-floor combat bookkeeping.
-var _longstrider_move_counter: int = 0
+# Ticks the named duty-cycle source (`id`) by `moves` out of every `per` real moves and returns
+# whether it "fires" this call — see `_speed_gate_accum`'s own comment above.
+func _consume_duty_cycle(id: String, moves: int, per: int) -> bool:
+	var r: Dictionary = CombatMath.tick_duty_cycle(int(_speed_gate_accum.get(id, 0)), moves, per)
+	_speed_gate_accum[id] = r["accum"]
+	return r["fires"] > 0
 
 
 func _ready() -> void:
@@ -267,6 +260,9 @@ func _on_turn_started() -> void:
 		_eagle_free_move_used = false
 		_grip_used_this_turn = false
 		_vex_adv_target = null
+		# Hunter's Mark is a bonus action in 5e — only one cast per round, see Stats.
+		# hunters_mark_cast_this_round's own comment.
+		stats.hunters_mark_cast_this_round = false
 		_oa_used_this_round = false
 		_expeditious_retreat_move_used_this_turn = false
 		_halfling.reset_turn()
@@ -382,9 +378,11 @@ func _on_turn_started() -> void:
 		if stats.hunters_mark_free_recast_available:
 			stats.hunters_mark_free_recast_available = false
 			GameState.game_log("[color=gray]Hunter's Mark: the free re-mark window has passed.[/color]")
+			GameState.ability_bar_changed.emit()
 		elif stats.hunters_mark_free_recast_pending:
 			stats.hunters_mark_free_recast_pending = false
 			stats.hunters_mark_free_recast_available = true
+			GameState.ability_bar_changed.emit()
 		# Hex: 600-turn Concentration cap (+600/upcast level — see Spell.upcast_flat_amount's own
 		# comment). No repeated-save early-end exists for this one (unlike Ray of Enfeeblement/Hold
 		# Person/Hideous Laughter below) — the curse only ever ends via this duration backstop, a
@@ -2086,15 +2084,17 @@ func _apply_queued_step_speed(next_pos: Vector2i) -> void:
 
 # Exhaustion's -1/6 movement speed per level, spread evenly across a 6-move cycle rather than
 # front-loaded (e.g. level 3 penalizes exactly 3 of every 6 moves = 50% slower, matching -15 ft of
-# the 30 ft baseline). Increments the counter and returns whether THIS move should cost double
-# (TurnManager.enemy_actions_this_round = 2, same knob Slowed uses) — never touches the visual
-# tween itself, per the "Player movement-speed visual consistency" permanent rule.
+# the 30 ft baseline). Returns whether THIS move should cost double (TurnManager.
+# enemy_actions_this_round = 2, same knob Slowed uses) — never touches the visual tween itself, per
+# the "Player movement-speed visual consistency" permanent rule. BUGFIX: this used to be a plain
+# `counter % 6 < exhaustion_level` check, which is actually front-loaded (penalizes the first N of
+# every 6 moves) despite this comment's own claim of an even spread — now genuinely evenly spread
+# via the shared CombatMath.tick_duty_cycle() accumulator (e.g. level 2 fires on moves 3 and 6, not
+# 1 and 2).
 func _exhaustion_move_penalizes() -> bool:
 	if GameState.player_stats.exhaustion_level <= 0:
 		return false
-	var slot: int = _exhaustion_move_counter % 6
-	_exhaustion_move_counter += 1
-	return slot < GameState.player_stats.exhaustion_level
+	return _consume_duty_cycle("exhaustion", GameState.player_stats.exhaustion_level, 6)
 
 func _has_new_enemy_in_fov(snapshot: Array[Enemy]) -> bool:
 	if _dungeon_floor == null or GameState.noclip:
@@ -2417,16 +2417,10 @@ func _try_move(dir: Vector2i) -> void:
 		return
 	var _wood_elf_free_step: bool = false
 	if stats.character_race == Stats.CharacterRace.ELF and stats.race_variant == Stats.ElfSubrace.WOOD_ELF:
-		_wood_elf_move_counter += 1
-		if _wood_elf_move_counter >= 6:
-			_wood_elf_move_counter = 0
-			_wood_elf_free_step = true
+		_wood_elf_free_step = _consume_duty_cycle("wood_elf", 1, 6)
 	var _longstrider_free_step: bool = false
 	if stats.longstrider_turns > 0:
-		_longstrider_move_counter += 1
-		if _longstrider_move_counter >= 3:
-			_longstrider_move_counter = 0
-			_longstrider_free_step = true
+		_longstrider_free_step = _consume_duty_cycle("longstrider", 1, 3)
 	var _large_form_free_step: bool = _goliath.consume_large_form_free_move()
 	if _large_form_free_step:
 		GameState.game_log("[color=cyan]Large Form: your giant stride carries you further at no cost.[/color]")
@@ -2450,7 +2444,8 @@ func _try_move(dir: Vector2i) -> void:
 		TurnManager.revert_to_waiting()
 		return
 	elif _wood_elf_free_step:
-		GameState.game_log("[color=cyan]Wood Elf: your swift steps carry you further at no cost.[/color]")
+		# Deliberately silent — same reasoning as Longstrider above (this fires roughly every
+		# 6th move for the whole run; a chat line every 6th step was pure log spam).
 		await _take_free_move_beat()
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
