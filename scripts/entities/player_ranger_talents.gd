@@ -12,10 +12,15 @@ var player: Player
 # shape now: free casting time (never costs a turn — no TurnManager.begin/on_player_action_complete
 # here), range 9 tiles, Concentration up to 100 turns (Stats.hunters_mark_turns, ticked in
 # player.gd's _on_turn_started() alongside Blade Ward/Expeditious Retreat/Fog Cloud). A use is spent
-# only when ESTABLISHING a mark on a target from having none — retargeting an already-active mark is
-# free (5e "move Hunter's Mark for free"). Once HUNTERS_MARK_USES_MAX free uses run out, establishing
-# a new mark automatically spends a real 1st-level Ranger spell slot instead (Hunter's Mark IS a real
-# 1st-level spell in 5e) — see the fallback in commit_mark() below.
+# every time the mark moves onto a DIFFERENT enemy than the one currently marked — re-clicking the
+# SAME already-marked target is the only free case (just refreshes the duration). The one other free
+# case is the real 5e "Curse a New Target" rule: if the marked target died while concentration was
+# still active, the VERY NEXT real turn's re-mark is free (Stats.hunters_mark_free_recast_available)
+# — direct owner correction: this used to also treat moving the mark to a different LIVING enemy at
+# any time as free ("5e move Hunter's Mark for free"), which isn't actually RAW — 5e's free retarget
+# is death-triggered only, not a standing bonus-action ability. Once HUNTERS_MARK_USES_MAX free uses
+# run out, marking a new target automatically spends a real 1st-level Ranger spell slot instead
+# (Hunter's Mark IS a real 1st-level spell in 5e) — see the fallback in commit_mark() below.
 
 func activate_hunters_mark() -> void:
 	if TurnManager.phase != TurnManager.Phase.WAITING_FOR_INPUT or player._path_executing:
@@ -34,8 +39,8 @@ func commit_mark(enemy: Enemy) -> void:
 	if dist_sq > Stats.HUNTERS_MARK_RANGE * Stats.HUNTERS_MARK_RANGE:
 		GameState.game_log("[color=gray]Hunter's Mark: target is out of range (%d tiles).[/color]" % Stats.HUNTERS_MARK_RANGE)
 		return
-	var establishing: bool = stats.hunters_mark_target == null or not is_instance_valid(stats.hunters_mark_target)
-	if establishing:
+	var already_this_target: bool = stats.hunters_mark_target == enemy and stats.hunters_mark_target != null and is_instance_valid(stats.hunters_mark_target)
+	if not already_this_target:
 		if stats.hunters_mark_free_recast_available:
 			# Baseline free-recast window: the previous mark's target died while concentration was
 			# still active, and this is the very next real turn — no use/slot spent.

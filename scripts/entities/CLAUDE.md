@@ -2281,8 +2281,12 @@ Force damage instance (`PlayerRangerTalents.hunters_mark_bonus_die()`; this used
 Fang R1, see that talent's entry below for the now-dead rank). `Stats.hunters_mark_target`/
 `hunters_mark_fresh` (not serialized, same precedent as `witch_bolt_target`) +
 `Stats.hunters_mark_uses_remaining`/`HUNTERS_MARK_USES_MAX` (3, serialized, refilled in
-`long_rest()`) — a use is spent only when establishing a mark from none; retargeting an active mark
-is free. **Once free uses run out**, establishing a new mark automatically spends a real
+`long_rest()`) — a use is spent every time the mark moves onto a DIFFERENT enemy than the one
+currently marked (re-clicking the SAME already-marked target is the only free case, just refreshing
+the duration); moving the mark to a different LIVING enemy is not otherwise free — direct owner
+correction, this used to treat any retarget as free ("5e move Hunter's Mark for free"), which isn't
+actually RAW (5e's own free retarget is death-triggered only — see "Free re-mark on kill" below, the
+one real free case). **Once free uses run out**, marking a new target automatically spends a real
 1st-level Ranger spell slot instead (Hunter's Mark is a real 1st-level spell in 5e —
 `commit_mark()` checks `Stats.caster.slot_pool.remaining.get(1, 0)` directly and calls
 `slot_pool.consume(1)`, same as any other leveled-spell cast); with neither a free use nor a slot

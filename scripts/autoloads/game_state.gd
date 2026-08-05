@@ -1355,7 +1355,7 @@ func _build_hunters_mark_description() -> String:
 	var uses: int = Stats.HUNTERS_MARK_USES_MAX
 	var lines: Array[String] = []
 	lines.append("Mark a visible enemy. Every hit against it (any weapon) deals +1d6 Force damage.")
-	lines.append("Retargeting an already-marked hunt is free; establishing a fresh one costs a use.")
+	lines.append("Moving the mark to a new target costs a use, unless the previous quarry just died and this is your very next turn.")
 	lines.append("%d use%s per long rest." % [uses, "s" if uses != 1 else ""])
 	return "\n".join(lines)
 
