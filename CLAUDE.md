@@ -68,7 +68,7 @@ Entity (CharacterBody2D)   ← grid_pos, move_to() 0.08s tween, _tile_center(), 
 World position = `pos * TILE_SIZE + TILE_SIZE/2`. `TILE_SIZE = 16`. z-index: floor items=1, enemies=1, player=3, fog=2, damage labels=10; blood decals=0.
 Full combat rolls, ADV/DISADV rules, status effects, enemy AI states, and per-class talent trees: **`scripts/entities/CLAUDE.md`**.
 Four real D&D-style **Conditions** — Poisoned, Prone, Restrained, Incapacitated — are implemented bidirectionally (player via `Stats`, enemy via `Enemy`'s own mirrored fields), each gating the ADV/DISADV/movement/action rules its 5e text actually specifies (e.g. Prone now really is stand-up-costs-movement + melee-ADV/ranged-DISADV against you, not the old full-turn skip) and wired into the effects that already existed (Maul's Topple, Spider's Web, Quasit's Rend). Frightened is not yet implemented. Full mechanism, per-condition effect table, and known partial-coverage gaps: `scripts/entities/CLAUDE.md`'s "Conditions" section.
-**Exhaustion** (D&D 2024, 0-6 levels, `Stats.exhaustion_level`) is implemented as a pure debuff scaffold — -2 to every player d20 test and -1/6 movement speed per level, 1 level removed per completed long rest — but **nothing in the game currently grants it** (no trap/status/mechanic sets `exhaustion_level` above 0 yet). See `scripts/entities/CLAUDE.md`'s "Exhaustion" section.
+**Exhaustion** (D&D 2024, 0-6 levels, `Stats.exhaustion_level`) is a debuff scaffold — -2 to every player d20 test and -1/6 movement speed per level, 1 level removed per completed long rest, shown as a status-tray icon whenever `exhaustion_level > 0`. **Death saves are now its one real source**: reviving via a successful death-save sequence (see "Death saves" above) grants +1 exhaustion level; reaching level 6 this way is instantly fatal (no further death save). Cheat-death holds (Bruiser R3, Orc Relentless Endurance) do NOT grant it - only an actual death-save revival does. No other trap/status/mechanic sets `exhaustion_level` yet. See `scripts/entities/CLAUDE.md`'s "Exhaustion" section and `scripts/autoloads/CLAUDE.md`'s "Death save sequence".
 Full D&D-style enemy stat-block schema — CR, ability-score `mods`/proficiency, damage resist/immune/vuln (3 lists), condition immunities, creature type, senses, multiattack, ability cooldown/uses_max/recharge, regeneration/undead-fortitude traits, legendary resistance — is **implemented** as optional `ENEMY_POOL`/`BOSS_POOL` pool keys (every new key has a safe legacy-behavior default, so authoring a new enemy is "add a dict"). Design doc (source of the schema, still useful as the field-by-field reference): `docs/architecture/enemy-stat-block-design.md`. **Size (multi-tile occupancy) is implemented**: `Entity.size`/`occupied_tiles()`/`occupies()`/`min_dist_to()`/`nearest_occupied_tile()` (pool `"size": {"w","h"}`) give a Large+ enemy a real WxH footprint — movement, targeting/click, attack range, LOS, and spawn placement (which requires the whole footprint to be free floor, so a Large enemy can never spawn in a 1-wide corridor) are all footprint-aware. First/only user today: Ogre (2x2). See `scripts/entities/CLAUDE.md`'s "Multi-tile footprint (Large enemies)". **CR-budgeted floor spawning is implemented**: `DungeonFloor._pick_cr_budgeted_enemies()` replaces the old flat random-count spawn with a per-floor CR budget (`_cr_budget()`) that repeatedly picks a uniformly-random affordable enemy until the budget or a safety cap is exhausted — a floor whose eligible band skews expensive (e.g. late-game Ogre) now legitimately spawns fewer, stronger enemies instead of always 3-5; the boss itself still always spawns unconditionally on top of a scaled-down regular budget on boss floors. See `scripts/world/CLAUDE.md`'s "Spawning" section and `docs/architecture/cr-budgeted-spawning-design.md`. Still design-only/deferred: reactions beyond Opportunity Attacks, conditional triggers, legendary actions, per-room CR distribution, elite/pack variants, CR-derived `exp`. Full field table and worked examples: `scripts/entities/CLAUDE.md`'s "Enemy D&D stat-block schema" section.
 Opportunity Attacks (movement out of threat range provokes a free reactive melee attack, Retaliation-style inline resolution, no TurnManager changes): **`scripts/entities/CLAUDE.md`**'s "Opportunity Attacks" section.
 Stealth & Surprise Attacks (5e-style Stealth-vs-Passive-Perception check deciding whether a SLEEPING/STATIONARY/ROAMING enemy notices the player, rolled once per real player turn; corrected surprise-ADV trigger table; debug-only "Show Stealth Checks" reveal toggle): **`scripts/entities/CLAUDE.md`**'s "Stealth & Surprise Attacks" section.
@@ -85,10 +85,12 @@ and a "Custom" card that hands off unchanged to the class/race/mastery flow. Als
 
 ### Point buy (ability score allocation)
 Custom-path onboarding order: **class select → point buy → background ASI → race select →
-mastery/cantrip picker → character summary → game starts**. Every step from point buy onward has a
-"← Back" button, and `GameState.class_selected` (input-gating) isn't set until the final summary
-screen's "Yes" — see `scripts/ui/CLAUDE.md`'s "Custom character creation: Back navigation +
-summary screen" and `scripts/autoloads/CLAUDE.md` for the full mechanism.
+character summary → mastery/cantrip/spell picker → game starts**. Every step through race select
+has a "← Back" button, and `GameState.class_selected` (input-gating) isn't set until the summary
+screen's "Yes" — weapon masteries and starting cantrips/spells are picked AFTER that point (once
+the character has already spawned into the run), deliberately with no Back button of their own, so
+there's no free way to reroll a bad draw — see `scripts/ui/CLAUDE.md`'s "Custom character creation:
+Back navigation + summary screen" and `scripts/autoloads/CLAUDE.md` for the full mechanism.
 `point_buy_select.gd` is a one-time blocking overlay spawned
 right after class selection, before the background picker (premade heroes bypass it entirely).
 D&D 2024 point-buy: all six scores start at 8, `-`/`+` per score within 8–15, 27-point budget,
@@ -120,9 +122,11 @@ sub-options (Aasimar's Celestial Revelation) — built by `RaceTooltip`/`RaceDb`
 `scripts/entities/CLAUDE.md`'s "Race tooltip format" section.
 
 Onboarding order (Custom path): **class select → point buy → background ASI → race select →
-mastery picker → game starts**. `race_select.gd` is a one-time blocking overlay spawned right
-after the background picker confirms (mirrors `subclass_select.gd`'s pattern), and itself spawns
-the Mastery Picker on confirm. 10 races (Orc, Human, Halfling, Dwarf,
+character summary → mastery picker → game starts**. `race_select.gd` is a one-time blocking
+overlay spawned right after the background picker confirms (mirrors `subclass_select.gd`'s
+pattern), and itself spawns `character_summary.gd` on confirm — the Mastery Picker (and, for a
+caster, the cantrip/spell picker) now runs AFTER that summary screen's "Yes", once the character
+has spawned into the run, see "Point buy" above. 10 races (Orc, Human, Halfling, Dwarf,
 Elf w/ 3 sub-races, Dragonborn, Tiefling w/ 3 Fiendish Legacies, Aasimar, Gnome w/ 2 lineages,
 Goliath w/ 6 Giant Ancestries) each with distinct traits — darkvision/FOV bonus, long-rest-gated
 charges (Orc Relentless Endurance — passive, holds at 1 HP once per long rest — plus Orc Adrenaline

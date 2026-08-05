@@ -241,20 +241,20 @@ repopulates `known_spells`, and silently clears if the saved id is no longer kno
 creation: Back navigation + summary screen" for the full walkthrough): `class_selected` is no
 longer set `true` inside `class_select.gd` — it stays `false` for the entire Custom flow (player
 input is hard-gated on it) until `character_summary.gd`'s final "Yes" confirm. Supporting state,
-all transient/onboarding-only, never serialized: `pending_point_buy_scores`/
-`pending_background_bonus` (`Dictionary`, empty = "not yet confirmed this flow", written by
-`point_buy_select.gd`/`background_select.gd`'s own Confirm, read by that same screen's `_ready()`
-to prefill when re-opened via Back) and `pending_summary_return_scene` (script path string —
-which screen `character_summary.gd`'s "Take Me Back" reopens). `GameState.
-reset_for_class_reselect()` wipes equipment/ability-bar/quickbar/bag/talents/masteries and
-re-grants the generic starting items whenever `class_select.gd`'s confirm handler runs (including
-re-picking a DIFFERENT class after backing up to it) — without this, `give_class_starting_items()`'s
-own idempotency guard would silently no-op on the second call and leave the old class's gear
-equipped. `GameState.reset_wizard_onboarding_picks()` wipes a Wizard's `caster.known_spells`/
-`prepared_spells`, their ability-bar entries, and the Special slot — called by
-`cantrip_select.gd._ready()` (safe no-op if nothing granted yet) so re-picking a starting cantrip/
-spell via Back never leaves the old pick known alongside the new one (`choose_cantrip()`/
-`choose_starting_spell()` only ever append).
+transient/onboarding-only, never serialized: `pending_point_buy_scores`/`pending_background_bonus`
+(`Dictionary`, empty = "not yet confirmed this flow", written by `point_buy_select.gd`/
+`background_select.gd`'s own Confirm, read by that same screen's `_ready()` to prefill when
+re-opened via Back). `GameState.reset_for_class_reselect()` wipes equipment/ability-bar/quickbar/
+bag/talents/masteries and re-grants the generic starting items whenever `class_select.gd`'s confirm
+handler runs (including re-picking a DIFFERENT class after backing up to it) — without this,
+`give_class_starting_items()`'s own idempotency guard would silently no-op on the second call and
+leave the old class's gear equipped. **Weapon masteries and starting cantrips/spells are picked
+AFTER `character_summary.gd`'s "Yes, I'm Ready!"** (direct owner request — removes the "Back ->
+reconfirm race select -> reroll" cheese that existed when those pickers ran before the final
+confirm), so `character_summary.gd`'s own "Take Me Back" always reopens `race_select.gd` — there's
+no longer a `pending_summary_return_scene` to track, and neither `mastery_picker.gd` nor
+`cantrip_select.gd` has a Back button in this post-spawn mode. See `scripts/ui/CLAUDE.md`'s
+"Mastery picker"/"Cantrip / starting-spell picker" sections.
 
 **`give_race_starting_items()` / `_restore_race_ability_bar()`**: Dragonborn-only today (Breath
 Weapon at level 1, Draconic Flight at level 5) — see `scripts/entities/CLAUDE.md`'s "Dragonborn"
@@ -275,8 +275,13 @@ starting uses); `from_dict()` calls the read-only `_restore_race_ability_bar()` 
 
 **"Try Again" (death → same character, fresh run)**: `character_creation_snapshot: Dictionary`
 (empty = none captured) is written once by `snapshot_character_creation()` right when character
-creation actually finishes — `character_select.gd`'s premade-card click and
-`character_summary.gd`'s final "Yes, I'm Ready!" confirm both call it just before `queue_free()`.
+creation actually finishes — `character_select.gd`'s premade-card click calls it directly before
+`queue_free()`. On the Custom path, masteries/cantrips/starting spells are now picked AFTER
+`character_summary.gd`'s "Yes, I'm Ready!" (see "Custom character-creation Back navigation" above),
+so the snapshot call moved to wherever that chain actually ends: `character_summary.gd._on_confirm()`
+itself for a class with neither (e.g. Monk), or the tail of `mastery_picker.gd._finish_learn()`/
+`cantrip_select.gd._on_chosen()` for a class that has one or both — always the last thing that
+happens before the character is genuinely done, never mid-pick.
 Captures only identity, not run progress: class, final ability scores (post point-buy +
 background, read straight off `player_stats` at that moment), race + variant + prof-ability,
 `known_weapon_masteries`, and (Wizard only) `caster.known_spells` + `special_slot_spell_id`.
@@ -352,7 +357,13 @@ instead of instant death:
   floor, play resumes normally) or runs the exact same `is_game_over = true` / `AudioManager.play`/
   `player_died.emit()` tail `check_player_death()` used to run directly (not revived — the normal
   Game Over flow, `SaveManager`'s permadeath delete-on-`player_died` hook included, fires
-  unchanged).
+  unchanged). **Revival now costs 1 Exhaustion level** (`Stats.exhaustion_level += 1`, see root
+  CLAUDE.md's "Exhaustion" / `scripts/entities/CLAUDE.md`'s "Exhaustion" section) — checked BEFORE
+  the HP/log/buff lines run, so if this increment would reach level 6 the function instead falls
+  straight into the not-revived death tail (no HP-1 set, no Risen from the Dead) — a 6th
+  death-save revival kills the character outright, matching 5e 2024's "exhaustion 6 = death" rule.
+  Cheat-death holds (Bruiser R3, Orc Relentless Endurance) intercept earlier in
+  `check_player_death()` and never reach this function, so they never grant exhaustion.
 - **"Risen from the Dead" buff (revived branch only)**: `GameState.risen_from_dead_active = true` —
   total invulnerability (no damage from ANY source: melee/ranged/spell attacks, Opportunity
   Attacks, status-tick DoT, traps, forced-movement wall-slam, even self-inflicted damage like a

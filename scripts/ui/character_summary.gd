@@ -1,13 +1,20 @@
 extends CanvasLayer
 
 # Final confirmation screen of the Custom character-creation flow (class select -> point buy ->
-# background ASI -> race select -> mastery/cantrip picker -> HERE). Spawned by whichever of
-# mastery_picker.gd/cantrip_select.gd/race_select.gd was the player's last class-specific
-# onboarding step (see each file's own comment) — that spawner also sets
-# GameState.pending_summary_return_scene so "Take me back" knows exactly where to reopen.
+# background ASI -> race select -> HERE -> mastery/cantrip/spell picker -> game begins). Spawned
+# directly by race_select.gd's confirm — always the same spawner now, so "Take me back" always
+# reopens race_select.gd (nothing class-specific has happened yet at this point).
 # GameState.class_selected is NOT set true until "Yes" is pressed here — the player has been
 # unable to touch the game world (input is hard-gated on class_selected) for the entire Custom
 # flow up to this point, so any amount of back-and-forth before this screen is invisible/harmless.
+#
+# Deliberate ordering change: weapon masteries and starting cantrips/spells are picked AFTER this
+# screen's "Yes, I'm Ready!" (see _on_confirm() below), once the character has actually spawned
+# into the run (class_selected == true) — direct owner request, so a bad random mastery/spell
+# draw can no longer be cheaply rerolled by hitting "Take Me Back" and reconfirming race select
+# over and over. Those post-spawn pickers (mastery_picker.gd/cantrip_select.gd) still block all
+# player input the same way every other blocking overlay does, and have no Back button of their
+# own — the pick is final the moment it's made.
 
 const PANEL_W: float = 720.0
 const MARGIN: float = 24.0
@@ -144,42 +151,24 @@ func _build_ui() -> void:
 
 	var y: float = score_y + 68.0
 
-	# ── Weapon masteries (if any) ────────────────────────────────────────────────
+	# ── Pending post-spawn picks (masteries/cantrips/spells) ─────────────────────
+	# Not chosen yet at this point in the flow (see header comment) — just a heads-up of what's
+	# still coming, rather than an always-empty "none chosen" listing.
+	var pending: Array[String] = []
 	if stats.mastery_cap() > 0:
-		var mastery_lbl := Label.new()
-		var known: Array[String] = stats.known_weapon_masteries
-		mastery_lbl.text = "Weapon Masteries: %s" % (", ".join(known) if known.size() > 0 else "none chosen")
-		mastery_lbl.add_theme_font_size_override("font_size", 14)
-		mastery_lbl.add_theme_color_override("font_color", Color(0.80, 0.80, 0.85))
-		mastery_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		mastery_lbl.position = Vector2(MARGIN, y)
-		mastery_lbl.size = Vector2(PANEL_W - MARGIN * 2.0, 24.0)
-		_panel.add_child(mastery_lbl)
-		y += 28.0
-
-	# ── Known spells (if a caster) ───────────────────────────────────────────────
+		pending.append("weapon masteries")
 	if stats.caster != null:
-		var cantrips: Array[String] = []
-		var prepared: Array[String] = []
-		for id: String in stats.caster.known_spells:
-			var spell: Spell = SpellDb.get_spell(id)
-			var label_name: String = spell.spell_name if spell != null else id
-			if spell != null and spell.level == 0:
-				cantrips.append(label_name)
-			else:
-				prepared.append(label_name)
-		var spell_lbl := Label.new()
-		spell_lbl.text = "Cantrips: %s\nPrepared Spells: %s" % [
-			(", ".join(cantrips) if cantrips.size() > 0 else "none"),
-			(", ".join(prepared) if prepared.size() > 0 else "none"),
-		]
-		spell_lbl.add_theme_font_size_override("font_size", 14)
-		spell_lbl.add_theme_color_override("font_color", Color(0.70, 0.80, 1.0))
-		spell_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		spell_lbl.position = Vector2(MARGIN, y)
-		spell_lbl.size = Vector2(PANEL_W - MARGIN * 2.0, 44.0)
-		_panel.add_child(spell_lbl)
-		y += 52.0
+		pending.append("starting spells")
+	if pending.size() > 0:
+		var pending_lbl := Label.new()
+		pending_lbl.text = "You'll choose your %s once you begin — that choice is final, so pick carefully." % " and ".join(pending)
+		pending_lbl.add_theme_font_size_override("font_size", 14)
+		pending_lbl.add_theme_color_override("font_color", Color(0.80, 0.80, 0.85))
+		pending_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		pending_lbl.position = Vector2(MARGIN, y)
+		pending_lbl.size = Vector2(PANEL_W - MARGIN * 2.0, 40.0)
+		_panel.add_child(pending_lbl)
+		y += 44.0
 
 	# ── Buttons ──────────────────────────────────────────────────────────────────
 	y += 12.0
@@ -260,18 +249,29 @@ func _on_confirm() -> void:
 	# was still false, so SaveManager's checkpoint-on-class_chosen hook was a no-op then — re-emit
 	# now that the character is actually finished so the run gets its very first checkpoint.
 	GameState.class_chosen.emit(GameState.player_stats.character_class)
-	GameState.snapshot_character_creation()
+	# Character has now genuinely spawned into the run (input is no longer gated). Masteries/
+	# cantrips/starting spells are chosen from here on — no snapshot yet, no Back button on any of
+	# these pickers: snapshot_character_creation() only fires once that chain fully finishes (see
+	# mastery_picker.gd/cantrip_select.gd's own tails), so a "Try Again" retry always replays the
+	# masteries/spells actually kept, not a mid-pick state.
+	if GameState.player_stats.mastery_cap() > 0:
+		var picker = load("res://scripts/ui/mastery_picker.gd").new()
+		picker.character_creation_mode = true
+		get_tree().root.call_deferred("add_child", picker)
+	elif GameState.player_stats.caster != null:
+		var cantrip_picker = load("res://scripts/ui/cantrip_select.gd").new()
+		get_tree().root.call_deferred("add_child", cantrip_picker)
+	else:
+		# Nothing left to pick (e.g. Monk) — the character is fully done.
+		GameState.snapshot_character_creation()
 	queue_free()
 
 func _on_back() -> void:
 	GameState.character_summary_open = false
-	var scene_path: String = GameState.pending_summary_return_scene
-	if scene_path == "":
-		scene_path = "res://scripts/ui/race_select.gd"
-	var screen = load(scene_path).new()
-	if scene_path == "res://scripts/ui/mastery_picker.gd":
-		screen.character_creation_mode = true
-	get_tree().root.call_deferred("add_child", screen)
+	# Always race_select.gd — nothing class-specific (masteries/cantrips/spells) has happened yet
+	# at this point in the flow, so there's nothing else to undo.
+	var race_picker = load("res://scripts/ui/race_select.gd").new()
+	get_tree().root.call_deferred("add_child", race_picker)
 	queue_free()
 
 func _style_btn(btn: Button, bg: Color, border: Color) -> void:

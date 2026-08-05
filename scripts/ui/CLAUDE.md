@@ -155,10 +155,13 @@ Picker last set. Refreshed via `GameState.known_masteries_changed` (fired by `to
 and the premade-hero setup path) in addition to the tray's usual chokepoints, so it updates
 immediately on a new game, a fresh mastery pick, a level-up cap increase, and a long-rest
 reselect — no separate wiring needed since all of those already end in a `toggle_mastery()` call
-or that same signal. No `icons/status/` art exists yet — every entry currently renders as a
-tinted placeholder square until real icons are supplied (`unarmored_defense`/`tactician`/
-`psycho_adv`/`concentration` already reuse existing talent/spell icons, so those render properly
-today). Open questions resolved: hover-only tooltip, shared tooltip panel, grow-panel layout.
+or that same signal. `exhaustion` (`Stats.exhaustion_level > 0` — see `scripts/entities/CLAUDE.md`'s
+"Exhaustion" section for its one real source, death-save revival) shows the current level, flat
+d20 penalty, movement fraction, and the level-6-is-fatal rule on hover. No `icons/status/` art
+exists yet — every entry currently renders as a tinted placeholder square until real icons are
+supplied (`unarmored_defense`/`tactician`/`psycho_adv`/`concentration` already reuse existing
+talent/spell icons, so those render properly today). Open questions resolved: hover-only tooltip,
+shared tooltip panel, grow-panel layout.
 
 ### Z-index reference
 | Element | Z |
@@ -599,11 +602,14 @@ skips all five; ability scores and race are both restored via `Stats.to_dict()`/
 stat.
 
 ## Cantrip / starting-spell picker (`cantrip_select.gd`)
-CanvasLayer, layer = 25. Wizard-only, mandatory pick spawned by `race_select.gd._on_confirm()` in
-the same slot the Mastery Picker would occupy (Wizard's `mastery_cap()` is already 0, so the two
-branches are mutually exclusive — `elif` off of it). Dim overlay + centered bordered `Panel`,
-`focus_mode = FOCUS_NONE`, non-dismissible (no close button, `_unhandled_input` swallows all keys
-— mirrors `race_select.gd`'s conventions). **Icon-focused tile grid, up to 3 per row**
+CanvasLayer, layer = 25. Mandatory **post-spawn** pick (`class_selected` already `true` — see
+"Custom character creation" above), spawned directly by `character_summary.gd._on_confirm()` for
+Wizard/Warlock (in the same slot the Mastery Picker would occupy — their `mastery_cap()` is 0, so
+the two branches there are mutually exclusive) or by `mastery_picker.gd._finish_learn()` right
+after its own mastery pick for Ranger (which needs both). Dim overlay + centered bordered `Panel`,
+`focus_mode = FOCUS_NONE`, non-dismissible (no close button, `_unhandled_input` swallows all keys)
+— and deliberately **no Back button anywhere in this file** (direct owner request, same reasoning
+as `mastery_picker.gd`'s own post-spawn mode: removes the free "Back → reroll" loop). **Icon-focused tile grid, up to 3 per row**
 (`TILE_SIZE`/`TILE_GAP`/`ICON_SIZE`/`COLS` consts, `_build_tile()`) — direct owner request,
 replacing an earlier full-text-card-per-row layout: a tile shows only the spell's icon + name,
 click commits immediately (`subclass_select.gd`'s card-click-commits style, no multi-select within
@@ -617,7 +623,7 @@ ability-bar hover already show, not reinvent a worse one). Anchored **above** th
 default (`_show_tooltip()`'s `ty` calc, falls back to below only if there's no room above — same
 shape as `hud.gd._position_qbar_tooltip_near()`) — a second owner correction, the tooltip used to
 spawn below the icon. Since round 1→2 tears down and rebuilds the entire node tree
-(`_on_chosen()`/`_on_back()`'s `queue_free()`-everything loop), `_setup_tooltip()` is called fresh
+(`_on_chosen()`'s `queue_free()`-everything loop), `_setup_tooltip()` is called fresh
 at the end of every `_build_ui()`, not just once in `_ready()`. Same tile/tooltip shape duplicated
 (not shared via a common helper — small enough to not force a premature abstraction) by
 `spell_learn_picker.gd` and `invocation_picker.gd` below — see those sections. Panel height grew
@@ -635,8 +641,10 @@ via `visible = false` first so the new round-2 panel doesn't render on top of a 
 stale one for a frame) and calls `_build_ui()` again on the SAME script instance (title swaps to
 "Choose Your Starting Level-1 Spell"). Round 2's pick calls `GameState.choose_starting_spell()`
 (learns AND prepares it — prepared cap is 1 at level 1) then sets `GameState.cantrip_picker_open =
-false` and frees the overlay for good. See `scripts/entities/CLAUDE.md`'s "Wizard spellcasting"
-section for what each pick actually grants.
+false`, calls `GameState.snapshot_character_creation()` (the whole onboarding chain is done at this
+point — see "Try Again" in `scripts/autoloads/CLAUDE.md`), and frees the overlay for good. Ranger's
+single round and Warlock's single round do the same snapshot-then-free on their own pick. See
+`scripts/entities/CLAUDE.md`'s "Wizard spellcasting" section for what each pick actually grants.
 
 ## Spell-learn picker (`spell_learn_picker.gd`)
 CanvasLayer, layer = 25. Wizard-only, spawned by `hud.gd._on_player_leveled_up()` whenever
@@ -778,21 +786,35 @@ invisible outside `R`. Blue when slots remain, dimmed gray at 0. Wired to
 
 ## Custom character creation: Back navigation + summary screen
 
-The full Custom-path chain — **class select → point buy → background ASI → race select →
-mastery/cantrip picker → character_summary.gd** — now supports going backward at every step, and
-ends on a final review/confirm screen instead of starting the run the instant the last picker
-closes. Key structural change: `GameState.class_selected` is **no longer set `true` inside
-class_select.gd** — it stays `false` for the ENTIRE Custom flow (player input is hard-gated on it
-in `player.gd`, so the player literally cannot touch the already-loaded floor 1 underneath no
-matter how much back-and-forth happens) and is only set at `character_summary.gd`'s final "Yes"
-confirm, which also re-emits `class_chosen` so `SaveManager`'s checkpoint-on-that-signal hook
-(previously a no-op the whole time, since it's gated on `class_selected`) finally fires.
+The full Custom-path chain is now **class select → point buy → background ASI → race select →
+character_summary.gd (review/confirm) → mastery/cantrip/spell picker (post-spawn) → game begins**.
+Every screen through `race_select.gd` supports going backward; `character_summary.gd` is the final
+review/confirm before the run genuinely starts. Key structural change: `GameState.class_selected`
+is **no longer set `true` inside class_select.gd** — it stays `false` for the ENTIRE class-select
+→ race-select span (player input is hard-gated on it in `player.gd`, so the player literally cannot
+touch the already-loaded floor 1 underneath no matter how much back-and-forth happens) and is only
+set at `character_summary.gd`'s final "Yes" confirm, which also re-emits `class_chosen` so
+`SaveManager`'s checkpoint-on-that-signal hook (previously a no-op the whole time, since it's gated
+on `class_selected`) finally fires.
 
-**Every screen after class_select gained a "← Back" button** (top-right corner, muted-gold style)
+**Deliberate ordering change (direct owner request)**: weapon masteries and starting cantrips/
+spells used to be picked BEFORE `character_summary.gd`, which meant hitting "Take Me Back" and
+reconfirming race select was a free way to keep re-rolling a bad mastery/spell draw (masteries/
+cantrips were wiped and re-rolled fresh on every re-entry). They're now picked AFTER "Yes, I'm
+Ready!" — once `class_selected` is already `true` and the character has genuinely spawned into the
+run — specifically so that loophole is gone: `mastery_picker.gd`/`cantrip_select.gd` have **no Back
+button at all** in this post-spawn mode, the pick is final the instant it's made. This also means
+`character_summary.gd` can no longer show the actual chosen masteries/spells (they don't exist yet
+at that point) — it shows a one-line "you'll choose your X once you begin" heads-up instead.
+
+**Every screen through race_select gained a "← Back" button** (top-right corner, muted-gold style)
 that tears down the current overlay and spawns the previous one:
 `point_buy_select` → `class_select` → `background_select` → `point_buy_select` →
-`race_select` → `background_select` → (`mastery_picker` or `cantrip_select`, whichever this class
-uses) → `race_select`. `class_select.gd` itself has no Back (it's the first step).
+`race_select` → `background_select` → `character_summary` → `race_select`. `class_select.gd` itself
+has no Back (it's the first step); `character_summary.gd`'s "Take Me Back" always reopens
+`race_select.gd` (nothing class-specific has run yet at that point, so there's nothing else to
+undo). Once past `character_summary.gd`'s confirm, there's no Back anywhere in the remaining
+mastery/cantrip/spell chain — see above.
 
 **Re-picking a class mid-flow**: `class_select.gd._on_class_selected()` now calls
 `GameState.reset_for_class_reselect()` (`scripts/autoloads/CLAUDE.md`) before applying the new
@@ -815,44 +837,27 @@ already-applied bonus would double it. `race_select._on_back()` calls
 `player_stats.apply_point_buy_scores(pending_point_buy_scores)` first to reset to the pure
 post-point-buy baseline. `background_select.gd`'s OWN Back (→ point buy) needs no such undo, since
 `apply_background_bonus()` only ever runs from that screen's own Confirm, never before Back can be
-pressed. Race/cantrip picks have no analogous prefill (re-opening loses the prior pick) — race
-re-selection is cheap/idempotent (`apply_race_defaults()`). **Masteries used to persist on
-`Stats.known_weapon_masteries` directly so re-opening the picker already showed them still
-selected — no longer true** since the tile-pick rework below: `mastery_picker.gd`'s
-`character_creation_mode` now unconditionally WIPES `known_weapon_masteries` on every entry (same
-"wipe on every fresh entry" precedent as `reset_wizard_onboarding_picks()` right below), so
-re-opening in creation mode always redoes a full fresh pick from scratch rather than showing
-anything pre-selected — see "Mastery picker" below for why (its known-vs-cap mode branch would
-otherwise misfire into Swap mode on re-entry).
-
-**Wizard's cantrip/starting-spell re-pick**: `GameState.reset_wizard_onboarding_picks()` wipes
-`caster.known_spells`/`prepared_spells`, their ability-bar entries, and the Special slot —
-`cantrip_select.gd._ready()` calls it unconditionally (safe no-op on a first-ever visit) so being
-re-opened via `character_summary.gd`'s "Take me back" doesn't leave the OLD pick known alongside a
-new one (`choose_cantrip()`/`choose_starting_spell()` only ever APPEND). Its own round-2 "← Back"
-button reuses this same wipe + the existing round-1↔round-2 rebuild-in-place pattern to return to
-round 1 with a clean slate; round-1's Back leaves straight for `race_select.gd` instead (nothing to
-undo yet).
+pressed. Race picks have no analogous prefill (re-opening loses the prior pick) — race re-selection
+is cheap/idempotent (`apply_race_defaults()`).
 
 **`mastery_picker.gd`'s `character_creation_mode: bool`** (set on the instance before `add_child`,
-default `false`): when true, shows a "← Back" button (→ `race_select.gd`) and its Done/Esc `_close()`
-routes to `character_summary.gd` instead of just freeing the overlay. Left `false` (unchanged
-behavior) for the long-rest reselect flow (`mastery_reselect_prompt.gd`), which never sees a Back
-button or the summary screen.
+default `false`): spawned only from `character_summary.gd._on_confirm()` — see "Mastery picker"
+below for its post-spawn, no-Back behavior. Left `false` (unchanged behavior) for the long-rest
+reselect flow (`mastery_reselect_prompt.gd`), which never sees this mode or the summary screen.
 
-**`character_summary.gd`** (new file, `layer = 26`, `GameState.character_summary_open` input-gate
-flag, non-dismissible like every other onboarding screen): the actual final step. Shows a portrait
-(same per-class sprite path table as `class_select.gd`'s `CLASS_DATA`), class + race (+ sub-race/
-ancestry) headline, hit die/HP/AC line, all six ability scores + modifiers, known weapon masteries
-(if `mastery_cap() > 0`), and known cantrips/prepared spells (if `player_stats.caster != null`) —
-everything read live off `GameState.player_stats`, no separate draft/snapshot object. Two buttons:
-**"Yes, I'm Ready!"** → `class_selected = true` + re-emits `class_chosen` (see above), then frees
-itself — the run genuinely begins here. **"Take Me Back"** → reads
-`GameState.pending_summary_return_scene` (a script path string, set by whichever of
-`mastery_picker.gd`/`cantrip_select.gd`/`race_select.gd` was this character's actual last
-class-specific step — `race_select.gd` itself sets it directly when neither a mastery cap nor
-Wizard cantrips apply, e.g. Monk) and reopens that screen fresh (setting
-`character_creation_mode = true` again if it's the mastery picker).
+**`character_summary.gd`** (`layer = 26`, `GameState.character_summary_open` input-gate flag,
+non-dismissible like every other onboarding screen): the review/confirm step, reached right after
+`race_select.gd`. Shows a portrait (same per-class sprite path table as `class_select.gd`'s
+`CLASS_DATA`), class + race (+ sub-race/ancestry) headline, hit die/HP/AC line, all six ability
+scores + modifiers, and — if the class has a mastery cap and/or is a caster — a one-line "you'll
+choose your weapon masteries/starting spells once you begin" heads-up (those picks don't exist yet
+at this point in the flow, see above) — everything else read live off `GameState.player_stats`, no
+separate draft/snapshot object. Two buttons: **"Yes, I'm Ready!"** → `class_selected = true` +
+re-emits `class_chosen`, then spawns whichever of `mastery_picker.gd`/`cantrip_select.gd` this
+class needs (or, for a class with neither, e.g. Monk, calls `GameState.snapshot_character_creation()`
+directly) before freeing itself — the run genuinely begins here, with the mastery/cantrip/spell
+chain running on top of an already-spawned character. **"Take Me Back"** → always reopens
+`race_select.gd`.
 
 ## Mastery picker (`mastery_picker.gd`)
 CanvasLayer, layer = 25. Lets the player build up `Stats.known_weapon_masteries` (the array every
@@ -889,26 +894,25 @@ dict supplies each mastery's one-line body). No icon assets exist yet — icons 
 (`res://icons/masteries/<name>.png`, none exist) until supplied; the bordered tile frame keeps
 each button visible/clickable regardless, same asset-debt precedent as before this rework.
 
-**`character_creation_mode: bool`** (set on the instance before `add_child`, default `false`):
-shows a "← Back" button in Learn mode (undoes the last pick this visit via `_session_picks`, or
-exits to `race_select.gd` if nothing's been picked yet) and, once Learn mode finishes, routes
+**`character_creation_mode: bool`** (set on the instance before `add_child`, default `false`): the
+**POST-SPAWN** onboarding pick — spawned only by `character_summary.gd._on_confirm()`, after
+`class_selected` is already `true`. Deliberately has **no Back button anywhere in Learn mode** —
+direct owner request, removing the earlier "Back → reconfirm race select → reroll" cheese that
+existed when this picker ran before the final summary/confirm. Once Learn mode finishes, it routes
 onward instead of just closing — a caster class (Ranger) spawns `cantrip_select.gd` for its own
-starting-spell pick, everyone else spawns `character_summary.gd`. **Critically, `_ready()`
-unconditionally WIPES `known_weapon_masteries` whenever `character_creation_mode` is true** —
-without this, a re-entry (Ranger's back-nav through `cantrip_select.gd`, `character_summary.gd`'s
-"Take Me Back") would find `known.size() == cap()` already true (masteries were fully picked
-before reaching either of those screens) and misfire into Swap mode instead of letting the player
-redo their picks; the wipe forces creation mode to always run a full fresh Learn flow from empty,
-mirroring `GameState.reset_wizard_onboarding_picks()`'s identical "wipe on every fresh entry"
-precedent for Wizard's own cantrip re-pick right below.
+starting-spell pick; everyone else calls `GameState.snapshot_character_creation()` (the onboarding
+chain is now genuinely done — see "Try Again" in `scripts/autoloads/CLAUDE.md`) and just closes.
+`_ready()` still unconditionally clears `known_weapon_masteries` in creation mode as a defensive
+no-op (there's no Back path back into this screen anymore, so it should never actually find
+anything to clear).
 
-**Wired to fire three ways**: right after class selection (`class_select.gd._on_class_selected()`,
-`character_creation_mode = true`), instantly on any level-up that raises `mastery_cap()` itself
-(currently only Barbarian, at levels 4 and 10) — `GameState.gain_exp()` snapshots `mastery_cap()`
-before applying the level-up and sets `mastery_learn_pending = true` if it grew, `hud.gd.
-_on_player_leveled_up()` spawns this picker right away when that flag is set (same "instant pick"
-treatment as hit dice/spell slots growing on level-up — see root CLAUDE.md's "Talent system"),
-naturally landing in Learn mode since `known < cap` right after the cap just grew — and from the
-long-rest hub's "Weapon Masteries" option (`mastery_reselect_prompt.gd`, see "Long-rest hub"
-above), naturally landing in Swap mode since masteries are already at cap by then. Never triggered
-by short rest or floor descent.
+**Wired to fire three ways**: from `character_summary.gd._on_confirm()` (`character_creation_mode
+= true`) once the character has spawned, instantly on any level-up that raises `mastery_cap()`
+itself (currently only Barbarian, at levels 4 and 10) — `GameState.gain_exp()` snapshots
+`mastery_cap()` before applying the level-up and sets `mastery_learn_pending = true` if it grew,
+`hud.gd._on_player_leveled_up()` spawns this picker right away when that flag is set (same
+"instant pick" treatment as hit dice/spell slots growing on level-up — see root CLAUDE.md's
+"Talent system"), naturally landing in Learn mode since `known < cap` right after the cap just
+grew — and from the long-rest hub's "Weapon Masteries" option (`mastery_reselect_prompt.gd`, see
+"Long-rest hub" above), naturally landing in Swap mode since masteries are already at cap by then.
+Never triggered by short rest or floor descent.

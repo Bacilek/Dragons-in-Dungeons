@@ -395,19 +395,13 @@ func _on_confirm() -> void:
 			prof_ability = 3 + (_selected_sub % 3)
 	GameState.race_picker_open = false
 	GameState.choose_race(race, variant, prof_ability)
-	if GameState.player_stats.mastery_cap() > 0:
-		var picker = load("res://scripts/ui/mastery_picker.gd").new()
-		picker.character_creation_mode = true
-		get_tree().root.call_deferred("add_child", picker)
-	elif GameState.player_stats.character_class in [Stats.CharacterClass.WIZARD, Stats.CharacterClass.WARLOCK]:
-		var cantrip_picker = load("res://scripts/ui/cantrip_select.gd").new()
-		get_tree().root.call_deferred("add_child", cantrip_picker)
-	else:
-		# No mastery/cantrip step for this class (e.g. Monk) — race select is the last
-		# class-specific onboarding screen, so go straight to the final summary/confirm.
-		GameState.pending_summary_return_scene = "res://scripts/ui/race_select.gd"
-		var summary = load("res://scripts/ui/character_summary.gd").new()
-		get_tree().root.call_deferred("add_child", summary)
+	# Race select is the last class-specific onboarding screen before the final review — masteries/
+	# cantrips/starting spells are no longer picked here. They're picked AFTER "Yes, I'm Ready!"
+	# spawns the character into the world (character_summary.gd._on_confirm()), specifically so
+	# there's no more free "Back" loop to reroll a bad mastery/spell draw before the run truly
+	# starts — see scripts/ui/CLAUDE.md's "Custom character creation" section.
+	var summary = load("res://scripts/ui/character_summary.gd").new()
+	get_tree().root.call_deferred("add_child", summary)
 	queue_free()
 
 func _on_back() -> void:

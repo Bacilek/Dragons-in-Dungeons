@@ -16,14 +16,14 @@ extends CanvasLayer
 # (blacksmith_panel.gd's own in-place-refresh-and-reveal convention, not a separate screen), and the
 # tile grid refreshes so the player can keep swapping or stop via Esc/Done.
 #
-# character_creation_mode (set on the instance before add_child, default false) additionally: shows
-# a "<- Back" button and routes onward on completion (Wizard/non-caster -> character_summary.gd,
-# Ranger -> cantrip_select.gd) instead of just closing — same as before this rework. Re-entries in
-# this mode (Ranger's back-nav through cantrip_select.gd, character_summary.gd's "Take Me Back")
-# happen AFTER masteries are already fully picked, which would otherwise misfire into Swap mode —
-# _ready() unconditionally wipes known_weapon_masteries first whenever character_creation_mode is
-# true, so creation mode always runs a full fresh Learn flow from empty (mirrors GameState.
-# reset_wizard_onboarding_picks()'s identical "wipe on every fresh entry" precedent for cantrips).
+# character_creation_mode (set on the instance before add_child, default false): this is the
+# POST-SPAWN onboarding pick — spawned by character_summary.gd's "Yes, I'm Ready!" once the
+# character has already spawned into the run (class_selected == true), specifically so there is no
+# "Back" button here to cheaply reroll a bad draw (direct owner request — undoing this rework's
+# earlier "mastery pick happens before the final summary/confirm" order, which let a player spam
+# Take Me Back -> reconfirm race select to keep re-rolling masteries for free). Learn mode routes
+# onward on completion (Wizard/non-caster -> just finishes, Ranger -> cantrip_select.gd) instead of
+# spawning character_summary.gd, which has already run by this point.
 
 const TILE_SIZE: float = 168.0
 const TILE_GAP: float = 16.0
@@ -50,7 +50,6 @@ var _panel: Panel
 var _tooltip: Panel
 var _tooltip_rtl: RichTextLabel
 var _mode: String = ""          # "learn" or "swap", decided once in _ready()
-var _session_picks: Array[String] = []   # Learn mode's Back-undo stack (creation mode only)
 var _tile_row: Array[Control] = []       # Swap mode's tile row — rebuilt in place after a swap
 var _reveal_rtl: RichTextLabel
 var _hover_source_rect: Rect2 = Rect2()   # last-shown tile's global rect, for _process()'s hover-chain check
@@ -59,10 +58,9 @@ func _ready() -> void:
 	layer = 25
 	GameState.mastery_picker_open = true
 	if character_creation_mode:
-		# Wipes an already-complete pick from an earlier pass through this screen (Ranger's
-		# back-nav through cantrip_select.gd, character_summary.gd's "Take Me Back") — without
-		# this, known.size() == cap() on re-entry and the picker would misfire into Swap mode
-		# instead of letting the player redo their picks.
+		# Defensive: guarantees a genuinely fresh Learn flow even if known_weapon_masteries somehow
+		# carried anything over (there's no Back path back into this screen anymore, so this should
+		# always be a no-op in practice).
 		GameState.player_stats.known_weapon_masteries.clear()
 		GameState.known_masteries_changed.emit()
 	var known: Array[String] = GameState.player_stats.known_weapon_masteries
@@ -129,26 +127,6 @@ func _build_learn_ui() -> void:
 	title.size = Vector2(panel_w - MARGIN * 2.0, 36.0)
 	_panel.add_child(title)
 
-	if character_creation_mode:
-		var back_btn := Button.new()
-		back_btn.text = "← Back"
-		back_btn.size = Vector2(90.0, 28.0)
-		back_btn.position = Vector2(panel_w - MARGIN - 90.0, 18.0)
-		back_btn.focus_mode = Control.FOCUS_NONE
-		back_btn.add_theme_font_size_override("font_size", 13)
-		var back_normal := StyleBoxFlat.new()
-		back_normal.bg_color = Color(0.14, 0.12, 0.10)
-		back_normal.set_border_width_all(1)
-		back_normal.border_color = Color(0.5, 0.45, 0.35)
-		back_normal.set_corner_radius_all(3)
-		back_btn.add_theme_stylebox_override("normal", back_normal)
-		var back_hover := StyleBoxFlat.new()
-		back_hover.bg_color = Color(0.14, 0.12, 0.10).lightened(0.12)
-		back_hover.set_corner_radius_all(3)
-		back_btn.add_theme_stylebox_override("hover", back_hover)
-		back_btn.pressed.connect(_on_learn_back)
-		_panel.add_child(back_btn)
-
 	var hint := Label.new()
 	hint.text = "This choice is permanent. Hover a tile for details."
 	hint.add_theme_font_size_override("font_size", 14)
@@ -175,40 +153,27 @@ func _build_learn_ui() -> void:
 
 func _on_learn_chosen(name: String) -> void:
 	GameState.toggle_mastery(name)
-	_session_picks.append(name)
 	if GameState.player_stats.known_weapon_masteries.size() >= GameState.player_stats.mastery_cap():
 		_finish_learn()
 	else:
 		_build_ui()
-
-func _on_learn_back() -> void:
-	if _session_picks.is_empty():
-		GameState.mastery_picker_open = false
-		var race_picker = load("res://scripts/ui/race_select.gd").new()
-		get_tree().root.call_deferred("add_child", race_picker)
-		queue_free()
-		return
-	var last: String = _session_picks.pop_back()
-	GameState.player_stats.known_weapon_masteries.erase(last)
-	GameState.known_masteries_changed.emit()
-	_build_ui()
 
 func _finish_learn() -> void:
 	GameState.mastery_picker_open = false
 	if character_creation_mode:
 		# A caster class that also has known weapon masteries (currently only Ranger — Wizard's
 		# mastery_cap() is 0, so it never reaches this picker with character_creation_mode set at
-		# all) still needs its one-time starting-spell pick before the summary screen — cantrip_
-		# select.gd, generalized to support a Ranger-only single-round mode (see that file's own
-		# header comment and scripts/entities/CLAUDE.md's "Ranger class").
+		# all) still needs its one-time starting-spell pick — cantrip_select.gd, generalized to
+		# support a Ranger-only single-round mode (see that file's own header comment and
+		# scripts/entities/CLAUDE.md's "Ranger class"). Otherwise the whole onboarding chain is
+		# done (character_summary.gd already ran before this picker even opened) — snapshot the
+		# finished character for "Try Again" and finish.
 		if GameState.player_stats.caster != null:
 			var spell_picker = load("res://scripts/ui/cantrip_select.gd").new()
 			get_tree().root.call_deferred("add_child", spell_picker)
 			queue_free()
 			return
-		GameState.pending_summary_return_scene = "res://scripts/ui/mastery_picker.gd"
-		var summary = load("res://scripts/ui/character_summary.gd").new()
-		get_tree().root.call_deferred("add_child", summary)
+		GameState.snapshot_character_creation()
 	queue_free()
 
 # ── Swap mode ───────────────────────────────────────────────────────────────────────────────

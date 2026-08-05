@@ -5,27 +5,33 @@ extends CanvasLayer
 # mastery_picker.gd's overlay/panel styling, but card-click commits immediately
 # (subclass_select.gd's style) since there's no multi-select within a round.
 #
-# **Wizard** (FULL_CASTER, mastery_cap() == 0 — spawned by race_select.gd right after race
-# confirm, in place of the Mastery Picker): TWO rounds (owner-requested: one cantrip AND one
-# level-1 spell, not two cantrips). Round 1 "pick 1 of 3" always offers the fixed cantrip trio
-# (SpellDb.STARTER_CANTRIP_IDS — unchanged so the premade Jace's "cantrip": "fire_bolt" shortcut
-# and old saves stay valid) via GameState.choose_cantrip(), which also auto-assigns the pick into
-# the Special quick-cast slot; on that pick, this same script re-builds itself for round 2,
-# "pick 1 of 2" from the fixed level-1 starting pair (Magic Missile, Shield) via
-# GameState.choose_starting_spell(). Round 2's pick closes the picker for good.
+# POST-SPAWN pick, same as mastery_picker.gd (see that file's header comment) — reached only after
+# character_summary.gd's "Yes, I'm Ready!" (class_selected already true). No Back button anywhere
+# in this file, deliberately: the whole point of moving this pick after the final confirm was to
+# remove the free "Back -> reconfirm -> reroll" loop.
 #
-# **Ranger** (HALF_CASTER, mastery_cap() == 2 > 0 — spawned by mastery_picker.gd's _close() right
-# after its own mastery pick, since Ranger needs both onboarding steps and mastery selection
-# already claims the "Wizard's cantrip-slot substitute" branch in race_select.gd): a single round,
-# "pick 1 of up to 3" random level-1 candidates from SpellDb.RANGER_SPELL_IDS (no cantrip round —
-# Rangers get none, see cantrip_max()) via GameState.choose_starting_spell() directly. `_round`
-# uses the sentinel value RANGER_ROUND so `_build_ui()`/`_on_chosen()`/`_on_back()` can each tell
-# it apart from Wizard's rounds 1/2 with one added branch, rather than a whole second parallel
-# script. **Content-count caveat**: `RANGER_SPELL_IDS` only has ONE entry today (Fog Cloud — every
-# other implemented spell's real class list is Sorcerer/Wizard(/Warlock), not Ranger; see that
-# const's own comment in spell_db.gd), so this "pick 1 of 3" in practice renders a single card
-# until more Ranger-eligible spell content exists — `_roll_ranger_candidates()` already handles any
-# candidate count from 0 upward gracefully, no special-casing needed here.
+# **Wizard/Warlock** (FULL_CASTER, mastery_cap() == 0 — spawned directly by
+# character_summary.gd._on_confirm() in place of the Mastery Picker): Wizard gets TWO rounds
+# (owner-requested: one cantrip AND one level-1 spell, not two cantrips). Round 1 "pick 1 of 3"
+# always offers the fixed cantrip trio (SpellDb.STARTER_CANTRIP_IDS — unchanged so the premade
+# Jace's "cantrip": "fire_bolt" shortcut and old saves stay valid) via GameState.choose_cantrip(),
+# which also auto-assigns the pick into the Special quick-cast slot; on that pick, this same script
+# re-builds itself for round 2, "pick 1 of 2" from the fixed level-1 starting pair (Magic Missile,
+# Shield) via GameState.choose_starting_spell(). Round 2's pick closes the picker for good.
+# Warlock is a single round (see `_is_warlock` below) with no round 2.
+#
+# **Ranger** (HALF_CASTER, mastery_cap() == 2 > 0 — spawned by mastery_picker.gd's _finish_learn()
+# right after its own mastery pick, since Ranger needs both onboarding steps and mastery selection
+# already claims the "Wizard's cantrip-slot substitute" branch): a single round, "pick 1 of up to
+# 3" random level-1 candidates from SpellDb.RANGER_SPELL_IDS (no cantrip round — Rangers get none,
+# see cantrip_max()) via GameState.choose_starting_spell() directly. `_round` uses the sentinel
+# value RANGER_ROUND so `_build_ui()`/`_on_chosen()` can each tell it apart from Wizard's rounds
+# 1/2 with one added branch, rather than a whole second parallel script. **Content-count caveat**:
+# `RANGER_SPELL_IDS` only has ONE entry today (Fog Cloud — every other implemented spell's real
+# class list is Sorcerer/Wizard(/Warlock), not Ranger; see that const's own comment in
+# spell_db.gd), so this "pick 1 of 3" in practice renders a single card until more Ranger-eligible
+# spell content exists — `_roll_ranger_candidates()` already handles any candidate count from 0
+# upward gracefully, no special-casing needed here.
 
 const TILE_SIZE: float = 168.0
 const TILE_GAP: float = 16.0
@@ -42,13 +48,12 @@ var _tooltip_rtl: RichTextLabel
 var _hover_source_rect: Rect2 = Rect2()   # last-shown tile's global rect, for _process()'s hover-chain check
 var _round: int = 1
 var _candidates: Array[String] = []
-var _back_btn: Button
 var _is_ranger: bool = false
-# Warlock (FULL_CASTER, mastery_cap() == 0 like Wizard — spawned by the same race_select.gd
-# branch): a single round, "pick 1 of 3" from SpellDb.WARLOCK_STARTER_CANTRIP_IDS via
-# GameState.choose_cantrip(), then closes straight to the summary screen — no round-2 level-1
-# spell pick (Warlock's leveled spells grow via the normal level-up spell-learn picker instead,
-# same as Ranger — see scripts/entities/CLAUDE.md's "Warlock class").
+# Warlock (FULL_CASTER, mastery_cap() == 0 like Wizard — spawned by the same
+# character_summary.gd branch): a single round, "pick 1 of 3" from
+# SpellDb.WARLOCK_STARTER_CANTRIP_IDS via GameState.choose_cantrip(), then closes for good — no
+# round-2 level-1 spell pick (Warlock's leveled spells grow via the normal level-up spell-learn
+# picker instead, same as Ranger — see scripts/entities/CLAUDE.md's "Warlock class").
 var _is_warlock: bool = false
 
 func _ready() -> void:
@@ -56,12 +61,6 @@ func _ready() -> void:
 	GameState.cantrip_picker_open = true
 	_is_ranger = GameState.player_stats.character_class == Stats.CharacterClass.RANGER
 	_is_warlock = GameState.player_stats.character_class == Stats.CharacterClass.WARLOCK
-	# Wipes any previous cantrip/starting-spell pick from an earlier pass through this screen —
-	# covers both being re-opened fresh via character_summary.gd's "Take me back" and this
-	# instance's own round-2-back-to-round-1 rebuild (see _on_back()). No-op on a truly first-ever
-	# visit (nothing granted yet). Without this, re-picking here would leave the OLD pick known
-	# alongside the new one, since choose_cantrip()/choose_starting_spell() only ever append.
-	GameState.reset_wizard_onboarding_picks()
 	if _is_ranger:
 		_round = RANGER_ROUND
 		_candidates = _roll_ranger_candidates()
@@ -112,25 +111,6 @@ func _build_ui() -> void:
 	title.position = Vector2(MARGIN, 16.0)
 	title.size = Vector2(panel_w - MARGIN * 2.0, 36.0)
 	_panel.add_child(title)
-
-	_back_btn = Button.new()
-	_back_btn.text = "← Back"
-	_back_btn.size = Vector2(90.0, 28.0)
-	_back_btn.position = Vector2(panel_w - MARGIN - 90.0, 16.0)
-	_back_btn.focus_mode = Control.FOCUS_NONE
-	_back_btn.add_theme_font_size_override("font_size", 13)
-	var back_normal := StyleBoxFlat.new()
-	back_normal.bg_color = Color(0.14, 0.12, 0.10)
-	back_normal.set_border_width_all(1)
-	back_normal.border_color = Color(0.5, 0.45, 0.35)
-	back_normal.set_corner_radius_all(3)
-	_back_btn.add_theme_stylebox_override("normal", back_normal)
-	var back_hover := StyleBoxFlat.new()
-	back_hover.bg_color = Color(0.14, 0.12, 0.10).lightened(0.12)
-	back_hover.set_corner_radius_all(3)
-	_back_btn.add_theme_stylebox_override("hover", back_hover)
-	_back_btn.pressed.connect(_on_back)
-	_panel.add_child(_back_btn)
 
 	var hint := Label.new()
 	hint.text = "This choice is permanent. Hover a tile for details."
@@ -288,37 +268,9 @@ func _on_chosen(spell_id: String) -> void:
 	else:
 		GameState.choose_starting_spell(spell_id)
 	GameState.cantrip_picker_open = false
-	GameState.pending_summary_return_scene = "res://scripts/ui/cantrip_select.gd"
-	var summary = load("res://scripts/ui/character_summary.gd").new()
-	get_tree().root.call_deferred("add_child", summary)
-	queue_free()
-
-func _on_back() -> void:
-	if _round == 2:
-		# Undo round 1's cantrip pick before letting the player redo it — same queue_free/rebuild
-		# pattern _on_chosen() already uses for the forward round-1-to-round-2 transition.
-		GameState.reset_wizard_onboarding_picks()
-		_round = 1
-		_candidates = SpellDb.STARTER_CANTRIP_IDS.duplicate()
-		for child: Node in get_children():
-			if child is CanvasItem:
-				(child as CanvasItem).visible = false
-			child.queue_free()
-		_panel = null
-		_build_ui()
-		return
-	GameState.cantrip_picker_open = false
-	if _is_ranger:
-		# Ranger reached this screen from mastery_picker.gd (not race_select.gd directly — see
-		# this file's header comment), so Back has to return there, not to race select.
-		GameState.reset_wizard_onboarding_picks()
-		var mastery = load("res://scripts/ui/mastery_picker.gd").new()
-		mastery.character_creation_mode = true
-		get_tree().root.call_deferred("add_child", mastery)
-		queue_free()
-		return
-	var race_picker = load("res://scripts/ui/race_select.gd").new()
-	get_tree().root.call_deferred("add_child", race_picker)
+	# Whole onboarding chain is done now (character_summary.gd already ran, and — for Ranger —
+	# mastery_picker.gd already ran too) — snapshot the finished character for "Try Again".
+	GameState.snapshot_character_creation()
 	queue_free()
 
 func _unhandled_input(event: InputEvent) -> void:

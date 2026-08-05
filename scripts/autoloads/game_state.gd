@@ -101,11 +101,10 @@ var risen_from_dead_active: bool = false
 var inventory_open: bool = false
 var class_selected: bool = false
 # Custom character-creation Back-navigation state (scripts/ui/CLAUDE.md's "Custom character
-# creation: Back navigation + summary screen"). All three are transient onboarding-only state,
+# creation: Back navigation + summary screen"). Both are transient onboarding-only state,
 # never serialized — cleared by reset_for_class_reselect().
 var pending_point_buy_scores: Dictionary = {}   # last-confirmed point_buy_select.gd scores, empty = none yet
 var pending_background_bonus: Dictionary = {}   # last-confirmed background_select.gd bonus dict, empty = none yet
-var pending_summary_return_scene: String = ""   # script path character_summary.gd's "Take me back" reopens
 var character_summary_open: bool = false        # blocks input while character_summary.gd is visible
 var invincible: bool = false
 var noclip: bool = false
@@ -558,15 +557,6 @@ func reset_for_class_reselect() -> void:
 # whole picker from scratch — without leaving a stale first pick alongside the new one (choose_
 # cantrip()/choose_starting_spell() only ever APPEND to known_spells, they never replace). No-op-
 # safe to call on a fresh Wizard that hasn't picked anything yet.
-func reset_wizard_onboarding_picks() -> void:
-	if player_stats.caster == null:
-		return
-	for id: String in player_stats.caster.known_spells.duplicate():
-		_remove_ability_by_id(_spell_ability_id(id))
-	player_stats.caster.known_spells.clear()
-	player_stats.caster.prepared_spells.clear()
-	special_slot_spell_id = ""
-
 # Called by class_select.gd after player picks a class, replaces generic starting gear.
 func give_class_starting_items() -> void:
 	if equipment.get("melee") != null or player_ability_bar[0] != null:
@@ -2183,9 +2173,18 @@ func _run_death_save_sequence() -> void:
 func _end_death_save_sequence(revived: bool) -> void:
 	is_dying = false
 	if revived:
+		player_stats.exhaustion_level += 1
+		if player_stats.exhaustion_level >= 6:
+			game_log("[color=red]Your body finally gives out under the weight of exhaustion.[/color]")
+			is_game_over = true
+			AudioManager.play("player_die")
+			player_died.emit()
+			death_save_finished.emit(false)
+			return
 		player_stats.current_hp = 1
 		player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 		game_log("[color=lime]You cling to life and rise with 1 HP![/color]")
+		game_log("[color=orange]Clawing back from death leaves you Exhausted (level %d).[/color]" % player_stats.exhaustion_level)
 		risen_from_dead_active = true
 		game_log("[color=cyan]Risen from the Dead: you are invulnerable until your next turn![/color]")
 		player_status_changed.emit()
