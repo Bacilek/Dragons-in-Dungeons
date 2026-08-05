@@ -31,6 +31,7 @@ var _status_tray: StatusTray  # status/buff/debuff/passive icon row under the po
 var _inventory_overlay_ref: Node = null
 var _debug_panel_ref: Node = null
 var _hit_dice_label: Label
+var _short_rest_label: RichTextLabel  # BG3-style pip row: short rests remaining this long-rest cycle
 var _gold_label: Label        # gold counter (coin icon + amount), wired to GameState.gold_changed
 var _spell_slots_label: RichTextLabel  # always-visible per-level spell slot remaining/max (Wizard only)
 
@@ -261,7 +262,7 @@ func _ready() -> void:
 	# Status/buff/debuff/passive icon tray — a data-driven row directly below the portrait+level
 	# +hit-dice column (see status_tray.gd / docs/architecture/status-icon-tray-design.md).
 	_status_tray = StatusTray.new()
-	_status_tray.position = Vector2(4.0, 122.0)
+	_status_tray.position = Vector2(4.0, 138.0)
 	_status_tray.size = Vector2(388.0, 32.0)
 	$StatsPanel.add_child(_status_tray)
 	_status_tray.icon_hovered.connect(_on_status_tray_icon_hovered)
@@ -314,6 +315,22 @@ func _ready() -> void:
 	$StatsPanel.add_child(_hit_dice_label)
 	_update_hit_dice_label()
 
+	# Short rest pip row (BG3-style) — filled/empty circles showing short_rests_remaining vs
+	# max_short_rests for this long-rest cycle, right below the hit-dice line in the portrait
+	# column, so it's visible at a glance without opening the Alt rest menu.
+	_short_rest_label = RichTextLabel.new()
+	_short_rest_label.bbcode_enabled = true
+	_short_rest_label.fit_content = false
+	_short_rest_label.scroll_active = false
+	_short_rest_label.position = Vector2(4.0, 120.0)
+	_short_rest_label.size = Vector2(64.0, 16.0)
+	_short_rest_label.add_theme_font_size_override("normal_font_size", 13)
+	_short_rest_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	_short_rest_label.tooltip_text = "Short Rests remaining (refills on Long Rest)"
+	$StatsPanel.add_child(_short_rest_label)
+	GameState.short_rest_changed.connect(_update_short_rest_pips)
+	_update_short_rest_pips()
+
 	# AC label — always visible to the right of the LevelLabel row
 	_ac_label = Label.new()
 	_ac_label.add_theme_font_size_override("font_size", 12)
@@ -353,7 +370,7 @@ func _ready() -> void:
 	_spell_slots_label.bbcode_enabled = true
 	_spell_slots_label.fit_content = false
 	_spell_slots_label.scroll_active = false
-	_spell_slots_label.position = Vector2(4.0, 158.0)
+	_spell_slots_label.position = Vector2(4.0, 174.0)
 	_spell_slots_label.size = Vector2(388.0, 38.0)
 	_spell_slots_label.add_theme_font_size_override("normal_font_size", 13)
 	_spell_slots_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -510,6 +527,7 @@ func _on_class_chosen(cls: Stats.CharacterClass) -> void:
 	var path: String = CLASS_PORTRAIT.get(cls, "res://sprites/characters/classes/Barbarian/idle_1.png")
 	portrait.texture_normal = load(path)
 	_update_hit_dice_label()
+	_update_short_rest_pips()
 	# class_chosen re-fires from character_summary.gd's final confirm, right after class_selected
 	# is set true — this is the first point in the Custom-path onboarding chain it's safe to spawn
 	# the Invocation picker for a fresh Warlock's level-1 grant (see _on_invocation_choice_required).
@@ -555,6 +573,20 @@ func _update_hit_dice_label() -> void:
 	var sides: int = GameState.hit_die_sides()
 	var available: int = GameState.hit_dice
 	_hit_dice_label.text = "d%d:%d" % [sides, available]
+
+## BG3-style filled/empty pip row for GameState.short_rests_remaining / max_short_rests.
+func _update_short_rest_pips() -> void:
+	if _short_rest_label == null:
+		return
+	var remaining: int = GameState.short_rests_remaining
+	var mx: int = GameState.max_short_rests
+	var pips: PackedStringArray = []
+	for i: int in mx:
+		if i < remaining:
+			pips.append("[color=#ffd24d]●[/color]")
+		else:
+			pips.append("[color=#555560]○[/color]")
+	_short_rest_label.text = " ".join(pips)
 
 func _on_floor_changed(new_floor: int) -> void:
 	floor_label.text = "Floor: %d" % new_floor
@@ -882,27 +914,28 @@ func _refresh_ability_bar() -> void:
 				elif ab.ability_id == "hellish_rebuke_toggle" and "hellish_rebuke" in GameState.player_stats.tiefling_legacy_spell_ids:
 					# Hellish Rebuke's free-cast counter lives on Stats.tiefling_legacy_free_casts_remaining
 					# ("hellish_rebuke" key), not the Ability itself (uses_max stays 0/0, same
-					# free-base-ability convention as Hunter's Mark above) — max is the character's
-					# live proficiency_bonus (the same value long_rest() refills every racial
-					# lineage/legacy free-cast counter to). Tiefling only — a Warlock who simply
-					# LEARNED this spell normally has no such counter at all (real spell slots are
-					# the only resource, same as every other spell ability), so it falls through to
-					# the blank uses_max==0 branch below instead, exactly like any other spell.
+					# free-base-ability convention as Hunter's Mark above) — max is a flat 1 (a
+					# Fiendish Legacy spell gets exactly 1 free cast per long rest, then falls back
+					# to a real spell slot — see _grant_tiefling_legacy_spell()'s own comment).
+					# Tiefling only — a Warlock who simply LEARNED this spell normally has no such
+					# counter at all (real spell slots are the only resource, same as every other
+					# spell ability), so it falls through to the blank uses_max==0 branch below
+					# instead, exactly like any other spell.
 					var hr_remaining: int = GameState.player_stats.tiefling_legacy_free_casts_remaining.get("hellish_rebuke", 0)
-					var hr_max: int = GameState.player_stats.proficiency_bonus
-					use_lbl.text = "%d/%d" % [hr_remaining, hr_max]
+					use_lbl.text = "%d/%d" % [hr_remaining, 1]
 					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if hr_remaining > 0 else Color(0.5, 0.5, 0.5))
 				elif ab.ability_id.begins_with("spell:") and _racial_lineage_spell_counter(ab.ability_id.substr(6)) != null:
-					# Elven Lineage / Fiendish Legacy / Gnomish Lineage spells: each grants
-					# proficiency_bonus free casts per long rest (Stats.
-					# elf_lineage_free_casts_remaining / tiefling_legacy_free_casts_remaining /
-					# gnome_lineage_free_casts_remaining, spell_id -> int) — same free-base-ability
+					# Elven Lineage / Fiendish Legacy spells each get exactly 1 free cast per long
+					# rest (Stats.elf_lineage_free_casts_remaining / tiefling_legacy_free_casts_remaining,
+					# spell_id -> int) before falling back to a real spell slot of the spell's own
+					# level (Wizard/Ranger only). Gnomish Lineage spells (Stats.
+					# gnome_lineage_free_casts_remaining) are the one exception still on the
+					# proficiency_bonus counter — they're cantrips with no spell-slot fallback at
+					# all, so a flat 1 would make them nearly unusable. Same free-base-ability
 					# convention as Hunter's Mark/Hellish Rebuke above (Ability.uses_max stays 0/0).
-					# Once the counter hits 0 the spell is STILL castable, just no longer free — it
-					# falls back to a real spell slot of its own level (Wizard/Ranger only).
 					var sid: String = ab.ability_id.substr(6)
 					var lin_remaining: int = _racial_lineage_spell_counter(sid)
-					var lin_max: int = GameState.player_stats.proficiency_bonus
+					var lin_max: int = GameState.player_stats.proficiency_bonus if sid in GameState.player_stats.gnome_lineage_spell_ids else 1
 					use_lbl.text = "%d/%d" % [lin_remaining, lin_max]
 					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if lin_remaining > 0 else Color(0.5, 0.5, 0.5))
 				elif ab.uses_max == 0:

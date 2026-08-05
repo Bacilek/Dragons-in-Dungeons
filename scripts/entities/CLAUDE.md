@@ -466,11 +466,13 @@ prepared-spell cap (and exists even for a non-caster class, e.g. a Barbarian Elf
 in `to_dict()`/`from_dict()`; `GameState._restore_race_ability_bar()` re-adds their ability-bar
 entries on save/load replay.
 
-**Free cast economy**: each lineage spell grants `proficiency_bonus` free casts per long rest —
-`Stats.elf_lineage_free_casts_remaining: Dictionary` (spell_id → int, refilled to
-`proficiency_bonus` in `GameState.long_rest()`, same counter shape as Gnomish Lineage's own
-`gnome_lineage_free_casts_remaining` below; was a single-bool "one free cast" until a direct owner
-request made it a real per-long-rest counter, shown on the ability-bar slot's use-count badge —
+**Free cast economy**: each lineage spell grants exactly **1** free cast per long rest —
+`Stats.elf_lineage_free_casts_remaining: Dictionary` (spell_id → int, refilled to `1` in
+`GameState.long_rest()`; briefly scaled to `proficiency_bonus`, same counter shape as Gnomish
+Lineage's own `gnome_lineage_free_casts_remaining` below, before a direct owner correction reverted
+it to a flat 1 — a leveled lineage spell genuinely falls back to a real spell slot once its free
+use is spent, unlike Gnomish Lineage's 3 cantrip grants, which have no slot fallback at all and so
+keep the `proficiency_bonus` counter — shown on the ability-bar slot's use-count badge —
 `hud.gd`'s `_refresh_ability_bar()`, same `"X/Y"` treatment as Hunter's Mark/Rage) +
 `Stats.is_lineage_free_cast_available(spell_id)` (checks BOTH
 `elf_lineage_free_casts_remaining` and `tiefling_legacy_free_casts_remaining` — a single shared
@@ -491,6 +493,25 @@ the spell's own level (Wizard/
 Ranger only) — a non-caster simply has no further casts once the free one is spent, a documented
 simplification (same "narrow case, not the full system" precedent as Scroll of &lt;Spell&gt;
 casting for a non-caster).
+
+**Dedup against a spell already learned normally**: a Ranger who already picked this exact spell
+from the level-up spell-learn picker (`SpellDb.RANGER_SPELL_IDS` includes `pass_without_trace` and
+`fog_cloud`, so this is a real, common overlap with Wood Elf's own level-5 grant, not a hypothetical
+one) used to end up with the spell tracked by BOTH systems at once — the normal
+`known_spells`/`prepared_spells` bookkeeping AND the lineage's own always-prepared grant — which
+could leave it duplicated on the ability bar. Two-sided fix: (1) `GameState.
+_migrate_spell_out_of_known_bookkeeping(spell_id)` — called at the top of both
+`_grant_elf_lineage_spell()` and `_grant_tiefling_legacy_spell()` — pulls the spell out of
+`known_spells`/`prepared_spells` and clears any existing `"spell:"` ability-bar entry FIRST (covers
+the "learned via the picker, THEN lineage-granted" order), so the lineage grant always ends up the
+sole owner of that spell_id going forward (a single ability-bar entry, governed only by the
+free-cast counter above, no longer selectable/toggleable from the Spellbook). (2) The reverse order
+(lineage-granted first, then the level-up picker/a scroll tries to teach the SAME spell_id again)
+is closed at both the offer side — `_roll_spell_learn_choices()`/`can_learn_scroll_spell()` never
+offer/allow a spell already in `elf_lineage_spell_ids`/`tiefling_legacy_spell_ids` — and as a
+generic backstop, `GameState.add_ability()` itself now refuses to place a second `Ability` sharing
+an `ability_id` already on the bar (returns `true`/no-op instead), so no future double-grant path
+of any kind can duplicate a bar slot.
 
 **Per sub-race** (`GameState._elf_lineage_spell_for(subrace, threshold_level)`):
 
@@ -643,11 +664,12 @@ casting for a non-caster).
   appears, a documented no-op rather than a dead button.
 - **Wood Elf's 35 ft speed** (level-1 benefit): approximated as a duty cycle rather than a
   distance, same reasoning as an `Enemy`'s own `"speed"` pool key (see "Movement speed scaling"
-  below) — `Player._wood_elf_move_counter` increments on every real move; every 6th one doesn't
-  cost the turn (`_try_move()`'s free-move check, extended to also fire for this counter alongside
-  Expeditious Retreat/Longstrider — see the next entry). **Scope limitation**: only wired into
-  `_try_move()` (single-step WASD movement), same documented gap as Expeditious Retreat/
-  Battlefield Expert R3 — the queued-path/chase-to-target movement functions don't check it.
+  below) — `Player._consume_duty_cycle("wood_elf", 1, 6)` (backed by the shared
+  `Player._speed_gate_accum` dict, see that section) fires every 6th real move, at which point it
+  doesn't cost the turn (`_try_move()`'s free-move check, alongside Expeditious Retreat/Longstrider
+  — see the next entry). **Scope limitation**: only wired into `_try_move()` (single-step WASD
+  movement), same documented gap as Expeditious Retreat/Battlefield Expert R3 — the
+  queued-path/chase-to-target movement functions don't check it.
 - **Longstrider** (`_longstrider()`, Transmutation, level 1, touch (`range_tiles = 1`, arm-then-
   any-click-confirms-on-yourself — same "no ally-buff targeting exists" self-only scope as Mage
   Armor/Invisibility), AUTO_HIT, NOT Concentration): now a real, independently-learnable
@@ -656,8 +678,8 @@ casting for a non-caster).
   `Scroll of Longstrider` exists now. RAW is a flat +10 ft speed buff (+1/3 over the 30 ft
   baseline), so — unlike Expeditious Retreat, which is genuinely a Dash-as-bonus-action double
   move — it uses the same duty-cycle mechanism as Wood Elf's 35 ft speed / Goliath's Large Form
-  +1/3 movement: `Player._longstrider_move_counter` increments every real move while
-  `longstrider_turns > 0`, and every 3rd one is free (`_try_move()`'s free-move check, its own
+  +1/3 movement: `Player._consume_duty_cycle("longstrider", 1, 3)` fires every 3rd real move while
+  `longstrider_turns > 0`, at which point it's free (`_try_move()`'s free-move check, its own
   branch alongside — not sharing a flag with — Expeditious Retreat/Wood Elf's own counters).
   **Bugfix**: this used to incorrectly share Expeditious Retreat's "first move each turn is free"
   mechanism, which granted far more than +1/3 (effectively doubling movement on any turn the
@@ -828,11 +850,12 @@ TIEFLING branch:
 
   **Mechanism is a direct clone of Elf's Elven Lineage** (see "Elf" above) — same ALWAYS-PREPARED
   ability-bar grant outside `known_spells`/`prepared_spells`/`SpellcasterState` bookkeeping (works
-  even for a non-caster class, e.g. a Tiefling Barbarian), same `proficiency_bonus`-free-casts-
-  per-long-rest counter economy
-  (`Stats.tiefling_legacy_spell_ids`/`tiefling_legacy_free_casts_remaining`/
+  even for a non-caster class, e.g. a Tiefling Barbarian), same 1-free-cast-per-long-rest counter
+  economy (`Stats.tiefling_legacy_spell_ids`/`tiefling_legacy_free_casts_remaining`/
   `is_tiefling_legacy_free_cast_available()`, checked in `SpellEffects._consume_slot()` right
-  alongside the Elf check, refilled to `proficiency_bonus` in `GameState.long_rest()`), same three-threshold grant timing
+  alongside the Elf check, refilled to `1` in `GameState.long_rest()`), and the same dedup-against-
+  an-already-learned-spell migration (`GameState._migrate_spell_out_of_known_bookkeeping()`, see
+  "Elf" above's "Dedup against a spell already learned normally" note) — same three-threshold grant timing
   except the level-1 cantrip is handed out immediately at race select
   (`GameState.give_race_starting_items()`'s TIEFLING branch) rather than waiting for a level-up —
   levels 3 and 5 are granted from `gain_exp()`'s level-up block exactly like Elf's own level-3/5
@@ -1071,8 +1094,10 @@ this engine, same "granted but nothing to hook into" precedent as Elf's Fey Ance
     escape attempt (`player.gd._attempt_web_escape()`), reads
     `PlayerGoliath.has_large_form_str_adv()` alongside its existing Poisoned/Frightened DISADV
     check, netting ADV/DISADV/flat per the normal cancel rule.
-  - **+1/3 movement speed**: reuses Wood Elf's own duty-cycle mechanism verbatim (see "Elf" above)
-    — `PlayerGoliath._large_form_move_counter` increments every real move; every 3rd one is free
+  - **+1/3 movement speed**: reuses Wood Elf's own duty-cycle mechanism (see "Elf" above) via the
+    same shared `CombatMath.tick_duty_cycle()` math — `PlayerGoliath._large_form_move_counter`
+    (kept local to `PlayerGoliath` rather than folded into `Player._speed_gate_accum`, since it's a
+    single implementation, not a duplicate) fires every 3rd real move, at which point it's free
     (`_try_move()`'s free-move check, alongside Expeditious Retreat/Longstrider/Wood Elf's own
     counters). Same scope limitation as those three: only wired into `_try_move()` (single-step
     WASD movement).
@@ -2036,11 +2061,16 @@ every consequence below already fires automatically.
 - **-1/6 movement speed per level**: reuses the exact same `TurnManager.enemy_actions_this_round =
   2` knob Slowed (Mud/Water) already drives — see root `CLAUDE.md`'s "Player movement-speed visual
   consistency" permanent rule: the move tween itself never changes, only how many actions the
-  environment gets for that one move. `Player._exhaustion_move_counter` (not serialized, same tier
-  as `_wood_elf_move_counter`) is a 6-slot duty cycle — `Player._exhaustion_move_penalizes()`
-  increments it and returns true for exactly `exhaustion_level` out of every 6 real moves, spread
-  evenly across the cycle rather than front-loaded (level 3 penalizes 3 of every 6 moves = 50%
-  slower, matching -15 ft of the 30 ft baseline exactly). Wired into both `_try_move()` (WASD) and
+  environment gets for that one move. `Player._exhaustion_move_penalizes()` calls
+  `Player._consume_duty_cycle("exhaustion", exhaustion_level, 6)` (the shared
+  `Player._speed_gate_accum` dict + `CombatMath.tick_duty_cycle()` accumulator — see "Movement
+  speed scaling" below), which fires true for exactly `exhaustion_level` out of every 6 real moves,
+  spread evenly across the cycle rather than front-loaded (level 3 penalizes 3 of every 6 moves =
+  50% slower, matching -15 ft of the 30 ft baseline exactly). **Bugfix**: this used to be a plain
+  `counter % 6 < exhaustion_level` check, which is actually front-loaded (always the first N of
+  every 6 moves) despite this same claim of an even spread already being the intent — now genuinely
+  evenly spread via the shared accumulator (e.g. level 2 fires on moves 3 and 6, not 1 and 2). Wired
+  into both `_try_move()` (WASD) and
   `_apply_queued_step_speed()` (click-to-move/enemy-chase), alongside their existing Slowed checks
   — same "both movement paths" coverage Slowed itself has. A free move (Expeditious
   Retreat/Longstrider/Wood Elf/Battlefield Expert's side-step/Adrenaline Rush) returns before
@@ -2571,7 +2601,7 @@ the click landed exactly on the Companion's own tile, the upcast ALSO reaches it
   different concentration spell).
 - **Longstrider**: flavor-only log line, no mechanical speed bonus — this engine has no movement-
   speed-scaling concept for `Companion` at all (no per-round "extra move" hook exists the way
-  `Player._longstrider_move_counter`'s duty cycle has for the player), a documented scope cut
+  `Player._speed_gate_accum`'s duty cycle has for the player), a documented scope cut
   rather than a half-built mechanic, same tier as Speak with Animals' own flavor-only cantrip.
 
 **No upcast benefit is intentionally set** for Misty Step, Expeditious Retreat, Darkness, and Ray

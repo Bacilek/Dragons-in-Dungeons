@@ -777,11 +777,13 @@ func _grant_gnome_lineage_spells() -> void:
 
 ## Grants a Fiendish Legacy spell — ALWAYS PREPARED, outside known_spells/prepared_spells/
 ## SpellcasterState bookkeeping, exactly mirroring _grant_elf_lineage_spell() above. Idempotent.
+## Grants exactly 1 free cast per long rest (see _grant_elf_lineage_spell()'s own comment).
 func _grant_tiefling_legacy_spell(spell_id: String) -> void:
 	if spell_id == "" or spell_id in player_stats.tiefling_legacy_spell_ids:
 		return
+	_migrate_spell_out_of_known_bookkeeping(spell_id)
 	player_stats.tiefling_legacy_spell_ids.append(spell_id)
-	player_stats.tiefling_legacy_free_casts_remaining[spell_id] = player_stats.proficiency_bonus
+	player_stats.tiefling_legacy_free_casts_remaining[spell_id] = 1
 	# Hellish Rebuke is a toggle-armed reaction, not a normal on-demand cast — see Stats.
 	# hellish_rebuke_armed's own comment and scripts/entities/CLAUDE.md's "Tiefling" section.
 	if spell_id == "hellish_rebuke":
@@ -805,16 +807,40 @@ func _build_hellish_rebuke_ability() -> Ability:
 	return ab
 
 
+## Pulls `spell_id` OUT of the caster's normal known_spells/prepared_spells bookkeeping and drops
+## its existing ability-bar entry (regardless of which system put it there) — called right before
+## a lineage/legacy grant takes over a spell the player already learned normally (e.g. a Ranger who
+## picked Pass Without Trace from the level-up spell-learn picker, then hits Wood Elf's own level-5
+## grant for the same spell). Without this, the spell would be tracked by BOTH the normal Spellbook
+## prepare/unprepare flow AND the lineage always-prepared flow at once — the two systems fighting
+## over the same ability_id is exactly what used to let it end up duplicated on the ability bar
+## (learned+prepared once via the level-up picker, then a second independent copy added by the
+## lineage grant once it found no CURRENT ability-bar entry, e.g. because the spell had since been
+## unprepared). A no-op for a spell that was never known normally (nothing to migrate).
+func _migrate_spell_out_of_known_bookkeeping(spell_id: String) -> void:
+	_remove_ability_by_id("spell:" + spell_id)
+	var caster: SpellcasterState = player_stats.caster
+	if caster == null:
+		return
+	if spell_id in caster.known_spells or spell_id in caster.prepared_spells:
+		caster.known_spells.erase(spell_id)
+		caster.prepared_spells.erase(spell_id)
+		spell_slots_changed.emit()
+
 ## Grants a lineage spell — ALWAYS PREPARED, outside the normal known_spells/prepared_spells/
 ## SpellcasterState bookkeeping entirely (never counts against a caster's known-cantrip or
 ## prepared-spell cap; works even for a non-caster class). Idempotent — safe to call again
 ## (gain_exp()'s own old_level < N guard already prevents a double-grant in practice, but
-## _restore_race_ability_bar() above may re-run this indirectly via save/load replay).
+## _restore_race_ability_bar() above may re-run this indirectly via save/load replay). Grants
+## exactly 1 free cast per long rest (not proficiency_bonus — direct owner correction, matching
+## Hunter's Mark's own "free once, then costs the real resource" framing) before falling back to a
+## real spell slot of the spell's own level.
 func _grant_elf_lineage_spell(spell_id: String) -> void:
 	if spell_id == "" or spell_id in player_stats.elf_lineage_spell_ids:
 		return
+	_migrate_spell_out_of_known_bookkeeping(spell_id)
 	player_stats.elf_lineage_spell_ids.append(spell_id)
-	player_stats.elf_lineage_free_casts_remaining[spell_id] = player_stats.proficiency_bonus
+	player_stats.elf_lineage_free_casts_remaining[spell_id] = 1
 	if _find_ability_by_id("spell:" + spell_id) == null:
 		add_ability(_build_spell_ability(spell_id))
 	var spell: Spell = SpellDb.get_spell(spell_id)
@@ -1367,6 +1393,16 @@ func _find_ability_by_id(id: String) -> Ability:
 func add_ability(ability: Ability) -> bool:
 	if ability.is_passive:
 		return false
+	# Never place two abilities sharing the same ability_id — most call sites already
+	# defensively check `_find_ability_by_id(id) == null` before calling this, but
+	# set_spell_prepared()/place_spell_in_slot() didn't, which used to let a spell already
+	# granted outside known_spells/prepared_spells (an Elf/Tiefling lineage spell) end up
+	# duplicated on the bar the moment it was ALSO learned/prepared through the normal
+	# spellbook flow. This is the single generic backstop for that whole class of bug.
+	for i: int in ABILITY_BAR_SIZE:
+		var existing: Ability = player_ability_bar[i] as Ability
+		if existing != null and existing.ability_id == ability.ability_id:
+			return true
 	for i: int in ABILITY_BAR_SIZE:
 		if player_ability_bar[i] == null:
 			player_ability_bar[i] = ability
@@ -1425,6 +1461,10 @@ func can_learn_scroll_spell(item: Item) -> bool:
 		return false
 	var caster: SpellcasterState = player_stats.caster
 	if caster.known_spells.has(spell_id):
+		return false
+	# Already granted for free by a racial lineage/legacy (Elf/Tiefling) — same reasoning as
+	# _roll_spell_learn_choices()'s own exclusion above.
+	if spell_id in player_stats.elf_lineage_spell_ids or spell_id in player_stats.tiefling_legacy_spell_ids:
 		return false
 	return true
 
@@ -1526,7 +1566,13 @@ func _roll_spell_learn_choices() -> void:
 		return
 	for sid: String in (pool_variant as Array[String]):
 		var s: Spell = SpellDb.get_spell(sid)
-		if s != null and s.level > 0 and s.level <= max_level and not caster.known_spells.has(sid):
+		# Skip a spell already granted for free by a racial lineage/legacy (Elf/Tiefling) — offering
+		# it here would just be a wasted pick (learn_spell()/set_spell_prepared() would try to
+		# prepare it into known_spells/prepared_spells alongside the lineage's own always-prepared
+		# copy of the same spell_id; add_ability() now blocks the resulting duplicate ability-bar
+		# entry, but there's no reason to ever offer the pick at all).
+		var already_lineage_granted: bool = sid in player_stats.elf_lineage_spell_ids or sid in player_stats.tiefling_legacy_spell_ids
+		if s != null and s.level > 0 and s.level <= max_level and not caster.known_spells.has(sid) and not already_lineage_granted:
 			candidates.append(sid)
 	Rng.shuffle(candidates)
 	if candidates.is_empty():
@@ -1914,12 +1960,14 @@ func long_rest() -> void:
 	player_stats.aasimar_celestial_revelation_used = false
 	player_stats.large_form_used = false
 	player_stats.giant_ancestry_uses_remaining = player_stats.proficiency_bonus
-	# Elven Lineage / Fiendish Legacy: each lineage spell's free-cast counter refills to
-	# proficiency_bonus (same counter shape as Gnomish Lineage below).
+	# Elven Lineage / Fiendish Legacy: each lineage spell's free-cast counter refills to exactly 1
+	# (a leveled spell falls back to a real spell slot once that 1 use is spent — Gnomish Lineage
+	# below stays on the proficiency_bonus counter since its 3 grants are cantrips with no slot
+	# fallback at all).
 	for elf_sid: String in player_stats.elf_lineage_spell_ids:
-		player_stats.elf_lineage_free_casts_remaining[elf_sid] = player_stats.proficiency_bonus
+		player_stats.elf_lineage_free_casts_remaining[elf_sid] = 1
 	for tsid2: String in player_stats.tiefling_legacy_spell_ids:
-		player_stats.tiefling_legacy_free_casts_remaining[tsid2] = player_stats.proficiency_bonus
+		player_stats.tiefling_legacy_free_casts_remaining[tsid2] = 1
 	# Gnomish Lineage: each lineage spell's free-cast counter refills to proficiency_bonus.
 	for gnome_sid: String in player_stats.gnome_lineage_spell_ids:
 		player_stats.gnome_lineage_free_casts_remaining[gnome_sid] = player_stats.proficiency_bonus

@@ -162,12 +162,19 @@ var adrenaline_rush_move_free_pending: bool = false
 # ALWAYS PREPARED — granted straight onto the ability bar via GameState._build_spell_ability(),
 # outside the normal known_spells/prepared_spells/SpellcasterState bookkeeping entirely, so it
 # never counts against a caster's known-cantrip or prepared-spell cap (and exists even for a
-# non-caster class, e.g. a Barbarian Elf). Each grants proficiency_bonus free casts per long rest
-# (elf_lineage_free_casts_remaining, refilled to proficiency_bonus in GameState.long_rest() — same
-# counter shape as Gnomish Lineage's gnome_lineage_free_casts_remaining below, was a single-bool
-# "one free cast" until a direct owner request made it a real per-long-rest counter, shown on the
-# ability-bar slot's use-count badge like Hunter's Mark/Rage) — SpellEffects._consume_slot()
-# checks Stats.is_lineage_free_cast_available() before ever touching a real spell slot. Beyond
+# non-caster class, e.g. a Barbarian Elf). Each grants exactly 1 free cast per long rest
+# (elf_lineage_free_casts_remaining, refilled to 1 in GameState.long_rest() — direct owner
+# correction: this briefly scaled to proficiency_bonus, matching Gnomish Lineage's own
+# gnome_lineage_free_casts_remaining below, but was reverted back to a flat 1 since a leveled
+# lineage spell genuinely does fall back to a real spell slot once its free use is spent —
+# Gnomish Lineage's 3 grants are cantrips with no such fallback, so THEY keep the
+# proficiency_bonus counter; shown on the ability-bar slot's use-count badge like Hunter's
+# Mark/Rage) — SpellEffects._consume_slot() checks Stats.is_lineage_free_cast_available() before
+# ever touching a real spell slot. If the spell was already known through the normal level-up
+# spell-learn picker at the moment the lineage grant fires, GameState.
+# _migrate_spell_out_of_known_bookkeeping() pulls it out of known_spells/prepared_spells first —
+# a spell is never simultaneously tracked by both systems (that dual-tracking used to let it end
+# up duplicated on the ability bar). Beyond
 # the free uses, a further cast needs a real spell slot of the spell's own level (Wizard/Ranger
 # only) — a non-caster simply has no further casts available once the free ones are spent, a
 # documented simplification (same "non-caster gets the narrow case, not the full system" precedent
@@ -189,10 +196,10 @@ func is_lineage_free_cast_available(spell_id: String) -> bool:
 # 1/3/5, not 3/5 — the level-1 grant is handed out immediately at race select via
 # GameState.give_race_starting_items(), not waiting for a level-up). Each of the 3 legacies
 # (TieflingLegacy) grants a cantrip at level 1, a 1st-level spell at level 3, a 2nd-level spell at
-# level 5 — always prepared, outside known_spells/prepared_spells bookkeeping, proficiency_bonus
-# free casts per long rest before falling back to a real spell slot (leveled spells only — a
-# cantrip is already unlimited, so the free-cast counter is a harmless no-op for the level-1
-# grant). See scripts/entities/CLAUDE.md's "Tiefling" section for the full spell table.
+# level 5 — always prepared, outside known_spells/prepared_spells bookkeeping, exactly 1 free cast
+# per long rest before falling back to a real spell slot (leveled spells only — a cantrip is
+# already unlimited, so the free-cast counter is a harmless no-op for the level-1 grant). See
+# scripts/entities/CLAUDE.md's "Tiefling" section for the full spell table.
 var tiefling_legacy_spell_ids: Array[String] = []
 var tiefling_legacy_free_casts_remaining: Dictionary = {}  # spell_id -> int, refilled in GameState.long_rest()
 
@@ -367,7 +374,8 @@ var slowed_turns: int = 0
 # D&D 2024 Exhaustion, 0-6 levels. Pure debuff scaffold — no source in this codebase grants it yet
 # (scripts/entities/CLAUDE.md's "Exhaustion" section). Each level: -2 to every player d20 test
 # (CombatMath.roll_with_adv_disadv()'s "exhaustion_penalty" field) and -1/6 movement speed (a
-# duty-cycle penalty, same mechanism family as Wood Elf's 35ft speed — see Player._exhaustion_move_counter).
+# duty-cycle penalty, same mechanism family as Wood Elf's 35ft speed — see Player._speed_gate_accum/
+# Player._exhaustion_move_penalizes()).
 # Removes exactly 1 level per completed long rest (GameState.long_rest()).
 var exhaustion_level: int = 0
 var temp_hp: int = 0  # Natural Sleeper R2 — consumed before regular HP damage
@@ -502,7 +510,7 @@ var hex_free_recast_pending: bool = false
 
 # Longstrider (Wood Elf lineage spell, level 3) — NOT Concentration (5e RAW). +1/3 movement speed
 # via the same duty-cycle mechanism as Wood Elf's 35ft speed / Goliath's Large Form (Player.
-# _longstrider_move_counter — every 3rd real move is free) — NOT Expeditious Retreat's "first
+# _speed_gate_accum — every 3rd real move is free) — NOT Expeditious Retreat's "first
 # move each turn is free" mechanism, which is a genuine double-move and was a bug when Longstrider
 # used to share it. See scripts/entities/CLAUDE.md's "Elf" section. Deliberately NOT serialized,
 # same mid-floor-only simplification as expeditious_retreat_turns.
