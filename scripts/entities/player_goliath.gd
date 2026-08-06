@@ -12,7 +12,7 @@ var player: Player
 # ── Large Form ───────────────────────────────────────────────────────────────────
 # Wood-Elf-style duty cycle for the +1/3 movement bonus (see scripts/entities/CLAUDE.md's "Elf"
 # section, "Wood Elf's 35 ft speed") — every 3rd real move while Large Form is active doesn't cost
-# a turn. Not serialized — mid-floor combat bookkeeping, same tier as _wood_elf_move_counter.
+# a turn. Not serialized — mid-floor combat bookkeeping, same tier as Player._speed_gate_accum.
 var _large_form_move_counter: int = 0
 
 func activate_large_form() -> void:
@@ -55,15 +55,15 @@ func has_large_form_str_adv() -> bool:
 
 # Called from player.gd's per-real-turn "first move free" gate, alongside Expeditious Retreat/
 # Longstrider/Wood Elf's own counters — a duty-cycle +1/3 speed bonus (every 3rd real move is
-# free), same mechanism/precedent as Wood Elf's own 35 ft speed.
+# free), sharing the same CombatMath.tick_duty_cycle() accumulator math Player._consume_duty_cycle()
+# uses for Wood Elf/Longstrider/Exhaustion (kept as its own local counter rather than folded into
+# Player._speed_gate_accum, since Large Form is a single implementation, not a duplicate).
 func consume_large_form_free_move() -> bool:
 	if player.stats.large_form_turns <= 0:
 		return false
-	_large_form_move_counter += 1
-	if _large_form_move_counter >= 3:
-		_large_form_move_counter = 0
-		return true
-	return false
+	var r: Dictionary = CombatMath.tick_duty_cycle(_large_form_move_counter, 1, 3)
+	_large_form_move_counter = r["accum"]
+	return r["fires"] > 0
 
 func _footprint_free(top_left: Vector2i) -> bool:
 	if player._dungeon_floor == null:

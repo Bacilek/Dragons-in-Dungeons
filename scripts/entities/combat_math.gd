@@ -37,6 +37,24 @@ static func consume_heroic_inspiration() -> bool:
 		return true
 	return false
 
+# Generic Bresenham-style duty-cycle accumulator — the same math Enemy._tick_speed_gate() uses for
+# its "speed" pool key, extracted into a pure, reusable form so player-side movement-speed
+# modifiers (Wood Elf/Longstrider/Large Form's free-move bonus, Exhaustion's move penalty) share
+# one implementation instead of each hand-rolling its own increment/wrap counter — see
+# scripts/entities/CLAUDE.md's "Movement speed scaling"/Player._speed_gate_accum. `accum` is the
+# caller-owned running total (stored per source, e.g. Player._speed_gate_accum); `moves`/`per`
+# mirror the enemy "speed" pool shape (moves=1 reproduces a plain "every Nth" gate; moves > 1
+# reproduces Exhaustion's "K of every `per`" gate, spread evenly rather than front-loaded). Returns
+# {accum, fires} — fires is normally 0 or 1 for every current caller, but the accumulator itself
+# supports moves > per exactly like Enemy's own above-baseline "speed" entries.
+static func tick_duty_cycle(accum: int, moves: int, per: int) -> Dictionary:
+	var a: int = accum + moves
+	var fires: int = 0
+	while a >= per:
+		a -= per
+		fires += 1
+	return {"accum": a, "fires": fires}
+
 # ADV/DISADV: standard 5e rule, not a net-count house rule — any ADV source together with any
 # DISADV source always cancels to a flat roll, regardless of how many sources are on each side
 # (adv_count=2, disadv_count=1 is still a flat roll, NOT Advantage). Only a pure adv_count>0/
