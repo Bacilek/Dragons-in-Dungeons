@@ -170,3 +170,26 @@ func activate_hail_of_thorns() -> void:
 		GameState.game_log("[color=cyan]Hail of Thorns is armed — your next ranged hit brings down a rain of thorns.[/color]")
 	else:
 		GameState.game_log("[color=gray]Hail of Thorns stood down.[/color]")
+
+# ── Ensnaring Strike (learnable 1st-level spell) ────────────────────────────────────────────────
+# Same toggle-armed shape as Hail of Thorns above, but "any weapon hit" — wired into both the
+# primary melee (player.gd._bump_attack()) and primary ranged (PlayerRanged.ranged_attack()) hit
+# branches, not ranged-only.
+
+func can_activate_ensnaring_strike() -> bool:
+	if GameState.invincible:
+		return true
+	var caster: SpellcasterState = player.stats.caster
+	if caster == null or caster.slot_pool == null:
+		return false
+	return caster.slot_pool.can_cast(SpellDb.get_spell("ensnaring_strike"))
+
+func activate_ensnaring_strike() -> void:
+	if not player.stats.ensnaring_strike_armed and not can_activate_ensnaring_strike():
+		GameState.game_log("[color=gray]Ensnaring Strike has no spell slot left to fuel it.[/color]")
+		return
+	player.stats.ensnaring_strike_armed = not player.stats.ensnaring_strike_armed
+	if player.stats.ensnaring_strike_armed:
+		GameState.game_log("[color=cyan]Ensnaring Strike is armed — your next weapon hit binds its target in thorns.[/color]")
+	else:
+		GameState.game_log("[color=gray]Ensnaring Strike stood down.[/color]")

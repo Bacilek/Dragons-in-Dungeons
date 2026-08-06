@@ -33,7 +33,7 @@ const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor
 # spell content of its own, e.g. Ensnaring Strike/Goodberry/Hunter's Mark-as-a-spell/Zephyr Strike
 # from the real 2024 Ranger list). No cantrips for Ranger either way (`cantrip_max()` stays 0 for
 # every non-Wizard class, matching both rule sets — Rangers don't get cantrips).
-const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace", "cure_wounds", "aid", "barkskin", "hail_of_thorns"]
+const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace", "cure_wounds", "aid", "barkskin", "hail_of_thorns", "ensnaring_strike"]
 # Warlock's real 5e/2024 Pact Magic list overlap with the shared SpellDb pool (scripts/entities/
 # CLAUDE.md's "Warlock class") — all ten are genuinely on Warlock's actual class list, no
 # reflavoring needed, unlike Ranger's thinner/approximated subset above. hellish_rebuke and hex are
@@ -134,6 +134,7 @@ static func get_spell(id: String) -> Spell:
 		"aid": return _aid()
 		"barkskin": return _barkskin()
 		"hail_of_thorns": return _hail_of_thorns()
+		"ensnaring_strike": return _ensnaring_strike()
 		"poison_spray": return _poison_spray()
 		"chill_touch": return _chill_touch()
 		"ray_of_sickness": return _ray_of_sickness()
@@ -762,6 +763,33 @@ static func _hail_of_thorns() -> Spell:
 	s.effect_id = "hail_of_thorns"
 	s.class_list = ["RANGER"]
 	s.upcast_dice_count = 1   # +1d10 per slot level above 1st
+	return s
+
+static func _ensnaring_strike() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "ensnaring_strike"
+	s.spell_name = "Ensnaring Strike"
+	s.school = "Conjuration"
+	# RAW casting time is a Bonus Action toggle; approximated as Free, same convention as Hail of
+	# Thorns/Hellish Rebuke's own reaction-toggle shape (this engine has no reaction/bonus-action-
+	# casting framework — see those spells' own comments).
+	s.casting_time = "Free"
+	s.level = 1
+	s.range_tiles = 0   # "your weapon range" — unlimited, matches whatever weapon lands the trigger hit, not a separate spell range
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.SAVE
+	s.save_stat = "STR"
+	s.save_for_half = false
+	s.duration_turns = 10
+	s.is_concentration = true
+	s.dice_count = 1
+	s.dice_sides = 6
+	s.damage_type = "Piercing"
+	s.description = "Toggle to arm — the next creature you hit with a weapon attack makes a STR save (Advantage if Large or bigger) or is Restrained until the spell ends. While Restrained, the target takes 1d6 Piercing at the start of its turns and repeats the STR save each turn, ending the spell early on a success."
+	s.icon_path = "res://icons/spells/1/ensnaring_strike.png"
+	s.effect_id = "ensnaring_strike"
+	s.class_list = ["RANGER"]
+	s.upcast_dice_count = 1   # +1d6 per slot level above 1st
 	return s
 
 static func _poison_spray() -> Spell:

@@ -672,14 +672,14 @@ for that spell.
   `ELF_LINEAGE_SPELL_IDS` below, since their sub-race's own free grant and normal learn/
   slot-casting are independent paths to the same spell, see `scripts/entities/CLAUDE.md`'s "Elf"
   section) + `RANGER_SPELL_IDS` (Ranger's own eligible subset, currently
-  `["fog_cloud", "pass_without_trace", "cure_wounds", "aid", "barkskin", "hail_of_thorns"]` —
-  `fog_cloud` is the only `LEVELED_SPELL_IDS` entry whose real 5e/5.5e class list actually includes
-  Ranger (every other `LEVELED_SPELL_IDS` entry is Sorcerer/Wizard(/Warlock)-only on both rule
-  sets, so it was deliberately NOT opened up to Ranger despite reusing the same shared spell pool);
-  `pass_without_trace`/`cure_wounds`/`aid`/`barkskin`/`hail_of_thorns` are all Ranger-exclusive
-  entries (`class_list = ["RANGER"]` only, never added to `LEVELED_SPELL_IDS`) — see
-  `scripts/entities/CLAUDE.md`'s "Ranger class" for Cure Wounds'/Aid's/Barkskin's/Hail of Thorns'
-  full mechanisms)
+  `["fog_cloud", "pass_without_trace", "cure_wounds", "aid", "barkskin", "hail_of_thorns",
+  "ensnaring_strike"]` — `fog_cloud` is the only `LEVELED_SPELL_IDS` entry whose real 5e/5.5e class
+  list actually includes Ranger (every other `LEVELED_SPELL_IDS` entry is Sorcerer/Wizard(/Warlock)
+  -only on both rule sets, so it was deliberately NOT opened up to Ranger despite reusing the same
+  shared spell pool); `pass_without_trace`/`cure_wounds`/`aid`/`barkskin`/`hail_of_thorns`/
+  `ensnaring_strike` are all Ranger-exclusive entries (`class_list = ["RANGER"]` only, never added
+  to `LEVELED_SPELL_IDS`) — see `scripts/entities/CLAUDE.md`'s "Ranger class" for Cure Wounds'/
+  Aid's/Barkskin's/Hail of Thorns'/Ensnaring Strike's full mechanisms)
   + `CLASS_SPELL_LISTS: Dictionary`
   (`"WIZARD"` → `LEVELED_SPELL_IDS`, `"RANGER"` → `RANGER_SPELL_IDS` — keyed by
   `Stats.CharacterClass` enum-name string, the level-up learn picker's candidate pool; cantrips are

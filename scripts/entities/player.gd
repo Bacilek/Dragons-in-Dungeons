@@ -424,6 +424,18 @@ func _on_turn_started() -> void:
 					stats.ray_of_enfeeblement_target.enfeeble_turns = 0
 				stats.ray_of_enfeeblement_target = null
 				GameState.game_log("[color=gray]Ray of Enfeeblement fades.[/color]")
+		# Ensnaring Strike: same 10-turn Concentration cap/backstop as Ray of Enfeeblement above —
+		# the target's own repeated STR save (Enemy.decide_turn()) usually ends this earlier by
+		# clearing restrained_turns to 0 directly; this is just the outer duration backstop.
+		if stats.ensnaring_strike_turns > 0:
+			stats.ensnaring_strike_turns -= 1
+			if stats.ensnaring_strike_turns <= 0:
+				if stats.concentration_spell_id == "ensnaring_strike":
+					stats.concentration_spell_id = ""
+				if is_instance_valid(stats.ensnaring_strike_target):
+					stats.ensnaring_strike_target.restrained_turns = 0
+				stats.ensnaring_strike_target = null
+				GameState.game_log("[color=gray]Ensnaring Strike fades.[/color]")
 		# Hold Person: same 10-turn Concentration cap/backstop as Ray of Enfeeblement above.
 		if stats.hold_person_turns > 0:
 			stats.hold_person_turns -= 1
@@ -2705,6 +2717,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Prone (melee attacks against a prone target have ADV; see the matching ranged-DISADV note
 	# at the ranged/thrown/spell attack sites).
 	if enemy.prone: adv_count += 1
+	# Ensnaring Strike's Restrained condition: ADV on attacks against it, any kind (unlike Prone's
+	# melee-ADV/ranged-DISADV split) — see enemy.gd's restrained_turns field comment.
+	if enemy.restrained_turns > 0: adv_count += 1
 	# Zealous Presence: Advantage on all attack rolls while buffed.
 	if stats.zealous_presence_turns > 0: adv_count += 1
 	# Vex (Short Bow): ADV on the attack immediately following a Short-Bow hit on this same enemy.
@@ -3031,6 +3046,14 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# own flavor line above — logged strictly after the hit line, never merged into it (no damage).
 	elif gol_type == "Prone":
 		GameState.game_log("[color=cyan]Hill's Tumble knocks %s Prone.[/color]" % enemy.display_name)
+
+	# Ensnaring Strike: consumed the instant a weapon attack lands (armed via the ability bar
+	# toggle — PlayerRangerTalents.activate_ensnaring_strike()). Cleared here, BEFORE the trigger
+	# resolves, same convention as Hail of Thorns'/Hellish Rebuke's own call sites. Off-hand/
+	# Cleave/OA don't trigger this — a documented scope limit, only wired into the primary swing.
+	if stats.ensnaring_strike_armed and not enemy.stats.is_dead():
+		stats.ensnaring_strike_armed = false
+		SpellEffects.trigger_ensnaring_strike(self, enemy, _dungeon_floor)
 
 	# Branching Strike R3: push the target 1 tile away on a hit with a Heavy/Versatile melee weapon.
 	if GameState.get_talent_rank("branching_strike") >= 3 and is_str_weapon and not enemy.stats.is_dead() \
@@ -3593,5 +3616,6 @@ func _use_ability_slot(idx: int) -> void:
 		"giant_ancestry":          _goliath.activate_giant_ancestry()
 		"hellish_rebuke_toggle":   _tiefling.activate_hellish_rebuke()
 		"hail_of_thorns_toggle":   _ranger_talents.activate_hail_of_thorns()
+		"ensnaring_strike_toggle": _ranger_talents.activate_ensnaring_strike()
 		"halfling_nimbleness":     _halfling.activate_nimbleness()
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)

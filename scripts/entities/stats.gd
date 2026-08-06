@@ -224,6 +224,21 @@ var hellish_rebuke_armed: bool = false
 # transient, same tier as hellish_rebuke_armed.
 var hail_of_thorns_armed: bool = false
 
+# Ensnaring Strike (Ranger's own real 5e spell list entry) — same toggle-armed-reaction ARMING
+# shape as Hail of Thorns above ("hits with a weapon" is broader than Hail of Thorns' "ranged
+# weapon" — wired into both the primary melee (player.gd._bump_attack()) and primary ranged
+# (PlayerRanged.ranged_attack()) hit branches), but unlike Hail of Thorns/Hellish Rebuke it's a
+# genuine ongoing Concentration effect once it actually triggers, not a one-shot burst — see
+# Enemy.restrained_turns' own comment for the real Restrained condition it applies.
+# `ensnaring_strike_target`/`ensnaring_strike_dice_count` are deliberately NOT serialized (live
+# Enemy reference, same precedent as hex_target/witch_bolt_target); `ensnaring_strike_turns` is
+# the outer Concentration backstop, ticked in player.gd's per-real-turn block like every other
+# 10-turn concentration spell.
+var ensnaring_strike_armed: bool = false
+var ensnaring_strike_target: Enemy = null
+var ensnaring_strike_turns: int = 0
+var ensnaring_strike_dice_count: int = 1
+
 # Fiendish Legacy spells are cast using "whichever of INT/WIS/CHA is highest" — not the character's
 # own class spellcasting_ability (a Tiefling Barbarian has no caster ability at all; a Tiefling
 # Wizard's own INT might not even be the best of the three). Checked by SpellEffects._attack_bonus()/
@@ -430,6 +445,7 @@ func concentration_turns_remaining() -> int:
 		"faerie_fire": return faerie_fire_turns
 		"invisibility": return invisibility_turns
 		"hex": return hex_turns
+		"ensnaring_strike": return ensnaring_strike_turns
 		_: return 0
 # Blade Ward's own duration — ticks down once per real player turn (player.gd _on_turn_started(),
 # same "if not came_from_revert" block as shield_ac_bonus); reaching 0 ends the effect and clears

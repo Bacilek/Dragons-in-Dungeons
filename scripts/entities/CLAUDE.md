@@ -1829,7 +1829,7 @@ targets an enemy).
 |---|---|---|---|
 | Poisoned | `Stats.poisoned_condition_turns` | `Enemy.poisoned_condition_turns` | DISADV on the condition-holder's OWN attack rolls and ability checks (NOT saving throws — 5e RAW only restricts checks/attacks). Does not stack with Prone/Restrained's own-attack DISADV (`Stats.has_disadvantage_condition()`). **Player-side only**, a source may additionally set `Stats.poisoned_condition_save_dc` (> 0) — see "Bearded Devil" below — granting a repeated end-of-turn CON save to end it early (`Player._on_turn_started()`) and blocking `GameState.heal()` entirely while active; a plain source that never sets this (Tripwire, Quasit's Rend) leaves both effects off, unaffected. |
 | Prone | `Stats.prone` (not turn-counted) | `Enemy.prone` (not turn-counted) | Melee attacks against the prone creature get ADV, ranged attacks get DISADV (threaded via an `is_ranged: bool` param on `Enemy._attack_player()`/`_attack_companion()`, and a `spell.range_tiles` check for player-cast spells). Can't move — any direction key press instead stands up (ends the condition), costing the turn without moving. An enemy auto-stands at the very top of its own `decide_turn()` instead, consuming ONE point of that turn's movement budget (`_moves_this_turn -= 1`) rather than the whole turn, then falls straight through to its normal decision logic — an enemy with spare movement budget (Aggressive's bonus step, an above-baseline `"speed"` entry) can still close distance and/or attack the same turn it stands. |
-| Restrained | `Stats.web_restrained` (persists until the web is destroyed — Spider's Web is still its only source, see "Spider" below) | *(no enemy-side trigger exists yet — infra would mirror the player's, not built until something needs it)* | Speed 0 (already blocked movement pre-conditions-system). ADV on attacks against the restrained creature (any kind, melee or ranged — unlike Prone's kind-split). DISADV on the restrained creature's own attacks (folds into the same `has_disadvantage_condition()`/`poisoned_condition_turns>0` DISADV pool) and DEX checks specifically (`PlayerThiefTools.attempt_disarm()`, the only player-side DEX check today). |
+| Restrained | `Stats.web_restrained` (persists until the web is destroyed — Spider's Web is still its only source, see "Spider" below) | `Enemy.restrained_turns`/`restrain_save_dc` — Ensnaring Strike only, see "Ranger class" below | Speed 0 (player: already blocked movement pre-conditions-system; enemy: `decide_turn()`'s movement gate, same shape as `rooted_turns` — skips movement, still attacks if adjacent). ADV on attacks against the restrained creature (any kind, melee or ranged — unlike Prone's kind-split; enemy-side added inline at the two primary melee/ranged attack-roll sites, same Prone-precedent pattern, not folded into `PlayerVfx.has_advantage()`). DISADV on the restrained creature's own attacks (player: folds into `has_disadvantage_condition()`/`poisoned_condition_turns>0`; enemy: folds into the same disadv pool as `poisoned_condition_turns`/`enfeeble_turns` in `_attack_player()`/`_attack_companion()`) and DEX checks specifically (`PlayerThiefTools.attempt_disarm()`, the only player-side DEX check today — no enemy-side DEX-check equivalent exists to extend this to). The enemy-side source (Ensnaring Strike) additionally deals 1d6 Piercing at the start of the restrained enemy's own turns and repeats a STR save each turn to break free early, ending the caster's Concentration on a success — see "Ranger class" below for the full mechanism; Spider's Web has no analogous DoT/repeated-save shape (a structure-destroying escape route instead). |
 | Incapacitated | `Stats.incapacitated_turns` | `Enemy.incapacitated_turns` | "Can't take actions" — blocks player movement/bump-attack (`player.gd._try_move()`) and ability/spell activation (`_use_ability_slot()`); **partial coverage** — mouse-click attacks and item/tool use aren't gated (no current trigger source exists for either side, so this wasn't exhaustively wired; extend these two gates if a future ability actually inflicts it). Breaks Concentration immediately (`GameState.apply_player_status()`'s `"incapacitated"` case calls `end_concentration()`). On the enemy side: skips its entire turn (`decide_turn()`'s very first check, same shape Prone used to have before this rework) AND makes every player attack against it a Surprise Attack (`PlayerVfx.has_advantage()`), since "every attack against it is a Surprise Attack" is 5e's own Incapacitated text and this engine's Surprise Attack mechanism already IS exactly that (flat +1 ADV). |
 | Blinded | `GameState.is_blinded(pos)` (positional, no Stats field — see "Fog Cloud" below) | same query, symmetric | ADV on attacks against a Blinded creature, DISADV on its own attacks (both sides, player and enemy). Vision collapses to a flat 1-tile radius (`GameState.effective_fov_radius()`), overriding every other bonus including darkvision — a real 3×3 block (Chebyshev), all 8 neighbors including diagonals, NOT just the 4 cardinals (bugfix: `DungeonFloor._cast_light()`/`get_visible_enemies()`'s shared Euclidean radius-bound check, `dx²+j² <= r²`, mathematically excludes a true diagonal neighbor at `radius=1` since its distance² is 2 > 1 — both now special-case Chebyshev whenever the effective radius is ≤1). **The enemy side is symmetric too**: `Enemy._sight_range()` now also collapses to 1 while the enemy itself stands in a Fog Cloud/Darkness zone (previously it never checked `is_blinded()` at all, so a blinded enemy kept its full normal sight radius), and `Enemy._can_see_entity()`'s own distance check gets the same Chebyshev-at-radius-1 fix. **A Blinded attacker's own reach also collapses to 1 tile (Chebyshev)** for ranged weapons (`PlayerRanged.is_ranged_target_in_range()`), thrown weapons (`PlayerThrowTool._throw_weapon()`), spells (`PlayerSpellcasting._effective_range()`), and the enemy-side mirrors (`Enemy._in_attack_range()`'s `"ranged"` branch, `Enemy._pick_ready_ability()`'s `max_reach`) — a weapon/spell's own longer range is simply unreachable while fighting blind; melee is unaffected (already 1 tile). "Auto-fails sight-based checks" is NOT implemented (no concrete "sight check" mechanic exists in this engine to gate). |
 | Frightened | `Stats.frightened_source: Enemy`/`frightened_turns`/`frightened_save_dc` (live ref, NOT serialized — same precedent as `hunters_mark_target`/`witch_bolt_target`) — only Quasit's Scare inflicts it, always targeting the player | `Enemy.frightened_turns`/`frightened_source: Player` (live ref, NOT serialized, same precedent) — only Aasimar's Necrotic Shroud (Celestial Revelation transformation, see "Aasimar" above) inflicts it, always the player | **Now a real bidirectional mirror on both sides** (`Player._frightened_active()`/`_frightened_blocks_move_to()` and `Enemy._frightened_active()`/`_frightened_blocks_step()`, same shape): DISADV on the holder's own attacks/checks ONLY while the source is in LOS — NOT unconditional like the other conditions, hence its own helper rather than folding into `has_disadvantage_condition()` (enemy-side: also threaded into `resist_check_detailed()`'s own ADV/DISADV netting, not just the attack-roll aggregation, so it covers the enemy's own checks too, e.g. a frightened enemy resisting Grip of the Forest's pull). Can't willingly move closer to the source via voluntary movement — player: `Player._frightened_blocks_move_to()`, checked in both `_try_move()` and the queued-path executor; enemy: `Enemy._frightened_blocks_step()`, checked in `_act_toward_single_step()`'s greedy-preferred-step loop AND its BFS fallback (both skip/reject a candidate step that would close distance, same "only wired into the chase-toward movement" scope limit as the player's own `_try_move()`/queued-path-only coverage) — forced movement like Push/a chasm shove is unaffected on either side since it never calls either helper. Player-side repeats a WIS save once per real turn (`Player._on_turn_started()`, vs `frightened_save_dc`) — success ends it early, a fail ticks toward the outer ~10-turn "1 minute" cap; auto-clears if the source dies (`Enemy.die()`). **Enemy-side still has no repeated save** — fixed 2-turn duration only (documented simplification, unchanged) — and `frightened_source` is cleared the instant `frightened_turns` ticks to 0 (`decide_turn()`). |
@@ -2429,7 +2429,8 @@ only one also genuinely on Ranger's real list — every other `LEVELED_SPELL_IDS
 Missile, Shield, Mage Armor, Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch Bolt,
 Expeditious Retreat, False Life, Invisibility, Darkness, Longstrider, Detect Magic) is
 Sorcerer/Wizard(/Warlock) only on both 2014 and 2024 rules. `RANGER_SPELL_IDS` is
-`["fog_cloud", "pass_without_trace", "cure_wounds", "aid", "barkskin", "hail_of_thorns"]` today:
+`["fog_cloud", "pass_without_trace", "cure_wounds", "aid", "barkskin", "hail_of_thorns",
+"ensnaring_strike"]` today:
 **Pass Without Trace** (Druid/Ranger, `class_list = ["RANGER"]` only — never opened to Wizard's
 own list, see "Elf"'s Wood Elf lineage grant), **Cure Wounds** (`SpellDb._cure_wounds()`,
 Abjuration, 1st level, real class list Bard/Cleric/Druid/Paladin/Ranger — only Ranger has
@@ -2437,9 +2438,11 @@ spellcasting of any kind here, so `class_list = ["RANGER"]` only, never added to
 `LEVELED_SPELL_IDS`/Wizard's own list), **Aid** (`SpellDb._aid()`, Abjuration, 2nd level, real
 class list Bard/Cleric/Druid/Paladin/Ranger, same `class_list = ["RANGER"]`-only treatment),
 **Barkskin** (`SpellDb._barkskin()`, Transmutation, 2nd level, real class list Druid/Ranger, same
-`class_list = ["RANGER"]`-only treatment), and **Hail of Thorns** (`SpellDb._hail_of_thorns()`,
+`class_list = ["RANGER"]`-only treatment), **Hail of Thorns** (`SpellDb._hail_of_thorns()`,
 Conjuration, 1st level, real class list Ranger-only, same `class_list = ["RANGER"]`-only
-treatment) are all five Ranger-exclusive spells, never offered to Wizard's own level-up picker.
+treatment), and **Ensnaring Strike** (`SpellDb._ensnaring_strike()`, Conjuration, 1st level, real
+class list Ranger-only, same `class_list = ["RANGER"]`-only treatment) are all six Ranger-exclusive
+spells, never offered to Wizard's own level-up picker.
 Cure Wounds is
 `resolution = AUTO_HIT`, `target_kind = SELF`, touch range (`range_tiles = 1`) — same "self, or the
 Companion" touch-target click scope as Healing Hands/Longstrider (no general ally-targeting system
@@ -2518,6 +2521,56 @@ this spell newly introduces). **No Scroll of Hail of Thorns exists** — same de
 Hellish Rebuke, for the identical reason: a toggle-armed reaction can't go through the generic
 `on_scroll_primed()`/`begin_cast()` cast-immediately flow every other scroll uses.
 `SpellEffects.trigger_hail_of_thorns()` is the resolver.
+
+**Ensnaring Strike**: same toggle-armed-REACTION shape as Hail of Thorns/Hellish Rebuke — arming
+(`PlayerRangerTalents.activate_ensnaring_strike()`/`can_activate_ensnaring_strike()`) and the
+`_build_spell_ability()`/`_spell_ability_id()`/`_spell_id_from_ability_id()` special-casing all
+mirror those two exactly (fixed `"ensnaring_strike_toggle"` ability id). **The one real
+difference: "hits with a weapon" is broader than Hail of Thorns' "ranged weapon"** — wired into
+BOTH the primary melee hit branch (`player.gd._bump_attack()`) and the primary ranged hit branch
+(`PlayerRanged.ranged_attack()`), not just one; Off-hand/Cleave/OA/thrown still don't trigger it,
+same documented scope limit as every other "primary hit only" bonus effect in this file. Skipped
+outright (armed flag left untouched, not consumed) on a killing blow — nothing left to restrain —
+same "a kill 'for free' doesn't cost a charge" precedent as Goliath's Fire/Frost/Hill Giant
+Ancestry.
+
+Unlike Hail of Thorns/Hellish Rebuke's one-shot burst, a failed save here starts a genuine ongoing
+**Concentration** effect (`Stats.concentration_spell_id == "ensnaring_strike"`, up to
+`Spell.duration_turns` = 10 turns, ticked in `player.gd`'s per-real-turn block alongside Ray of
+Enfeeblement/Hold Person — same "repeated save usually ends it early, this is just the outer
+backstop" shape). `SpellEffects.trigger_ensnaring_strike()`: consumes a real spell slot (or free
+while invincible/God Mode), rolls the target's STR save (`resist_check_detailed()`'s `magical`
+param true, `force_adv` true whenever the target is Large or bigger — `creature_size in
+["Large","Huge","Gargantuan"]` or a footprint > 1 tile, same "big creature" check Halfling
+Nimbleness uses — a house-rule addition on top of real 5e's own Ensnaring Strike text, per the
+owner's own stat block). A passed save fizzles the cast entirely (no Concentration started, no
+target array populated) — same "on an initial-save success, nothing lingers" precedent as Ray of
+Enfeeblement's own minor-effect-only branch. A failed save sets `Enemy.restrained_turns`/
+`restrain_save_dc` — the first real implementation of the enemy-side Restrained condition (see
+"Conditions" above's table, previously a documented gap) — and `Stats.ensnaring_strike_target`/
+`ensnaring_strike_dice_count` (the DoT's own die count, `+1d6` per slot level above 1st via
+`upcast_dice_count`).
+
+**The Restrained condition itself** (`Enemy.restrained_turns`): speed 0 in `_decide_action()` (same
+shape as `rooted_turns` — skips movement, still attacks if already adjacent; doesn't decrement the
+counter itself, since `decide_turn()`'s own tick below already does), ADV on attacks against it
+added inline at the two primary melee/ranged attack-roll sites (`player.gd._bump_attack()`/
+`PlayerRanged.ranged_attack()` — any kind, not folded into `PlayerVfx.has_advantage()`, same
+Prone-precedent pattern), DISADV on its own attack rolls folded into the existing disadv pool in
+`_attack_player()`/`_attack_companion()` alongside `poisoned_condition_turns`/`enfeeble_turns`.
+**`decide_turn()`'s own tick** (right after the Paralyzed/Hold Person block): rolls
+`Stats.ensnaring_strike_dice_count`d6 Piercing — this ALWAYS lands regardless of the save outcome
+(5e RAW: the save only ever tries to break free, it never stops the thorns from biting that same
+turn) — with its own kill-handling tail (`GameState.gain_exp(exp_reward/2)` + `remove_enemy()` +
+`die()`, same "environment, not a direct player swing, landed the kill" shape
+`DungeonFloor.tick_fire_damage_for()` already uses) if the DoT itself is lethal. If the enemy
+survives the tick, it then repeats the STR save vs `restrain_save_dc` — a pass clears
+`restrained_turns` and ends the caster's Concentration (`GameState.end_concentration()`) via the
+same `"ensnaring_strike"` case `end_concentration()`'s own exhaustive match gained; a fail just
+decrements `restrained_turns` (cosmetic/redundant — the REAL end trigger is either a save success
+or the outer `Stats.ensnaring_strike_turns` backstop reaching 0 on the player's own turn). Shown on
+Ctrl-Inspect (`EnemyInspect.status_entries()`'s new `"restrained"` entry). **No status-tray icon
+and no Scroll of Ensnaring Strike** — same precedents as Hail of Thorns, for the identical reasons.
 
 Longstrider/Detect Magic are still NOT opened up to
 Ranger — a deliberately narrow scope cut, not an oversight (extend `RANGER_SPELL_IDS` further in a

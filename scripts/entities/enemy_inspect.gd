@@ -18,6 +18,7 @@ const TITLES: Dictionary = {
 	"frightened": "Frightened",
 	"paralyzed": "Paralyzed",
 	"blinded": "Blinded",
+	"restrained": "Restrained (Ensnaring Strike)",
 }
 
 const COLORS: Dictionary = {
@@ -30,6 +31,7 @@ const COLORS: Dictionary = {
 	"frightened": Color(0.6, 0.3, 0.8),
 	"paralyzed": Color(0.5, 0.5, 0.9),
 	"blinded": Color(0.35, 0.35, 0.35),
+	"restrained": Color(0.45, 0.65, 0.25),
 }
 
 static func status_entries(enemy: Enemy) -> Array[Dictionary]:
@@ -52,6 +54,8 @@ static func status_entries(enemy: Enemy) -> Array[Dictionary]:
 		entries.append(_entry("paralyzed"))
 	if GameState.is_blinded(enemy.grid_pos):
 		entries.append(_entry("blinded"))
+	if enemy.restrained_turns > 0:
+		entries.append(_entry("restrained"))
 	return entries
 
 static func _entry(id: String) -> Dictionary:
@@ -77,6 +81,8 @@ static func get_text(id: String) -> String:
 			return "Can't act. Auto-fails STR/DEX checks. Every attack against it has Advantage, and a hit from within 1 tile is an automatic critical."
 		"blinded":
 			return "Standing in a Heavily Obscured zone — Advantage on attacks against it, Disadvantage on its own attacks."
+		"restrained":
+			return "Speed 0. Advantage on attacks against it (any kind), Disadvantage on its own attack rolls. Takes 1d6 Piercing at the start of its turns and repeats a STR save to break free."
 		_:
 			return ""
 

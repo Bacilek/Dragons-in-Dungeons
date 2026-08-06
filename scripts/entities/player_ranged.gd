@@ -110,6 +110,9 @@ func ranged_attack(enemy: Enemy) -> void:
 	var disadv_count: int = 0
 	if was_surprised: adv_count += 1
 	if player.stats.zealous_presence_turns > 0: adv_count += 1
+	# Ensnaring Strike's Restrained condition: ADV on attacks against it, any kind (unlike Prone's
+	# melee-ADV/ranged-DISADV split below) — see enemy.gd's restrained_turns field comment.
+	if enemy.restrained_turns > 0: adv_count += 1
 	# Vex: if the flag targets this exact enemy, grant ADV and consume it on this attempt.
 	var vex_triggered: bool = player._vex_adv_target == enemy
 	if vex_triggered: adv_count += 1
@@ -286,6 +289,14 @@ func ranged_attack(enemy: Enemy) -> void:
 	if player.stats.hail_of_thorns_armed:
 		player.stats.hail_of_thorns_armed = false
 		SpellEffects.trigger_hail_of_thorns(player, enemy, player._dungeon_floor)
+
+	# Ensnaring Strike: consumed the instant a weapon attack lands (armed via the ability bar
+	# toggle — PlayerRangerTalents.activate_ensnaring_strike()) — any weapon, so ranged counts too,
+	# unlike Hail of Thorns above. Cleared here, BEFORE the trigger resolves, same convention as
+	# player.gd's own primary-melee call site. Skipped on a killing shot (nothing left to restrain).
+	if player.stats.ensnaring_strike_armed and not enemy.stats.is_dead():
+		player.stats.ensnaring_strike_armed = false
+		SpellEffects.trigger_ensnaring_strike(player, enemy, player._dungeon_floor)
 
 	if is_lethal:
 		# Enemy died to this shot — arrow drop-from-corpse (50% chance) is handled inside

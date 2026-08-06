@@ -69,6 +69,8 @@ var enfeeble_save_dc: int = 0    # the DC for enfeeble_turns' repeated end-of-tu
 var paralyzed_turns: int = 0     # Hold Person (Abyssal Tiefling lineage spell) — the real Paralyzed condition: skips this enemy's entire turn (decide_turn(), same shape as incapacitated_turns), auto-fails STR/DEX checks (resist_check_detailed()), every attack against it has Advantage (PlayerVfx.has_advantage()), and a hit made from within 1 tile of it is an automatic critical hit. Repeats a WIS save at the end of each of its own turns (decide_turn(), vs paralyze_save_dc) — success ends the effect early; the outer 10-turn Concentration duration (Stats.hold_person_turns) is the backstop.
 var paralyze_save_dc: int = 0    # the DC for paralyzed_turns' repeated end-of-turn WIS save, set once at cast time
 var hideous_laughter_save_dc: int = 0  # Tasha's Hideous Laughter — the DC for the repeated WIS save (both the end-of-turn one in decide_turn() and the on-hit one in take_typed_damage()), set once at cast time
+var restrained_turns: int = 0    # Ensnaring Strike (Ranger's own real 5e spell list entry) — the real enemy-side Restrained condition (the "no enemy-side trigger exists yet" gap the Conditions table used to note): speed 0 (decide_turn()'s movement gate, same shape as rooted_turns — skips movement, still attacks if adjacent), ADV on attacks against it (any kind — added inline at each attack-roll site, same Prone-precedent pattern, not folded into PlayerVfx.has_advantage()), DISADV on ITS OWN attack rolls/checks (folded into the same disadv pool as poisoned_condition_turns/enfeeble_turns in _attack_player()/_attack_companion()). Takes 1d6 Piercing at the start of each of its own turns while restrained (decide_turn()), then repeats a STR save vs restrain_save_dc — success ends both the condition AND the caster's Concentration (SpellEffects.trigger_ensnaring_strike()'s own comment); the outer 10-turn Concentration duration (Stats.ensnaring_strike_turns) is the backstop, same shape as paralyzed_turns/enfeeble_turns above.
+var restrain_save_dc: int = 0    # the DC for restrained_turns' repeated end-of-turn STR save, set once at cast time
 var embedded_items: Array[Item] = []  # thrown weapons stuck in a non-lethal hit (PlayerThrowTool._throw_weapon) — dropped at 100% chance wherever/whenever this enemy eventually dies, see die() override below
 var escape_turns: int = 0    # Nimble Escape trait (Goblin) — random 1-5 turns fleeing escape_from, set in on_melee_hit()
 var escape_from: Node = null  # entity being fled from; always is_instance_valid()-checked before use (may die/despawn mid-flee)
@@ -1166,6 +1168,46 @@ func decide_turn() -> Dictionary:
 			paralyzed_turns -= 1
 			GameState.game_log("%s [url=%s]remains paralyzed[/url]." % [display_name, par_meta])
 			return {"type": "idle_tick"}
+	# Ensnaring Strike's Restrained condition: 1d6 Piercing at the start of THIS enemy's own turn,
+	# then a repeated STR save vs restrain_save_dc — success ends both the condition AND the
+	# caster's Concentration (matching Hold Person/Ray of Enfeeblement's own repeated-save shape).
+	# The damage always lands regardless of the save outcome (5e RAW: the save only ever tries to
+	# BREAK FREE, it never stops the thorns from biting this same turn).
+	if restrained_turns > 0:
+		var es_rolls: Array[int] = Rng.roll_dice(GameState.player_stats.ensnaring_strike_dice_count, 6)
+		var es_inst: Dictionary = CombatMath.build_damage_instance(es_rolls, 6, [], false, "Piercing")
+		var es_result: Dictionary = take_typed_damage(int(es_inst["subtotal"]), "Piercing")
+		es_inst["final"] = es_result["actual"]
+		es_inst["resist_mul"] = es_result["mul"]
+		update_hp_bar()
+		if _dungeon_floor != null:
+			_dungeon_floor.show_damage(position, es_result["actual"], false, CombatMath.damage_type_color("Piercing"))
+		var es_dmg_meta: String = CombatMath.encode_damage_instance(es_inst)
+		var es_lethal: bool = stats.is_dead()
+		GameState.game_log("%s writhes in the entangling thorns for [url=%s][color=yellow]%d[/color][/url] Piercing dmg.%s" % [
+			display_name, es_dmg_meta, es_result["actual"], CombatMath.death_suffix(es_lethal)])
+		if es_lethal:
+			# Killed by the condition's own DoT tick, not a direct player attack — same
+			# gain_exp/remove_enemy/die() tail DungeonFloor.tick_fire_damage_for() uses for an
+			# identical "environment, not the player's own swing, landed the killing blow" case.
+			if GameState.player_stats.concentration_spell_id == "ensnaring_strike" and GameState.player_stats.ensnaring_strike_target == self:
+				GameState.end_concentration()
+			GameState.gain_exp(maxi(1, exp_reward / 2))
+			if _dungeon_floor != null:
+				_dungeon_floor.remove_enemy(self)
+			die()
+			return {"type": "wait"}
+		var res_save: Dictionary = resist_check_detailed(restrain_save_dc, false, false, false, false, true)
+		var res_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+			res_save["die"], res_save["mod"], res_save["floor_bonus"], res_save["prof_label"], res_save["total"], res_save["dc"], res_save["stat"], int(res_save["pass"]), res_save["sliver_penalty"]]
+		if res_save["pass"]:
+			restrained_turns = 0
+			GameState.game_log("%s [url=%s]breaks free[/url] of the entangling thorns!" % [display_name, res_meta])
+			if GameState.player_stats.concentration_spell_id == "ensnaring_strike" and GameState.player_stats.ensnaring_strike_target == self:
+				GameState.end_concentration()
+		else:
+			restrained_turns -= 1
+			GameState.game_log("%s [url=%s]remains bound[/url] by the thorns." % [display_name, res_meta])
 	# Tasha's Hideous Laughter: repeats a WIS save (no ADV) at the end of this enemy's own turn —
 	# same repeated-end-of-turn-save shape as Ray of Enfeeblement/Hold Person above. A pass zeroes
 	# incapacitated_turns via the resolver, so the generic incapacitated block right below no
@@ -1313,6 +1355,14 @@ func _decide_action() -> Dictionary:
 	# World Tree Grip of the Forest R2: rooted — no movement this turn, but can still attack if adjacent.
 	if rooted_turns > 0:
 		rooted_turns -= 1
+		if _chebyshev_to(target) == 1 and not _target_is_untouchable(target):
+			return {"type": "attack", "target": target}
+		return {"type": "wait"}
+
+	# Ensnaring Strike's Restrained condition: speed 0 — same shape as rooted_turns above (no
+	# movement, still attacks if already adjacent). Doesn't decrement restrained_turns itself —
+	# decide_turn()'s own DoT-tick/repeated-save block already did that this turn.
+	if restrained_turns > 0:
 		if _chebyshev_to(target) == 1 and not _target_is_untouchable(target):
 			return {"type": "attack", "target": target}
 		return {"type": "wait"}
@@ -2116,7 +2166,7 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 		# approximated as unconditional here since this engine doesn't track per-attack ability
 		# score usage for enemies (same documented simplification as the damage-reduction block
 		# below and Ray of Enfeeblement's own physical-damage-type approximation elsewhere).
-		long_shot or GameState.is_blinded(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0 or _frightened_active() or enfeeble_turns > 0)
+		long_shot or GameState.is_blinded(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0 or _frightened_active() or enfeeble_turns > 0 or restrained_turns > 0)
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]
@@ -2310,7 +2360,7 @@ func _attack_companion(companion: Companion, sub: Dictionary = {}, long_shot: bo
 				break
 	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, _attack_bonus_for(sub), 0,
 		GameState.is_blinded(companion.grid_pos) or pack_tactics_adv,
-		long_shot or GameState.is_blinded(grid_pos) or poisoned_condition_turns > 0 or _frightened_active())
+		long_shot or GameState.is_blinded(grid_pos) or poisoned_condition_turns > 0 or _frightened_active() or restrained_turns > 0)
 	if not r["is_hit"]:
 		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [atk_label, companion.animal_name])
 		return

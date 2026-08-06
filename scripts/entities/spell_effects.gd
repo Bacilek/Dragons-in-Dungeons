@@ -1526,6 +1526,48 @@ static func trigger_hail_of_thorns(player: Player, primary: Enemy, dungeon_floor
 		if is_lethal:
 			player._finish_kill(e)
 
+# Ensnaring Strike (Ranger's own real 5e spell list entry) — same toggle-armed-reaction shape as
+# Hail of Thorns (see PlayerRangerTalents' own header comment), triggered from the CALLER (player.gd
+# _bump_attack()/PlayerRanged.ranged_attack() — any weapon hit, not just ranged), which clears
+# Stats.ensnaring_strike_armed BEFORE calling this. Unlike Hail of Thorns/Hellish Rebuke's one-shot
+# burst, a failed save here starts a genuine ongoing Concentration effect (Enemy.restrained_turns'
+# own repeated-save/DoT-tick mechanism, ticked from that enemy's own decide_turn()) rather than
+# resolving everything in one call.
+static func trigger_ensnaring_strike(player: Player, target: Enemy, dungeon_floor: Node) -> void:
+	var spell: Spell = SpellDb.get_spell("ensnaring_strike")
+	var stats: Stats = player.stats
+	var cast_level: int = spell.level
+	if stats.caster != null and stats.caster.slot_pool != null and (GameState.invincible or stats.caster.slot_pool.can_cast(spell)):
+		if not GameState.invincible:
+			cast_level = stats.caster.slot_pool.available_level(spell)
+			stats.caster.slot_pool.consume(cast_level)
+	else:
+		GameState.game_log("[color=gray]Ensnaring Strike has no spell slot left to fuel it.[/color]")
+		return
+	GameState.spell_slots_changed.emit()
+	var extra_levels: int = _upcast_extra_levels(spell, cast_level)
+	var dice_count: int = spell.dice_count + spell.upcast_dice_count * extra_levels
+	var dc: int = _save_dc(stats, spell)
+	# Large-or-bigger creatures roll this initial save with Advantage (a house-rule addition on top
+	# of real 5e's own Ensnaring Strike text, per the owner's own stat block) — same "footprint > 1
+	# tile OR creature_size Large+" check Halfling Nimbleness uses for "is this a big creature".
+	var is_big: bool = target.creature_size in ["Large", "Huge", "Gargantuan"] or target.size.x * target.size.y > 1
+	var save: Dictionary = target.resist_check_detailed(dc, false, false, false, false, true, false, is_big)
+	var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+		save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
+	if save["pass"]:
+		GameState.game_log("[color=lime]Ensnaring Strike[/color] lashes out at %s — [url=%s]it resists[/url] the entangling thorns." % [target.display_name, save_meta])
+		return
+	if stats.concentration_spell_id != "" and stats.concentration_spell_id != "ensnaring_strike":
+		GameState.end_concentration("[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
+	stats.concentration_spell_id = "ensnaring_strike"
+	stats.ensnaring_strike_turns = spell.duration_turns
+	stats.ensnaring_strike_target = target
+	stats.ensnaring_strike_dice_count = dice_count
+	target.restrained_turns = spell.duration_turns
+	target.restrain_save_dc = dc
+	GameState.game_log("[color=lime]Ensnaring Strike[/color] lashes out at %s — [url=%s]it fails[/url] the save and is bound by thorns!" % [target.display_name, save_meta])
+
 # Witch Bolt's per-turn damage tick (called from player.gd's _on_turn_started(), NOT a player
 # action — no TurnManager envelope, no slot consumption, no fresh attack roll; only the initial
 # cast above rolls to hit). Automatic 1d12 Lightning to the Jolted target.

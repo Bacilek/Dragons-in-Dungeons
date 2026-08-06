@@ -807,6 +807,17 @@ func _build_hail_of_thorns_ability() -> Ability:
 	ab.uses_max = 0
 	return ab
 
+func _build_ensnaring_strike_ability() -> Ability:
+	var spell: Spell = SpellDb.get_spell("ensnaring_strike")
+	var ab := Ability.new()
+	ab.ability_id = "ensnaring_strike_toggle"
+	ab.ability_name = spell.spell_name if spell != null else "Ensnaring Strike"
+	ab.description = SpellTooltip.build(spell) if spell != null else ""
+	ab.icon_path = spell.icon_path if spell != null else ""
+	ab.uses_remaining = 0
+	ab.uses_max = 0
+	return ab
+
 
 ## Pulls `spell_id` OUT of the caster's normal known_spells/prepared_spells bookkeeping and drops
 ## its existing ability-bar entry (regardless of which system put it there) — called right before
@@ -1091,6 +1102,8 @@ func _spell_ability_id(spell_id: String) -> String:
 		return "hellish_rebuke_toggle"
 	if spell_id == "hail_of_thorns":
 		return "hail_of_thorns_toggle"
+	if spell_id == "ensnaring_strike":
+		return "ensnaring_strike_toggle"
 	return "spell:" + spell_id
 
 ## Inverse of _spell_ability_id() — "" if `ability_id` isn't a spell-backed ability at all.
@@ -1099,6 +1112,8 @@ func _spell_id_from_ability_id(ability_id: String) -> String:
 		return "hellish_rebuke"
 	if ability_id == "hail_of_thorns_toggle":
 		return "hail_of_thorns"
+	if ability_id == "ensnaring_strike_toggle":
+		return "ensnaring_strike"
 	if ability_id.begins_with("spell:"):
 		return ability_id.trim_prefix("spell:")
 	return ""
@@ -1108,6 +1123,8 @@ func _build_spell_ability(spell_id: String) -> Ability:
 		return _build_hellish_rebuke_ability()
 	if spell_id == "hail_of_thorns":
 		return _build_hail_of_thorns_ability()
+	if spell_id == "ensnaring_strike":
+		return _build_ensnaring_strike_ability()
 	var spell: Spell = SpellDb.get_spell(spell_id)
 	var ab := Ability.new()
 	ab.ability_id = "spell:" + spell_id
@@ -2086,6 +2103,10 @@ func is_ability_usable(ab: Ability) -> bool:
 			if player_stats.hail_of_thorns_armed or invincible:
 				return true
 			return player_stats.caster != null and player_stats.caster.slot_pool != null and player_stats.caster.slot_pool.can_cast(SpellDb.get_spell("hail_of_thorns"))
+		"ensnaring_strike_toggle":
+			if player_stats.ensnaring_strike_armed or invincible:
+				return true
+			return player_stats.caster != null and player_stats.caster.slot_pool != null and player_stats.caster.slot_pool.can_cast(SpellDb.get_spell("ensnaring_strike"))
 	return true
 
 # Triggered on short rest completion. Heals companion (if alive) AND restores One with Nature charge.
@@ -3340,6 +3361,11 @@ func end_concentration(reason_log: String = "") -> void:
 		player_stats.hex_turns = 0
 		player_stats.hex_target = null
 		player_stats.hex_ability = ""
+	elif broken_spell == "ensnaring_strike":
+		player_stats.ensnaring_strike_turns = 0
+		if is_instance_valid(player_stats.ensnaring_strike_target):
+			player_stats.ensnaring_strike_target.restrained_turns = 0
+		player_stats.ensnaring_strike_target = null
 	if reason_log != "":
 		game_log(reason_log)
 
