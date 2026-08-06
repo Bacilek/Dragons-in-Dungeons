@@ -501,6 +501,9 @@ func _update_status_icons() -> void:
 	if s.aid_bonus_hp > 0:
 		var _aid_spell: Spell = SpellDb.get_spell("aid")
 		entries.append({"id": "aid", "icon_path": _aid_spell.icon_path if _aid_spell != null else "", "fallback_color": Color(0.5, 0.9, 0.6)})
+	if s.barkskin_turns > 0 and not s.barkskin_on_companion:
+		var _bk_spell: Spell = SpellDb.get_spell("barkskin")
+		entries.append({"id": "barkskin", "icon_path": _bk_spell.icon_path if _bk_spell != null else "", "fallback_color": Color(0.55, 0.40, 0.20)})
 	if s.faerie_fire_outlined_turns > 0:
 		entries.append({"id": "faerie_fire_outlined", "icon_path": "", "fallback_color": s.faerie_fire_outlined_color})
 	if s.mastery_cap() > 0 and s.known_weapon_masteries.size() > 0:

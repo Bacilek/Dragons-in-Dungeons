@@ -148,7 +148,10 @@ fallback tint; tooltip text (`status_tooltips.gd`'s `"torch"` case) is dynamic, 
 `scripts/items/CLAUDE.md`'s "Torch"), `aid` (`Stats.aid_bonus_hp > 0` — Ranger's Aid spell, icon is
 that spell's own `icon_path`, light-green fallback tint; tooltip shows the exact flat HP bonus
 currently applied and that it lasts until the next long rest — see `scripts/entities/CLAUDE.md`'s
-"Ranger class" section), `weapon_mastery` (always-on passive, shown whenever
+"Ranger class" section), `barkskin` (`Stats.barkskin_turns > 0 and not Stats.barkskin_on_companion`
+— Ranger's Barkskin spell, icon is that spell's own `icon_path`, brown/bark fallback tint;
+deliberately its own entry rather than riding the generic `concentration` one, since this spell is
+NOT Concentration — see `scripts/entities/CLAUDE.md`'s "Ranger class" section), `weapon_mastery` (always-on passive, shown whenever
 `Stats.mastery_cap() > 0` — i.e. a martial class, currently Barbarian/Ranger — AND
 `Stats.known_weapon_masteries.size() > 0`; no dedicated art yet, `res://icons/status/
 weapon_mastery.png` placeholder + bronze fallback tint, real icon still TBD). Hover tooltip

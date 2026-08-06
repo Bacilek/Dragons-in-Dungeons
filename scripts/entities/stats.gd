@@ -528,6 +528,22 @@ var hex_free_recast_pending: bool = false
 # same mid-floor-only simplification as expeditious_retreat_turns.
 var longstrider_turns: int = 0
 
+# Barkskin (2nd level Transmutation, Ranger) — NOT Concentration, per the owner's own stat block
+# (Free casting time, touch, flat 600-turn duration — same "flat duration, no concentration" shape
+# as Longstrider above, deliberately NOT matching real 5e's own Concentration text). "AC can be no
+# less than 17" is a floor applied on top of whatever AC would otherwise be — Stats.recalc_ac()/
+# GameState.recalculate_stats() both clamp the final computed armor_class up to 17 whenever this is
+# > 0 (see recalc_ac()'s own tail). `barkskin_on_companion` tracks which of the two valid touch
+# targets (self, or the Companion — no general ally-targeting system exists, same scope as Cure
+# Wounds/Aid) this cast actually landed on, since only ONE creature is ever affected per cast
+# (unlike Aid, which can buff both at once) — `barkskin_pre_ac` is the Companion's own AC snapshot
+# from right before the floor was applied (Companion has no live AC-recompute system like the
+# player's own recalc_ac(), so this is what player.gd's turn-tick restores exactly on expiry).
+# Deliberately NOT serialized, same mid-floor-only simplification as longstrider_turns.
+var barkskin_turns: int = 0
+var barkskin_on_companion: bool = false
+var barkskin_pre_ac: int = 0
+
 # Detect Magic (level-1 spell, Ritual, SELF) — same generic concentration_spell_id mechanism
 # ("detect_magic") as Fog Cloud/Darkness. While active, DungeonFloor._update_detect_magic_markers()
 # shows a blue tremorsense-style ping over every magic item within Spell.shape_size (3) tiles of
@@ -789,6 +805,8 @@ func recalc_ac(has_armor_equipped: bool, armor_item: Item = null) -> void:
 	else:
 		armor_class = 10 + dex_modifier()
 	armor_class += shield_ac_bonus
+	if barkskin_turns > 0:
+		armor_class = maxi(armor_class, 17)
 
 # ── Save/load (Phase A — docs/architecture/SAVE_LOAD_ARCHITECTURE.md §4.1) ──────
 # Persist mutable state only. Computed properties (proficiency_bonus, rage_uses_max,

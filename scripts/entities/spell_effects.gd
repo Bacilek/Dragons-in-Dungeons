@@ -639,6 +639,8 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			_resolve_cure_wounds(player, spell, extra_levels, clicked)
 		"aid":
 			_resolve_aid(player, spell, extra_levels, clicked)
+		"barkskin":
+			_resolve_barkskin(player, spell, clicked)
 		"pass_without_trace":
 			if player.stats.concentration_spell_id != "":
 				GameState.end_concentration("" if player.stats.concentration_spell_id == "pass_without_trace" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
@@ -1539,6 +1541,25 @@ static func _resolve_aid(player: Player, spell: Spell, extra_levels: int, clicke
 		companion.stats.current_hp += amount
 		companion.stats.aid_bonus_hp += amount
 		GameState.game_log("[color=cyan]%s's max HP swells by [color=lightgreen]%d[/color] too.[/color]" % [companion.animal_name, amount])
+
+# Barkskin (2nd level Transmutation): NOT Concentration (see Stats.barkskin_turns' own comment) —
+# a flat 600-turn buff floors the touched creature's AC at 17 (Stats.recalc_ac() applies the floor
+# for the player; the Companion has no live AC-recompute system, so its AC is floored directly here
+# and restored from `barkskin_pre_ac` when the duration runs out, see player.gd's turn-tick).
+# Same "self, or the Companion" touch scope as Cure Wounds/Aid — but only ONE target is ever
+# affected per cast, unlike Aid's simultaneous self+Companion.
+static func _resolve_barkskin(player: Player, spell: Spell, clicked: Vector2i) -> void:
+	var companion: Companion = GameState.player_companion
+	var on_companion: bool = companion != null and is_instance_valid(companion) and companion.grid_pos == clicked
+	player.stats.barkskin_turns = 600
+	player.stats.barkskin_on_companion = on_companion
+	if on_companion:
+		companion.stats.barkskin_pre_ac = companion.stats.armor_class
+		companion.stats.armor_class = maxi(companion.stats.armor_class, 17)
+		GameState.game_log("[color=cyan]You cast [b]%s[/b] on %s — their skin turns rough as tree bark, AC can be no lower than 17.[/color]" % [spell.spell_name, companion.animal_name])
+	else:
+		GameState.recalculate_stats()
+		GameState.game_log("[color=cyan]You cast [b]%s[/b] — your skin turns rough as tree bark, your AC can be no lower than 17.[/color]" % spell.spell_name)
 
 static func _resolve_fog_cloud(player: Player, spell: Spell, center: Vector2i, extra_levels: int = 0) -> void:
 	var stats: Stats = player.stats

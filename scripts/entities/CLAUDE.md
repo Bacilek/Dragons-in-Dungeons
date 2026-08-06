@@ -2429,14 +2429,15 @@ only one also genuinely on Ranger's real list — every other `LEVELED_SPELL_IDS
 Missile, Shield, Mage Armor, Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch Bolt,
 Expeditious Retreat, False Life, Invisibility, Darkness, Longstrider, Detect Magic) is
 Sorcerer/Wizard(/Warlock) only on both 2014 and 2024 rules. `RANGER_SPELL_IDS` is
-`["fog_cloud", "pass_without_trace", "cure_wounds", "aid"]` today: **Pass Without Trace**
-(Druid/Ranger, `class_list = ["RANGER"]` only — never opened to Wizard's own list, see "Elf"'s
-Wood Elf lineage grant), **Cure Wounds** (`SpellDb._cure_wounds()`, Abjuration, 1st level, real
-class list Bard/Cleric/Druid/Paladin/Ranger — only Ranger has spellcasting of any kind here, so
-`class_list = ["RANGER"]` only, never added to `LEVELED_SPELL_IDS`/Wizard's own list), and **Aid**
+`["fog_cloud", "pass_without_trace", "cure_wounds", "aid", "barkskin"]` today: **Pass Without
+Trace** (Druid/Ranger, `class_list = ["RANGER"]` only — never opened to Wizard's own list, see
+"Elf"'s Wood Elf lineage grant), **Cure Wounds** (`SpellDb._cure_wounds()`, Abjuration, 1st level,
+real class list Bard/Cleric/Druid/Paladin/Ranger — only Ranger has spellcasting of any kind here,
+so `class_list = ["RANGER"]` only, never added to `LEVELED_SPELL_IDS`/Wizard's own list), **Aid**
 (`SpellDb._aid()`, Abjuration, 2nd level, real class list Bard/Cleric/Druid/Paladin/Ranger, same
-`class_list = ["RANGER"]`-only treatment) are all three Ranger-exclusive spells, never offered to
-Wizard's own level-up picker. Cure Wounds is
+`class_list = ["RANGER"]`-only treatment), and **Barkskin** (`SpellDb._barkskin()`, Transmutation,
+2nd level, real class list Druid/Ranger, same `class_list = ["RANGER"]`-only treatment) are all
+four Ranger-exclusive spells, never offered to Wizard's own level-up picker. Cure Wounds is
 `resolution = AUTO_HIT`, `target_kind = SELF`, touch range (`range_tiles = 1`) — same "self, or the
 Companion" touch-target click scope as Healing Hands/Longstrider (no general ally-targeting system
 exists): clicking the Companion's own tile heals it, any other click heals the caster. Heals
@@ -2464,6 +2465,28 @@ full-heal-to-max-HP line runs, same "persists until long rest" precedent as `mag
 entry (spell's own icon, light-green fallback tint) whenever `s.aid_bonus_hp > 0` — same
 "icon reuses the spell's own art" convention as `concentration`/`torch`/`longstrider` — since a
 flat max-HP bump is otherwise invisible at a glance beyond the HP bar quietly getting wider.
+
+**Barkskin**: `resolution = AUTO_HIT`, `target_kind = SELF`, `range_tiles = 1`, same "self, or the
+Companion" touch-click scope as Cure Wounds/Aid — but only ONE of the two is ever affected per
+cast (`Stats.barkskin_on_companion` tracks which), unlike Aid's simultaneous self+Companion.
+**Deliberately NOT Concentration** — real 5e Barkskin is Concentration up to 1 hour, but this
+codebase's own stat block (direct owner dictation) omits it, so it's a flat 600-turn duration
+instead (`Stats.barkskin_turns`, ticked in `player.gd`'s per-real-turn block exactly like
+`longstrider_turns` — same "flat duration, no concentration" shape, NOT the generic
+`concentration_spell_id` mechanism every other 600-turn buff in this file uses). "AC can be no
+less than 17" is a floor applied on top of whatever AC would otherwise be, not a replacement — for
+the player, `Stats.recalc_ac()`'s own tail clamps the computed `armor_class` up to 17 whenever
+`barkskin_turns > 0`, BEFORE `GameState.recalculate_stats()` adds equipment/terrain/Bruiser bonuses
+on top (so a Shield's +2 still stacks above the 17 floor, matching RAW). The Companion has no live
+AC-recompute system like the player's own `recalc_ac()`, so a Companion-targeted cast floors its
+`Stats.armor_class` directly at cast time (`Stats.barkskin_pre_ac` snapshots the pre-floor value)
+and `player.gd`'s turn-tick restores that exact snapshot when the duration runs out. **Status-tray
+icon**: since this ISN'T Concentration, it doesn't ride the generic `concentration` tray entry the
+way Blade Ward/Witch Bolt/etc. do — `hud.gd._update_status_icons()` shows its own `"barkskin"`
+entry (spell's own icon, brown/bark fallback tint) whenever `s.barkskin_turns > 0 and not
+s.barkskin_on_companion` (the icon only ever reflects the PLAYER's own buff state, matching the
+AC floor's own scope). `SpellEffects._resolve_barkskin()` is the resolver, dispatched from
+`cast_leveled_self()`'s `effect_id == "barkskin"` case.
 
 Longstrider/Detect Magic are still NOT opened up to
 Ranger — a deliberately narrow scope cut, not an oversight (extend `RANGER_SPELL_IDS` further in a

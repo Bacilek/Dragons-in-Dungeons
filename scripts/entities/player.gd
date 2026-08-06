@@ -345,6 +345,17 @@ func _on_turn_started() -> void:
 			stats.longstrider_turns -= 1
 			if stats.longstrider_turns <= 0:
 				GameState.game_log("[color=gray]Longstrider fades.[/color]")
+		# Barkskin: flat 600-turn duration, NOT Concentration (see Stats.barkskin_turns' own
+		# comment). Restoring the Companion's own AC (if that's who was touched) mirrors
+		# Invisibility's own companion-mirror pattern above.
+		if stats.barkskin_turns > 0:
+			stats.barkskin_turns -= 1
+			if stats.barkskin_turns <= 0:
+				if stats.barkskin_on_companion and GameState.player_companion != null and is_instance_valid(GameState.player_companion):
+					GameState.player_companion.stats.armor_class = GameState.player_companion.stats.barkskin_pre_ac
+				stats.barkskin_on_companion = false
+				GameState.recalculate_stats()
+				GameState.game_log("[color=gray]Barkskin fades.[/color]")
 		# Detect Magic: same 600-turn Concentration pattern as Fog Cloud/Darkness above — nothing
 		# beyond the Stats field to clear (the blue-dot markers are recomputed live off
 		# detect_magic_turns > 0 every update_fog() call, no position/state to reset).

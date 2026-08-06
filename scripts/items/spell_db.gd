@@ -33,7 +33,7 @@ const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor
 # spell content of its own, e.g. Ensnaring Strike/Goodberry/Hunter's Mark-as-a-spell/Zephyr Strike
 # from the real 2024 Ranger list). No cantrips for Ranger either way (`cantrip_max()` stays 0 for
 # every non-Wizard class, matching both rule sets — Rangers don't get cantrips).
-const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace", "cure_wounds", "aid"]
+const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace", "cure_wounds", "aid", "barkskin"]
 # Warlock's real 5e/2024 Pact Magic list overlap with the shared SpellDb pool (scripts/entities/
 # CLAUDE.md's "Warlock class") — all ten are genuinely on Warlock's actual class list, no
 # reflavoring needed, unlike Ranger's thinner/approximated subset above. hellish_rebuke and hex are
@@ -132,6 +132,7 @@ static func get_spell(id: String) -> Spell:
 		"pass_without_trace": return _pass_without_trace()
 		"cure_wounds": return _cure_wounds()
 		"aid": return _aid()
+		"barkskin": return _barkskin()
 		"poison_spray": return _poison_spray()
 		"chill_touch": return _chill_touch()
 		"ray_of_sickness": return _ray_of_sickness()
@@ -714,6 +715,27 @@ static func _aid() -> Spell:
 	s.effect_id = "aid"
 	s.class_list = ["RANGER"]
 	s.upcast_flat_amount = 5   # +5 HP (each target) per slot level above 2nd
+	return s
+
+static func _barkskin() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "barkskin"
+	s.spell_name = "Barkskin"
+	s.school = "Transmutation"
+	s.casting_time = "Free"
+	s.level = 2
+	s.range_tiles = 1
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.duration_turns = 600
+	# Real 5e/5.5e class list: Druid/Ranger — only Ranger has spellcasting here. Deliberately NOT
+	# Concentration, per the owner's own stat block (real 5e Barkskin IS Concentration; this one
+	# isn't) — same "self, or the Companion" touch-target scope as Cure Wounds/Aid above, but only
+	# ONE of the two is ever affected per cast (Aid can hit both at once, Barkskin can't).
+	s.description = "Until the spell ends, the touched creature's AC can be no less than 17."
+	s.icon_path = "res://icons/spells/2/barkskin.png"
+	s.effect_id = "barkskin"
+	s.class_list = ["RANGER"]
 	return s
 
 static func _poison_spray() -> Spell:
