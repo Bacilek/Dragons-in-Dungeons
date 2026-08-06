@@ -1762,9 +1762,22 @@ GameState.player_status_changed.emit()
 | Status | HUD dot | Source | Effect |
 |---|---|---|---|
 | Poison | green | potions, enemies | damage/turn |
-| Burning | orange | Fire Trap | damage/turn |
+| Burning | orange | *(no current source — see below)* | damage/turn |
 | Bleeding | red | Spike Trap (5t) | damage/turn |
 | Slowed | brown | Bear Trap (20t), mud, water | movement costs 2 turns |
+
+**Fire Trap no longer applies the Burning status** — direct owner correction: the old
+`burning_turns = 4` DoT dealt `character_level` damage per tick (`Stats.tick_status()`), which
+spiraled into an absurd total at higher levels (12+ damage at level 1, 28+ at level 5, on top of
+the trap's own flat hit). `dungeon_floor.gd`'s `trigger_trap()` now deals a flat, one-shot **2d4
+Fire** hit instead (`Rng.roll_dice(2, 4)`, same roll shape as `_roll_fire_tick_damage()`'s burning-
+prop tick) and, separately, burns one random Scroll out of the player's own quickbar+bag
+(`GameState.burn_random_scroll()` — decrements `quantity` if stacked, else removes it outright,
+logged as its own line) as the trap's real punishment instead of a lingering DoT. `Stats.
+burning_turns`/`tick_status()`'s burning branch are unchanged and still exist — they're just
+currently dead scaffolding with no live call site setting `burning_turns` for the player anymore
+(a future fire source, e.g. standing in flames, could still use it) — same "granted but nothing to
+hook into" precedent as several race traits in this file.
 
 **Water extinguishes burning**: stepping onto (or ending a move on) a WATER tile zeroes
 `burning_turns` to 0 — `player.gd`'s `_try_move()`/`_execute_queued_path()` for the player,

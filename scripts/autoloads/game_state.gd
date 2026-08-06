@@ -2993,6 +2993,30 @@ func remove_item(item: Item) -> void:
 			inventory_changed.emit()
 			return
 
+# Fire Trap (see dungeon_floor.gd's trigger_trap()): destroys one random Scroll from the player's
+# quickbar+bag as a one-shot punishment, replacing the old burning-status DoT. Returns the burned
+# item's display name, or "" if no scroll was being carried (no-op in that case).
+func burn_random_scroll() -> String:
+	var candidates: Array[Item] = []
+	for i: int in QUICKBAR_SIZE:
+		var it: Item = player_quickbar[i]
+		if it != null and it.item_type == Item.Type.SCROLL:
+			candidates.append(it)
+	for i: int in INVENTORY_SIZE:
+		var it: Item = player_inventory[i]
+		if it != null and it.item_type == Item.Type.SCROLL:
+			candidates.append(it)
+	if candidates.is_empty():
+		return ""
+	var chosen: Item = Rng.pick(candidates)
+	var burned_name: String = chosen.item_name
+	if chosen.quantity > 1:
+		chosen.quantity -= 1
+	else:
+		remove_item(chosen)
+	inventory_changed.emit()
+	return burned_name
+
 func _remove_from_bags(item: Item) -> void:
 	for i: int in QUICKBAR_SIZE:
 		if player_quickbar[i] == item:

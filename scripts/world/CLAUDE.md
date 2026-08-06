@@ -231,7 +231,7 @@ Value keys: `name, damage, msg, sprite_node, revealed, triggered, is_push, reusa
 |---|---|---|---|
 | Spike | yes | bleeding 5 turns | — |
 | Bear | no | slowed 20 turns | — |
-| Fire | no | burning 4 turns | can cook Rotten Meat |
+| Fire | no | 2d4 Fire (one-shot, not a burning DoT) + burns a random carried Scroll | can cook Rotten Meat |
 | Piston | no | push + damage | detectable only from push side |
 | Tripwire | no | 3-6 Piercing + Poisoned (6 turns) to whoever's downrange | see "Tripwire trap" below — the one type NOT drawn from `TRAP_POOL` |
 

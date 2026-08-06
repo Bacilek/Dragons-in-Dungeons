@@ -2458,13 +2458,21 @@ func trigger_trap(pos: Vector2i, entity: Node2D = null) -> void:
 			trap["triggered"] = true
 			if is_instance_valid(sprite_node):
 				sprite_node.modulate = Color(0.25, 0.25, 0.25, 0.85)  # Dark = spent
-		var dmg: int = trap["damage"] + GameState.current_floor / 2
+		# Fire Trap: a one-shot 2d4 Fire hit (was a flat "damage" + burning_turns DoT scaled by
+		# character_level, which spiraled to absurd totals at higher levels — direct owner
+		# correction) that also torches one random Scroll from the player's own inventory instead.
+		var dmg: int
+		if trap["name"] == "Fire Trap":
+			var fire_rolls: Array[int] = Rng.roll_dice(2, 4)
+			dmg = fire_rolls[0] + fire_rolls[1]
+		else:
+			dmg = trap["damage"] + GameState.current_floor / 2
 		_apply_trap_damage(target, dmg, trap["msg"])
-		# Fire Trap applies burning
 		if trap["name"] == "Fire Trap" and target is Player:
 			AudioManager.play("trap_fire")
-			if GameState.apply_player_status("burning", 4):
-				GameState.game_log("[color=orange]You are burning! (4 turns)[/color]")
+			var burned_name: String = GameState.burn_random_scroll()
+			if burned_name != "":
+				GameState.game_log("[color=orange]The flames catch your %s and burn it to ash![/color]" % burned_name)
 		# Pit Spikes apply bleeding (5 turns, 1 dmg/turn)
 		if trap["name"] == "Pit Spikes" and target is Player:
 			AudioManager.play("trap_spike")

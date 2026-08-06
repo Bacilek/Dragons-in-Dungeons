@@ -21,6 +21,8 @@ static func is_scroll_level_eligible(entry: Dictionary, character_level: int) ->
 
 const TRAP_POOL: Array = [
 	{"name": "Bear Trap",  "sprite": "bear_trap.png",       "damage": 0, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
+	# "damage" is ignored for Fire Trap specifically — dungeon_floor.gd's trigger_trap() rolls a
+	# flat 2d4 Fire hit for it instead (see scripts/entities/CLAUDE.md's "Status effects" section).
 	{"name": "Fire Trap",  "sprite": "fire_trap.png",        "damage": 8, "msg": "Jets of flame engulf you!",        "wall_trap": false},
 	{"name": "Pit Spikes", "sprite": "pit_trap_spikes.png",  "damage": 7, "msg": "You fall into a spike pit!",       "wall_trap": false, "reusable": true},
 	{"name": "Piston",     "sprite": "push_trap/front.png",  "damage": 0, "msg": "A piston blasts you!",             "wall_trap": true},
