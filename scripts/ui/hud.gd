@@ -476,6 +476,8 @@ func _update_status_icons() -> void:
 		entries.append({"id": "raging", "icon_path": GameState.talent_icon_path("rage", 3), "fallback_color": Color(0.85, 0.15, 0.05)})
 	if GameState.risen_from_dead_active:
 		entries.append({"id": "risen_from_dead", "icon_path": "res://icons/status/risen_from_dead.png", "fallback_color": Color(0.2, 0.9, 0.9)})
+	if s.exhaustion_level > 0:
+		entries.append({"id": "exhaustion", "icon_path": "res://icons/status/exhaustion.png", "fallback_color": Color(0.5, 0.4, 0.3)})
 	if s.temp_hp > 0:
 		entries.append({"id": "temp_hp", "icon_path": "res://icons/status/temp_hp.png", "fallback_color": Color(0.4, 0.8, 1.0)})
 	if s.concentration_spell_id != "":

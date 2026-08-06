@@ -27,6 +27,7 @@ const TITLES: Dictionary = {
 	"blinded": "Blinded",
 	"frightened": "Frightened",
 	"risen_from_dead": "Risen from the Dead",
+	"exhaustion": "Exhausted",
 }
 
 static func get_text(id: String) -> String:
@@ -88,6 +89,9 @@ static func get_text(id: String) -> String:
 			var src: Enemy = GameState.player_stats.frightened_source
 			var src_name: String = src.display_name if src != null and is_instance_valid(src) else "the source"
 			return "Disadvantage on attacks and checks while %s is in sight. Can't willingly move closer to it. Repeats a WIS save each turn to end early." % src_name
+		"exhaustion":
+			var lvl: int = GameState.player_stats.exhaustion_level
+			return "Level %d/6 — %d to every d20 test, %d/6 movement speed. A long rest removes 1 level. Reaching level 6 is fatal." % [lvl, -2 * lvl, 6 - lvl]
 		_:
 			return ""
 
