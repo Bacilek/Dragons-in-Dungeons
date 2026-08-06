@@ -2429,15 +2429,18 @@ only one also genuinely on Ranger's real list — every other `LEVELED_SPELL_IDS
 Missile, Shield, Mage Armor, Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch Bolt,
 Expeditious Retreat, False Life, Invisibility, Darkness, Longstrider, Detect Magic) is
 Sorcerer/Wizard(/Warlock) only on both 2014 and 2024 rules. `RANGER_SPELL_IDS` is
-`["fog_cloud", "pass_without_trace", "cure_wounds", "aid", "barkskin"]` today: **Pass Without
-Trace** (Druid/Ranger, `class_list = ["RANGER"]` only — never opened to Wizard's own list, see
-"Elf"'s Wood Elf lineage grant), **Cure Wounds** (`SpellDb._cure_wounds()`, Abjuration, 1st level,
-real class list Bard/Cleric/Druid/Paladin/Ranger — only Ranger has spellcasting of any kind here,
-so `class_list = ["RANGER"]` only, never added to `LEVELED_SPELL_IDS`/Wizard's own list), **Aid**
-(`SpellDb._aid()`, Abjuration, 2nd level, real class list Bard/Cleric/Druid/Paladin/Ranger, same
-`class_list = ["RANGER"]`-only treatment), and **Barkskin** (`SpellDb._barkskin()`, Transmutation,
-2nd level, real class list Druid/Ranger, same `class_list = ["RANGER"]`-only treatment) are all
-four Ranger-exclusive spells, never offered to Wizard's own level-up picker. Cure Wounds is
+`["fog_cloud", "pass_without_trace", "cure_wounds", "aid", "barkskin", "hail_of_thorns"]` today:
+**Pass Without Trace** (Druid/Ranger, `class_list = ["RANGER"]` only — never opened to Wizard's
+own list, see "Elf"'s Wood Elf lineage grant), **Cure Wounds** (`SpellDb._cure_wounds()`,
+Abjuration, 1st level, real class list Bard/Cleric/Druid/Paladin/Ranger — only Ranger has
+spellcasting of any kind here, so `class_list = ["RANGER"]` only, never added to
+`LEVELED_SPELL_IDS`/Wizard's own list), **Aid** (`SpellDb._aid()`, Abjuration, 2nd level, real
+class list Bard/Cleric/Druid/Paladin/Ranger, same `class_list = ["RANGER"]`-only treatment),
+**Barkskin** (`SpellDb._barkskin()`, Transmutation, 2nd level, real class list Druid/Ranger, same
+`class_list = ["RANGER"]`-only treatment), and **Hail of Thorns** (`SpellDb._hail_of_thorns()`,
+Conjuration, 1st level, real class list Ranger-only, same `class_list = ["RANGER"]`-only
+treatment) are all five Ranger-exclusive spells, never offered to Wizard's own level-up picker.
+Cure Wounds is
 `resolution = AUTO_HIT`, `target_kind = SELF`, touch range (`range_tiles = 1`) — same "self, or the
 Companion" touch-target click scope as Healing Hands/Longstrider (no general ally-targeting system
 exists): clicking the Companion's own tile heals it, any other click heals the caster. Heals
@@ -2487,6 +2490,34 @@ entry (spell's own icon, brown/bark fallback tint) whenever `s.barkskin_turns > 
 s.barkskin_on_companion` (the icon only ever reflects the PLAYER's own buff state, matching the
 AC floor's own scope). `SpellEffects._resolve_barkskin()` is the resolver, dispatched from
 `cast_leveled_self()`'s `effect_id == "barkskin"` case.
+
+**Hail of Thorns**: **a toggle-armed REACTION, not a normal on-demand cast** — RAW is "the first
+time you hit a creature with a ranged weapon attack while the spell is active," and this engine
+has no reaction-casting framework, so it's implemented as the exact offensive mirror of Hellish
+Rebuke's own toggle-armed shape (see "Tiefling" above) rather than going through the normal
+arm-then-click spell-targeting flow at all — `_build_spell_ability()`/`_spell_ability_id()`/
+`_spell_id_from_ability_id()` all special-case `spell_id == "hail_of_thorns"` to build/route a
+fixed `"hail_of_thorns_toggle"` ability id exactly like they already do for `"hellish_rebuke"`.
+Toggling it (`PlayerRangerTalents.activate_hail_of_thorns()`/`can_activate_hail_of_thorns()`,
+`scripts/entities/player_ranger_talents.gd` — same "can't arm with nothing to fuel it" gate
+Hellish Rebuke's own activation has) flips `Stats.hail_of_thorns_armed`. **Triggered from
+`PlayerRanged.ranged_attack()`'s own hit branch** (not an enemy-side hook like Hellish Rebuke) —
+the instant a ranged shot lands, the caller clears the armed flag and calls
+`SpellEffects.trigger_hail_of_thorns()`, same "disarm BEFORE the trigger resolves" convention as
+enemy.gd's own Hellish Rebuke call site. **Thrown weapons don't trigger it** — a documented scope
+limit, only wired into the one equipped-ranged-weapon attack site. On trigger: the shot's own
+target (if it survived the weapon hit — a shot that already killed it outright leaves nothing for
+the thorns to catch) plus every OTHER living enemy within Chebyshev 1 of its tile (5e RAW's "5
+feet") each roll an independent DEX save (`magical = true`, so Imp/Quasit's Magic Resistance
+grants Advantage against it like any other spell save) — a fail takes the full `1d10` Piercing
+roll (`+1d10` per slot level above 1st via `upcast_dice_count` — Warlock Pact Magic auto-upcast
+only, a no-op for Ranger's own non-upcasting `HalfCasterSlotPool`), a pass takes half. **No status-
+tray icon** — same precedent as Hellish Rebuke, whose own armed-toggle state also isn't reflected
+in the ability-bar's orange-highlight convention today (a pre-existing gap in both, not something
+this spell newly introduces). **No Scroll of Hail of Thorns exists** — same deliberate holdout as
+Hellish Rebuke, for the identical reason: a toggle-armed reaction can't go through the generic
+`on_scroll_primed()`/`begin_cast()` cast-immediately flow every other scroll uses.
+`SpellEffects.trigger_hail_of_thorns()` is the resolver.
 
 Longstrider/Detect Magic are still NOT opened up to
 Ranger — a deliberately narrow scope cut, not an oversight (extend `RANGER_SPELL_IDS` further in a

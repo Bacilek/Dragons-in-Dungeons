@@ -33,7 +33,7 @@ const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor
 # spell content of its own, e.g. Ensnaring Strike/Goodberry/Hunter's Mark-as-a-spell/Zephyr Strike
 # from the real 2024 Ranger list). No cantrips for Ranger either way (`cantrip_max()` stays 0 for
 # every non-Wizard class, matching both rule sets — Rangers don't get cantrips).
-const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace", "cure_wounds", "aid", "barkskin"]
+const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace", "cure_wounds", "aid", "barkskin", "hail_of_thorns"]
 # Warlock's real 5e/2024 Pact Magic list overlap with the shared SpellDb pool (scripts/entities/
 # CLAUDE.md's "Warlock class") — all ten are genuinely on Warlock's actual class list, no
 # reflavoring needed, unlike Ranger's thinner/approximated subset above. hellish_rebuke and hex are
@@ -133,6 +133,7 @@ static func get_spell(id: String) -> Spell:
 		"cure_wounds": return _cure_wounds()
 		"aid": return _aid()
 		"barkskin": return _barkskin()
+		"hail_of_thorns": return _hail_of_thorns()
 		"poison_spray": return _poison_spray()
 		"chill_touch": return _chill_touch()
 		"ray_of_sickness": return _ray_of_sickness()
@@ -736,6 +737,31 @@ static func _barkskin() -> Spell:
 	s.icon_path = "res://icons/spells/2/barkskin.png"
 	s.effect_id = "barkskin"
 	s.class_list = ["RANGER"]
+	return s
+
+static func _hail_of_thorns() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "hail_of_thorns"
+	s.spell_name = "Hail of Thorns"
+	s.school = "Conjuration"
+	# RAW casting time is a Bonus Action toggle; approximated as Free, same convention as Hellish
+	# Rebuke's own reaction-toggle shape (this engine has no reaction/bonus-action-casting
+	# framework — see that spell's own comment).
+	s.casting_time = "Free"
+	s.level = 1
+	s.range_tiles = 0   # "your weapon range" — unlimited, matches whatever ranged weapon you fire, not a separate spell range
+	s.target_kind = Spell.TargetKind.ENEMY
+	s.resolution = Spell.Resolution.SAVE
+	s.save_stat = "DEX"
+	s.save_for_half = true
+	s.dice_count = 1
+	s.dice_sides = 10
+	s.damage_type = "Piercing"
+	s.description = "Toggle to arm — the next creature you hit with a ranged weapon attack, and every creature within 1 tile of it, must make a DEX save or take 1d10 Piercing (half on a success)."
+	s.icon_path = "res://icons/spells/1/hail_of_thorns.png"
+	s.effect_id = "hail_of_thorns"
+	s.class_list = ["RANGER"]
+	s.upcast_dice_count = 1   # +1d10 per slot level above 1st
 	return s
 
 static func _poison_spray() -> Spell:

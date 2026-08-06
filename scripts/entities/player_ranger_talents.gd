@@ -145,3 +145,28 @@ func try_bloodhound_remark(dead_enemy: Enemy) -> void:
 		stats.concentration_spell_id = "hunters_mark"
 		GameState.game_log("[color=cyan]Bloodhound: Hunter's Mark shifts to %s.[/color]" % best.display_name)
 	GameState.ability_bar_changed.emit()
+
+# ── Hail of Thorns (learnable 1st-level spell) ──────────────────────────────────────────────────
+# Toggle-armed reaction, same shape as PlayerTiefling's Hellish Rebuke (see that file's own header
+# comment) but the offensive mirror of it — arms here, actually resolves from
+# PlayerRanged.ranged_attack()'s own hit branch via SpellEffects.trigger_hail_of_thorns() the
+# moment a ranged shot lands (thrown weapons don't trigger it — a documented scope limit, same
+# "only the one call site it was built for" precedent as Hunter's Mark's own bonus die).
+
+func can_activate_hail_of_thorns() -> bool:
+	if GameState.invincible:
+		return true
+	var caster: SpellcasterState = player.stats.caster
+	if caster == null or caster.slot_pool == null:
+		return false
+	return caster.slot_pool.can_cast(SpellDb.get_spell("hail_of_thorns"))
+
+func activate_hail_of_thorns() -> void:
+	if not player.stats.hail_of_thorns_armed and not can_activate_hail_of_thorns():
+		GameState.game_log("[color=gray]Hail of Thorns has no spell slot left to fuel it.[/color]")
+		return
+	player.stats.hail_of_thorns_armed = not player.stats.hail_of_thorns_armed
+	if player.stats.hail_of_thorns_armed:
+		GameState.game_log("[color=cyan]Hail of Thorns is armed — your next ranged hit brings down a rain of thorns.[/color]")
+	else:
+		GameState.game_log("[color=gray]Hail of Thorns stood down.[/color]")

@@ -279,6 +279,14 @@ func ranged_attack(enemy: Enemy) -> void:
 	elif gol_type == "Prone":
 		GameState.game_log("[color=cyan]Hill's Tumble knocks %s Prone.[/color]" % enemy.display_name)
 
+	# Hail of Thorns: consumed the instant a ranged shot lands (armed via the ability bar toggle —
+	# PlayerRangerTalents.activate_hail_of_thorns()). Cleared here, BEFORE the trigger resolves,
+	# same convention as enemy.gd's own Hellish Rebuke call site. Thrown weapons don't trigger this
+	# — a documented scope limit, only wired into the equipped-ranged-weapon shot.
+	if player.stats.hail_of_thorns_armed:
+		player.stats.hail_of_thorns_armed = false
+		SpellEffects.trigger_hail_of_thorns(player, enemy, player._dungeon_floor)
+
 	if is_lethal:
 		# Enemy died to this shot — arrow drop-from-corpse (50% chance) is handled inside
 		# _finish_kill so it can use the corpse's final tile after remove_enemy()/die().

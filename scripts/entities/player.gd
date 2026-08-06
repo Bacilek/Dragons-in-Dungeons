@@ -3592,5 +3592,6 @@ func _use_ability_slot(idx: int) -> void:
 		"large_form":              _goliath.activate_large_form()
 		"giant_ancestry":          _goliath.activate_giant_ancestry()
 		"hellish_rebuke_toggle":   _tiefling.activate_hellish_rebuke()
+		"hail_of_thorns_toggle":   _ranger_talents.activate_hail_of_thorns()
 		"halfling_nimbleness":     _halfling.activate_nimbleness()
 		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)

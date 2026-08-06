@@ -215,6 +215,15 @@ func is_tiefling_legacy_free_cast_available(spell_id: String) -> bool:
 # serialized — combat-transient, same tier as giant_ancestry_armed.
 var hellish_rebuke_armed: bool = false
 
+# Hail of Thorns (Ranger's own real 5e spell list entry) — same toggle-armed-reaction shape as
+# Hellish Rebuke above, just the offensive mirror of it: RAW is "the first time you hit a creature
+# with a ranged weapon attack while the spell is active", and this engine has no reaction-casting
+# framework for that either, so arming it (PlayerRangerTalents.activate_hail_of_thorns(),
+# scripts/entities/player_ranger_talents.gd) and letting PlayerRanged.ranged_attack() trigger the
+# actual burst on its own next landed hit is the closest analogue. Not serialized — combat-
+# transient, same tier as hellish_rebuke_armed.
+var hail_of_thorns_armed: bool = false
+
 # Fiendish Legacy spells are cast using "whichever of INT/WIS/CHA is highest" — not the character's
 # own class spellcasting_ability (a Tiefling Barbarian has no caster ability at all; a Tiefling
 # Wizard's own INT might not even be the best of the three). Checked by SpellEffects._attack_bonus()/

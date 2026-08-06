@@ -1467,6 +1467,65 @@ static func trigger_hellish_rebuke(player: Player, attacker: Enemy, dungeon_floo
 	if is_lethal:
 		player._finish_kill(attacker)
 
+# Hail of Thorns (Ranger's own real 5e spell list entry) — the offensive mirror of Hellish Rebuke's
+# toggle-armed-reaction shape (see PlayerRangerTalents' own header comment): armed via the ability
+# bar, consumed by the CALLER (PlayerRanged.ranged_attack(), which clears Stats.hail_of_thorns_armed
+# BEFORE calling this, same convention as enemy.gd's own Hellish Rebuke call site) the instant a
+# ranged shot lands. `primary` is the shot's own target — included in the burst only if it's still
+# alive (a shot that already killed it outright leaves nothing there for the thorns to catch), plus
+# every OTHER living enemy within Chebyshev 1 of `primary`'s tile (5e RAW's "5 feet"). Each rolls an
+# independent DEX save; a fail takes the full roll, a pass takes half (rounded down).
+static func trigger_hail_of_thorns(player: Player, primary: Enemy, dungeon_floor: Node) -> void:
+	var spell: Spell = SpellDb.get_spell("hail_of_thorns")
+	var stats: Stats = player.stats
+	var cast_level: int = spell.level
+	if stats.caster != null and stats.caster.slot_pool != null and (GameState.invincible or stats.caster.slot_pool.can_cast(spell)):
+		if not GameState.invincible:
+			cast_level = stats.caster.slot_pool.available_level(spell)
+			stats.caster.slot_pool.consume(cast_level)
+	else:
+		GameState.game_log("[color=gray]Hail of Thorns has no spell slot left to fuel it.[/color]")
+		return
+	GameState.spell_slots_changed.emit()
+	var extra_levels: int = _upcast_extra_levels(spell, cast_level)
+	var dice_count: int = spell.dice_count + spell.upcast_dice_count * extra_levels
+	var dc: int = _save_dc(stats, spell)
+
+	var targets: Array[Enemy] = []
+	if is_instance_valid(primary) and not primary.stats.is_dead():
+		targets.append(primary)
+	if dungeon_floor != null:
+		for e: Enemy in dungeon_floor.get_all_enemies():
+			if e == primary or not is_instance_valid(e) or e.stats.is_dead():
+				continue
+			if primary.min_dist_to_entity(e) <= 1:
+				targets.append(e)
+	if targets.is_empty():
+		return
+
+	GameState.game_log("[color=lime]Hail of Thorns[/color] rains down around %s!" % primary.display_name)
+	for e: Enemy in targets:
+		var save: Dictionary = e.resist_check_detailed(dc, false, true, false, false, true)
+		var save_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+			save["die"], save["mod"], save["floor_bonus"], save["prof_label"], save["total"], save["dc"], save["stat"], int(save["pass"]), save["sliver_penalty"]]
+		var rolls: Array[int] = Rng.roll_dice(dice_count, spell.dice_sides)
+		var inst: Dictionary = CombatMath.build_damage_instance(rolls, spell.dice_sides, [], false, spell.damage_type)
+		var roll_total: int = int(inst["subtotal"])
+		var dmg: int = roll_total if not save["pass"] else roll_total / 2
+		var result: Dictionary = e.take_typed_damage(dmg, spell.damage_type)
+		inst["final"] = result["actual"]
+		inst["resist_mul"] = result["mul"]
+		var actual: int = result["actual"]
+		e.update_hp_bar()
+		if dungeon_floor != null:
+			dungeon_floor.show_damage(e.position, actual, false, CombatMath.damage_type_color(spell.damage_type))
+		var dmg_meta: String = CombatMath.encode_damage_instance(inst)
+		var is_lethal: bool = e.stats.is_dead()
+		GameState.game_log("%s is [url=%s]%s[/url] by the thorns for [url=%s][color=yellow]%d[/color][/url] Piercing dmg.%s" % [
+			e.display_name, save_meta, "torn" if not save["pass"] else "grazed", dmg_meta, actual, CombatMath.death_suffix(is_lethal)])
+		if is_lethal:
+			player._finish_kill(e)
+
 # Witch Bolt's per-turn damage tick (called from player.gd's _on_turn_started(), NOT a player
 # action — no TurnManager envelope, no slot consumption, no fresh attack roll; only the initial
 # cast above rolls to hit). Automatic 1d12 Lightning to the Jolted target.
