@@ -1213,6 +1213,8 @@ func _update_spell_aoe_preview() -> bool:
 			return _update_nimbleness_preview()
 		if _goliath.cloud_teleport_mode_active:
 			return _update_cloud_teleport_preview()
+		if _hunters_mark_mode_active:
+			return _update_hunters_mark_preview()
 		_dungeon_floor.hide_aoe_preview()
 		_dungeon_floor.hide_spell_range_preview()
 		return false
@@ -1349,6 +1351,20 @@ func _update_cloud_teleport_preview() -> bool:
 		and _dungeon_floor.is_tile_visible(tile) and _dungeon_floor.is_walkable(tile) \
 		and _dungeon_floor.get_enemy_at(tile) == null
 	_dungeon_floor.show_touch_target_preview(tile, in_range)
+	return true
+
+# Hunter's Mark targeting preview — same shape every other spell/ability gets: a blue max-range
+# backdrop (Stats.HUNTERS_MARK_RANGE) plus a red highlight on the hovered tile whenever it holds a
+# targetable enemy in range. Bugfix: this used to have no preview whatsoever, same gap Breath
+# Weapon/Cloud Giant's Jaunt had before their own previews were added.
+func _update_hunters_mark_preview() -> bool:
+	_dungeon_floor.show_spell_range_preview(grid_pos, Stats.HUNTERS_MARK_RANGE, false)
+	var world_mouse: Vector2 = get_global_mouse_position()
+	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
+	var d: Vector2i = tile - grid_pos
+	var dist_sq: int = d.x * d.x + d.y * d.y
+	var in_range: bool = dist_sq <= Stats.HUNTERS_MARK_RANGE * Stats.HUNTERS_MARK_RANGE
+	_dungeon_floor.show_single_target_preview(tile, in_range)
 	return true
 
 # Shift+hover ranged-weapon targeting preview — mirrors _update_spell_aoe_preview()'s shape but for

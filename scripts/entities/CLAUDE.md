@@ -2352,7 +2352,14 @@ implemented**: the 5e "Advantage on a Wisdom (Perception/Survival) check to find
 target" clause — this codebase has no player-side "find a creature" WIS-check mechanic to hook it
 into (`player_actions.gd`'s `search_action()` is for traps/secret doors and already always rolls
 with Advantage for everyone; the closest analog, `_resolve_stealth_check()`, is the opposite
-direction — enemy Stealth vs. player Passive Perception). Shown as a `X/3` use-count badge on the
+direction — enemy Stealth vs. player Passive Perception). **Targeting preview** (bugfix — this used
+to have none at all, same gap Breath Weapon/Cloud Giant's Jaunt had before their own previews were
+added): `player.gd._update_hunters_mark_preview()`, dispatched from `_update_spell_aoe_preview()`'s
+own fallback chain while `_hunters_mark_mode_active` — a blue max-range backdrop
+(`Stats.HUNTERS_MARK_RANGE`) plus a red highlight on the hovered tile whenever it holds a
+targetable enemy in range, reusing `DungeonFloor.show_spell_range_preview()`/
+`show_single_target_preview()` verbatim, same shape every other single-target spell/ability gets.
+Shown as a `X/3` use-count badge on the
 ability bar slot (`hud.gd`'s `_refresh_ability_bar()`, same special-cased-`Ability` convention as
 Rage — `Stats.hunters_mark_uses_remaining` is read directly since the `Ability` resource's own
 `uses_remaining`/`uses_max` stay 0/0). Direction to the marked target shows on-screen even outside
