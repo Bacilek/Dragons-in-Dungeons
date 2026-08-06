@@ -2467,13 +2467,15 @@ func _try_move(dir: Vector2i) -> void:
 		if _new_ac_bonus != GameState.terrain_ac_bonus:
 			GameState.terrain_ac_bonus = _new_ac_bonus
 			GameState.recalculate_stats()
-	# With no live enemy on the floor, turn economy is moot — every speed effect (free moves,
-	# Slowed, Exhaustion) exists purely to change how many actions the environment gets relative to
-	# the player's one move; skipping that bookkeeping entirely (instead of still granting/denying
-	# free moves with nothing to race against) is what keeps movement from reading as
-	# stuttery/warping once a floor is cleared. See scripts/entities/CLAUDE.md's "Player
-	# movement-speed visual consistency" — this is the one sanctioned way to bypass it.
+	# With no live enemy on the floor, turn economy (free moves, Slowed, Exhaustion) is moot, so
+	# that bookkeeping is skipped — but WASD movement (this function) still pays the same
+	# FREE_MOVE_BEAT_SEC pacing beat an idle enemy's own turn would normally cost, so walking speed
+	# stays identical to a floor with enemies on it (direct owner request — holding WASD used to
+	# visibly speed up the instant the last enemy died, purely because there was no enemy round left
+	# to wait on). Click-to-move (_execute_queued_path()) deliberately does NOT pay this beat — it's
+	# the one sanctioned way to move fast, exactly as intended.
 	if not TurnManager.has_any_enemy():
+		await get_tree().create_timer(FREE_MOVE_BEAT_SEC).timeout
 		TurnManager.on_player_action_complete()
 		return
 	if _free_sidestep:

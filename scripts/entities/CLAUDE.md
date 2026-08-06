@@ -1648,21 +1648,32 @@ with an invisible opponent. Both `_try_move()` (WASD) and `_execute_queued_path(
 this consistently; the free-move half (Expeditious Retreat etc.) is still `_try_move()`-only, same
 pre-existing scope limitation as those talents' own entries above.
 
-**No speed variance at all once the floor has no live enemy** (bugfix — direct owner request):
-every mechanism above exists solely to change turn ECONOMY relative to the environment/enemies —
-with `TurnManager.has_any_enemy() == false` (floor cleared), there is no environment to race
-against, so granting a free move (skip enemy phase) or a Slowed/Exhaustion penalty (double enemy
-phase) accomplishes nothing except firing `_take_free_move_beat()`/duty-cycle bookkeeping for no
-reason, which read as stuttery/warping movement once the player picked up speed (Wood Elf's
-duty-cycle free step, Exhaustion's penalty, etc. combining unpredictably with nothing to balance
-against). Both `_try_move()` and `_apply_queued_step_speed()` now check `TurnManager.
+**No free-move/Slowed/Exhaustion duty-cycle bookkeeping once the floor has no live enemy, but WASD
+walking speed itself stays constant** (reworked — direct owner request reversed the original
+bugfix below): every duty-cycle/free-move mechanism above exists solely to change turn ECONOMY
+relative to the environment/enemies — with `TurnManager.has_any_enemy() == false` (floor cleared),
+there is no environment to race against, so granting a free move (skip enemy phase) or a
+Slowed/Exhaustion penalty (double enemy phase) accomplishes nothing except advancing duty-cycle
+counters for no reason. Both `_try_move()` and `_apply_queued_step_speed()` check `TurnManager.
 has_any_enemy()` first and, if false, skip the ENTIRE free-move/Slowed/Exhaustion block outright —
-`_try_move()` falls straight through to a plain `TurnManager.on_player_action_complete()` (never
-touching `_free_sidestep`/Wood Elf/Longstrider/Large Form/Expeditious Retreat's own duty-cycle
-consumption, so their counters don't advance while there's nothing to spend a free move on),
-`_apply_queued_step_speed()` returns before either `enemy_actions_this_round = 2` assignment. Once
-a new enemy is registered (`TurnManager.register_enemy()`, e.g. entering a room with sleepers),
-every duty cycle resumes exactly where it left off — nothing is reset, just paused.
+neither touches `_free_sidestep`/Wood Elf/Longstrider/Large Form/Expeditious Retreat's own
+duty-cycle consumption, so their counters don't advance while there's nothing to spend a free move
+on. Once a new enemy is registered (`TurnManager.register_enemy()`, e.g. entering a room with
+sleepers), every duty cycle resumes exactly where it left off — nothing is reset, just paused.
+
+**`_try_move()`'s no-enemy branch still pays the `FREE_MOVE_BEAT_SEC` (0.08s) pacing beat** before
+completing the round (`await get_tree().create_timer(FREE_MOVE_BEAT_SEC).timeout` right before
+`TurnManager.on_player_action_complete()`) — direct owner correction to an earlier version of this
+same bugfix, which skipped straight to `on_player_action_complete()` with no beat at all: since
+`TurnManager._process_enemies()` resolves synchronously with zero enemies, that made holding WASD
+visibly speed up the instant the last enemy on a floor died (no enemy-round overhead left to wait
+on), which reads as "the player got faster," not "the environment stopped being in the way." The
+added beat keeps WASD's per-tile pace identical whether or not the floor still has enemies on it.
+**`_execute_queued_path()` (click-to-move / enemy-chase) deliberately does NOT pay this beat** —
+its own per-step body calls `TurnManager.on_player_action_complete()` directly, with no equivalent
+check or beat at all, so a cleared floor's click-to-move genuinely does move faster than WASD
+(chains at the tween's own 0.08s per tile, back-to-back) — that asymmetry is the intended
+"fast only when you click somewhere" behavior, not an oversight to fix.
 
 ---
 
