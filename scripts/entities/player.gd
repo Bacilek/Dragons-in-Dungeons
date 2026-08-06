@@ -2077,6 +2077,10 @@ func _apply_queued_step_speed(next_pos: Vector2i) -> void:
 		GameState.player_stats.burning_turns = 0
 		GameState.player_status_changed.emit()
 		GameState.game_log("[color=cyan]The water extinguishes your flames![/color]")
+	# See the identical has_any_enemy() guard in _try_move() — no live enemy means no turn economy
+	# to protect, so Slowed/Exhaustion's extra-enemy-round trick is skipped entirely.
+	if not TurnManager.has_any_enemy():
+		return
 	if GameState.player_stats.slowed_turns > 0 and GameState.get_talent_rank("trailblazer") < 1:
 		TurnManager.enemy_actions_this_round = 2
 	if _exhaustion_move_penalizes():
@@ -2402,6 +2406,15 @@ func _try_move(dir: Vector2i) -> void:
 		if _new_ac_bonus != GameState.terrain_ac_bonus:
 			GameState.terrain_ac_bonus = _new_ac_bonus
 			GameState.recalculate_stats()
+	# With no live enemy on the floor, turn economy is moot — every speed effect (free moves,
+	# Slowed, Exhaustion) exists purely to change how many actions the environment gets relative to
+	# the player's one move; skipping that bookkeeping entirely (instead of still granting/denying
+	# free moves with nothing to race against) is what keeps movement from reading as
+	# stuttery/warping once a floor is cleared. See scripts/entities/CLAUDE.md's "Player
+	# movement-speed visual consistency" — this is the one sanctioned way to bypass it.
+	if not TurnManager.has_any_enemy():
+		TurnManager.on_player_action_complete()
+		return
 	if _free_sidestep:
 		GameState.game_log("[color=cyan]Battlefield Expert: that side-step didn't cost you your turn.[/color]")
 		await _take_free_move_beat()

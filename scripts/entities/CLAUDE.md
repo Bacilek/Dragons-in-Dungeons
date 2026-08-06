@@ -1648,6 +1648,22 @@ with an invisible opponent. Both `_try_move()` (WASD) and `_execute_queued_path(
 this consistently; the free-move half (Expeditious Retreat etc.) is still `_try_move()`-only, same
 pre-existing scope limitation as those talents' own entries above.
 
+**No speed variance at all once the floor has no live enemy** (bugfix — direct owner request):
+every mechanism above exists solely to change turn ECONOMY relative to the environment/enemies —
+with `TurnManager.has_any_enemy() == false` (floor cleared), there is no environment to race
+against, so granting a free move (skip enemy phase) or a Slowed/Exhaustion penalty (double enemy
+phase) accomplishes nothing except firing `_take_free_move_beat()`/duty-cycle bookkeeping for no
+reason, which read as stuttery/warping movement once the player picked up speed (Wood Elf's
+duty-cycle free step, Exhaustion's penalty, etc. combining unpredictably with nothing to balance
+against). Both `_try_move()` and `_apply_queued_step_speed()` now check `TurnManager.
+has_any_enemy()` first and, if false, skip the ENTIRE free-move/Slowed/Exhaustion block outright —
+`_try_move()` falls straight through to a plain `TurnManager.on_player_action_complete()` (never
+touching `_free_sidestep`/Wood Elf/Longstrider/Large Form/Expeditious Retreat's own duty-cycle
+consumption, so their counters don't advance while there's nothing to spend a free move on),
+`_apply_queued_step_speed()` returns before either `enemy_actions_this_round = 2` assignment. Once
+a new enemy is registered (`TurnManager.register_enemy()`, e.g. entering a room with sleepers),
+every duty cycle resumes exactly where it left off — nothing is reset, just paused.
+
 ---
 
 ## Stats (`stats.gd`)
@@ -2035,11 +2051,25 @@ turn right after the main-hand swing already consumed the surprise, so the targe
 ## Exhaustion
 
 D&D 2024's simplified Exhaustion track — `Stats.exhaustion_level: int` (0-6, serialized) — is
-implemented as a **pure debuff scaffold**: every mechanical consequence works, but no trap/spell/
-status/mechanic anywhere in this codebase currently sets `exhaustion_level` above 0, and there's
-no UI to view/set it outside the debug panel's raw field access. It exists so a future exhaustion
-source (a starvation mechanic, a boss curse, a specific trap) only needs to write the field —
-every consequence below already fires automatically.
+implemented as a debuff scaffold: every mechanical consequence works, and one real source now
+grants it. It exists so a future exhaustion source (a starvation mechanic, a boss curse, a
+specific trap) only needs to write the field — every consequence below already fires
+automatically.
+
+- **Source: death-save revival**. `GameState._end_death_save_sequence(true)`
+  (`scripts/autoloads/game_state.gd`, root CLAUDE.md's "Death saves") increments
+  `exhaustion_level` by 1 every time the player claws back from 0 HP via a successful death-save
+  sequence. If that increment reaches **level 6, the revival is aborted** — the function instead
+  runs the normal death tail (`is_game_over = true`, `player_died.emit()`) instead of setting
+  `current_hp = 1`, i.e. a 6th death-save revival is fatal on the spot, matching 5e 2024's own
+  "exhaustion 6 = death" rule. Cheat-death holds (Bruiser R3's "refuse to fall", Orc Relentless
+  Endurance) intercept `check_player_death()` **before** `begin_death_save_sequence()` ever runs —
+  neither grants exhaustion, only an actual death-save revival does.
+- **Visible in the status tray**: `hud.gd._update_status_icons()` appends an `"exhaustion"` entry
+  (`res://icons/status/exhaustion.png`, no real art yet — renders as a tinted placeholder square
+  like every other art-less tray entry) whenever `exhaustion_level > 0`; hover text
+  (`status_tooltips.gd`) reports the current level, its flat d20 penalty, movement fraction, and
+  the long-rest-removes-1/level-6-is-fatal rules.
 
 - **-2 to every player d20 test per level**: `CombatMath.exhaustion_penalty() -> int` (`-2 *
   exhaustion_level`) is a flat modifier added into the caller's own bonus-total sum at every
@@ -2078,8 +2108,10 @@ every consequence below already fires automatically.
   simplification, not a bug (matches every other per-round-cap field's own reset-on-revert
   precedent).
 - **Removal**: `GameState.long_rest()` decrements `exhaustion_level` by exactly 1 (floored at 0) —
-  matches D&D 2024's own "long rest removes 1 level" rule. No other removal path exists (no
-  per-level-6-death rule either, since nothing can currently reach level 6).
+  matches D&D 2024's own "long rest removes 1 level" rule. No other removal path exists.
+  **Level 6 is not actually reachable as a standing state** — the death-save source above checks
+  for it at the moment of the would-be 6th increment and kills the character instead of ever
+  setting the field to 6, so `exhaustion_level` tops out at 5 in practice.
 
 ## Multi-turn action interrupts (short rest / armor change / scroll learn)
 
@@ -2364,18 +2396,32 @@ genuinely has none). **Prepared count**: `SpellcasterState.prepared_max()` branc
 actually on Ranger's real 5e/5.5e (2024) spell list — `SpellDb.RANGER_SPELL_IDS` deliberately does
 NOT just open every `LEVELED_SPELL_IDS` entry up to Ranger; each spell's own `class_list` was
 checked against its actual RAW class list (direct owner correction after an earlier pass got this
-wrong). Of the 15 `LEVELED_SPELL_IDS` entries, **Fog Cloud** (Druid/Ranger/Sorcerer/Wizard),
-**Longstrider** (Bard/Druid/Ranger/Wizard), and **Detect Magic** (Bard/Cleric/Druid/Paladin/
-Ranger/Sorcerer/Warlock/Wizard) are the only three genuinely on Ranger's real list — every other
-one (Magic Missile, Shield, Mage Armor, Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch
-Bolt, Expeditious Retreat, False Life, Invisibility, Darkness) is Sorcerer/Wizard(/Warlock) only on
-both 2014 and 2024 rules. `RANGER_SPELL_IDS` is still just `["fog_cloud"]` today — Longstrider/
-Detect Magic weren't opened up to Ranger in this same pass, a deliberately narrow scope cut, not
-an oversight (extend `RANGER_SPELL_IDS` in a future pass if Ranger's spell list gets a dedicated
-content pass) — a real content gap (this codebase has no nature-flavored spell content of its own,
-e.g. the real 2024 Ranger list's Ensnaring Strike/Goodberry/Zephyr Strike/etc.), not a
-bug; the starting-spell picker below already degrades gracefully to fewer than 3 cards when the
-eligible pool is this thin. `SpellDb.CLASS_SPELL_LISTS["RANGER"]` feeds the level-up spell-learn picker exactly like Wizard's
+wrong). Of the `LEVELED_SPELL_IDS` entries, **Fog Cloud** (Druid/Ranger/Sorcerer/Wizard) is the
+only one also genuinely on Ranger's real list — every other `LEVELED_SPELL_IDS` entry (Magic
+Missile, Shield, Mage Armor, Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch Bolt,
+Expeditious Retreat, False Life, Invisibility, Darkness, Longstrider, Detect Magic) is
+Sorcerer/Wizard(/Warlock) only on both 2014 and 2024 rules. `RANGER_SPELL_IDS` is
+`["fog_cloud", "pass_without_trace", "cure_wounds"]` today: **Pass Without Trace** (Druid/Ranger,
+`class_list = ["RANGER"]` only — never opened to Wizard's own list, see "Elf"'s Wood Elf lineage
+grant) and **Cure Wounds** (`SpellDb._cure_wounds()`, Abjuration, 1st level, real class list
+Bard/Cleric/Druid/Paladin/Ranger — only Ranger has spellcasting of any kind here, so
+`class_list = ["RANGER"]` only, never added to `LEVELED_SPELL_IDS`/Wizard's own list) are both
+Ranger-exclusive spells, never offered to Wizard's own level-up picker. Cure Wounds is
+`resolution = AUTO_HIT`, `target_kind = SELF`, touch range (`range_tiles = 1`) — same "self, or the
+Companion" touch-target click scope as Healing Hands/Longstrider (no general ally-targeting system
+exists): clicking the Companion's own tile heals it, any other click heals the caster. Heals
+2d8 + spellcasting ability modifier (WIS for Ranger), `upcast_dice_count = 2` (+2d8 per slot level
+above 1st — Warlock Pact Magic auto-upcast only, a no-op for Ranger's own non-upcasting
+`HalfCasterSlotPool`). `SpellEffects._resolve_cure_wounds()` resolves it via `GameState.heal()`
+(Bruiser R1's own +1d4-while-Bloodied bonus applies for free) for a self-cast, or a direct
+`Companion.stats.current_hp` bump for a Companion cast — same `heal:` tooltip format short rest/
+Zealot Strike/Healing Hands already use. Longstrider/Detect Magic are still NOT opened up to
+Ranger — a deliberately narrow scope cut, not an oversight (extend `RANGER_SPELL_IDS` further in a
+future pass if Ranger's spell list gets another content pass) — a real content gap (this codebase
+has little other nature-flavored spell content of its own, e.g. the real 2024 Ranger list's
+Ensnaring Strike/Goodberry/Zephyr Strike/etc.), not a bug; the starting-spell picker below already
+degrades gracefully to fewer than 3 cards when the eligible pool is this thin.
+`SpellDb.CLASS_SPELL_LISTS["RANGER"]` feeds the level-up spell-learn picker exactly like Wizard's
 own entry — `GameState._roll_spell_learn_choices()` was generalized to look up
 `Stats.CharacterClass.keys()[character_class]` instead of a hardcoded `"WIZARD"` string, and
 `gain_exp()`'s call site dropped its `character_class == WIZARD` gate in favor of a bare
