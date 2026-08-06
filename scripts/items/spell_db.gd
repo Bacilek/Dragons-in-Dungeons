@@ -33,7 +33,7 @@ const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor
 # spell content of its own, e.g. Ensnaring Strike/Goodberry/Hunter's Mark-as-a-spell/Zephyr Strike
 # from the real 2024 Ranger list). No cantrips for Ranger either way (`cantrip_max()` stays 0 for
 # every non-Wizard class, matching both rule sets — Rangers don't get cantrips).
-const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace"]
+const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace", "cure_wounds"]
 # Warlock's real 5e/2024 Pact Magic list overlap with the shared SpellDb pool (scripts/entities/
 # CLAUDE.md's "Warlock class") — all ten are genuinely on Warlock's actual class list, no
 # reflavoring needed, unlike Ranger's thinner/approximated subset above. hellish_rebuke and hex are
@@ -130,6 +130,7 @@ static func get_spell(id: String) -> Spell:
 		"detect_magic": return _detect_magic()
 		"longstrider": return _longstrider()
 		"pass_without_trace": return _pass_without_trace()
+		"cure_wounds": return _cure_wounds()
 		"poison_spray": return _poison_spray()
 		"chill_touch": return _chill_touch()
 		"ray_of_sickness": return _ray_of_sickness()
@@ -671,6 +672,27 @@ static func _pass_without_trace() -> Spell:
 # above. class_list is left empty, same convention as the Elf lineage spells above — these are
 # never offered by any class's known-spell list or the level-up picker, only ever granted directly
 # by GameState._grant_tiefling_legacy_spell().
+
+static func _cure_wounds() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "cure_wounds"
+	s.spell_name = "Cure Wounds"
+	s.school = "Abjuration"
+	s.casting_time = "Action"
+	s.level = 1
+	s.range_tiles = 1
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	s.dice_count = 2
+	s.dice_sides = 8
+	# Real 5e/5.5e class list: Bard/Cleric/Druid/Paladin/Ranger — only Ranger is a playable class
+	# with any spellcasting today.
+	s.description = "A creature you touch regains 2d8 + your spellcasting ability modifier HP. No effect on undead or constructs."
+	s.icon_path = "res://icons/spells/1/cure_wounds.png"
+	s.effect_id = "cure_wounds"
+	s.class_list = ["RANGER"]
+	s.upcast_dice_count = 2   # +2d8 per slot level above 1st
+	return s
 
 static func _poison_spray() -> Spell:
 	var s := Spell.new()

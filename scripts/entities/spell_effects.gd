@@ -635,6 +635,8 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 				var comp2: Companion = GameState.player_companion
 				if comp2 != null and is_instance_valid(comp2) and comp2.grid_pos == clicked:
 					GameState.game_log("[color=cyan]%s feels the same swiftness (flavor only — no mechanical speed system exists for companions).[/color]" % comp2.animal_name)
+		"cure_wounds":
+			_resolve_cure_wounds(player, spell, extra_levels, clicked)
 		"pass_without_trace":
 			if player.stats.concentration_spell_id != "":
 				GameState.end_concentration("" if player.stats.concentration_spell_id == "pass_without_trace" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
@@ -1488,6 +1490,34 @@ static func tick_witch_bolt(player: Player, target: Enemy, dungeon_floor: Node) 
 # player_vfx.gd's has_advantage(), the disadv_count block at every player attack-roll site, and
 # enemy.gd._resolve_attack_roll()'s extra_adv/extra_disadv params — nothing here applies a status
 # effect directly. See scripts/entities/CLAUDE.md's "Fog Cloud" section.
+
+# Cure Wounds (Ranger's own real 5e spell list entry) — touch a creature and heal it 2d8 + your
+# spellcasting ability modifier, +2d8 per slot level above 1st (Warlock Pact Magic auto-upcast
+# only — Ranger's own HalfCasterSlotPool never upcasts, see "Spell upcasting"). Same "self, or the
+# Companion" touch-target scope as Healing Hands/Longstrider (no general ally-targeting system
+# exists) — clicking the Companion's own tile heals it instead of the caster.
+static func _resolve_cure_wounds(player: Player, spell: Spell, extra_levels: int, clicked: Vector2i) -> void:
+	var stats: Stats = player.stats
+	var dice_count: int = spell.dice_count + spell.upcast_dice_count * extra_levels
+	var rolls: Array[int] = Rng.roll_dice(dice_count, spell.dice_sides)
+	var mod: int = _cast_ability_mod(stats, spell)
+	var roll_total: int = 0
+	for r: int in rolls:
+		roll_total += r
+	var amount: int = maxi(1, roll_total + mod)
+	var companion: Companion = GameState.player_companion
+	var heal_companion: bool = companion != null and is_instance_valid(companion) and companion.grid_pos == clicked
+	if heal_companion:
+		companion.stats.current_hp = mini(companion.stats.max_hp, companion.stats.current_hp + amount)
+		var hm: String = "heal:dice=%d,sides=%d,con=%d,roll=%d,bonus=%s,total=%d" % [dice_count, spell.dice_sides, mod, roll_total, CombatMath.encode_bonus_sources([]), amount]
+		GameState.game_log("[color=cyan]You cast [b]%s[/b] on %s — [url=%s]%d[/url] HP restored.[/color]" % [spell.spell_name, companion.animal_name, hm, amount])
+	else:
+		var bruiser_bonus: int = GameState.heal(amount)
+		var total: int = amount + bruiser_bonus
+		var bonus_sources: String = CombatMath.encode_bonus_sources([{"name": "Bruiser", "amount": bruiser_bonus, "color": "orange"}])
+		var hm2: String = "heal:dice=%d,sides=%d,con=%d,roll=%d,bonus=%s,total=%d" % [dice_count, spell.dice_sides, mod, roll_total, bonus_sources, total]
+		GameState.game_log("[color=cyan]You cast [b]%s[/b] — [url=%s]%d[/url] HP restored.[/color]" % [spell.spell_name, hm2, total])
+
 static func _resolve_fog_cloud(player: Player, spell: Spell, center: Vector2i, extra_levels: int = 0) -> void:
 	var stats: Stats = player.stats
 	if stats.concentration_spell_id != "":

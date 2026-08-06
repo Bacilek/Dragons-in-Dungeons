@@ -672,11 +672,12 @@ for that spell.
   `ELF_LINEAGE_SPELL_IDS` below, since their sub-race's own free grant and normal learn/
   slot-casting are independent paths to the same spell, see `scripts/entities/CLAUDE.md`'s "Elf"
   section) + `RANGER_SPELL_IDS` (Ranger's own eligible subset, currently
-  `["fog_cloud", "pass_without_trace"]` — the only two `LEVELED_SPELL_IDS` entries whose real
-  5e/5.5e class list actually includes Ranger; every other entry is Sorcerer/Wizard(/Warlock)-only
-  on both rule sets, so it was deliberately NOT opened up to Ranger despite reusing the same shared
-  spell pool — a real content-thinness gap, not a bug; see `scripts/entities/CLAUDE.md`'s "Ranger
-  class")
+  `["fog_cloud", "pass_without_trace", "cure_wounds"]` — `fog_cloud` is the only `LEVELED_SPELL_IDS`
+  entry whose real 5e/5.5e class list actually includes Ranger (every other `LEVELED_SPELL_IDS`
+  entry is Sorcerer/Wizard(/Warlock)-only on both rule sets, so it was deliberately NOT opened up
+  to Ranger despite reusing the same shared spell pool); `pass_without_trace` and `cure_wounds` are
+  both Ranger-exclusive entries (`class_list = ["RANGER"]` only, never added to `LEVELED_SPELL_IDS`)
+  — see `scripts/entities/CLAUDE.md`'s "Ranger class" for Cure Wounds' full mechanism)
   + `CLASS_SPELL_LISTS: Dictionary`
   (`"WIZARD"` → `LEVELED_SPELL_IDS`, `"RANGER"` → `RANGER_SPELL_IDS` — keyed by
   `Stats.CharacterClass` enum-name string, the level-up learn picker's candidate pool; cantrips are
@@ -783,7 +784,7 @@ teach the spell, it just casts it once at the spell's base level (no upcasting, 
 then crumbles. **Castable by any class**, not just Wizard — the point of this item type. Every
 spell in the game has a matching scroll now (full coverage pass, including every lineage/legacy-
 only grant — Elf/Tiefling/Gnome spells previously excluded on purpose are now covered too) —
-35 exist in `ITEM_POOL`/`debug_panel.ALL_ITEMS`, one per `SpellDb.get_spell()` id, with exactly
+36 exist in `ITEM_POOL`/`debug_panel.ALL_ITEMS`, one per `SpellDb.get_spell()` id, with exactly
 **one** deliberate holdout: `hellish_rebuke` has no scroll, since it's a reaction-toggle ability
 (`GameState._build_hellish_rebuke_ability()`) rather than a normal on-demand cast, so it can't go
 through the generic `on_scroll_primed()`/`begin_cast()` flow every other scroll uses. Icon reuses the
