@@ -18,6 +18,7 @@ const TITLES: Dictionary = {
 	"hunters_mark_free_recast": "Hunter's Mark: Free Re-mark",
 	"torch": "Torch Lit",
 	"longstrider": "Longstrider",
+	"aid": "Aid",
 	"faerie_fire_outlined": "Outlined (Faerie Fire)",
 	"poisoned_condition": "Poisoned",
 	"prone": "Prone",
@@ -70,6 +71,8 @@ static func get_text(id: String) -> String:
 			return "Lit — burns out in %d more turns.\n+1 FOV.%s" % [t.torch_turns_remaining, fire_note]
 		"longstrider":
 			return "+1/3 movement speed — every 3rd real move doesn't cost a turn.\nFades in %d more turns." % GameState.player_stats.longstrider_turns
+		"aid":
+			return "+%d max HP and current HP. Lasts until your next long rest." % GameState.player_stats.aid_bonus_hp
 		"faerie_fire_outlined":
 			return "You're outlined in dancing light — every attack roll against you has Advantage if the attacker can see you.\nFades in %d more turns." % GameState.player_stats.faerie_fire_outlined_turns
 		"poisoned_condition":

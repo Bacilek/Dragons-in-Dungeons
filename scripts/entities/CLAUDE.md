@@ -2221,6 +2221,14 @@ Pool entries may set `"attack_profile": {"kind": "ranged", "range": N, "projecti
 ---
 
 ## Player-specific (`player.gd`)
+- `_trap_alert: bool` — set by `PlayerActions.passive_trap_check()` the instant it reveals a trap
+  (see that function's own entry above). `_process()`'s hold-movement-repeat interrupt check
+  (the same branch that already stops a held WASD key the moment `_fov_this_turn` gains a visible
+  enemy) now also fires on `_trap_alert`, then clears it — so discovering a trap mid-hold stops
+  the player exactly like spotting an enemy does, instead of silently walking onward. Also cleared
+  whenever no movement key is held at all (`dir == Vector2i.ZERO`), so a stale alert from a
+  single-tap move (too short-lived to ever reach the interrupt check) can't leak into and
+  incorrectly interrupt a later, unrelated key press.
 - `_click_start_screen_pos`: recorded on LMB press; drag > 8 px cancels `_queued_path`
 - `_lmb_press_over_ui: bool` — set in `_input()`'s LMB-press branch via
   `get_viewport().gui_get_hovered_control() != null` (any Control under the cursor at the moment
@@ -2250,7 +2258,7 @@ Pool entries may set `"attack_profile": {"kind": "ranged", "range": N, "projecti
 - `player_throw_tool.gd` (`PlayerThrowTool`) — throw-mode and tool-priming activation, bottle fill/creation, and the Thrown-weapon attack (`_throw_weapon()` — see `scripts/items/CLAUDE.md`'s "Thrown weapons"). `_throw_item`/`_tool_item` fields deliberately stay on `Player` itself (read from ~10 other input/movement call sites to cancel on move/Esc) — only the functions moved here, mutating the fields via the `player` back-reference. `do_throw()` branches to `_throw_weapon()` before the generic food/item-throw path whenever the primed item is `Item.Type.WEAPON` with `is_thrown == true`.
 - `player_thief_tools.gd` (`PlayerThiefTools`) — disarm trap / lock / pick-lock door actions, plus `show_float_text()` (its only caller). `player.gd._try_move()`'s Thief-Tools-primed bump path and `PlayerActions.interact_action()` call into this.
 - `player_vfx.gd` (`PlayerVfx`) — blood trail, hit-flash tween, sword-slash arc, surprise-mark "!" floater, screen shake, the ADV surprise-attack check (`has_advantage()`). `GameState.screen_shake` connects directly to `_vfx.screen_shake`.
-- `player_actions.gd` (`PlayerActions`) — short rest / talent picker openers, wait, search/inspect, passive trap perception, floor-item pickup, door/trap interact dispatch. Owns `_last_search_request`/`_traps_in_proximity` (were player.gd fields) and `_inspect_panel` (the live `InspectPanel` instance — see below). `do_inspect(pos)` opens a full-value `InspectPanel` (`scripts/ui/CLAUDE.md`'s "Inspect Panel") instead of the old plain chat-log line — an enemy target's status-icon row is built by `EnemyInspect.status_entries()`/`build_bbcode()` (`enemy_inspect.gd`, same directory), a static helper mirroring `status_tooltips.gd`'s pattern generalized to read an `Enemy`'s own fields directly.
+- `player_actions.gd` (`PlayerActions`) — short rest / talent picker openers, wait, search/inspect, passive trap perception, floor-item pickup, door/trap interact dispatch. Owns `_last_search_request` (was a player.gd field) and `_inspect_panel` (the live `InspectPanel` instance — see below). **Passive trap perception** (`passive_trap_check()`, called every real player turn from BOTH `_try_move()` (WASD) and `_execute_queued_path()`'s two per-step move bodies (click-to-move and enemy-chase)): rolls `d20 + WIS mod` vs a flat `DC 15` (no longer floor-scaled) against every unrevealed trap within Chebyshev 2 of the player **that is also currently in FOV** (`DungeonFloor.is_tile_visible(trap_pos)`, checked after that step's own `update_fog()` call so it reflects the player's just-updated position — a trap within range but behind a wall/closed door, or otherwise out of line of sight, is silently skipped, never rolled against) — **re-rolled every single turn** the player stays in range (no "already checked this trap" memory), not just on first entering range. Revealing a trap sets `Player._trap_alert = true` and, when a queued path/enemy-chase was active, clears it itself with its own "stop cautiously" log line (the function's own `player._queued_path.size() > 0` branch) — `_execute_queued_path()`'s own step body additionally checks `_trap_alert` right after the call and clears/breaks out of the move loop so a long automated run genuinely halts on the discovery, not just the very next queued step. `_process()`'s hold-movement-repeat interrupt check (see "Player-specific" below) also consumes the flag the next frame — a freshly-discovered trap stops a held WASD key exactly like a freshly-visible enemy does, instead of the player walking straight past it. `do_inspect(pos)` opens a full-value `InspectPanel` (`scripts/ui/CLAUDE.md`'s "Inspect Panel") instead of the old plain chat-log line — an enemy target's status-icon row is built by `EnemyInspect.status_entries()`/`build_bbcode()` (`enemy_inspect.gd`, same directory), a static helper mirroring `status_tooltips.gd`'s pattern generalized to read an `Enemy`'s own fields directly.
 - `combat_math.gd` (`CombatMath`, static-func-only helper, `extends RefCounted`, mirrors `scripts/ui/tooltip_formatters.gd`'s pattern) — the ADV/DISADV d20-roll resolution shared verbatim by melee/cleave/ranged (`roll_with_adv_disadv()`), weapon proficiency bonus (`weapon_prof_bonus()` — was `player.gd._weapon_prof_bonus()`, see "Weapon proficiency flags" above), `melee_reach_bonus()` (Branching Strike's talent-rank reach) and `melee_reach(weapon, rank)` (total melee range = `1 + melee_reach_bonus(rank) + 1 if weapon.is_reach`, additive — used by the chase-to-attack range check and Cleave's target-gathering radius), `finesse_modifier(str_mod, dex_mod, is_finesse) -> int` (returns `max(str_mod, dex_mod)` when `is_finesse`, else `str_mod` — used for both the attack roll and damage roll in `player.gd._bump_attack()` when `GameState.equipped_weapon.is_finesse`), and `encode_bonus_sources()`/`decode_bonus_sources()` (generic bonus-damage tooltip encoding — see "Bonus damage stacking" below). The bonus-damage STACKING sequence itself (Ironwood Bark/Judgement Day summation) and the full hit/miss/log flow stay in `player.gd._bump_attack()`/`PlayerRanged.ranged_attack()` — see "Bonus damage stacking" above.
 - `player_ranged.gd` (`PlayerRanged`) — the full ranged-combat body: range/LOS checks (`is_ranged_target_in_range()`, `ranged_shot_disadvantage()`, `is_in_ranged_range()`), the ranged attack roll (`ranged_attack()`), projectile VFX (`show_projectile()`), and ranged-at-tile (`ranged_attack_tile()`). Mirrors `_bump_attack()`'s ADV/DISADV/crit/Divine-Fury-stacking structure closely — kept as one function per the same "don't split stateful stacking logic" reasoning as melee (see "Bonus damage stacking" above). **`ranged_attack(enemy)` redirects to a blocking body**: before anything else, it calls `DungeonFloor.get_blocking_body_on_line(player.grid_pos, enemy.nearest_occupied_tile(...))` — if another `Enemy` occupies an intermediate tile of the shot, the local `enemy` parameter is reassigned to that blocker and the entire rest of the function (on_disturbed, roll, damage, log, Hunter's Mark, kill handling) resolves against it instead of whoever was actually clicked. Matches the "the arrow hits the first thing in its path" rule — see `scripts/world/CLAUDE.md`'s `has_clear_shot()`/`get_blocking_body_on_line()`.
 
@@ -2421,12 +2429,14 @@ only one also genuinely on Ranger's real list — every other `LEVELED_SPELL_IDS
 Missile, Shield, Mage Armor, Misty Step, Fireball, Chromatic Orb, Burning Hands, Witch Bolt,
 Expeditious Retreat, False Life, Invisibility, Darkness, Longstrider, Detect Magic) is
 Sorcerer/Wizard(/Warlock) only on both 2014 and 2024 rules. `RANGER_SPELL_IDS` is
-`["fog_cloud", "pass_without_trace", "cure_wounds"]` today: **Pass Without Trace** (Druid/Ranger,
-`class_list = ["RANGER"]` only — never opened to Wizard's own list, see "Elf"'s Wood Elf lineage
-grant) and **Cure Wounds** (`SpellDb._cure_wounds()`, Abjuration, 1st level, real class list
-Bard/Cleric/Druid/Paladin/Ranger — only Ranger has spellcasting of any kind here, so
-`class_list = ["RANGER"]` only, never added to `LEVELED_SPELL_IDS`/Wizard's own list) are both
-Ranger-exclusive spells, never offered to Wizard's own level-up picker. Cure Wounds is
+`["fog_cloud", "pass_without_trace", "cure_wounds", "aid"]` today: **Pass Without Trace**
+(Druid/Ranger, `class_list = ["RANGER"]` only — never opened to Wizard's own list, see "Elf"'s
+Wood Elf lineage grant), **Cure Wounds** (`SpellDb._cure_wounds()`, Abjuration, 1st level, real
+class list Bard/Cleric/Druid/Paladin/Ranger — only Ranger has spellcasting of any kind here, so
+`class_list = ["RANGER"]` only, never added to `LEVELED_SPELL_IDS`/Wizard's own list), and **Aid**
+(`SpellDb._aid()`, Abjuration, 2nd level, real class list Bard/Cleric/Druid/Paladin/Ranger, same
+`class_list = ["RANGER"]`-only treatment) are all three Ranger-exclusive spells, never offered to
+Wizard's own level-up picker. Cure Wounds is
 `resolution = AUTO_HIT`, `target_kind = SELF`, touch range (`range_tiles = 1`) — same "self, or the
 Companion" touch-target click scope as Healing Hands/Longstrider (no general ally-targeting system
 exists): clicking the Companion's own tile heals it, any other click heals the caster. Heals
@@ -2435,7 +2445,27 @@ above 1st — Warlock Pact Magic auto-upcast only, a no-op for Ranger's own non-
 `HalfCasterSlotPool`). `SpellEffects._resolve_cure_wounds()` resolves it via `GameState.heal()`
 (Bruiser R1's own +1d4-while-Bloodied bonus applies for free) for a self-cast, or a direct
 `Companion.stats.current_hp` bump for a Companion cast — same `heal:` tooltip format short rest/
-Zealot Strike/Healing Hands already use. Longstrider/Detect Magic are still NOT opened up to
+Zealot Strike/Healing Hands already use.
+
+**Aid**: `resolution = AUTO_HIT`, `target_kind = SELF`, `range_tiles = 2`, same touch-click scope
+as Cure Wounds — but unlike Cure Wounds' either/or click, it always buffs the caster AND
+additionally buffs the Companion too when the click lands on its tile (RAW genuinely targets
+multiple creatures with one cast; this engine's "self, or the Companion" scope caps the real
+"up to 3 creatures" text at 2 rather than 3, a documented simplification). Raises max HP AND
+current HP by a flat 5 (`+5` per extra spell level above 2nd via `upcast_flat_amount`, applied to
+each target independently — Warlock Pact Magic auto-upcast only, a no-op for Ranger's own
+`HalfCasterSlotPool`) for every creature it actually reaches. **Not a turn-ticked duration** — RAW
+"until you finish a long rest," so it's tracked via `Stats.aid_bonus_hp` (the exact amount granted,
+serialized) rather than a countdown; `GameState.long_rest()` subtracts it back out of `max_hp`
+(both the player's and, independently, the Companion's own `Stats.aid_bonus_hp`) before the normal
+full-heal-to-max-HP line runs, same "persists until long rest" precedent as `mage_armor_active`.
+`SpellEffects._resolve_aid()` is the resolver, dispatched from `cast_leveled_self()`'s
+`effect_id == "aid"` case. **Status-tray icon**: `hud.gd._update_status_icons()` shows an `"aid"`
+entry (spell's own icon, light-green fallback tint) whenever `s.aid_bonus_hp > 0` — same
+"icon reuses the spell's own art" convention as `concentration`/`torch`/`longstrider` — since a
+flat max-HP bump is otherwise invisible at a glance beyond the HP bar quietly getting wider.
+
+Longstrider/Detect Magic are still NOT opened up to
 Ranger — a deliberately narrow scope cut, not an oversight (extend `RANGER_SPELL_IDS` further in a
 future pass if Ranger's spell list gets another content pass) — a real content gap (this codebase
 has little other nature-flavored spell content of its own, e.g. the real 2024 Ranger list's

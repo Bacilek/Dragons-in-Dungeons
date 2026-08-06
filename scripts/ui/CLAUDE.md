@@ -145,7 +145,10 @@ specifically so this tray can read them without a live `Player` node reference �
 reads GameState" above. `torch` (`GameState.lit_torch_item() != null` — icon is that Torch's own `icon_path`, orange
 fallback tint; tooltip text (`status_tooltips.gd`'s `"torch"` case) is dynamic, showing
 `torch_turns_remaining` and whether the Fire-damage bonus applies (Main Hand only) — see
-`scripts/items/CLAUDE.md`'s "Torch"), `weapon_mastery` (always-on passive, shown whenever
+`scripts/items/CLAUDE.md`'s "Torch"), `aid` (`Stats.aid_bonus_hp > 0` — Ranger's Aid spell, icon is
+that spell's own `icon_path`, light-green fallback tint; tooltip shows the exact flat HP bonus
+currently applied and that it lasts until the next long rest — see `scripts/entities/CLAUDE.md`'s
+"Ranger class" section), `weapon_mastery` (always-on passive, shown whenever
 `Stats.mastery_cap() > 0` — i.e. a martial class, currently Barbarian/Ranger — AND
 `Stats.known_weapon_masteries.size() > 0`; no dedicated art yet, `res://icons/status/
 weapon_mastery.png` placeholder + bronze fallback tint, real icon still TBD). Hover tooltip

@@ -33,7 +33,7 @@ const LEVELED_SPELL_IDS: Array[String] = ["magic_missile", "shield", "mage_armor
 # spell content of its own, e.g. Ensnaring Strike/Goodberry/Hunter's Mark-as-a-spell/Zephyr Strike
 # from the real 2024 Ranger list). No cantrips for Ranger either way (`cantrip_max()` stays 0 for
 # every non-Wizard class, matching both rule sets — Rangers don't get cantrips).
-const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace", "cure_wounds"]
+const RANGER_SPELL_IDS: Array[String] = ["fog_cloud", "pass_without_trace", "cure_wounds", "aid"]
 # Warlock's real 5e/2024 Pact Magic list overlap with the shared SpellDb pool (scripts/entities/
 # CLAUDE.md's "Warlock class") — all ten are genuinely on Warlock's actual class list, no
 # reflavoring needed, unlike Ranger's thinner/approximated subset above. hellish_rebuke and hex are
@@ -131,6 +131,7 @@ static func get_spell(id: String) -> Spell:
 		"longstrider": return _longstrider()
 		"pass_without_trace": return _pass_without_trace()
 		"cure_wounds": return _cure_wounds()
+		"aid": return _aid()
 		"poison_spray": return _poison_spray()
 		"chill_touch": return _chill_touch()
 		"ray_of_sickness": return _ray_of_sickness()
@@ -692,6 +693,27 @@ static func _cure_wounds() -> Spell:
 	s.effect_id = "cure_wounds"
 	s.class_list = ["RANGER"]
 	s.upcast_dice_count = 2   # +2d8 per slot level above 1st
+	return s
+
+static func _aid() -> Spell:
+	var s := Spell.new()
+	s.spell_id = "aid"
+	s.spell_name = "Aid"
+	s.school = "Abjuration"
+	s.casting_time = "Action"
+	s.level = 2
+	s.range_tiles = 2
+	s.target_kind = Spell.TargetKind.SELF
+	s.resolution = Spell.Resolution.AUTO_HIT
+	# Real 5e/5.5e class list: Bard/Cleric/Druid/Paladin/Ranger — only Ranger has spellcasting here.
+	# RAW targets up to 3 creatures; this engine only has two valid touch targets (self, the
+	# Companion — same "self, or the Companion" scope as Cure Wounds/Healing Hands above), so it's
+	# capped there. Lasts until your next long rest, not a turn-ticked duration.
+	s.description = "Up to 2 creatures you touch (yourself, or your Companion) have their max and current HP increased by 5 until your next long rest."
+	s.icon_path = "res://icons/spells/2/aid.png"
+	s.effect_id = "aid"
+	s.class_list = ["RANGER"]
+	s.upcast_flat_amount = 5   # +5 HP (each target) per slot level above 2nd
 	return s
 
 static func _poison_spray() -> Spell:

@@ -387,6 +387,12 @@ var exhaustion_level: int = 0
 var temp_hp: int = 0  # Natural Sleeper R2 — consumed before regular HP damage
 var zealous_presence_turns: int = 0  # Zealot Zealous Presence — Advantage on attacks/checks while > 0
 
+# Aid spell (2nd level Abjuration, Ranger) — raises max_hp AND current_hp by a flat amount until
+# the next long rest (not a turn-ticked duration, same "persists until long rest" shape as
+# mage_armor_active). Tracks the amount actually granted so GameState.long_rest() can subtract it
+# back out cleanly on removal, same precedent as every other long-rest-cleared buff.
+var aid_bonus_hp: int = 0
+
 # Blade Ward cantrip — see scripts/entities/CLAUDE.md's "Wizard spellcasting (cantrips)" section.
 # `concentration_spell_id`: generic single-slot concentration tracker ("" = not concentrating).
 # Only Blade Ward uses it today, but the field/mechanism is spell-agnostic — a future concentration
@@ -818,6 +824,7 @@ func to_dict() -> Dictionary:
 		"large_form_used": large_form_used,
 		"giant_ancestry_uses_remaining": giant_ancestry_uses_remaining,
 		"temp_hp": temp_hp,
+		"aid_bonus_hp": aid_bonus_hp,
 		"poison_turns": poison_turns,
 		"burning_turns": burning_turns,
 		"bleeding_turns": bleeding_turns,
@@ -874,6 +881,7 @@ func from_dict(d: Dictionary) -> void:
 	large_form_used = bool(d.get("large_form_used", false))
 	giant_ancestry_uses_remaining = int(d.get("giant_ancestry_uses_remaining", 0))
 	temp_hp = int(d.get("temp_hp", 0))
+	aid_bonus_hp = int(d.get("aid_bonus_hp", 0))
 	poison_turns = int(d.get("poison_turns", 0))
 	burning_turns = int(d.get("burning_turns", 0))
 	bleeding_turns = int(d.get("bleeding_turns", 0))

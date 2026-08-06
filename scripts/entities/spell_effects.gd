@@ -637,6 +637,8 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 					GameState.game_log("[color=cyan]%s feels the same swiftness (flavor only — no mechanical speed system exists for companions).[/color]" % comp2.animal_name)
 		"cure_wounds":
 			_resolve_cure_wounds(player, spell, extra_levels, clicked)
+		"aid":
+			_resolve_aid(player, spell, extra_levels, clicked)
 		"pass_without_trace":
 			if player.stats.concentration_spell_id != "":
 				GameState.end_concentration("" if player.stats.concentration_spell_id == "pass_without_trace" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
@@ -1517,6 +1519,26 @@ static func _resolve_cure_wounds(player: Player, spell: Spell, extra_levels: int
 		var bonus_sources: String = CombatMath.encode_bonus_sources([{"name": "Bruiser", "amount": bruiser_bonus, "color": "orange"}])
 		var hm2: String = "heal:dice=%d,sides=%d,con=%d,roll=%d,bonus=%s,total=%d" % [dice_count, spell.dice_sides, mod, roll_total, bonus_sources, total]
 		GameState.game_log("[color=cyan]You cast [b]%s[/b] — [url=%s]%d[/url] HP restored.[/color]" % [spell.spell_name, hm2, total])
+
+# Aid (2nd level Abjuration): flat max-HP AND current-HP increase, lasting until the caster's next
+# long rest (Stats.aid_bonus_hp — not a turn-ticked duration, cleared by GameState.long_rest()).
+# RAW targets up to 3 creatures; this engine only has one other valid touch target (the Companion,
+# same "self, or the Companion" scope as Cure Wounds above) — unlike Cure Wounds' either/or click,
+# Aid always affects the caster AND additionally affects the Companion if the click landed on it,
+# since RAW genuinely buffs multiple creatures with one cast.
+static func _resolve_aid(player: Player, spell: Spell, extra_levels: int, clicked: Vector2i) -> void:
+	var amount: int = 5 + spell.upcast_flat_amount * extra_levels
+	player.stats.max_hp += amount
+	player.stats.current_hp += amount
+	player.stats.aid_bonus_hp += amount
+	GameState.player_hp_changed.emit(player.stats.current_hp, player.stats.max_hp)
+	GameState.game_log("[color=cyan]You cast [b]%s[/b] — your max HP swells by [color=lightgreen]%d[/color] until your next long rest.[/color]" % [spell.spell_name, amount])
+	var companion: Companion = GameState.player_companion
+	if companion != null and is_instance_valid(companion) and companion.grid_pos == clicked:
+		companion.stats.max_hp += amount
+		companion.stats.current_hp += amount
+		companion.stats.aid_bonus_hp += amount
+		GameState.game_log("[color=cyan]%s's max HP swells by [color=lightgreen]%d[/color] too.[/color]" % [companion.animal_name, amount])
 
 static func _resolve_fog_cloud(player: Player, spell: Spell, center: Vector2i, extra_levels: int = 0) -> void:
 	var stats: Stats = player.stats

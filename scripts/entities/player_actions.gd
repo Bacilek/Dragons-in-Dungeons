@@ -8,7 +8,6 @@ extends Node
 var player: Player
 
 var _last_search_request: float = -999.0
-var _traps_in_proximity: Array[Vector2i] = []
 var _inspect_panel: InspectPanel = null
 
 func open_short_rest() -> void:
@@ -162,24 +161,22 @@ func passive_trap_check() -> void:
 	if player._dungeon_floor == null:
 		return
 	var wis_mod: int = GameState.player_stats.wis_modifier()
-	var dc: int = maxi(8, 8 + GameState.current_floor / 2)
-	var now_in_range: Array[Vector2i] = []
+	var dc: int = 15
 	for trap_pos: Vector2i in player._dungeon_floor.get_unrevealed_traps():
 		var diff: Vector2i = trap_pos - player.grid_pos
 		if maxi(absi(diff.x), absi(diff.y)) > 2:
 			continue
-		now_in_range.append(trap_pos)
-		if trap_pos in _traps_in_proximity:
-			continue  # already knew it was near — don't re-roll
+		if not player._dungeon_floor.is_tile_visible(trap_pos):
+			continue  # in range but not actually seen (behind a wall/door, out of FOV)
 		var die: int = Rng.roll(20)
 		if die + wis_mod >= dc:
 			player._dungeon_floor.reveal_trap(trap_pos)
+			player._trap_alert = true
 			if player._queued_path.size() > 0:
 				player._queued_path.clear()
 				GameState.game_log("[color=yellow]You notice something suspicious nearby and stop cautiously.[/color]")
 			else:
 				GameState.game_log("[color=yellow]You notice something suspicious on the floor.[/color]")
-	_traps_in_proximity = now_in_range
 
 func interact_action(can_lock: bool = true, target: Vector2i = Vector2i(-1, -1)) -> void:
 	if player._dungeon_floor == null:

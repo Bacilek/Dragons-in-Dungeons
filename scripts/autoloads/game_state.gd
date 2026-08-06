@@ -1917,6 +1917,12 @@ func long_rest_turns_needed() -> int:
 	return LONG_REST_TURNS
 
 func long_rest() -> void:
+	if player_stats.aid_bonus_hp > 0:
+		player_stats.max_hp = maxi(1, player_stats.max_hp - player_stats.aid_bonus_hp)
+		player_stats.aid_bonus_hp = 0
+	if player_companion != null and is_instance_valid(player_companion) and player_companion.stats.aid_bonus_hp > 0:
+		player_companion.stats.max_hp = maxi(1, player_companion.stats.max_hp - player_companion.stats.aid_bonus_hp)
+		player_companion.stats.aid_bonus_hp = 0
 	player_stats.current_hp = player_stats.max_hp
 	player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 	clear_light_source()  # Light cantrip — ends on a completed rest, short or long

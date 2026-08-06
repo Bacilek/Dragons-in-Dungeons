@@ -48,6 +48,11 @@ var _enemy_noticed_last_round: bool = false
 var _prev_dir: Vector2i = Vector2i.ZERO  # direction held in the previous WAITING_FOR_INPUT frame
 var _interrupted: bool = false           # set when enemy seen mid-hold; cleared only on key release
 
+# Set true by PlayerActions.passive_trap_check() the instant it reveals a trap; consumed by the
+# very next _process() hold-interrupt check (same frame the move that found it just finished) so
+# a freshly-discovered trap stops held movement exactly like a freshly-visible enemy does.
+var _trap_alert: bool = false
+
 # Hold-to-wait: holding Space repeats wait_action() once per real turn for as long as it's held
 # (mirrors the movement-hold-repeat mechanic above), stopping the instant an enemy becomes visible
 # (same interrupt-on-sight rule as movement) until the key is released and re-pressed.
@@ -1049,6 +1054,10 @@ func _process(_delta: float) -> void:
 		_prev_dir = Vector2i.ZERO
 		_last_move_dir = Vector2i.ZERO
 		_interrupted = false
+		# No movement key held — a stale trap-alert from a single-tap move that already ended on
+		# its own (never got the chance to interrupt a hold) must not leak into the next,
+		# unrelated key press.
+		_trap_alert = false
 		if Input.is_physical_key_pressed(KEY_SPACE):
 			_handle_space_hold()
 		else:
@@ -1061,9 +1070,10 @@ func _process(_delta: float) -> void:
 		# Key still physically held after interrupt — block until finger lifted
 		_prev_dir = dir
 		return
-	elif not GameState.noclip and not _fov_this_turn.is_empty():
-		# Any enemy visible — interrupt hold movement
+	elif not GameState.noclip and (not _fov_this_turn.is_empty() or _trap_alert):
+		# Any enemy visible, or a trap was just discovered — interrupt hold movement
 		_interrupted = true
+		_trap_alert = false
 		_prev_dir = dir
 		return
 	_prev_dir = dir
@@ -1954,11 +1964,17 @@ func _execute_queued_path() -> void:
 				var _flying_c: bool = GameState.player_stats.draconic_flight_turns > 0
 				if not _flying_c and _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 					_dungeon_floor.destroy_grass(grid_pos)
+				if not _flying_c:
+					_actions.passive_trap_check()
 				_actions.check_pickup()
 				_play_footstep_sound()
 				var trap_c: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 				if not _flying_c and not trap_c.is_empty():
 					await _dungeon_floor.trigger_trap(grid_pos, self)
+					_target_enemy = null
+					break
+				if _trap_alert:
+					_trap_alert = false
 					_target_enemy = null
 					break
 
@@ -2043,11 +2059,17 @@ func _execute_queued_path() -> void:
 			if not _flying_p and _dungeon_floor.get_tile_type(grid_pos) == DungeonData.TileType.GRASS:
 				_dungeon_floor.destroy_grass(grid_pos)
 				_dungeon_floor.update_fog(grid_pos)
+			if not _flying_p:
+				_actions.passive_trap_check()
 			_actions.check_pickup()
 			_play_footstep_sound()
 			var trap_p: Dictionary = _dungeon_floor.get_trap_at(grid_pos)
 			if not _flying_p and not trap_p.is_empty():
 				await _dungeon_floor.trigger_trap(grid_pos, self)
+				_queued_path.clear()
+				break
+			if _trap_alert:
+				_trap_alert = false
 				_queued_path.clear()
 				break
 
