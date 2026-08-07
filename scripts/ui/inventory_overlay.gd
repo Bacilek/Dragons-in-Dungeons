@@ -20,6 +20,11 @@ var _inv_glossary_rtl: RichTextLabel = null
 # this rect (even after the tooltip itself covers the cursor) keeps the whole chain alive. See
 # "Tooltip hover chain (no Ctrl-freeze)" in _process().
 var _inv_hover_source_rect: Rect2 = Rect2()
+# Grace period before the hover chain below actually hides — see hud.gd's identical
+# `_HOVER_CHAIN_HIDE_GRACE_SEC` for why: a single frame spent crossing the visual gap between a
+# trigger slot and its tooltip box otherwise reads as "left the chain" and closes it immediately.
+const _HOVER_CHAIN_HIDE_GRACE_SEC: float = 0.2
+var _hover_chain_outside_time: float = 0.0
 
 # Drag state (manual drag — no Godot built-in drag API)
 var _dragging:       bool    = false
@@ -100,9 +105,14 @@ func _process(_delta: float) -> void:
 		var over_source: bool = _inv_hover_source_rect.has_point(mp)
 		var over_tooltip: bool = _inv_tooltip.visible and Rect2(_inv_tooltip.position, _inv_tooltip.size).has_point(mp)
 		var over_glossary: bool = _inv_glossary_popup != null and _inv_glossary_popup.visible and Rect2(_inv_glossary_popup.position, _inv_glossary_popup.size).has_point(mp)
-		if _inv_glossary_popup != null and _inv_glossary_popup.visible and not over_tooltip and not over_glossary:
+		if over_source or over_tooltip or over_glossary:
+			_hover_chain_outside_time = 0.0
+		else:
+			_hover_chain_outside_time += get_process_delta_time()
+		var chain_grace_expired: bool = _hover_chain_outside_time > _HOVER_CHAIN_HIDE_GRACE_SEC
+		if _inv_glossary_popup != null and _inv_glossary_popup.visible and not over_tooltip and not over_glossary and chain_grace_expired:
 			_inv_glossary_popup.visible = false
-		if _inv_tooltip.visible and not over_source and not over_tooltip and not over_glossary:
+		if _inv_tooltip.visible and not over_source and not over_tooltip and not over_glossary and chain_grace_expired:
 			_inv_tooltip.visible = false
 
 # ── UI construction ───────────────────────────────────────────────────────────

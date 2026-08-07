@@ -24,6 +24,11 @@ var _eligible: Array[EldritchInvocation] = []
 var _tooltip: Panel
 var _tooltip_rtl: RichTextLabel
 var _hover_source_rect: Rect2 = Rect2()   # last-shown tile's global rect, for _process()'s hover-chain check
+# Grace period before the hover chain hides — see hud.gd's identical `_HOVER_CHAIN_HIDE_GRACE_SEC`
+# for why: a single frame crossing the gap between a tile and its tooltip otherwise reads as "left
+# the chain" and closes it before the mouse can ever reach the tooltip.
+const _HOVER_CHAIN_HIDE_GRACE_SEC: float = 0.2
+var _hover_chain_outside_time: float = 0.0
 
 func _ready() -> void:
 	layer = 25
@@ -205,12 +210,16 @@ func _hide_tooltip() -> void:
 ## ever reach it. Keeping it open while the mouse is over either the source tile OR the tooltip
 ## itself (same "hover chain" convention as hud.gd's own qbar tooltip) also means a longer
 ## description that needs scanning won't vanish out from under the cursor.
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _tooltip == null or not _tooltip.visible:
 		return
 	var mp: Vector2 = get_viewport().get_mouse_position()
 	var over_tooltip := Rect2(_tooltip.global_position, _tooltip.size).has_point(mp)
-	if not _hover_source_rect.has_point(mp) and not over_tooltip:
+	if _hover_source_rect.has_point(mp) or over_tooltip:
+		_hover_chain_outside_time = 0.0
+	else:
+		_hover_chain_outside_time += delta
+	if _hover_chain_outside_time > _HOVER_CHAIN_HIDE_GRACE_SEC:
 		_tooltip.visible = false
 
 func _on_chosen(id: String) -> void:

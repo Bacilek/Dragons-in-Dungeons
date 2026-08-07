@@ -70,6 +70,15 @@ var _glossary_popup: Panel = null
 var _glossary_rtl: RichTextLabel = null
 var _glossary_popup2: Panel = null
 var _glossary_rtl2: RichTextLabel = null
+# Grace period (seconds) the hover chain below tolerates the mouse being outside every rect in the
+# chain before actually hiding anything — without this, a single frame spent crossing the visual
+# gap between a trigger icon and its tooltip box (e.g. the status tray, whose icons sit right above
+# a tooltip that opens a few px below them) reads as "left the chain" and closes it, making it feel
+# like the tooltip can never be reached on the first try. Reset to 0 the instant the mouse re-enters
+# any part of the chain; only once it's been continuously outside for longer than this does the
+# chain actually hide.
+const _HOVER_CHAIN_HIDE_GRACE_SEC: float = 0.2
+var _hover_chain_outside_time: float = 0.0
 
 # ── Extra popup labels (added programmatically to expand the stats popup) ─────
 var _popup_prof_label: Label = null
@@ -1180,8 +1189,16 @@ func _on_qbar_slot_hover(idx: int) -> void:
 		# avoid double-printing the name.
 		if ab.ability_id.begins_with("spell:") or ab.ability_id == "hellish_rebuke_toggle":
 			text = ab.description
+			if not ab.is_active and not GameState.is_ability_usable(ab):
+				var spell_unusable_reason: String = GameState.ability_unusable_reason(ab)
+				if spell_unusable_reason != "":
+					text = "[color=#ff4c4c]%s[/color]\n%s" % [spell_unusable_reason, text]
 		else:
 			text = "[b]%s[/b]\n%s" % [ab.ability_name, ab.description]
+			if not ab.is_active and not GameState.is_ability_usable(ab):
+				var unusable_reason: String = GameState.ability_unusable_reason(ab)
+				if unusable_reason != "":
+					text = "[color=#ff4c4c]%s[/color]\n%s" % [unusable_reason, text]
 	else:
 		var item := item_or_ability as Item
 		if item == null:
@@ -1323,7 +1340,7 @@ func _setup_log_tooltip() -> void:
 
 const _TOOLTIP_W: float = 220.0
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	var mp: Vector2 = get_viewport().get_mouse_position()
 	var vp: Vector2 = get_viewport().get_visible_rect().size
 	_process_bar_drag(mp)
@@ -1376,11 +1393,17 @@ func _process(_delta: float) -> void:
 	var _over_qbar: bool = _qbar_tooltip != null and _qbar_tooltip.visible and Rect2(_qbar_tooltip.position, _qbar_tooltip.size).has_point(mp)
 	var _over_glossary: bool = _glossary_popup != null and _glossary_popup.visible and Rect2(_glossary_popup.position, _glossary_popup.size).has_point(mp)
 	var _over_glossary2: bool = _glossary_popup2 != null and _glossary_popup2.visible and Rect2(_glossary_popup2.position, _glossary_popup2.size).has_point(mp)
-	if _glossary_popup2 != null and _glossary_popup2.visible and not _over_glossary and not _over_glossary2:
+	var _over_any_chain: bool = _over_source or _over_qbar or _over_glossary or _over_glossary2
+	if _over_any_chain:
+		_hover_chain_outside_time = 0.0
+	else:
+		_hover_chain_outside_time += delta
+	var _chain_grace_expired: bool = _hover_chain_outside_time > _HOVER_CHAIN_HIDE_GRACE_SEC
+	if _glossary_popup2 != null and _glossary_popup2.visible and not _over_glossary and not _over_glossary2 and _chain_grace_expired:
 		_glossary_popup2.visible = false
-	if _glossary_popup != null and _glossary_popup.visible and not _over_qbar and not _over_glossary and not _over_glossary2:
+	if _glossary_popup != null and _glossary_popup.visible and not _over_qbar and not _over_glossary and not _over_glossary2 and _chain_grace_expired:
 		_glossary_popup.visible = false
-	if _qbar_tooltip != null and _qbar_tooltip.visible and not _over_source and not _over_qbar and not _over_glossary and not _over_glossary2:
+	if _qbar_tooltip != null and _qbar_tooltip.visible and not _over_source and not _over_qbar and not _over_glossary and not _over_glossary2 and _chain_grace_expired:
 		_qbar_tooltip.visible = false
 
 func _on_log_meta_hover_started(meta: Variant) -> void:
