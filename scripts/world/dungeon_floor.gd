@@ -920,14 +920,17 @@ func show_ranged_range_preview(center: Vector2i, normal_radius: int, long_radius
 	var tints: Array[Color] = []
 	for dy: int in range(-long_radius, long_radius + 1):
 		for dx: int in range(-long_radius, long_radius + 1):
-			var dist_sq: int = dx * dx + dy * dy
+			# Chebyshev, not Euclidean — must match PlayerRanged.is_ranged_target_in_range()'s own
+			# range check exactly, same reasoning as show_spell_range_preview()'s own Chebyshev
+			# switch (a diagonal tile at radius R is a valid shot, not "out of range").
+			var dist_cheb: int = maxi(absi(dx), absi(dy))
 			var t: Vector2i = center + Vector2i(dx, dy)
 			if not _in_grid_bounds(t):
 				continue
-			if dist_sq <= normal_radius * normal_radius:
+			if dist_cheb <= normal_radius:
 				tiles.append(t)
 				tints.append(RANGED_NORMAL_TINT)
-			elif dist_sq <= long_radius * long_radius:
+			elif dist_cheb <= long_radius:
 				tiles.append(t)
 				tints.append(RANGED_LONG_TINT)
 	while _ranged_range_rects.size() < tiles.size():
@@ -3519,7 +3522,7 @@ func _spawn_items() -> void:
 
 	var count: int = mini(_pop_rng.randi_range(2, 3), candidates.size())
 	for i: int in count:
-		var d: Dictionary = eligible[_pop_rng.randi_range(0, eligible.size() - 1)]
+		var d: Dictionary = DungeonFloorData.pick_weighted_pool_entry(_pop_rng, eligible)
 		_build_floor_item(candidates[i], d)
 
 # Drains GameState.pending_chasm_items (arrows/ammo that fell into a chasm on the previous
@@ -3639,7 +3642,7 @@ func _spawn_treasure(rect: Rect2i) -> void:
 	if not eligible.is_empty():
 		var loot_count: int = mini(3, candidates.size())
 		for i: int in loot_count:
-			var d: Dictionary = eligible[_pop_rng.randi_range(0, eligible.size() - 1)]
+			var d: Dictionary = DungeonFloorData.pick_weighted_pool_entry(_pop_rng, eligible)
 			_build_floor_item(candidates[i], d)
 			used += 1
 	if used < candidates.size():
@@ -3763,7 +3766,7 @@ func _spawn_secret_room(rect: Rect2i) -> void:
 		used += 1
 		var extra_count: int = mini(_pop_rng.randi_range(1, 2), candidates.size() - used)
 		for i: int in extra_count:
-			var d: Dictionary = eligible[_pop_rng.randi_range(0, eligible.size() - 1)]
+			var d: Dictionary = DungeonFloorData.pick_weighted_pool_entry(_pop_rng, eligible)
 			_build_floor_item(candidates[used + i], d)
 		used += extra_count
 
@@ -4018,7 +4021,7 @@ func _spawn_locked_doors() -> void:
 		RngUtil.shuffle(reward_candidates, _pop_rng)
 		var count: int = mini(_pop_rng.randi_range(2, 3), reward_candidates.size())
 		for i: int in count:
-			var d: Dictionary = eligible[_pop_rng.randi_range(0, eligible.size() - 1)]
+			var d: Dictionary = DungeonFloorData.pick_weighted_pool_entry(_pop_rng, eligible)
 			_build_floor_item(reward_candidates[i], d)
 
 		break  # max 1 locked door per floor

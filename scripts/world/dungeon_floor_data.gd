@@ -19,6 +19,45 @@ static func is_scroll_level_eligible(entry: Dictionary, character_level: int) ->
 		return true
 	return s.level <= StandardSlotPool.highest_accessible_level(character_level)
 
+# Named-ammo floor-loot weighting (owner request): Arrow/Bolt/Buckshot (any ITEM_POOL entry
+# flagged "is_ammo": true) should spawn as loot in proportion to how many weapons in THIS SAME
+# POOL currently consume it as their "ammo" — 3 Arrow-weapons : 2 Dart-weapons : 0 Buckshot-weapons
+# should roll 3:2:0. Fully dynamic: counts are derived by scanning ITEM_POOL itself every call, so
+# adding/removing a weapon (or a new named-ammo item) automatically reweights everything with zero
+# extra bookkeeping — there is no separate weight table to keep in sync.
+static func ammo_weapon_counts() -> Dictionary:
+	var counts: Dictionary = {}
+	for entry: Dictionary in ITEM_POOL:
+		var ammo_name: String = entry.get("ammo", "")
+		if ammo_name != "":
+			counts[ammo_name] = int(counts.get(ammo_name, 0)) + 1
+	return counts
+
+# Weighted-random pick from an `eligible` ITEM_POOL subset (already fmin/fmax/scroll-level
+# filtered by the caller, same shape dungeon_floor.gd's loot rollers already build). Every entry
+# weighs 1, except an "is_ammo" entry, whose weight is ammo_weapon_counts()[its name] (0 if no
+# weapon currently uses it — it simply never spawns until one does). Shared by every floor-loot
+# roll that used to do a flat uniform pick (_spawn_items, locked-door rewards, secret-room
+# rewards) so they all stay in sync automatically.
+static func pick_weighted_pool_entry(rng: RandomNumberGenerator, eligible: Array) -> Dictionary:
+	var counts: Dictionary = ammo_weapon_counts()
+	var weights: Array[float] = []
+	var total: float = 0.0
+	for entry: Dictionary in eligible:
+		var w: float = float(counts.get(entry["name"], 0)) if entry.get("is_ammo", false) else 1.0
+		weights.append(w)
+		total += w
+	if total <= 0.0:
+		# Every eligible entry weighs 0 (e.g. the only eligible items are ammo types nothing uses
+		# yet) — fall back to a uniform pick so callers still get a valid entry.
+		return eligible[rng.randi_range(0, eligible.size() - 1)]
+	var roll: float = rng.randf() * total
+	for i: int in eligible.size():
+		roll -= weights[i]
+		if roll <= 0.0:
+			return eligible[i]
+	return eligible[eligible.size() - 1]
+
 const TRAP_POOL: Array = [
 	{"name": "Bear Trap",  "sprite": "bear_trap.png",       "damage": 0, "msg": "The bear trap snaps shut on you!", "wall_trap": false},
 	# "damage" is ignored for Fire Trap specifically — dungeon_floor.gd's trigger_trap() rolls a
@@ -67,9 +106,13 @@ const ITEM_POOL: Array = [
 	{"name": "Scimitar",       "type": 0, "icon": "weapon_scimitar.png",           "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "", "dmg_type": "Slashing", "category": "Martial", "die_min": 1, "die_max": 6, "mastery": "Nick", "finesse": true, "light": true, "gold": 25},
 	{"name": "Javelin",        "type": 0, "icon": "weapon_spear.png",              "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "", "dmg_type": "Piercing", "category": "Simple", "die_min": 1, "die_max": 6, "mastery": "Slow", "thrown": true, "range": 3, "long_range": 12, "uses_max": 5, "silver": 5},
 	{"name": "Torch",          "type": 0, "icon": "weapon_torch.png",             "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Click while equipped to light it — burns 100 turns, granting +1 FOV and (in Main Hand) +2d4 Fire on hit. Thrown and lodged in an enemy, it sets them ablaze for 2d4 Fire each round until doused or they die, and casts a radius-1 glow around them; lying on the ground it casts a radius-2 glow instead. Can be equipped in either hand like a Shield. Burns out permanently into a Burnt Torch.", "dmg_type": "Bludgeoning", "category": "Simple", "die_min": 1, "die_max": 4, "torch": true, "thrown": true, "range": 2, "long_range": 4, "uses_max": 1, "gold": 10},
-	{"name": "Arrow",          "type": 7, "icon": "ammo/arrow.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Short Bow and Longbow.", "qty": 6, "gold": 1},
-	{"name": "Bolt",           "type": 7, "icon": "ammo/arrow_gold.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Heavy Crossbow.", "qty": 6, "gold": 1},
-	{"name": "Buckshot",       "type": 7, "icon": "ammo/buckshot.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for muskets and other firearms.", "qty": 6, "gold": 1},
+	# "is_ammo": true flags a named-ammo item for ammo_weapon_counts()/pick_weighted_pool_entry()
+	# below — its relative floor-loot spawn chance is derived dynamically from how many weapons in
+	# THIS SAME POOL currently set "ammo" to this item's name, not a fixed weight. Adding a new
+	# named-ammo item just needs this flag; no separate weight table to maintain.
+	{"name": "Arrow",          "type": 7, "icon": "ammo/arrow.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Short Bow and Longbow.", "qty": 6, "gold": 1, "is_ammo": true},
+	{"name": "Bolt",           "type": 7, "icon": "ammo/arrow_gold.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Heavy Crossbow.", "qty": 6, "gold": 1, "is_ammo": true},
+	{"name": "Buckshot",       "type": 7, "icon": "ammo/buckshot.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for muskets and other firearms.", "qty": 6, "gold": 1, "is_ammo": true},
 	{"name": "Thief Tools",    "type": 7, "icon": "misc/key_iron.png",                    "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Disarm traps, lock doors. Consumed on failure.", "qty": 2, "gold": 25},
 	# Mold: Blacksmith crafting material (scripts/items/CLAUDE.md's "WeaponForge" section). Sentinel
 	# fmin/fmax=99 keeps it out of every generic floor-loot roll — its only spawn path is
