@@ -10,7 +10,7 @@ metadata={
 
 [deps]
 
-source_file="res://sprites/items/_unused/materials/stone.png"
+source_file="res://sprites/items/ammo/buckshot.png"
 dest_files=["res://.godot/imported/stone.png-4978d9961d8ab9fe4f880c2508e6c43e.ctex"]
 
 [params]
