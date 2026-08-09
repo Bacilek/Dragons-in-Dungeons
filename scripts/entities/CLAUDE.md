@@ -1348,9 +1348,10 @@ race with no darkvision):
   `scripts/entities/player_halfling.gd` (`PlayerHalfling`, `_halfling` on `player.gd`), same pattern
   as `PlayerDwarf`/`PlayerGoliath`. Free action, capped at once per real round
   (`PlayerHalfling.used_this_turn`, reset from `player.gd._on_turn_started()`'s
-  `if not came_from_revert:` block — not rest-gated, so `Ability.uses_max` stays 0/infinite and the
-  ability bar never greys it for this cap, same precedent as Grip of the Forest's own
-  `_grip_used_this_turn`). Activating arms `nimbleness_mode_active` (arm-then-click, same family as
+  `if not came_from_revert:` block — not rest-gated, so `Ability.uses_max` stays 0/infinite; the
+  ability bar still greys for this per-round cap via `GameState.halfling_nimbleness_used_this_turn`,
+  a mirrored bool `is_ability_usable()` reads, same precedent as Grip of the Forest's own
+  `GameState.grip_of_the_forest_used_this_turn`). Activating arms `nimbleness_mode_active` (arm-then-click, same family as
   Grip of the Forest's hook mode/Cloud Giant's Jaunt) and shows a blue backdrop over the 8 tiles
   directly adjacent to the player (`PlayerHalfling.adjacent_tiles()`,
   `player.gd._update_nimbleness_preview()` → `DungeonFloor.show_spell_range_preview_tiles()`) with
@@ -1602,6 +1603,23 @@ so a short RAW range never collapses below the content type's own floor and lose
   assuming `/10` is final when authoring a new AoE spell's `shape_size`, since the same "grid only
   grants 1 tile/turn" argument that already pulled ranged-weapon/spell range down to `/20` could
   eventually pull this down too.
+
+**Single-target reach is always Chebyshev, never Euclidean (bugfix)**: every single-target
+max-range gate — ranged weapons (`PlayerRanged.is_ranged_target_in_range()`/
+`ranged_shot_disadvantage()`), thrown weapons (`PlayerThrowTool._throw_weapon()`), and Hunter's
+Mark (`PlayerRangerTalents.commit_mark()`, plus its own targeting-preview duplicate in
+`player.gd._update_hunters_mark_preview()`) used to gate range with squared-Euclidean distance
+(`dx*dx+dy*dy <= r*r`) — a circle on the square movement grid, which under-reaches diagonally
+versus a cardinal shot at the same tile count (a diagonal step costs the same 1 tile of movement as
+a cardinal one everywhere else in this engine). Spells already got this right
+(`player_spellcasting.gd`'s `_effective_range()`/`try_cast_at()`, Chebyshev — see that file's own
+`dist_cheb` comment) but weapons/Hunter's Mark never got the same treatment. Fixed to Chebyshev
+(`maxi(absi(dx), absi(dy)) <= r`) everywhere above, plus their matching preview backdrops
+(`DungeonFloor.show_ranged_range_preview()`) — matches `show_spell_range_preview()`'s own
+Chebyshev convention. **AoE/zone shapes are intentionally unaffected** — Fireball/Burning
+Hands-cone/Faerie Fire/Fog Cloud/Darkness really are D&D spheres/circles by design (see
+`DungeonFloor`'s AoE-preview section comment and `scripts/world/CLAUDE.md`'s own note on it) and
+still use Euclidean distance on purpose; only single-target max-reach gates were in scope.
 
 **Spells deliberately have NO long-range/DISADV tier** (direct owner decision) — `Spell.range_tiles`
 is a single flat number under the `/20` rule above, with no `long_range`/Disadvantage-at-extended-
@@ -2055,6 +2073,19 @@ call can mutate it) and having the expiry guard read that snapshot instead of th
 already-mutated value — only a flag that was already true going into decide_turn() (i.e. survived
 a full round unconsumed) expires; a flag freshly set this round survives into the player's next
 turn as intended.
+**BUGFIX (regain-check hoisted to the top of `_decide_action()`)**: the `_had_los_to_player`/
+`surprise_available` bookkeeping used to live only inside the `CHASING`/`SEARCHING` arms of
+`_decide_action()`'s `match behavior:` block — but several early-return branches evaluated BEFORE
+that match block (one-shot `thrown_weapon`, Imp's `invisibility`, Spider's `web`, Quasit's `scare`,
+each gated on `behavior in [CHASING, SEARCHING]` and its own `has_clear_shot()`/range check) could
+return an intent without ever reaching it. Concretely: an Orc Warrior chasing blind toward a closed
+door, regaining LOS by crossing it, in Javelin range of the player — fell into the `thrown_weapon`
+branch and threw immediately, `surprise_available` never got set, and the door-ambush granted no
+ADV at all on the player's next attack, for any enemy with one of those four pool keys. Fixed by
+moving the exact same regain check (`can_see` → `_had_los_to_player` false→true → set
+`surprise_available`/update `last_known_target_pos`/`_search_heading`) to run unconditionally right
+after target selection, before any early-return branch; the match block's own `CHASING`/`SEARCHING`
+arms now only handle behavior transition + acting, not the surprise bookkeeping itself.
 **Call-order rule (BUGFIX — this used to be dead code)**: every attack site must read
 `has_advantage(enemy)` (and any `enemy.behavior`-based DISADV exemption, e.g. the ranged/thrown
 melee-range penalty's "unaware target" carve-out) **before** calling `enemy.on_disturbed(...)` —
@@ -2109,9 +2140,13 @@ automatically.
   checks (`player_thief_tools.gd`). `roll_with_adv_disadv()` also returns the penalty value as its
   own `"exhaustion_penalty"` dict key (self-documenting for any future call site) for callers that
   already destructure the returned dict rather than calling `CombatMath.exhaustion_penalty()`
-  directly. **No player-side death-save mechanic exists yet** (root `CLAUDE.md`'s Rest system —
-  0 HP is currently instant death, no Dying state) — "death saves" in the field's own doc comment
-  is aspirational, wiring it in is a future pass once that system exists.
+  directly. **Visible in every affected roll's own hover tooltip, not just the status tray**: each
+  of the 16 call sites above now also threads its captured penalty value into that roll's `[url=]`
+  meta string as its own `exh=` field, and `TooltipFormatters.fmt_hit_tooltip()`/`fmt_sphit_tooltip()`/
+  `fmt_save_tooltip()`/`fmt_stealth_tooltip()` (`scripts/ui/tooltip_formatters.gd`) each render a
+  `[color=cyan]-N[/color]  (Exhaustion)` line whenever `exh != 0` — so a hit/save/check breakdown
+  taken while exhausted now visibly itemizes the penalty instead of silently folding it into the
+  final total (see `scripts/ui/CLAUDE.md`'s "Roll tooltips must stay complete" convention).
 - **-1/6 movement speed per level**: reuses the exact same `TurnManager.enemy_actions_this_round =
   2` knob Slowed (Mud/Water) already drives — see root `CLAUDE.md`'s "Player movement-speed visual
   consistency" permanent rule: the move tween itself never changes, only how many actions the
@@ -2316,7 +2351,7 @@ Tier 1 (levels 1–6): earns 5 talent points, spent across 3 talents — Psycho,
 
 **World Tree Tier 2 talents** (max 3 ranks each, unchanged by this rework):
 - **Ironwood Bark** (`talent_id: "ironwood_bark"`, max 3): Passive ability added to bar at rank 1 (no activation — triggers automatically). R1: activating Rage (`player.gd._activate_rage()`) grants `1d6 × rage_bonus_damage` temp HP. R2/R3: evaluated together in `_on_turn_started()`, gated on `not came_from_revert` (real turns only) — **critical evaluation-order rule**: both ranks read the SAME pre-turn `temp_hp` snapshot taken before either mutates it. If snapshot is 0 and rank ≥ 2: refresh temp HP (`1d6 × rage_bonus_damage`, replace not stack). Else if snapshot > 0 and rank ≥ 3: set `_ironwood_bark_bonus_pending = snapshot`. This keeps R2/R3 mutually exclusive each turn — R2's refresh this tick can never also trigger R3 this same tick. `_ironwood_bark_bonus_pending` is consumed once in `_bump_attack()` (added as bonus damage on the next attack, tagged `(+N Ironwood Bark)`, then zeroed) — mirrors the Frenzy bonus-damage pattern exactly.
-- **Grip of the Forest** (`talent_id: "grip_of_the_forest"`, max 3): Active ability added to bar at rank 1 — activating (`player.gd._activate_grip_of_the_forest()`) requires `GameState.is_raging` and not `_grip_used_this_turn` (reset in `_on_turn_started()`), then arms `_hook_mode_active` (modeled on throw-mode priming, not a toggle). Next LMB click on an enemy within range (R1=3/R2=4/R3=5 tiles, Chebyshev, `has_ranged_los()`) resolves `_execute_hook()`, which costs the turn like a normal action. Enemy rolls `Enemy.resist_check(dc)` (STR-based) vs `dc = 8 + player STR mod + proficiency` (see "Enemy resist checks" above). On success, pulls the enemy toward the player one tile at a time via `DungeonFloor.force_move_entity()`, stopping once adjacent. R2: sets `enemy.rooted_turns = 1`. R3: sets `enemy.disadv_next_attack = true`.
+- **Grip of the Forest** (`talent_id: "grip_of_the_forest"`, max 3): Active ability added to bar at rank 1 — activating (`player.gd._activate_grip_of_the_forest()`) requires `GameState.is_raging` and not `GameState.grip_of_the_forest_used_this_turn` (reset in `_on_turn_started()`, also greys the ability-bar slot via `is_ability_usable()`), then arms `_hook_mode_active` (modeled on throw-mode priming, not a toggle). Next LMB click on an enemy within range (R1=3/R2=4/R3=5 tiles, Chebyshev, `has_ranged_los()`) resolves `_execute_hook()`, which costs the turn like a normal action. Enemy rolls `Enemy.resist_check(dc)` (STR-based) vs `dc = 8 + player STR mod + proficiency` (see "Enemy resist checks" above). On success, pulls the enemy toward the player one tile at a time via `DungeonFloor.force_move_entity()`, stopping once adjacent. R2: sets `enemy.rooted_turns = 1`. R3: sets `enemy.disadv_next_attack = true`.
 - **Branching Strike** (`talent_id: "branching_strike"`, max 3): Passive ability added to bar at rank 1. R1/R2: reach bonus for `Item.is_heavy or Item.is_versatile` melee weapons (`player.gd._melee_reach_bonus()` — R1 = +1 tile, R2 = +2 tiles, **replaces** R1, not additive). Applied at the chase-resolution chokepoint in `_execute_queued_path()` (`chase_path.size() <= 1 + _melee_reach_bonus()` instead of the old `== 1`). R3: on a successful hit with a heavy/versatile weapon, pushes the target 1 tile directly away from the player via `force_move_entity()` — target rolls `Enemy.resist_check(dc, true)` (CON-based) vs the same DC convention as Grip of the Forest.
 - **Shared forced-movement hook**: `DungeonFloor.force_move_entity()` — see `scripts/world/CLAUDE.md`.
 

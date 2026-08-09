@@ -274,7 +274,7 @@ func take_typed_damage(amount: int, damage_type: String, is_crit: bool = false) 
 				effective = stats.current_hp - 1
 				GameState.game_log("[color=gray]%s's [url=%s]Undead Fortitude[/url] keeps it standing![/color]" % [display_name, save_meta])
 			elif GameState.debug_show_all_checks:
-				GameState.game_log("[color=gray][url=%s]%s's Undead Fortitude check fails.[/url][/color]" % [save_meta, display_name])
+				GameState.game_log("[color=#c06060]%s's [url=%s]Undead Fortitude[/url] check fails — it collapses.[/color]" % [display_name, save_meta])
 			break
 	var actual: int = stats.take_damage(effective)
 	if actual > 0:
@@ -1275,6 +1275,27 @@ func _decide_action() -> Dictionary:
 		return {"type": "wait"}
 	var target: Node = _select_target(candidates)
 
+	# LOS-regain surprise-flag bookkeeping (SPD-style door-ambush/ring-around/invisibility-ending —
+	# see "Stealth & Surprise Attacks" in scripts/entities/CLAUDE.md) MUST run here, before every
+	# early-return branch below (thrown weapon, Invisibility, Web, Scare). Those all resolve off
+	# their own has_clear_shot()/range check and can return an intent without ever reaching the
+	# CHASING/SEARCHING arm of the match block further down — which used to be this bookkeeping's
+	# only home. An enemy with e.g. a thrown weapon (Orc Warrior's Javelin) would regain sight
+	# through a door, immediately throw, and the player would never get the surprise-ADV window
+	# because surprise_available was never set. BUGFIX: hoisted out of the match block so it always
+	# runs once per decide_turn() regardless of which intent ultimately gets picked. The match
+	# block's own CHASING/SEARCHING arms only recompute `can_see` below for their own act/attack
+	# decision — the surprise bookkeeping itself now lives only here.
+	if behavior in [Behavior.CHASING, Behavior.SEARCHING]:
+		if _can_see_entity(target):
+			if not _had_los_to_player:
+				_had_los_to_player = true
+				surprise_available = true
+			last_known_target_pos = target.grid_pos
+			_search_heading = Vector2i(sign(target.grid_pos.x - grid_pos.x), sign(target.grid_pos.y - grid_pos.y))
+		else:
+			_had_los_to_player = false
+
 	# Nimble Escape (Goblin trait): fleeing takes priority over every other behavior below,
 	# including attacking an adjacent target — a fleeing goblin doesn't stop to swing. A
 	# "flee_only" thrown weapon (Goblin Minion's Dagger) is NOT thrown mid-flee — it's a parting
@@ -1376,8 +1397,6 @@ func _decide_action() -> Dictionary:
 		return {"type": "wait"}
 
 	var can_see: bool = _can_see_entity(target)
-	var dx: int = target.grid_pos.x - grid_pos.x
-	var dy: int = target.grid_pos.y - grid_pos.y
 
 	match behavior:
 		Behavior.SLEEPING:
@@ -1415,38 +1434,17 @@ func _decide_action() -> Dictionary:
 			return {"type": "roam"}
 
 		Behavior.CHASING:
-			if can_see:
-				# LOS-regain (SPD-style ring-around/door-ambush/invisibility-ending): this enemy's
-				# OWN turn is what re-establishes sight after having lost it — grants one round of
-				# surprise-attack eligibility on the player's very next attack. See "Stealth &
-				# Surprise Attacks" in scripts/entities/CLAUDE.md for why this differs from a
-				# player-triggered stealth-check notice (which never grants this).
-				# Deliberately does NOT freeze the round (no golden "?", no _notice_target()) —
-				# this enemy was already actively hunting the player, so re-establishing sight
-				# isn't a fresh discovery; it acts immediately (chase/attack) the same turn it
-				# regains LOS, only the surprise-ADV window on the player's next attack is granted.
-				if not _had_los_to_player:
-					_had_los_to_player = true
-					surprise_available = true
-				last_known_target_pos = target.grid_pos
-				_search_heading = Vector2i(sign(dx), sign(dy))
-			else:
-				_had_los_to_player = false
+			# LOS-regain surprise-flag bookkeeping (SPD-style ring-around/door-ambush/invisibility-
+			# ending) already ran at the top of _decide_action(), before the early-return branches —
+			# see the comment there for why. Nothing left to do here but act.
 			return _act_toward_or_ability(target, can_see, {"chasing": true})
 
 		Behavior.SEARCHING:
 			if can_see:
-				# Same no-freeze LOS-regain rule as CHASING above — a SEARCHING enemy is still
-				# actively hunting (just without a current fix on the player), so spotting them
-				# again isn't a fresh discovery either.
-				if not _had_los_to_player:
-					_had_los_to_player = true
-					surprise_available = true
+				# Same LOS-regain rule as CHASING — bookkeeping already ran at the top of
+				# _decide_action(). Only the behavior-state flip belongs here.
 				behavior = Behavior.CHASING
-				last_known_target_pos = target.grid_pos
-				_search_heading = Vector2i(sign(dx), sign(dy))
 				return _act_toward_or_ability(target, can_see)
-			_had_los_to_player = false
 			return {"type": "search"}
 
 	return {"type": "wait"}
@@ -1914,14 +1912,15 @@ func _execute_cast_scare(target: Node, cfg: Dictionary) -> void:
 	var scare_adv: int = 1 if (s.character_race == Stats.CharacterRace.HALFLING or s.gnomish_cunning_grants_adv("wis") or GameState.knows_invocation("beguiling_defenses")) else 0
 	var roll: Dictionary = CombatMath.roll_with_adv_disadv(scare_adv, 0)
 	var die: int = roll["die"]
-	var total: int = die + wis_mod + prof + CombatMath.exhaustion_penalty()
+	var scare_exh: int = CombatMath.exhaustion_penalty()
+	var total: int = die + wis_mod + prof + scare_exh
 	var passed: bool = total >= dc
 	# Bugfix: this meta used to omit d1/d2/adv/disadv/lucky entirely, so the tooltip always
 	# rendered a plain "d20 = N" line with no way to see Halfling Brave's Advantage actually
 	# applying (the roll was correct, it just wasn't visible on hover).
-	var meta: String = "save:die=%d,d1=%d,d2=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=WIS,pass=%d,adv=%d,disadv=%d,lucky1=%d,lucky2=%d" % [
+	var meta: String = "save:die=%d,d1=%d,d2=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=WIS,pass=%d,adv=%d,disadv=%d,lucky1=%d,lucky2=%d,exh=%d" % [
 		die, roll["die1"], roll["die2"], wis_mod, prof, total, dc, int(passed),
-		int(roll["adv"]), int(roll["disadv"]), int(roll["lucky1"]), int(roll["lucky2"])]
+		int(roll["adv"]), int(roll["disadv"]), int(roll["lucky1"]), int(roll["lucky2"]), scare_exh]
 	if passed:
 		GameState.game_log("%s shrieks at you, but you [url=%s]hold your nerve[/url]." % [display_name, meta])
 		return
