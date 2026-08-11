@@ -16,24 +16,29 @@ var player: Player
 # through fog/darkness/unexplored tiles alike, is intended, same as PlayerRanged.ranged_attack_tile()
 # already allows for an empty tile). A ranged item that doesn't set long_range (none exist today)
 # falls back to the player's live FOV radius as its cap instead.
+# Chebyshev, not Euclidean — matches every spell's own range check (see
+# player_spellcasting.gd's _effective_range()/dist_cheb comment) and the melee-reach convention
+# elsewhere: on a square grid a diagonal step costs the same 1 tile as a cardinal one, so the
+# reachable area is a square, not a circle (bugfix — this used to under-reach diagonally, since a
+# diagonal tile at distance R is Euclidean distance R*sqrt(2) from the origin).
 func is_ranged_target_in_range(weapon: Item, target_pos: Vector2i) -> bool:
 	if weapon == null or player._dungeon_floor == null:
 		return false
 	var d: Vector2i = target_pos - player.grid_pos
-	var dist_sq: int = d.x * d.x + d.y * d.y
+	var dist_cheb: int = maxi(absi(d.x), absi(d.y))
 	# Blinded: a ranged attack's reach collapses to 1 tile (Chebyshev, so a diagonal-adjacent
 	# target still counts) regardless of the weapon's own range/long_range (Heavily Obscured
 	# terrain — Fog Cloud/Darkness — see GameState.is_blinded()).
 	if GameState.is_blinded(player.grid_pos):
-		return maxi(absi(d.x), absi(d.y)) <= 1
+		return dist_cheb <= 1
 	var long_r: int = weapon.long_range if weapon.long_range > 0 else DungeonFloor.FOV_RADIUS
-	return dist_sq <= long_r * long_r
+	return dist_cheb <= long_r
 
 func ranged_shot_disadvantage(weapon: Item, target_pos: Vector2i) -> bool:
 	if weapon == null:
 		return false
 	var d: Vector2i = target_pos - player.grid_pos
-	return (d.x * d.x + d.y * d.y) > weapon.range * weapon.range
+	return maxi(absi(d.x), absi(d.y)) > weapon.range
 
 func is_in_ranged_range(enemy: Enemy) -> bool:
 	var weapon: Item = GameState.equipped_ranged
@@ -44,6 +49,11 @@ func is_in_ranged_range(enemy: Enemy) -> bool:
 		and player._dungeon_floor.has_ranged_los(player.grid_pos, near)
 
 func ranged_attack(enemy: Enemy) -> void:
+	# Loading: this weapon can only fire once per real turn, full stop — checked before anything
+	# else even starts (no animation, no ammo consumed) so a blocked shot costs nothing.
+	if GameState.equipped_ranged != null and GameState.equipped_ranged.is_loading and GameState.equipped_ranged.loading_used_this_turn:
+		GameState.game_log("[color=gray]%s needs to be reloaded.[/color]" % GameState.equipped_ranged.item_name)
+		return
 	# If another enemy stands between the player and the intended target, the shot hits THAT
 	# enemy instead — a projectile can't fly through a blocking body to reach whoever was clicked.
 	if player._dungeon_floor != null:
@@ -52,13 +62,13 @@ func ranged_attack(enemy: Enemy) -> void:
 			enemy = blocker
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
-	# Captured BEFORE on_disturbed() wakes the enemy — both has_advantage() and the melee-range
-	# DISADV exemption below read pre-attack behavior/surprise_available state, which on_disturbed()
-	# immediately mutates away. The DISADV exemption reuses has_advantage()'s own result rather than
-	# re-deriving it, so a freshly re-sighted (surprise_available) enemy gets the same exemption a
-	# still-unaware one does.
+	# Captured BEFORE on_disturbed() wakes the enemy — both has_advantage() and
+	# PlayerVfx.is_target_unaware() read pre-attack behavior/surprise_available state, which
+	# on_disturbed() immediately mutates away. is_target_unaware() is deliberately narrower than
+	# has_advantage() (see that function's own comment) — Paralyzed/Incapacitated/Faerie Fire/
+	# Blinded grant ADV but do NOT exempt the melee-range DISADV below, so they net normally.
+	var target_was_unaware: bool = player._vfx.is_target_unaware(enemy)
 	var was_surprised: bool = player._vfx.has_advantage(enemy)
-	var target_was_unaware: bool = was_surprised
 	enemy.on_disturbed(player.grid_pos)
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = enemy.grid_pos.x < player.grid_pos.x
@@ -96,6 +106,8 @@ func ranged_attack(enemy: Enemy) -> void:
 			GameState.game_log("[color=gray]Last throwing dagger used.[/color]")
 
 	show_projectile(enemy.position, weapon)
+	if weapon != null and weapon.is_loading:
+		weapon.loading_used_this_turn = true
 
 	var dex_mod: int = player.stats.dex_modifier()
 	var prof: int = CombatMath.weapon_prof_bonus(weapon, player.stats.proficiency_bonus, player.stats.proficient_simple_weapons, player.stats.proficient_martial_weapons)
@@ -119,9 +131,8 @@ func ranged_attack(enemy: Enemy) -> void:
 	# Disadvantage: ranged weapon fired at melee range (Chebyshev distance 1), Heavy weapon with
 	# DEX < 13, or a long-range shot (beyond the weapon's normal range but within FOV).
 	var near_tile: Vector2i = enemy.nearest_occupied_tile(player.grid_pos)
-	# EXCEPT against an unaware target (SLEEPING/STATIONARY/ROAMING) — see the identical exemption
-	# in PlayerThrowTool._throw_weapon() for the reasoning (5e RAW exempts an incapacitated nearby
-	# creature from this penalty; without it the surprise-attack Advantage always cancels back out).
+	# EXCEPT against a genuinely unaware target (PlayerVfx.is_target_unaware()) — see that function's
+	# own comment for why this is narrower than has_advantage()'s ADV sources.
 	if enemy.min_dist_to(player.grid_pos) <= 1 and not target_was_unaware: disadv_count += 1
 	if weapon != null and weapon.is_heavy and player.stats.dexterity < 13: disadv_count += 1
 	if ranged_shot_disadvantage(weapon, near_tile): disadv_count += 1
@@ -137,7 +148,8 @@ func ranged_attack(enemy: Enemy) -> void:
 	var disadv: bool = r["disadv"]
 	if vex_triggered:
 		player._vex_adv_target = null
-	var roll: int = die + dex_mod + weapon_bonus + CombatMath.exhaustion_penalty()
+	var ranged_exh: int = CombatMath.exhaustion_penalty()
+	var roll: int = die + dex_mod + weapon_bonus + ranged_exh
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		player._base_talents.on_crit()
@@ -145,10 +157,10 @@ func ranged_attack(enemy: Enemy) -> void:
 	var is_nat_one: bool = die == 1
 
 	var r_wpn_enh: int = weapon.bonus_damage if weapon != null else 0
-	var hit_meta: String = "rhit:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
+	var hit_meta: String = "rhit:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,exh=%d" % [
 		die, die1, die2, dex_mod, prof, r_wpn_enh, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
-		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
+		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0, ranged_exh]
 
 	# Zealot Strike / Judgement Day are melee-only (see markdowns/zealot.md) — no ranged hook here.
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
@@ -361,6 +373,11 @@ func show_projectile(target_world_pos: Vector2, weapon: Item) -> void:
 		t.tween_callback(sp.queue_free)
 
 func ranged_attack_tile(target_pos: Vector2i) -> void:
+	# Loading: same hard once-per-turn gate as ranged_attack() above — checked first, nothing
+	# spent if blocked.
+	if GameState.equipped_ranged != null and GameState.equipped_ranged.is_loading and GameState.equipped_ranged.loading_used_this_turn:
+		GameState.game_log("[color=gray]%s needs to be reloaded.[/color]" % GameState.equipped_ranged.item_name)
+		return
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
@@ -393,6 +410,8 @@ func ranged_attack_tile(target_pos: Vector2i) -> void:
 			GameState.game_log("[color=gray]Last throwing dagger thrown.[/color]")
 	var target_world: Vector2 = Vector2(target_pos.x * 16 + 8, target_pos.y * 16 + 8)
 	show_projectile(target_world, weapon)
+	if weapon != null and weapon.is_loading:
+		weapon.loading_used_this_turn = true
 	if player._dungeon_floor != null:
 		player._dungeon_floor.try_shoot_tripwire(target_pos)
 		var prop_result: Dictionary = player._dungeon_floor.damage_prop_at(target_pos, _roll_prop_damage(weapon))

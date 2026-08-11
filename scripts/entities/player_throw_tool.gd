@@ -67,7 +67,6 @@ func do_throw(pos: Vector2i) -> void:
 		GameState.consume_one(item)
 		var cooked: Item = player._dungeon_floor.cook_rotten_meat(pos)
 		player._dungeon_floor.place_item_on_floor(pos, cooked)
-		GameState.game_log("[color=orange]You throw the meat into the fire — it sizzles and cooks! [b]Cooked Meat[/b] landed where the trap was.[/color]")
 	elif not trap.is_empty():
 		var trap_name: String = trap.get("name", "trap")
 		var land_pos: Vector2i = player._dungeon_floor.throw_item_onto_trap(pos, item)
@@ -208,14 +207,16 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var total_hit_bonus: int = atk_mod + prof + weapon.bonus_damage
 
 	var d: Vector2i = pos - player.grid_pos
-	var dist_sq: int = d.x * d.x + d.y * d.y
+	# Chebyshev, not Euclidean — matches ranged weapons/spells, see
+	# PlayerRanged.is_ranged_target_in_range()'s own comment.
+	var dist_cheb: int = maxi(absi(d.x), absi(d.y))
 	var long_r: int = weapon.long_range if weapon.long_range > 0 else DungeonFloor.FOV_RADIUS
-	var in_normal_range: bool = dist_sq <= weapon.range * weapon.range
-	var in_range: bool = in_normal_range or dist_sq <= long_r * long_r
+	var in_normal_range: bool = dist_cheb <= weapon.range
+	var in_range: bool = in_normal_range or dist_cheb <= long_r
 	# Blinded: a thrown weapon's reach collapses to 1 tile (Chebyshev) regardless of its own
 	# range/long_range — same rule as ranged weapons/spells, see PlayerRanged.is_ranged_target_in_range().
 	if GameState.is_blinded(player.grid_pos):
-		in_range = maxi(absi(d.x), absi(d.y)) <= 1
+		in_range = dist_cheb <= 1
 	if not in_range:
 		GameState.game_log("[color=gray]Too far to throw %s.[/color]" % weapon.item_name)
 		player._handle_post_attack_turn()
@@ -223,16 +224,16 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var long_throw: bool = not in_normal_range
 
 	var enemy: Enemy = player._dungeon_floor.get_targetable_enemy_at(pos)
-	# Captured BEFORE on_disturbed() wakes the enemy — both has_advantage() and the melee-range
-	# DISADV exemption below read pre-attack behavior/surprise_available state, which on_disturbed()
-	# immediately mutates away. The DISADV exemption reuses has_advantage()'s own result rather than
-	# re-deriving it, so a freshly re-sighted (surprise_available) enemy gets the same exemption a
-	# still-unaware one does.
+	# Captured BEFORE on_disturbed() wakes the enemy — both has_advantage() and
+	# PlayerVfx.is_target_unaware() read pre-attack behavior/surprise_available state, which
+	# on_disturbed() immediately mutates away. is_target_unaware() is deliberately narrower than
+	# has_advantage() (see that function's own comment) — Paralyzed/Incapacitated/Faerie Fire/
+	# Blinded grant ADV but do NOT exempt the melee-range DISADV below, so they net normally.
 	var was_surprised: bool = false
 	var target_was_unaware: bool = false
 	if enemy != null:
+		target_was_unaware = player._vfx.is_target_unaware(enemy)
 		was_surprised = player._vfx.has_advantage(enemy)
-		target_was_unaware = was_surprised
 		enemy.on_disturbed(player.grid_pos)
 	var target_world_pos: Vector2 = enemy.position if enemy != null else Vector2(pos.x * 16 + 8, pos.y * 16 + 8)
 	player._ranged.show_projectile(target_world_pos, weapon)
@@ -289,10 +290,8 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
 	# Same convention as ranged weapons: throwing at an adjacent target (Chebyshev 1) is
 	# awkward at that range, so it rolls with Disadvantage too (PlayerRanged.ranged_attack()).
-	# EXCEPT against an unaware target (SLEEPING/STATIONARY/ROAMING) — 5e RAW exempts an
-	# incapacitated nearby creature from this "distracted by a hostile at melee range" penalty,
-	# and a sleeping/unaware enemy is the closest equivalent this engine has; without this
-	# exemption the surprise-attack Advantage from has_advantage() always cancels right back out.
+	# EXCEPT against a genuinely unaware target (PlayerVfx.is_target_unaware()) — see that
+	# function's own comment for why this is narrower than has_advantage()'s ADV sources.
 	if maxi(absi(d.x), absi(d.y)) <= 1 and not target_was_unaware: disadv_count += 1
 	if GameState.is_blinded(player.grid_pos): disadv_count += 1
 	if stats.has_disadvantage_condition(): disadv_count += 1
@@ -304,7 +303,8 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + total_hit_bonus + CombatMath.exhaustion_penalty()
+	var throw_exh: int = CombatMath.exhaustion_penalty()
+	var roll: int = die + total_hit_bonus + throw_exh
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		player._base_talents.on_crit()
@@ -312,10 +312,10 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var is_nat_one: bool = die == 1
 
 	var mod_key: String = "dex" if (weapon.is_finesse and dex_mod > str_mod) else "str"
-	var hit_meta: String = "thrhit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
+	var hit_meta: String = "thrhit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,exh=%d" % [
 		die, die1, die2, mod_key, atk_mod, prof, weapon.bonus_damage, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
-		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
+		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0, throw_exh]
 
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"

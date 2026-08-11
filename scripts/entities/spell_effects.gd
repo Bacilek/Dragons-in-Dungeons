@@ -120,13 +120,9 @@ static func cast_multi_beam_cantrip(player: Player, spell: Spell, targets: Array
 static func _resolve_cantrip_hit(player: Player, spell: Spell, target: Enemy, dungeon_floor: Node) -> void:
 	# Captured BEFORE on_disturbed() wakes the target — has_advantage() reads pre-attack
 	# behavior/surprise_available state, which on_disturbed() immediately mutates away.
+	var target_was_unaware: bool = player._vfx.is_target_unaware(target)
 	var was_surprised: bool = player._vfx.has_advantage(target)
 	target.on_disturbed(player.grid_pos)
-
-	# Reuses has_advantage()'s own result for the melee-range DISADV exemption below, rather than
-	# re-deriving "unaware" from behavior — so a freshly re-sighted (surprise_available) target
-	# gets the same exemption a still-unaware one does.
-	var target_was_unaware: bool = was_surprised
 
 	var stats: Stats = player.stats
 	var attack_bonus: int = _attack_bonus(stats, spell)
@@ -136,10 +132,10 @@ static func _resolve_cantrip_hit(player: Player, spell: Spell, target: Enemy, du
 	var disadv_count: int = 0
 	if was_surprised: adv_count += 1
 	if stats.zealous_presence_turns > 0: adv_count += 1
-	# Disadvantage: ranged spell attack at melee range (Chebyshev distance 1), EXCEPT against an
-	# unaware target — same exemption as PlayerRanged.ranged_attack()/PlayerThrowTool._throw_weapon()
-	# (5e RAW exempts an incapacitated-nearby creature from this penalty; without it, a surprise
-	# attack's ADV always cancelled back out against a target that hadn't noticed the caster).
+	# Disadvantage: ranged spell attack at melee range (Chebyshev distance 1), EXCEPT against a
+	# genuinely unaware target (PlayerVfx.is_target_unaware()) — see that function's own comment
+	# for why this is narrower than has_advantage()'s ADV sources (Paralyzed/Incapacitated/Faerie
+	# Fire/Blinded net normally against this DISADV instead of being exempted from it).
 	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1 and not target_was_unaware: disadv_count += 1
 	if GameState.is_blinded(player.grid_pos): disadv_count += 1
 	if stats.has_disadvantage_condition(): disadv_count += 1
@@ -156,17 +152,18 @@ static func _resolve_cantrip_hit(player: Player, spell: Spell, target: Enemy, du
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + attack_bonus + CombatMath.exhaustion_penalty()
+	var sp_exh: int = CombatMath.exhaustion_penalty()
+	var roll: int = die + attack_bonus + sp_exh
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		player._base_talents.on_crit()
 		player._berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 
-	var hit_meta: String = "sphit:die=%d,d1=%d,d2=%d,int=%d,prof=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,stat=%s" % [
+	var hit_meta: String = "sphit:die=%d,d1=%d,d2=%d,int=%d,prof=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,stat=%s,exh=%d" % [
 		die, die1, die2, _cast_ability_mod(stats, spell), stats.proficiency_bonus, roll, target.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
-		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0, _cast_ability_label(stats, spell)]
+		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0, _cast_ability_label(stats, spell), sp_exh]
 
 	if not is_crit and (is_nat_one or roll < target.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
@@ -983,13 +980,11 @@ static func cast_magic_missile(player: Player, spell: Spell, cast_level: int, ta
 # damage roll against a second target, reusing the same log-line shape with the "leaps to" phrasing
 # instead of "cast ... at".
 static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Enemy, dtype: String, dungeon_floor: Node, is_leap: bool) -> Dictionary:
-	# Captured BEFORE on_disturbed() wakes the target — has_advantage() reads pre-attack
-	# behavior/surprise_available state, which on_disturbed() immediately mutates away. The DISADV
-	# exemption reuses has_advantage()'s own result rather than re-deriving "unaware" from behavior,
-	# so a freshly re-sighted (surprise_available) target gets the same exemption a still-unaware
-	# one does.
+	# Captured BEFORE on_disturbed() wakes the target — both has_advantage() and
+	# PlayerVfx.is_target_unaware() read pre-attack behavior/surprise_available state, which
+	# on_disturbed() immediately mutates away.
+	var target_was_unaware: bool = player._vfx.is_target_unaware(target)
 	var was_surprised: bool = player._vfx.has_advantage(target)
-	var target_was_unaware: bool = was_surprised
 	target.on_disturbed(player.grid_pos)
 	var stats: Stats = player.stats
 	var attack_bonus: int = _attack_bonus(stats, spell)
@@ -1018,17 +1013,18 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + attack_bonus + CombatMath.exhaustion_penalty()
+	var sp_exh: int = CombatMath.exhaustion_penalty()
+	var roll: int = die + attack_bonus + sp_exh
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		player._base_talents.on_crit()
 		player._berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 
-	var hit_meta: String = "sphit:die=%d,d1=%d,d2=%d,int=%d,prof=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,stat=%s" % [
+	var hit_meta: String = "sphit:die=%d,d1=%d,d2=%d,int=%d,prof=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,stat=%s,exh=%d" % [
 		die, die1, die2, _cast_ability_mod(stats, spell), stats.proficiency_bonus, roll, target.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
-		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0, _cast_ability_label(stats, spell)]
+		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0, _cast_ability_label(stats, spell), sp_exh]
 
 	if not is_crit and (is_nat_one or roll < target.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"

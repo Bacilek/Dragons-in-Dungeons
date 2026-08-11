@@ -44,6 +44,18 @@ func has_advantage(enemy: Enemy) -> bool:
 		return true
 	return enemy.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
 
+# The melee-range ranged/thrown/spell DISADV penalty's own "unaware target" exemption (5e RAW: an
+# incapacitated nearby creature doesn't count as "a hostile creature who can see you" for the
+# distracted-by-melee-range penalty). Deliberately NARROWER than has_advantage() above — a target
+# is "unaware" here only if it genuinely hasn't reacted to the player yet (still asleep/hasn't
+# noticed, or just regained sight mid-chase). Paralyzed/Incapacitated/Faerie Fire/Blinded all grant
+# has_advantage()'s ADV too, but none of them mean "distracted by nothing at melee range" the way
+# unawareness does — those cases should net ADV against the melee-range DISADV like any other
+# ADV+DISADV pair, not get a free exemption that leaves them at pure ADV.
+# MUST be read before has_advantage()/on_disturbed() run (both mutate surprise_available/behavior).
+func is_target_unaware(enemy: Enemy) -> bool:
+	return enemy.surprise_available or enemy.behavior in [Enemy.Behavior.SLEEPING, Enemy.Behavior.STATIONARY, Enemy.Behavior.ROAMING]
+
 func show_surprise_mark(enemy: Enemy) -> void:
 	if not is_instance_valid(enemy):
 		return
