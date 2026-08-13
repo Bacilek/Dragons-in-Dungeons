@@ -12,7 +12,7 @@ const DICE_SHAPES: Array = [
 
 const REQUIREMENT_POOL: Array[String] = ["Heavy", "Two-handed", "Martial", "Ammo"]
 const PROPERTY_POOL: Array[String] = ["Finesse", "Reach", "Thrown", "Versatile"]
-const AMMO_ITEMS: Array[String] = ["Arrow", "Bolt", "Buckshot"]
+const AMMO_ITEMS: Array[String] = ["Arrow", "Bolt", "Bullet"]
 
 const DAMAGE_TYPES_PHYSICAL: Array[String] = ["Slashing", "Piercing", "Bludgeoning"]
 const DAMAGE_TYPES_ELEMENTAL: Array[String] = ["Fire", "Cold", "Acid", "Poison", "Thunder", "Lightning"]

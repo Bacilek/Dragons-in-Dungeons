@@ -19,9 +19,9 @@ static func is_scroll_level_eligible(entry: Dictionary, character_level: int) ->
 		return true
 	return s.level <= StandardSlotPool.highest_accessible_level(character_level)
 
-# Named-ammo floor-loot weighting (owner request): Arrow/Bolt/Buckshot (any ITEM_POOL entry
+# Named-ammo floor-loot weighting (owner request): Arrow/Bolt/Bullet (any ITEM_POOL entry
 # flagged "is_ammo": true) should spawn as loot in proportion to how many weapons in THIS SAME
-# POOL currently consume it as their "ammo" — 3 Arrow-weapons : 2 Dart-weapons : 0 Buckshot-weapons
+# POOL currently consume it as their "ammo" — 3 Arrow-weapons : 2 Dart-weapons : 0 Bullet-weapons
 # should roll 3:2:0. Fully dynamic: counts are derived by scanning ITEM_POOL itself every call, so
 # adding/removing a weapon (or a new named-ammo item) automatically reweights everything with zero
 # extra bookkeeping — there is no separate weight table to keep in sync.
@@ -83,8 +83,10 @@ const ITEM_POOL: Array = [
 	# use_item()'s FOOD branch.
 	{"name": "Healing Herb",   "type": 4, "icon": "food/salad_flower_purple.png",           "src": "items", "bonus_dmg": 0, "heal": 4, "food_value": 25, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A fragrant garden herb. Eating it heals 4 HP and also counts as long-rest fuel.", "gold": 10},
 	{"name": "Short Bow",      "type": 0, "icon": "weapons/bow_arrow.png",                 "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 2, "fmax": 6,  "desc": "Ranged, DEX-based. Normal range 4, long range 16 (DISADV). Requires Arrows.", "is_ranged": true, "range": 4, "long_range": 16, "dmg_type": "Piercing", "category": "Simple", "die_min": 1, "die_max": 6, "mastery": "Vex", "ammo": "Arrow", "gold": 50},
-	{"name": "Heavy Crossbow", "type": 0, "icon": "weapons/bow_arrow_gold.png",             "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "Ranged, DEX-based. Normal range 5, long range 20 (DISADV). Heavy (DEX 13+), two-handed. Requires Bolts.", "is_ranged": true, "range": 5, "long_range": 20, "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 10, "mastery": "Push", "ammo": "Bolt", "heavy": true, "two_handed": true, "gold": 120},
-	{"name": "Longbow",       "type": 0, "icon": "weapons/bow.png",                      "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 5, "fmax": 10, "desc": "Ranged, DEX-based. Normal range 8, long range 30 (DISADV). Heavy (DEX 13+), two-handed. Requires Arrows.", "is_ranged": true, "range": 8, "long_range": 30, "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 8, "mastery": "Slow", "ammo": "Arrow", "heavy": true, "two_handed": true, "gold": 50},
+	{"name": "Heavy Crossbow", "type": 0, "icon": "weapons/bow_arrow_gold.png",             "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "Ranged, DEX-based. Normal range 5, long range 20 (DISADV). Heavy (DEX 13+), two-handed, Loading. Requires Bolts.", "is_ranged": true, "range": 5, "long_range": 20, "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 10, "mastery": "Push", "ammo": "Bolt", "heavy": true, "two_handed": true, "loading": true, "gold": 120},
+	{"name": "Longbow",       "type": 0, "icon": "weapons/bow.png",                      "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 5, "fmax": 10, "desc": "Ranged, DEX-based. Normal range 8, long range 30 (DISADV). Heavy (DEX 13+), two-handed, Loading. Requires Arrows.", "is_ranged": true, "range": 8, "long_range": 30, "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 8, "mastery": "Slow", "ammo": "Arrow", "heavy": true, "two_handed": true, "loading": true, "gold": 50},
+	{"name": "Pistol",        "type": 0, "icon": "weapons/bow_arrow_gold.png",             "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 6, "fmax": 10, "desc": "Ranged, DEX-based. Normal range 2, long range 5 (DISADV). Loading. Requires Bullets.", "is_ranged": true, "range": 2, "long_range": 5, "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 10, "mastery": "Vex", "ammo": "Bullet", "loading": true, "gold": 250},
+	{"name": "Musket",        "type": 0, "icon": "weapons/bow.png",                      "src": "items",   "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 7, "fmax": 10, "desc": "Ranged, DEX-based. Normal range 2, long range 6 (DISADV). Two-handed, Loading. Requires Bullets.", "is_ranged": true, "range": 2, "long_range": 6, "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 12, "mastery": "Slow", "ammo": "Bullet", "two_handed": true, "loading": true, "gold": 500},
 	# Tier 3 (weapon-tiers-design.md §3): moved from fmin=1 — 25gp/1d8-finesse/Martial doesn't
 	# belong next to a 2sp Quarterstaff on floor 1, see that doc's §1 for the full rationale.
 	{"name": "Rapier",         "type": 0, "icon": "weapon_duel_sword.png",               "src": "weapons", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 4, "fmax": 10, "desc": "", "dmg_type": "Piercing", "category": "Martial", "die_min": 1, "die_max": 8, "mastery": "Vex", "finesse": true, "gold": 25},
@@ -112,7 +114,7 @@ const ITEM_POOL: Array = [
 	# named-ammo item just needs this flag; no separate weight table to maintain.
 	{"name": "Arrow",          "type": 7, "icon": "ammo/arrow.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Short Bow and Longbow.", "qty": 6, "gold": 1, "is_ammo": true},
 	{"name": "Bolt",           "type": 7, "icon": "ammo/arrow_gold.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for the Heavy Crossbow.", "qty": 6, "gold": 1, "is_ammo": true},
-	{"name": "Buckshot",       "type": 7, "icon": "ammo/buckshot.png",             "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for muskets and other firearms.", "qty": 6, "gold": 1, "is_ammo": true},
+	{"name": "Bullet",         "type": 7, "icon": "ammo/bullet.png",               "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Ammunition for pistols, muskets, and other firearms.", "qty": 6, "gold": 1, "is_ammo": true},
 	{"name": "Thief Tools",    "type": 7, "icon": "misc/key_iron.png",                    "src": "items", "bonus_dmg": 0, "heal": 0,   "str_bonus": 0, "fmin": 2, "fmax": 10, "desc": "Disarm traps, lock doors. Consumed on failure.", "qty": 2, "gold": 25},
 	# Mold: Blacksmith crafting material (scripts/items/CLAUDE.md's "WeaponForge" section). Sentinel
 	# fmin/fmax=99 keeps it out of every generic floor-loot roll — its only spawn path is
@@ -610,4 +612,38 @@ const ENEMY_POOL: Array = [
 	 "multiattack": [{"name": "Bite", "count": 1, "dmg_min": 4, "dmg_max": 11, "damage_type": "Piercing",
 	                  "extra": {"dmg_min": 2, "dmg_max": 12, "damage_type": "Poison"}}],
 	 "web": {"cooldown": 10, "range": 6, "save_dc": 13}},
+	# STR 9(-1) DEX 12(+1) CON 11(+0) INT 13(+1) WIS 8(-1) CHA 13(+1). AC 12 is natural armor
+	# (baked straight into "ac", no separate "armor" bonus). Small Beast, CR 1/4, a plain 1x1
+	# footprint (no "size" key — unlike Spider, this one never grows to Large) sharing Spider's own
+	# sliced sheet at Imp's Shape Shift "spider" form scale (0.5, same as SHAPE_SHIFT_SPRITES) so it
+	# visibly reads as a baby version of the same art, not a separate asset.
+	# Darkvision: +1 (senses.sight_bonus). Resist Fire, immune Poison damage AND the Poisoned
+	# condition (both — a real 5e stat block distinguishes damage immunity from condition immunity,
+	# see the schema's "damage_immunities"/"condition_immunities" rows). Also immune to Exhaustion/
+	# Paralyzed/Unconscious per its own stat block, but none of those three currently have any
+	# mechanism that could ever target an enemy (Exhaustion is player-only; Paralyzed's only source,
+	# Hold Person, is Humanoid-only and a Spiderling is a Beast; Unconscious isn't a modeled
+	# condition at all) — same "granted but nothing to hook into" precedent as several race traits
+	# in scripts/entities/CLAUDE.md, so no `condition_immunities` entry is needed for any of the
+	# three.
+	# Bite: +3 to hit (DEX+prof, falls out of "mods" + the default CR-derived prof_bonus with no
+	# override needed), reach 1, 1d6+1 Piercing. On a hit the player rolls a DC 10 CON check
+	# ("on_hit_save", the same generic mechanism Bearded Devil's Beard uses) — a fail applies the
+	# real Poisoned condition for 10 turns ("1 minute" at 6s/round, matching Beard's own turns=10
+	# for its DC 12 version). **Not implemented**: "fails by 5 or more → also Paralyzed while
+	# poisoned" — this engine has no player-side Paralyzed condition/mechanism at all yet (see
+	# scripts/entities/CLAUDE.md's Conditions table, Paralyzed row: "no player-side trigger exists
+	# yet — infra would mirror the enemy's, not built until something needs it"), so this half of
+	# the real stat block is a documented gap, not wired.
+	{"enemy_id": "spiderling", "display_name": "Spiderling", "sprite": "spider",
+	 "sprite_frame_size": {"w": 32, "h": 32}, "sprite_scale": 0.5, "idle_frames": 6, "run_frames": 6,
+	 "floor_min": 1, "floor_max": 4, "hp": 9, "hp_per_floor": 1, "dmg_min": 2, "dmg_max": 7, "armor": 0, "ac": 12, "exp": 8,
+	 "cr": 0.25, "creature_type": "Beast", "size_category": "Small",
+	 "mods": {"str": -1, "dex": 1, "con": 0, "int": 1, "wis": -1, "cha": 1},
+	 "damage_resistances": ["Fire"], "damage_immunities": ["Poison"],
+	 "senses": {"sight_bonus": 1},
+	 "passive_perception": 9,
+	 "attack_profile": {"attack_stat": "dex"},
+	 "multiattack": [{"name": "Bite", "count": 1, "dmg_min": 2, "dmg_max": 7, "damage_type": "Piercing",
+	                  "on_hit_save": {"stat": "con", "dc": 10, "status": "poisoned_condition", "turns": 10, "paralyze_margin": 5}}]},
 ]

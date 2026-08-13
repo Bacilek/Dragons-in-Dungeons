@@ -78,6 +78,15 @@ enum ArmorCategory { NONE, LIGHT, MEDIUM, HEAVY }
 @export var is_finesse: bool = false      # Finesse: attack/damage modifier uses max(STR, DEX) instead of STR — see CombatMath.finesse_modifier()
 @export var is_light: bool = false        # Light: pairs with a Light Main Hand weapon in the Off-hand slot to attack with both — see player.gd._try_offhand_attack()
 @export var is_reach: bool = false        # Reach: +1 tile melee range — see CombatMath.melee_reach()
+# Loading: this weapon can only be fired once per turn, period — no other effect/ability/talent
+# can force a second shot with it this turn (a hard per-weapon cooldown, not a per-player one, so
+# a different Loading weapon or a non-Loading weapon is unaffected). loading_used_this_turn is the
+# live cooldown flag, deliberately NOT meaningfully persisted across save/load (always resets to
+# false on load, same "combat-transient" precedent as several Stats fields — see
+# scripts/entities/CLAUDE.md) since it only ever needs to survive to the next real player turn,
+# where PlayerRanged's own turn-start reset already clears it anyway.
+@export var is_loading: bool = false
+@export var loading_used_this_turn: bool = false
 # Torch: click-to-light while equipped (Main Hand or Off-hand) — see GameState.light_torch(). Once
 # lit, burns for 600 turns (torch_turns_remaining), granting +1 FOV in either hand and +1d4 Fire
 # damage on the standard melee swing only while wielded in Main Hand. Reaching 0 permanently sets
@@ -211,6 +220,7 @@ func to_dict() -> Dictionary:
 		"is_finesse": is_finesse,
 		"is_light": is_light,
 		"is_reach": is_reach,
+		"is_loading": is_loading,
 		"is_torch": is_torch,
 		"torch_lit": torch_lit,
 		"torch_burnt": torch_burnt,
@@ -270,6 +280,7 @@ static func from_dict(d: Dictionary) -> Item:
 	it.is_finesse = bool(d.get("is_finesse", false))
 	it.is_light = bool(d.get("is_light", false))
 	it.is_reach = bool(d.get("is_reach", false))
+	it.is_loading = bool(d.get("is_loading", false))
 	it.is_torch = bool(d.get("is_torch", false))
 	it.torch_lit = bool(d.get("torch_lit", false))
 	it.torch_burnt = bool(d.get("torch_burnt", false))

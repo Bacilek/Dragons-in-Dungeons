@@ -694,12 +694,12 @@ _build_floor_item(pos: Vector2i, d: Dictionary)  # shared by _spawn_items() and 
 entry" roll (`_spawn_items()`, `_spawn_treasure()`'s guaranteed-loot loop, `_spawn_locked_doors()`'s
 reward loop, `_spawn_secret_room()`'s extra-reward loop) goes through `DungeonFloorData.
 pick_weighted_pool_entry(_pop_rng, eligible)` instead of a flat `eligible[randi_range(...)]` pick.
-Every entry still weighs 1 **except** one flagged `"is_ammo": true` (Arrow/Bolt/Buckshot today) —
+Every entry still weighs 1 **except** one flagged `"is_ammo": true` (Arrow/Bolt/Bullet today) —
 that entry's weight is however many weapons in `ITEM_POOL` currently set `"ammo"` to its name
 (`DungeonFloorData.ammo_weapon_counts()`, computed by scanning the pool itself every call). So
-Arrow:Bolt:Buckshot spawn in proportion to how many weapons actually consume each one (today
-2:1:0 — Short Bow + Longbow use Arrow, Heavy Crossbow uses Bolt, nothing yet uses Buckshot, so it
-never spawns as loot until some weapon does) — fully dynamic, adding/removing a ranged weapon
+Arrow:Bolt:Bullet spawn in proportion to how many weapons actually consume each one (today
+2:1:2 — Short Bow + Longbow use Arrow, Heavy Crossbow uses Bolt, Pistol + Musket use Bullet) —
+fully dynamic, adding/removing a ranged weapon
 reweights everything automatically with no separate table to maintain. A future named-ammo item
 just needs `"is_ammo": true` on its own `ITEM_POOL`/`debug_panel.ALL_ITEMS` entries; nothing else
 to wire. `_spawn_secret_room()`'s own top-half-by-`gold_value` biased pick (its FIRST reward item)

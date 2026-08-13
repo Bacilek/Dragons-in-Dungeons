@@ -37,6 +37,7 @@ const KEYWORD_GLOSSARY: Dictionary = {
 	"nick": "Mastery: Nick.\nWhile dual-wielding two\nLight weapons, make one\nfurther attack this turn —\nsame rules as the Off-hand\nswing (max 3 attacks total).",
 	"slow": "Mastery: Slow.\nOn a hit, the target is\nSlowed — its next move\ncosts an extra turn, same\nas stepping into mud/water.",
 	"ammo": "Ammo.\nThis weapon consumes one\nunit of the named ammo\nitem per shot.",
+	"loading": "Loading.\nCan only be fired once per\nturn, no matter what other\neffects/abilities/talents\nwould otherwise grant a\nsecond shot with it.",
 	"heavily_obscured": "Heavily Obscured terrain.\nAnyone standing in it —\nplayer or enemy — is\nBlinded (see the Blinded\nkeyword). Fog Cloud is the\nonly source today.",
 	"blinded": "Blinded (condition).\nCan't see — automatically\nfails checks requiring\nsight. Attacks against you\nhave Advantage, your own\nattacks have Disadvantage.\nVision collapses to 1 tile,\neven with darkvision.",
 	"frightened": "Frightened (condition).\nDisadvantage on checks and\nattacks while the source of\nfear is in sight. Can't\nwillingly move closer to it\n(forced movement is fine).\nRepeats a WIS save each\nturn to end early.",
@@ -161,6 +162,8 @@ static func build(item: Item) -> String:
 		props.append({"key": "Finesse", "text": "[url=keyword:finesse]Finesse[/url]"})
 	if item.is_light:
 		props.append({"key": "Light", "text": "[url=keyword:light]Light[/url]"})
+	if item.is_loading:
+		props.append({"key": "Loading", "text": "[url=keyword:loading]Loading[/url]"})
 	if item.is_reach:
 		props.append({"key": "Reach", "text": "[url=keyword:reach]Reach[/url]"})
 	if item.is_thrown:
