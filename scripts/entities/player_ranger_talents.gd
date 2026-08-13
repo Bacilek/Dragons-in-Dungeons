@@ -35,8 +35,10 @@ func commit_mark(enemy: Enemy) -> void:
 		return
 	var stats: Stats = GameState.player_stats
 	var diff: Vector2i = enemy.grid_pos - player.grid_pos
-	var dist_sq: int = diff.x * diff.x + diff.y * diff.y
-	if dist_sq > Stats.HUNTERS_MARK_RANGE * Stats.HUNTERS_MARK_RANGE:
+	# Chebyshev, not Euclidean — matches every other spell's range check (see
+	# player_spellcasting.gd's _effective_range()), so a diagonal target doesn't under-reach.
+	var dist_cheb: int = maxi(absi(diff.x), absi(diff.y))
+	if dist_cheb > Stats.HUNTERS_MARK_RANGE:
 		GameState.game_log("[color=gray]Hunter's Mark: target is out of range (%d tiles).[/color]" % Stats.HUNTERS_MARK_RANGE)
 		return
 	if stats.hunters_mark_cast_this_round:

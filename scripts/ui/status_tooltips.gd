@@ -25,6 +25,7 @@ const TITLES: Dictionary = {
 	"prone": "Prone",
 	"restrained": "Restrained",
 	"incapacitated": "Incapacitated",
+	"paralyzed": "Paralyzed",
 	"weapon_mastery": "Weapon Masteries",
 	"blinded": "Blinded",
 	"frightened": "Frightened",
@@ -86,6 +87,8 @@ static func get_text(id: String) -> String:
 			return "Speed 0. Attacks against you have Advantage, your own attacks have Disadvantage, and you have Disadvantage on DEX checks. Attempt a STR check each turn (movement key) to break free."
 		"incapacitated":
 			return "Can't take actions — movement, attacks, and ability/spell use are all blocked. Breaks Concentration immediately."
+		"paralyzed":
+			return "Can't take actions (implies Incapacitated). Attacks against you have Advantage, and any hit from within 1 tile is an automatic critical hit. Repeats a %s save each turn to end early." % GameState.player_stats.paralyze_save_stat.to_upper()
 		"weapon_mastery":
 			var known: Array[String] = GameState.player_stats.known_weapon_masteries
 			return "Currently known: %s" % ", ".join(known)

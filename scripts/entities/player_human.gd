@@ -10,7 +10,6 @@ var player: Player
 
 func activate_heroic_inspiration() -> void:
 	if not GameState.player_stats.heroic_inspiration_available and not GameState.invincible:
-		GameState.game_log("[color=gray]Heroic Inspiration: no use remaining (long rest to recover).[/color]")
 		return
 	if not GameState.invincible:
 		GameState.player_stats.heroic_inspiration_available = false

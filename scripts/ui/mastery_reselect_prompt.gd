@@ -11,6 +11,12 @@ extends CanvasLayer
 # GameState.*_open flag independently (mastery_picker.gd/attunement_picker.gd both also set
 # mastery_picker_open themselves — redundant but harmless; spellbook_overlay.gd uses its own
 # spellbook_open flag, untouched by this hub).
+#
+# Weapon Masteries reselect is limited to ONE per long-rest cycle (direct owner request): once
+# mastery_picker.gd's Swap mode completes a single discard+pick round, it sets
+# GameState.mastery_reselect_used_this_long_rest = true and closes straight back to this hub
+# instead of looping for another swap. `_build_ui()` greys out the "Weapon Masteries" button
+# (label gains " (used)") whenever that flag is set; GameState.long_rest() resets it to false.
 
 var _panel: Panel
 
@@ -44,7 +50,9 @@ func _build_ui() -> void:
 
 	var y: float = 54.0
 	if GameState.player_stats.mastery_cap() > 0:
-		_add_option_btn("Weapon Masteries", y, _open_masteries)
+		var masteries_used: bool = GameState.mastery_reselect_used_this_long_rest
+		var masteries_label: String = "Weapon Masteries" + (" (used)" if masteries_used else "")
+		_add_option_btn(masteries_label, y, _open_masteries, masteries_used)
 		y += 46.0
 	_add_option_btn("Attunement", y, _open_attunements)
 	y += 46.0
@@ -68,12 +76,13 @@ func _build_ui() -> void:
 	_panel.size = Vector2(360.0, y)
 	_panel.position = (vp - _panel.size) * 0.5
 
-func _add_option_btn(text: String, y: float, callback: Callable) -> void:
+func _add_option_btn(text: String, y: float, callback: Callable, disabled: bool = false) -> void:
 	var btn := Button.new()
 	btn.text = text
 	btn.size = Vector2(320.0, 40.0)
 	btn.position = Vector2(20.0, y)
 	btn.focus_mode = Control.FOCUS_NONE
+	btn.disabled = disabled
 	btn.pressed.connect(callback)
 	_panel.add_child(btn)
 
@@ -100,7 +109,11 @@ func _on_subpicker_closed() -> void:
 	# The sub-picker's own _close() just cleared this flag on its way out — restore it since the
 	# hub is still up and should keep blocking input until its own Done/Esc is pressed.
 	GameState.mastery_picker_open = true
-	_panel.visible = true
+	# Rebuild (not just re-show) — a mastery swap may have just flipped
+	# mastery_reselect_used_this_long_rest, and the button's disabled state needs to reflect that
+	# the instant we're back, not only on the hub's next fresh spawn.
+	_panel.queue_free()
+	_build_ui()
 
 func _on_done() -> void:
 	GameState.mastery_picker_open = false

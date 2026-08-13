@@ -27,7 +27,6 @@ func activate_breath_weapon() -> void:
 			GameState.game_log("[color=gray]Breath Weapon cancelled.[/color]")
 		return
 	if player.stats.breath_weapon_uses_remaining <= 0 and not GameState.invincible:
-		GameState.game_log("[color=gray]Breath Weapon: no uses remaining (long rest to recover).[/color]")
 		return
 	breath_weapon_mode_active = true
 	breath_weapon_shape = "cone"
@@ -132,7 +131,6 @@ func activate_draconic_flight() -> void:
 	if player.stats.character_level < 5:
 		return
 	if player.stats.draconic_flight_used and not GameState.invincible:
-		GameState.game_log("[color=gray]Draconic Flight: already used this long rest.[/color]")
 		return
 	if not GameState.invincible:
 		player.stats.draconic_flight_used = true

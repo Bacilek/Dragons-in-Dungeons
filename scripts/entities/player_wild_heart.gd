@@ -11,7 +11,6 @@ var player: Player
 func activate_one_with_nature(ab: Ability) -> void:
 	var rank: int = GameState.get_talent_rank("wild_companion")
 	if ab.uses_remaining <= 0:
-		GameState.game_log("[color=gray]One with Nature: no charge available (rest to restore).[/color]")
 		return
 	if GameState.player_companion != null and is_instance_valid(GameState.player_companion):
 		dismiss_companion()

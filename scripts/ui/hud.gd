@@ -475,6 +475,8 @@ func _update_status_icons() -> void:
 		entries.append({"id": "restrained", "icon_path": "res://icons/status/restrained.png", "fallback_color": Color(0.45, 0.45, 0.45)})
 	if s.incapacitated_turns > 0:
 		entries.append({"id": "incapacitated", "icon_path": "res://icons/status/incapacitated.png", "fallback_color": Color(0.75, 0.10, 0.10)})
+	if s.paralyzed_turns > 0:
+		entries.append({"id": "paralyzed", "icon_path": "res://icons/status/paralyzed.png", "fallback_color": Color(0.55, 0.05, 0.05)})
 	if GameState.is_blinded(GameState.player_grid_pos):
 		entries.append({"id": "blinded", "icon_path": "res://icons/status/blinded.png", "fallback_color": Color(0.08, 0.08, 0.10)})
 	if s.frightened_turns > 0:

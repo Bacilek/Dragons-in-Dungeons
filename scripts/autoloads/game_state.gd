@@ -136,6 +136,7 @@ var shop_open: bool = false                 # blocks ALL player input while shop
 var short_rest_open: bool = false
 var talent_picker_open: bool = false
 var mastery_picker_open: bool = false
+var mastery_reselect_used_this_long_rest: bool = false  # long-rest hub: Weapon Masteries reselect is limited to once per long-rest cycle, reset in long_rest()
 var subclass_picker_open: bool = false  # blocks ALL player input while the subclass-select overlay is visible
 var race_picker_open: bool = false  # blocks ALL player input while the race-select overlay is visible (scripts/ui/race_select.gd)
 var point_buy_open: bool = false  # blocks ALL player input while the point-buy overlay is visible (scripts/ui/point_buy_select.gd, Custom path only)
@@ -273,6 +274,12 @@ var player_on_difficult_terrain: bool = false
 # Barbarian Tier 1 talents section.
 var psycho_adv_pending: bool = false
 var battlefield_adv_pending: bool = false
+# Grip of the Forest's once-per-turn cap and Halfling Nimbleness's once-per-round cap — mirrored
+# here from Player._grip_used_this_turn / PlayerHalfling.used_this_turn (same "HUD only reads
+# GameState" reasoning as psycho_adv_pending/battlefield_adv_pending above) so is_ability_usable()
+# can grey the ability bar for these per-round caps too, not just rest-gated resources.
+var grip_of_the_forest_used_this_turn: bool = false
+var halfling_nimbleness_used_this_turn: bool = false
 # Human Heroic Inspiration: activating the ability arms this; the player's very next d20 roll
 # (attack, check, or save — anything routed through CombatMath.roll_with_adv_disadv() or the
 # stealth-check/Thief-Tools-disarm rolls) is forced to a natural 20, guaranteeing a critical
@@ -490,11 +497,11 @@ func retry_same_character() -> bool:
 
 func _give_starting_items() -> void:
 	var ration := Item.new()
-	ration.item_name = "Ration"
+	ration.item_name = "Cooked Meat"
 	ration.item_type = Item.Type.FOOD
-	ration.food_value = 50
+	ration.food_value = 75
 	ration.icon_path = "res://sprites/items/food/meat_cooked.png"
-	ration.description = "Required for a long rest."
+	ration.description = "Roasted over a fire trap."
 	ration.quantity = 3
 	add_item(ration)
 
@@ -1982,6 +1989,7 @@ func long_rest() -> void:
 	player_stats.hunters_mark_free_recast_available = false
 	hit_dice = max_hit_dice()
 	short_rests_remaining = max_short_rests
+	mastery_reselect_used_this_long_rest = false
 	berserker_frenzy_used = false
 	berserker_turns_since_frenzy = 0
 	scarred_warrior_limit_break_used = false
@@ -2081,12 +2089,28 @@ func is_ability_usable(ab: Ability) -> bool:
 		"zealot_strike":
 			return hit_dice > 0
 		"grip_of_the_forest":
-			return is_raging
+			return is_raging and not grip_of_the_forest_used_this_turn
+		"halfling_nimbleness":
+			return not halfling_nimbleness_used_this_turn
 		"hunters_mark":
 			# Bonus-action cooldown (Stats.hunters_mark_cast_this_round) — see
 			# player_ranger_talents.gd's commit_mark(). Greys the slot for the round, matching
-			# Frenzy's own cooldown-greying treatment.
-			return not player_stats.hunters_mark_cast_this_round
+			# Frenzy's own cooldown-greying treatment. Beyond the round cooldown, also greys out
+			# once there's no resource left to actually mark a NEW target with: re-clicking the
+			# CURRENTLY marked target is always free (just refreshes duration), so a live target
+			# alone keeps it usable even at 0 uses/slots — mirrors commit_mark()'s own gating.
+			if player_stats.hunters_mark_cast_this_round:
+				return false
+			if invincible:
+				return true
+			if player_stats.hunters_mark_target != null and is_instance_valid(player_stats.hunters_mark_target):
+				return true
+			if player_stats.hunters_mark_free_recast_available:
+				return true
+			if player_stats.hunters_mark_uses_remaining > 0:
+				return true
+			var hm_slot_pool = player_stats.caster.slot_pool if player_stats.caster != null else null
+			return hm_slot_pool != null and hm_slot_pool.remaining.get(1, 0) > 0
 		"draconic_flight":
 			return player_stats.character_level >= 5 and not player_stats.draconic_flight_used
 		"hellish_rebuke_toggle":
@@ -2107,7 +2131,82 @@ func is_ability_usable(ab: Ability) -> bool:
 			if player_stats.ensnaring_strike_armed or invincible:
 				return true
 			return player_stats.caster != null and player_stats.caster.slot_pool != null and player_stats.caster.slot_pool.can_cast(SpellDb.get_spell("ensnaring_strike"))
+	if ab.ability_id.begins_with("spell:"):
+		return can_cast_spell_now(ab.ability_id.substr(6))
 	return true
+
+## Whether a known spell (cantrip or leveled, referenced by its "spell:<id>" ability-bar entry)
+## currently has any way to actually be cast — a free racial/lineage/invocation cast still
+## remaining, ritual casting, or a real spell slot of its own level. Used by is_ability_usable()
+## to grey out a spell whose free uses ran dry AND has no backing spell slot left, until either
+## refreshes (long rest, or a short rest for Warlock's Pact Magic). Mirrors begin_cast()'s own
+## gating checks (scripts/entities/player_spellcasting.gd) without needing a live Player reference.
+func can_cast_spell_now(spell_id: String) -> bool:
+	if invincible:
+		return true
+	var spell: Spell = SpellDb.get_spell(spell_id)
+	if spell == null:
+		return true
+	if spell.level == 0:
+		if spell_id in player_stats.gnome_lineage_spell_ids:
+			return player_stats.is_gnome_lineage_free_cast_available(spell_id)
+		return true
+	if spell.is_ritual:
+		return true
+	if player_stats.is_lineage_free_cast_available(spell_id):
+		return true
+	if warlock_invocation_free_cast(spell_id):
+		return true
+	if spell_id in player_stats.gnome_lineage_spell_ids and player_stats.is_gnome_lineage_free_cast_available(spell_id):
+		return true
+	var caster: SpellcasterState = player_stats.caster
+	return caster != null and caster.slot_pool != null and caster.slot_pool.can_cast(spell)
+
+## Short red-text reason shown directly on an ability-bar slot whenever is_ability_usable(ab) is
+## false — replaces the old chat-log "why can't I use this" messages (removed) with an always-
+## visible on-slot explanation instead, hud.gd's "Ability bar greying" section. Empty string means
+## no extra text is needed — either the ability turns out to actually be usable, or it already
+## shows its own countdown/counter badge that already reads as the reason (Frenzy/Hunter's Mark's
+## cooldown, a racial free-cast "X/Y" counter that still has a real spell slot to fall back on).
+func ability_unusable_reason(ab: Ability) -> String:
+	match ab.ability_id:
+		"frenzy":
+			if not is_raging:
+				return "No Rage"
+			if berserker_frenzy_used:
+				return "Used"
+		"limit_break":
+			if scarred_warrior_limit_break_used:
+				return "Used"
+		"zealot_strike":
+			if hit_dice <= 0:
+				return "No HD"
+		"grip_of_the_forest":
+			if not is_raging:
+				return "No Rage"
+			if grip_of_the_forest_used_this_turn:
+				return "Used"
+		"halfling_nimbleness":
+			if halfling_nimbleness_used_this_turn:
+				return "Used"
+		"draconic_flight":
+			if player_stats.character_level < 5:
+				return "Lvl 5"
+			if player_stats.draconic_flight_used:
+				return "Used"
+		"hellish_rebuke_toggle", "hail_of_thorns_toggle", "ensnaring_strike_toggle":
+			return "No Slot"
+		"hunters_mark":
+			# The round-cooldown case is already shown via hud.gd's own "%dt"/flat-"1" countdown
+			# overlay (frenzy_cooldown_turns), so this only ever fires for the "out of every
+			# resource" case (no live target to free-refresh, no free recast, no uses, no slot).
+			return "No Slot"
+	if ab.ability_id.begins_with("spell:"):
+		var spell: Spell = SpellDb.get_spell(ab.ability_id.substr(6))
+		return "No Uses" if spell != null and spell.level == 0 else "No Slot"
+	if not ab.has_uses():
+		return "No Uses"
+	return ""
 
 # Triggered on short rest completion. Heals companion (if alive) AND restores One with Nature charge.
 # Natural Sleeper's form lock does NOT happen here — long rest only (see long_rest()).
@@ -2843,10 +2942,20 @@ func move_item(src: String, src_idx: int, src_slot: String,
 	# Dragging a stacked weapon (e.g. Handaxe/Dagger, quantity > 1) into an equipment slot only
 	# equips a single unit — the rest of the stack stays put instead of the whole pile moving
 	# into the slot. Mirrors equip()'s splitting rule (see _should_split_for_equip()).
+	# Dropping a stackable item (dest not an equipment slot) merges with any matching stack
+	# ALREADY sitting anywhere in the quickbar/bag — not only the exact slot dropped onto — so
+	# e.g. unequipping a Thrown weapon and dropping it in any empty slot still finds and joins an
+	# existing pile of the same weapon instead of starting a second one (see _items_can_stack()).
+	var stack_target: Item = null
+	if dest != "equipment" and src_item != null:
+		stack_target = _find_matching_stack(src_item, src, src_idx)
 	if dest == "equipment" and src_item != null and _should_split_for_equip(src_item):
 		_set_slot_item(dest, dest_idx, dest_slot, _split_one_unit(src_item))
 		if dest_item != null:
 			_add_to_bags_silent(dest_item)
+	elif stack_target != null:
+		_merge_into_stack(stack_target, src_item)
+		_set_slot_item(src, src_idx, src_slot, null)
 	else:
 		_set_slot_item(src, src_idx, src_slot, dest_item)
 		_set_slot_item(dest, dest_idx, dest_slot, src_item)
@@ -2889,22 +2998,48 @@ func _set_slot_item(source: String, idx: int, slot_name: String, item: Item) -> 
 
 # ── Item management ───────────────────────────────────────────────────────────
 
+# Two items stack together iff they share an item_name AND (neither is a WEAPON, OR both are
+# Thrown weapons with matching uses_max — see _merge_into_stack()). A non-Thrown weapon (sword,
+# axe, bow, ...) never stacks with anything, even another copy of the exact same weapon — each
+# unit is its own distinct instance and always takes its own slot.
+func _items_can_stack(a: Item, b: Item) -> bool:
+	if a.item_name != b.item_name:
+		return false
+	if a.item_type != Item.Type.WEAPON:
+		return true
+	return a.is_thrown and b.is_thrown and a.uses_max == b.uses_max
+
+# Scans the whole quickbar+bag for an existing stack `item` can merge into, skipping the slot
+# `item` itself is currently sitting in (`exclude_src`/`exclude_idx` — irrelevant, and left
+# unexcluded, when the source is an equipment slot). Used by move_item() so dropping a stackable
+# item (e.g. unequipping a Thrown weapon) merges with a matching pile anywhere in the inventory,
+# not only when dropped directly onto it.
+func _find_matching_stack(item: Item, exclude_src: String, exclude_idx: int) -> Item:
+	for i: int in QUICKBAR_SIZE:
+		if exclude_src == "quickbar" and exclude_idx == i:
+			continue
+		var ex: Item = player_quickbar[i] as Item
+		if ex != null and _items_can_stack(ex, item):
+			return ex
+	for i: int in INVENTORY_SIZE:
+		if exclude_src == "inventory" and exclude_idx == i:
+			continue
+		var ex: Item = player_inventory[i] as Item
+		if ex != null and _items_can_stack(ex, item):
+			return ex
+	return null
+
 func add_item(item: Item) -> bool:
-	# Weapons with individual durability (uses_max > 0, e.g. thrown weapons) stack with any
-	# existing same-named pile regardless of durability — each unit's own uses_remaining is kept
-	# via Item.stack_uses (see _merge_into_stack()), so a mixed-durability stack still throws/
-	# equips its most-damaged unit first (equip()/PlayerThrowTool._throw_weapon() splitting).
-	var is_durability_weapon: bool = item.item_type == Item.Type.WEAPON and item.uses_max > 0
 	# Try stacking in quickbar, then bag
 	for i: int in QUICKBAR_SIZE:
 		var ex: Item = player_quickbar[i] as Item
-		if ex != null and ex.item_name == item.item_name and (not is_durability_weapon or ex.uses_max == item.uses_max):
+		if ex != null and _items_can_stack(ex, item):
 			_merge_into_stack(ex, item)
 			inventory_changed.emit()
 			return true
 	for i: int in INVENTORY_SIZE:
 		var ex: Item = player_inventory[i] as Item
-		if ex != null and ex.item_name == item.item_name and (not is_durability_weapon or ex.uses_max == item.uses_max):
+		if ex != null and _items_can_stack(ex, item):
 			_merge_into_stack(ex, item)
 			inventory_changed.emit()
 			return true
@@ -3453,6 +3588,23 @@ func apply_player_frightened(source: Enemy, turns: int, save_dc: int = 10) -> vo
 func clear_player_frightened() -> void:
 	player_stats.frightened_source = null
 	player_stats.frightened_turns = 0
+	player_status_changed.emit()
+
+# Paralyzed — player-side mirror of Enemy.apply_status()'s "paralyzed_turns" write (Hold Person),
+# see Stats.paralyzed_turns' own comment. Like apply_player_frightened() above, this is a dedicated
+# setter rather than an apply_player_status() match case since it needs to stash a save DC/stat
+# alongside the turn count. Also ends Concentration immediately, same as the "incapacitated" case
+# in apply_player_status() below — 5e's real Paralyzed condition implies Incapacitated.
+func apply_player_paralyzed(turns: int, save_dc: int = 10, stat: String = "con") -> void:
+	player_stats.paralyzed_turns = maxi(player_stats.paralyzed_turns, turns)
+	player_stats.paralyze_save_dc = save_dc
+	player_stats.paralyze_save_stat = stat
+	if player_stats.concentration_spell_id != "":
+		end_concentration("You lose concentration!")
+	player_status_changed.emit()
+
+func clear_player_paralyzed() -> void:
+	player_stats.paralyzed_turns = 0
 	player_status_changed.emit()
 
 

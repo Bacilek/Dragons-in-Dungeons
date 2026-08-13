@@ -18,9 +18,12 @@ extends CanvasLayer
 #      — once you've given up a mastery you must pick its replacement) drawn from every mastery
 #      that's neither the one just discarded nor still known. Clicking one calls
 #      GameState.toggle_mastery(new_name) (the "add" branch — always legal here, since discarding
-#      first guarantees known.size() < cap). An in-panel "Lost X -> Gained Y" reveal line appears
-#      (blacksmith_panel.gd's own in-place-refresh-and-reveal convention, not a separate screen),
-#      then the picker returns to step 1 so the player can keep swapping or stop via Esc/Done.
+#      first guarantees known.size() < cap), logs a "Lost X -> Gained Y" chat line, sets
+#      GameState.mastery_reselect_used_this_long_rest = true, and closes straight back to the
+#      long-rest hub (mastery_reselect_prompt.gd) — direct owner request: a reselect is limited to
+#      ONE mastery per long-rest cycle, not an unlimited swap-then-loop-back-to-step-1 session. The
+#      hub greys out its own "Weapon Masteries" button once that flag is set, and it resets to
+#      false in GameState.long_rest().
 #
 # character_creation_mode (set on the instance before add_child, default false): this is the
 # POST-SPAWN onboarding pick — spawned by character_summary.gd's "Yes, I'm Ready!" once the
@@ -56,7 +59,6 @@ var _panel: Panel
 var _tooltip: Panel
 var _tooltip_rtl: RichTextLabel
 var _mode: String = ""          # "learn" or "swap", decided once in _ready()
-var _reveal_rtl: RichTextLabel
 var _hover_source_rect: Rect2 = Rect2()   # last-shown tile's global rect, for _process()'s hover-chain check
 # Grace period before the hover chain hides — see hud.gd's identical `_HOVER_CHAIN_HIDE_GRACE_SEC`
 # for why: a single frame crossing the gap between a tile and its tooltip otherwise reads as "left
@@ -68,7 +70,6 @@ var _hover_chain_outside_time: float = 0.0
 var _swap_step: String = "discard"       # "discard" or "pick"
 var _swap_discarded: String = ""         # the mastery just given up, excluded from the pick pool
 var _swap_candidates: Array[String] = [] # rolled once on entering "pick", stays fixed for that round
-var _last_reveal_text: String = ""       # "Lost X -> Gained Y" line, persists across the two steps
 
 func _ready() -> void:
 	layer = 25
@@ -94,7 +95,6 @@ func _build_ui() -> void:
 	_panel = null
 	_tooltip = null
 	_tooltip_rtl = null
-	_reveal_rtl = null
 
 	var dim := ColorRect.new()
 	dim.color = Color(0.0, 0.0, 0.0, 0.55)
@@ -245,18 +245,7 @@ func _build_swap_discard_ui() -> void:
 		var pos := Vector2(MARGIN + col * (TILE_SIZE + TILE_GAP), y0 + row * (TILE_SIZE + TILE_GAP))
 		_build_tile(known[i], pos, _on_swap_discard_chosen)
 
-	_reveal_rtl = RichTextLabel.new()
-	_reveal_rtl.bbcode_enabled = true
-	_reveal_rtl.fit_content = false
-	_reveal_rtl.scroll_active = false
-	_reveal_rtl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_reveal_rtl.add_theme_font_size_override("normal_font_size", 15)
-	_reveal_rtl.text = _last_reveal_text
-	_reveal_rtl.position = Vector2(MARGIN, y0 + rows * (TILE_SIZE + TILE_GAP))
-	_reveal_rtl.size = Vector2(panel_w - MARGIN * 2.0, 30.0)
-	_panel.add_child(_reveal_rtl)
-
-	var panel_h: float = y0 + rows * (TILE_SIZE + TILE_GAP) + 30.0 + 28.0
+	var panel_h: float = y0 + rows * (TILE_SIZE + TILE_GAP) + 28.0
 	_panel.size = Vector2(panel_w, panel_h)
 	_panel.position = Vector2((vp.x - panel_w) * 0.5, (vp.y - panel_h) * 0.5)
 
@@ -311,10 +300,12 @@ func _build_swap_pick_ui() -> void:
 
 func _on_swap_pick_chosen(new_name: String) -> void:
 	GameState.toggle_mastery(new_name)
-	_last_reveal_text = "[color=#e05050]Lost %s[/color] → [color=#f2c94c]Gained %s![/color]" % [_swap_discarded, new_name]
+	GameState.game_log("[color=#f2c94c]Lost %s -> Gained %s![/color]" % [_swap_discarded, new_name])
 	_swap_discarded = ""
-	_swap_step = "discard"
-	_build_ui()
+	# One reselect per long rest (direct owner request) — close back to the long-rest hub instead
+	# of looping to step 1 for another swap.
+	GameState.mastery_reselect_used_this_long_rest = true
+	_close()
 
 func _close() -> void:
 	GameState.mastery_picker_open = false

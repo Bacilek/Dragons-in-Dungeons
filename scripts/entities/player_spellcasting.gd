@@ -86,12 +86,10 @@ func begin_cast(spell_id: String) -> void:
 	if spell.level > 0 and not GameState.invincible and not ritual_free and not player.stats.is_lineage_free_cast_available(spell_id) and not GameState.warlock_invocation_free_cast(spell_id):
 		var caster: SpellcasterState = player.stats.caster
 		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
-			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
 			return
 	# Gnomish Lineage cantrips have no spell-slot fallback at all — proficiency_bonus free casts
 	# per long rest IS the entire resource (see Stats.gnome_lineage_free_casts_remaining).
 	if spell_id in player.stats.gnome_lineage_spell_ids and not GameState.invincible and not player.stats.is_gnome_lineage_free_cast_available(spell_id):
-		GameState.game_log("[color=gray]You have no uses of %s left this long rest.[/color]" % spell.spell_name)
 		return
 	if _uses_multi_target_flow(spell):
 		_begin_multi_target(spell_id, false, null)
@@ -194,7 +192,6 @@ func _cast_level_for(spell: Spell) -> int:
 func _cast_self(spell: Spell, from_scroll: bool = false, clicked: Vector2i = Vector2i(-1, -1)) -> void:
 	var lvl: int = spell.level if from_scroll else _cast_level_for(spell)
 	if not from_scroll and spell.level > 0 and lvl == -1:
-		GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
 		return
 	await SpellEffects.cast_leveled_self(player, spell, lvl, player._dungeon_floor, from_scroll, clicked)
 
@@ -244,7 +241,6 @@ func cast_direct(spell_id: String, clicked: Vector2i) -> void:
 	if spell.level > 0 and not GameState.invincible and not ritual_free and not player.stats.is_lineage_free_cast_available(spell_id) and not GameState.warlock_invocation_free_cast(spell_id):
 		var caster: SpellcasterState = player.stats.caster
 		if caster == null or caster.slot_pool == null or not caster.slot_pool.can_cast(spell):
-			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
 			return
 	if spell.target_kind == Spell.TargetKind.SELF:
 		_cast_self(spell, false, clicked)
@@ -303,7 +299,6 @@ func try_cast_at(clicked: Vector2i) -> void:
 	if not from_scroll and spell.level > 0:
 		lvl = _cast_level_for(spell)
 		if lvl == -1:
-			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
 			return
 
 	# A scroll is spent the instant its cast actually resolves (range/LOS already checked above) —
@@ -496,7 +491,6 @@ func _resolve_multi_target_collection(spell: Spell) -> void:
 	if not from_scroll and spell.level > 0:
 		lvl = _cast_level_for(spell)
 		if lvl == -1:
-			GameState.game_log("[color=gray]No spell slot available for %s.[/color]" % spell.spell_name)
 			return
 	if from_scroll:
 		_consume_scroll(scroll_item)

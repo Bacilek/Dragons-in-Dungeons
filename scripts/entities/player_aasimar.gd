@@ -28,7 +28,6 @@ func activate_healing_hands() -> void:
 		cancel_healing_hands()
 		return
 	if not player.stats.aasimar_healing_hands_available and not GameState.invincible:
-		GameState.game_log("[color=gray]Healing Hands: no use remaining (long rest to recover).[/color]")
 		return
 	healing_hands_mode_active = true
 	GameState.game_log("[color=lime]Healing Hands armed — click your companion to heal it, or click anywhere else to heal yourself. Costs your action.[/color]")
@@ -74,7 +73,6 @@ func activate_celestial_revelation() -> void:
 	if player.stats.character_level < 3:
 		return
 	if player.stats.aasimar_celestial_revelation_used and not GameState.invincible:
-		GameState.game_log("[color=gray]Celestial Revelation: already used this long rest.[/color]")
 		return
 	var picker: Node = load("res://scripts/ui/celestial_revelation_picker.gd").new()
 	picker.aasimar = self

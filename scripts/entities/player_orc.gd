@@ -9,7 +9,6 @@ var player: Player
 
 func activate_adrenaline_rush() -> void:
 	if player.stats.adrenaline_rush_uses_remaining <= 0 and not GameState.invincible:
-		GameState.game_log("[color=gray]Adrenaline Rush: no uses remaining (short/long rest to recover).[/color]")
 		return
 	if not GameState.invincible:
 		player.stats.adrenaline_rush_uses_remaining -= 1

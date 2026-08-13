@@ -18,6 +18,7 @@ static func fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 	var n1: bool    = p.get("n1", "0") == "1"
 	var lucky1: bool = p.get("lucky1", "0") == "1"
 	var lucky2: bool = p.get("lucky2", "0") == "1"
+	var exh: int    = int(p.get("exh", "0"))
 	var stat_name: String = "DEX" if use_dex else "STR"
 	var lines: PackedStringArray = []
 	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if n20 else ("  [color=red]✕ FAIL[/color]" if n1 else "")
@@ -37,6 +38,8 @@ static func fmt_hit_tooltip(p: Dictionary, is_ranged: bool) -> String:
 		lines.append("[color=lightblue]+%d[/color]  (Proficiency)" % prof)
 	if wpn != 0:
 		lines.append("[color=lightblue]%+d[/color]  (weapon +%d)" % [wpn, wpn])
+	if exh != 0:
+		lines.append("[color=cyan]%d[/color]  (Exhaustion)" % exh)
 	lines.append("─────────────────")
 	var vs: String
 	if n20:
@@ -71,6 +74,7 @@ static func fmt_sphit_tooltip(p: Dictionary) -> String:
 	var n1: bool    = p.get("n1", "0") == "1"
 	var lucky1: bool = p.get("lucky1", "0") == "1"
 	var lucky2: bool = p.get("lucky2", "0") == "1"
+	var exh: int = int(p.get("exh", "0"))
 	var lines: PackedStringArray = []
 	var die_suffix: String = "  [color=gold]★ CRIT[/color]" if n20 else ("  [color=red]✕ FAIL[/color]" if n1 else "")
 	if adv:
@@ -87,6 +91,8 @@ static func fmt_sphit_tooltip(p: Dictionary) -> String:
 		lines.append("[color=lightblue]%+d[/color]  (%s mod)" % [stat_mod, stat_label])
 	if prof != 0:
 		lines.append("[color=lightblue]+%d[/color]  (Proficiency)" % prof)
+	if exh != 0:
+		lines.append("[color=cyan]%d[/color]  (Exhaustion)" % exh)
 	lines.append("─────────────────")
 	var vs: String
 	if n20:
@@ -329,6 +335,7 @@ static func fmt_save_tooltip(p: Dictionary) -> String:
 	var lucky1: bool = p.get("lucky1", "0") == "1"
 	var lucky2: bool = p.get("lucky2", "0") == "1"
 	var sliver: int = int(p.get("sliver", "0"))
+	var exh: int = int(p.get("exh", "0"))
 	var lines: PackedStringArray = []
 	if adv:
 		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
@@ -347,6 +354,8 @@ static func fmt_save_tooltip(p: Dictionary) -> String:
 		lines.append("[color=lightblue]+%d[/color]  (%s, %s check)" % [prof, prof_label, stat])
 	if sliver > 0:
 		lines.append("[color=#c060ff]-%d[/color]  (Mind Sliver)" % sliver)
+	if exh != 0:
+		lines.append("[color=cyan]%d[/color]  (Exhaustion)" % exh)
 	lines.append("─────────────────")
 	var result: String = "[color=green]SUCCESS[/color]" if passed else "[color=red]FAIL[/color]"
 	lines.append("= [color=yellow]%d[/color] vs DC %d  →  %s" % [total, dc, result])
@@ -370,6 +379,7 @@ static func fmt_stealth_tooltip(p: Dictionary) -> String:
 	var lucky2: bool = p.get("lucky2", "0") == "1"
 	var stbonus: int = int(p.get("stbonus", "0"))
 	var stbonus_id: int = int(p.get("stbonusid", "0"))
+	var exh: int = int(p.get("exh", "0"))
 	var lines: PackedStringArray = []
 	if adv_net > 0:
 		lines.append("d20 (adv):  %d, %d  → [color=yellow]%d[/color]" % [d1, d2, die])
@@ -392,6 +402,8 @@ static func fmt_stealth_tooltip(p: Dictionary) -> String:
 			2: stbonus_name = "Minor Illusion"
 			_: stbonus_name = "Pass Without Trace + Minor Illusion"
 		lines.append("[color=lightgreen]+%d[/color]  (%s)" % [stbonus, stbonus_name])
+	if exh != 0:
+		lines.append("[color=cyan]%d[/color]  (Exhaustion)" % exh)
 	lines.append("─────────────────")
 	if distbonus > 0:
 		lines.append("Passive Perception %d [color=orange]+%d[/color]  (proximity)  =  %d" % [basepp, distbonus, epp])

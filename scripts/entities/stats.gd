@@ -667,10 +667,28 @@ var frightened_source: Enemy = null
 var frightened_turns: int = 0
 var frightened_save_dc: int = 10  # the WIS save DC the repeated end-of-turn check rolls against (stashed here same as web_escape_dc, rather than hardcoding Scare's own DC)
 
+# Paralyzed — the player-side mirror of Enemy.paralyzed_turns/paralyze_save_dc (Hold Person's own
+# implementation, see scripts/entities/CLAUDE.md's "Conditions" table). First real source:
+# Spiderling's Bite ("fails the poison save by 5 or more" clause, see the Spiderling section) via
+# GameState.apply_player_paralyzed()/clear_player_paralyzed(). `paralyze_save_stat` (default "con",
+# matching Spiderling's own CON-based poison save) lets a future source repeat a different stat's
+# check without a second field, same "stashed alongside the DC" convention as web_escape_dc/
+# frightened_save_dc above. Deliberately NOT serialized, same mid-floor-only precedent as
+# poisoned_condition_turns/frightened_turns above — combat conditions simply end on save/load.
+var paralyzed_turns: int = 0
+var paralyze_save_dc: int = 10
+var paralyze_save_stat: String = "con"
+
+func is_paralyzed() -> bool:
+	return paralyzed_turns > 0
+
 # True while any condition that imposes a blanket DISADV on attack rolls/ability checks is active
 # (5e: Poisoned, Prone [attacks only], Restrained). Multiple conditions never stack disadvantage
 # (5e has no "double disadvantage") — every attack/check call site adds at most 1 to its
-# disadv_count from this single helper instead of checking each field separately.
+# disadv_count from this single helper instead of checking each field separately. Paralyzed is
+# deliberately NOT folded in here — it's a full action-lock (see Player._try_move()/
+# _use_ability_slot()'s own guards), not a bare DISADV source, same asymmetry the enemy side's own
+# separate incapacitated_turns/paralyzed_turns fields already have.
 func has_disadvantage_condition() -> bool:
 	return poisoned_condition_turns > 0 or prone or web_restrained
 

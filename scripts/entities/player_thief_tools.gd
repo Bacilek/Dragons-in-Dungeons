@@ -54,12 +54,13 @@ func attempt_disarm(trap_pos: Vector2i) -> void:
 	if CombatMath.consume_heroic_inspiration():
 		die = 20
 	var lucky: bool = lucky1 or lucky2
-	var total: int = die + dex_mod + prof_bonus + CombatMath.exhaustion_penalty()
+	var disarm_exh: int = CombatMath.exhaustion_penalty()
+	var total: int = die + dex_mod + prof_bonus + disarm_exh
 	const DC: int = 10
 	var trap: Dictionary = player._dungeon_floor.get_trap_at(trap_pos)
 	var trap_name: String = trap.get("name", "trap")
 	var adv_tag: String = " [color=gray](Zealous Presence)[/color]" if has_adv else (" [color=gray](Disadvantage)[/color]" if has_disadv else "")
-	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d,lucky1=%d,lucky2=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, DC, 1 if total >= DC else 0, 1 if has_adv else 0, 1 if lucky1 else 0, 1 if lucky2 else 0]
+	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d,lucky1=%d,lucky2=%d,exh=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, DC, 1 if total >= DC else 0, 1 if has_adv else 0, 1 if lucky1 else 0, 1 if lucky2 else 0, disarm_exh]
 
 	if total >= DC:
 		GameState.game_log(CombatMath.wrap_halfling_luck("[color=green]Disarmed [b]%s[/b]!%s [url=%s]%d vs DC %d[/url][/color]" % [trap_name, adv_tag, check_meta, total, DC], lucky))
@@ -118,10 +119,11 @@ func attempt_disarm_lock(door_pos: Vector2i) -> void:
 	if has_adv:
 		die2 = Rng.roll(20)
 	var die: int = maxi(die1, die2)
-	var total: int = die + dex_mod + prof_bonus + CombatMath.exhaustion_penalty()
+	var pick_exh: int = CombatMath.exhaustion_penalty()
+	var total: int = die + dex_mod + prof_bonus + pick_exh
 	var dc: int = 10 + GameState.current_floor / 3
 	var adv_tag: String = " [color=gray](Zealous Presence)[/color]" if has_adv else ""
-	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, dc, 1 if total >= dc else 0, 1 if has_adv else 0]
+	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d,exh=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, dc, 1 if total >= dc else 0, 1 if has_adv else 0, pick_exh]
 	var door_world: Vector2 = Vector2(door_pos * Entity.TILE_SIZE) + Vector2(Entity.TILE_SIZE * 0.5, Entity.TILE_SIZE * 0.5)
 	if total >= dc:
 		player._dungeon_floor.unlock_door(door_pos)

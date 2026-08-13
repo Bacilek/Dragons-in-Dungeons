@@ -259,10 +259,20 @@ false`, node stays alive) and spawns that sub-picker fresh (`mastery_picker.gd` 
 `attunement_picker.gd` / `spellbook_overlay.gd`) — each sub-picker owns its own
 `GameState.*_open` flag independently (Spellbook's `spellbook_open`, the other two also set
 `mastery_picker_open` themselves, redundant but harmless). `_on_subpicker_closed()` (connected to
-the sub-picker's `tree_exited`) re-shows the hub panel and restores `mastery_picker_open = true`
-(the sub-picker's own `_close()` just cleared it on its way out) — so the player can visit any
+the sub-picker's `tree_exited`) **rebuilds** (queue_frees the old `_panel`, calls `_build_ui()`
+again — not just `_panel.visible = true`) and restores `mastery_picker_open = true`
+(the sub-picker's own `_close()` just cleared it on its way out) — rebuilding rather than just
+re-showing is what lets the "Weapon Masteries" button's disabled state (see below) update the
+instant the player is back, not only on the hub's next fresh spawn — so the player can visit any
 number of the three options before finally pressing Done/Esc, which is what actually frees the hub
 and clears the flag for good. Never shown after a short rest, only a completed long rest.
+
+**Weapon Masteries reselect is limited to ONE per long-rest cycle** (direct owner request): the
+Mastery Picker's Swap mode (see "Mastery picker" below) now closes straight back to this hub after
+a single discard+pick round instead of looping for another swap, setting `GameState.
+mastery_reselect_used_this_long_rest = true`. This hub greys out (`Button.disabled = true`) and
+relabels ("Weapon Masteries (used)") that option whenever the flag is set; `GameState.long_rest()`
+resets it to `false` at the start of the next cycle.
 
 ## Attunement picker (`attunement_picker.gd`)
 CanvasLayer, layer = 25. Magic item attunement — see `scripts/items/CLAUDE.md`'s "Attunement"
@@ -913,11 +923,12 @@ above:
   the one just discarded nor still known, so the discarded mastery can never reappear as its own
   replacement and an already-known one can never be picked twice. Clicking a candidate calls
   `GameState.toggle_mastery(new_name)` (always the "add" branch here, since discarding first
-  guarantees `known.size() < cap()`), shows an in-panel "Lost X → Gained Y" reveal line
-  (`blacksmith_panel.gd`'s own reveal-line convention; `_last_reveal_text` persists it across the
-  full `_build_ui()` rebuild back to step 1, since — unlike the old design — every step transition
-  now tears down and rebuilds the whole panel rather than patching one tile row in place), and
-  returns to step 1 so the player can keep swapping or stop via Done/Esc.
+  guarantees `known.size() < cap()`), logs a "Lost X -> Gained Y" chat line, sets
+  `GameState.mastery_reselect_used_this_long_rest = true`, and closes straight back to the
+  long-rest hub (`mastery_reselect_prompt.gd`) — **one reselect per long-rest cycle**, direct owner
+  request replacing an earlier design that returned to step 1 for another swap (an unlimited loop
+  had no real stopping point). The hub greys out its own "Weapon Masteries" option once that flag
+  is set; `GameState.long_rest()` resets it to `false`.
 
 Both modes share one `_build_tile(name, pos, on_click)` (icon + name label, hover → the same
 styled BBCode tooltip popup anchored above the tile as the spell pickers use — `MASTERY_DESCRIPTIONS`

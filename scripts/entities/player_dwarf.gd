@@ -9,7 +9,6 @@ var player: Player
 
 func activate_stonecunning() -> void:
 	if player.stats.stonecunning_uses_remaining <= 0 and not GameState.invincible:
-		GameState.game_log("[color=gray]Stonecunning: no uses remaining (long rest to recover).[/color]")
 		return
 	if not GameState.invincible:
 		player.stats.stonecunning_uses_remaining -= 1
