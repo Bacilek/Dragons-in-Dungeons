@@ -123,8 +123,9 @@ var _reverted_this_round: bool = false
 # Ironwood Bark R3: bonus damage from temp HP snapshotted at turn start, consumed by next attack.
 var _ironwood_bark_bonus_pending: int = 0
 # Grip of the Forest: once-per-turn hook-targeting mode (armed via ability bar, resolved on click).
+# The "used this turn" flag lives on GameState.grip_of_the_forest_used_this_turn, not here, so
+# is_ability_usable() can grey the ability-bar slot for it — see that field's own comment.
 var _hook_mode_active: bool = false
-var _grip_used_this_turn: bool = false
 
 # ── Ranger state ───────────────────────────────────────────────────────────────
 # Hunter's Mark: same arm-then-click targeting-mode pattern as Grip of the Forest's hook mode
@@ -168,11 +169,49 @@ func _consume_duty_cycle(id: String, moves: int, per: int) -> bool:
 	_speed_gate_accum[id] = r["accum"]
 	return r["fires"] > 0
 
+# RewindManager (scripts/autoloads/rewind_manager.gd) needs to tell a real new-round
+# player_turn_started from a revert_to_waiting() free-action one BEFORE this flag resets itself
+# in _on_turn_started() — see that autoload's own header comment.
+func is_reverted_turn() -> bool:
+	return _reverted_this_round
+
+## Rewind snapshot of the scattered per-turn transient fields that live on Player/its composition
+## children rather than on Stats/GameState — see scripts/autoloads/rewind_manager.gd.
+func capture_rewind_state() -> Dictionary:
+	return {
+		"grid_pos": grid_pos,
+		"oa_used_this_round": _oa_used_this_round,
+		"reverted_this_round": _reverted_this_round,
+		"enemy_attacked_last_round": _enemy_attacked_last_round,
+		"enemy_noticed_last_round": _enemy_noticed_last_round,
+		"speed_gate_accum": _speed_gate_accum.duplicate(),
+		"berserker": _berserker.get_rewind_fields(),
+		"scarred_warrior": _scarred_warrior.get_rewind_fields(),
+		"zealot": _zealot.get_rewind_fields(),
+		"goliath": _goliath.get_rewind_fields(),
+		"halfling": _halfling.get_rewind_fields(),
+	}
+
+func restore_rewind_state(d: Dictionary) -> void:
+	set_grid_pos(d.get("grid_pos", grid_pos))
+	_oa_used_this_round = bool(d.get("oa_used_this_round", false))
+	_reverted_this_round = bool(d.get("reverted_this_round", false))
+	_enemy_attacked_last_round = bool(d.get("enemy_attacked_last_round", false))
+	_enemy_noticed_last_round = bool(d.get("enemy_noticed_last_round", false))
+	_speed_gate_accum = (d.get("speed_gate_accum", {}) as Dictionary).duplicate()
+	_vex_adv_target = null
+	_berserker.set_rewind_fields(d.get("berserker", {}))
+	_scarred_warrior.set_rewind_fields(d.get("scarred_warrior", {}))
+	_zealot.set_rewind_fields(d.get("zealot", {}))
+	_goliath.set_rewind_fields(d.get("goliath", {}))
+	_halfling.set_rewind_fields(d.get("halfling", {}))
+
 
 func _ready() -> void:
 	stats = GameState.player_stats
 	is_friendly = true
 	z_index = 3
+	add_to_group("player")
 	_setup_animations()
 	_setup_faerie_fire_indicator()
 
@@ -263,8 +302,16 @@ func _on_turn_started() -> void:
 			GameState.risen_from_dead_active = false
 			GameState.player_status_changed.emit()
 		_eagle_free_move_used = false
-		_grip_used_this_turn = false
+		if GameState.grip_of_the_forest_used_this_turn or GameState.halfling_nimbleness_used_this_turn:
+			GameState.grip_of_the_forest_used_this_turn = false
+			GameState.halfling_nimbleness_used_this_turn = false
+			GameState.ability_bar_changed.emit()
 		_vex_adv_target = null
+		# Loading: a weapon that fired this turn can fire again next real turn — see Item.
+		# is_loading's own comment. Equipped weapon only; a Loading weapon sitting unequipped in
+		# the bag was never able to fire in the first place, so there's nothing to reset there.
+		if GameState.equipped_ranged != null and GameState.equipped_ranged.is_loading:
+			GameState.equipped_ranged.loading_used_this_turn = false
 		# Hunter's Mark is a bonus action in 5e — only one cast per round, see Stats.
 		# hunters_mark_cast_this_round's own comment.
 		stats.hunters_mark_cast_this_round = false
@@ -539,15 +586,16 @@ func _on_turn_started() -> void:
 				var fr_adv: int = 1 if (stats.character_race == Stats.CharacterRace.HALFLING or stats.gnomish_cunning_grants_adv("wis") or GameState.knows_invocation("beguiling_defenses")) else 0
 				var fr_roll: Dictionary = CombatMath.roll_with_adv_disadv(fr_adv, 0)
 				var fr_die: int = fr_roll["die"]
-				var fr_total: int = fr_die + fr_wis_mod + fr_prof + CombatMath.exhaustion_penalty()
+				var fr_exh: int = CombatMath.exhaustion_penalty()
+				var fr_total: int = fr_die + fr_wis_mod + fr_prof + fr_exh
 				var fr_pass: bool = fr_total >= stats.frightened_save_dc
 				# Bugfix: this save used to log a bare, non-hoverable line with no roll breakdown at
 				# all — no way to see the d20 result, let alone whether Halfling Brave's Advantage
 				# (two dice, pick higher) actually applied. Now wrapped exactly like every other
 				# save's [url=] tooltip.
-				var fr_meta: String = "save:die=%d,d1=%d,d2=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=WIS,pass=%d,adv=%d,disadv=%d,lucky1=%d,lucky2=%d" % [
+				var fr_meta: String = "save:die=%d,d1=%d,d2=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=WIS,pass=%d,adv=%d,disadv=%d,lucky1=%d,lucky2=%d,exh=%d" % [
 					fr_die, fr_roll["die1"], fr_roll["die2"], fr_wis_mod, fr_prof, fr_total, stats.frightened_save_dc, int(fr_pass),
-					int(fr_roll["adv"]), int(fr_roll["disadv"]), int(fr_roll["lucky1"]), int(fr_roll["lucky2"])]
+					int(fr_roll["adv"]), int(fr_roll["disadv"]), int(fr_roll["lucky1"]), int(fr_roll["lucky2"]), fr_exh]
 				if fr_pass:
 					GameState.game_log("[color=lime]You [url=%s]shake off[/url] your fear of %s![/color]" % [fr_meta, stats.frightened_source.display_name])
 					GameState.clear_player_frightened()
@@ -556,42 +604,82 @@ func _on_turn_started() -> void:
 					stats.frightened_turns -= 1
 					if stats.frightened_turns <= 0:
 						GameState.clear_player_frightened()
-			# Bearded Devil's Beard attack: repeats a CON save once per real turn to end the
-			# Poisoned condition early — mirrors Frightened's own repeated-save shape above, just
-			# CON instead of WIS and gated on poisoned_condition_save_dc > 0 (a plain Tripwire/Rend
-			# Poisoned application, save_dc == 0, only ever decays via Stats.tick_status(), never
-			# rolls this). tick_status() (below) still decrements poisoned_condition_turns by 1
-			# every real turn regardless — this save is just an extra way to end it early.
-			if stats.poisoned_condition_turns > 0 and stats.poisoned_condition_save_dc > 0:
-				var pc_mod: int = stats.con_modifier()
-				var pc_prof: int = stats.proficiency_bonus if stats.check_prof_con else 0
-				var pc_roll: Dictionary = CombatMath.roll_with_adv_disadv(0, 0)
-				var pc_die: int = pc_roll["die"]
-				var pc_total: int = pc_die + pc_mod + pc_prof + CombatMath.exhaustion_penalty()
-				var pc_pass: bool = pc_total >= stats.poisoned_condition_save_dc
-				var pc_meta: String = "save:die=%d,d1=%d,d2=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=CON,pass=%d,adv=0,disadv=0,lucky1=%d,lucky2=%d" % [
-					pc_die, pc_roll["die1"], pc_roll["die2"], pc_mod, pc_prof, pc_total, stats.poisoned_condition_save_dc, int(pc_pass),
-					int(pc_roll["lucky1"]), int(pc_roll["lucky2"])]
-				if pc_pass:
-					GameState.game_log("[color=lime]You [url=%s]fight off[/url] the venom![/color]" % pc_meta)
-					stats.poisoned_condition_turns = 0
-					stats.poisoned_condition_save_dc = 0
-					GameState.player_status_changed.emit()
-				else:
-					GameState.game_log("[color=gray]You [url=%s]remain poisoned[/url].[/color]" % pc_meta)
-			# Infernal Wound (Bearded Devil's Glaive attack): infernal_wound_dice d10 Necrotic at
-			# the start of every real turn while active — see Stats.infernal_wound_active's own
-			# comment for how it ends (any healing, GameState.heal()'s tail).
-			if stats.infernal_wound_active:
-				var iw_rolls: Array[int] = Rng.roll_dice(stats.infernal_wound_dice, 10)
-				var iw_inst: Dictionary = CombatMath.build_damage_instance(iw_rolls, 10, [], false, "Necrotic")
-				var iw_actual: int = GameState.take_damage_raw(iw_inst["subtotal"], false, "Necrotic")
-				iw_inst["final"] = iw_actual
-				GameState.flush_stone_endurance_log()
-				if _dungeon_floor != null:
-					_dungeon_floor.show_damage(position, iw_actual, true, CombatMath.damage_type_color("Necrotic"))
-				var iw_meta: String = CombatMath.encode_damage_instance(iw_inst)
-				GameState.game_log("[color=orange]The infernal wound tears at you for [url=%s][color=yellow]%d[/color][/url] Necrotic dmg.[/color]" % [iw_meta, iw_actual])
+		# Bearded Devil's Beard attack: repeats a CON save once per real turn to end the
+		# Poisoned condition early — mirrors Frightened's own repeated-save shape above, just
+		# CON instead of WIS and gated on poisoned_condition_save_dc > 0 (a plain Tripwire/Rend
+		# Poisoned application, save_dc == 0, only ever decays via Stats.tick_status(), never
+		# rolls this). tick_status() (below) still decrements poisoned_condition_turns by 1
+		# every real turn regardless — this save is just an extra way to end it early.
+		# BUGFIX: this block (and Infernal Wound right below it) used to be accidentally nested
+		# one level too deep, inside the `if stats.frightened_turns > 0` branch above — so a
+		# poisoned-but-not-frightened player never got this early-end save (fell back to the
+		# plain tick_status() decay only). Dedented to its own top-level sibling check.
+		if stats.poisoned_condition_turns > 0 and stats.poisoned_condition_save_dc > 0:
+			var pc_mod: int = stats.con_modifier()
+			var pc_prof: int = stats.proficiency_bonus if stats.check_prof_con else 0
+			var pc_roll: Dictionary = CombatMath.roll_with_adv_disadv(0, 0)
+			var pc_die: int = pc_roll["die"]
+			var pc_exh: int = CombatMath.exhaustion_penalty()
+			var pc_total: int = pc_die + pc_mod + pc_prof + pc_exh
+			var pc_pass: bool = pc_total >= stats.poisoned_condition_save_dc
+			var pc_meta: String = "save:die=%d,d1=%d,d2=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=CON,pass=%d,adv=0,disadv=0,lucky1=%d,lucky2=%d,exh=%d" % [
+				pc_die, pc_roll["die1"], pc_roll["die2"], pc_mod, pc_prof, pc_total, stats.poisoned_condition_save_dc, int(pc_pass),
+				int(pc_roll["lucky1"]), int(pc_roll["lucky2"]), pc_exh]
+			if pc_pass:
+				GameState.game_log("[color=lime]You [url=%s]fight off[/url] the venom![/color]" % pc_meta)
+				stats.poisoned_condition_turns = 0
+				stats.poisoned_condition_save_dc = 0
+				GameState.player_status_changed.emit()
+			else:
+				GameState.game_log("[color=gray]You [url=%s]remain poisoned[/url].[/color]" % pc_meta)
+		# Infernal Wound (Bearded Devil's Glaive attack): infernal_wound_dice d10 Necrotic at
+		# the start of every real turn while active — see Stats.infernal_wound_active's own
+		# comment for how it ends (any healing, GameState.heal()'s tail). Same BUGFIX dedent as
+		# the Poisoned repeated-save block above — this used to only tick while also frightened.
+		if stats.infernal_wound_active:
+			var iw_rolls: Array[int] = Rng.roll_dice(stats.infernal_wound_dice, 10)
+			var iw_inst: Dictionary = CombatMath.build_damage_instance(iw_rolls, 10, [], false, "Necrotic")
+			var iw_actual: int = GameState.take_damage_raw(iw_inst["subtotal"], false, "Necrotic")
+			iw_inst["final"] = iw_actual
+			GameState.flush_stone_endurance_log()
+			if _dungeon_floor != null:
+				_dungeon_floor.show_damage(position, iw_actual, true, CombatMath.damage_type_color("Necrotic"))
+			var iw_meta: String = CombatMath.encode_damage_instance(iw_inst)
+			GameState.game_log("[color=orange]The infernal wound tears at you for [url=%s][color=yellow]%d[/color][/url] Necrotic dmg.[/color]" % [iw_meta, iw_actual])
+		# Paralyzed: repeats a save (Stats.paralyze_save_stat, default CON) once per real turn to
+		# end early — mirrors Frightened's own repeated-save shape above, deliberately its OWN
+		# top-level check (not nested under the frightened_turns branch above) so it fires
+		# regardless of whether the player also happens to be frightened. See Stats.paralyzed_turns'
+		# own comment / scripts/entities/CLAUDE.md's "Conditions" table (Paralyzed row) — mirrors
+		# Enemy's own Hold Person-driven Paralyzed repeated save (Enemy.decide_turn()).
+		if stats.paralyzed_turns > 0:
+			var pz_stat: String = stats.paralyze_save_stat
+			var pz_mod: int
+			var pz_prof_ok: bool
+			match pz_stat:
+				"str": pz_mod = stats.str_modifier(); pz_prof_ok = stats.check_prof_str
+				"dex": pz_mod = stats.dex_modifier(); pz_prof_ok = stats.check_prof_dex
+				"int": pz_mod = stats.int_modifier(); pz_prof_ok = stats.check_prof_int
+				"wis": pz_mod = stats.wis_modifier(); pz_prof_ok = stats.check_prof_wis
+				"cha": pz_mod = stats.cha_modifier(); pz_prof_ok = stats.check_prof_cha
+				_:    pz_mod = stats.con_modifier(); pz_prof_ok = stats.check_prof_con
+			var pz_prof: int = stats.proficiency_bonus if pz_prof_ok else 0
+			var pz_roll: Dictionary = CombatMath.roll_with_adv_disadv(0, 0)
+			var pz_die: int = pz_roll["die"]
+			var pz_exh: int = CombatMath.exhaustion_penalty()
+			var pz_total: int = pz_die + pz_mod + pz_prof + pz_exh
+			var pz_pass: bool = pz_total >= stats.paralyze_save_dc
+			var pz_meta: String = "save:die=%d,d1=%d,d2=%d,mod=%d,prof=%d,prof_label=Proficiency,total=%d,dc=%d,stat=%s,pass=%d,adv=0,disadv=0,lucky1=%d,lucky2=%d,exh=%d" % [
+				pz_die, pz_roll["die1"], pz_roll["die2"], pz_mod, pz_prof, pz_total, stats.paralyze_save_dc, pz_stat.to_upper(), int(pz_pass),
+				int(pz_roll["lucky1"]), int(pz_roll["lucky2"]), pz_exh]
+			if pz_pass:
+				GameState.game_log("[color=lime]You [url=%s]shake off[/url] the paralysis![/color]" % pz_meta)
+				GameState.clear_player_paralyzed()
+			else:
+				GameState.game_log("[color=gray]You [url=%s]remain paralyzed[/url].[/color]" % pz_meta)
+				stats.paralyzed_turns -= 1
+				if stats.paralyzed_turns <= 0:
+					GameState.clear_player_paralyzed()
 		# Torch: 600-turn duration per lit torch, ticked once per real turn — regardless of
 		# where it currently is (equipped, quickbar/bag, floor, or embedded in an enemy). Equipped
 		# slots + quickbar/bag are swept here (GameState-only data); floor items and enemy-embedded
@@ -944,7 +1032,8 @@ func _resolve_stealth_check() -> void:
 			die = maxi(die1, die2) if obs_net > 0 else mini(die1, die2)
 		if heroic:
 			die = 20
-		var total: int = die + dex_mod + prof + CombatMath.exhaustion_penalty()
+		var stealth_exh: int = CombatMath.exhaustion_penalty()
+		var total: int = die + dex_mod + prof + stealth_exh
 		# Pass Without Trace (Wood Elf/Ranger spell) and Minor Illusion (Forest Gnome lineage
 		# cantrip) both grant a flat bonus to the stealth roll while active — stbonus/stbonus_id
 		# below carry whichever is active into the tooltip breakdown (fmt_stealth_tooltip()),
@@ -974,9 +1063,9 @@ func _resolve_stealth_check() -> void:
 		if e == s.hunters_mark_target and GameState.get_talent_rank("bloodhound") >= 2:
 			effective_pp -= BLOODHOUND_R2_PP_DEBUFF
 		var noticed: bool = total < effective_pp
-		var stealth_meta: String = "stealth:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,total=%d,epp=%d,basepp=%d,distbonus=%d,adv=%d,pass=%d,lucky1=%d,lucky2=%d,stbonus=%d,stbonusid=%d" % [
+		var stealth_meta: String = "stealth:die=%d,d1=%d,d2=%d,dex=%d,prof=%d,total=%d,epp=%d,basepp=%d,distbonus=%d,adv=%d,pass=%d,lucky1=%d,lucky2=%d,stbonus=%d,stbonusid=%d,exh=%d" % [
 			die, die1, die2, dex_mod, prof, total, effective_pp, e.passive_perception, dist_bonus,
-			signi(obs_net), 0 if noticed else 1, 1 if lucky1 else 0, 1 if lucky2 else 0, stbonus, stbonus_id]
+			signi(obs_net), 0 if noticed else 1, 1 if lucky1 else 0, 1 if lucky2 else 0, stbonus, stbonus_id, stealth_exh]
 		var god_suffix: String = " [color=gray](Stealth %d vs PP %d)[/color]" % [total, e.passive_perception] if GameState.god_mode else ""
 		if noticed:
 			e._notice_target(grid_pos)
@@ -1395,8 +1484,9 @@ func _update_hunters_mark_preview() -> bool:
 	var world_mouse: Vector2 = get_global_mouse_position()
 	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
 	var d: Vector2i = tile - grid_pos
-	var dist_sq: int = d.x * d.x + d.y * d.y
-	var in_range: bool = dist_sq <= Stats.HUNTERS_MARK_RANGE * Stats.HUNTERS_MARK_RANGE
+	# Chebyshev, matching commit_mark()'s own range check (player_ranger_talents.gd).
+	var dist_cheb: int = maxi(absi(d.x), absi(d.y))
+	var in_range: bool = dist_cheb <= Stats.HUNTERS_MARK_RANGE
 	_dungeon_floor.show_single_target_preview(tile, in_range)
 	return true
 
@@ -1635,6 +1725,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_try_move(Vector2i(1, 1))
 			KEY_SPACE, KEY_PERIOD, KEY_KP_5: _actions.wait_action()
 			KEY_R: _actions.open_short_rest()
+			KEY_BACKSPACE:
+				if not RewindManager.rewind():
+					GameState.game_log("[color=gray]Nothing to rewind.[/color]")
 			KEY_1: _use_quickbar_slot(0)
 			KEY_2: _use_quickbar_slot(1)
 			KEY_3: _use_quickbar_slot(2)
@@ -2277,9 +2370,12 @@ func _try_move(dir: Vector2i) -> void:
 	# damage-based escape route on). Consumes the turn either way, same as a real move would.
 	# Incapacitated: "can't take actions" — blocks movement/bump-attack entirely, costing the turn
 	# (same "any direction key redirects" shape as Restrained/Prone below). See _use_ability_slot()
-	# for the ability/spell half of the guard.
-	if stats.incapacitated_turns > 0:
-		GameState.game_log("[color=gray]You're incapacitated and can't act![/color]")
+	# for the ability/spell half of the guard. Paralyzed implies Incapacitated (5e) plus its own
+	# extra effects (ADV against/auto-crit within reach — enemy.gd's _attack_player(); a repeated
+	# save each real turn — see below) — same guard, same "any key just burns the turn" shape.
+	if stats.incapacitated_turns > 0 or stats.paralyzed_turns > 0:
+		var _lock_msg: String = "paralyzed" if stats.paralyzed_turns > 0 else "incapacitated"
+		GameState.game_log("[color=gray]You're %s and can't act![/color]" % _lock_msg)
 		TurnManager.begin_player_action()
 		TurnManager.on_player_action_complete()
 		return
@@ -2619,10 +2715,8 @@ func _activate_rage() -> void:
 
 func _activate_grip_of_the_forest() -> void:
 	if not _is_raging:
-		GameState.game_log("[color=gray]Grip of the Forest requires Raging.[/color]")
 		return
-	if _grip_used_this_turn:
-		GameState.game_log("[color=gray]Grip of the Forest: already used this turn.[/color]")
+	if GameState.grip_of_the_forest_used_this_turn:
 		return
 	_hook_mode_active = true
 	var rank: int = GameState.get_talent_rank("grip_of_the_forest")
@@ -2630,7 +2724,8 @@ func _activate_grip_of_the_forest() -> void:
 	GameState.game_log("[color=lime]Grip of the Forest — click an enemy within %d tiles. [Esc] to cancel.[/color]" % hook_range)
 
 func _execute_hook(enemy: Enemy) -> void:
-	_grip_used_this_turn = true
+	GameState.grip_of_the_forest_used_this_turn = true
+	GameState.ability_bar_changed.emit()
 	GameState.stealth_check_stillness = true
 	TurnManager.begin_player_action()
 	var rank: int = GameState.get_talent_rank("grip_of_the_forest")
@@ -2706,7 +2801,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var is_finesse_weapon: bool = not is_unarmed and GameState.equipped_weapon.is_finesse
 	# Monk unarmed uses DEX; Finesse weapons use max(STR, DEX); everyone else uses STR for melee attack roll.
 	var attack_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
-	var total_hit_bonus: int = attack_mod + prof + weapon_bonus + CombatMath.exhaustion_penalty()
+	var attack_exh: int = CombatMath.exhaustion_penalty()
+	var total_hit_bonus: int = attack_mod + prof + weapon_bonus + attack_exh
 	# Advantage/Disadvantage sources are counted, but CombatMath.roll_with_adv_disadv() applies the
 	# standard 5e cancel rule: any ADV source together with any DISADV source is a flat roll — e.g.
 	# two ADV sources + one DISADV is still a flat roll, not ADV.
@@ -2785,10 +2881,10 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var w_enh: int = weapon_bonus  # weapon.bonus_damage
 	# Use dex= key for Monk unarmed, or for a Finesse weapon whose DEX mod is the one actually used.
 	var mod_key: String = "dex" if (is_monk_unarmed or (is_finesse_weapon and dex_mod > str_mod)) else "str"
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,exh=%d" % [
 		die, die1, die2, mod_key, attack_mod, prof, w_enh, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
-		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
+		1 if is_crit else 0, 1 if is_nat_one else 0, 1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0, attack_exh]
 
 	# Zealot Strike heal resolves off the very next melee attack this turn regardless of hit/miss.
 	_zealot.resolve_zealot_strike_heal()
@@ -3172,16 +3268,17 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + str_mod + prof + weapon_bonus + CombatMath.exhaustion_penalty()
+	var cleave_exh: int = CombatMath.exhaustion_penalty()
+	var roll: int = die + str_mod + prof + weapon_bonus + cleave_exh
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		_base_talents.on_crit()
 		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,str=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,exh=%d" % [
 		die, die1, die2, str_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0,
-		1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
+		1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0, cleave_exh]
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
 		GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]Cleave:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color], r["lucky"]))
@@ -3271,17 +3368,18 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + attack_mod + prof + weapon_bonus + CombatMath.exhaustion_penalty()
+	var offhand_exh: int = CombatMath.exhaustion_penalty()
+	var roll: int = die + attack_mod + prof + weapon_bonus + offhand_exh
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		_base_talents.on_crit()
 		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 	var mod_key: String = "dex" if (weapon.is_finesse and dex_mod > str_mod) else "str"
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,exh=%d" % [
 		die, die1, die2, mod_key, attack_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0,
-		1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
+		1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0, offhand_exh]
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
 		GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]%s:[/color] you swing at [color=orange]%s[/color] — [url=%s]%s[/url]." % [label, enemy.display_name, hit_meta, miss_color], r["lucky"]))
@@ -3411,17 +3509,18 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	var die: int = r["die"]
 	var adv: bool = r["adv"]
 	var disadv: bool = r["disadv"]
-	var roll: int = die + attack_mod + prof + weapon_bonus + CombatMath.exhaustion_penalty()
+	var oa_exh: int = CombatMath.exhaustion_penalty()
+	var roll: int = die + attack_mod + prof + weapon_bonus + oa_exh
 	var is_crit: bool = CombatMath.is_critical_hit(die, adv)
 	if is_crit:
 		_base_talents.on_crit()
 		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
 	var mod_key: String = "dex" if (is_monk_unarmed or (is_finesse_weapon and dex_mod > str_mod)) else "str"
-	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d" % [
+	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,exh=%d" % [
 		die, die1, die2, mod_key, attack_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0,
-		1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0]
+		1 if r["lucky1"] else 0, 1 if r["lucky2"] else 0, oa_exh]
 	if not is_crit and (is_nat_one or roll < enemy.stats.armor_class):
 		var miss_color: String = "[color=red]critical fail[/color]" if is_nat_one else "[color=gray]miss[/color]"
 		GameState.game_log(CombatMath.wrap_halfling_luck("[color=cyan]Opportunity attack:[/color] you swing at [color=orange]%s[/color] as it flees — [url=%s]%s[/url]." % [enemy.display_name, hit_meta, miss_color], r["lucky"]))
@@ -3550,10 +3649,12 @@ func _use_ability_slot(idx: int) -> void:
 	if idx < 0 or idx >= GameState.ABILITY_BAR_SIZE:
 		return
 	# Incapacitated: "can't take actions" — blocks ability/spell activation. See _try_move()'s own
-	# incapacitated guard for the movement/melee-bump half; mouse-click attacks and item/tool use
-	# aren't gated here (partial coverage — see scripts/entities/CLAUDE.md's "Conditions" section).
-	if stats.incapacitated_turns > 0:
-		GameState.game_log("[color=gray]You're incapacitated and can't act![/color]")
+	# incapacitated guard for the movement/melee-bump half (Paralyzed shares that same guard);
+	# mouse-click attacks and item/tool use aren't gated here (partial coverage — see
+	# scripts/entities/CLAUDE.md's "Conditions" section).
+	if stats.incapacitated_turns > 0 or stats.paralyzed_turns > 0:
+		var _lock_msg: String = "paralyzed" if stats.paralyzed_turns > 0 else "incapacitated"
+		GameState.game_log("[color=gray]You're %s and can't act![/color]" % _lock_msg)
 		return
 	var raw = GameState.player_ability_bar[idx]
 	if raw == null:

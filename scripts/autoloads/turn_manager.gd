@@ -44,6 +44,19 @@ func has_any_enemy() -> bool:
 			return true
 	return false
 
+## Read-only snapshot of the registered enemy/companion list, in the exact order
+## _process_enemy_round() iterates them — RewindManager (Phase 2) needs to restore this exact
+## order on rewind, since it determines Rng-stream consumption order (see
+## scripts/autoloads/CLAUDE.md's RewindManager section).
+func get_enemy_list() -> Array:
+	return _enemies.duplicate()
+
+## Rebuilds the registration list from scratch in the given order — used only by RewindManager's
+## restore path. Never call this outside a rewind restore; every other caller should use
+## register_enemy()/unregister_enemy()/clear_enemies().
+func set_enemy_list(list: Array) -> void:
+	_enemies = list.duplicate()
+
 func begin_player_action() -> void:
 	phase = Phase.RESOLVING_PLAYER
 

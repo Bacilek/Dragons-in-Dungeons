@@ -237,6 +237,115 @@ func _apply_stats() -> void:
 	damage_immunities      = Array(_type.get("damage_immunities", []), TYPE_STRING, "", null)
 	condition_immunities   = Array(_type.get("condition_immunities", []), TYPE_STRING, "", null)
 
+## Rewind snapshot (scripts/autoloads/rewind_manager.gd, Phase 2) — hand-written to_dict()/
+## from_dict() pair mirroring Stats.to_dict()'s convention. NOT a save-file format (no precedent
+## exists for enemy serialization anywhere else — Phase A save/load never persists mid-floor
+## enemy state, see scripts/autoloads/CLAUDE.md's SaveManager section) and deliberately narrower
+## than a full field dump: `stats.max_hp`/`armor_class`/etc are always re-derivable from `_type`
+## (the pool dict) + the current floor via `_apply_stats()` (a pure function of those two inputs),
+## so only `current_hp` needs capturing, not a full Stats clone. Live Node references
+## (`escape_from`, `_thrown_weapon_lodged_target`, `frightened_source`) are deliberately dropped —
+## same "ends on rewind" policy as the player-side live-Enemy-reference Stats fields.
+func to_dict() -> Dictionary:
+	return {
+		"enemy_id": enemy_id, "is_boss": is_boss, "grid_pos": grid_pos, "size": size,
+		"behavior": behavior, "initial_behavior": initial_behavior, "current_hp": stats.current_hp,
+		"last_known_target_pos": last_known_target_pos, "_had_los_to_player": _had_los_to_player,
+		"surprise_available": surprise_available, "_surprise_before_decide": _surprise_before_decide,
+		"just_noticed": just_noticed, "oa_used_this_round": oa_used_this_round,
+		"_roam_target": _roam_target, "_roam_path": _roam_path.duplicate(),
+		"_search_heading": _search_heading, "_search_turns_remaining": _search_turns_remaining,
+		"_search_target": _search_target, "_search_path": _search_path.duplicate(),
+		"_speed_accum": _speed_accum, "_moves_this_turn": _moves_this_turn,
+		"slowed_turns": slowed_turns, "rooted_turns": rooted_turns,
+		"disadv_next_attack": disadv_next_attack, "prone": prone,
+		"poisoned_condition_turns": poisoned_condition_turns,
+		"incapacitated_turns": incapacitated_turns, "faerie_fire_turns": faerie_fire_turns,
+		"shocked_no_oa": shocked_no_oa, "mind_sliver_penalty_die": mind_sliver_penalty_die,
+		"frightened_turns": frightened_turns, "enfeeble_turns": enfeeble_turns,
+		"enfeeble_save_dc": enfeeble_save_dc, "paralyzed_turns": paralyzed_turns,
+		"paralyze_save_dc": paralyze_save_dc, "hideous_laughter_save_dc": hideous_laughter_save_dc,
+		"restrained_turns": restrained_turns, "restrain_save_dc": restrain_save_dc,
+		"embedded_items": embedded_items.map(func(i: Item) -> Dictionary: return i.to_dict()),
+		"escape_turns": escape_turns, "_hits_taken": _hits_taken,
+		"_thrown_weapon_used": _thrown_weapon_used,
+		"_invis_turns": _invis_turns, "_invis_cooldown_remaining": _invis_cooldown_remaining,
+		"_web_cooldown_remaining": _web_cooldown_remaining, "_scare_used": _scare_used,
+		"legendary_resistances_remaining": legendary_resistances_remaining,
+		"_undead_fortitude_used": _undead_fortitude_used,
+		"_regen_blocked_this_round": _regen_blocked_this_round, "_shifted_form": _shifted_form,
+		"_ability_cooldowns": _ability_cooldowns.duplicate(),
+		"_ability_uses": _ability_uses.duplicate(),
+		"_ability_recharge_ready": _ability_recharge_ready.duplicate(),
+	}
+
+func from_dict(d: Dictionary) -> void:
+	is_boss = bool(d.get("is_boss", is_boss))
+	set_grid_pos(d.get("grid_pos", grid_pos))
+	size = d.get("size", size)
+	behavior = int(d.get("behavior", behavior)) as Behavior
+	initial_behavior = int(d.get("initial_behavior", initial_behavior)) as Behavior
+	stats.current_hp = int(d.get("current_hp", stats.current_hp))
+	last_known_target_pos = d.get("last_known_target_pos", last_known_target_pos)
+	_had_los_to_player = bool(d.get("_had_los_to_player", false))
+	surprise_available = bool(d.get("surprise_available", false))
+	_surprise_before_decide = bool(d.get("_surprise_before_decide", false))
+	just_noticed = bool(d.get("just_noticed", false))
+	oa_used_this_round = bool(d.get("oa_used_this_round", false))
+	_roam_target = d.get("_roam_target", Vector2i(-1, -1))
+	_roam_path = (d.get("_roam_path", []) as Array).duplicate()
+	_search_heading = d.get("_search_heading", Vector2i.ZERO)
+	_search_turns_remaining = int(d.get("_search_turns_remaining", 0))
+	_search_target = d.get("_search_target", Vector2i(-1, -1))
+	_search_path = (d.get("_search_path", []) as Array).duplicate()
+	_speed_accum = int(d.get("_speed_accum", 0))
+	_moves_this_turn = int(d.get("_moves_this_turn", 1))
+	slowed_turns = int(d.get("slowed_turns", 0))
+	rooted_turns = int(d.get("rooted_turns", 0))
+	disadv_next_attack = bool(d.get("disadv_next_attack", false))
+	prone = bool(d.get("prone", false))
+	poisoned_condition_turns = int(d.get("poisoned_condition_turns", 0))
+	incapacitated_turns = int(d.get("incapacitated_turns", 0))
+	faerie_fire_turns = int(d.get("faerie_fire_turns", 0))
+	shocked_no_oa = bool(d.get("shocked_no_oa", false))
+	mind_sliver_penalty_die = bool(d.get("mind_sliver_penalty_die", false))
+	frightened_turns = int(d.get("frightened_turns", 0))
+	frightened_source = null
+	enfeeble_turns = int(d.get("enfeeble_turns", 0))
+	enfeeble_save_dc = int(d.get("enfeeble_save_dc", 0))
+	paralyzed_turns = int(d.get("paralyzed_turns", 0))
+	paralyze_save_dc = int(d.get("paralyze_save_dc", 0))
+	hideous_laughter_save_dc = int(d.get("hideous_laughter_save_dc", 0))
+	restrained_turns = int(d.get("restrained_turns", 0))
+	restrain_save_dc = int(d.get("restrain_save_dc", 0))
+	embedded_items = []
+	for id: Dictionary in (d.get("embedded_items", []) as Array):
+		embedded_items.append(Item.from_dict(id))
+	escape_turns = int(d.get("escape_turns", 0))
+	escape_from = null
+	_hits_taken = int(d.get("_hits_taken", 0))
+	_thrown_weapon_used = bool(d.get("_thrown_weapon_used", false))
+	_thrown_weapon_lodged_target = null
+	_invis_turns = int(d.get("_invis_turns", 0))
+	_invis_cooldown_remaining = int(d.get("_invis_cooldown_remaining", 0))
+	_web_cooldown_remaining = int(d.get("_web_cooldown_remaining", 0))
+	_scare_used = bool(d.get("_scare_used", false))
+	legendary_resistances_remaining = int(d.get("legendary_resistances_remaining", 0))
+	_undead_fortitude_used = bool(d.get("_undead_fortitude_used", false))
+	_regen_blocked_this_round = bool(d.get("_regen_blocked_this_round", false))
+	_shifted_form = String(d.get("_shifted_form", ""))
+	_refresh_shape_shift_visual()
+	# A freshly-respawned instance's _ready() may have already started the zzz visual off its
+	# default (SLEEPING) initial_behavior, before this function overwrote `behavior` above —
+	# reconcile it now so a respawned CHASING/etc enemy doesn't keep showing "Zzz".
+	if behavior == Behavior.SLEEPING:
+		_start_zzz()
+	else:
+		_stop_zzz()
+	_ability_cooldowns = (d.get("_ability_cooldowns", {}) as Dictionary).duplicate()
+	_ability_uses = (d.get("_ability_uses", {}) as Dictionary).duplicate()
+	_ability_recharge_ready = (d.get("_ability_recharge_ready", {}) as Dictionary).duplicate()
+
 # Single chokepoint for typed damage against this enemy — applies immunity (×0) / vulnerability
 # (×2) / resistance (×0.5), priority in that order (§5), before Stats.take_damage()'s flat
 # floor-at-1 clamp. Also the two trait hooks that fire off a hit (§11): a "regeneration" trait's
@@ -2148,7 +2257,10 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	# target is an easy target up close but a harder one at range.
 	var target_restrained: bool = GameState.player_stats.web_restrained
 	var target_prone: bool = GameState.player_stats.prone
-	var condition_adv: bool = target_restrained or (target_prone and not is_ranged)
+	# Paralyzed (mirrors the enemy-side Hold Person effect table, see Stats.paralyzed_turns' own
+	# comment): ADV regardless of attack kind, same as Restrained — not kind-split like Prone.
+	var target_paralyzed: bool = GameState.player_stats.paralyzed_turns > 0
+	var condition_adv: bool = target_restrained or target_paralyzed or (target_prone and not is_ranged)
 	var condition_disadv: bool = target_prone and is_ranged
 	# Faerie Fire outlining the PLAYER (symmetric to the enemy-side "Advantage against an outlined
 	# enemy, if the attacker can see it" rule — see SpellEffects._resolve_faerie_fire()).
@@ -2174,6 +2286,12 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 		GameState.game_log("%s[color=tomato]%s[/color] [url=%s]misses[/url]!%s%s" % [bracket_l, atk_label, hit_meta, miss_suffix, bracket_r])
 		return
 	var is_crit: bool = r["is_crit"]
+	# Paralyzed: any HIT made from within 5 ft (1 tile) of the player is an automatic critical hit
+	# — mirrors the enemy-side Hold Person effect (player.gd._bump_attack()'s own paralyzed_turns
+	# check). A natural-1 miss still misses (already returned above); this only upgrades a landed
+	# hit, never turns a miss into one.
+	if target_paralyzed and not is_crit and min_dist_to(_player.grid_pos) <= 1:
+		is_crit = true
 	var min_d: int = int(sub.get("dmg_min", stats.min_damage))
 	var max_d: int = int(sub.get("dmg_max", stats.max_damage))
 	# "advantage_bonus" trait (Goblin Warrior/Archer): an extra die on top of the normal roll
@@ -2297,8 +2415,9 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	# Save-resisted on-hit status (Bearded Devil's Beard — see scripts/entities/CLAUDE.md's
 	# "Bearded Devil" section): unlike the unconditional "status" block above, the condition only
 	# applies if the target FAILS a save — a pool "on_hit_save" sub-key ({"stat","dc","status",
-	# "turns"}). Player-only today (Companion has no equivalent check yet, same documented gap as
-	# every other Companion-side simplification in this file).
+	# "turns"}, plus an optional "paralyze_margin" — see Spiderling below). Player-only today
+	# (Companion has no equivalent check yet, same documented gap as every other Companion-side
+	# simplification in this file).
 	if sub.has("on_hit_save") and actual > 0 and not invincible and is_instance_valid(_player) and not _player.stats.is_dead():
 		var sv: Dictionary = sub["on_hit_save"]
 		var sv_dc: int = int(sv.get("dc", 10))
@@ -2318,6 +2437,15 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 			var sv_status: String = String(sv.get("status", "poisoned_condition"))
 			GameState.apply_player_status(sv_status, sv_turns, sv_dc)
 			GameState.game_log("[color=orange]You are [url=%s]poisoned[/url]! (%d turns)[/color]" % [sv_meta, sv_turns])
+			# "paralyze_margin" (Spiderling's Bite — real 5e text: "if the creature fails the saving
+			# throw by 5 or more, it's paralyzed while it remains poisoned this way"): a fail-by-N-
+			# or-more variant on the SAME failed save above — no second roll. Ties the real player-
+			# side Paralyzed condition to this exact save/DC/stat so it ends the moment the poison
+			# does (GameState.apply_player_paralyzed(), see scripts/entities/CLAUDE.md's "Conditions"
+			# table).
+			if sv.has("paralyze_margin") and (sv_dc - sv_total) >= int(sv["paralyze_margin"]):
+				GameState.apply_player_paralyzed(sv_turns, sv_dc, sv_stat)
+				GameState.game_log("[color=red]The venom leaves you [url=%s]paralyzed[/url]![/color]" % sv_meta)
 	# Infernal Wound (Bearded Devil's Glaive attack): a pool "infernal_wound" sub-key ({"dc"}).
 	# First hit rolls a CON save; a fail arms Stats.infernal_wound_active with 1 die. Every
 	# SUBSEQUENT Glaive hit while already wounded adds another die unconditionally, per the real

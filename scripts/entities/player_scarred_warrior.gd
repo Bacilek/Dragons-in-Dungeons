@@ -10,9 +10,15 @@ var player: Player
 # Click-to-target arming, mirrors Grip of the Forest's _hook_mode_active pattern.
 var limit_break_mode_active: bool = false
 
+## Rewind snapshot — see scripts/autoloads/rewind_manager.gd.
+func get_rewind_fields() -> Dictionary:
+	return {"limit_break_mode_active": limit_break_mode_active}
+
+func set_rewind_fields(d: Dictionary) -> void:
+	limit_break_mode_active = bool(d.get("limit_break_mode_active", false))
+
 func activate_limit_break() -> void:
 	if GameState.scarred_warrior_limit_break_used:
-		GameState.game_log("[color=gray]Limit Break: already used (resets on long rest).[/color]")
 		return
 	limit_break_mode_active = true
 	var rank: int = GameState.get_talent_rank("enough_is_enough")

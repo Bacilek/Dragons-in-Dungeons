@@ -73,6 +73,23 @@ func _ready() -> void:
 	add_to_group("companions")
 	TurnManager.register_enemy(self)  # companions share the enemy phase
 
+## Rewind snapshot (scripts/autoloads/rewind_manager.gd, Phase 2) — in-place restore only, no
+## respawn support: a Companion that dies during the rewound turn is NOT brought back (its identity
+## is tied to Wild Heart's rank-based WILD_HEART_COMPANION_STATS, not a simple pool lookup like
+## Enemy.enemy_id) — documented gap, same tier as several other narrow scope cuts in this codebase.
+func to_dict() -> Dictionary:
+	return {
+		"grid_pos": grid_pos, "current_hp": stats.current_hp,
+		"oa_used_this_round": oa_used_this_round, "invisibility_turns": invisibility_turns,
+	}
+
+func from_dict(d: Dictionary) -> void:
+	set_grid_pos(d.get("grid_pos", grid_pos))
+	stats.current_hp = int(d.get("current_hp", stats.current_hp))
+	oa_used_this_round = bool(d.get("oa_used_this_round", false))
+	invisibility_turns = int(d.get("invisibility_turns", 0))
+	update_hp_bar()
+
 func heal_to_max() -> void:
 	if stats != null:
 		stats.current_hp = stats.max_hp

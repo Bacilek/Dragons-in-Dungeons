@@ -1,6 +1,6 @@
 # scripts/autoloads
 
-Core singletons — loaded at engine start, affect the entire game. Files: `rng.gd`, `game_state.gd`, `turn_manager.gd`, `audio_manager.gd`, `save_manager.gd`. (`Rng` is registered FIRST in project.godot — `GameState._ready()` → `start_new_run()` calls `Rng.reseed()`, so it must already exist.)
+Core singletons — loaded at engine start, affect the entire game. Files: `rng.gd`, `game_state.gd`, `turn_manager.gd`, `audio_manager.gd`, `save_manager.gd`, `rewind_manager.gd`. (`Rng` is registered FIRST in project.godot — `GameState._ready()` → `start_new_run()` calls `Rng.reseed()`, so it must already exist.)
 
 `game_state.gd` (3300+ lines) is mid-refactor into smaller pieces, same "extract a static-func
 `RefCounted` helper" pattern `scripts/items/CLAUDE.md`'s `WeaponTooltip`/`ArmorTooltip` already
@@ -166,6 +166,7 @@ LONG_REST_FOOD_COST: int     # const 100 — combined Item.food_value required t
 LONG_REST_TURNS: int         # const 20 — turns a long rest takes (short rest: SHORT_REST_TURNS = 5)
 talent_picker_open: bool     # blocks ALL player input while talent picker is visible
 mastery_picker_open: bool    # blocks ALL player input while the Mastery Picker is visible (scripts/ui/mastery_picker.gd)
+mastery_reselect_used_this_long_rest: bool  # long-rest hub's Weapon Masteries reselect is limited to once per cycle — set true when a Swap-mode discard+pick round completes, reset false in long_rest()
 subclass_picker_open: bool   # blocks ALL player input while the subclass-select overlay is visible (scripts/ui/subclass_select.gd)
 talent_points: Dictionary    # {1:0, 2:0, 3:0, 4:0} tier → unspent points; accumulates even while a tier is locked
 talent_points_available: int # computed sum over talent_points (backward-compat: signals, auto-close logic)
@@ -231,7 +232,7 @@ repopulates `known_spells`, and silently clears if the saved id is no longer kno
 
 **Gold economy (session 7a)**: `add_gold(amount)` (ignores ≤ 0) and `spend_gold(amount) -> bool` are the only mutation points — both emit `gold_changed(gold)`. While `invincible`, `spend_gold()` succeeds WITHOUT decrementing (consumption-skip invariant; earning is unaffected). Reset to 0 in `start_new_run()`; persists across floors (`advance_floor()` never touches it). Serialized as a top-level `"gold"` key in `to_dict()`/`from_dict()` (`int(d.get("gold", 0))` — old saves load as 0). Gold piles on the floor are `Item.Type.GOLD` items whose `gold_value` is the pile size — picked up straight into the wallet by `PlayerActions.check_pickup()`, never into the inventory. **Spend sinks**: the Blacksmith's random-weapon crafting (`scripts/ui/blacksmith_panel.gd`, `BLACKSMITH_GOLD_COST` = 50) and, since session 7e, the ShopRoom's Buy tab (`scripts/ui/shop_panel.gd`) — the first real two-directional gold sink/source, since Shop also buys items back from the player via its Sell tab (`GameState.remove_item()` + `add_gold()`).
 
-**Ability usability check**: `GameState.is_ability_usable(ab: Ability) -> bool` — beyond the generic `uses_remaining`/`uses_max` pool (`Ability.has_uses()`), several free base-abilities (`uses_max == 0`, always "has uses") are additionally gated by external state that isn't visible from the `Ability` resource alone: `"frenzy"` needs `is_raging` and `not berserker_frenzy_used`, `"limit_break"` needs `not scarred_warrior_limit_break_used`, `"zealot_strike"` needs `hit_dice > 0`, `"grip_of_the_forest"` needs `is_raging`. Used only by `hud.gd`'s ability-bar greying (`scripts/ui/CLAUDE.md`) — never gates the actual activation logic, which each ability's own function (`player_berserker.gd` etc.) still owns independently.
+**Ability usability check**: `GameState.is_ability_usable(ab: Ability) -> bool` — beyond the generic `uses_remaining`/`uses_max` pool (`Ability.has_uses()`), several free base-abilities (`uses_max == 0`, always "has uses") are additionally gated by external state that isn't visible from the `Ability` resource alone: `"frenzy"` needs `is_raging` and `not berserker_frenzy_used`, `"limit_break"` needs `not scarred_warrior_limit_break_used`, `"zealot_strike"` needs `hit_dice > 0`, `"grip_of_the_forest"` needs `is_raging`. `"hunters_mark"`'s own case (bugfix, 2026-08-07) checks the SAME resource chain `PlayerRangerTalents.commit_mark()` does — not just the round cooldown — before reporting usable: a live already-marked target (free re-click) OR `hunters_mark_free_recast_available` OR `hunters_mark_uses_remaining > 0` OR a real 1st-level Ranger spell slot; previously it only ever checked `not hunters_mark_cast_this_round`, so the slot silently never greyed out even at 0 free uses AND 0 spell slots. Used only by `hud.gd`'s ability-bar greying (`scripts/ui/CLAUDE.md`) — never gates the actual activation logic, which each ability's own function (`player_berserker.gd` etc.) still owns independently.
 
 **Weapon mastery selection**: `can_select_mastery(name) -> bool` / `toggle_mastery(name) -> bool` mutate `player_stats.known_weapon_masteries` (the single source of truth every combat mastery gate reads — no parallel copy on `GameState`). Hard-blocks selecting past `Stats.mastery_cap()`; deselection always allowed. Emits `known_masteries_changed`. `discard_mastery(old_name)` (long-rest Swap mode's step 1 — just removes, rolls nothing; the picker itself runs a mandatory "pick 1 of 3" round and calls `toggle_mastery()` for the replacement — see `scripts/ui/CLAUDE.md`'s "Mastery picker" section) is the only other mutator. Used by `scripts/ui/mastery_picker.gd`.
 
@@ -462,6 +463,10 @@ TurnManager.register_enemy(enemy)       # call in enemy _ready()
 TurnManager.clear_enemies()             # call in DungeonFloor before floor reload
 TurnManager.revert_to_waiting()         # Rager talent only — skips enemy phase, returns to WAITING_FOR_INPUT
                                         # DO NOT generalize: this is not a general action-economy system
+TurnManager.get_enemy_list() / set_enemy_list(list)  # read-only snapshot / restore-only rebuild of
+                                        # the registered enemy+companion list, in iteration order —
+                                        # RewindManager (Phase 2) only; every other caller keeps
+                                        # using register_enemy()/unregister_enemy()/clear_enemies()
 TurnManager.enemy_actions_this_round    # int, default 1, auto-reset by _process_enemies() — set to 2/0
                                         # right before on_player_action_complete() to grant every enemy
                                         # two actions / zero actions for THIS ONE round (Slowed / a free
@@ -500,3 +505,87 @@ fire at the end of a turn rather than the start of the next one.
 4. Phase = WAITING_FOR_INPUT → `player_turn_started` signal fires
 
 Each turn: `Stats.tick_status()` deals status damage. Hunger has been removed — see "Rest system" above.
+
+---
+
+## RewindManager (`rewind_manager.gd`)
+
+"Undo 1 turn" mechanic — **Backspace**, gated on `TurnManager.phase == WAITING_FOR_INPUT` (only
+between turns, never mid-resolution). In-memory only, `MAX_SNAPSHOTS = 1` — never touches disk,
+unrelated to `SaveManager`'s much coarser floor-entry checkpoint (which is curated and deliberately
+excludes most of what a turn-rewind needs — see that section's own "Phase B" note above).
+
+### Phase 1 (implemented) — player + RNG + TurnManager only
+- **Snapshot point**: `TurnManager.player_turn_started`, guarded on `not player.is_reverted_turn()`
+  — `revert_to_waiting()` free actions (Rager, Battlefield Expert side-step, Frenzy, Shield) fire
+  the same signal but must never overwrite the snapshot taken at the start of the real round
+  they're part of. `RewindManager._ready()` connects before any floor/`Player` exists (autoload),
+  so its handler always runs BEFORE `Player`'s own `_on_turn_started()` — `is_reverted_turn()` is
+  read here before `Player` resets its own `_reverted_this_round` flag.
+- **Captured**: `Rng.get_state()`, `TurnManager.phase`/`enemy_actions_this_round`,
+  `GameState.player_stats.duplicate(true)` (a real `Resource.duplicate(true)`, not the curated
+  `Stats.to_dict()` — catches every field `to_dict()` deliberately omits, e.g. `witch_bolt_turns`,
+  `hex_*`, `is_raging`), and `Player.capture_rewind_state()` (grid_pos + the scattered per-turn
+  transient fields living directly on `Player`/its composition children — `PlayerBerserker`/
+  `PlayerScarredWarrior`/`PlayerZealot`/`PlayerGoliath`/`PlayerHalfling` each expose their own
+  `get_rewind_fields()`/`set_rewind_fields()` pair, same "each subclass owns its own field list"
+  convention as `to_dict()`).
+- **Restore policy for live-`Enemy`-reference `Stats` fields** (`hunters_mark_target`,
+  `witch_bolt_target`, `ray_of_enfeeblement_target`, `hold_person_target`, `hideous_laughter_target`,
+  `hex_target`, `frightened_source`, `ensnaring_strike_target`): nulled out unconditionally on
+  restore — these concentration/targeting effects simply end on rewind, matching existing
+  save/load precedent (never serialized either) rather than trying to re-resolve a reference across
+  a rewind.
+- **Floor-scoped**: `DungeonFloor._load_floor()` calls `RewindManager.clear()` at the very top —
+  a snapshot can never survive a floor transition.
+- Player finds the live `Player` node via `get_tree().get_first_node_in_group("player")` —
+  `Player._ready()` calls `add_to_group("player")`, same convention as `DungeonFloor`'s own
+  `"dungeon_floor"` group.
+
+### Phase 2 (implemented) — enemies + companions
+- `Enemy.to_dict()`/`from_dict()` (`scripts/entities/enemy.gd`) — a hand-written pair mirroring
+  `Stats.to_dict()`'s convention, deliberately narrower than a full field dump: `stats.max_hp`/
+  `armor_class`/etc are always re-derivable from `_type` (the pool dict, looked up by `enemy_id`)
+  + the current floor via `_apply_stats()`, so only `stats.current_hp` is captured, not a cloned
+  `Stats`. Live Node references (`escape_from`, `_thrown_weapon_lodged_target`, `frightened_source`)
+  are dropped on restore — same "ends on rewind" policy as the player-side live-`Enemy`-reference
+  `Stats` fields. `Companion.to_dict()`/`from_dict()` (`scripts/entities/companion.gd`) is a much
+  smaller in-place-only pair — **no respawn support**: a Companion that dies during the rewound
+  turn stays dead (its identity is tied to Wild Heart's rank-based `WILD_HEART_COMPANION_STATS`,
+  not a simple pool lookup like `Enemy.enemy_id` — documented gap, not built this pass).
+- `DungeonFloor.capture_rewind_enemies()`/`restore_rewind_enemies()` — captures every node in
+  `TurnManager.get_enemy_list()` (a new read-only accessor; `TurnManager.set_enemy_list()` is the
+  matching restore-only rebuild — **never call either outside a rewind restore**, everywhere else
+  keeps using `register_enemy()`/`unregister_enemy()`/`clear_enemies()`), in that exact order —
+  load-bearing, since `_process_enemy_round()`'s own iteration order determines `Rng`-stream
+  consumption order (see this file's `Rng` section). Restore policy: a snapshot entry whose
+  `instance_id` is no longer alive (died this turn) is respawned via `enemy.tscn` +
+  `Enemy.configure(pool_entry)` (looked up by `enemy_id`/`boss_id` across `ENEMY_POOL`/
+  `BOSS_POOL`) then `from_dict()`'d; a live node not in the snapshot (a mid-turn summon — e.g. Wild
+  Heart's own companion, which shares this same `TurnManager` registration path) is despawned;
+  everything else is restored in place. `TurnManager.set_enemy_list()` rebuilds the registration
+  list to match the snapshot order exactly.
+
+### Phase 3 (implemented) — floor props
+`DungeonFloor.capture_rewind_props()`/`restore_rewind_props()` cover `_traps`/`_dispensers`/
+`_doors`/`_barrels`/`_webs`/`_burning_grass`/`_floor_items`/`_pending_thrown_weapon_drops`. Sprite/
+texture Node references are stripped from the captured dicts (not serializable, not needed —
+every prop's own sprite node persists across the turn in the common case) and the surviving
+fields are written straight back onto the existing dict entries, with the sprite's own
+tint/texture synced manually (bypassing `open_door()`/`lock_door()`/etc's own guard conditions and
+audio side effects — this is a silent state rewind, not a replayed player action). **Barrels and
+webs that were fully destroyed mid-turn (a direct hit dropping a barrel to 0 HP; a web's STR-check
+escape) DO respawn**, reusing the same `_place_barrel()`/`spawn_web()` helpers `_spawn_barrels()`/
+`Enemy._execute_cast_web()` already call; a web spawned mid-turn (Spider's Web ability) that isn't
+in the snapshot is torn back down via `destroy_web()`. **Floor items are torn down and rebuilt
+wholesale** (`remove_floor_item()` for every currently-occupied tile, then `place_item_on_floor()`
+per snapshot entry) rather than diffed — pickup/drop genuinely adds/removes stack entries, so a
+full rebuild is simpler and safer. `_pending_thrown_weapon_drops` and `_burning_grass` are plain
+dict/array data with no Node references, duplicated directly.
+
+**Known gap**: a trap or dispenser DISARMED or LOOTED during the rewound turn is not respawned —
+no reusable "build one trap sprite from a `TRAP_POOL` entry" helper exists for the wall/push
+(Piston) variant, and this was judged a rare enough edge case (a single deliberate Thief Tools
+action within the very same turn being rewound) not to justify factoring one out this pass.
+Restoring a trap/dispenser only updates fields on an entry that's still present in `_traps`/
+`_dispensers`.

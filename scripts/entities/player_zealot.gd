@@ -15,9 +15,16 @@ var zealot_strike_armed: bool = false
 # (not the same attack that triggered the heal) — mirrors Ironwood Bark R3's pending-bonus pattern.
 var judgement_day_pending: bool = false
 
+## Rewind snapshot — see scripts/autoloads/rewind_manager.gd.
+func get_rewind_fields() -> Dictionary:
+	return {"zealot_strike_armed": zealot_strike_armed, "judgement_day_pending": judgement_day_pending}
+
+func set_rewind_fields(d: Dictionary) -> void:
+	zealot_strike_armed = bool(d.get("zealot_strike_armed", false))
+	judgement_day_pending = bool(d.get("judgement_day_pending", false))
+
 func activate_zealot_strike(ab: Ability) -> void:
 	if GameState.hit_dice <= 0:
-		GameState.game_log("[color=gray]Zealot Strike: no Hit Dice remaining (rest to recover).[/color]")
 		return
 	zealot_strike_armed = true
 	GameState.game_log("[color=gold]Zealot Strike armed — your next melee attack this turn heals you.[/color]")

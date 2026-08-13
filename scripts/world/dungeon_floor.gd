@@ -250,6 +250,9 @@ func _add_tile_source_or_color(tile_set: TileSet, source_id: int, path: String, 
 	tile_set.add_source(atlas, source_id)
 
 func _load_floor() -> void:
+	# A rewind snapshot is scoped to "within the same floor" (Phase 1, scripts/autoloads/
+	# rewind_manager.gd) — never let one survive a floor transition.
+	RewindManager.clear()
 	for e in _enemies:
 		if is_instance_valid(e):
 			e.queue_free()
@@ -1798,6 +1801,227 @@ func spawn_companion(companion: Companion, pos: Vector2i) -> void:
 
 func remove_companion(companion: Companion) -> void:
 	_companions.erase(companion)
+
+## Rewind snapshot (scripts/autoloads/rewind_manager.gd, Phase 2) — captures every live
+## Enemy/Companion currently registered with TurnManager, in TurnManager's own iteration order
+## (load-bearing for Rng-stream determinism, see turn_manager.gd's get_enemy_list() comment).
+func capture_rewind_enemies() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for node: Node in TurnManager.get_enemy_list():
+		if not is_instance_valid(node):
+			continue
+		if node is Enemy:
+			out.append({"kind": "enemy", "instance_id": node.get_instance_id(), "data": (node as Enemy).to_dict()})
+		elif node is Companion:
+			out.append({"kind": "companion", "instance_id": node.get_instance_id(), "data": (node as Companion).to_dict()})
+	return out
+
+func _find_enemy_pool_entry_by_id(id: String) -> Dictionary:
+	for entry in DungeonFloorData.ENEMY_POOL:
+		var t: Dictionary = entry
+		if String(t.get("enemy_id", "")) == id:
+			return t
+	for entry in DungeonFloorData.BOSS_POOL:
+		var t: Dictionary = entry
+		if String(t.get("boss_id", "")) == id:
+			return t
+	return {}
+
+## Restores the enemy/companion set to exactly what capture_rewind_enemies() captured: enemies
+## that died during the rewound turn are re-instantiated from their pool entry (Enemy.enemy_id),
+## enemies/companions still alive have their fields restored in place, and anything alive now that
+## wasn't in the snapshot (a mid-turn summon — Wild Heart's own companion summon/dismiss shares
+## this same registration path, see scripts/entities/CLAUDE.md's "Wild Heart Tier 2 talents")
+## is despawned. TurnManager's registration order is rebuilt to match the snapshot exactly, since
+## that order determines Rng-stream consumption order (scripts/autoloads/CLAUDE.md).
+## Companion respawn is NOT supported (see Companion.to_dict()'s own doc comment) — a Companion
+## that died during the rewound turn stays dead.
+func restore_rewind_enemies(snapshot: Array[Dictionary]) -> void:
+	var enemy_scene: PackedScene = preload("res://scenes/game/enemy.tscn")
+	var live_by_id: Dictionary = {}
+	for node: Node in TurnManager.get_enemy_list():
+		if is_instance_valid(node):
+			live_by_id[node.get_instance_id()] = node
+
+	var snapshot_ids: Dictionary = {}
+	var new_order: Array = []
+	_enemies.clear()
+	for entry: Dictionary in snapshot:
+		var iid: int = int(entry.get("instance_id", 0))
+		var kind: String = String(entry.get("kind", "enemy"))
+		var data: Dictionary = entry.get("data", {})
+		snapshot_ids[iid] = true
+		var node: Node = live_by_id.get(iid)
+		if node == null:
+			if kind != "enemy":
+				continue  # Companion respawn unsupported — stays dead, see doc comment above
+			var pool_entry: Dictionary = _find_enemy_pool_entry_by_id(String(data.get("enemy_id", "")))
+			if pool_entry.is_empty():
+				continue  # can't respawn without a matching pool entry — documented gap
+			var e: Enemy = enemy_scene.instantiate() as Enemy
+			e.configure(pool_entry)
+			e._dungeon_floor = self
+			entities.add_child(e)
+			node = e
+		if node is Enemy:
+			(node as Enemy).from_dict(data)
+			_enemies.append(node as Enemy)
+		elif node is Companion:
+			(node as Companion).from_dict(data)
+		new_order.append(node)
+
+	# Despawn anything alive now that wasn't in the snapshot (mid-turn summon/spawn).
+	for node: Node in TurnManager.get_enemy_list():
+		if not is_instance_valid(node) or snapshot_ids.has(node.get_instance_id()):
+			continue
+		if node is Enemy:
+			_enemies.erase(node)
+		elif node is Companion:
+			_companions.erase(node)
+			GameState.player_companion = null
+		node.queue_free()
+
+	TurnManager.set_enemy_list(new_order)
+	update_fog(_player.grid_pos if _player != null else Vector2i.ZERO)
+
+## Rewind snapshot (scripts/autoloads/rewind_manager.gd, Phase 3) — floor prop state: traps,
+## dispensers, doors, barrels, webs, burning grass, floor items, pending thrown-weapon drops.
+## Sprite/texture Node references are excluded (not needed —
+## prop dict's OWN sprite node persists across the turn in the common case; only floor items are
+## fully torn down/rebuilt, since those genuinely appear/disappear via pickup/drop).
+## Known gap: a trap/dispenser DISARMED or LOOTED during the rewound turn is not respawned (no
+## reusable "build one trap sprite from a TRAP_POOL entry" helper exists for the wall/push variant)
+## — restoring one only updates fields on an entry that's still present. Barrels/webs that are
+## fully destroyed (barrel HP hits 0 from a direct hit, a web's STR-check escape) DO respawn, via
+## the same _place_barrel()/spawn_web() helpers _spawn_barrels()/Enemy._execute_cast_web() use.
+func capture_rewind_props() -> Dictionary:
+	var traps: Dictionary = {}
+	for pos: Vector2i in _traps:
+		var t: Dictionary = _traps[pos].duplicate()
+		t.erase("sprite_node")
+		traps[pos] = t
+	var dispensers: Dictionary = {}
+	for pos: Vector2i in _dispensers:
+		dispensers[pos] = _dispensers[pos].duplicate()
+	var doors: Dictionary = {}
+	for pos: Vector2i in _doors:
+		var t: Dictionary = _doors[pos].duplicate()
+		t.erase("sprite"); t.erase("tex_open"); t.erase("tex_closed"); t.erase("lock_icon")
+		doors[pos] = t
+	var barrels: Dictionary = {}
+	for pos: Vector2i in _barrels:
+		var t: Dictionary = _barrels[pos].duplicate()
+		t.erase("sprite")
+		barrels[pos] = t
+	var webs: Dictionary = {}
+	for pos: Vector2i in _webs:
+		var t: Dictionary = _webs[pos].duplicate()
+		t.erase("sprite")
+		webs[pos] = t
+	var floor_items: Dictionary = {}
+	for pos: Vector2i in _floor_items:
+		var stack: Array = _floor_items[pos]
+		floor_items[pos] = stack.map(func(i: Item) -> Dictionary: return i.to_dict())
+	return {
+		"traps": traps, "dispensers": dispensers, "doors": doors, "barrels": barrels, "webs": webs,
+		"burning_grass": _burning_grass.duplicate(),
+		"floor_items": floor_items,
+		"pending_thrown_weapon_drops": _pending_thrown_weapon_drops.duplicate(),
+	}
+
+func restore_rewind_props(snap: Dictionary) -> void:
+	# Traps/dispensers: field restore only on still-present entries — see capture_rewind_props()'s
+	# own "Known gap" note for why a disarmed/looted one isn't respawned.
+	var traps: Dictionary = snap.get("traps", {})
+	for pos: Vector2i in traps:
+		if not _traps.has(pos):
+			continue
+		var saved: Dictionary = traps[pos]
+		var sprite_node: Sprite2D = _traps[pos].get("sprite_node")
+		for key: String in saved:
+			_traps[pos][key] = saved[key]
+		if is_instance_valid(sprite_node):
+			if saved.get("triggered", false) and not saved.get("is_push", false):
+				sprite_node.modulate = Color(0.25, 0.25, 0.25, 0.85)  # spent one-shot trap
+			elif saved.get("revealed", false):
+				sprite_node.modulate = Color(1.0, 1.0, 1.0, 1.0)
+			else:
+				sprite_node.modulate.a = 0.0  # still hidden
+
+	var dispensers: Dictionary = snap.get("dispensers", {})
+	for pos: Vector2i in dispensers:
+		if _dispensers.has(pos):
+			_dispensers[pos] = (dispensers[pos] as Dictionary).duplicate()
+
+	# Doors: field restore + manual sprite/tint/icon sync (bypasses open_door()/lock_door()'s own
+	# guard conditions and audio side effects — this is a silent state rewind, not a player action).
+	var doors: Dictionary = snap.get("doors", {})
+	for pos: Vector2i in doors:
+		if not _doors.has(pos):
+			continue
+		var saved: Dictionary = doors[pos]
+		var d: Dictionary = _doors[pos]
+		d["is_open"] = saved.get("is_open", d["is_open"])
+		d["locked"] = saved.get("locked", d["locked"])
+		d["player_locked"] = saved.get("player_locked", d.get("player_locked", false))
+		d["hp"] = saved.get("hp", d.get("hp", DOOR_MAX_HP))
+		var sp: Sprite2D = d.get("sprite")
+		if is_instance_valid(sp):
+			sp.texture = d["tex_open"] if d["is_open"] else d["tex_closed"]
+			sp.modulate = Color(0.55, 0.35, 0.85) if d["locked"] else Color(1.0, 1.0, 1.0)
+		if d["locked"] and not d.has("lock_icon"):
+			_add_lock_icon_at(pos)
+		elif not d["locked"] and d.has("lock_icon"):
+			var icon: Node = d["lock_icon"]
+			if is_instance_valid(icon):
+				icon.queue_free()
+			d.erase("lock_icon")
+
+	# Barrels: field restore on existing entries; respawn ones destroyed this turn.
+	var barrels: Dictionary = snap.get("barrels", {})
+	var barrel_tex: Texture2D = load(BARREL_TEX_PATH) if ResourceLoader.exists(BARREL_TEX_PATH) else null
+	for pos: Vector2i in barrels:
+		var saved: Dictionary = barrels[pos]
+		if not _barrels.has(pos):
+			_place_barrel(pos, barrel_tex)
+		var b: Dictionary = _barrels[pos]
+		b["burning"] = saved.get("burning", false)
+		b["hp"] = saved.get("hp", b.get("hp", BARREL_MAX_HP))
+		var sp: Sprite2D = b.get("sprite")
+		if is_instance_valid(sp):
+			sp.modulate = FIRE_TINT if b["burning"] else Color(1.0, 1.0, 1.0)
+	for pos: Vector2i in _barrels.keys():
+		if not barrels.has(pos):
+			var sp: Sprite2D = _barrels[pos].get("sprite")
+			if is_instance_valid(sp):
+				sp.queue_free()
+			_barrels.erase(pos)
+
+	# Webs: field restore on existing entries; respawn ones destroyed (escaped) this turn; remove
+	# ones spawned mid-turn (Spider's Web ability) that weren't in the snapshot.
+	var webs: Dictionary = snap.get("webs", {})
+	for pos: Vector2i in webs:
+		if not _webs.has(pos):
+			spawn_web(pos)
+		if _webs.has(pos):
+			var saved: Dictionary = webs[pos]
+			_webs[pos]["hp"] = saved.get("hp", _webs[pos].get("hp", 5))
+	for pos: Vector2i in _webs.keys():
+		if not webs.has(pos):
+			destroy_web(pos)
+
+	_burning_grass = (snap.get("burning_grass", {}) as Dictionary).duplicate()
+
+	# Floor items: torn down and rebuilt wholesale — the common case (pickup/drop) genuinely adds
+	# or removes stack entries, so a full rebuild is simpler and safer than diffing.
+	for pos: Vector2i in _floor_items.keys():
+		remove_floor_item(pos)
+	var floor_items: Dictionary = snap.get("floor_items", {})
+	for pos: Vector2i in floor_items:
+		for item_dict: Dictionary in (floor_items[pos] as Array):
+			place_item_on_floor(pos, Item.from_dict(item_dict))
+
+	_pending_thrown_weapon_drops = (snap.get("pending_thrown_weapon_drops", []) as Array).duplicate()
 
 func is_walkable_for_companion(pos: Vector2i) -> bool:
 	if not _data.is_walkable(pos):
@@ -3461,6 +3685,7 @@ func _build_item_from_pool(d: Dictionary) -> Item:
 	item.is_light = d.get("light", false)
 	item.is_torch = d.get("torch", false)
 	item.is_reach = d.get("reach", false)
+	item.is_loading = d.get("loading", false)
 	item.is_versatile = d.get("versatile", false)
 	item.versatile_die_min = d.get("vmin", 0)
 	item.versatile_die_max = d.get("vmax", 0)

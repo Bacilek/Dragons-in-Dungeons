@@ -10,12 +10,17 @@ var player: Player
 # Click-to-target arming, mirrors Grip of the Forest's _hook_mode_active pattern (World Tree).
 var frenzy_mode_active: bool = false
 
+## Rewind snapshot — see scripts/autoloads/rewind_manager.gd.
+func get_rewind_fields() -> Dictionary:
+	return {"frenzy_mode_active": frenzy_mode_active}
+
+func set_rewind_fields(d: Dictionary) -> void:
+	frenzy_mode_active = bool(d.get("frenzy_mode_active", false))
+
 func activate_frenzy() -> void:
 	if not GameState.is_raging:
-		GameState.game_log("[color=gray]Frenzy requires Raging.[/color]")
 		return
 	if GameState.berserker_frenzy_used:
-		GameState.game_log("[color=gray]Frenzy: already used (resets on short/long rest).[/color]")
 		return
 	frenzy_mode_active = true
 	GameState.game_log("[color=red]Frenzy — move into or click an adjacent enemy. [Esc] to cancel.[/color]")

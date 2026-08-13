@@ -18,6 +18,14 @@ var player: Player
 var nimbleness_mode_active: bool = false
 var used_this_turn: bool = false
 
+## Rewind snapshot — see scripts/autoloads/rewind_manager.gd.
+func get_rewind_fields() -> Dictionary:
+	return {"nimbleness_mode_active": nimbleness_mode_active, "used_this_turn": used_this_turn}
+
+func set_rewind_fields(d: Dictionary) -> void:
+	nimbleness_mode_active = bool(d.get("nimbleness_mode_active", false))
+	used_this_turn = bool(d.get("used_this_turn", false))
+
 # 8 offsets around the player, E/SE/S/SW/W/NW/N/NE (Godot's +Y is down) — each already a unit
 # Vector2i step, since every one of these tiles is by definition Chebyshev distance 1.
 const DIR8: Array[Vector2i] = [
@@ -36,7 +44,6 @@ func adjacent_tiles() -> Array[Vector2i]:
 
 func activate_nimbleness() -> void:
 	if used_this_turn and not GameState.invincible:
-		GameState.game_log("[color=gray]Nimbleness: already used this round (free once per round).[/color]")
 		return
 	if nimbleness_mode_active:
 		nimbleness_mode_active = false
@@ -85,6 +92,8 @@ func resolve_nimbleness(clicked: Vector2i) -> void:
 		return
 	if not GameState.invincible:
 		used_this_turn = true
+		GameState.halfling_nimbleness_used_this_turn = true
+		GameState.ability_bar_changed.emit()
 	var prev: Vector2i = player.grid_pos
 	player.set_grid_pos(landing)
 	GameState.game_log("[color=cyan]Halfling Nimbleness: you slip through %s's space.[/color]" % target.display_name)

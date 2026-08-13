@@ -25,6 +25,7 @@ GameState="*res://scripts/autoloads/game_state.gd"
 TurnManager="*res://scripts/autoloads/turn_manager.gd"
 AudioManager="*res://scripts/autoloads/audio_manager.gd"
 SaveManager="*res://scripts/autoloads/save_manager.gd"
+RewindManager="*res://scripts/autoloads/rewind_manager.gd"
 
 [display]
 

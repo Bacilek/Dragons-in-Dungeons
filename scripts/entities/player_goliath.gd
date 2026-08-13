@@ -15,6 +15,17 @@ var player: Player
 # a turn. Not serialized — mid-floor combat bookkeeping, same tier as Player._speed_gate_accum.
 var _large_form_move_counter: int = 0
 
+## Rewind snapshot — see scripts/autoloads/rewind_manager.gd.
+func get_rewind_fields() -> Dictionary:
+	return {
+		"large_form_move_counter": _large_form_move_counter,
+		"cloud_teleport_mode_active": cloud_teleport_mode_active,
+	}
+
+func set_rewind_fields(d: Dictionary) -> void:
+	_large_form_move_counter = int(d.get("large_form_move_counter", 0))
+	cloud_teleport_mode_active = bool(d.get("cloud_teleport_mode_active", false))
+
 func activate_large_form() -> void:
 	if player.stats.character_level < 5:
 		return
@@ -23,7 +34,6 @@ func activate_large_form() -> void:
 		end_large_form()
 		return
 	if player.stats.large_form_used and not GameState.invincible:
-		GameState.game_log("[color=gray]Large Form: already used this long rest.[/color]")
 		return
 	if not _footprint_free(player.grid_pos):
 		GameState.game_log("[color=gray]Large Form: not enough open space here.[/color]")
@@ -102,7 +112,6 @@ const CLOUD_TELEPORT_RANGE: int = 3
 
 func activate_giant_ancestry() -> void:
 	if player.stats.giant_ancestry_uses_remaining <= 0 and not GameState.invincible:
-		GameState.game_log("[color=gray]%s: no uses remaining (long rest to recover).[/color]" % GameState._giant_ancestry_name(player.stats.race_variant))
 		return
 	match player.stats.race_variant:
 		Stats.GiantAncestry.CLOUD:
@@ -173,7 +182,6 @@ func resolve_cloud_teleport(clicked: Vector2i) -> void:
 	if player._dungeon_floor == null:
 		return
 	if player.stats.giant_ancestry_uses_remaining <= 0 and not GameState.invincible:
-		GameState.game_log("[color=gray]Cloud's Jaunt: no uses remaining (long rest to recover).[/color]")
 		return
 	var dist: int = maxi(absi(clicked.x - player.grid_pos.x), absi(clicked.y - player.grid_pos.y))
 	if dist > CLOUD_TELEPORT_RANGE:
