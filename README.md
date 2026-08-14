@@ -10,7 +10,8 @@ A 2D pixel roguelike built in **Godot 4 (Mono build)** - Pixel Dungeon's gamepla
 - **5 playable classes** - Barbarian, Ranger, Wizard, Monk, Warlock - each with class-specific mechanics (Rage, Hunter's Mark, spell slots, martial arts dice, Pact Magic + Eldritch Invocations) and a talent tree; Barbarian additionally has 5 boss-gated Tier 2 subclasses (Berserker, Scarred Warrior, Wild Heart, Zealot, World Tree)
 - **10 races** - Orc, Human, Halfling, Dwarf, Elf (3 sub-races), Dragonborn (10 ancestries), Tiefling (3 Fiendish Legacies), Aasimar, Gnome (2 lineages), Goliath (6 Giant Ancestries) - each with distinct traits (darkvision, rest-gated charges, racial spells, size/form-changing abilities, etc.)
 - **Spellcasting** - 11 cantrips + 21 leveled spells with real D&D 2024 spell slots, Concentration, an O-key Spellbook overlay, and Scrolls castable by any class
-- **Enemy AI** - Sleeping/Stationary/Roaming/Chasing/Searching states, full D&D-style stat blocks (CR, resistances, multiattack, legendary resistance, traits like Regeneration/Pack Tactics/Magic Resistance), CR-budgeted floor spawning, multi-tile Large enemies - 15 enemy types across 2 bosses
+- **Enemy AI** - Sleeping/Stationary/Roaming/Chasing/Searching states, full D&D-style stat blocks (CR, resistances, multiattack, legendary resistance, traits like Regeneration/Pack Tactics/Magic Resistance), CR-budgeted floor spawning, multi-tile Large enemies - 16 enemy types across 2 bosses
+- **Rewind** - Backspace rewinds to the start of the previous player turn (in-memory, same-floor only) - undoes a bad move without reloading a save
 - **Fog of war** - configurable-radius FOV, explored (dim) vs unseen (black), LOS with diagonal shoulder check
 - **Environment variety** - chasms, water/mud (difficult terrain), destructible grass, doors, flammable barrels, fire spread, magical darkness/fog zones
 - **Trap & door system** - Bear Trap, Fire Trap, Spike Trap, Pit Spikes, Piston, Thief Tools lock-picking
@@ -40,6 +41,7 @@ Full up-to-date control list lives in `CLAUDE.md`'s "Running the Game" section. 
 | Left-click floor | Pathfind |
 | RMB (no tool primed) | Inspect; quick second RMB = Search |
 | RMB on item | Item interaction menu (Throw/Drop/etc.) |
+| Backspace | Rewind to start of previous player turn |
 
 ## Running
 
@@ -49,7 +51,7 @@ Open `project.godot` in **Godot 4.6 (Mono build)** and press **F5**. No CLI buil
 
 This is a high-level map - see `CLAUDE.md` (project root) for the authoritative, actively-maintained index, and the sub-directory `CLAUDE.md` files for full mechanics:
 
-- **Singletons (`scripts/autoloads/`):** `GameState` (run/floor/inventory/talent state), `TurnManager` (turn phase state machine), `AudioManager`, `Rng` (seeded gameplay RNG), `SaveManager`
+- **Singletons (`scripts/autoloads/`):** `GameState` (run/floor/inventory/talent state), `TurnManager` (turn phase state machine), `AudioManager`, `Rng` (seeded gameplay RNG), `SaveManager`, `RewindManager` (1-turn in-memory rewind)
 - **Dungeon generation (`scripts/dungeon/`):** `DungeonGenerator.generate(seed, floor)` -> `DungeonData`, pipelined through `FloorPlanner` -> `BspBuilder` -> `LevelPainter`
 - **World (`scripts/world/`):** `DungeonFloor` - tilemap, fog, traps, doors, barrels, floor items, special rooms
 - **Entities (`scripts/entities/`):** `Entity` (CharacterBody2D) -> `Player` / `Enemy` / `Companion`, `Stats` (D&D ability scores/combat math)
