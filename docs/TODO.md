@@ -20,15 +20,13 @@ aren't lost. Delete an entry once it's picked up (either built, or promoted to a
 
 - **Difficult terrain status icon/effect** — no `icons/status/` art exists at all yet (shares `slowed.png` placeholder).
 
-- **Enemy stat blocks missing** — Masked Orc (Orc), Orc Shaman (Priest), Wogol (Hobgoblin), Pumpkin Dude (Vineblight), Big Demon (Barbed Devil), Necromancer (Mage), Boar, Squirrel, Spiderling (see also line below, same gap).
+- **Enemy stat blocks missing** — Masked Orc (Orc), Orc Shaman (Priest), Wogol (Hobgoblin), Pumpkin Dude (Vineblight), Big Demon (Barbed Devil), Necromancer (Mage), Boar, Squirrel.
 
 - **Phase Spider enemy** — new enemy type, needs a Web sprite (for both spawning webs and the spider itself).
 
 - **Boss starting gear** — let boss choose/pick starting gear instead of fixed loadout.
 
 - ~~**New equip slots** — Trinket, Headgear, Boots, Gloves.~~ (done — `GameState.equipment` has `boots`/`gloves`/`head`/`trinket`)
-
-- ~~**Remaining Conditions** — implement the rest beyond Poisoned/Prone/Restrained/Incapacitated (e.g. Frightened).~~ (done — Frightened fully implemented, `scripts/entities/CLAUDE.md`'s "Conditions" section; root CLAUDE.md's "Frightened is not yet implemented" line is stale and needs updating)
 
 - **Paladin/Sorcerer sprites** — still no art, plain "?" fallback.
 
