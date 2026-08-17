@@ -5,14 +5,17 @@ extends Node
 # REAL player turn and can restore the most recent one on demand. Never touches disk (unrelated
 # to SaveManager's floor-entry checkpoint, which is a much coarser, curated snapshot).
 #
-# Phase 1+2+3, all implemented: player position/Stats/RNG-stream/TurnManager round state (plus
-# the scattered per-turn transient fields on Player/its composition children), every live
-# Enemy/Companion (positions/HP/AI state, respawning ones that died this turn, despawning ones
-# summoned mid-turn — see DungeonFloor.capture_rewind_enemies()/restore_rewind_enemies()), and
-# floor prop state (traps/dispensers/doors/barrels/webs/burning grass/floor items/pending
-# thrown-weapon drops — see DungeonFloor.capture_rewind_props()/restore_rewind_props()). One
-# documented gap: a trap/dispenser disarmed or looted during the rewound turn is not respawned —
-# see that function's own doc comment.
+# Phase 1+2+3, all implemented: player position/Stats/TurnManager round state (plus the scattered
+# per-turn transient fields on Player/its composition children), every live Enemy/Companion
+# (positions/HP/AI state, respawning ones that died this turn, despawning ones summoned mid-turn —
+# see DungeonFloor.capture_rewind_enemies()/restore_rewind_enemies()), and floor prop state
+# (traps/dispensers/doors/barrels/webs/burning grass/floor items/pending thrown-weapon drops —
+# see DungeonFloor.capture_rewind_props()/restore_rewind_props()). One documented gap: a
+# trap/dispenser disarmed or looted during the rewound turn is not respawned — see that function's
+# own doc comment. **Deliberately NOT restored: `Rng`'s gameplay stream position** — see
+# _restore_snapshot()'s own comment for why (direct owner request: rewind should let a repeated
+# action reroll for a different outcome, not deterministically replay the exact same miss/damage
+# every time).
 #
 # Snapshot point: TurnManager.player_action_starting, fired from the top of begin_player_action()
 # — i.e. right BEFORE any player action (real or a revert_to_waiting() free action) resolves.
@@ -161,7 +164,6 @@ func _restore_gs_fields(fields: Dictionary) -> void:
 func _capture_snapshot(player: Player) -> Dictionary:
 	var floor: DungeonFloor = _get_floor()
 	return {
-		"rng_state": Rng.get_state(),
 		"turn_phase": TurnManager.phase,
 		"enemy_actions_this_round": TurnManager.enemy_actions_this_round,
 		"player_stats": GameState.player_stats.duplicate(true),
@@ -192,7 +194,17 @@ func _restore_snapshot(snap: Dictionary) -> void:
 		clear()
 		return
 
-	Rng.set_state(int(snap.get("rng_state", Rng.get_state())))
+	# Deliberately does NOT restore Rng's stream position (used to, via a captured "rng_state" —
+	# removed). Direct owner request: rewind should let a repeated action re-roll for a different
+	# outcome, not deterministically reproduce the exact same miss/damage every single time. This
+	# costs nothing elsewhere — DungeonFloor's own floor-generation/population RNG (_pop_rng) is a
+	# completely separate RandomNumberGenerator instance seeded from (run_seed, floor), never the
+	# Rng autoload's gameplay stream, so floor layout/loot stay exactly as reproducible as before;
+	# SaveManager's own "rng_state" is an independent floor-entry checkpoint, unrelated to rewind's
+	# in-memory-only snapshot. TurnManager.set_enemy_list() below still restores enemy ITERATION
+	# ORDER exactly (load-bearing for who draws which Rng roll on the NEXT round) — only the actual
+	# stream POSITION is left wherever it already advanced to, so the next roll off it is a genuine
+	# fresh one rather than a replay of the undone action's own roll.
 
 	current_floor.restore_rewind_enemies(snap.get("enemies", []))
 	current_floor.restore_rewind_props(snap.get("props", {}))

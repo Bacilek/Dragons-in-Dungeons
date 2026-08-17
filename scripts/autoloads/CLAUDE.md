@@ -515,7 +515,18 @@ between turns, never mid-resolution). In-memory only, `MAX_SNAPSHOTS = 1` — ne
 unrelated to `SaveManager`'s much coarser floor-entry checkpoint (which is curated and deliberately
 excludes most of what a turn-rewind needs — see that section's own "Phase B" note above).
 
-### Phase 1 (implemented) — player + RNG + TurnManager only
+### Phase 1 (implemented) — player + TurnManager only
+**`Rng`'s gameplay stream position is deliberately NOT captured/restored** (direct owner request,
+reversing an earlier version that did) — rewinding and repeating the exact same action (e.g. the
+same attack that just missed) now draws a genuinely fresh roll instead of deterministically
+replaying the identical miss/damage forever, so rewind can be used as a real "reroll" rather than
+being a no-op for outcome purposes. Costs nothing elsewhere: `DungeonFloor._pop_rng` (floor
+generation/population) is a wholly separate `RandomNumberGenerator` seeded from `(run_seed,
+floor)`, never the `Rng` autoload's own stream, so floor layout/loot stay exactly as reproducible
+as before; `SaveManager`'s own serialized `rng_state` is an independent floor-entry checkpoint,
+unrelated to this in-memory-only snapshot. `TurnManager.set_enemy_list()` still restores enemy
+*iteration order* exactly (load-bearing for who draws which roll first on the next round) — only
+the stream's actual position is left wherever it already advanced to.
 - **Snapshot point**: `TurnManager.player_action_starting`, a new signal fired from the very top of
   `TurnManager.begin_player_action()` — i.e. right BEFORE any player action (real or a
   `revert_to_waiting()` free action) starts resolving. **Bugfix**: this used to snapshot on
@@ -528,7 +539,7 @@ excludes most of what a turn-rewind needs — see that section's own "Phase B" n
   simply becomes the rewind target for that free action alone once it's the most recent one taken
   (Backspace undoing "just the free action" rather than the whole preceding round is intentional,
   not a gap — see `turn_manager.gd`'s own signal comment).
-- **Captured**: `Rng.get_state()`, `TurnManager.phase`/`enemy_actions_this_round`,
+- **Captured**: `TurnManager.phase`/`enemy_actions_this_round`,
   `GameState.player_stats.duplicate(true)` (a real `Resource.duplicate(true)`, not the curated
   `Stats.to_dict()` — catches every field `to_dict()` deliberately omits, e.g. `witch_bolt_turns`,
   `hex_*`), and `Player.capture_rewind_state()` (grid_pos + the scattered per-turn
