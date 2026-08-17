@@ -78,6 +78,24 @@ func _push(snap: Dictionary) -> void:
 		_snapshots.pop_front()
 
 
+## Deep-duplicates an Array of possibly-null Item resources (quickbar/bag slots) — null entries
+## (empty slots) pass through unchanged, everything else gets a real Resource.duplicate(true) so
+## a later mutation (uses_remaining ticking down, quantity changing) never touches the snapshot.
+func _dup_item_array(arr: Array) -> Array:
+	var out: Array = []
+	for it in arr:
+		out.append((it as Item).duplicate(true) if it != null else null)
+	return out
+
+
+func _dup_equipment(eq: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for key: String in eq:
+		var it: Item = eq[key]
+		out[key] = it.duplicate(true) if it != null else null
+	return out
+
+
 func _capture_snapshot(player: Player) -> Dictionary:
 	var floor: DungeonFloor = _get_floor()
 	return {
@@ -86,6 +104,9 @@ func _capture_snapshot(player: Player) -> Dictionary:
 		"enemy_actions_this_round": TurnManager.enemy_actions_this_round,
 		"player_stats": GameState.player_stats.duplicate(true),
 		"player_state": player.capture_rewind_state(),
+		"quickbar": _dup_item_array(GameState.player_quickbar),
+		"bag": _dup_item_array(GameState.player_inventory),
+		"equipment": _dup_equipment(GameState.equipment),
 		"enemies": floor.capture_rewind_enemies() if floor != null else [],
 		"props": floor.capture_rewind_props() if floor != null else {},
 		"floor_ref": weakref(floor) if floor != null else null,
@@ -129,10 +150,20 @@ func _restore_snapshot(snap: Dictionary) -> void:
 
 	player.restore_rewind_state(snap.get("player_state", {}))
 
+	# The snapshot dict is popped and discarded right after this restore (see rewind()), so these
+	# Item resources can be handed to GameState directly — no need to duplicate them a second time.
+	if snap.has("quickbar"):
+		GameState.player_quickbar = snap["quickbar"]
+	if snap.has("bag"):
+		GameState.player_inventory = snap["bag"]
+	if snap.has("equipment"):
+		GameState.equipment = snap["equipment"]
+
 	TurnManager.enemy_actions_this_round = int(snap.get("enemy_actions_this_round", 1))
 	TurnManager.phase = snap.get("turn_phase", TurnManager.Phase.WAITING_FOR_INPUT)
 
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 	GameState.equipment_changed.emit()
+	GameState.inventory_changed.emit()
 	GameState.player_status_changed.emit()
 	GameState.game_log("[color=gray]You rewind time to the start of the turn.[/color]")

@@ -535,7 +535,12 @@ excludes most of what a turn-rewind needs — see that section's own "Phase B" n
   transient fields living directly on `Player`/its composition children — `PlayerBerserker`/
   `PlayerScarredWarrior`/`PlayerZealot`/`PlayerGoliath`/`PlayerHalfling` each expose their own
   `get_rewind_fields()`/`set_rewind_fields()` pair, same "each subclass owns its own field list"
-  convention as `to_dict()`).
+  convention as `to_dict()`), and `GameState.player_quickbar`/`player_inventory`/`equipment`
+  (each `Item` deep-`duplicate(true)`'d via `RewindManager._dup_item_array()`/`_dup_equipment()` —
+  **bugfix**: these three were missing from the original snapshot entirely, so a thrown/consumed
+  item correctly vanished off the floor on rewind (props restore covers that) but never came back
+  into the quickbar/bag/equipment slot it was thrown/consumed from, since nothing had captured
+  their pre-action state at all).
 - **Restore policy for live-`Enemy`-reference `Stats` fields** (`hunters_mark_target`,
   `witch_bolt_target`, `ray_of_enfeeblement_target`, `hold_person_target`, `hideous_laughter_target`,
   `hex_target`, `frightened_source`, `ensnaring_strike_target`): nulled out unconditionally on
