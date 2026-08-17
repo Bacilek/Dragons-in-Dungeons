@@ -179,6 +179,13 @@ func capture_rewind_state() -> Dictionary:
 		"enemy_attacked_last_round": _enemy_attacked_last_round,
 		"enemy_noticed_last_round": _enemy_noticed_last_round,
 		"speed_gate_accum": _speed_gate_accum.duplicate(),
+		# Rage's own live gate + visual — GameState.is_raging is only a UI mirror; every actual
+		# combat-roll check (e.g. _bump_attack()'s rage_bonus) reads THIS field, so restoring
+		# GameState.is_raging alone (rewind_manager.gd's own gs_fields list) would leave Rage's
+		# real mechanical effect and sprite tint out of sync with the restored HUD state.
+		"is_raging": _is_raging,
+		"rage_turns": _rage_turns,
+		"rage_attacked_this_turn": _rage_attacked_this_turn,
 		"berserker": _berserker.get_rewind_fields(),
 		"scarred_warrior": _scarred_warrior.get_rewind_fields(),
 		"zealot": _zealot.get_rewind_fields(),
@@ -194,6 +201,12 @@ func restore_rewind_state(d: Dictionary) -> void:
 	_enemy_noticed_last_round = bool(d.get("enemy_noticed_last_round", false))
 	_speed_gate_accum = (d.get("speed_gate_accum", {}) as Dictionary).duplicate()
 	_vex_adv_target = null
+	_is_raging = bool(d.get("is_raging", false))
+	_rage_turns = int(d.get("rage_turns", 0))
+	_rage_attacked_this_turn = bool(d.get("rage_attacked_this_turn", false))
+	GameState.is_raging = _is_raging
+	GameState.rage_turns_remaining = _rage_turns
+	$AnimatedSprite2D.modulate = Color(1.6, 0.55, 0.55) if _is_raging else Color(1.0, 1.0, 1.0)
 	_berserker.set_rewind_fields(d.get("berserker", {}))
 	_scarred_warrior.set_rewind_fields(d.get("scarred_warrior", {}))
 	_zealot.set_rewind_fields(d.get("zealot", {}))

@@ -26,6 +26,35 @@ extends Node
 
 const MAX_SNAPSHOTS: int = 1
 
+## Combat-transient GameState fields that live directly on the autoload rather than on
+## GameState.player_stats (which already gets a full Resource.duplicate(true) — see
+## _capture_snapshot()) or on Player (which owns its own is_raging/rage mirror, see
+## Player.capture_rewind_state()). Every one of these is a plain value type (bool/int/String/
+## Vector2i/Color), so a generic GameState.get(name)/set(name, value) round-trip is enough — no
+## per-field plumbing needed. Pulled from this same file's/root CLAUDE.md's own "combat-transient
+## state" bugfix note (GameState.start_new_run()'s reset list) plus the Wild Heart/Zealot/Fog
+## Cloud/Darkness/Light fields documented alongside it. Deliberately excludes GameState.
+## player_companion (owned by DungeonFloor.restore_rewind_enemies()'s own Companion respawn/
+## despawn handling — reassigning it here could race that) and GameState.light_source_item (a
+## floor Item reference invalidated by the floor-items wholesale rebuild in
+## DungeonFloor.restore_rewind_props() — restoring light_source_pos/color without it just means a
+## rewound Light cast may auto-expire on the next update_fog() instead of perfectly relighting,
+## a documented minor gap, not a crash).
+const REWIND_GAMESTATE_FIELDS: Array[String] = [
+	"berserker_frenzy_used", "berserker_turns_since_frenzy",
+	"masochist_ac_bonus", "scarred_warrior_limit_break_used", "bruiser_revive_used_this_floor",
+	"player_was_hit_this_turn", "player_attacked_this_turn", "enemy_noticed_player_this_turn",
+	"fov_radius_bonus", "psycho_adv_pending", "battlefield_adv_pending", "battlefield_adv_expire_turns",
+	"grip_of_the_forest_used_this_turn", "halfling_nimbleness_used_this_turn",
+	"risen_from_dead_active", "player_on_difficult_terrain", "terrain_ac_bonus",
+	"natural_rager_form", "active_rager_form", "rager_form_switch_turns_remaining",
+	"wild_heart_sleeper_active", "player_evades_opportunity_attacks",
+	"zealot_divine_fury_type", "zealot_blessed_charges", "zealot_blessed_heal_queued", "zealot_zp_charges",
+	"special_slot_spell_id",
+	"fog_cloud_pos", "fog_cloud_radius", "darkness_pos", "darkness_radius",
+	"light_source_pos", "light_source_color",
+]
+
 var _snapshots: Array[Dictionary] = []
 var _rewind_in_progress: bool = false
 
@@ -96,6 +125,28 @@ func _dup_equipment(eq: Dictionary) -> Dictionary:
 	return out
 
 
+## Same shape as _dup_item_array() but for Ability resources (GameState.player_ability_bar) — a
+## deep duplicate.true() so each ability's own uses_remaining/is_active is snapshotted before any
+## activation this action might spend, and restoring later never touches the still-live originals.
+func _dup_ability_array(arr: Array) -> Array:
+	var out: Array = []
+	for ab in arr:
+		out.append((ab as Ability).duplicate(true) if ab != null else null)
+	return out
+
+
+func _capture_gs_fields() -> Dictionary:
+	var out: Dictionary = {}
+	for f: String in REWIND_GAMESTATE_FIELDS:
+		out[f] = GameState.get(f)
+	return out
+
+
+func _restore_gs_fields(fields: Dictionary) -> void:
+	for f: String in fields:
+		GameState.set(f, fields[f])
+
+
 func _capture_snapshot(player: Player) -> Dictionary:
 	var floor: DungeonFloor = _get_floor()
 	return {
@@ -107,7 +158,9 @@ func _capture_snapshot(player: Player) -> Dictionary:
 		"quickbar": _dup_item_array(GameState.player_quickbar),
 		"bag": _dup_item_array(GameState.player_inventory),
 		"equipment": _dup_equipment(GameState.equipment),
+		"ability_bar": _dup_ability_array(GameState.player_ability_bar),
 		"gold": GameState.gold,
+		"gs_fields": _capture_gs_fields(),
 		"enemies": floor.capture_rewind_enemies() if floor != null else [],
 		"props": floor.capture_rewind_props() if floor != null else {},
 		"floor_ref": weakref(floor) if floor != null else null,
@@ -169,8 +222,17 @@ func _restore_snapshot(snap: Dictionary) -> void:
 		var eq: Dictionary = snap["equipment"]
 		for key: String in eq:
 			GameState.equipment[key] = eq[key]
+	if snap.has("ability_bar"):
+		# Ability count/order doesn't change mid-action in normal play, so a same-index in-place
+		# restore is enough (matches quickbar/bag above) — a mismatched size (an ability somehow
+		# added/removed by the very action being undone) just restores whatever indices overlap.
+		var ab_bar: Array = snap["ability_bar"]
+		for i: int in mini(ab_bar.size(), GameState.player_ability_bar.size()):
+			GameState.player_ability_bar[i] = ab_bar[i]
 	if snap.has("gold"):
 		GameState.gold = int(snap["gold"])
+	if snap.has("gs_fields"):
+		_restore_gs_fields(snap["gs_fields"])
 
 	TurnManager.enemy_actions_this_round = int(snap.get("enemy_actions_this_round", 1))
 	TurnManager.phase = snap.get("turn_phase", TurnManager.Phase.WAITING_FOR_INPUT)
@@ -178,6 +240,7 @@ func _restore_snapshot(snap: Dictionary) -> void:
 	GameState.player_hp_changed.emit(GameState.player_stats.current_hp, GameState.player_stats.max_hp)
 	GameState.equipment_changed.emit()
 	GameState.inventory_changed.emit()
+	GameState.ability_bar_changed.emit()
 	GameState.player_status_changed.emit()
 	GameState.gold_changed.emit(GameState.gold)
 	GameState.game_log("[color=gray]You rewind time to the start of the turn.[/color]")

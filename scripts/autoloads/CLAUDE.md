@@ -531,25 +531,48 @@ excludes most of what a turn-rewind needs — see that section's own "Phase B" n
 - **Captured**: `Rng.get_state()`, `TurnManager.phase`/`enemy_actions_this_round`,
   `GameState.player_stats.duplicate(true)` (a real `Resource.duplicate(true)`, not the curated
   `Stats.to_dict()` — catches every field `to_dict()` deliberately omits, e.g. `witch_bolt_turns`,
-  `hex_*`, `is_raging`), and `Player.capture_rewind_state()` (grid_pos + the scattered per-turn
+  `hex_*`), and `Player.capture_rewind_state()` (grid_pos + the scattered per-turn
   transient fields living directly on `Player`/its composition children — `PlayerBerserker`/
   `PlayerScarredWarrior`/`PlayerZealot`/`PlayerGoliath`/`PlayerHalfling` each expose their own
   `get_rewind_fields()`/`set_rewind_fields()` pair, same "each subclass owns its own field list"
-  convention as `to_dict()`), `GameState.player_quickbar`/`player_inventory`/`equipment`
+  convention as `to_dict()`; **also captures/restores Rage's own live gate** — `Player._is_raging`/
+  `_rage_turns`/`_rage_attacked_this_turn` plus the `$AnimatedSprite2D.modulate` red tint and the
+  `GameState.is_raging`/`rage_turns_remaining` UI mirrors, all in one place, since every real
+  combat-roll check reads `Player._is_raging`, not the GameState mirror — **bugfix**: rewinding used
+  to leave Rage's actual mechanical gate and sprite tint completely untouched regardless of what the
+  HUD said), `GameState.player_quickbar`/`player_inventory`/`equipment`
   (each `Item` deep-`duplicate(true)`'d via `RewindManager._dup_item_array()`/`_dup_equipment()` —
   **bugfix**: these three were missing from the original snapshot entirely, so a thrown/consumed
   item correctly vanished off the floor on rewind (props restore covers that) but never came back
   into the quickbar/bag/equipment slot it was thrown/consumed from, and — symmetrically — an item
   freshly picked UP off the floor correctly reappeared on the ground on rewind but also stayed
-  duplicated in the quickbar/bag, since nothing had captured their pre-action state at all), and
+  duplicated in the quickbar/bag, since nothing had captured their pre-action state at all),
+  `GameState.player_ability_bar` (each `Ability` deep-`duplicate(true)`'d via
+  `RewindManager._dup_ability_array()`, restored in place by index — **bugfix**: an ability's own
+  `uses_remaining`/`is_active` — Rage charges, Hunter's Mark uses, Frenzy's toggle, etc. — used to
+  survive a rewind completely unreverted, since nothing captured the ability bar at all),
   `GameState.gold` (**bugfix**: the wallet lives directly on `GameState`, not on `Stats`, so it was
   never covered by the `player_stats.duplicate(true)` capture either — picking up a gold pile and
   rewinding used to put the pile back on the floor while leaving it ALSO already spent into the
-  wallet). Restore mutates `player_quickbar`/`player_inventory`/`equipment` **in place** (loops
-  writing into the existing slots/keys) rather than reassigning `GameState.player_quickbar =
-  new_array` — matches `SaveManager`'s own `_dicts_into_item_slots()` restore convention, so
-  anything that might hold onto the live container reference (not just re-reading `GameState.
-  player_quickbar` fresh every time) still observes the change.
+  wallet), and a curated list of combat-transient `GameState` fields
+  (`RewindManager.REWIND_GAMESTATE_FIELDS` — Berserker/Scarred Warrior/Bruiser one-shot-use flags,
+  the `player_was_hit_this_turn`/`player_attacked_this_turn`/`enemy_noticed_player_this_turn`
+  per-turn flags, Psycho/Battlefield Expert pending-ADV windows, Wild Heart form state, Zealot
+  charges, Fog Cloud/Darkness zone position+radius, Light source position+color, the Special
+  quick-cast slot id — **bugfix**: same root cause as Rage above, every one of these lives directly
+  on the `GameState` autoload rather than on `Stats`, so none of them were ever touched by a
+  rewind even though `root CLAUDE.md`'s own "combat-transient state survived death" bugfix note
+  already documented this exact set of fields as GameState-resident, not Stats-resident — captured/
+  restored generically via `GameState.get(name)`/`set(name, value)`, no per-field plumbing needed;
+  deliberately excludes `player_companion` (owned by `DungeonFloor.restore_rewind_enemies()`'s own
+  Companion respawn/despawn handling) and `light_source_item` (a floor `Item` reference invalidated
+  by the floor-items wholesale rebuild in `restore_rewind_props()` — a documented minor gap, not a
+  crash: a rewound Light cast may just auto-expire on the next `update_fog()` instead of perfectly
+  relighting)). Restore mutates `player_quickbar`/`player_inventory`/`equipment`/`player_ability_bar`
+  **in place** (loops writing into the existing slots/keys) rather than reassigning
+  `GameState.player_quickbar = new_array` — matches `SaveManager`'s own `_dicts_into_item_slots()`
+  restore convention, so anything that might hold onto the live container reference (not just
+  re-reading `GameState.player_quickbar` fresh every time) still observes the change.
 - **Restore policy for live-`Enemy`-reference `Stats` fields** (`hunters_mark_target`,
   `witch_bolt_target`, `ray_of_enfeeblement_target`, `hold_person_target`, `hideous_laughter_target`,
   `hex_target`, `frightened_source`, `ensnaring_strike_target`): nulled out unconditionally on
