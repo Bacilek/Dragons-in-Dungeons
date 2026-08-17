@@ -107,6 +107,7 @@ func _capture_snapshot(player: Player) -> Dictionary:
 		"quickbar": _dup_item_array(GameState.player_quickbar),
 		"bag": _dup_item_array(GameState.player_inventory),
 		"equipment": _dup_equipment(GameState.equipment),
+		"gold": GameState.gold,
 		"enemies": floor.capture_rewind_enemies() if floor != null else [],
 		"props": floor.capture_rewind_props() if floor != null else {},
 		"floor_ref": weakref(floor) if floor != null else null,
@@ -150,14 +151,26 @@ func _restore_snapshot(snap: Dictionary) -> void:
 
 	player.restore_rewind_state(snap.get("player_state", {}))
 
-	# The snapshot dict is popped and discarded right after this restore (see rewind()), so these
-	# Item resources can be handed to GameState directly — no need to duplicate them a second time.
+	# Mutated IN PLACE rather than reassigning GameState.player_quickbar/player_inventory/equipment
+	# to a new Array/Dictionary instance — same convention SaveManager's own restore
+	# (_dicts_into_item_slots()) already uses, so anything holding a reference to the live
+	# container (not just re-reading GameState.player_quickbar fresh every time) still sees the
+	# update. The snapshot dict is popped and discarded right after this restore (see rewind()),
+	# so these Item resources can be handed over directly — no need to duplicate them again.
 	if snap.has("quickbar"):
-		GameState.player_quickbar = snap["quickbar"]
+		var qb: Array = snap["quickbar"]
+		for i: int in mini(qb.size(), GameState.player_quickbar.size()):
+			GameState.player_quickbar[i] = qb[i]
 	if snap.has("bag"):
-		GameState.player_inventory = snap["bag"]
+		var bag: Array = snap["bag"]
+		for i: int in mini(bag.size(), GameState.player_inventory.size()):
+			GameState.player_inventory[i] = bag[i]
 	if snap.has("equipment"):
-		GameState.equipment = snap["equipment"]
+		var eq: Dictionary = snap["equipment"]
+		for key: String in eq:
+			GameState.equipment[key] = eq[key]
+	if snap.has("gold"):
+		GameState.gold = int(snap["gold"])
 
 	TurnManager.enemy_actions_this_round = int(snap.get("enemy_actions_this_round", 1))
 	TurnManager.phase = snap.get("turn_phase", TurnManager.Phase.WAITING_FOR_INPUT)
@@ -166,4 +179,5 @@ func _restore_snapshot(snap: Dictionary) -> void:
 	GameState.equipment_changed.emit()
 	GameState.inventory_changed.emit()
 	GameState.player_status_changed.emit()
+	GameState.gold_changed.emit(GameState.gold)
 	GameState.game_log("[color=gray]You rewind time to the start of the turn.[/color]")
