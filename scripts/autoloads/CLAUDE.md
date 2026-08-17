@@ -615,6 +615,10 @@ excludes most of what a turn-rewind needs — see that section's own "Phase B" n
   smaller in-place-only pair — **no respawn support**: a Companion that dies during the rewound
   turn stays dead (its identity is tied to Wild Heart's rank-based `WILD_HEART_COMPANION_STATS`,
   not a simple pool lookup like `Enemy.enemy_id` — documented gap, not built this pass).
+  **Bugfix**: `Enemy.from_dict()` restored `stats.current_hp` correctly but never called
+  `update_hp_bar()` afterward (`Companion.from_dict()` already did) — an enemy's HP data reverted
+  correctly on rewind while its visible health bar sprite silently kept showing the pre-rewind,
+  post-damage value until something else happened to touch it (e.g. its next turn/hit).
 - `DungeonFloor.capture_rewind_enemies()`/`restore_rewind_enemies()` — captures every node in
   `TurnManager.get_enemy_list()` (a new read-only accessor; `TurnManager.set_enemy_list()` is the
   matching restore-only rebuild — **never call either outside a rewind restore**, everywhere else

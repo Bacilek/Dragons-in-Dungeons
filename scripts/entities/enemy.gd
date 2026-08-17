@@ -345,6 +345,11 @@ func from_dict(d: Dictionary) -> void:
 	_ability_cooldowns = (d.get("_ability_cooldowns", {}) as Dictionary).duplicate()
 	_ability_uses = (d.get("_ability_uses", {}) as Dictionary).duplicate()
 	_ability_recharge_ready = (d.get("_ability_recharge_ready", {}) as Dictionary).duplicate()
+	# Bugfix (rewind): current_hp was restored above but the HP bar sprite never got told to
+	# redraw — Companion.from_dict() already calls this, this one just never did, so an enemy's
+	# health data reverted correctly on rewind while its visible health bar silently kept showing
+	# the pre-rewind (post-damage) value.
+	update_hp_bar()
 
 # Single chokepoint for typed damage against this enemy — applies immunity (×0) / vulnerability
 # (×2) / resistance (×0.5), priority in that order (§5), before Stats.take_damage()'s flat
