@@ -5,6 +5,12 @@ enum Phase { WAITING_FOR_INPUT, RESOLVING_PLAYER, RESOLVING_ENEMIES }
 signal player_turn_started()
 signal player_turn_ending()  # fired once per real (non-reverted) player action, right before enemies act
 signal turn_resolved()
+# Fired at the very top of begin_player_action() — i.e. right before ANY player action (real or a
+# revert_to_waiting() free action) starts resolving. RewindManager's ONLY listener: it snapshots
+# state here, not on player_turn_started, because player_turn_started fires AFTER the action+enemy
+# phase already resolved — capturing there would snapshot "now", making Backspace a no-op. See
+# scripts/autoloads/CLAUDE.md's RewindManager section.
+signal player_action_starting()
 
 var phase: Phase = Phase.WAITING_FOR_INPUT
 var fast_mode: bool = false
@@ -58,6 +64,7 @@ func set_enemy_list(list: Array) -> void:
 	_enemies = list.duplicate()
 
 func begin_player_action() -> void:
+	player_action_starting.emit()
 	phase = Phase.RESOLVING_PLAYER
 
 func on_player_action_complete() -> void:

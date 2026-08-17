@@ -169,12 +169,6 @@ func _consume_duty_cycle(id: String, moves: int, per: int) -> bool:
 	_speed_gate_accum[id] = r["accum"]
 	return r["fires"] > 0
 
-# RewindManager (scripts/autoloads/rewind_manager.gd) needs to tell a real new-round
-# player_turn_started from a revert_to_waiting() free-action one BEFORE this flag resets itself
-# in _on_turn_started() — see that autoload's own header comment.
-func is_reverted_turn() -> bool:
-	return _reverted_this_round
-
 ## Rewind snapshot of the scattered per-turn transient fields that live on Player/its composition
 ## children rather than on Stats/GameState — see scripts/autoloads/rewind_manager.gd.
 func capture_rewind_state() -> Dictionary:

@@ -516,12 +516,18 @@ unrelated to `SaveManager`'s much coarser floor-entry checkpoint (which is curat
 excludes most of what a turn-rewind needs — see that section's own "Phase B" note above).
 
 ### Phase 1 (implemented) — player + RNG + TurnManager only
-- **Snapshot point**: `TurnManager.player_turn_started`, guarded on `not player.is_reverted_turn()`
-  — `revert_to_waiting()` free actions (Rager, Battlefield Expert side-step, Frenzy, Shield) fire
-  the same signal but must never overwrite the snapshot taken at the start of the real round
-  they're part of. `RewindManager._ready()` connects before any floor/`Player` exists (autoload),
-  so its handler always runs BEFORE `Player`'s own `_on_turn_started()` — `is_reverted_turn()` is
-  read here before `Player` resets its own `_reverted_this_round` flag.
+- **Snapshot point**: `TurnManager.player_action_starting`, a new signal fired from the very top of
+  `TurnManager.begin_player_action()` — i.e. right BEFORE any player action (real or a
+  `revert_to_waiting()` free action) starts resolving. **Bugfix**: this used to snapshot on
+  `player_turn_started` instead, which fires AFTER the action + enemy phase already resolved — by
+  the time WAITING_FOR_INPUT comes back around, the "current" state and the just-captured snapshot
+  were identical, so pressing Backspace logged its flavor line but visibly changed nothing (no HP
+  restored, no position reverted). Capturing pre-action means the snapshot now naturally survives,
+  untouched, across the WAITING_FOR_INPUT gap until the player's NEXT action begins — exactly when
+  Backspace needs it to still describe "before your last action." A free action's own snapshot
+  simply becomes the rewind target for that free action alone once it's the most recent one taken
+  (Backspace undoing "just the free action" rather than the whole preceding round is intentional,
+  not a gap — see `turn_manager.gd`'s own signal comment).
 - **Captured**: `Rng.get_state()`, `TurnManager.phase`/`enemy_actions_this_round`,
   `GameState.player_stats.duplicate(true)` (a real `Resource.duplicate(true)`, not the curated
   `Stats.to_dict()` — catches every field `to_dict()` deliberately omits, e.g. `witch_bolt_turns`,

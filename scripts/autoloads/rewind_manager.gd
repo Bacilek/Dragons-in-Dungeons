@@ -14,12 +14,15 @@ extends Node
 # documented gap: a trap/dispenser disarmed or looted during the rewound turn is not respawned —
 # see that function's own doc comment.
 #
-# Snapshot point: TurnManager.player_turn_started, guarded on NOT Player.is_reverted_turn() — a
-# revert_to_waiting() free action (Rager, Battlefield Expert side-step, Frenzy, Shield) fires the
-# same signal but must never overwrite the snapshot taken at the start of the real round it's
-# part of. RewindManager connects in _ready() (autoload, so before any floor/Player exists) and
-# therefore always fires BEFORE Player's own _on_turn_started() handler (connected later, when
-# Player is instantiated) — so is_reverted_turn() is read here before Player resets it to false.
+# Snapshot point: TurnManager.player_action_starting, fired from the top of begin_player_action()
+# — i.e. right BEFORE any player action (real or a revert_to_waiting() free action) resolves.
+# Deliberately NOT player_turn_started: that signal fires AFTER the action + enemy phase already
+# resolved, at which point the "current" state and the "about to snapshot" state are identical —
+# rewinding from a player_turn_started-taken snapshot was a no-op (bugfix, this used to be the
+# snapshot point). Capturing pre-action means the snapshot naturally survives untouched across the
+# WAITING_FOR_INPUT gap until the player's NEXT action begins, which is exactly when Backspace
+# needs it. A free action's own snapshot simply becomes the rewind target for that free action
+# alone (nothing wrong with that — undoing a free action is a well-defined, useful thing to do).
 
 const MAX_SNAPSHOTS: int = 1
 
@@ -28,7 +31,7 @@ var _rewind_in_progress: bool = false
 
 
 func _ready() -> void:
-	TurnManager.player_turn_started.connect(_on_player_turn_started)
+	TurnManager.player_action_starting.connect(_on_player_action_starting)
 
 
 func _get_player() -> Player:
@@ -39,11 +42,11 @@ func _get_floor() -> DungeonFloor:
 	return get_tree().get_first_node_in_group("dungeon_floor") as DungeonFloor
 
 
-func _on_player_turn_started() -> void:
+func _on_player_action_starting() -> void:
 	if _rewind_in_progress:
 		return
 	var player: Player = _get_player()
-	if player == null or player.is_reverted_turn():
+	if player == null:
 		return
 	_push(_capture_snapshot(player))
 
