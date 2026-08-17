@@ -55,6 +55,17 @@ const REWIND_GAMESTATE_FIELDS: Array[String] = [
 	"light_source_pos", "light_source_color",
 ]
 
+## Concentration spells whose ongoing effect is anchored to a live Enemy-node reference
+## (`Stats.hunters_mark_target` etc.) rather than pure position/counter data — see
+## _restore_snapshot()'s own comment for why these specifically get force-ended on rewind (Fog
+## Cloud/Darkness/Blade Ward/Expeditious Retreat/Detect Magic/Pass Without Trace/Invisibility/
+## Faerie Fire hold no live Enemy reference and are deliberately NOT in this list — their state
+## already round-trips correctly through the plain Stats/GameState field capture above).
+const LIVE_REF_CONCENTRATION_SPELLS: Array[String] = [
+	"hunters_mark", "witch_bolt", "ray_of_enfeeblement", "hold_person", "hideous_laughter",
+	"hex", "ensnaring_strike",
+]
+
 var _snapshots: Array[Dictionary] = []
 var _rewind_in_progress: bool = false
 
@@ -188,19 +199,32 @@ func _restore_snapshot(snap: Dictionary) -> void:
 
 	var restored_stats: Stats = snap.get("player_stats") as Stats
 	if restored_stats != null:
-		# Live Enemy-reference concentration/target fields (Hunter's Mark, Witch Bolt, etc.) end
-		# on rewind unconditionally — matches existing save/load precedent (see root CLAUDE.md's
-		# "Wizard leveled spells" / Ranger sections, "not serialized, live reference").
-		restored_stats.hunters_mark_target = null
-		restored_stats.witch_bolt_target = null
-		restored_stats.ray_of_enfeeblement_target = null
-		restored_stats.hold_person_target = []
-		restored_stats.hideous_laughter_target = []
-		restored_stats.hex_target = null
-		restored_stats.frightened_source = null
-		restored_stats.ensnaring_strike_target = null
 		GameState.player_stats = restored_stats
 		player.stats = restored_stats
+		# Live Enemy-reference concentration/target fields (Hunter's Mark, Witch Bolt, etc.) end
+		# on rewind unconditionally — matches existing save/load precedent (see root CLAUDE.md's
+		# "Wizard leveled spells" / Ranger sections, "not serialized, live reference"): the
+		# referenced Enemy node may no longer be the same instance after the enemies-array restore
+		# just above (a dead one respawns as a NEW node, a mid-turn-summoned one despawns), so the
+		# reference can't be trusted regardless of which spell it belonged to.
+		# **Bugfix**: this used to only null the target reference itself, leaving its matching
+		# `_turns` counter and `concentration_spell_id` still pointing at the "ended" spell — e.g.
+		# the status tray kept showing "Concentrating: Witch Bolt" with a live countdown even
+		# though the target reference backing it was already gone. Routed through the same
+		# GameState.end_concentration() every real cast-a-different-spell/CON-check-fail call site
+		# already uses, so the counter/target/concentration_spell_id all clear together, exactly
+		# like a genuine mid-game concentration break — but ONLY when the restored
+		# concentration_spell_id is actually one of the live-ref spells (LIVE_REF_CONCENTRATION_
+		# SPELLS); every other concentration spell (Fog Cloud, Blade Ward, ...) has no live
+		# reference to invalidate and is left alone, restored correctly by the plain field capture.
+		if restored_stats.concentration_spell_id in LIVE_REF_CONCENTRATION_SPELLS:
+			GameState.end_concentration()
+		# Frightened isn't part of the concentration mechanism at all, but frightened_source is
+		# the exact same kind of live Enemy reference — ends unconditionally for the same reason,
+		# and (bugfix, same shape as above) frightened_turns is zeroed alongside it so the status
+		# tray/DISADV checks don't keep reading "still frightened" off a source-less counter.
+		restored_stats.frightened_source = null
+		restored_stats.frightened_turns = 0
 
 	player.restore_rewind_state(snap.get("player_state", {}))
 

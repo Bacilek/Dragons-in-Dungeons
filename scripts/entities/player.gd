@@ -186,6 +186,11 @@ func capture_rewind_state() -> Dictionary:
 		"is_raging": _is_raging,
 		"rage_turns": _rage_turns,
 		"rage_attacked_this_turn": _rage_attacked_this_turn,
+		"eagle_free_move_used": _eagle_free_move_used,
+		"ironwood_bark_bonus_pending": _ironwood_bark_bonus_pending,
+		"hook_mode_active": _hook_mode_active,
+		"hunters_mark_mode_active": _hunters_mark_mode_active,
+		"expeditious_retreat_move_used_this_turn": _expeditious_retreat_move_used_this_turn,
 		"berserker": _berserker.get_rewind_fields(),
 		"scarred_warrior": _scarred_warrior.get_rewind_fields(),
 		"zealot": _zealot.get_rewind_fields(),
@@ -207,6 +212,11 @@ func restore_rewind_state(d: Dictionary) -> void:
 	GameState.is_raging = _is_raging
 	GameState.rage_turns_remaining = _rage_turns
 	$AnimatedSprite2D.modulate = Color(1.6, 0.55, 0.55) if _is_raging else Color(1.0, 1.0, 1.0)
+	_eagle_free_move_used = bool(d.get("eagle_free_move_used", false))
+	_ironwood_bark_bonus_pending = int(d.get("ironwood_bark_bonus_pending", 0))
+	_hook_mode_active = bool(d.get("hook_mode_active", false))
+	_hunters_mark_mode_active = bool(d.get("hunters_mark_mode_active", false))
+	_expeditious_retreat_move_used_this_turn = bool(d.get("expeditious_retreat_move_used_this_turn", false))
 	_berserker.set_rewind_fields(d.get("berserker", {}))
 	_scarred_warrior.set_rewind_fields(d.get("scarred_warrior", {}))
 	_zealot.set_rewind_fields(d.get("zealot", {}))

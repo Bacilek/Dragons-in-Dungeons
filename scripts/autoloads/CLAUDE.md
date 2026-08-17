@@ -575,10 +575,29 @@ excludes most of what a turn-rewind needs — see that section's own "Phase B" n
   re-reading `GameState.player_quickbar` fresh every time) still observes the change.
 - **Restore policy for live-`Enemy`-reference `Stats` fields** (`hunters_mark_target`,
   `witch_bolt_target`, `ray_of_enfeeblement_target`, `hold_person_target`, `hideous_laughter_target`,
-  `hex_target`, `frightened_source`, `ensnaring_strike_target`): nulled out unconditionally on
+  `hex_target`, `frightened_source`, `ensnaring_strike_target`): ended unconditionally on
   restore — these concentration/targeting effects simply end on rewind, matching existing
   save/load precedent (never serialized either) rather than trying to re-resolve a reference across
-  a rewind.
+  a rewind. **Bugfix**: this used to just null the target reference itself and stop there, leaving
+  its matching `_turns` duration counter and `Stats.concentration_spell_id` still pointing at the
+  now-target-less spell (e.g. the status tray kept showing a live "Concentrating: Witch Bolt"
+  countdown, or the player still read as Frightened via a lingering `frightened_turns > 0`, even
+  though the reference backing either effect was already gone) — this is the specific shape of bug
+  behind "stavy/debuffy zůstávají stejné jako před rewindem" reports. The 7 concentration-mechanism
+  ones (`RewindManager.LIVE_REF_CONCENTRATION_SPELLS`) are now torn down via `GameState.
+  end_concentration()` — the exact same function every real cast-a-different-spell/failed-CON-check
+  call site already uses — whenever the restored `concentration_spell_id` is one of them, so the
+  counter/target/id all clear together; every OTHER concentration spell (Fog Cloud, Darkness, Blade
+  Ward, Expeditious Retreat, Detect Magic, Pass Without Trace, Invisibility, Faerie Fire) holds no
+  live Enemy reference at all and is deliberately left alone, since its state already round-trips
+  correctly through the plain `Stats`/`GameState` field capture. Frightened isn't part of the
+  concentration mechanism, so it's handled as its own explicit pair: `frightened_source = null` AND
+  `frightened_turns = 0` together.
+- **`Player`'s own additional per-turn transient fields** (`_eagle_free_move_used`,
+  `_ironwood_bark_bonus_pending`, `_hook_mode_active` [Grip of the Forest arm state],
+  `_hunters_mark_mode_active`, `_expeditious_retreat_move_used_this_turn`) are captured/restored
+  alongside Rage — same root cause as Rage's own fix above, plain `Player` script fields that
+  `player_stats.duplicate(true)` never touches.
 - **Floor-scoped**: `DungeonFloor._load_floor()` calls `RewindManager.clear()` at the very top —
   a snapshot can never survive a floor transition.
 - Player finds the live `Player` node via `get_tree().get_first_node_in_group("player")` —
