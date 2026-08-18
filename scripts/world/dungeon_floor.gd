@@ -1931,11 +1931,22 @@ func capture_rewind_props() -> Dictionary:
 	for pos: Vector2i in _floor_items:
 		var stack: Array = _floor_items[pos]
 		floor_items[pos] = stack.map(func(i: Item) -> Dictionary: return i.to_dict())
+	# Every currently-GRASS tile's position — TRAMPLED_GRASS never spontaneously reverts to GRASS
+	# on its own in normal gameplay, so this is the only direction that ever needs tracking: if a
+	# tile that was GRASS at capture time comes back TRAMPLED (walked/burned over during the
+	# rewound turn), restore_rewind_props() below reverts it. A whole-grid scan is cheap (floor is
+	# at most 48x48) and only ever runs once per real player action, discarded right after use.
+	var grass: Array[Vector2i] = []
+	for y: int in _data.height:
+		for x: int in _data.width:
+			if _data.get_tile(x, y) == DungeonData.TileType.GRASS:
+				grass.append(Vector2i(x, y))
 	return {
 		"traps": traps, "dispensers": dispensers, "doors": doors, "barrels": barrels, "webs": webs,
 		"burning_grass": _burning_grass.duplicate(),
 		"floor_items": floor_items,
 		"pending_thrown_weapon_drops": _pending_thrown_weapon_drops.duplicate(),
+		"grass": grass,
 	}
 
 func restore_rewind_props(snap: Dictionary) -> void:
@@ -2031,6 +2042,20 @@ func restore_rewind_props(snap: Dictionary) -> void:
 			place_item_on_floor(pos, Item.from_dict(item_dict))
 
 	_pending_thrown_weapon_drops = (snap.get("pending_thrown_weapon_drops", []) as Array).duplicate()
+
+	# Grass: any tile that was GRASS at capture time but has since been trampled/burned to
+	# TRAMPLED_GRASS (walking through it, a fire spreading over it) grows back — see
+	# capture_rewind_props()'s own "grass" comment for why only this direction is ever needed.
+	for pos: Vector2i in (snap.get("grass", []) as Array):
+		restore_grass(pos)
+
+	# Grass/doors both block LOS — restore_rewind_enemies()'s own update_fog() call (in
+	# RewindManager._restore_snapshot(), right before this function runs) already ran against the
+	# PRE-restore door/grass state, so fog/vision could still be stale relative to what this
+	# function just changed. One more recompute here is cheap and keeps it correct immediately
+	# instead of waiting for the player's next real turn to naturally refresh it.
+	if _player != null:
+		update_fog(_player.grid_pos)
 
 func is_walkable_for_companion(pos: Vector2i) -> bool:
 	if not _data.is_walkable(pos):
@@ -3625,6 +3650,15 @@ func destroy_grass(pos: Vector2i) -> void:
 	_data.grid[pos.y][pos.x] = DungeonData.TileType.TRAMPLED_GRASS
 	_grass_layer.set_cell(pos, SOURCE_TRAMPLED_GRASS, ATLAS_ORIGIN)
 	_burning_grass.erase(pos)
+
+## The reverse of destroy_grass() — TRAMPLED_GRASS back to GRASS. Never called by normal gameplay
+## (nothing un-tramples grass on its own) — exists solely for RewindManager's own restore path, see
+## capture_rewind_props()/restore_rewind_props()'s "grass" entry below.
+func restore_grass(pos: Vector2i) -> void:
+	if _data.get_tile(pos.x, pos.y) != DungeonData.TileType.TRAMPLED_GRASS:
+		return
+	_data.grid[pos.y][pos.x] = DungeonData.TileType.GRASS
+	_grass_layer.set_cell(pos, SOURCE_GRASS, ATLAS_ORIGIN)
 
 ## Starts a GRASS tile burning — unlike destroy_grass() (an instant, permanent conversion to
 ## TRAMPLED_GRASS with no time window), this leaves the tile marked "on fire" in `_burning_grass`

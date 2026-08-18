@@ -682,7 +682,8 @@ the stream's actual position is left wherever it already advanced to.
 
 ### Phase 3 (implemented) — floor props
 `DungeonFloor.capture_rewind_props()`/`restore_rewind_props()` cover `_traps`/`_dispensers`/
-`_doors`/`_barrels`/`_webs`/`_burning_grass`/`_floor_items`/`_pending_thrown_weapon_drops`. Sprite/
+`_doors`/`_barrels`/`_webs`/`_burning_grass`/`_floor_items`/`_pending_thrown_weapon_drops`/**grass**.
+Sprite/
 texture Node references are stripped from the captured dicts (not serializable, not needed —
 every prop's own sprite node persists across the turn in the common case) and the surviving
 fields are written straight back onto the existing dict entries, with the sprite's own
@@ -696,6 +697,31 @@ wholesale** (`remove_floor_item()` for every currently-occupied tile, then `plac
 per snapshot entry) rather than diffed — pickup/drop genuinely adds/removes stack entries, so a
 full rebuild is simpler and safer. `_pending_thrown_weapon_drops` and `_burning_grass` are plain
 dict/array data with no Node references, duplicated directly.
+
+**Grass (bugfix — this used to not be captured at all, so a trampled GRASS tile never grew back on
+rewind)**: `capture_rewind_props()`'s `"grass"` entry is a plain `Array[Vector2i]` of every tile
+that's currently `GRASS` — a full scan of `_data.grid` (cheap, ≤48×48, once per real player
+action). `TRAMPLED_GRASS` never spontaneously reverts to `GRASS` on its own in normal gameplay, so
+that's the only direction that ever needs tracking: `restore_rewind_props()` calls
+`DungeonFloor.restore_grass(pos)` (the exact mirror of `destroy_grass()` — flips `_data.grid` and
+the `_grass_layer` tilemap cell back) for every captured position that's since become
+`TRAMPLED_GRASS`. Also calls `update_fog(_player.grid_pos)` once at its own tail — grass (like a
+door) blocks LOS, and `restore_rewind_enemies()`'s own `update_fog()` call (earlier in
+`RewindManager._restore_snapshot()`) already ran against the PRE-restore door/grass state, so a
+second recompute here keeps vision correct immediately instead of waiting for the player's next
+real turn.
+
+**Door open/close is now also actually undoable (bugfix)**: `player.gd`'s `_try_move()` (WASD) and
+`_execute_queued_path()`'s regular queued-path loop both used to call `DungeonFloor.open_door()`/
+`unlock_door()` *before* `TurnManager.begin_player_action()` — since that's what fires
+`RewindManager`'s snapshot, the door was already open by the time the "before" state was captured,
+so a rewind could never put it back to closed. Both call sites now split door handling into a
+read-only DECISION phase (locked-door checks, sets `_door_will_open`/`_door_will_unlock` bools, no
+mutation) that runs where the old code used to mutate, and a separate MUTATION phase
+(`open_door()`/`unlock_door()`, gated on those bools) moved to right after
+`begin_player_action()`. The `is_walkable(target)` check in between also gained a `not
+_door_will_open` exemption, since a still-genuinely-closed door reads as unwalkable until the
+(now-deferred) open actually happens.
 
 **Known gap**: a trap or dispenser DISARMED or LOOTED during the rewound turn is not respawned —
 no reusable "build one trap sprite from a `TRAP_POOL` entry" helper exists for the wall/push

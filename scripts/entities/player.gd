@@ -2138,27 +2138,32 @@ func _execute_queued_path() -> void:
 				await TurnManager.player_turn_started
 			break
 
+		# Door handling read-only decision — deliberately does NOT mutate the door yet, same
+		# reasoning as _try_move()'s own identical fix: mutating before begin_player_action()
+		# would happen before RewindManager's snapshot, so a rewind could never restore the door
+		# back to closed.
+		var _door_will_open: bool = false
+		var _door_will_unlock: bool = false
+
 		if GameState.noclip:
 			# Noclip: reject only off-grid VOID tiles
 			if _dungeon_floor.get_tile_type(next) == DungeonData.TileType.VOID:
 				_queued_path.clear()
 				break
 		else:
-			# Door handling — locked doors distinguish dungeon-generated vs player-set
 			if _dungeon_floor.has_door_at(next) and not _dungeon_floor.is_door_open(next):
 				if _dungeon_floor.is_door_locked(next):
 					if _dungeon_floor.is_door_player_locked(next):
-						_dungeon_floor.unlock_door(next)
-						_dungeon_floor.open_door(next)
-						GameState.game_log("[color=cyan]You pass through the door you locked.[/color]")
+						_door_will_unlock = true
+						_door_will_open = true
 					else:
 						GameState.game_log("[color=red]The door is locked.[/color]")
 						_queued_path.clear()
 						break
 				else:
-					_dungeon_floor.open_door(next)
+					_door_will_open = true
 
-			if not _dungeon_floor.is_walkable(next):
+			if not _dungeon_floor.is_walkable(next) and not _door_will_open:
 				_queued_path.clear()
 				break
 
@@ -2175,6 +2180,13 @@ func _execute_queued_path() -> void:
 			break
 		_apply_queued_step_speed(next)
 		TurnManager.begin_player_action()
+		# Door mutation, deferred from the read-only decision above — see that block's own
+		# comment.
+		if _door_will_unlock:
+			_dungeon_floor.unlock_door(next)
+			GameState.game_log("[color=cyan]You pass through the door you locked.[/color]")
+		if _door_will_open:
+			_dungeon_floor.open_door(next)
 		$AnimatedSprite2D.flip_h = dir.x < 0
 		$AnimatedSprite2D.play("run")
 		move_to(next, 0.08)
@@ -2481,6 +2493,14 @@ func _try_move(dir: Vector2i) -> void:
 	var _sleeper_on: bool = GameState.wild_heart_sleeper_active and _ns_rank >= 1
 	var _target_tile: DungeonData.TileType = _dungeon_floor.get_tile_type(target)
 
+	# Door handling read-only decision (locked doors distinguish dungeon-generated vs
+	# player-set) — deliberately does NOT mutate the door yet. See the begin_player_action()
+	# call below for why: mutating here would happen BEFORE RewindManager's snapshot, so a
+	# rewind could never restore the door back to closed (bugfix — this used to open/unlock
+	# right here, unconditionally ahead of the turn actually starting).
+	var _door_will_open: bool = false
+	var _door_will_unlock: bool = false
+
 	if GameState.noclip:
 		# Noclip: only reject off-grid VOID
 		if _dungeon_floor.get_tile_type(target) == DungeonData.TileType.VOID:
@@ -2498,22 +2518,20 @@ func _try_move(dir: Vector2i) -> void:
 		if _dungeon_floor.has_shopkeeper_at(target):
 			_actions.open_shop_panel(target)
 			return
-		# Door handling — locked doors distinguish dungeon-generated vs player-set
 		if _dungeon_floor.has_door_at(target) and not _dungeon_floor.is_door_open(target):
 			if _dungeon_floor.is_door_locked(target):
 				if _dungeon_floor.is_door_player_locked(target):
 					# Player set this lock — walk through freely (you know it)
-					_dungeon_floor.unlock_door(target)
-					_dungeon_floor.open_door(target)
-					GameState.game_log("[color=cyan]You pass through the door you locked.[/color]")
+					_door_will_unlock = true
+					_door_will_open = true
 				else:
 					# Dungeon-generated lock — can't walk through
 					GameState.game_log("[color=red]The door is locked.[/color]")
 					return
 			else:
-				_dungeon_floor.open_door(target)
+				_door_will_open = true
 
-		if not _dungeon_floor.is_walkable(target) and not _owl_override:
+		if not _dungeon_floor.is_walkable(target) and not _owl_override and not _door_will_open:
 			return
 
 	if _frightened_blocks_move_to(target):
@@ -2529,6 +2547,13 @@ func _try_move(dir: Vector2i) -> void:
 	# consume_free_sidestep() clears sidestep_detected_this_move — used at the end of this move.
 	var _free_sidestep: bool = _base_talents.consume_free_sidestep()
 	TurnManager.begin_player_action()
+	# Door mutation, deferred from the read-only decision above — happens right after
+	# begin_player_action() so RewindManager's snapshot still captures the door closed.
+	if _door_will_unlock:
+		_dungeon_floor.unlock_door(target)
+		GameState.game_log("[color=cyan]You pass through the door you locked.[/color]")
+	if _door_will_open:
+		_dungeon_floor.open_door(target)
 	$AnimatedSprite2D.flip_h = dir.x < 0
 	$AnimatedSprite2D.play("run")
 	await move_to(target)
