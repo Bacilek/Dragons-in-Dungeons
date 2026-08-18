@@ -527,6 +527,22 @@ as before; `SaveManager`'s own serialized `rng_state` is an independent floor-en
 unrelated to this in-memory-only snapshot. `TurnManager.set_enemy_list()` still restores enemy
 *iteration order* exactly (load-bearing for who draws which roll first on the next round) — only
 the stream's actual position is left wherever it already advanced to.
+- **Call-order rule (any turn-costing action)**: `TurnManager.begin_player_action()` must run
+  BEFORE the action mutates `player_quickbar`/`player_inventory`/`equipment` — it's what fires the
+  `player_action_starting` snapshot this whole mechanism is built on, so anything that mutates
+  inventory state before calling it gets that mutation baked into the "before" snapshot instead of
+  reverted by it. **Bugfix**: `PlayerThrowTool._throw_weapon()` (`scripts/entities/
+  player_throw_tool.gd`) used to split a stacked thrown weapon (quantity > 1 — see
+  `scripts/items/CLAUDE.md`'s "Mixed-durability stacking") BEFORE calling `begin_player_action()`
+  — the split mutates the ORIGINAL stack's `quantity`/`stack_uses` in place, so for a stack the
+  snapshot was already capturing the post-split state and a rewind could never restore the
+  un-split stack; throwing the LAST unit of a stack (quantity == 1, no split branch taken at all)
+  never hit this and always looked correct, which is what made the bug read as "only works with a
+  single copy." Fixed by reordering `begin_player_action()` to the top of the function, before the
+  split. `GameState.equip()`/`move_item()`'s own identical stack-split call sites are unaffected —
+  neither calls `begin_player_action()` at all for a plain (non-Shield) item, since equip is a
+  free action (root `CLAUDE.md`'s "Equip is always a free action"), so their split simply bundles
+  into whatever the current undo point already is, same as any other free action.
 - **Snapshot point**: `TurnManager.player_action_starting`, a new signal fired from the very top of
   `TurnManager.begin_player_action()` — i.e. right BEFORE any player action (real or a
   `revert_to_waiting()` free action) starts resolving. **Bugfix**: this used to snapshot on

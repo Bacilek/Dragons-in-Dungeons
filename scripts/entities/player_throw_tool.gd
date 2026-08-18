@@ -184,6 +184,16 @@ func try_fill_bottle(bottle: Item, target: Vector2i) -> void:
 # via Enemy.die()'s override. If durability hits 0 on this throw the weapon shatters instead of
 # landing/embedding (see _consume_throw_use()).
 func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
+	# TurnManager.begin_player_action() MUST run before the stack-split mutation below — it's what
+	# fires RewindManager's snapshot (TurnManager.player_action_starting), and that snapshot has to
+	# capture the quickbar/bag arrays in their genuine PRE-throw state. Bugfix: this order used to
+	# be reversed (split first, begin_player_action() second) — for a stacked thrown weapon
+	# (quantity > 1) the split had already mutated the ORIGINAL stack's quantity/uses down by 1
+	# by the time the snapshot was taken, so that mutation was baked into the "before" state and a
+	# rewind could never restore the un-split stack; a non-stacked (quantity == 1) throw never hit
+	# this branch at all, which is why only that case ever appeared to rewind correctly.
+	GameState.stealth_check_skip = true
+	TurnManager.begin_player_action()
 	# Throwing from a stack (quantity > 1, units may carry different durability — see
 	# GameState.add_item()) only ever throws a single unit: split the most-damaged one off
 	# (GameState._split_one_unit(), shared with equip()'s identical stack split) so the rest of
@@ -191,8 +201,6 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	if weapon.quantity > 1:
 		weapon = GameState._split_one_unit(weapon)
 		GameState.inventory_changed.emit()
-	GameState.stealth_check_skip = true
-	TurnManager.begin_player_action()
 	var sprite: AnimatedSprite2D = player.get_node("AnimatedSprite2D")
 	sprite.flip_h = pos.x < player.grid_pos.x
 	sprite.play("hit")
