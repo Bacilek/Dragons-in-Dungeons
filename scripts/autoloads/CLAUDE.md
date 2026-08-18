@@ -581,6 +581,19 @@ the stream's actual position is left wherever it already advanced to.
   simply becomes the rewind target for that free action alone once it's the most recent one taken
   (Backspace undoing "just the free action" rather than the whole preceding round is intentional,
   not a gap — see `turn_manager.gd`'s own signal comment).
+- **Bugfix — spell slots breaking permanently after a rewind (not fixable even by a long rest)**:
+  `StandardSlotPool`/`HalfCasterSlotPool`/`PactSlotPool` (`scripts/items/*_slot_pool.gd`) each hold
+  a circular `owner_stats: Stats` back-reference to the ENCLOSING `Stats` object (`Stats -> caster
+  -> slot_pool -> owner_stats -> the same Stats`), set once at `apply_class_defaults()`.
+  `Resource.duplicate(true)` recursively duplicates every nested Resource it finds, with no
+  guarantee it re-links a cycle back to the fresh clone rather than the original/an orphan — after
+  the `player_stats.duplicate(true)` + restore round-trip, `owner_stats` could end up wrong or
+  null, and `max_slots()`'s `if owner_stats == null: return {}` silently returns an EMPTY slot
+  table — which cascades into "no spell slots available" that a long rest can't fix either, since
+  `on_long_rest()` just re-derives `remaining` from that same broken `max_slots()`.
+  `_restore_snapshot()` now explicitly re-points `restored_stats.caster.slot_pool.owner_stats =
+  restored_stats` right after the `player_stats` swap — a cheap, unconditional correctness
+  guarantee that doesn't depend on knowing exactly what `duplicate()` did to the cycle.
 - **Captured**: `TurnManager.phase`/`enemy_actions_this_round`,
   `GameState.player_stats.duplicate(true)` (a real `Resource.duplicate(true)`, not the curated
   `Stats.to_dict()` — catches every field `to_dict()` deliberately omits, e.g. `witch_bolt_turns`,

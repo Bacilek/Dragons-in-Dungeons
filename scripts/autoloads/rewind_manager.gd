@@ -249,6 +249,20 @@ func _restore_snapshot(snap: Dictionary) -> void:
 	if restored_stats != null:
 		GameState.player_stats = restored_stats
 		player.stats = restored_stats
+		# Bugfix: StandardSlotPool/HalfCasterSlotPool/PactSlotPool (scripts/items/*_slot_pool.gd)
+		# each hold a `owner_stats: Stats` back-reference to the ENCLOSING Stats object, set once
+		# at apply_class_defaults() (`caster.slot_pool.owner_stats = self`) — a genuine circular
+		# reference (Stats -> caster -> slot_pool -> owner_stats -> the same Stats). Resource.
+		# duplicate(true) recursively duplicates every nested Resource it finds, and there's no
+		# guarantee it re-links a cycle back to the FRESH clone rather than the original/an orphan
+		# — if `owner_stats` ends up wrong (or null) after the duplicate/restore round-trip,
+		# max_slots() silently returns an EMPTY dict (`if owner_stats == null: return {}`), which
+		# cascades into "no spell slots available" that not even a long rest can fix (on_long_rest()
+		# just re-derives `remaining` from that same broken max_slots()). Explicitly re-pointing it
+		# at the just-restored Stats object here is a cheap, unconditional correctness guarantee
+		# regardless of what duplicate() actually did with the cycle.
+		if restored_stats.caster != null and restored_stats.caster.slot_pool != null:
+			restored_stats.caster.slot_pool.owner_stats = restored_stats
 		# Live Enemy-reference concentration/target fields (Hunter's Mark, Witch Bolt, etc.) end
 		# on rewind unconditionally — matches existing save/load precedent (see root CLAUDE.md's
 		# "Wizard leveled spells" / Ranger sections, "not serialized, live reference"): the
