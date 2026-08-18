@@ -515,6 +515,27 @@ between turns, never mid-resolution). In-memory only, `MAX_SNAPSHOTS = 1` — ne
 unrelated to `SaveManager`'s much coarser floor-entry checkpoint (which is curated and deliberately
 excludes most of what a turn-rewind needs — see that section's own "Phase B" note above).
 
+**`RewindManager.seed_baseline()`**: a snapshot pushed OUTSIDE the normal
+`TurnManager.player_action_starting` capture point, so Backspace has something to revert to even
+before the player's first real (turn-costing) action. **Bugfix**: a free action (drinking a
+potion, equipping gear — neither calls `TurnManager.begin_player_action()`, see the "Call-order
+rule" bullet below) taken as literally the first thing after entering a floor, or right after a
+prior rewind, had nothing to revert to at all — `_snapshots` was empty (only real actions ever
+pushed one), so `can_rewind()` correctly refused and logged "Nothing to rewind"; the potion's heal/
+consumption, etc. all silently stuck with no way to undo them. Called from two places, both
+mirroring `SaveManager.checkpoint()`'s own "everything is set up now" timing and its
+`GameState.class_selected` gate (character creation itself mutates `player_stats`/inventory
+without ever reloading the floor, so a naive call right after `_load_floor()` alone would capture a
+snapshot of the not-yet-finalized default character on floor 1): `DungeonFloor._load_floor()`'s own
+tail, right after `SaveManager.checkpoint()`, gated on `class_selected` (skips the pre-
+character-creation floor-1 load); and `GameState.class_chosen` (`RewindManager._on_class_chosen()`,
+same `class_selected` gate) — covers the moment onboarding genuinely finishes for the Custom path,
+where `class_chosen` re-fires from `character_summary.gd`'s confirm exactly when `class_selected`
+turns true, same precedent `SaveManager`'s own checkpoint-on-`class_chosen` hook already relies on.
+Deliberately NOT hooked to `TurnManager.player_turn_started` — that signal also fires very early
+mid-`_load_floor()` (from `TurnManager.reset()`), well before this floor's own player/enemies/props
+exist yet, so capturing there would seed garbage.
+
 ### Phase 1 (implemented) — player + TurnManager only
 **`Rng`'s gameplay stream position is deliberately NOT captured/restored** (direct owner request,
 reversing an earlier version that did) — rewinding and repeating the exact same action (e.g. the

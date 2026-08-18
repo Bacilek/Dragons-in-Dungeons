@@ -75,6 +75,17 @@ var _rewind_in_progress: bool = false
 
 func _ready() -> void:
 	TurnManager.player_action_starting.connect(_on_player_action_starting)
+	# Floor 1 loads BEFORE character creation even starts, so _load_floor()'s own seed_baseline()
+	# call is gated on GameState.class_selected and no-ops that first time (see DungeonFloor.
+	# _load_floor()'s own comment) — this covers the moment onboarding genuinely finishes instead,
+	# same "class_chosen re-fires once class_selected is finally true" precedent SaveManager's own
+	# checkpoint-on-class_chosen hook relies on.
+	GameState.class_chosen.connect(_on_class_chosen)
+
+
+func _on_class_chosen(_chosen_class: Stats.CharacterClass) -> void:
+	if GameState.class_selected:
+		seed_baseline()
 
 
 func _get_player() -> Player:
@@ -113,6 +124,23 @@ func rewind() -> bool:
 ## rewind is explicitly scoped to "within the same floor" (see the plan's non-goals).
 func clear() -> void:
 	_snapshots.clear()
+
+
+## Seeds a baseline "floor entry" snapshot so Backspace has something to rewind to even before the
+## player's first REAL (turn-costing) action on a fresh floor. Bugfix: a free action — drinking a
+## potion, equipping gear, filling a bottle's not-turn-costing branch, etc, none of which call
+## TurnManager.begin_player_action() — taken as literally the very first thing after entering a
+## floor (or after a prior rewind) had nothing to revert to at all: `_snapshots` was empty (only
+## real actions push a snapshot), so can_rewind() correctly refused and "Nothing to rewind" logged
+## — the potion's heal, item consumption, etc. all silently stuck. Called once by
+## DungeonFloor._load_floor(), right after the floor is fully populated (SaveManager.checkpoint()'s
+## own "everything is set up now" timing) — deliberately NOT on TurnManager.player_turn_started,
+## which fires far too early mid-load (from TurnManager.reset(), before this floor's own
+## player/enemies/props exist yet) to capture anything meaningful.
+func seed_baseline() -> void:
+	var player: Player = _get_player()
+	if player != null:
+		_push(_capture_snapshot(player))
 
 
 func _push(snap: Dictionary) -> void:

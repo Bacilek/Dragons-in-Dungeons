@@ -388,6 +388,15 @@ func _load_floor() -> void:
 	# Floor-entry checkpoint (Save/Load Phase A, doc §2) — snapshot + write once the
 	# floor is fully populated. No-op before class selection or after the run ended.
 	SaveManager.checkpoint()
+	# Rewind baseline (scripts/autoloads/rewind_manager.gd) — same "everything is set up now"
+	# timing as the checkpoint above, so Backspace has something to revert to even before the
+	# player's first real action on this floor. Gated on class_selected for the exact same reason
+	# SaveManager.checkpoint() itself no-ops until then: floor 1 loads BEFORE character creation
+	# even starts, so seeding here while still mid-onboarding would capture a snapshot of the
+	# not-yet-finalized default character — RewindManager.seed_baseline() is called again once
+	# onboarding genuinely finishes, via GameState.class_chosen (see RewindManager._ready()).
+	if GameState.class_selected:
+		RewindManager.seed_baseline()
 
 # ── Save/Load Continue flow (Phase A, session 3c) ─────────────────────────────
 
