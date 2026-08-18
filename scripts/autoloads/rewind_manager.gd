@@ -117,6 +117,14 @@ func rewind() -> bool:
 	_rewind_in_progress = true
 	_restore_snapshot(snap)
 	_rewind_in_progress = false
+	# Bugfix: rewind() used to leave _snapshots completely empty right after popping/restoring —
+	# fine for the FIRST Backspace, but the very next free action (drinking a potion, equipping
+	# gear) had nothing to revert to again until the player's next real turn-costing action, so a
+	# second consecutive "free action then Backspace" always failed with "Nothing to rewind" even
+	# though nothing about the situation actually changed. Re-seed a fresh baseline of the
+	# just-restored state — same helper/reasoning as the floor-entry baseline (seed_baseline()'s
+	# own doc comment) — so rewind is immediately usable again.
+	seed_baseline()
 	return true
 
 

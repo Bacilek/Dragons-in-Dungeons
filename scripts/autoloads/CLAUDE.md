@@ -534,7 +534,12 @@ where `class_chosen` re-fires from `character_summary.gd`'s confirm exactly when
 turns true, same precedent `SaveManager`'s own checkpoint-on-`class_chosen` hook already relies on.
 Deliberately NOT hooked to `TurnManager.player_turn_started` — that signal also fires very early
 mid-`_load_floor()` (from `TurnManager.reset()`), well before this floor's own player/enemies/props
-exist yet, so capturing there would seed garbage.
+exist yet, so capturing there would seed garbage. **`rewind()` itself also calls `seed_baseline()`
+again right after restoring** (bugfix): popping/restoring the one stored snapshot used to leave
+`_snapshots` completely empty until the player's next real action — fine for a single Backspace,
+but a second consecutive "free action, then Backspace" (e.g. drink a potion, rewind, drink another,
+rewind again) always failed with "Nothing to rewind" even though nothing about the situation had
+actually changed. Re-seeding right after a restore keeps Backspace immediately usable again.
 
 ### Phase 1 (implemented) — player + TurnManager only
 **`Rng`'s gameplay stream position is deliberately NOT captured/restored** (direct owner request,
