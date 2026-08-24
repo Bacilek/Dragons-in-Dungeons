@@ -756,12 +756,21 @@ ORC branch:
   reads as "you get one move for free," matching the ability's own flavor), entirely outside the
   turn pipeline (no `TurnManager.begin_player_action()`/`revert_to_waiting()` call at all, since
   there's no real move to make free — the dash never touches the turn economy in the first place).
-  Cancels for free (nothing spent) via Esc, a WASD/arrow key press, or clicking anywhere invalid —
-  same "charge only spent on a confirmed resolution" convention as Cloud's Jaunt/Halfling
-  Nimbleness. `PlayerOrc.get_rewind_fields()`/`set_rewind_fields()` capture the armed state for
-  Backspace, same as `PlayerGoliath`'s own `cloud_teleport_mode_active`. Proficiency-bonus level-up
-  crossings (5/9/13/17) grant +1 CURRENT use immediately, mirroring Breath Weapon/Stonecunning's
-  identical treatment.
+  **Direction can be picked two ways**: a mouse click (arm-then-click, same as Cloud's Jaunt) OR a
+  WASD/arrow key press — direct owner request, mirroring how Thief Tools primed lets a directional
+  bump complete the action instead of just moving. `_try_move(dir)` checks
+  `_orc.dash_mode_active` right after computing its own `target` tile and, if armed, consumes the
+  flag and resolves the dash there instead of a normal move (same "the primed mode owns this
+  direction press, not a plain move" pattern the pre-existing Thief-Tools-primed-bump branch a few
+  lines below it already uses) — the movement-key handler's own cancel-on-move sweep explicitly
+  skips `dash_mode_active` for the same reason it already skips a primed Thief Tools item, leaving
+  `_try_move()` as the sole place that consumes or resolves it for a keyboard press. Cancels for
+  free (nothing spent) via Esc or clicking anywhere invalid — same "charge only spent on a
+  confirmed resolution" convention as Cloud's Jaunt/Halfling Nimbleness.
+  `PlayerOrc.get_rewind_fields()`/`set_rewind_fields()` capture the armed state for Backspace, same
+  as `PlayerGoliath`'s own `cloud_teleport_mode_active`. Proficiency-bonus level-up crossings
+  (5/9/13/17) grant +1 CURRENT use immediately, mirroring Breath Weapon/Stonecunning's identical
+  treatment.
 
 ## Aasimar
 

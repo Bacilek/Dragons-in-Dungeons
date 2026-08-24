@@ -1229,9 +1229,8 @@ func _process(_delta: float) -> void:
 	if _goliath.cloud_teleport_mode_active:
 		_goliath.cloud_teleport_mode_active = false
 		GameState.game_log("[color=gray]Cloud Giant teleport cancelled.[/color]")
-	if _orc.dash_mode_active:
-		_orc.cancel()
-		GameState.game_log("[color=gray]Adrenaline Rush dash cancelled.[/color]")
+	# Adrenaline Rush dash: let _try_move handle a WASD direction as the dash's own target — same
+	# "don't cancel here, resolve in _try_move" pattern as Thief Tools above.
 	if _halfling.nimbleness_mode_active:
 		_halfling.cancel()
 		GameState.game_log("[color=gray]Nimbleness cancelled.[/color]")
@@ -2455,6 +2454,14 @@ func _try_move(dir: Vector2i) -> void:
 		TurnManager.on_player_action_complete()
 		return
 	var target: Vector2i = grid_pos + dir
+
+	# Adrenaline Rush dash primed: a WASD/arrow direction picks the dash's own target instead of
+	# the normal move, exactly like Thief Tools' door/trap bump below — the armed mode is consumed
+	# here rather than cancelled by movement (see the movement-key handler's own comment).
+	if _orc.dash_mode_active:
+		_orc.dash_mode_active = false
+		_orc.resolve_dash(target)
+		return
 
 	# Large Form (Goliath, see player_goliath.gd): a 2x2 footprint needs its WHOLE destination
 	# block free, not just the single leading tile the rest of this function checks — otherwise a
