@@ -599,7 +599,7 @@ the stream's actual position is left wherever it already advanced to.
   `Stats.to_dict()` — catches every field `to_dict()` deliberately omits, e.g. `witch_bolt_turns`,
   `hex_*`), and `Player.capture_rewind_state()` (grid_pos + the scattered per-turn
   transient fields living directly on `Player`/its composition children — `PlayerBerserker`/
-  `PlayerScarredWarrior`/`PlayerZealot`/`PlayerGoliath`/`PlayerHalfling` each expose their own
+  `PlayerScarredWarrior`/`PlayerZealot`/`PlayerGoliath`/`PlayerHalfling`/`PlayerOrc` each expose their own
   `get_rewind_fields()`/`set_rewind_fields()` pair, same "each subclass owns its own field list"
   convention as `to_dict()`; **also captures/restores Rage's own live gate** — `Player._is_raging`/
   `_rage_turns`/`_rage_attacked_this_turn` plus the `$AnimatedSprite2D.modulate` red tint and the

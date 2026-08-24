@@ -72,7 +72,7 @@ static func build(stats: Stats) -> Dictionary:
 		Stats.CharacterRace.ORC:
 			traits = [
 				_t("relentless_endurance", "Relentless Endurance", "When a hit would drop you to 0 HP, drop to 1 HP instead. Once per long rest."),
-				_t("adrenaline_rush", "Adrenaline Rush", "Free action. Gain temp HP equal to your proficiency bonus and your next move is free. Proficiency-bonus uses, refills on short AND long rest."),
+				_t("adrenaline_rush", "Adrenaline Rush", "Free action. Gain temp HP equal to your proficiency bonus and dash one tile for free. Proficiency-bonus uses, refills on short AND long rest."),
 			]
 			return {"creature_type": "Humanoid", "size": "Medium", "speed": "1 tile/turn", "darkvision": dv, "traits": traits}
 		Stats.CharacterRace.HUMAN:

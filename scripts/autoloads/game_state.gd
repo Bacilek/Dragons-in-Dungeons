@@ -942,7 +942,7 @@ func _build_adrenaline_rush_ability() -> Ability:
 	# "describe the rule, not a number" pattern _build_breath_weapon_ability()/
 	# _build_stonecunning_ability() already use, and the ability-bar's own "X/Y" badge (which reads
 	# uses_remaining/uses_max live) already shows the actual current numbers regardless.
-	ab.description = "Gain temporary HP equal to your proficiency bonus and your next move doesn't cost you a turn. Free action, uses = your proficiency bonus — refills on short rest AND long rest."
+	ab.description = "Gain temporary HP equal to your proficiency bonus and dash one tile for free. Free action, uses = your proficiency bonus — refills on short rest AND long rest."
 	ab.icon_path = "res://icons/races/orc/adrenaline_rush.png"
 	ab.uses_remaining = player_stats.adrenaline_rush_uses_remaining
 	ab.uses_max = player_stats.proficiency_bonus

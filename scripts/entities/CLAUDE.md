@@ -745,15 +745,23 @@ ORC branch:
   correction, since real 5e Adrenaline Rush is normally long-rest-only). Activating
   (`PlayerOrc.activate_adrenaline_rush()`) sets `Stats.temp_hp = proficiency_bonus` (flat replace,
   not additive, matching every other temp-HP grant's convention — Natural Sleeper R2, Overheal
-  Shield, Ironwood Bark) and arms a one-shot `Stats.adrenaline_rush_move_free_pending` flag (not
-  serialized — mid-floor buff state, same precedent as `expeditious_retreat_turns`). The player's
-  very next WASD move consumes that flag and doesn't cost a turn (`player.gd._try_move()`, the
-  same `TurnManager.revert_to_waiting()` free-action pattern as Battlefield Expert R3's free
-  side-step / Expeditious Retreat/Longstrider's free move — checked as its own standalone gate
-  right after the Battlefield Expert branch, ahead of Wood Elf/Expeditious Retreat). Same scope
-  limitation as those: only wired into `_try_move()` (single-step WASD movement), not the
-  queued-path/chase-to-target movement functions. Proficiency-bonus level-up crossings (5/9/13/17)
-  grant +1 CURRENT use immediately, mirroring Breath Weapon/Stonecunning's identical treatment.
+  Shield, Ironwood Bark) and arms `PlayerOrc.dash_mode_active` — **reworked, direct owner request**:
+  this used to arm a one-shot `Stats.adrenaline_rush_move_free_pending` flag consumed by the
+  player's next WASD move (via `TurnManager.revert_to_waiting()`, same free-action pattern as
+  Battlefield Expert R3's side-step); it's now an arm-then-click one-tile dash instead, the same
+  family as Cloud Giant's Jaunt (`PlayerGoliath.cloud_teleport_mode_active`/
+  `resolve_cloud_teleport()`, see "Goliath" below) but clamped to `PlayerOrc.DASH_RANGE` (1 tile):
+  clicking an adjacent, visible, walkable, unoccupied tile plays a normal `Entity.move_to()`
+  slide-animation onto it (not an instant teleport like Cloud's Jaunt — the visible motion is what
+  reads as "you get one move for free," matching the ability's own flavor), entirely outside the
+  turn pipeline (no `TurnManager.begin_player_action()`/`revert_to_waiting()` call at all, since
+  there's no real move to make free — the dash never touches the turn economy in the first place).
+  Cancels for free (nothing spent) via Esc, a WASD/arrow key press, or clicking anywhere invalid —
+  same "charge only spent on a confirmed resolution" convention as Cloud's Jaunt/Halfling
+  Nimbleness. `PlayerOrc.get_rewind_fields()`/`set_rewind_fields()` capture the armed state for
+  Backspace, same as `PlayerGoliath`'s own `cloud_teleport_mode_active`. Proficiency-bonus level-up
+  crossings (5/9/13/17) grant +1 CURRENT use immediately, mirroring Breath Weapon/Stonecunning's
+  identical treatment.
 
 ## Aasimar
 
@@ -1668,7 +1676,7 @@ cycle) — the two stack rather than reusing one mechanism, since Aggressive is 
 
 **Player movement-speed visual consistency (PERMANENT RULE)**: whatever affects the PLAYER's own
 movement speed (difficult terrain/Slowed → slower, Expeditious Retreat/Longstrider/Wood Elf/Large
-Form/Battlefield Expert's free side-step/Adrenaline Rush → faster) must NEVER change the visual
+Form/Battlefield Expert's free side-step → faster) must NEVER change the visual
 tween itself — `Entity.move_to()` is always the same fixed duration regardless of speed status.
 The only thing allowed to differ is the turn economy: how many actions the environment (enemies)
 gets for that one player move. `TurnManager.enemy_actions_this_round: int` (default 1, always
@@ -2188,7 +2196,7 @@ automatically.
   into both `_try_move()` (WASD) and
   `_apply_queued_step_speed()` (click-to-move/enemy-chase), alongside their existing Slowed checks
   — same "both movement paths" coverage Slowed itself has. A free move (Expeditious
-  Retreat/Longstrider/Wood Elf/Battlefield Expert's side-step/Adrenaline Rush) returns before
+  Retreat/Longstrider/Wood Elf/Battlefield Expert's side-step) returns before
   reaching this check, so it doesn't advance the duty-cycle counter either — a documented
   simplification, not a bug (matches every other per-round-cap field's own reset-on-revert
   precedent).

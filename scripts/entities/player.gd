@@ -196,6 +196,7 @@ func capture_rewind_state() -> Dictionary:
 		"zealot": _zealot.get_rewind_fields(),
 		"goliath": _goliath.get_rewind_fields(),
 		"halfling": _halfling.get_rewind_fields(),
+		"orc": _orc.get_rewind_fields(),
 	}
 
 func restore_rewind_state(d: Dictionary) -> void:
@@ -222,6 +223,7 @@ func restore_rewind_state(d: Dictionary) -> void:
 	_zealot.set_rewind_fields(d.get("zealot", {}))
 	_goliath.set_rewind_fields(d.get("goliath", {}))
 	_halfling.set_rewind_fields(d.get("halfling", {}))
+	_orc.set_rewind_fields(d.get("orc", {}))
 
 
 func _ready() -> void:
@@ -1227,6 +1229,9 @@ func _process(_delta: float) -> void:
 	if _goliath.cloud_teleport_mode_active:
 		_goliath.cloud_teleport_mode_active = false
 		GameState.game_log("[color=gray]Cloud Giant teleport cancelled.[/color]")
+	if _orc.dash_mode_active:
+		_orc.cancel()
+		GameState.game_log("[color=gray]Adrenaline Rush dash cancelled.[/color]")
 	if _halfling.nimbleness_mode_active:
 		_halfling.cancel()
 		GameState.game_log("[color=gray]Nimbleness cancelled.[/color]")
@@ -1352,6 +1357,8 @@ func _update_spell_aoe_preview() -> bool:
 			return _update_nimbleness_preview()
 		if _goliath.cloud_teleport_mode_active:
 			return _update_cloud_teleport_preview()
+		if _orc.dash_mode_active:
+			return _update_adrenaline_dash_preview()
 		if _hunters_mark_mode_active:
 			return _update_hunters_mark_preview()
 		_dungeon_floor.hide_aoe_preview()
@@ -1487,6 +1494,20 @@ func _update_cloud_teleport_preview() -> bool:
 	var d: Vector2i = tile - grid_pos
 	var dist_cheb: int = maxi(absi(d.x), absi(d.y))
 	var in_range: bool = dist_cheb <= PlayerGoliath.CLOUD_TELEPORT_RANGE \
+		and _dungeon_floor.is_tile_visible(tile) and _dungeon_floor.is_walkable(tile) \
+		and _dungeon_floor.get_enemy_at(tile) == null
+	_dungeon_floor.show_touch_target_preview(tile, in_range)
+	return true
+
+# Adrenaline Rush's one-tile dash targeting preview — same shape as Cloud Giant's Jaunt above,
+# just clamped to PlayerOrc.DASH_RANGE (1 tile).
+func _update_adrenaline_dash_preview() -> bool:
+	_dungeon_floor.show_spell_range_preview(grid_pos, PlayerOrc.DASH_RANGE, false)
+	var world_mouse: Vector2 = get_global_mouse_position()
+	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
+	var d: Vector2i = tile - grid_pos
+	var dist_cheb: int = maxi(absi(d.x), absi(d.y))
+	var in_range: bool = tile != grid_pos and dist_cheb <= PlayerOrc.DASH_RANGE \
 		and _dungeon_floor.is_tile_visible(tile) and _dungeon_floor.is_walkable(tile) \
 		and _dungeon_floor.get_enemy_at(tile) == null
 	_dungeon_floor.show_touch_target_preview(tile, in_range)
@@ -1695,6 +1716,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _goliath.cloud_teleport_mode_active:
 				_goliath.cloud_teleport_mode_active = false
 				GameState.game_log("[color=gray]Cloud Giant teleport cancelled.[/color]")
+			if _orc.dash_mode_active:
+				_orc.cancel()
+				GameState.game_log("[color=gray]Adrenaline Rush dash cancelled.[/color]")
 			if _halfling.nimbleness_mode_active:
 				_halfling.cancel()
 				GameState.game_log("[color=gray]Nimbleness cancelled.[/color]")
@@ -1932,6 +1956,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_goliath.cloud_teleport_mode_active = false
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
 				_goliath.resolve_cloud_teleport(clicked)
+			return
+
+		# Adrenaline Rush's one-tile dash targeting mode (Orc) — click an adjacent visible tile;
+		# a genuinely free action, no turn cost either way (see player_orc.gd).
+		if _orc.dash_mode_active:
+			_orc.dash_mode_active = false
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				_orc.resolve_dash(clicked)
 			return
 
 		# Halfling Nimbleness targeting mode — click one of the 8 adjacent tiles (blue preview);
@@ -2618,13 +2650,6 @@ func _try_move(dir: Vector2i) -> void:
 		return
 	if _free_sidestep:
 		GameState.game_log("[color=cyan]Battlefield Expert: that side-step didn't cost you your turn.[/color]")
-		await _take_free_move_beat()
-		_reverted_this_round = true
-		TurnManager.revert_to_waiting()
-		return
-	if stats.adrenaline_rush_move_free_pending:
-		stats.adrenaline_rush_move_free_pending = false
-		GameState.game_log("[color=cyan]Adrenaline Rush: that move didn't cost you your turn.[/color]")
 		await _take_free_move_beat()
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()

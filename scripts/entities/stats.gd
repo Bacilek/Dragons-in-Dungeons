@@ -151,9 +151,6 @@ var heroic_inspiration_available: bool = false  # Human
 # every other race charge above, which is long-rest-only) — see GameState._on_short_rest_completed()/
 # long_rest() and scripts/entities/CLAUDE.md's "Orc" section.
 var adrenaline_rush_uses_remaining: int = 0
-# One-shot flag: the player's very next WASD move doesn't cost a turn. Not serialized — mid-floor
-# buff state, same precedent as expeditious_retreat_turns/longstrider_turns.
-var adrenaline_rush_move_free_pending: bool = false
 
 # ── Elf: Elven Lineage ────────────────────────────────────────────────────────────
 # Each of the 3 sub-races (ElfSubrace) grants two spells, at character levels 3 and 5
