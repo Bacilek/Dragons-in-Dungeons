@@ -1548,6 +1548,20 @@ func _update_ranged_range_preview() -> bool:
 	if spell_armed:
 		_dungeon_floor.hide_ranged_range_preview()
 		return false
+	# Primed throw mode (_throw_item armed via on_throw_primed()): show the same two-tone range
+	# backdrop plus a world-tile red/single-target highlight so the player can actually see where
+	# the throw will land — bugfix, this used to show nothing once primed (only the pre-activation
+	# quickbar-hover preview below existed), so there was no feedback at all while "ready to throw."
+	if _throw_item != null and _throw_item.item_type == Item.Type.WEAPON and _throw_item.is_thrown:
+		var throw_long_r: int = _throw_item.long_range if _throw_item.long_range > 0 else DungeonFloor.FOV_RADIUS
+		_dungeon_floor.show_ranged_range_preview(grid_pos, _throw_item.range, throw_long_r)
+		var world_mouse_t: Vector2 = get_global_mouse_position()
+		var tile_t: Vector2i = Vector2i(floori(world_mouse_t.x / 16.0), floori(world_mouse_t.y / 16.0))
+		var d_t: Vector2i = tile_t - grid_pos
+		var dist_cheb_t: int = maxi(absi(d_t.x), absi(d_t.y))
+		var in_range_t: bool = dist_cheb_t <= throw_long_r
+		_dungeon_floor.show_single_target_preview(tile_t, in_range_t)
+		return true
 	# Quickbar hover: hovering a thrown item in the item bar (hud.gd) previews ITS range/
 	# long_range, same two-tone backdrop, no Shift/equipped-ranged-weapon needed — no world-tile
 	# enemy highlight though, since the mouse is over UI, not a game-world tile.
