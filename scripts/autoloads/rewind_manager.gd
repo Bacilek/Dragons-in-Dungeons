@@ -54,7 +54,7 @@ const REWIND_GAMESTATE_FIELDS: Array[String] = [
 	"bonus_action_used",
 	"risen_from_dead_active", "player_on_difficult_terrain", "terrain_ac_bonus",
 	"natural_rager_form", "active_rager_form", "rager_form_switch_turns_remaining",
-	"wild_heart_sleeper_active", "player_evades_opportunity_attacks",
+	"wild_heart_sleeper_active", "player_evades_opportunity_attacks", "monk_disengage_this_round",
 	"zealot_divine_fury_type", "zealot_blessed_charges", "zealot_blessed_heal_queued", "zealot_zp_charges",
 	"special_slot_spell_id",
 	"fog_cloud_pos", "fog_cloud_radius", "darkness_pos", "darkness_radius",

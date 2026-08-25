@@ -240,9 +240,12 @@ func activate_flurry_of_blows() -> void:
 # A Bonus Action (not the player's whole turn, D&D 2024 PHB text) — grants Stats.dodge_turns = 1,
 # which imposes DISADV on every attack roll against the player (enemy.gd's _attack_player()) until
 # it ticks to 0 at the start of the player's own next turn (Stats.tick_status()), AND sets
-# GameState.player_evades_opportunity_attacks = true so this round's own movement doesn't provoke
-# an Opportunity Attack either (Disengage, folded into the same activation) - reset alongside the
-# other once-per-round flags in Player._on_turn_started(). Only activatable while engaged
+# GameState.monk_disengage_this_round = true so this round's own movement doesn't provoke an
+# Opportunity Attack either (Disengage, folded into the same activation) - a separate flag from
+# Wild Heart Eagle form's own player_evades_opportunity_attacks, ORed together in
+# Player._resolve_enemy_opportunity_attacks(), so this per-round reset can never interrupt an
+# active Eagle form - reset alongside the other once-per-round flags in Player._on_turn_started().
+# Only activatable while engaged
 # (PlayerMonk.is_engaged()) — see GameState.is_ability_usable()'s "patient_defense" case for the
 # matching ability-bar grey-out.
 func activate_patient_defense() -> void:
@@ -257,7 +260,7 @@ func activate_patient_defense() -> void:
 		GameState.bonus_action_used = true
 		GameState.ability_bar_changed.emit()
 	player.stats.dodge_turns = 1
-	GameState.player_evades_opportunity_attacks = true
+	GameState.monk_disengage_this_round = true
 	GameState.player_status_changed.emit()
 	GameState.game_log("[color=cyan]Patient Defense: attacks against you have Disadvantage and your movement won't provoke Opportunity Attacks until your next turn.[/color]")
 
@@ -266,10 +269,11 @@ func activate_patient_defense() -> void:
 # (player_orc.gd's dash_mode_active/resolve_dash()), just Focus-gated instead of a per-rest
 # counter, no temp HP, and limited to once per turn (GameState.step_of_wind_used_this_turn). Also a
 # Bonus Action, D&D 2024 PHB text: alongside the dash itself, sets GameState.
-# player_evades_opportunity_attacks = true so NONE of the player's movement this round (not just
-# the dash) provokes an Opportunity Attack (Disengage) - reset alongside the other once-per-round
-# flags in Player._on_turn_started(). Set on arm (matching the Focus Point spend below), not on a
-# successful dash landing.
+# monk_disengage_this_round = true so NONE of the player's movement this round (not just the dash)
+# provokes an Opportunity Attack (Disengage) - same flag Patient Defense sets above, separate from
+# Wild Heart Eagle form's own player_evades_opportunity_attacks - reset alongside the other
+# once-per-round flags in Player._on_turn_started(). Set on arm (matching the Focus Point spend
+# below), not on a successful dash landing.
 func activate_step_of_wind() -> void:
 	if GameState.step_of_wind_used_this_turn:
 		return
@@ -281,7 +285,7 @@ func activate_step_of_wind() -> void:
 	if not GameState.invincible:
 		GameState.bonus_action_used = true
 		GameState.ability_bar_changed.emit()
-	GameState.player_evades_opportunity_attacks = true
+	GameState.monk_disengage_this_round = true
 	step_of_wind_mode_active = true
 	GameState.game_log("[color=cyan]Step of the Wind: click an adjacent tile to dash there for free. Your movement won't provoke Opportunity Attacks this round.[/color]")
 

@@ -332,7 +332,7 @@ func _on_turn_started() -> void:
 			GameState.deflect_attacks_used_this_turn = false
 			GameState.monk_extra_attack_used_this_turn = false
 			GameState.ability_bar_changed.emit()
-		GameState.player_evades_opportunity_attacks = false
+		GameState.monk_disengage_this_round = false
 		# Bonus Action refreshes at the start of every real round — see scripts/entities/CLAUDE.md's
 		# "Bonus Action economy" section.
 		if GameState.bonus_action_used:
@@ -2424,7 +2424,7 @@ func _resolve_enemy_opportunity_attacks(prev: Vector2i, next: Vector2i) -> void:
 	# and must still run in God Mode (God Mode sets noclip alongside invincible) — otherwise the
 	# whole Tactician/Side Step trigger silently never fires while debugging.
 	var noclip: bool = GameState.noclip
-	var evading: bool = GameState.player_evades_opportunity_attacks
+	var evading: bool = GameState.player_evades_opportunity_attacks or GameState.monk_disengage_this_round
 	var evaded_any: bool = false
 	# Invisible (unseen) player: enemies have no idea where you are, so they can't react with an
 	# Opportunity Attack — matches Enemy._can_see_entity()'s same outright-false treatment.

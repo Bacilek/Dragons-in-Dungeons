@@ -248,12 +248,19 @@ var rager_form_switch_turns_remaining: int = 0
 var natural_sleeper_form: String = ""   # "" = no form chosen; locks in on long_rest()
 var active_sleeper_form: String = ""    # locks in on long_rest() only
 var wild_heart_sleeper_active: bool = false
-# Disengage-for-the-round: while true, none of the player's voluntary moves this round provoke an
-# Opportunity Attack (Player._resolve_enemy_opportunity_attacks() reads it). Set by Monk's Patient
-# Defense/Step of the Wind (scripts/entities/player_monk.gd); reset every REAL turn start alongside
-# the other once-per-round flags in Player._on_turn_started(). Also reserved for Wild Heart's
-# future Eagle R3 (not implemented yet) - do NOT remove this flag even if no caster sets it.
+# Wild Heart Eagle form: true for as long as active_rager_form == "Eagle" (kept in sync by
+# _apply_active_rager_form_effects(), NOT turn-scoped) - enemies never gain Opportunity Attacks
+# against the player while active. Do not reset this on a turn boundary; it tracks form state, not
+# a per-round buff. Monk's own per-round Disengage (Patient Defense/Step of the Wind) is a SEPARATE
+# flag, monk_disengage_this_round, precisely so it can't stomp this one - see that flag's comment.
 var player_evades_opportunity_attacks: bool = false
+# Monk Disengage-for-the-round (Patient Defense/Step of the Wind, scripts/entities/player_monk.gd,
+# D&D 2024 PHB text folds a Disengage into both): while true, none of the player's voluntary moves
+# THIS ROUND provoke an Opportunity Attack (Player._resolve_enemy_opportunity_attacks() ORs it with
+# player_evades_opportunity_attacks above). Reset every REAL turn start alongside the other
+# once-per-round flags in Player._on_turn_started() - kept independent of the Eagle-form flag above
+# so that reset can never interrupt an active Eagle form.
+var monk_disengage_this_round: bool = false
 # Wild Heart Enhanced Forms R1: +1 while in Eagle form, threaded into DungeonFloor's FOV radius.
 var fov_radius_bonus: int = 0
 # Reference to living companion node (null when no companion). Set by player.gd.
@@ -426,6 +433,7 @@ func start_new_run() -> void:
 	active_sleeper_form = ""
 	wild_heart_sleeper_active = false
 	player_evades_opportunity_attacks = false
+	monk_disengage_this_round = false
 	player_companion = null
 	pending_companion_restore = {}
 	terrain_ac_bonus = 0

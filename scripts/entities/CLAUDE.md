@@ -1944,7 +1944,11 @@ Full design doc: `docs/architecture/opportunity-attacks-design.md`. Core rule (5
 | Enemy | `oa_used_this_round` | Top of `take_turn()`, unconditionally (before the prone/slowed/rooted early-returns — a slowed enemy still refreshes its reaction) |
 | Companion | `oa_used_this_round` | Top of `take_turn()` |
 
-**Eagle R3 flag** (`GameState.player_evades_opportunity_attacks`, on `GameState`, not per-entity — it's a player-only debuff-immunity toggle, not reaction state): while true, `_resolve_enemy_opportunity_attacks()` never lets an enemy actually swing (auto-evade, not "OA with disadvantage") but still logs a single gray flavor line if it prevented at least one attacker's OA that move ("Eagle Form: you slip past their reach."). It has **no effect on the player's own OAs against enemies**. Set in `_activate_rage()` (`get_talent_rank("natural_rager") >= 3 and natural_rager_form == "Eagle"`) and cleared in `_end_rage()`; form can't be switched mid-Rage so no other write site is needed.
+**Two independent evasion flags, ORed together** in `_resolve_enemy_opportunity_attacks()`'s `evading` check — kept separate on purpose so nothing can stomp the other:
+- **`GameState.player_evades_opportunity_attacks`** — Wild Heart Eagle form's own flag, kept in sync with `active_rager_form` by `_apply_active_rager_form_effects()` (true for as long as Eagle is the active form, see "Wild Heart Tier 2 talents" below) — NOT turn-scoped, never reset on a turn boundary.
+- **`GameState.monk_disengage_this_round`** — Monk's Patient Defense and Step of the Wind (`player_monk.gd`, see "Monk class" below and "Bonus Action economy" above) each set this true on activation, folding a genuine Disengage into their existing effect. Reset every REAL turn start in `player.gd`'s `_on_turn_started()` (`if not came_from_revert:` block) — a Monk-only per-round buff, unlike Eagle's persistent form state, hence the separate flag rather than reusing `player_evades_opportunity_attacks` (reusing it would mean this same per-turn reset silently interrupts an active Eagle form).
+
+While either flag is true, `_resolve_enemy_opportunity_attacks()` never lets an enemy actually swing (auto-evade, not "OA with disadvantage") but still logs a single gray flavor line if it prevented at least one attacker's OA that move. Neither flag has any effect on the player's own OAs against enemies.
 
 `resolve_opportunity_attack(enemy: Enemy)` on `player.gd` is modeled on `_resolve_cleave_attack()` — self-contained roll+damage+log, no per-turn talent effects wired in (Vex/Frenzy/Divine-Fury/Ironwood-Bark deliberately excluded, since those are per-turn action effects and OA fires on someone else's turn). Reuses the existing `hit:`/`dmg:` tooltip metas (no new formatter needed) with an "Opportunity attack:" log prefix.
 
@@ -2238,14 +2242,14 @@ sets `bonus_action_used = true` only on confirmed activation/resolution — matc
 - **Flurry of Blows** — `player_monk.gd.activate_flurry_of_blows()`.
 - **Step of the Wind** — `player_monk.gd.activate_step_of_wind()` (its own pre-existing
   `step_of_wind_used_this_turn` per-turn cap is unaffected, both gates must pass). Also sets
-  `GameState.player_evades_opportunity_attacks = true` on arm (Disengage-for-the-round, see the
-  "Monk class" section above).
+  `GameState.monk_disengage_this_round = true` on arm (Disengage-for-the-round, see the "Monk
+  class" section above and the "Opportunity Attacks" section's "Two independent evasion flags").
 - **Patient Defense** — `player_monk.gd.activate_patient_defense()` (its own pre-existing
   `PlayerMonk.is_engaged()` gate is unaffected, both checks must pass). **Reworked from a
   turn-costing action to a genuine Bonus Action** (D&D 2024 PHB text, direct owner correction) —
   used to call `TurnManager.begin_player_action()`/`on_player_action_complete()` like a Dodge
   action substitute; now takes the same free-action shape as Flurry of Blows (no `TurnManager`
-  envelope at all). Also sets `GameState.player_evades_opportunity_attacks = true` alongside
+  envelope at all). Also sets `GameState.monk_disengage_this_round = true` alongside
   `Stats.dodge_turns = 1` (Disengage folded into the same activation, see the "Monk class" section
   above).
 - **Halfling Nimbleness** — `player_halfling.gd.resolve_nimbleness()` (gated on confirmed
@@ -4026,13 +4030,15 @@ in `player_monk.gd`:
   Flurry of Blows/Step of the Wind. Two effects, both "until the start of your next turn": sets
   `Stats.dodge_turns = 1` — every enemy attack roll against the player gets DISADV while it's > 0
   (`enemy.gd`'s `_attack_player()` disadv expression) — AND sets
-  `GameState.player_evades_opportunity_attacks = true` (Disengage folded into the same activation)
-  so none of the player's own movement this round provokes an Opportunity Attack either. Both tick
-  down/clear together, ticked by `Stats.tick_status()` (`dodge_turns`) and reset in `player.gd`'s
-  `_on_turn_started()` (`player_evades_opportunity_attacks`, alongside the other once-per-round
-  flags) — so both naturally last through the following enemy round and clear right before the
-  player's own next turn. `dodge_turns` is serialized (`Stats.to_dict()`/`from_dict()`, same tier
-  as `slowed_turns`/`blade_ward_turns`); `player_evades_opportunity_attacks` is combat-transient
+  `GameState.monk_disengage_this_round = true` (Disengage folded into the same activation) so none
+  of the player's own movement this round provokes an Opportunity Attack either — a flag separate
+  from Wild Heart Eagle form's own `player_evades_opportunity_attacks` (see "Opportunity Attacks"
+  section's "Two independent evasion flags"), so this reset can never interrupt an active Eagle
+  form. Both tick down/clear together, ticked by `Stats.tick_status()` (`dodge_turns`) and reset in
+  `player.gd`'s `_on_turn_started()` (`monk_disengage_this_round`, alongside the other
+  once-per-round flags) — so both naturally last through the following enemy round and clear right
+  before the player's own next turn. `dodge_turns` is serialized (`Stats.to_dict()`/`from_dict()`,
+  same tier as `slowed_turns`/`blade_ward_turns`); `monk_disengage_this_round` is combat-transient
   (GameState-resident, captured/restored by `RewindManager.REWIND_GAMESTATE_FIELDS` like Rage's
   own flags, never serialized to a save).
 - **Step of the Wind** (`"step_of_wind"`, `PlayerMonk.activate_step_of_wind()`/
@@ -4045,7 +4051,7 @@ in `player_monk.gd`:
   Grip of the Forest/Halfling Nimbleness's own once-per-turn flags — same precedent, so
   `is_ability_usable()` can read it without a `Player` reference). Also a **Bonus Action** (D&D
   2024 PHB text): on activation (same moment the Focus Point and Bonus Action are spent, not on a
-  successful dash landing) also sets `GameState.player_evades_opportunity_attacks = true` — same
+  successful dash landing) also sets `GameState.monk_disengage_this_round = true` — same
   Disengage-for-the-round flag Patient Defense uses above, so it's not just the dash tile itself
   that's protected, ANY of the player's movement for the rest of the round is. The Focus Point is
   spent on arm, not on a successful landing (matches Adrenaline Rush's own convention) — a
