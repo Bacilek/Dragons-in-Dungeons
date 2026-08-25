@@ -74,14 +74,22 @@ func activate_celestial_revelation() -> void:
 		return
 	if player.stats.aasimar_celestial_revelation_used and not GameState.invincible:
 		return
+	if GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	var picker: Node = load("res://scripts/ui/celestial_revelation_picker.gd").new()
 	picker.aasimar = self
 	player.get_tree().root.add_child(picker)
 
 func resolve_celestial_revelation_choice(transform: int) -> void:
+	if GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	if not GameState.invincible:
 		player.stats.aasimar_celestial_revelation_used = true
+		GameState.bonus_action_used = true
 	GameState._sync_ability_uses()
+	GameState.ability_bar_changed.emit()
 	player.stats.celestial_revelation_turns = 10
 	player.stats.celestial_revelation_transform = transform
 	player.stats.celestial_revelation_bonus_used_this_turn = false

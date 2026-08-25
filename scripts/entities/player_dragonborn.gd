@@ -132,8 +132,13 @@ func activate_draconic_flight() -> void:
 		return
 	if player.stats.draconic_flight_used and not GameState.invincible:
 		return
+	if GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	if not GameState.invincible:
 		player.stats.draconic_flight_used = true
+		GameState.bonus_action_used = true
+		GameState.ability_bar_changed.emit()
 	player.stats.draconic_flight_turns = 100
 	GameState.player_status_changed.emit()
 	GameState.game_log("[color=cyan]Your wings unfurl — you take to the air for up to 100 turns.[/color]")

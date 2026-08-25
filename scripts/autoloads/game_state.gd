@@ -940,7 +940,7 @@ func _build_stonecunning_ability() -> Ability:
 	var ab := Ability.new()
 	ab.ability_id = "stonecunning"
 	ab.ability_name = "Stonecunning"
-	ab.description = "Gain Tremorsense for up to 100 turns: sense any living creature within %d tiles standing on the same terrain type as you, even through walls/darkness/blindness — shown as a red tremor ping, not a clear sighting. Free action." % Stats.STONECUNNING_RANGE
+	ab.description = "Gain Tremorsense for up to 100 turns: sense any living creature within %d tiles standing on the same terrain type as you, even through walls/darkness/blindness — shown as a red tremor ping, not a clear sighting. Costs a Bonus Action." % Stats.STONECUNNING_RANGE
 	ab.icon_path = "res://icons/races/dwarf/stonecunning.png"
 	ab.uses_remaining = player_stats.stonecunning_uses_remaining
 	ab.uses_max = player_stats.proficiency_bonus
@@ -988,7 +988,7 @@ func _build_celestial_revelation_ability() -> Ability:
 	var ab := Ability.new()
 	ab.ability_id = "celestial_revelation"
 	ab.ability_name = "Celestial Revelation"
-	ab.description = "Free action. Choose Heavenly Wings, Inner Radiance, or Necrotic Shroud — press to cycle the choice, click anywhere to activate. For 10 turns, the first damage you deal each turn is boosted by your proficiency bonus (%d). 1 use per long rest." % player_stats.proficiency_bonus
+	ab.description = "Costs a Bonus Action. Choose Heavenly Wings, Inner Radiance, or Necrotic Shroud — press to cycle the choice, click anywhere to activate. For 10 turns, the first damage you deal each turn is boosted by your proficiency bonus (%d). 1 use per long rest." % player_stats.proficiency_bonus
 	ab.icon_path = "res://icons/races/aasimar/celestial_revelation.png"
 	ab.uses_remaining = 0 if player_stats.aasimar_celestial_revelation_used else 1
 	ab.uses_max = 1
@@ -1009,7 +1009,7 @@ func _build_draconic_flight_ability() -> Ability:
 	var ab := Ability.new()
 	ab.ability_id = "draconic_flight"
 	ab.ability_name = "Draconic Flight"
-	ab.description = "Take to the air for up to 100 turns: cross chasms, never trample grass, never trigger traps, and ignore standing-on-fire damage. Free action, 1/long rest."
+	ab.description = "Take to the air for up to 100 turns: cross chasms, never trample grass, never trigger traps, and ignore standing-on-fire damage. Costs a Bonus Action, 1/long rest."
 	ab.icon_path = "res://icons/races/dragonborn/draconic_flight.png"
 	ab.uses_remaining = 0
 	ab.uses_max = 0
@@ -1019,7 +1019,7 @@ func _build_large_form_ability() -> Ability:
 	var ab := Ability.new()
 	ab.ability_id = "large_form"
 	ab.ability_name = "Large Form"
-	ab.description = "Grow to Large size for up to 100 turns (needs a free 2x2 space): Advantage on STR checks, +1/3 movement speed. Press again to end early. Free action, 1/long rest."
+	ab.description = "Grow to Large size for up to 100 turns (needs a free 2x2 space): Advantage on STR checks, +1/3 movement speed. Press again to end early (free). Costs a Bonus Action to activate, 1/long rest."
 	ab.icon_path = "res://icons/races/goliath/large_form.png"
 	ab.uses_remaining = 0 if player_stats.large_form_used else 1
 	ab.uses_max = 1
@@ -1405,7 +1405,7 @@ func _build_hunters_mark_description() -> String:
 	var lines: Array[String] = []
 	lines.append("Mark a visible enemy. Every hit against it (any weapon) deals +1d6 Force damage.")
 	lines.append("Moving the mark to a new target costs a use, unless the previous quarry just died and this is your very next turn.")
-	lines.append("%d use%s per long rest." % [uses, "s" if uses != 1 else ""])
+	lines.append("%d use%s per long rest. Costs a Bonus Action." % [uses, "s" if uses != 1 else ""])
 	return "\n".join(lines)
 
 func _give_monk_starting_items() -> void:
@@ -2135,6 +2135,29 @@ func _sync_ability_uses() -> void:
 			ab.uses_max = player_stats.proficiency_bonus
 	ability_bar_changed.emit()
 
+# Ability ids gated behind the shared Bonus Action economy (scripts/entities/CLAUDE.md's "Bonus
+# Action economy" section) — checked generically in is_ability_usable()/ability_unusable_reason()
+# below as an ADDITIONAL condition on top of each ability's own existing checks, not a replacement.
+# "giant_ancestry"/"spell:blade_ward"/"spell:hex" are handled separately since their ability_id
+# doesn't uniquely identify a gated ability (Giant Ancestry is shared by all 6 variants — only
+# Cloud's Jaunt is gated; spell abilities are prefixed).
+const BONUS_ACTION_ABILITY_IDS: PackedStringArray = [
+	"rage", "frenzy", "zealot_strike", "flurry_of_blows", "step_of_wind", "halfling_nimbleness",
+	"adrenaline_rush", "heroic_inspiration", "draconic_flight", "stonecunning", "large_form",
+	"celestial_revelation", "hunters_mark", "grip_of_the_forest",
+]
+
+func _bonus_action_blocks(ab: Ability) -> bool:
+	if invincible or not bonus_action_used:
+		return false
+	if ab.ability_id in BONUS_ACTION_ABILITY_IDS:
+		return true
+	if ab.ability_id == "giant_ancestry":
+		return player_stats.race_variant == Stats.GiantAncestry.CLOUD
+	if ab.ability_id.begins_with("spell:"):
+		return ab.ability_id.substr(6) in ["blade_ward", "hex"]
+	return false
+
 ## Whether an ability-bar entry can currently be activated — beyond the generic uses_remaining
 ## pool, several free base-abilities (uses_max == 0, i.e. always "has_uses") are additionally
 ## gated by external boolean state (a requirement to be raging, a once-per-rest flag, a spent
@@ -2148,6 +2171,8 @@ func is_ability_usable(ab: Ability) -> bool:
 	# window — nothing but landing that attack (or Wait, which forfeits it) is allowed, matching
 	# the same hard block player.gd's _use_quickbar_slot() already applies to actual activation.
 	if monk_extra_attack_pending:
+		return false
+	if _bonus_action_blocks(ab):
 		return false
 	match ab.ability_id:
 		"frenzy":
@@ -2251,6 +2276,9 @@ func can_cast_spell_now(spell_id: String) -> bool:
 func ability_unusable_reason(ab: Ability) -> String:
 	if monk_extra_attack_pending:
 		return "Attack/Wait"
+	# "No Bonus Action" only wins when it's the SOLE blocker — a more specific existing reason
+	# (e.g. "No Rage", "Not Engaged") still takes priority if that's ALSO true, checked below.
+	var bonus_action_reason: String = "No Bonus Action" if _bonus_action_blocks(ab) else ""
 	match ab.ability_id:
 		"frenzy":
 			if not is_raging:
@@ -2296,8 +2324,12 @@ func ability_unusable_reason(ab: Ability) -> String:
 		"hunters_mark":
 			# The round-cooldown case is already shown via hud.gd's own "%dt"/flat-"1" countdown
 			# overlay (frenzy_cooldown_turns), so this only ever fires for the "out of every
-			# resource" case (no live target to free-refresh, no free recast, no uses, no slot).
-			return "No Slot"
+			# resource" case (no live target to free-refresh, no free recast, no uses, no slot) —
+			# unless the Bonus Action itself is the actual blocker, checked below instead.
+			if bonus_action_reason == "":
+				return "No Slot"
+	if bonus_action_reason != "":
+		return bonus_action_reason
 	if ab.ability_id.begins_with("spell:"):
 		var spell: Spell = SpellDb.get_spell(ab.ability_id.substr(6))
 		return "No Uses" if spell != null and spell.level == 0 else "No Slot"

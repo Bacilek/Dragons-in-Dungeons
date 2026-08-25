@@ -1380,6 +1380,13 @@ const HEX_ABILITIES: Array[String] = ["str", "dex", "con", "int", "wis", "cha"]
 # casting time (RAW: bonus action) — ends via the same revert_to_waiting() free-action pattern as
 # Shield, instead of player._handle_post_attack_turn().
 static func cast_leveled_auto_hit_at_enemy(player: Player, spell: Spell, cast_level: int, target: Enemy, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	# Hex is a Bonus Action cast in 5e RAW — gated on the Bonus Action economy BEFORE the turn/slot
+	# are ever touched (this covers a manual re-cast too — Enemy.die()'s free-recast-on-kill arming
+	# only ever gets spent through this same function, never fires on its own). See
+	# scripts/entities/CLAUDE.md's "Bonus Action economy" section.
+	if spell.effect_id == "hex" and GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	target.on_disturbed(player.grid_pos)
@@ -1411,6 +1418,9 @@ static func cast_leveled_auto_hit_at_enemy(player: Player, spell: Spell, cast_le
 # the very next Hex cast (any target) costs no slot at all.
 static func _resolve_hex(player: Player, spell: Spell, cast_level: int, target: Enemy, from_scroll: bool) -> void:
 	var stats: Stats = player.stats
+	if not GameState.invincible:
+		GameState.bonus_action_used = true
+		GameState.ability_bar_changed.emit()
 	if stats.hex_free_recast_pending and not from_scroll:
 		stats.hex_free_recast_pending = false
 		GameState.game_log("[color=cyan]Hex: your fallen quarry lets you recast for free.[/color]")

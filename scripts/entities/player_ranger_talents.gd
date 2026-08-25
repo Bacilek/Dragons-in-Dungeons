@@ -44,6 +44,9 @@ func commit_mark(enemy: Enemy) -> void:
 	if stats.hunters_mark_cast_this_round:
 		GameState.game_log("[color=gray]Hunter's Mark: already cast this round.[/color]")
 		return
+	if GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	var already_this_target: bool = stats.hunters_mark_target == enemy and stats.hunters_mark_target != null and is_instance_valid(stats.hunters_mark_target)
 	if not already_this_target:
 		if stats.hunters_mark_free_recast_available:
@@ -70,6 +73,8 @@ func commit_mark(enemy: Enemy) -> void:
 	stats.hunters_mark_target = enemy
 	stats.hunters_mark_fresh = true
 	stats.hunters_mark_cast_this_round = true
+	if not GameState.invincible:
+		GameState.bonus_action_used = true
 	GameState.game_log("[color=cyan]You mark %s as your quarry.[/color]" % enemy.display_name)
 	if player._dungeon_floor != null:
 		player._dungeon_floor.update_fog(player.grid_pos)
@@ -124,7 +129,11 @@ func try_bloodhound_remark(dead_enemy: Enemy) -> void:
 	stats.hunters_mark_turns = 0
 	if stats.concentration_spell_id == "hunters_mark":
 		stats.concentration_spell_id = ""
-	if GameState.get_talent_rank("bloodhound") < 3 or player == null or player._dungeon_floor == null:
+	# R3's auto-remark is itself a bonus-action-shaped trigger (it re-casts Hunter's Mark) — if the
+	# bonus action is already spent on something else this round, it doesn't fire for free; falls
+	# through to the same free-recast-window fallback the non-R3 case already uses.
+	var bonus_action_available: bool = not GameState.bonus_action_used or GameState.invincible
+	if GameState.get_talent_rank("bloodhound") < 3 or player == null or player._dungeon_floor == null or not bonus_action_available:
 		if was_concentrating:
 			stats.hunters_mark_free_recast_pending = true
 			GameState.game_log("[color=cyan]Hunter's Mark: your quarry has fallen — mark a new target for free on your next turn.[/color]")
@@ -145,6 +154,8 @@ func try_bloodhound_remark(dead_enemy: Enemy) -> void:
 		stats.hunters_mark_fresh = true
 		stats.hunters_mark_turns = Stats.HUNTERS_MARK_DURATION
 		stats.concentration_spell_id = "hunters_mark"
+		if not GameState.invincible:
+			GameState.bonus_action_used = true
 		GameState.game_log("[color=cyan]Bloodhound: Hunter's Mark shifts to %s.[/color]" % best.display_name)
 	GameState.ability_bar_changed.emit()
 

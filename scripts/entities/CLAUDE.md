@@ -2254,12 +2254,57 @@ sets `bonus_action_used = true` only on confirmed activation/resolution — matc
   spends the Bonus Action. `Spell.casting_time` updated to `"Bonus Action"` (`spell_db.gd`).
 - **Grip of the Forest** — `player.gd._activate_grip_of_the_forest()` (gated on
   activation/arming, alongside its own `grip_of_the_forest_used_this_turn` cap).
+- **Aasimar Celestial Revelation** — `player_aasimar.gd.activate_celestial_revelation()` (checked
+  before the picker even opens, so an already-spent bonus action never wastes the click) AND
+  `resolve_celestial_revelation_choice()` (the actual commit point, defense-in-depth).
+- **Dragonborn Draconic Flight** — `player_dragonborn.gd.activate_draconic_flight()`.
+- **Dwarf Stonecunning** — `player_dwarf.gd.activate_stonecunning()`.
+- **Goliath Large Form** — `player_goliath.gd.activate_large_form()`, **activation only** — the
+  same function's "second press while already active ends it early" branch (`end_large_form()`)
+  returns before ever reaching the gate, so ending the form stays a genuinely free action.
+- **Warlock Hex** — `spell_effects.gd.cast_leveled_auto_hit_at_enemy()`'s top-of-function check
+  (before the turn/slot are touched) covers BOTH a fresh manual cast and a manual re-cast off
+  Bloodhound-style free-recast-on-kill (`Stats.hex_free_recast_pending`, consumed inside
+  `_resolve_hex()`, which only ever runs through this same entry point — there is no automatic-
+  reflex path for Hex, unlike Ranger's Bloodhound R3 below). `Spell.casting_time` updated to
+  `"Bonus Action"`.
+- **Ranger Hunter's Mark** — `player_ranger_talents.gd.commit_mark()` (the manual arm-then-click
+  cast/re-cast path — this spell's casting time was already "free," i.e. never called
+  `TurnManager.begin_player_action()` at all, so it's exactly the kind of ability this whole
+  feature targets). **Also gates the AUTOMATIC Bloodhound R3 remark**
+  (`try_bloodhound_remark()`, called unconditionally from `Enemy.die()` when the Marked target
+  dies) — a genuinely automatic trigger, not a player click: if the Bonus Action is already spent
+  when the kill happens, R3's auto-remark does NOT fire; it falls through to the same
+  `hunters_mark_free_recast_pending` fallback the sub-R3 case already uses (a gray "mark a new
+  target for free on your next turn" line — the player can still manually re-mark once the Bonus
+  Action refreshes, no double penalty). If the Bonus Action IS available, the auto-remark fires
+  and consumes it. The non-Bloodhound "free re-mark window" itself (`hunters_mark_free_recast_
+  pending` → `_available`, consumed by a normal manual `commit_mark()` re-click) needs no separate
+  handling — it's just another `commit_mark()` call, already covered by that function's own gate.
 
 **Deliberately NOT gated**: Shield (spell) — stays a free action; it simulates a 5e Reaction,
 which this engine has no framework for, and the direct owner decided against folding it into this
-system. Equip/unequip/drop/torch-lighting/Inspect/the Versatile-grip toggle, and Monk's
-auto-granted Bonus Unarmed Strike/Extra Attack windows (automatic side effects of an attack, not a
-standalone player choice) are untouched — administrative/passive actions were never in scope.
+system. Goliath's Fire/Frost/Hill/Storm/Stone Giant Ancestry variants — only Cloud's Jaunt is
+gated; the other five stay free since they're "arm now, trigger later on a hit" reactions, not
+proactive actions. Wild Heart's Animal Form cycling (Bear/Eagle/Wolf toggle) — stays free, it's a
+Barbarian subclass mechanic, not a race/species feature, and the owner wants form-switching itself
+to never cost anything. Equip/unequip/drop/torch-lighting/Inspect/the Versatile-grip toggle, and
+Monk's auto-granted Extra Attack window (an automatic side effect of an attack, not a standalone
+player choice) are untouched — administrative/passive actions were never in scope.
+
+**Monk's Bonus Unarmed Strike is now genuinely gated too** (`player_monk.gd.
+try_bonus_unarmed_strike()`, called from both the hit and miss tails of `_bump_attack()`) — a real
+behavior change, not just a check: this used to be an unconditional free extra attack whenever
+Martial Arts was active. Two cases:
+- **Flurry of Blows NOT pending**: right before firing, checks `GameState.bonus_action_used` — if
+  already spent, the strike doesn't fire at all (silent no-op, no log spam); if available, consumes
+  it and fires exactly ONE bonus strike, same as before.
+- **Flurry of Blows pending** (`flurry_pending == true`): Flurry's own activation already spent
+  the Bonus Action when it was armed (see the gated-abilities list above) — this trigger bypasses
+  the check/consumption entirely and just resolves the doubled-strike loop as normal.
+Net result: "2 attacks for 1 Bonus Action" when Flurry fires, "1 attack for 1 Bonus Action" when it
+doesn't, "0 attacks" if the Bonus Action was already spent on something else this round (and Flurry
+wasn't what spent it).
 
 **Rage house-rule (on top of 5e 2024, direct owner request)**: a leftover, UNUSED Bonus Action at
 the end of a real player turn automatically extends Rage — `player.gd._on_turn_ending()` (fires
@@ -2277,6 +2322,23 @@ while available this round, dark gray once `bonus_action_used` is true. No dedic
 (`res://icons/status/bonus_action.png`, renders as a tinted placeholder square). Refreshed via the
 tray's usual chokepoints (`TurnManager.player_turn_started`, `GameState.ability_bar_changed` —
 every gated site above emits `ability_bar_changed` right after flipping the flag).
+
+**Ability-bar greying + red reason text**: `GameState._bonus_action_blocks(ab) -> bool` is the
+single shared check `is_ability_usable(ab)`/`ability_unusable_reason(ab)` both call — an ADDITIONAL
+condition layered on top of each ability's own existing gate, never a replacement.
+`GameState.BONUS_ACTION_ABILITY_IDS` (a flat `PackedStringArray`) lists every plainly-identified
+gated ability_id (Rage, Frenzy, Zealot Strike, Flurry of Blows, Step of the Wind, Halfling
+Nimbleness, Adrenaline Rush, Heroic Inspiration, Draconic Flight, Stonecunning, Large Form,
+Celestial Revelation, Hunter's Mark, Grip of the Forest); Cloud's Jaunt (`ability_id ==
+"giant_ancestry"`, shared by all 6 Giant Ancestry variants — only greyed when
+`race_variant == Stats.GiantAncestry.CLOUD`) and Blade Ward/Hex (`ability_id.begins_with("spell:")`
+— checked by spell id, since a spell ability's id is prefixed) are handled as separate branches
+inside `_bonus_action_blocks()` since their bare ability_id doesn't uniquely identify the gated
+case. `ability_unusable_reason()` shows a red `"No Bonus Action"` line ONLY when no other
+ability-specific reason (e.g. `"No Rage"`, `"Not Engaged"`) is ALSO true — every gated ability's
+own `match` arm falls through (doesn't `return`) when its own condition is satisfied, so the
+generic Bonus-Action check right after the `match` block is what actually supplies the reason in
+that case.
 
 ## Multi-turn action interrupts (short rest / armor change / scroll learn)
 

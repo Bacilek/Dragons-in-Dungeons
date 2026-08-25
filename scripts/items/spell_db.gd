@@ -951,14 +951,14 @@ static func _hex() -> Spell:
 	s.spell_id = "hex"
 	s.spell_name = "Hex"
 	s.school = "Enchantment"
-	s.casting_time = "Free"
+	s.casting_time = "Bonus Action"
 	s.level = 1
 	s.range_tiles = 5
 	s.target_kind = Spell.TargetKind.ENEMY
 	s.resolution = Spell.Resolution.AUTO_HIT
 	s.duration_turns = 600
 	s.is_concentration = true
-	s.description = "Curse an enemy you can see. While cursed, every attack (weapon, cantrip, or spell) you land against it deals an extra 1d6 Necrotic damage, and it has Disadvantage on checks using one randomly chosen ability score. If the target dies while the curse is still active, your next casting of Hex costs no spell slot."
+	s.description = "Curse an enemy you can see. While cursed, every attack (weapon, cantrip, or spell) you land against it deals an extra 1d6 Necrotic damage, and it has Disadvantage on checks using one randomly chosen ability score. If the target dies while the curse is still active, your next casting of Hex costs no spell slot. Costs a Bonus Action, not your full turn."
 	s.icon_path = "res://icons/spells/1/hex.png"
 	s.effect_id = "hex"
 	s.class_list = ["WARLOCK"]

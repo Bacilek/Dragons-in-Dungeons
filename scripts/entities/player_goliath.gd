@@ -35,11 +35,16 @@ func activate_large_form() -> void:
 		return
 	if player.stats.large_form_used and not GameState.invincible:
 		return
+	if GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	if not _footprint_free(player.grid_pos):
 		GameState.game_log("[color=gray]Large Form: not enough open space here.[/color]")
 		return
 	if not GameState.invincible:
 		player.stats.large_form_used = true
+		GameState.bonus_action_used = true
+		GameState.ability_bar_changed.emit()
 	player.stats.large_form_turns = 100
 	player.size = Vector2i(2, 2)
 	_large_form_move_counter = 0
