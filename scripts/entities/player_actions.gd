@@ -64,7 +64,14 @@ func check_pickup() -> void:
 func wait_action() -> void:
 	GameState.stealth_check_stillness = true
 	TurnManager.begin_player_action()
-	GameState.game_log("[color=gray]You skipped a turn.[/color]")
+	# Extra Attack (Monk, level 5+): Waiting during the granted second-attack window forfeits it
+	# instead of the normal "You skipped a turn." line — same "attack again or wait" choice
+	# _try_move()/quickbar/mouse-click all present while the window is open.
+	if GameState.monk_extra_attack_pending:
+		GameState.monk_extra_attack_pending = false
+		GameState.game_log("[color=gray]Extra Attack forfeited.[/color]")
+	else:
+		GameState.game_log("[color=gray]You skipped a turn.[/color]")
 	if player._dungeon_floor != null:
 		player._dungeon_floor.update_fog(player.grid_pos)
 	TurnManager.on_player_action_complete()

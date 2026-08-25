@@ -2237,7 +2237,17 @@ sets `bonus_action_used = true` only on confirmed activation/resolution — matc
 - **Zealot Strike** — `player_zealot.gd.activate_zealot_strike()` (gated on arming).
 - **Flurry of Blows** — `player_monk.gd.activate_flurry_of_blows()`.
 - **Step of the Wind** — `player_monk.gd.activate_step_of_wind()` (its own pre-existing
-  `step_of_wind_used_this_turn` per-turn cap is unaffected, both gates must pass).
+  `step_of_wind_used_this_turn` per-turn cap is unaffected, both gates must pass). Also sets
+  `GameState.player_evades_opportunity_attacks = true` on arm (Disengage-for-the-round, see the
+  "Monk class" section above).
+- **Patient Defense** — `player_monk.gd.activate_patient_defense()` (its own pre-existing
+  `PlayerMonk.is_engaged()` gate is unaffected, both checks must pass). **Reworked from a
+  turn-costing action to a genuine Bonus Action** (D&D 2024 PHB text, direct owner correction) —
+  used to call `TurnManager.begin_player_action()`/`on_player_action_complete()` like a Dodge
+  action substitute; now takes the same free-action shape as Flurry of Blows (no `TurnManager`
+  envelope at all). Also sets `GameState.player_evades_opportunity_attacks = true` alongside
+  `Stats.dodge_turns = 1` (Disengage folded into the same activation, see the "Monk class" section
+  above).
 - **Halfling Nimbleness** — `player_halfling.gd.resolve_nimbleness()` (gated on confirmed
   resolution, alongside its own `used_this_turn` cap).
 - **Cloud Giant's Jaunt** — `player_goliath.gd.resolve_cloud_teleport()` (gated on confirmed
@@ -4010,14 +4020,21 @@ in `player_monk.gd`:
   activatable while **engaged** (`PlayerMonk.is_engaged()` — adjacent, via `Enemy.min_dist_to()`,
   to a live visible enemy; static, group-looks-up `"dungeon_floor"` so
   `GameState.is_ability_usable()` can call it without a live `Player` reference) — greys out
-  otherwise with a red "Not Engaged" tooltip reason (`GameState.ability_unusable_reason()`).
-  Costs the player's turn (a Dodge-action substitute, `TurnManager.begin_player_action()`/
-  `on_player_action_complete()`, same shape as `PlayerActions.wait_action()`) and sets
+  otherwise with a red "Not Engaged" tooltip reason (`GameState.ability_unusable_reason()`). A
+  **Bonus Action** (D&D 2024 PHB text, corrected from an earlier turn-costing implementation), so
+  it's in `GameState.BONUS_ACTION_ABILITY_IDS` and gates/spends `bonus_action_used` exactly like
+  Flurry of Blows/Step of the Wind. Two effects, both "until the start of your next turn": sets
   `Stats.dodge_turns = 1` — every enemy attack roll against the player gets DISADV while it's > 0
-  (`enemy.gd`'s `_attack_player()` disadv expression), ticked down by `Stats.tick_status()` so it
-  naturally lasts through the following enemy round and clears right before the player's own next
-  turn ("until the start of your next turn"). Serialized (`Stats.to_dict()`/`from_dict()`'s
-  `dodge_turns` key), same tier as `slowed_turns`/`blade_ward_turns`.
+  (`enemy.gd`'s `_attack_player()` disadv expression) — AND sets
+  `GameState.player_evades_opportunity_attacks = true` (Disengage folded into the same activation)
+  so none of the player's own movement this round provokes an Opportunity Attack either. Both tick
+  down/clear together, ticked by `Stats.tick_status()` (`dodge_turns`) and reset in `player.gd`'s
+  `_on_turn_started()` (`player_evades_opportunity_attacks`, alongside the other once-per-round
+  flags) — so both naturally last through the following enemy round and clear right before the
+  player's own next turn. `dodge_turns` is serialized (`Stats.to_dict()`/`from_dict()`, same tier
+  as `slowed_turns`/`blade_ward_turns`); `player_evades_opportunity_attacks` is combat-transient
+  (GameState-resident, captured/restored by `RewindManager.REWIND_GAMESTATE_FIELDS` like Rage's
+  own flags, never serialized to a save).
 - **Step of the Wind** (`"step_of_wind"`, `PlayerMonk.activate_step_of_wind()`/
   `resolve_step_of_wind()`/`cancel_step_of_wind()`): a free 1-tile dash, **directly modeled on
   Orc's Adrenaline Rush** (`player_orc.gd`'s `dash_mode_active`/`resolve_dash()` — same
@@ -4026,10 +4043,15 @@ in `player_monk.gd`:
   of a per-rest counter, no temp HP grant, and limited to **once per turn**
   (`GameState.step_of_wind_used_this_turn`, reset in `player.gd`'s `_on_turn_started()` alongside
   Grip of the Forest/Halfling Nimbleness's own once-per-turn flags — same precedent, so
-  `is_ability_usable()` can read it without a `Player` reference). The Focus Point is spent on
-  arm, not on a successful landing (matches Adrenaline Rush's own convention) — a cancelled/
-  out-of-range/blocked attempt doesn't refund it, but also doesn't burn the once-per-turn flag
-  (only a genuinely completed dash does).
+  `is_ability_usable()` can read it without a `Player` reference). Also a **Bonus Action** (D&D
+  2024 PHB text): on activation (same moment the Focus Point and Bonus Action are spent, not on a
+  successful dash landing) also sets `GameState.player_evades_opportunity_attacks = true` — same
+  Disengage-for-the-round flag Patient Defense uses above, so it's not just the dash tile itself
+  that's protected, ANY of the player's movement for the rest of the round is. The Focus Point is
+  spent on arm, not on a successful landing (matches Adrenaline Rush's own convention) — a
+  cancelled/out-of-range/blocked attempt doesn't refund it, but also doesn't burn the once-per-turn
+  flag (only a genuinely completed dash does); the Disengage flag, however, is already granted the
+  instant the ability arms, same as the Bonus Action spend it's bundled with.
 
 All three abilities keep `Ability.uses_max == 0` (the free-base-ability convention, same as Rage/
 Hunter's Mark) since the shared Focus pool, not a per-ability use count, is what actually gates
@@ -4176,12 +4198,23 @@ since no other class can select one):
 - **Archery**: `+2` folded directly into `PlayerRanged.ranged_attack()`'s existing aggregate
   `weapon_bonus` local (the same var `weapon.bonus_damage`/`prof` already share on the `wpn=`
   tooltip field — not worth a dedicated tooltip line for one more flat add).
-- **Blind Fighting**: `Enemy.is_hidden_from_player()` returns `false` (ignoring Invisibility)
-  whenever the enemy is within Chebyshev 1 of `GameState.player_grid_pos`. **The darkness/Heavily-
-  Obscured half is NOT implemented** — a documented scope trim, not a design decision: every player
-  attack-roll site (`_bump_attack()`/ranged/thrown/cleave/off-hand/OA, 6+ places) independently
-  checks `GameState.is_blinded(grid_pos)` for its own DISADV, and none of them special-case an
-  adjacent target yet.
+- **Blind Fighting**: blindsight 1 tile, fully implemented on both sides — `GameState.
+  blind_fighting_ignores(enemy) -> bool` (`fighting_style == "blind_fighting" and
+  enemy.min_dist_to(player_grid_pos) <= 1`, footprint-aware) is the single chokepoint every
+  consumer calls, so the ADV/DISADV/Invisibility halves can never drift out of sync:
+  - `Enemy.is_hidden_from_player()` returns `false` (ignoring Invisibility) for a qualifying enemy.
+  - Every player attack-roll site's `GameState.is_blinded(grid_pos)` DISADV check (`_bump_attack()`/
+    `_resolve_cleave_attack()`/`_resolve_offhand_attack()`/`resolve_opportunity_attack()` in
+    `player.gd`, `PlayerRanged.ranged_attack()`, `PlayerThrowTool._throw_weapon()`,
+    `SpellEffects`' two ATTACK_ROLL cast sites) additionally requires
+    `not GameState.blind_fighting_ignores(<target>)` — so attacking a target within 1 tile while
+    standing in Fog Cloud/Darkness no longer imposes the usual DISADV.
+  - `enemy.gd._attack_player()`'s own `fog_adv` (the ADV an attacker gets for attacking a blinded
+    player) is denied the same way (`and not GameState.blind_fighting_ignores(self)`, `self`
+    being the attacking `Enemy`) — an adjacent attacker gets no free ADV either.
+  Darkvision/truesight-style "see in the dark" (`Stats.darkvision_bonus`/
+  `sees_through_magical_darkness`) is a separate, unrelated FOV/exploration mechanic — this is
+  purely about the ADV/DISADV a Heavily Obscured zone imposes on a roll.
 - **Defense**: `+1` AC, folded into `Stats.recalc_ac()`'s real-body-armor branch only (never the
   unarmored-defense ones) — gated on `armor_item.base_ac > 0`, so it only applies while genuinely
   wearing light/medium/heavy armor, matching the style's own text.

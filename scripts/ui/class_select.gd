@@ -86,12 +86,28 @@ const CLASS_DATA: Array = [
 			"starting_equipment": "",
 		},
 	},
+	{
+		"cls":    7,  # Stats.CharacterClass.FIGHTER
+		"name":   "Fighter",
+		"sprite": CHAR_PATH + "Fighter/idle_1.png",
+		"hd":     "d10 Hit Die",
+		"desc":   "Versatile master\nof weapons and armor.",
+		"color":  Color(0.75, 0.75, 0.80),
+		"info": {
+			"primary_ability": "STR or DEX",
+			"hit_die": "d10",
+			"check_profs": "STR, CON",
+			"weapon_profs": "Simple, Martial",
+			"armor_training": "Light, Medium, Heavy, Shields",
+			"starting_equipment": "",
+		},
+	},
 ]
 
 # Classes with no implementation yet — shown as locked silhouette tiles so the
 # grid reads as the full 5e class roster and new classes can slot in later.
 const LOCKED_CLASSES: Array = [
-	"Bard", "Cleric", "Druid", "Fighter",
+	"Bard", "Cleric", "Druid",
 	"Paladin", "Rogue", "Sorcerer",
 ]
 

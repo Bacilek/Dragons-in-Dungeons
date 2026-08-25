@@ -532,7 +532,14 @@ func _tick_invisibility() -> void:
 			_end_invisibility()
 
 func is_hidden_from_player() -> bool:
-	return _invis_turns > 0 and faerie_fire_turns <= 0
+	if _invis_turns <= 0 or faerie_fire_turns > 0:
+		return false
+	# Blind Fighting Style (Fighter): blindsight 1 tile — ignores Invisibility within Chebyshev 1.
+	# See GameState.blind_fighting_ignores()'s own comment for the matching ADV/DISADV half of
+	# this style (every player attack-roll DISADV site, and the enemy-side fog_adv ADV source).
+	if GameState.blind_fighting_ignores(self):
+		return false
+	return true
 
 # Faerie Fire "can't be invisible" clause: an outlined creature that's ALSO invisible is forced
 # visible (rendered translucent) rather than hidden — see DungeonFloor._update_enemy_visibility().
@@ -2244,7 +2251,9 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	# Twin Fang R3: the Marked target can never gain Advantage on attacks against the Ranger.
 	var twin_fang_blocks_adv: bool = GameState.get_talent_rank("twin_fang") >= 3 \
 		and GameState.player_stats.hunters_mark_target == self
-	var fog_adv: bool = GameState.is_blinded(_player.grid_pos) and not twin_fang_blocks_adv
+	# Blind Fighting Style (Fighter): blindsight 1 tile denies this ADV outright when the attacker
+	# is within Chebyshev 1 of the player — see GameState.blind_fighting_ignores()'s own comment.
+	var fog_adv: bool = GameState.is_blinded(_player.grid_pos) and not twin_fang_blocks_adv and not GameState.blind_fighting_ignores(self)
 	# Pack Tactics (Giant Rat): Advantage whenever another awake ally is within 5 ft (1 tile) of
 	# the target. SLEEPING is the closest analogue this engine has to 5e's "incapacitated" — no
 	# other enemy status here (rooted/frozen/etc.) maps to a real incapacitating condition.
@@ -2282,7 +2291,7 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 		# approximated as unconditional here since this engine doesn't track per-attack ability
 		# score usage for enemies (same documented simplification as the damage-reduction block
 		# below and Ray of Enfeeblement's own physical-damage-type approximation elsewhere).
-		long_shot or GameState.is_blinded(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0 or _frightened_active() or enfeeble_turns > 0 or restrained_turns > 0)
+		long_shot or GameState.is_blinded(grid_pos) or terrain_disadv or condition_disadv or poisoned_condition_turns > 0 or _frightened_active() or enfeeble_turns > 0 or restrained_turns > 0 or GameState.player_stats.dodge_turns > 0)
 	var hit_meta: String = "ehit:die=%d,d1=%d,d2=%d,bonus=%d,total=%d,ac=%d,crit=%d,adv=%d,disadv=%d,bw=%d" % [
 		r["die"], r["die1"], r["die2"], r["bonus"], r["roll"], r["target_ac"],
 		1 if r["is_crit"] else 0, 1 if r["adv"] else 0, 1 if r["disadv"] else 0, r["roll_penalty"]]
@@ -2356,6 +2365,7 @@ func _attack_player(_player: Player, sub: Dictionary = {}, long_shot: bool = fal
 	# absorb this hit, its own log line prints now — AFTER the "hits you for X dmg" line, same
 	# reaction-logs-after-the-attack ordering as Storm's Thunder right below.
 	GameState.flush_stone_endurance_log()
+	GameState.flush_deflect_attacks_log()
 	# Storm Giant ancestry (Goliath, see player_goliath.gd): toggled on, the next entity that deals
 	# ANY damage to the player FROM WITHIN 3 TILES takes 1d8 Thunder back. Consumes the armed flag +
 	# a charge only when it actually procs — logged AFTER the "hits you for X dmg" line above
@@ -2490,9 +2500,20 @@ func _attack_companion(companion: Companion, sub: Dictionary = {}, long_shot: bo
 					and other.min_dist_to(companion.grid_pos) <= 1:
 				pack_tactics_adv = true
 				break
+	# Protection Fighting Style (Fighter, via the player's Companion — the only ally this engine
+	# has to protect): while holding a Shield and adjacent to the target, this attack rolls with
+	# DISADV. Real 5e text extends this to every attack against that target for the rest of the
+	# turn — scope-limited here to just the triggering attack (no cross-attack "already protected
+	# this target this turn" tracking exists).
+	var protection_disadv: bool = false
+	if GameState.player_stats.fighting_style == "protection":
+		var prot_shield: Item = GameState.equipment.get("hand2") as Item
+		if prot_shield != null and prot_shield.is_shield \
+				and maxi(absi(GameState.player_grid_pos.x - companion.grid_pos.x), absi(GameState.player_grid_pos.y - companion.grid_pos.y)) <= 1:
+			protection_disadv = true
 	var r: Dictionary = _resolve_attack_roll(companion.stats.armor_class, _attack_bonus_for(sub), 0,
 		GameState.is_blinded(companion.grid_pos) or pack_tactics_adv,
-		long_shot or GameState.is_blinded(grid_pos) or poisoned_condition_turns > 0 or _frightened_active() or restrained_turns > 0)
+		long_shot or GameState.is_blinded(grid_pos) or poisoned_condition_turns > 0 or _frightened_active() or restrained_turns > 0 or protection_disadv)
 	if not r["is_hit"]:
 		GameState.game_log("[color=tomato]%s[/color] attacks %s and misses!" % [atk_label, companion.animal_name])
 		return
@@ -2512,6 +2533,16 @@ func _attack_companion(companion: Companion, sub: Dictionary = {}, long_shot: bo
 		var e_max: int = int(extra.get("dmg_max", 0))
 		var e_roll: int = Rng.range_i(e_min, maxi(e_min, e_max))
 		dmg += e_roll * (2 if r["is_crit"] else 1)
+	# Interception Fighting Style (Fighter, via the Companion — same "only real ally" scope as
+	# Protection above): wielding a Shield or a Simple/Martial weapon, adjacent to the target,
+	# reduces this hit by 1d10 + proficiency bonus.
+	if GameState.player_stats.fighting_style == "interception":
+		var ic_weapon: Item = GameState.equipped_weapon
+		var ic_shield: Item = GameState.equipment.get("hand2") as Item
+		var ic_has_gear: bool = (ic_shield != null and ic_shield.is_shield) \
+			or (ic_weapon != null and ic_weapon.weapon_category in ["Simple", "Martial"])
+		if ic_has_gear and maxi(absi(GameState.player_grid_pos.x - companion.grid_pos.x), absi(GameState.player_grid_pos.y - companion.grid_pos.y)) <= 1:
+			dmg = maxi(0, dmg - (Rng.roll(10) + GameState.player_stats.proficiency_bonus))
 	if r["is_crit"]:
 		AudioManager.play("crit")
 	else:

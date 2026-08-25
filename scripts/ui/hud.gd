@@ -672,6 +672,13 @@ func _on_player_leveled_up(level: int) -> void:
 		GameState.mastery_learn_pending = false
 		var mastery_picker = load("res://scripts/ui/mastery_picker.gd").new()
 		get_tree().root.add_child(mastery_picker)
+	# Fighter's own Fighting Style — a direct owner house rule (real 5e RAW doesn't allow this)
+	# lets it be freely reselected on every level-up, offered here the same "instant pick" way as
+	# the mastery-cap-grew case above, just optional (fighting_style_picker.gd's own "Keep Current"/
+	# Esc). Reuses mastery_picker_open as its own input-block flag, so this guard also covers it.
+	if level > 1 and GameState.player_stats.character_class == Stats.CharacterClass.FIGHTER and not GameState.mastery_picker_open:
+		var style_picker = load("res://scripts/ui/fighting_style_picker.gd").new()
+		get_tree().root.add_child(style_picker)
 
 func _on_death_save_started() -> void:
 	# 0-HP hit that isn't caught by Bruiser R3 / Relentless Endurance — see

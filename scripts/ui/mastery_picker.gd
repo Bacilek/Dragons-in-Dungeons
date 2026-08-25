@@ -188,6 +188,14 @@ func _finish_learn() -> void:
 			get_tree().root.call_deferred("add_child", spell_picker)
 			queue_free()
 			return
+		# Fighter's own mandatory level-1 pick, same "route onward instead of just finishing"
+		# treatment as Ranger's cantrip pick above — see scripts/ui/fighting_style_picker.gd.
+		if GameState.player_stats.character_class == Stats.CharacterClass.FIGHTER:
+			var style_picker = load("res://scripts/ui/fighting_style_picker.gd").new()
+			style_picker.character_creation_mode = true
+			get_tree().root.call_deferred("add_child", style_picker)
+			queue_free()
+			return
 		GameState.snapshot_character_creation()
 	queue_free()
 

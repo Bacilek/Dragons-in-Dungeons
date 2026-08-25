@@ -524,6 +524,22 @@ static func fmt_stonedr_tooltip(p: Dictionary) -> String:
 	lines.append("= [color=cyan]%d[/color] damage reduced" % total)
 	return "\n".join(lines)
 
+## Monk's Deflect Attacks (level 3+) — the 1d10+DEX+level damage-reduction roll, made at the
+## moment physical damage actually lands (GameState.take_damage_raw()'s own Deflect Attacks block).
+static func fmt_deflect_tooltip(p: Dictionary) -> String:
+	var die: int = int(p.get("die", "0"))
+	var dex: int = int(p.get("dex", "0"))
+	var lvl: int = int(p.get("lvl", "0"))
+	var total: int = int(p.get("total", "0"))
+	var lines: PackedStringArray = []
+	lines.append("1d10 = [color=yellow]%d[/color]" % die)
+	if dex != 0:
+		lines.append("[color=lightblue]%+d[/color]  (DEX mod)" % dex)
+	lines.append("[color=lightblue]%+d[/color]  (Monk level)" % lvl)
+	lines.append("─────────────────")
+	lines.append("= [color=cyan]%d[/color] damage reduced" % total)
+	return "\n".join(lines)
+
 static func fmt_ret_tooltip(p: Dictionary) -> String:
 	var rank: int      = int(p.get("rank", "0"))
 	var wpn_roll: int  = int(p.get("wpn_roll", "0"))

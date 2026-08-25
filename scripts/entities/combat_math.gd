@@ -107,16 +107,14 @@ static func exhaustion_penalty() -> int:
 	return -2 * GameState.player_stats.exhaustion_level
 
 # Weapon proficiency: unarmed strikes are always proficient. A Simple/Martial weapon only adds
-# proficiency_bonus to the attack roll if the matching proficiency flag is set — lacking
-# proficiency doesn't block using the weapon, it just drops this bonus.
-static func weapon_prof_bonus(weapon: Item, proficiency_bonus: int, proficient_simple: bool, proficient_martial: bool) -> int:
+# proficiency_bonus to the attack roll if Stats.is_weapon_proficient() says so (folds in
+# Stats.martial_weapon_restriction, e.g. Monk's Martial-Light-only proficiency) — lacking
+# proficiency doesn't block using the weapon (equip-time gating is EquipRequirements'
+# job), it just drops this bonus.
+static func weapon_prof_bonus(weapon: Item, proficiency_bonus: int, stats: Stats) -> int:
 	if weapon == null:
 		return proficiency_bonus
-	var proficient: bool = true
-	match weapon.weapon_category:
-		"Simple":  proficient = proficient_simple
-		"Martial": proficient = proficient_martial
-	return proficiency_bonus if proficient else 0
+	return proficiency_bonus if stats.is_weapon_proficient(weapon) else 0
 
 # Finesse: attack/damage modifier uses whichever of STR/DEX is higher instead of always STR.
 static func finesse_modifier(str_mod: int, dex_mod: int, is_finesse: bool) -> int:

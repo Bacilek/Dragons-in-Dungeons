@@ -248,7 +248,11 @@ var rager_form_switch_turns_remaining: int = 0
 var natural_sleeper_form: String = ""   # "" = no form chosen; locks in on long_rest()
 var active_sleeper_form: String = ""    # locks in on long_rest() only
 var wild_heart_sleeper_active: bool = false
-# Eagle R3: no-op pending future Opportunity Attack system — do NOT remove this flag.
+# Disengage-for-the-round: while true, none of the player's voluntary moves this round provoke an
+# Opportunity Attack (Player._resolve_enemy_opportunity_attacks() reads it). Set by Monk's Patient
+# Defense/Step of the Wind (scripts/entities/player_monk.gd); reset every REAL turn start alongside
+# the other once-per-round flags in Player._on_turn_started(). Also reserved for Wild Heart's
+# future Eagle R3 (not implemented yet) - do NOT remove this flag even if no caster sets it.
 var player_evades_opportunity_attacks: bool = false
 # Wild Heart Enhanced Forms R1: +1 while in Eagle form, threaded into DungeonFloor's FOV radius.
 var fov_radius_bonus: int = 0
@@ -2219,9 +2223,9 @@ func _sync_ability_uses() -> void:
 # gated ability (Giant Ancestry is shared by all 6 variants — only Cloud's Jaunt is gated; the two
 # toggles only cost the Bonus Action on ARMING, never on disarming; spell abilities are prefixed).
 const BONUS_ACTION_ABILITY_IDS: PackedStringArray = [
-	"rage", "frenzy", "zealot_strike", "flurry_of_blows", "step_of_wind", "halfling_nimbleness",
-	"adrenaline_rush", "heroic_inspiration", "draconic_flight", "stonecunning", "large_form",
-	"celestial_revelation", "hunters_mark", "grip_of_the_forest",
+	"rage", "frenzy", "zealot_strike", "flurry_of_blows", "step_of_wind", "patient_defense",
+	"halfling_nimbleness", "adrenaline_rush", "heroic_inspiration", "draconic_flight",
+	"stonecunning", "large_form", "celestial_revelation", "hunters_mark", "grip_of_the_forest",
 ]
 
 func _bonus_action_blocks(ab: Ability) -> bool:
@@ -4117,6 +4121,18 @@ func discard_mastery(old_name: String) -> void:
 # Fighter's Fighting Style pick/reselect — scripts/ui/fighting_style_picker.gd's only mutator.
 # recalculate_stats() re-runs immediately so a swap into/out of "defense" updates AC right away
 # (matching every other equip/level-up path that can move armor_class).
+# Blind Fighting Style (Fighter): blindsight 1 tile — ignores every vision-related ADV/DISADV
+# source (Fog Cloud/Darkness Heavily-Obscured blindness) on BOTH sides whenever the other party is
+# within Chebyshev 1 tile: the player's own attack-roll DISADV for standing in it (every player
+# attack-roll site's `GameState.is_blinded(grid_pos)` check) AND an attacker's ADV for attacking a
+# blinded player (enemy.gd's `fog_adv`) — both funnel through this one helper so the two can never
+# drift out of sync. Footprint-aware via Enemy.min_dist_to() so a Large enemy's whole footprint
+# counts, not just its origin tile. Darkvision/truesight-style "see in the dark" is a separate,
+# unrelated mechanic (`Stats.darkvision_bonus`/`sees_through_magical_darkness`) — this is purely
+# about the ADV/DISADV a Heavily Obscured zone imposes on a roll, not FOV/exploration.
+func blind_fighting_ignores(enemy: Enemy) -> bool:
+	return player_stats.fighting_style == "blind_fighting" and is_instance_valid(enemy) and enemy.min_dist_to(player_grid_pos) <= 1
+
 func set_fighting_style(id: String) -> void:
 	player_stats.fighting_style = id
 	recalculate_stats()

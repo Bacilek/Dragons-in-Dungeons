@@ -237,28 +237,39 @@ func activate_flurry_of_blows() -> void:
 	GameState.game_log("[color=cyan]Flurry of Blows: your next Bonus Unarmed Strike hits twice.[/color]")
 
 # ── Monk's Focus: Patient Defense ───────────────────────────────────────────
-# Costs the player's turn (a Dodge action substitute, not a free buff) — grants Stats.dodge_turns
-# = 1, which imposes DISADV on every attack roll against the player (enemy.gd's _attack_player())
-# until it ticks to 0 at the start of the player's own next turn (Stats.tick_status()). Only
-# activatable while engaged (PlayerMonk.is_engaged()) — see GameState.is_ability_usable()'s
-# "patient_defense" case for the matching ability-bar grey-out.
+# A Bonus Action (not the player's whole turn, D&D 2024 PHB text) — grants Stats.dodge_turns = 1,
+# which imposes DISADV on every attack roll against the player (enemy.gd's _attack_player()) until
+# it ticks to 0 at the start of the player's own next turn (Stats.tick_status()), AND sets
+# GameState.player_evades_opportunity_attacks = true so this round's own movement doesn't provoke
+# an Opportunity Attack either (Disengage, folded into the same activation) - reset alongside the
+# other once-per-round flags in Player._on_turn_started(). Only activatable while engaged
+# (PlayerMonk.is_engaged()) — see GameState.is_ability_usable()'s "patient_defense" case for the
+# matching ability-bar grey-out.
 func activate_patient_defense() -> void:
 	if not is_engaged():
 		return
+	if GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	if not GameState.spend_monk_focus(1):
 		return
-	TurnManager.begin_player_action()
+	if not GameState.invincible:
+		GameState.bonus_action_used = true
+		GameState.ability_bar_changed.emit()
 	player.stats.dodge_turns = 1
+	GameState.player_evades_opportunity_attacks = true
 	GameState.player_status_changed.emit()
-	GameState.game_log("[color=cyan]Patient Defense: attacks against you have Disadvantage until your next turn.[/color]")
-	if player._dungeon_floor != null:
-		player._dungeon_floor.update_fog(player.grid_pos)
-	TurnManager.on_player_action_complete()
+	GameState.game_log("[color=cyan]Patient Defense: attacks against you have Disadvantage and your movement won't provoke Opportunity Attacks until your next turn.[/color]")
 
 # ── Monk's Focus: Step of the Wind ──────────────────────────────────────────
 # Arm-then-click/WASD one-tile free dash — directly modeled on Orc's Adrenaline Rush
 # (player_orc.gd's dash_mode_active/resolve_dash()), just Focus-gated instead of a per-rest
-# counter, no temp HP, and limited to once per turn (GameState.step_of_wind_used_this_turn).
+# counter, no temp HP, and limited to once per turn (GameState.step_of_wind_used_this_turn). Also a
+# Bonus Action, D&D 2024 PHB text: alongside the dash itself, sets GameState.
+# player_evades_opportunity_attacks = true so NONE of the player's movement this round (not just
+# the dash) provokes an Opportunity Attack (Disengage) - reset alongside the other once-per-round
+# flags in Player._on_turn_started(). Set on arm (matching the Focus Point spend below), not on a
+# successful dash landing.
 func activate_step_of_wind() -> void:
 	if GameState.step_of_wind_used_this_turn:
 		return
@@ -270,8 +281,9 @@ func activate_step_of_wind() -> void:
 	if not GameState.invincible:
 		GameState.bonus_action_used = true
 		GameState.ability_bar_changed.emit()
+	GameState.player_evades_opportunity_attacks = true
 	step_of_wind_mode_active = true
-	GameState.game_log("[color=cyan]Step of the Wind: click an adjacent tile to dash there for free.[/color]")
+	GameState.game_log("[color=cyan]Step of the Wind: click an adjacent tile to dash there for free. Your movement won't provoke Opportunity Attacks this round.[/color]")
 
 func cancel_step_of_wind() -> void:
 	step_of_wind_mode_active = false

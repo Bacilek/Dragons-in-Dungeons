@@ -332,6 +332,7 @@ func _on_turn_started() -> void:
 			GameState.deflect_attacks_used_this_turn = false
 			GameState.monk_extra_attack_used_this_turn = false
 			GameState.ability_bar_changed.emit()
+		GameState.player_evades_opportunity_attacks = false
 		# Bonus Action refreshes at the start of every real round — see scripts/entities/CLAUDE.md's
 		# "Bonus Action economy" section.
 		if GameState.bonus_action_used:
@@ -3028,8 +3029,9 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Heavy weapon penalty: STR < 13 imposes Disadvantage
 	var weapon_item_ref: Item = GameState.equipped_weapon
 	if weapon_item_ref != null and weapon_item_ref.is_heavy and stats.strength < 13: disadv_count += 1
-	# Fog Cloud (Blinded): your own attack rolls have Disadvantage while standing inside the cloud.
-	if GameState.is_blinded(grid_pos): disadv_count += 1
+	# Fog Cloud (Blinded): your own attack rolls have Disadvantage while standing inside the cloud —
+	# UNLESS Blind Fighting Style ignores it for this specific target (blindsight 1 tile).
+	if GameState.is_blinded(grid_pos) and not GameState.blind_fighting_ignores(enemy): disadv_count += 1
 	# Poisoned / Prone / Restrained condition — DISADV on your own attack rolls (5e: none of
 	# these three stack disadvantage with each other, hence the single combined helper).
 	if stats.has_disadvantage_condition(): disadv_count += 1
@@ -3486,7 +3488,7 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	if enemy.prone: adv_count += 1
 	var disadv_count: int = 0
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
-	if GameState.is_blinded(grid_pos): disadv_count += 1
+	if GameState.is_blinded(grid_pos) and not GameState.blind_fighting_ignores(enemy): disadv_count += 1
 	# Poisoned / Prone / Restrained condition — DISADV on your own attack rolls (5e: none of
 	# these three stack disadvantage with each other, hence the single combined helper).
 	if stats.has_disadvantage_condition(): disadv_count += 1
@@ -3587,7 +3589,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	if enemy.prone: adv_count += 1  # Prone: melee attacks against it have ADV
 	var disadv_count: int = 0
 	if weapon.is_heavy and stats.strength < 13: disadv_count += 1
-	if GameState.is_blinded(grid_pos): disadv_count += 1
+	if GameState.is_blinded(grid_pos) and not GameState.blind_fighting_ignores(enemy): disadv_count += 1
 	# Poisoned / Prone / Restrained condition — DISADV on your own attack rolls (5e: none of
 	# these three stack disadvantage with each other, hence the single combined helper).
 	if stats.has_disadvantage_condition(): disadv_count += 1
@@ -3733,7 +3735,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	if enemy.prone: adv_count += 1
 	var disadv_count: int = 0
 	if weapon != null and weapon.is_heavy and stats.strength < 13: disadv_count += 1
-	if GameState.is_blinded(grid_pos): disadv_count += 1
+	if GameState.is_blinded(grid_pos) and not GameState.blind_fighting_ignores(enemy): disadv_count += 1
 	# Poisoned / Prone / Restrained condition — DISADV on your own attack rolls (5e: none of
 	# these three stack disadvantage with each other, hence the single combined helper).
 	if stats.has_disadvantage_condition(): disadv_count += 1

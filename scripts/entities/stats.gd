@@ -54,7 +54,6 @@ const TIEFLING_LEGACY_RESIST: Array[String] = ["Poison", "Necrotic", "Fire"]  # 
 
 # Check proficiency flags — which ability checks the class rolls with proficiency bonus.
 # Barbarian: STR + CON. Ranger: STR + DEX. Wizard: INT + WIS. Monk: STR + DEX.
-# Monk also has proficiency with simple weapons + martial weapons with light property (TODO: enforce).
 var check_prof_str: bool = false
 var check_prof_con: bool = false
 var check_prof_dex: bool = false
@@ -65,8 +64,36 @@ var check_prof_cha: bool = false
 # Weapon proficiency — whether the class adds proficiency_bonus to attack rolls with
 # Simple/Martial weapons (Item.weapon_category). Lacking proficiency still lets the
 # character use the weapon; it just skips the proficiency bonus on the attack roll.
+# EquipRequirements.can_equip_weapon() additionally hard-blocks EQUIPPING an unproficient
+# Simple/Martial weapon outright (see that file) — proficient_martial_weapons == false there
+# means "no martial weapons at all" unless martial_weapon_restriction below grants a subset.
 var proficient_simple_weapons: bool = false
 var proficient_martial_weapons: bool = false
+
+# Partial Martial-weapon proficiency for a class that doesn't get full Martial training but does
+# get a restricted 5e-RAW subset. "" = no restriction (proficient_martial_weapons alone decides).
+# "light" = Martial weapons with the Light property only (Monk). Checked by is_weapon_proficient()
+# below, which both EquipRequirements.can_equip_weapon() and CombatMath.weapon_prof_bonus() call
+# so the "can I equip this" and "do I get the attack-roll bonus" answers never diverge.
+var martial_weapon_restriction: String = ""
+
+# Single proficiency check for a weapon — folds proficient_simple_weapons/proficient_martial_weapons
+# and martial_weapon_restriction together so no call site duplicates the match logic. null (unarmed)
+# is always proficient.
+func is_weapon_proficient(item: Item) -> bool:
+	if item == null:
+		return true
+	match item.weapon_category:
+		"Simple":
+			return proficient_simple_weapons
+		"Martial":
+			if proficient_martial_weapons:
+				return true
+			match martial_weapon_restriction:
+				"light": return item.is_light
+			return false
+		_:
+			return true
 
 # Shield proficiency — whether the class may equip a Shield (Item.is_shield) at all. Lacking it
 # blocks equipping outright (unlike weapon proficiency, which just drops a bonus) — see
@@ -91,6 +118,44 @@ var known_weapon_masteries: Array[String] = []
 func knows_mastery(mastery_name: String) -> bool:
 	return mastery_name in known_weapon_masteries
 
+# Fighter's level-1 Fighting Style (D&D 2024): pick one, reselectable on every level-up (a direct
+# owner house rule — real 5e RAW only lets a Fighter change styles via specific class features/
+# feats, not freely; this project deliberately allows it every level-up instead). "" = none chosen
+# yet. See scripts/ui/fighting_style_picker.gd for the picker UI and scripts/entities/CLAUDE.md's
+# "Fighter class" section for the full per-style mechanism/hook-site table.
+var fighting_style: String = ""
+
+const ALL_FIGHTING_STYLES: Array[String] = [
+	"archery", "blind_fighting", "defense", "dueling", "great_weapon_fighting",
+	"interception", "protection", "thrown_weapon_fighting", "two_weapon_fighting", "unarmed_fighting",
+]
+
+const FIGHTING_STYLE_NAMES: Dictionary = {
+	"archery": "Archery",
+	"blind_fighting": "Blind Fighting",
+	"defense": "Defense",
+	"dueling": "Dueling",
+	"great_weapon_fighting": "Great Weapon Fighting",
+	"interception": "Interception",
+	"protection": "Protection",
+	"thrown_weapon_fighting": "Thrown Weapon Fighting",
+	"two_weapon_fighting": "Two-Weapon Fighting",
+	"unarmed_fighting": "Unarmed Fighting",
+}
+
+const FIGHTING_STYLE_DESCRIPTIONS: Dictionary = {
+	"archery": "+2 bonus to attack rolls with Ranged weapons.",
+	"blind_fighting": "Blindsight 1 tile — see everything within 1 tile of you, ignoring darkness/invisibility.",
+	"defense": "+1 AC while wearing light, medium, or heavy armor.",
+	"dueling": "+2 to damage rolls with a melee weapon when it's the only weapon you're wielding, one-handed.",
+	"great_weapon_fighting": "Rolling damage for a two-handed (or versatile gripped two-handed) melee weapon: treat a 1 or 2 on any damage die as a 3.",
+	"interception": "While wielding a Shield or a Simple/Martial weapon: when a creature you can see next to you is hit, reduce that damage by 1d10 + proficiency bonus.",
+	"protection": "While wielding a Shield: when a creature you can see attacks a target other than you that's next to you, every attack against that target this turn (including the triggering one) is made with Disadvantage.",
+	"thrown_weapon_fighting": "+2 to damage rolls with Thrown weapons.",
+	"two_weapon_fighting": "Your Off-hand attack (from dual-wielding Light weapons) adds your ability modifier to its damage roll, if it wouldn't otherwise.",
+	"unarmed_fighting": "Your unarmed strikes deal 1d6 + STR Bludgeoning (1d8 + STR while wielding no weapon or shield at all).",
+}
+
 # Canonical mastery vocabulary shown by the Mastery Picker (scripts/ui/mastery_picker.gd) —
 # see docs/architecture/weapon-mastery-selection-design.md. Alphabetical, stable render order.
 const ALL_WEAPON_MASTERIES: Array[String] = [
@@ -107,6 +172,10 @@ func mastery_cap() -> int:
 			return 2
 		CharacterClass.RANGER:
 			return 2
+		CharacterClass.FIGHTER:
+			if character_level >= 10: return 5
+			if character_level >= 4:  return 4
+			return 3
 		_:
 			return 0   # WIZARD, MONK
 
@@ -329,6 +398,23 @@ var rage_bonus_damage: int:
 		if character_level >= 9:  return 3
 		return 2
 
+# Monk's Focus (Monk only, from level 2 — D&D 2024's rename of "Ki"): current Focus Points.
+# monk_focus_points_max scales 1:1 with character level (not gated to level >= 2 — a Monk simply
+# has no Focus-costing feature to spend it on before level 2, same "the resource exists, nothing
+# consumes it yet" shape as Barbarian's rage_uses_max at level 1). Regains to max on BOTH a
+# completed short AND long rest (unlike every other per-rest resource in this codebase, which is
+# long-rest-only) — see GameState._on_short_rest_completed()/long_rest(). Spent via
+# GameState.spend_monk_focus(amount). Save DC for any future Monk feature that needs one: D&D 2024
+# text is "8 + proficiency bonus + WIS modifier" — none of Flurry of Blows/Patient Defense/Step of
+# the Wind actually roll against it, so monk_save_dc exists for forward compatibility only.
+var monk_focus_points: int = 0
+var monk_focus_points_max: int:
+	get:
+		if character_class != CharacterClass.MONK: return 0
+		return character_level
+var monk_save_dc: int:
+	get: return 8 + proficiency_bonus + wis_modifier()
+
 # Dragonborn Breath Weapon uses (Dragonborn only) — baseline level-1 ability, granted directly
 # like Rage/Hunter's Mark above. Max uses = proficiency_bonus (5e 2024 rule); refilled to max in
 # GameState.long_rest(), and bumped by +1 CURRENT use the instant a level-up raises proficiency_bonus
@@ -398,6 +484,11 @@ var poison_turns: int = 0
 var burning_turns: int = 0
 var bleeding_turns: int = 0
 var slowed_turns: int = 0
+# Dodge (Monk's Patient Defense, see player_monk.gd): every attack roll against the player has
+# DISADV while > 0 — see enemy.gd's _attack_player() disadv_count. Set to 1 on activation, ticked
+# down by tick_status() below so it naturally lasts through the enemy round and clears right
+# before the player's own next turn ("until the start of your next turn").
+var dodge_turns: int = 0
 # D&D 2024 Exhaustion, 0-6 levels. Pure debuff scaffold — no source in this codebase grants it yet
 # (scripts/entities/CLAUDE.md's "Exhaustion" section). Each level: -2 to every player d20 test
 # (CombatMath.roll_with_adv_disadv()'s "exhaustion_penalty" field) and -1/6 movement speed (a
@@ -813,6 +904,8 @@ func tick_status() -> int:
 		bleeding_turns -= 1
 	if slowed_turns > 0:
 		slowed_turns -= 1
+	if dodge_turns > 0:
+		dodge_turns -= 1
 	if poisoned_condition_turns > 0:
 		poisoned_condition_turns -= 1
 	if incapacitated_turns > 0:
@@ -821,12 +914,18 @@ func tick_status() -> int:
 
 # Recalculates armor_class based on what is equipped.
 # Called externally by GameState.recalculate_stats().
-# Barbarian unarmored defense: AC = 10 + DEX + CON when no armor.
-# Monk unarmored defense:     AC = 10 + DEX + WIS when no armor.
+# Barbarian unarmored defense: AC = 10 + DEX + CON when no armor (5e RAW: a shield is explicitly
+# still allowed alongside it, so has_shield_equipped is deliberately NOT checked here).
+# Monk unarmored defense:     AC = 10 + DEX + WIS when no armor AND no shield (5e RAW: unlike
+# Barbarian, wielding a shield voids Monk's version of the feature entirely).
 # `armor_item`: the equipped body-armor Item (Type.ARMOR, not a Shield), or null if unarmored —
 # real body armor (armor_item.base_ac > 0) always wins over every unarmored-defense formula below
 # (5e RAW: unarmored defense only applies while wearing no armor at all).
-func recalc_ac(has_armor_equipped: bool, armor_item: Item = null) -> void:
+# `has_shield_equipped`: only matters for the Monk branch — see above. In practice a Monk can never
+# equip a Shield at all today (Stats.proficient_shields is false for Monk, and
+# EquipRequirements.can_equip_shield() hard-blocks the equip outright), so this parameter exists
+# for correctness/documentation rather than because the case is currently reachable.
+func recalc_ac(has_armor_equipped: bool, armor_item: Item = null, has_shield_equipped: bool = false) -> void:
 	if armor_item != null and armor_item.base_ac > 0:
 		var dex_bonus: int
 		if armor_item.dex_cap == 0:
@@ -836,9 +935,13 @@ func recalc_ac(has_armor_equipped: bool, armor_item: Item = null) -> void:
 		else:
 			dex_bonus = dex_modifier()  # Light: unlimited
 		armor_class = armor_item.base_ac + dex_bonus
+		# Defense Fighting Style (Fighter): +1 AC while wearing real light/medium/heavy armor —
+		# gated on this exact branch (armor_item.base_ac > 0), never the unarmored-defense ones.
+		if fighting_style == "defense":
+			armor_class += 1
 	elif character_class == CharacterClass.BARBARIAN and not has_armor_equipped:
 		armor_class = 10 + dex_modifier() + con_modifier()
-	elif character_class == CharacterClass.MONK and not has_armor_equipped:
+	elif character_class == CharacterClass.MONK and not has_armor_equipped and not has_shield_equipped:
 		armor_class = 10 + dex_modifier() + wis_modifier()
 	elif mage_armor_active and not has_armor_equipped:
 		armor_class = 13 + dex_modifier()
@@ -875,6 +978,7 @@ func to_dict() -> Dictionary:
 		"base_min_damage": base_min_damage,
 		"base_max_damage": base_max_damage,
 		"rage_uses_remaining": rage_uses_remaining,
+		"monk_focus_points": monk_focus_points,
 		"hunters_mark_uses_remaining": hunters_mark_uses_remaining,
 		"breath_weapon_uses_remaining": breath_weapon_uses_remaining,
 		"draconic_flight_used": draconic_flight_used,
@@ -887,12 +991,14 @@ func to_dict() -> Dictionary:
 		"burning_turns": burning_turns,
 		"bleeding_turns": bleeding_turns,
 		"slowed_turns": slowed_turns,
+		"dodge_turns": dodge_turns,
 		"exhaustion_level": exhaustion_level,
 		"zealous_presence_turns": zealous_presence_turns,
 		"mage_armor_active": mage_armor_active,
 		"concentration_spell_id": concentration_spell_id,
 		"blade_ward_turns": blade_ward_turns,
 		"known_weapon_masteries": known_weapon_masteries.duplicate(),
+		"fighting_style": fighting_style,
 		"elf_lineage_spell_ids": elf_lineage_spell_ids.duplicate(),
 		"elf_lineage_free_casts_remaining": elf_lineage_free_casts_remaining.duplicate(),
 		"tiefling_legacy_spell_ids": tiefling_legacy_spell_ids.duplicate(),
@@ -932,6 +1038,7 @@ func from_dict(d: Dictionary) -> void:
 	base_min_damage = int(d.get("base_min_damage", base_min_damage))
 	base_max_damage = int(d.get("base_max_damage", base_max_damage))
 	rage_uses_remaining = int(d.get("rage_uses_remaining", 0))
+	monk_focus_points = int(d.get("monk_focus_points", 0))
 	hunters_mark_uses_remaining = int(d.get("hunters_mark_uses_remaining", 0))
 	breath_weapon_uses_remaining = int(d.get("breath_weapon_uses_remaining", 0))
 	draconic_flight_used = bool(d.get("draconic_flight_used", false))
@@ -944,6 +1051,7 @@ func from_dict(d: Dictionary) -> void:
 	burning_turns = int(d.get("burning_turns", 0))
 	bleeding_turns = int(d.get("bleeding_turns", 0))
 	slowed_turns = int(d.get("slowed_turns", 0))
+	dodge_turns = int(d.get("dodge_turns", 0))
 	exhaustion_level = int(d.get("exhaustion_level", 0))
 	zealous_presence_turns = int(d.get("zealous_presence_turns", 0))
 	mage_armor_active = bool(d.get("mage_armor_active", false))
@@ -952,6 +1060,7 @@ func from_dict(d: Dictionary) -> void:
 	known_weapon_masteries.clear()
 	for m: Variant in (d.get("known_weapon_masteries", []) as Array):
 		known_weapon_masteries.append(String(m))
+	fighting_style = String(d.get("fighting_style", ""))
 	elf_lineage_spell_ids.clear()
 	for sid: Variant in (d.get("elf_lineage_spell_ids", []) as Array):
 		elf_lineage_spell_ids.append(String(sid))
@@ -1089,10 +1198,8 @@ func apply_class_defaults() -> void:
 			rage_uses_remaining = 0               # Monk never rages (rage_uses_max computed = 0)
 			check_prof_str = true
 			check_prof_dex = true
-			# Weapon profs intentionally NOT set — real Monk proficiency is Simple + only the
-			# Martial weapons with the Light property, a finer grain than the flat
-			# proficient_simple_weapons/proficient_martial_weapons bools support (same
-			# pre-existing TODO noted in scripts/entities/CLAUDE.md's "Monk class" section).
+			proficient_simple_weapons = true
+			martial_weapon_restriction = "light"   # Martial weapons with the Light property only
 			# No armor training (any armor gives DISADV on STR/DEX checks/attacks — not enforced).
 		# ── Base D&D stat blocks only (root CLAUDE.md's "Locked-class art") — none of these 8
 		# are selectable in character creation or class_select.gd/character_select.gd yet, and
@@ -1126,8 +1233,11 @@ func apply_class_defaults() -> void:
 			proficient_shields = true
 			proficient_light_armor = true
 		CharacterClass.FIGHTER:
-			strength = 16; constitution = 14; dexterity = 12
-			wisdom = 10; intelligence = 10; charisma = 8
+			# No hardcoded ability-score baseline (unlike every other class here) — Fighter has no
+			# premade hero (character_select.gd's PREMADE cards), so nothing ever reads these
+			# scores before the Custom path's point-buy screen overwrites them anyway (Stats'
+			# own Resource field defaults, 10 across the board, are a perfectly safe placeholder
+			# in the brief window before that runs).
 			max_hp = 10 + modifier(constitution)   # Fighter HD d10
 			check_prof_str = true
 			check_prof_con = true

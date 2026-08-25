@@ -137,7 +137,7 @@ static func _resolve_cantrip_hit(player: Player, spell: Spell, target: Enemy, du
 	# for why this is narrower than has_advantage()'s ADV sources (Paralyzed/Incapacitated/Faerie
 	# Fire/Blinded net normally against this DISADV instead of being exempted from it).
 	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1 and not target_was_unaware: disadv_count += 1
-	if GameState.is_blinded(player.grid_pos): disadv_count += 1
+	if GameState.is_blinded(player.grid_pos) and not GameState.blind_fighting_ignores(target): disadv_count += 1
 	if stats.has_disadvantage_condition(): disadv_count += 1
 	if player._frightened_active(): disadv_count += 1
 	# Prone: melee/touch spells (range_tiles <= 1) get ADV against a prone target, ranged spells
@@ -1052,7 +1052,7 @@ static func _resolve_spell_attack_bolt(player: Player, spell: Spell, target: Ene
 	# Disadvantage: ranged spell attack at melee range, EXCEPT against an unaware target — same
 	# exemption as cast_spell() above / PlayerRanged.ranged_attack().
 	if spell.range_tiles > 1 and target.min_dist_to(player.grid_pos) <= 1 and not target_was_unaware: disadv_count += 1
-	if GameState.is_blinded(player.grid_pos): disadv_count += 1
+	if GameState.is_blinded(player.grid_pos) and not GameState.blind_fighting_ignores(target): disadv_count += 1
 	if stats.has_disadvantage_condition(): disadv_count += 1
 	if player._frightened_active(): disadv_count += 1
 	# Prone: melee/touch spells (range_tiles <= 1) get ADV against a prone target, ranged spells

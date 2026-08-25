@@ -211,7 +211,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var str_mod: int = stats.str_modifier()
 	var dex_mod: int = stats.dex_modifier()
 	var atk_mod: int = CombatMath.finesse_modifier(str_mod, dex_mod, weapon.is_finesse)
-	var prof: int = CombatMath.weapon_prof_bonus(weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
+	var prof: int = CombatMath.weapon_prof_bonus(weapon, stats.proficiency_bonus, stats)
 	var total_hit_bonus: int = atk_mod + prof + weapon.bonus_damage
 
 	var d: Vector2i = pos - player.grid_pos
@@ -301,7 +301,7 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	# EXCEPT against a genuinely unaware target (PlayerVfx.is_target_unaware()) — see that
 	# function's own comment for why this is narrower than has_advantage()'s ADV sources.
 	if maxi(absi(d.x), absi(d.y)) <= 1 and not target_was_unaware: disadv_count += 1
-	if GameState.is_blinded(player.grid_pos): disadv_count += 1
+	if GameState.is_blinded(player.grid_pos) and not GameState.blind_fighting_ignores(enemy): disadv_count += 1
 	if stats.has_disadvantage_condition(): disadv_count += 1
 	if player._frightened_active(): disadv_count += 1
 	if enemy.prone: disadv_count += 1  # Prone: ranged/thrown attacks against it have DISADV
@@ -348,7 +348,9 @@ func _throw_weapon(weapon: Item, pos: Vector2i) -> void:
 	var dmin: int = weapon.damage_die_min if weapon.damage_die_min > 0 else stats.base_min_damage
 	var dmax: int = weapon.damage_die_max if weapon.damage_die_max > 0 else stats.base_max_damage
 	var die_roll: int = Rng.range_i(dmin, dmax)
-	var pre_crit: int = die_roll + weapon.bonus_damage + atk_mod
+	# Thrown Weapon Fighting Style (Fighter): +2 damage with a Thrown-property weapon.
+	var thrown_style_bonus: int = 2 if stats.fighting_style == "thrown_weapon_fighting" else 0
+	var pre_crit: int = die_roll + weapon.bonus_damage + atk_mod + thrown_style_bonus
 	if is_crit:
 		pre_crit *= 2
 		GameState.crit_banner.emit("CRITICAL HIT!", Color(1.0, 0.85, 0.0))

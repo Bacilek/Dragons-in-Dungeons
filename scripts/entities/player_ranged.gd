@@ -110,8 +110,12 @@ func ranged_attack(enemy: Enemy) -> void:
 		weapon.loading_used_this_turn = true
 
 	var dex_mod: int = player.stats.dex_modifier()
-	var prof: int = CombatMath.weapon_prof_bonus(weapon, player.stats.proficiency_bonus, player.stats.proficient_simple_weapons, player.stats.proficient_martial_weapons)
-	var weapon_bonus: int = (weapon.bonus_damage if weapon != null else 0) + prof
+	var prof: int = CombatMath.weapon_prof_bonus(weapon, player.stats.proficiency_bonus, player.stats)
+	# Archery Fighting Style (Fighter): +2 to the attack roll with a Ranged weapon — folded into
+	# the same aggregate "wpn=" tooltip field prof/weapon.bonus_damage already share (that field
+	# was never strictly weapon-only to begin with), rather than adding a new tooltip line.
+	var archery_bonus: int = 2 if player.stats.fighting_style == "archery" else 0
+	var weapon_bonus: int = (weapon.bonus_damage if weapon != null else 0) + prof + archery_bonus
 	# Advantage / Disadvantage: sources are counted, but CombatMath.roll_with_adv_disadv() applies
 	# the standard 5e cancel rule — any ADV source together with any DISADV source is a flat roll,
 	# not a net count. See player.gd._bump_attack() for the reference melee implementation.
@@ -136,7 +140,7 @@ func ranged_attack(enemy: Enemy) -> void:
 	if enemy.min_dist_to(player.grid_pos) <= 1 and not target_was_unaware: disadv_count += 1
 	if weapon != null and weapon.is_heavy and player.stats.dexterity < 13: disadv_count += 1
 	if ranged_shot_disadvantage(weapon, near_tile): disadv_count += 1
-	if GameState.is_blinded(player.grid_pos): disadv_count += 1
+	if GameState.is_blinded(player.grid_pos) and not GameState.blind_fighting_ignores(enemy): disadv_count += 1
 	if player.stats.has_disadvantage_condition(): disadv_count += 1
 	if player._frightened_active(): disadv_count += 1
 	if enemy.prone: disadv_count += 1  # Prone: ranged attacks against it have DISADV

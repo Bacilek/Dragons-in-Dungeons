@@ -49,8 +49,9 @@ Each turn: status effects tick (`Stats.tick_status()` → dmg). Hunger has been 
 
 **Bonus Action economy**: `GameState.bonus_action_used` is a once-per-real-round gate over the
 formerly-unlimited "free actions" (Rage, Frenzy, Zealot Strike, Flurry of Blows, Step of the Wind,
-Halfling Nimbleness, Cloud Giant's Jaunt, Orc Adrenaline Rush, Human Heroic Inspiration, Blade
-Ward, Grip of the Forest) — at most one per round, mirroring 5e's own single-bonus-action rule.
+Patient Defense, Halfling Nimbleness, Cloud Giant's Jaunt, Orc Adrenaline Rush, Human Heroic
+Inspiration, Blade Ward, Grip of the Forest) — at most one per round, mirroring 5e's own
+single-bonus-action rule.
 Rage additionally auto-extends off a leftover unused Bonus Action at end of turn. Full mechanism:
 `scripts/entities/CLAUDE.md`'s "Bonus Action economy" section.
 
@@ -299,11 +300,11 @@ Hunger has been removed. `Alt` opens a tabbed rest panel (`scripts/ui/short_rest
   character/class prefix and no `_anim_f` suffix, since the folder itself already identifies the
   character):
   - **`classes/`** — every player class, implemented or not: `Barbarian/`, `Ranger/`, `Wizard/`,
-    `Monk/`, `Warlock/` (the 5 real, selectable classes — `Player.KNIGHT_PATH`/`character_select.gd`'s/
-    `class_select.gd`'s/`character_summary.gd`'s own `CHAR_PATH` all point here — Warlock's own
-    `_setup_animations()` case was added alongside Ranger/Wizard/Monk's, previously falling through
-    to the Barbarian default) plus
-    `Bard/`, `Cleric/`, `Druid/`, `Fighter/`, `Rogue/` (locked/not-yet-implemented
+    `Monk/`, `Warlock/`, `Fighter/` (the 6 real, selectable classes — `Player.KNIGHT_PATH`/`character_select.gd`'s/
+    `class_select.gd`'s/`character_summary.gd`'s own `CHAR_PATH` all point here — Warlock's and
+    Fighter's own `_setup_animations()` cases were each added alongside Ranger/Wizard/Monk's,
+    previously falling through to the Barbarian default) plus
+    `Bard/`, `Cleric/`, `Druid/`, `Rogue/` (locked/not-yet-implemented
     classes with sourced art but no gameplay — see "Locked-class art" below). Paladin/Sorcerer have
     no folder yet.
   - **`enemies/`** — every enemy/boss identity: `BigDemon/`, `Necromancer/`, `Goblin/` (shared by
@@ -341,18 +342,21 @@ Hunger has been removed. `Alt` opens a tabbed rest panel (`scripts/ui/short_rest
   holds the idle pose, no swing frame) until a real matching hit frame is sourced, at which point
   flip that class back into `has_real_hit_art` and drop the `hit_1.png` placeholder file.
   **Locked-class art (sourced, not yet implemented classes)**: `classes/Bard/`, `Cleric/`, `Druid/`,
-  `Fighter/`, `Rogue/` each hold a real `idle_1..4.png`/`run_1..4.png` set now (sourced
+  `Rogue/` each hold a real `idle_1..4.png`/`run_1..4.png` set now (sourced
   from Superdark's CC0 16×16 packs, same style/size as the base 0x72 tileset), read by
   `scripts/ui/class_select.gd`'s `_build_locked_card()` to show a dimmed portrait instead of a "?"
-  glyph on that class's still-locked tile. None of these five are wired into
+  glyph on that class's still-locked tile. None of these four are wired into
   `Stats.CharacterClass`/`_setup_animations()`'s match statement or any gameplay path — the art
   exists, the class mechanics don't, same "Coming Soon" status as before. **Paladin/Sorcerer still
-  have no folder/art** and keep the plain "?" fallback. **Warlock's `classes/Warlock/` folder is no
-  longer in this locked-art group** — it's a real, implemented class now (`scripts/entities/
-  CLAUDE.md`'s "Warlock class"), same "sourced from the same CC0 pack, single shared 4-frame
+  have no folder/art** and keep the plain "?" fallback. **Warlock's `classes/Warlock/` and Fighter's
+  `classes/Fighter/` folders are no
+  longer in this locked-art group** — both are real, implemented classes now (`scripts/entities/
+  CLAUDE.md`'s "Warlock class"/"Fighter class"), same "sourced from the same CC0 pack, single shared
+  4-frame
   idle+walk animation (no separate run cycle, `idle_N.png`/`run_N.png` are byte-identical
-  duplicates)" art as before, and it still has **no `hit_N.png`** — `_setup_animations()`'s
-  `has_real_hit_art` list stays `["Wizard", "Monk"]` (Warlock deliberately excluded), so it plays a
+  duplicates)" art as before, and both still have **no `hit_N.png`** — `_setup_animations()`'s
+  `has_real_hit_art` list stays `["Wizard", "Monk"]` (Warlock/Fighter deliberately excluded), so
+  each plays a
   static idle frame on attack instead, same placeholder treatment as Barbarian/Ranger. `Cleric/`/
   `Druid/` (still locked) share the same single-shared-4-frame-animation trait as Warlock's own art
   did. None of the remaining five locked classes have a `hit_N.png` — harmless today since nothing loads one for a non-implemented

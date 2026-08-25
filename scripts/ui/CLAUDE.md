@@ -50,7 +50,7 @@ deliberately keeps `mouse_filter = STOP` unlike most decorative StatsPanel child
 
 **ActionBar (bottom quickbar/ability bar) scale**: `scenes/ui/hud.tscn`'s `ActionBar` panel and its 9 `ItemSlotN` buttons + Wait/Search/Interact buttons are sized 1.5× the original layout (`ActionBar` height 90→135, slot size 76→114px, pitch 80→120px). Item/ability icons use `Button.icon` + `expand_icon = true` so they auto-scale with the button — no separate icon-size code to touch. The per-slot quantity badge (`_slot_qty_labels`) and ability use-count badge (`_slot_use_labels`) offsets/font sizes in `hud.gd` scale alongside (`-32/-18/11pt` → `-48/-27/16pt`). `_bar_mode_label` offsets are pinned to `ActionBar`'s new top (`-135`), not the old `-90`. Each slot also carries a static top-left `_slot_num_labels` badge showing its 1-9 hotkey (slot index `i` → `KEY_(i+1)`, matches `player.gd`'s `_use_quickbar_slot`/`_use_ability_slot` dispatch) — created once in `_ready()`, never toggled, visible in both item and ability bar mode.
 
-**Ability bar greying**: `_refresh_ability_bar()`'s slot `modulate` is gray whenever `not GameState.is_ability_usable(ab)` (see `scripts/autoloads/CLAUDE.md`) — covers plain exhausted charges (Rage) AND infinite-use abilities that are situationally blocked (Frenzy without Rage active, Limit Break already used this long rest, Zealot Strike with 0 Hit Dice, Grip of the Forest without Rage or already used this turn, Halfling Nimbleness already used this round, Hellish Rebuke/Hail of Thorns/Ensnaring Strike with no free cast or spell slot left to arm them, Hunter's Mark already cast this round). Any `"spell:"`-prefixed leveled/cantrip ability greys the same way once its free racial/lineage/invocation casts run out AND no real spell slot of its own level remains (`GameState.can_cast_spell_now()`) — it returns to normal color the instant a long rest (or, for a Warlock's Pact Magic, a short rest) refills either resource. Every one of these now-grey activation attempts is a **silent no-op** — the individual ability functions (`player_*.gd`) no longer log a "no uses remaining"/"already used" chat line for a resource-exhaustion refusal, since the ability bar's own greyed-out slot already communicates that; a still-relevant refusal reason (out of range, no room to land, wrong prerequisite target) still logs normally. Orange still means "active toggle" (`ab.is_active`), takes priority over the usability check.
+**Ability bar greying**: `_refresh_ability_bar()`'s slot `modulate` is gray whenever `not GameState.is_ability_usable(ab)` (see `scripts/autoloads/CLAUDE.md`) — covers plain exhausted charges (Rage) AND infinite-use abilities that are situationally blocked (Frenzy without Rage active, Limit Break already used this long rest, Zealot Strike with 0 Hit Dice, Grip of the Forest without Rage or already used this turn, Halfling Nimbleness already used this round, Hellish Rebuke/Hail of Thorns/Ensnaring Strike with no free cast or spell slot left to arm them, Hunter's Mark already cast this round, Monk's Flurry of Blows/Patient Defense/Step of the Wind with 0 Focus Points or their own extra prerequisite unmet — Martial Arts not active, not engaged, or already used this turn respectively, see `scripts/entities/CLAUDE.md`'s "Monk class"). Any `"spell:"`-prefixed leveled/cantrip ability greys the same way once its free racial/lineage/invocation casts run out AND no real spell slot of its own level remains (`GameState.can_cast_spell_now()`) — it returns to normal color the instant a long rest (or, for a Warlock's Pact Magic, a short rest) refills either resource. Every one of these now-grey activation attempts is a **silent no-op** — the individual ability functions (`player_*.gd`) no longer log a "no uses remaining"/"already used" chat line for a resource-exhaustion refusal, since the ability bar's own greyed-out slot already communicates that; a still-relevant refusal reason (out of range, no room to land, wrong prerequisite target) still logs normally. Orange still means "active toggle" (`ab.is_active`), takes priority over the usability check.
 
 **Unmet-requirement reason text (tooltip-only, red)**: whenever `is_ability_usable(ab)` is false and the ability isn't `ab.is_active`, `_on_qbar_slot_hover()` prepends `GameState.ability_unusable_reason(ab)` as its own red (`#ff4c4c`) line ABOVE the ability's name/description in the hover tooltip — direct owner request, moved off the slot itself (2026-08-07): the slot still darkens via `_refresh_ability_bar()`'s modulate (unusable = gray, unchanged), but the "why" text is now only visible in the popup you get by hovering, not printed over the use-count badge on the bar itself. `_refresh_ability_bar()` no longer touches `use_lbl.text`/color for this — the use-count badge always shows its normal `uses/max` (or blank for infinite) regardless of usability; only a live cooldown countdown (below) still overrides that badge, since a countdown number IS itself the reason and stays on-slot. **Any new `is_ability_usable()` match case should get a matching `ability_unusable_reason()` case** (direct owner convention, mirrors the cooldown-countdown convention below) — never grey a slot with no tooltip explanation of why. **Frenzy cooldown countdown** (Frenzied Killer R3): while `GameState.berserker_frenzy_used` and `get_talent_rank("frenzied_killer") >= 3`, the use-count badge shows `"%dt"` counting down from `3 - GameState.berserker_turns_since_frenzy` (same red tint/format as Rage's own "%dt" remaining-duration display) instead of the normal `uses/max` text — makes the automatic refresh timing visible instead of just guessing. **Any new same-round cooldown should follow this exact pattern** (direct owner convention): grey the slot via a new `is_ability_usable()` case AND show a big red `"%dt"` countdown overlay in place of the normal use-count badge — never just grey it with no explanation, or leave the normal badge showing while the ability is actually blocked. Hunter's Mark's own one-cast-per-round cooldown (`Stats.hunters_mark_cast_this_round`, `scripts/entities/CLAUDE.md`'s "Ranger class") reuses the exact same `frenzy_cooldown_turns` local (set to a flat `1` while on cooldown) rather than inventing a parallel countdown variable, since the display logic is identical either way.
 
@@ -83,6 +83,17 @@ overlay's "Reverse direction — ActionBar slot → Special slot" note below.
 - `compass.gd` (`Compass`, composition child-node, `extends Panel`) — owns the top-center stairs compass UI and its `_stairs_found_this_floor` state internally. Public methods: `on_stairs_discovered()`, `update_display()`, `reset_for_new_floor()`. Instantiated once in `hud.gd._ready()` (`_compass`); `GameState.stairs_discovered` connects to `on_stairs_discovered`, `TurnManager.player_turn_started` connects to `update_display`, and `hud.gd._on_floor_changed()` calls `reset_for_new_floor()`.
 - `hunters_mark_indicator.gd` (`HuntersMarkIndicator`, composition child-node, `extends Panel`) — Ranger's Hunter's Mark direction widget, positioned left of the stairs Compass, same arrow-glyph rendering copied verbatim but driven by `GameState.player_stats.hunters_mark_target` (visible whenever a target is marked, even outside FOV/LOS) instead of a one-shot discovery flag. Instantiated once in `hud.gd._ready()` (`_hunters_mark_indicator`); `TurnManager.player_turn_started` connects to `update_display`, `hud.gd._on_floor_changed()` calls `reset_for_new_floor()` and clears `hunters_mark_target` (a live `Enemy` ref from the previous floor). See `scripts/entities/CLAUDE.md`'s "Ranger class" section.
 - `status_tray.gd` (`StatusTray`, composition child-node, `extends Control`) + `status_tooltips.gd` (`StatusTooltips`, static-func-only helper) — the status/buff/debuff/passive icon tray under the portrait. See "Status/buff/debuff/passive icon tray" below.
+
+**Icon ordering (permanence tiers)**: `hud.gd._update_status_icons()` sorts its entries (stable
+sort, `Array.sort_custom`) by `STATUS_TIER` before handing them to `StatusTray.refresh()`, so the
+tray always reads left-to-right as permanent → shortest-lived: **tier 0** racial (`race_bonus`,
+always leftmost) → **tier 1** semi-permanent item/talent passives (`unarmored_defense`,
+`weapon_mastery`, `torch`, `exhaustion`) → **tier 2** (default for any id not in the map) temporary
+real-duration effects (conditions, DoTs, Concentration spells, buff spells) → **tier 3** shortest-
+lived one-window procs (`tactician`/`psycho_adv` pending-ADV windows, `hunters_mark_free_recast`,
+`risen_from_dead`). Any new status-tray entry that's a passive or a short-lived proc (not an
+ordinary temporary condition/spell effect) needs its own `STATUS_TIER` line — everything else is
+fine falling through to the tier-2 default.
 
 **Status/buff/debuff/passive icon tray** (`status_tray.gd`, `StatusTray extends Control`,
 composition child-node instantiated once in `hud.gd._ready()` as `_status_tray`, added under
@@ -507,21 +518,21 @@ more classes are added without ever needing a redesign. Each real class tile is 
 (not a `Panel` + separate click layer) showing only sprite icon, name, hit die, and a 1-2 line
 flavor `desc` — `CLASS_DATA` no longer carries an `hp`/stat-block field at all. A **Random** tile
 (`_build_random_card()`, purple `RANDOM_COLOR`, dice glyph in place of a sprite) sits right after
-the 4 real class tiles, before the locked ones — clicking it rolls `CLASS_DATA[randi() %
+the 6 real class tiles, before the locked ones — clicking it rolls `CLASS_DATA[randi() %
 CLASS_DATA.size()]` and calls the exact same `_on_class_selected()` a normal tile uses, so it still
 walks the entire point-buy/background/race/mastery Custom flow (per direct owner correction: it
 must NOT bypass those screens the way a premade hero on `character_select.gd` does — only the
 class choice itself is randomized). `LOCKED_CLASSES`
-(Bard/Cleric/Druid/Fighter/Paladin/Rogue/Sorcerer/Warlock — the rest of the 5e class list, not yet
+(Bard/Cleric/Druid/Paladin/Rogue/Sorcerer — the rest of the 5e class list, not yet
 implemented) render as non-interactive tiles (`_build_locked_card()`: dark `Panel`, dimmed name,
 "Coming Soon" subtitle, `MOUSE_FILTER_IGNORE`) appended after Random in the same grid — purely
 cosmetic roster completeness, no selection path exists for them. **Portrait**: `_build_locked_card()`
 checks `res://sprites/characters/classes/<class_name>/idle_1.png` and shows a dimmed
-(`Color(0.55,0.55,0.55,0.85)`) `TextureRect` portrait when it exists (Bard/Cleric/Druid/Fighter/
-Rogue/Warlock all have art now — see root `CLAUDE.md`'s "Locked-class art") instead of the gray "?"
+(`Color(0.55,0.55,0.55,0.85)`) `TextureRect` portrait when it exists (Bard/Cleric/Druid/
+Rogue all have art now — see root `CLAUDE.md`'s "Locked-class art") instead of the gray "?"
 glyph fallback (still used for Paladin/Sorcerer, which have no folder yet) — purely visual, doesn't
 make the tile interactive. Adding a real class: append to `CLASS_DATA` and remove its name from
-`LOCKED_CLASSES`.
+`LOCKED_CLASSES` (most recently done for Warlock, then Fighter).
 
 **Info tooltip ("i" badge)**: each real `CLASS_DATA` entry carries an `"info"` dict
 (`primary_ability`, `hit_die`, `check_profs`, `weapon_profs`, `armor_training`,
@@ -958,3 +969,27 @@ itself (currently only Barbarian, at levels 4 and 10) — `GameState.gain_exp()`
 grew — and from the long-rest hub's "Weapon Masteries" option (`mastery_reselect_prompt.gd`, see
 "Long-rest hub" above), naturally landing in Swap mode since masteries are already at cap by then.
 Never triggered by short rest or floor descent.
+
+## Fighting Style picker (`fighting_style_picker.gd`)
+CanvasLayer, layer = 25. Fighter's level-1 Fighting Style pick (`scripts/entities/CLAUDE.md`'s
+"Fighter class" section — full per-style mechanism table there). Modeled on
+`attunement_picker.gd`'s plain row-list layout rather than the spell/mastery pickers' icon-tile
+grid — none of the 10 styles have icon art, so a tile grid would just be 10 blank squares; a row
+per style (name + inline description, no hover popup needed) reads better with zero art. Reuses
+`GameState.mastery_picker_open` as its input-block flag (same no-dedicated-flag precedent as
+`high_elf_cantrip_swap.gd`/`attunement_picker.gd` above).
+
+**`character_creation_mode: bool`** (set on the instance before `add_child`, default `false`):
+- **`true`** — the mandatory level-1 pick, spawned by `mastery_picker.gd`'s `_finish_learn()` right
+  after its own Learn-mode "pick 3 masteries" round finishes for a Fighter (same "route onward
+  instead of just closing" shape Ranger's own `cantrip_select.gd` hop uses). No Esc, no "Keep
+  Current" — a style MUST be chosen. Picking one calls `GameState.snapshot_character_creation()`
+  itself (the onboarding chain is genuinely done at this point) before closing.
+- **`false`** (default) — the reselect flow, spawned by `hud.gd._on_player_leveled_up()` on every
+  Fighter level-up past 1 (a direct owner house rule; real 5e RAW doesn't allow this). Has a "Keep
+  Current [Esc]" button — purely optional, changes nothing if dismissed.
+
+Either mode's pick calls `GameState.set_fighting_style(id)` (sets `Stats.fighting_style`, re-runs
+`recalculate_stats()` so a swap into/out of Defense updates AC immediately, logs the change) then
+closes. The current selection's row is highlighted (gold border + "(current)" suffix) in reselect
+mode.
