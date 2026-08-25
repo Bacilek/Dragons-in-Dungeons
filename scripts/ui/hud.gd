@@ -35,6 +35,27 @@ var _short_rest_label: RichTextLabel  # BG3-style pip row: short rests remaining
 var _gold_label: Label        # gold counter (coin icon + amount), wired to GameState.gold_changed
 var _spell_slots_label: RichTextLabel  # always-visible per-level spell slot remaining/max (Wizard only)
 
+# ── Status tray ordering (left → right = permanent → shortest-lived) ──────────────────────────
+# Tier 0: racial — never goes away for the whole run (currently just race_bonus).
+# Tier 1: semi-permanent — item/talent passives that persist across many turns/floors without a
+#         real "duration" (equipment state, weapon mastery, exhaustion until the next long rest).
+# Tier 2: temporary — a real turn-count/Concentration duration (conditions, DoTs, buff spells).
+# Tier 3: shortest-lived — one-turn/one-window procs (pending-ADV windows, free-recast windows,
+#         a short timed transformation).
+# Anything not listed here defaults to tier 2 (temporary) — see _status_tier() below.
+const STATUS_TIER: Dictionary = {
+	"race_bonus": 0,
+	"bonus_action": 0,
+	"unarmored_defense": 1,
+	"weapon_mastery": 1,
+	"torch": 1,
+	"exhaustion": 1,
+	"tactician": 3,
+	"psycho_adv": 3,
+	"hunters_mark_free_recast": 3,
+	"risen_from_dead": 3,
+}
+
 # ── In-bar reorder drag (item quickbar OR ability bar, no overlay needed) ─────────────────────
 # Press-and-drag an ActionBar slot onto another slot of the SAME bar to move it there — e.g. drag
 # slot 1 onto slot 5. Independent of spellbook_overlay.gd's own drag (which targets these same
@@ -453,6 +474,10 @@ func _update_status_icons() -> void:
 	# at-a-glance reference for every trait the player's chosen race grants). Unlike every other
 	# tray entry this one is never conditional on a live game-state flag.
 	entries.append({"id": "race_bonus", "icon_path": StatusTooltips.race_portrait_icon_path(GameState.player_stats), "fallback_color": Color(0.85, 0.70, 0.35)})
+	# Bonus Action economy (scripts/entities/CLAUDE.md's "Bonus Action economy" section) — always
+	# shown, like race_bonus, so its availability is visible at a glance regardless of class; green
+	# while available this round, dark gray once spent.
+	entries.append({"id": "bonus_action", "icon_path": "res://icons/status/bonus_action.png", "fallback_color": Color(0.30, 0.30, 0.30) if GameState.bonus_action_used else Color(0.25, 0.80, 0.35)})
 	if s.poison_turns > 0:
 		entries.append({"id": "poisoned", "icon_path": "res://icons/status/poisoned.png", "fallback_color": Color(0.20, 0.85, 0.35)})
 	if s.burning_turns > 0:
@@ -519,7 +544,16 @@ func _update_status_icons() -> void:
 		entries.append({"id": "faerie_fire_outlined", "icon_path": "", "fallback_color": s.faerie_fire_outlined_color})
 	if s.mastery_cap() > 0 and s.known_weapon_masteries.size() > 0:
 		entries.append({"id": "weapon_mastery", "icon_path": "res://icons/status/weapon_mastery.png", "fallback_color": Color(0.80, 0.65, 0.20)})
+	# Stable sort by permanence tier (see STATUS_TIER above) — race_bonus always leftmost, then
+	# semi-permanent passives, then real-duration temporary effects, then the shortest-lived procs
+	# rightmost. Array.sort_custom is stable in Godot 4, so entries sharing a tier keep the order
+	# they were appended above.
+	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return _status_tier(a.get("id", "")) < _status_tier(b.get("id", "")))
 	_status_tray.refresh(entries)
+
+func _status_tier(id: String) -> int:
+	return STATUS_TIER.get(id, 2)
 
 func _on_status_tray_icon_hovered(id: String, rect: Rect2) -> void:
 	if _qbar_tooltip == null:
@@ -966,6 +1000,14 @@ func _refresh_ability_bar() -> void:
 					var lin_max: int = GameState.player_stats.proficiency_bonus if sid in GameState.player_stats.gnome_lineage_spell_ids else 1
 					use_lbl.text = "%d/%d" % [lin_remaining, lin_max]
 					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if lin_remaining > 0 else Color(0.5, 0.5, 0.5))
+				elif ab.ability_id in ["flurry_of_blows", "patient_defense", "step_of_wind"]:
+					# Monk's Focus: uses live on the shared Stats.monk_focus_points/
+					# monk_focus_points_max pool, not the Ability itself (uses_max stays 0/0, same
+					# free-base-ability convention as Hunter's Mark above) — checked before the
+					# generic uses_max == 0 branch below, which would otherwise blank this out.
+					var fp: int = GameState.player_stats.monk_focus_points
+					use_lbl.text = "%d/%d" % [fp, GameState.player_stats.monk_focus_points_max]
+					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if fp > 0 else Color(0.5, 0.5, 0.5))
 				elif ab.uses_max == 0:
 					# Passive / infinite uses.
 					use_lbl.text = ""
@@ -1456,4 +1498,5 @@ func _format_tooltip(meta: String) -> String:
 		"msn":           return TooltipFormatters.fmt_masochist_tooltip(params)
 		"conc":          return TooltipFormatters.fmt_conc_tooltip(params)
 		"stonedr":       return TooltipFormatters.fmt_stonedr_tooltip(params)
+		"deflect":       return TooltipFormatters.fmt_deflect_tooltip(params)
 	return ""

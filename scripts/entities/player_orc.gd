@@ -21,9 +21,14 @@ func set_rewind_fields(d: Dictionary) -> void:
 func activate_adrenaline_rush() -> void:
 	if player.stats.adrenaline_rush_uses_remaining <= 0 and not GameState.invincible:
 		return
+	if GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	if not GameState.invincible:
 		player.stats.adrenaline_rush_uses_remaining -= 1
+		GameState.bonus_action_used = true
 	GameState._sync_ability_uses()
+	GameState.ability_bar_changed.emit()
 	player.stats.temp_hp = player.stats.proficiency_bonus
 	GameState.player_hp_changed.emit(player.stats.current_hp, player.stats.max_hp)
 	dash_mode_active = true

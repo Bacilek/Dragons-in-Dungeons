@@ -280,6 +280,22 @@ var battlefield_adv_pending: bool = false
 # can grey the ability bar for these per-round caps too, not just rest-gated resources.
 var grip_of_the_forest_used_this_turn: bool = false
 var halfling_nimbleness_used_this_turn: bool = false
+var step_of_wind_used_this_turn: bool = false  # Monk's Step of the Wind — once per turn, see player_monk.gd
+# Bonus Action economy (see scripts/entities/CLAUDE.md's "Bonus Action economy" section): a single shared
+# once-per-real-round gate over every "free action" ability that would otherwise chain infinitely
+# in one round (Rage, Frenzy, Zealot Strike, Flurry of Blows, Step of the Wind, Halfling
+# Nimbleness, Cloud Giant's Jaunt, Orc Adrenaline Rush, Human Heroic Inspiration, Blade Ward, Grip
+# of the Forest). Reset in player.gd's _on_turn_started()'s `if not came_from_revert:` block,
+# alongside grip_of_the_forest_used_this_turn etc. Captured in RewindManager.
+# REWIND_GAMESTATE_FIELDS so Backspace can't be used to refresh it for free.
+var bonus_action_used: bool = false
+# Monk's Extra Attack (level 5+, see player.gd's _handle_post_attack_turn()): monk_extra_attack_pending
+# is true for the whole granted second-attack window (nothing but landing that attack or Wait can
+# happen while it's open — see _try_move()/the LMB click handler/_use_quickbar_slot()'s own
+# guards); monk_extra_attack_used_this_turn is the once-per-real-turn gate on GRANTING the window
+# in the first place, reset in player.gd's _on_turn_started().
+var monk_extra_attack_pending: bool = false
+var monk_extra_attack_used_this_turn: bool = false
 # Human Heroic Inspiration: activating the ability arms this; the player's very next d20 roll
 # (attack, check, or save — anything routed through CombatMath.roll_with_adv_disadv() or the
 # stealth-check/Thief-Tools-disarm rolls) is forced to a natural 20, guaranteeing a critical
@@ -942,7 +958,7 @@ func _build_adrenaline_rush_ability() -> Ability:
 	# "describe the rule, not a number" pattern _build_breath_weapon_ability()/
 	# _build_stonecunning_ability() already use, and the ability-bar's own "X/Y" badge (which reads
 	# uses_remaining/uses_max live) already shows the actual current numbers regardless.
-	ab.description = "Gain temporary HP equal to your proficiency bonus and dash one tile for free. Free action, uses = your proficiency bonus — refills on short rest AND long rest."
+	ab.description = "Gain temporary HP equal to your proficiency bonus and dash one tile for free. Costs a Bonus Action, uses = your proficiency bonus — refills on short rest AND long rest."
 	ab.icon_path = "res://icons/races/orc/adrenaline_rush.png"
 	ab.uses_remaining = player_stats.adrenaline_rush_uses_remaining
 	ab.uses_max = player_stats.proficiency_bonus
@@ -952,7 +968,7 @@ func _build_heroic_inspiration_ability() -> Ability:
 	var ab := Ability.new()
 	ab.ability_id = "heroic_inspiration"
 	ab.ability_name = "Heroic Inspiration"
-	ab.description = "Your very next d20 roll (attack, check, or save) is guaranteed to succeed as a critical natural 20. Free action, 1 use per long rest."
+	ab.description = "Your very next d20 roll (attack, check, or save) is guaranteed to succeed as a critical natural 20. Costs a Bonus Action, 1 use per long rest."
 	ab.icon_path = "res://icons/races/human/heroic_inspiration.png"
 	ab.uses_remaining = 1 if player_stats.heroic_inspiration_available else 0
 	ab.uses_max = 1
@@ -1025,7 +1041,7 @@ func _giant_ancestry_name(variant: int) -> String:
 func _giant_ancestry_description(variant: int) -> String:
 	match variant:
 		Stats.GiantAncestry.CLOUD:
-			return "Free action: teleport up to 3 tiles to an unoccupied space you can see. %d uses/long rest." % player_stats.proficiency_bonus
+			return "Costs a Bonus Action: teleport up to 3 tiles to an unoccupied space you can see. %d uses/long rest." % player_stats.proficiency_bonus
 		Stats.GiantAncestry.FIRE:
 			return "Arm, then your next attack that hits also deals +1d10 Fire damage (a miss doesn't spend a charge). %d uses/long rest." % player_stats.proficiency_bonus
 		Stats.GiantAncestry.FROST:
@@ -1064,7 +1080,7 @@ func _build_halfling_nimbleness_ability() -> Ability:
 	var ab := Ability.new()
 	ab.ability_id = "halfling_nimbleness"
 	ab.ability_name = "Nimbleness"
-	ab.description = "Slip through the space of a creature larger than you. Click one of the 8 tiles next to you that holds a larger creature to come out the other side. Free action, once per round."
+	ab.description = "Slip through the space of a creature larger than you. Click one of the 8 tiles next to you that holds a larger creature to come out the other side. Costs a Bonus Action, once per round."
 	ab.icon_path = "res://icons/races/halfling/nimbleness.png"
 	# uses_max = 0 (infinite/free) — gated by PlayerHalfling.used_this_turn, a per-round flag, not
 	# a rest-refilled counter, same shape as Grip of the Forest's "_grip_used_this_turn".
@@ -1408,7 +1424,7 @@ func _give_monk_starting_items() -> void:
 	var ma := Ability.new()
 	ma.ability_id = "martial_arts"
 	ma.ability_name = "Martial Arts"
-	ma.description = "Passive: Unarmed strikes use DEX + 1d6. After a main-action unarmed strike, make a free bonus-action unarmed strike. Die scales at levels 5/11/17."
+	ma.description = "Passive, while unarmed or wielding only Monk weapons (Simple, or Martial+Light), unarmored, no shield: Dextrous Attacks (use DEX instead of STR), Martial Arts Die (1d6, replaces a weaker weapon die, scales at levels 5/11/17), Bonus Unarmed Strike (a free extra unarmed strike after your attack lands or misses)."
 	ma.icon_path = "res://sprites/items/misc/key_iron.png"
 	ma.uses_remaining = 0
 	ma.uses_max = 0
@@ -1416,6 +1432,40 @@ func _give_monk_starting_items() -> void:
 	add_ability(ma)
 	recalculate_stats()
 	equipment_changed.emit()
+
+# Monk's Focus (level 2+): grants the three level-2 Focus abilities directly onto the ability bar
+# — real activatable abilities (unlike Unarmored Defense/Martial Arts above, which are pure
+# passives), each costing 1 Focus Point via GameState.spend_monk_focus(). uses_max stays 0 (the
+# "free-base-ability" convention, same as Rage) since the shared Focus pool — not a per-ability
+# use count — is what actually gates them; hud.gd shows the live Focus Points count on their slots
+# instead of a normal use-count badge (see "Ability bar greying" in scripts/ui/CLAUDE.md).
+func _grant_monk_focus_abilities() -> void:
+	var fob := Ability.new()
+	fob.ability_id = "flurry_of_blows"
+	fob.ability_name = "Flurry of Blows"
+	fob.description = "1 Focus Point + a Bonus Action. Requires Martial Arts active (unarmed or a Monk weapon, unarmored, no shield). Your next Bonus Unarmed Strike this turn hits twice instead of once."
+	fob.icon_path = "res://sprites/items/misc/key_iron.png"
+	fob.uses_remaining = 0
+	fob.uses_max = 0
+	add_ability(fob)
+
+	var pd := Ability.new()
+	pd.ability_id = "patient_defense"
+	pd.ability_name = "Patient Defense"
+	pd.description = "1 Focus Point. Requires being engaged (adjacent to a live enemy). Costs your turn — attacks against you have Disadvantage until the start of your next turn."
+	pd.icon_path = "res://sprites/items/misc/key_iron.png"
+	pd.uses_remaining = 0
+	pd.uses_max = 0
+	add_ability(pd)
+
+	var sow := Ability.new()
+	sow.ability_id = "step_of_wind"
+	sow.ability_name = "Step of the Wind"
+	sow.description = "1 Focus Point + a Bonus Action, once per turn. A free 1-tile dash that costs no turn — click (or move into) an adjacent visible, walkable tile."
+	sow.icon_path = "res://sprites/items/misc/key_iron.png"
+	sow.uses_remaining = 0
+	sow.uses_max = 0
+	add_ability(sow)
 
 func _find_ability_by_id(id: String) -> Ability:
 	for slot in player_ability_bar:
@@ -1890,6 +1940,18 @@ func spend_gold(amount: int) -> bool:
 	gold_changed.emit(gold)
 	return true
 
+# Monk's Focus spend chokepoint — Flurry of Blows/Patient Defense/Step of the Wind (and any
+# future Monk Focus feature) all funnel through this rather than touching monk_focus_points
+# directly. Same "invincible skips consumption" invariant as spend_gold() above.
+func spend_monk_focus(amount: int) -> bool:
+	if invincible:
+		return true
+	if amount > player_stats.monk_focus_points:
+		return false
+	player_stats.monk_focus_points -= amount
+	ability_bar_changed.emit()
+	return true
+
 func advance_floor() -> void:
 	current_floor += 1
 	# Floor descent is no longer a rest — see long_rest() for every long-rest-gated resource.
@@ -1976,6 +2038,7 @@ func long_rest() -> void:
 	player_stats.exhaustion_level = maxi(0, player_stats.exhaustion_level - 1)
 	player_status_changed.emit()
 	player_stats.rage_uses_remaining = player_stats.rage_uses_max
+	player_stats.monk_focus_points = player_stats.monk_focus_points_max
 	player_stats.hunters_mark_uses_remaining = Stats.HUNTERS_MARK_USES_MAX
 	player_stats.breath_weapon_uses_remaining = player_stats.proficiency_bonus
 	player_stats.draconic_flight_used = false
@@ -2081,6 +2144,11 @@ func _sync_ability_uses() -> void:
 func is_ability_usable(ab: Ability) -> bool:
 	if not ab.has_uses():
 		return false
+	# Monk's Extra Attack (level 5+): every ability greys out during the granted second-attack
+	# window — nothing but landing that attack (or Wait, which forfeits it) is allowed, matching
+	# the same hard block player.gd's _use_quickbar_slot() already applies to actual activation.
+	if monk_extra_attack_pending:
+		return false
 	match ab.ability_id:
 		"frenzy":
 			return is_raging and not berserker_frenzy_used
@@ -2131,6 +2199,18 @@ func is_ability_usable(ab: Ability) -> bool:
 			if player_stats.ensnaring_strike_armed or invincible:
 				return true
 			return player_stats.caster != null and player_stats.caster.slot_pool != null and player_stats.caster.slot_pool.can_cast(SpellDb.get_spell("ensnaring_strike"))
+		"flurry_of_blows":
+			if player_stats.monk_focus_points <= 0 and not invincible:
+				return false
+			return PlayerMonk.martial_arts_active(equipped_weapon)
+		"patient_defense":
+			if player_stats.monk_focus_points <= 0 and not invincible:
+				return false
+			return PlayerMonk.is_engaged()
+		"step_of_wind":
+			if step_of_wind_used_this_turn:
+				return false
+			return invincible or player_stats.monk_focus_points > 0
 	if ab.ability_id.begins_with("spell:"):
 		return can_cast_spell_now(ab.ability_id.substr(6))
 	return true
@@ -2169,6 +2249,8 @@ func can_cast_spell_now(spell_id: String) -> bool:
 ## shows its own countdown/counter badge that already reads as the reason (Frenzy/Hunter's Mark's
 ## cooldown, a racial free-cast "X/Y" counter that still has a real spell slot to fall back on).
 func ability_unusable_reason(ab: Ability) -> String:
+	if monk_extra_attack_pending:
+		return "Attack/Wait"
 	match ab.ability_id:
 		"frenzy":
 			if not is_raging:
@@ -2196,6 +2278,21 @@ func ability_unusable_reason(ab: Ability) -> String:
 				return "Used"
 		"hellish_rebuke_toggle", "hail_of_thorns_toggle", "ensnaring_strike_toggle":
 			return "No Slot"
+		"flurry_of_blows":
+			if player_stats.monk_focus_points <= 0 and not invincible:
+				return "No Focus"
+			if not PlayerMonk.martial_arts_active(equipped_weapon):
+				return "Need Monk Gear"
+		"patient_defense":
+			if player_stats.monk_focus_points <= 0 and not invincible:
+				return "No Focus"
+			if not PlayerMonk.is_engaged():
+				return "Not Engaged"
+		"step_of_wind":
+			if step_of_wind_used_this_turn:
+				return "Used"
+			if player_stats.monk_focus_points <= 0 and not invincible:
+				return "No Focus"
 		"hunters_mark":
 			# The round-cooldown case is already shown via hud.gd's own "%dt"/flat-"1" countdown
 			# overlay (frenzy_cooldown_turns), so this only ever fires for the "out of every
@@ -2212,6 +2309,9 @@ func ability_unusable_reason(ab: Ability) -> String:
 # Natural Sleeper's form lock does NOT happen here — long rest only (see long_rest()).
 func _on_short_rest_completed() -> void:
 	clear_light_source()  # Light cantrip — ends on a completed rest, short or long
+	# Monk's Focus: unlike every other per-rest resource in this codebase, refills on BOTH a short
+	# AND a long rest (D&D 2024 RAW) — see Stats.monk_focus_points_max's own comment.
+	player_stats.monk_focus_points = player_stats.monk_focus_points_max
 	if berserker_frenzy_used and _find_ability_by_id("frenzy") != null:
 		game_log("[color=lime]Frenzy: use refreshed.[/color]")
 	berserker_frenzy_used = false
@@ -2372,6 +2472,7 @@ func heal(amount: int) -> int:
 func gain_exp(amount: int) -> void:
 	var old_max_hp: int = player_stats.max_hp
 	var old_rage_max: int = player_stats.rage_uses_max
+	var old_focus_max: int = player_stats.monk_focus_points_max
 	var old_max_hit_dice: int = max_hit_dice()
 	var old_mastery_cap: int = player_stats.mastery_cap()
 	var old_prof_bonus: int = player_stats.proficiency_bonus
@@ -2405,6 +2506,15 @@ func gain_exp(amount: int) -> void:
 					player_stats.rage_uses_remaining + (new_rage_max - old_rage_max),
 					new_rage_max)
 				_sync_ability_uses()
+		# Monk's Focus scales 1:1 with level — grant the extra point immediately, same "on the
+		# triggering level-up, not only after the next rest" treatment as Rage above.
+		if player_stats.character_class == Stats.CharacterClass.MONK:
+			var new_focus_max: int = player_stats.monk_focus_points_max
+			if new_focus_max > old_focus_max:
+				player_stats.monk_focus_points = mini(
+					player_stats.monk_focus_points + (new_focus_max - old_focus_max),
+					new_focus_max)
+				ability_bar_changed.emit()
 		var lv_str: String = ""
 		if point_tier > 0:
 			lv_str = " +1 talent point."
@@ -2865,7 +2975,9 @@ func recalculate_stats() -> void:
 	s.armor = 0
 	var armor_item: Item = equipment.get("armor") as Item
 	var has_armor: bool = armor_item != null
-	s.recalc_ac(has_armor, armor_item)
+	var hand2_item: Item = equipment.get("hand2") as Item
+	var has_shield: bool = hand2_item != null and hand2_item.is_shield
+	s.recalc_ac(has_armor, armor_item, has_shield)
 	# Start from weapon's own damage die if it defines one, else base stats
 	var melee: Item = equipment.get("melee") as Item
 	var melee_bonus_dmg: int = melee.bonus_damage if (melee != null and _item_bonus_active(melee)) else 0
@@ -3292,6 +3404,13 @@ var enemy_noticed_player_this_turn: bool = false
 # for why this is deferred rather than logged inline like every other combat-math side effect.
 var _pending_stone_endurance_log: String = ""
 
+# Monk's Deflect Attacks (level 3+) — same deferred-log shape as Stone's Endurance above, set by
+# take_damage_raw() the instant the reduction rolls. deflect_attacks_used_this_turn is the
+# once-per-turn gate (auto-consumed by the FIRST physical hit each turn, not player-armed) —
+# reset in player.gd's _on_turn_started() alongside the other once-per-turn ability flags.
+var _pending_deflect_attacks_log: String = ""
+var deflect_attacks_used_this_turn: bool = false
+
 # Synced by player.gd each turn so HUD can display remaining rage turns on the ability slot.
 var rage_turns_remaining: int = 0
 
@@ -3367,6 +3486,21 @@ func take_damage_raw(amount: int, ignore_rage: bool = false, damage_type: String
 		# after its own hit line — same "reaction logs after the attack it reacted to" ordering as
 		# Storm's Thunder/Hellish Rebuke (see enemy.gd._attack_player()).
 		_pending_stone_endurance_log = "[color=cyan]Stone's Endurance[/color] absorbs [url=%s][color=yellow]%d[/color][/url] damage." % [stone_meta, reduction]
+	# Monk's Deflect Attacks (level 3+, PASSIVE — auto-fires on the first physical hit each turn,
+	# no player activation): 1d10 + DEX mod + Monk level, reduces Slashing/Piercing/Bludgeoning
+	# damage only. Same "roll at the moment damage actually lands" + deferred-log shape as Stone's
+	# Endurance above (flush_deflect_attacks_log(), called by the same set of take_damage_raw()
+	# callers right after their own hit line).
+	if not ignore_rage and is_physical and player_stats.character_class == Stats.CharacterClass.MONK \
+			and player_stats.character_level >= 3 and not deflect_attacks_used_this_turn:
+		deflect_attacks_used_this_turn = true
+		var deflect_die: int = Rng.roll(10)
+		var deflect_dex: int = player_stats.dex_modifier()
+		var deflect_lvl: int = player_stats.character_level
+		var deflect_reduction: int = maxi(0, deflect_die + deflect_dex + deflect_lvl)
+		final_amount = maxi(0, final_amount - deflect_reduction)
+		var deflect_meta: String = "deflect:die=%d,dex=%d,lvl=%d,total=%d" % [deflect_die, deflect_dex, deflect_lvl, deflect_reduction]
+		_pending_deflect_attacks_log = "[color=cyan]Deflect Attacks[/color] reduces the damage by [url=%s][color=yellow]%d[/color][/url]." % [deflect_meta, deflect_reduction]
 	# DR can reduce damage to 0 — skip Stats.take_damage() which floors at 1.
 	if final_amount <= 0:
 		if is_physical and not ignore_rage:
@@ -3395,6 +3529,17 @@ func flush_stone_endurance_log() -> void:
 		return
 	game_log(_pending_stone_endurance_log)
 	_pending_stone_endurance_log = ""
+
+## Same shape as flush_stone_endurance_log() above, for Monk's Deflect Attacks — every
+## take_damage_raw() caller that builds its own hit line must call this immediately after logging
+## it (same call sites as flush_stone_endurance_log(): enemy.gd._attack_player(),
+## player_berserker.gd's two Frenzy self-damage branches, spell_effects.gd's Fireball self-catch,
+## dungeon_floor.gd's standing-in-fire tick, and player.gd's status-tick block).
+func flush_deflect_attacks_log() -> void:
+	if _pending_deflect_attacks_log.is_empty():
+		return
+	game_log(_pending_deflect_attacks_log)
+	_pending_deflect_attacks_log = ""
 
 # Blade Ward cantrip (and any future concentration spell): taking damage forces a CON check —
 # DC = max(10, damage taken), 5e's concentration-save shape but without the usual "half rounded
@@ -3613,14 +3758,56 @@ func _apply_monk_level_features(level: int) -> void:
 		return
 	var die_sides: int = player_stats.martial_arts_die_sides
 	match level:
+		2:
+			_grant_monk_focus_abilities()
+			combat_message.emit("[color=cyan]Level 2 Monk: Monk's Focus unlocked — Flurry of Blows, Patient Defense, Step of the Wind (%d Focus Points).[/color]" % player_stats.monk_focus_points_max)
+		3:
+			var da := Ability.new()
+			da.ability_id = "deflect_attacks"
+			da.ability_name = "Deflect Attacks"
+			da.description = "Passive: the first time you're hit by Slashing/Piercing/Bludgeoning damage each turn, automatically reduce it by 1d10 + DEX modifier + your Monk level."
+			da.icon_path = "res://sprites/items/misc/key_iron.png"
+			da.uses_remaining = 0
+			da.uses_max = 0
+			add_ability(da)
+			combat_message.emit("[color=cyan]Level 3 Monk: Deflect Attacks unlocked — 1d10 + DEX + level physical damage reduction, once per turn.[/color]")
 		4:
 			player_stats.dexterity += 2
 			recalculate_stats()
-			combat_message.emit("[color=cyan]Level 4 Monk: DEX +2 (now [b]%d[/b], modifier +%d)![/color]" % [player_stats.dexterity, player_stats.dex_modifier()])
-		5, 11, 17:
+			# Slow Fall — PLACEHOLDER ONLY, per direct owner request: grants the ability-bar entry
+			# (so the level-up reads as a real feature) but the mechanic itself does nothing yet.
+			# No fall-damage system exists anywhere in this codebase to hook into — chasms are an
+			# instant remove/kill, not a damage roll (see scripts/world/CLAUDE.md's forced-movement/
+			# chasm handling) — so there's nothing for "reduce fall damage" to reduce today. Revisit
+			# if/when a real fall-damage mechanic is ever added.
+			var sf := Ability.new()
+			sf.ability_id = "slow_fall"
+			sf.ability_name = "Slow Fall"
+			sf.description = "Passive: not yet implemented — this game has no fall-damage mechanic to reduce yet."
+			sf.icon_path = "res://sprites/items/misc/key_iron.png"
+			sf.uses_remaining = 0
+			sf.uses_max = 0
+			sf.is_passive = true
+			add_ability(sf)
+			combat_message.emit("[color=cyan]Level 4 Monk: DEX +2 (now [b]%d[/b], modifier +%d)! Slow Fall unlocked (not yet implemented).[/color]" % [player_stats.dexterity, player_stats.dex_modifier()])
+		5:
+			var ea := Ability.new()
+			ea.ability_id = "extra_attack"
+			ea.ability_name = "Extra Attack"
+			ea.description = "Passive: your first melee attack each turn no longer ends your turn — you may make one more attack. No movement or other action in between; Space/Wait forfeits the second attack."
+			ea.icon_path = "res://sprites/items/misc/key_iron.png"
+			ea.uses_remaining = 0
+			ea.uses_max = 0
+			add_ability(ea)
+			var ma5: Ability = _find_ability_by_id("martial_arts")
+			if ma5 != null:
+				ma5.description = "Passive, while unarmed or wielding only Monk weapons (Simple, or Martial+Light), unarmored, no shield: Dextrous Attacks (use DEX instead of STR), Martial Arts Die (1d%d, replaces a weaker weapon die), Bonus Unarmed Strike (a free extra unarmed strike after your attack lands or misses)." % die_sides
+			ability_bar_changed.emit()
+			combat_message.emit("[color=cyan]Level 5 Monk: [b]Extra Attack[/b]! Your first melee attack no longer ends your turn. Martial Arts die increased to [b]1d%d[/b]![/color]" % die_sides)
+		11, 17:
 			var ma: Ability = _find_ability_by_id("martial_arts")
 			if ma != null:
-				ma.description = "Passive: Unarmed strikes use DEX + 1d%d. Bonus-action unarmed strike after main-action attack. Die scales at levels 5/11/17." % die_sides
+				ma.description = "Passive, while unarmed or wielding only Monk weapons (Simple, or Martial+Light), unarmored, no shield: Dextrous Attacks (use DEX instead of STR), Martial Arts Die (1d%d, replaces a weaker weapon die), Bonus Unarmed Strike (a free extra unarmed strike after your attack lands or misses)." % die_sides
 			ability_bar_changed.emit()
 			combat_message.emit("[color=cyan]Level %d Monk: Martial Arts die increased to [b]1d%d[/b]![/color]" % [level, die_sides])
 
@@ -3988,7 +4175,7 @@ func _build_frenzy_description() -> String:
 	var lines: Array[String] = [
 		"Requires Raging. Move into or click an adjacent enemy. Rolls a plain d20 (no attack modifier, no AC) to decide the outcome — weapon damage always includes your STR mod + Rage bonus, same as a normal attack.",
 		"Nat 1: miss — only you take the damage. 2-19: hit — enemy AND you both take the same damage roll. Nat 20: enemy takes double damage, you take none.",
-		"Once per short rest (also resets on long rest).",
+		"Once per short rest (also resets on long rest). Costs a Bonus Action.",
 	]
 	if sadist_rank >= 1:
 		lines.append("Sadist Monster: enemy also takes +%dd6 bonus damage (self-damage unaffected)." % sadist_rank)
@@ -4012,8 +4199,9 @@ func _build_rage_description() -> String:
 	var bonus: int = player_stats.rage_bonus_damage
 	var lines: Array[String] = []
 	lines.append("+%d damage on STR attacks. 50%% DR vs Bludgeoning/Piercing/Slashing." % bonus)
-	lines.append("Lasts 1 turn; refreshed to 1 turn by attacking or being attacked.")
+	lines.append("Lasts 1 turn; refreshed to 1 turn by attacking, being attacked, or a leftover bonus action.")
 	lines.append("%d use%s per floor (scales with level)." % [uses, "s" if uses != 1 else ""])
+	lines.append("Costs a Bonus Action.")
 	return "\n".join(lines)
 
 func _build_one_with_nature_description() -> String:
@@ -4089,7 +4277,7 @@ func _build_ironwood_bark_description() -> String:
 func _build_grip_of_the_forest_description() -> String:
 	var rank: int = get_talent_rank("grip_of_the_forest")
 	var hook_range: int = [0, 3, 4, 5][mini(rank, 3)]
-	var lines: Array[String] = ["While Raging, once per turn: target an enemy within %d tiles (STR check DC 8+STR mod+prof to resist) and pull them into melee range." % hook_range]
+	var lines: Array[String] = ["While Raging, once per turn (costs a Bonus Action): target an enemy within %d tiles (STR check DC 8+STR mod+prof to resist) and pull them into melee range." % hook_range]
 	if rank >= 2: lines.append("R2: On success, the target can't move on their next turn.")
 	if rank >= 3: lines.append("R3: On success, the target also has Disadvantage on their next attack roll.")
 	return "\n".join(lines)
@@ -4108,7 +4296,7 @@ func _build_zealot_strike_description() -> String:
 	var os_rank: int = get_talent_rank("overheal_shield")
 	var lines: Array[String] = [
 		"Your next melee attack this turn (hit or miss) consumes 1 Hit Die and heals you for the roll (1d%d + CON mod)." % hit_die_sides(),
-		"Hit dice: %d/%d." % [hit_dice, max_hit_dice()],
+		"Hit dice: %d/%d. Costs a Bonus Action to arm." % [hit_dice, max_hit_dice()],
 	]
 	if jd_rank >= 1:
 		lines.append("Judgement Day: your next attack after the heal deals +%d× Rage bonus × 1d6 bonus damage." % jd_rank)

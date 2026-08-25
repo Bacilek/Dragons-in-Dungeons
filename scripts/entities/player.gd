@@ -33,6 +33,7 @@ var _goliath: PlayerGoliath
 var _tiefling: PlayerTiefling
 var _halfling: PlayerHalfling
 var _warlock: PlayerWarlock
+var _monk: PlayerMonk
 
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
@@ -197,6 +198,7 @@ func capture_rewind_state() -> Dictionary:
 		"goliath": _goliath.get_rewind_fields(),
 		"halfling": _halfling.get_rewind_fields(),
 		"orc": _orc.get_rewind_fields(),
+		"monk": _monk.get_rewind_fields(),
 	}
 
 func restore_rewind_state(d: Dictionary) -> void:
@@ -224,6 +226,7 @@ func restore_rewind_state(d: Dictionary) -> void:
 	_goliath.set_rewind_fields(d.get("goliath", {}))
 	_halfling.set_rewind_fields(d.get("halfling", {}))
 	_orc.set_rewind_fields(d.get("orc", {}))
+	_monk.set_rewind_fields(d.get("monk", {}))
 
 
 func _ready() -> void:
@@ -257,6 +260,7 @@ func _ready() -> void:
 	_tiefling = PlayerTiefling.new(); _tiefling.player = self; add_child(_tiefling)
 	_halfling = PlayerHalfling.new(); _halfling.player = self; add_child(_halfling)
 	_warlock = PlayerWarlock.new(); _warlock.player = self; add_child(_warlock)
+	_monk = PlayerMonk.new(); _monk.player = self; add_child(_monk)
 
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
@@ -321,9 +325,17 @@ func _on_turn_started() -> void:
 			GameState.risen_from_dead_active = false
 			GameState.player_status_changed.emit()
 		_eagle_free_move_used = false
-		if GameState.grip_of_the_forest_used_this_turn or GameState.halfling_nimbleness_used_this_turn:
+		if GameState.grip_of_the_forest_used_this_turn or GameState.halfling_nimbleness_used_this_turn or GameState.step_of_wind_used_this_turn or GameState.deflect_attacks_used_this_turn or GameState.monk_extra_attack_used_this_turn:
 			GameState.grip_of_the_forest_used_this_turn = false
 			GameState.halfling_nimbleness_used_this_turn = false
+			GameState.step_of_wind_used_this_turn = false
+			GameState.deflect_attacks_used_this_turn = false
+			GameState.monk_extra_attack_used_this_turn = false
+			GameState.ability_bar_changed.emit()
+		# Bonus Action refreshes at the start of every real round — see scripts/entities/CLAUDE.md's
+		# "Bonus Action economy" section.
+		if GameState.bonus_action_used:
+			GameState.bonus_action_used = false
 			GameState.ability_bar_changed.emit()
 		_vex_adv_target = null
 		# Loading: a weapon that fired this turn can fire again next real turn — see Item.
@@ -661,6 +673,7 @@ func _on_turn_started() -> void:
 			var iw_actual: int = GameState.take_damage_raw(iw_inst["subtotal"], false, "Necrotic")
 			iw_inst["final"] = iw_actual
 			GameState.flush_stone_endurance_log()
+			GameState.flush_deflect_attacks_log()
 			if _dungeon_floor != null:
 				_dungeon_floor.show_damage(position, iw_actual, true, CombatMath.damage_type_color("Necrotic"))
 			var iw_meta: String = CombatMath.encode_damage_instance(iw_inst)
@@ -902,6 +915,7 @@ func _on_turn_started() -> void:
 	if status_dmg > 0:
 		GameState.take_damage_raw(status_dmg)
 		GameState.flush_stone_endurance_log()
+		GameState.flush_deflect_attacks_log()
 		if _dungeon_floor != null:
 			_dungeon_floor.show_damage(position, status_dmg, true)
 		GameState.player_status_changed.emit()
@@ -932,6 +946,16 @@ func _on_turn_started() -> void:
 # casting turn, not the casting turn itself.
 func _on_turn_ending() -> void:
 	_resolve_stealth_check()
+	# Rage house-rule (Bonus Action economy, scripts/entities/CLAUDE.md): a leftover, unused Bonus
+	# Action at the end of a real turn automatically extends Rage — on top of (not replacing) the
+	# existing "attack or be attacked" trigger the _on_turn_started() rage-tick block reads.
+	# _on_turn_ending() only ever fires on a real (non-reverted) turn (TurnManager.player_turn_ending's
+	# own contract), so no extra revert guard is needed here.
+	if _is_raging and not GameState.bonus_action_used:
+		_rage_attacked_this_turn = true
+		GameState.bonus_action_used = true
+		GameState.ability_bar_changed.emit()
+		GameState.game_log("[color=gray]Your leftover bonus action keeps the Rage going.[/color]")
 	var stats: Stats = GameState.player_stats
 	if stats.witch_bolt_turns <= 0:
 		return
@@ -1358,6 +1382,8 @@ func _update_spell_aoe_preview() -> bool:
 			return _update_cloud_teleport_preview()
 		if _orc.dash_mode_active:
 			return _update_adrenaline_dash_preview()
+		if _monk.step_of_wind_mode_active:
+			return _update_step_of_wind_preview()
 		if _hunters_mark_mode_active:
 			return _update_hunters_mark_preview()
 		_dungeon_floor.hide_aoe_preview()
@@ -1507,6 +1533,20 @@ func _update_adrenaline_dash_preview() -> bool:
 	var d: Vector2i = tile - grid_pos
 	var dist_cheb: int = maxi(absi(d.x), absi(d.y))
 	var in_range: bool = tile != grid_pos and dist_cheb <= PlayerOrc.DASH_RANGE \
+		and _dungeon_floor.is_tile_visible(tile) and _dungeon_floor.is_walkable(tile) \
+		and _dungeon_floor.get_enemy_at(tile) == null
+	_dungeon_floor.show_touch_target_preview(tile, in_range)
+	return true
+
+# Step of the Wind's one-tile dash targeting preview — identical shape to Adrenaline Rush's own
+# above, just PlayerMonk.STEP_OF_WIND_RANGE (also 1 tile).
+func _update_step_of_wind_preview() -> bool:
+	_dungeon_floor.show_spell_range_preview(grid_pos, PlayerMonk.STEP_OF_WIND_RANGE, false)
+	var world_mouse: Vector2 = get_global_mouse_position()
+	var tile: Vector2i = Vector2i(floori(world_mouse.x / 16.0), floori(world_mouse.y / 16.0))
+	var d: Vector2i = tile - grid_pos
+	var dist_cheb: int = maxi(absi(d.x), absi(d.y))
+	var in_range: bool = tile != grid_pos and dist_cheb <= PlayerMonk.STEP_OF_WIND_RANGE \
 		and _dungeon_floor.is_tile_visible(tile) and _dungeon_floor.is_walkable(tile) \
 		and _dungeon_floor.get_enemy_at(tile) == null
 	_dungeon_floor.show_touch_target_preview(tile, in_range)
@@ -1732,6 +1772,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _orc.dash_mode_active:
 				_orc.cancel()
 				GameState.game_log("[color=gray]Adrenaline Rush dash cancelled.[/color]")
+			if _monk.step_of_wind_mode_active:
+				_monk.cancel_step_of_wind()
+				GameState.game_log("[color=gray]Step of the Wind cancelled.[/color]")
 			if _halfling.nimbleness_mode_active:
 				_halfling.cancel()
 				GameState.game_log("[color=gray]Nimbleness cancelled.[/color]")
@@ -1822,6 +1865,18 @@ func _unhandled_input(event: InputEvent) -> void:
 					return
 				if GameState.short_rest_active or GameState.short_rest_open or GameState.blacksmith_panel_open or GameState.shop_open:
 					return
+				# Extra Attack (Monk, level 5+): during the granted second-attack window, a click
+				# only ever resolves as the second attack itself (an already-adjacent, targetable
+				# enemy — no movement needed to reach it) — any other click (an empty tile, a
+				# distant enemy that would require chasing, a spell) is blocked outright, same
+				# "attack again or wait, nothing else" rule _try_move() enforces for WASD.
+				if GameState.monk_extra_attack_pending:
+					var _ea_enemy: Enemy = _dungeon_floor.get_targetable_enemy_at(pending)
+					var _ea_ok: bool = _ea_enemy != null and _ea_enemy.min_dist_to(grid_pos) <= 1 \
+						and not Input.is_key_pressed(KEY_SHIFT) and not Input.is_key_pressed(KEY_ALT)
+					if not _ea_ok:
+						GameState.game_log("[color=gray]Extra Attack: attack again, or wait to end your turn.[/color]")
+						return
 				# BUGFIX: this Alt+special-slot check must run BEFORE the "pending == grid_pos"
 				# no-op-move guard below — a SELF-target spell (Mage Armor) in the Special slot is
 				# naturally Alt+clicked ON your own tile (the only valid target), which used to
@@ -1977,6 +2032,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_orc.dash_mode_active = false
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
 				_orc.resolve_dash(clicked)
+			return
+
+		# Step of the Wind's one-tile dash targeting mode (Monk) — click an adjacent visible tile;
+		# a genuinely free action, no turn cost either way (see player_monk.gd).
+		if _monk.step_of_wind_mode_active:
+			_monk.step_of_wind_mode_active = false
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				_monk.resolve_step_of_wind(clicked)
 			return
 
 		# Halfling Nimbleness targeting mode — click one of the 8 adjacent tiles (blue preview);
@@ -2477,6 +2540,13 @@ func _try_move(dir: Vector2i) -> void:
 		_orc.resolve_dash(target)
 		return
 
+	# Step of the Wind dash primed: a WASD/arrow direction picks the dash's own target instead of
+	# the normal move, same precedent as Adrenaline Rush directly above.
+	if _monk.step_of_wind_mode_active:
+		_monk.step_of_wind_mode_active = false
+		_monk.resolve_step_of_wind(target)
+		return
+
 	# Large Form (Goliath, see player_goliath.gd): a 2x2 footprint needs its WHOLE destination
 	# block free, not just the single leading tile the rest of this function checks — otherwise a
 	# Large player could squeeze partway through a 1-wide gap. Only the 3 NEW tiles (the ones not
@@ -2507,6 +2577,16 @@ func _try_move(dir: Vector2i) -> void:
 			_ranged.ranged_attack(enemy)
 		else:
 			_bump_attack(enemy, dir)
+		return
+
+	# Extra Attack (Monk, level 5+, see PlayerMonk/_bump_attack()'s own trigger): while the
+	# granted second-attack window is open, nothing but landing that second attack (the enemy!=null
+	# branch above) or forfeiting via Wait can happen this "turn" — no genuine movement, no
+	# interact-without-moving (Thief Tools bump below), matching the 5e text that Extra Attack
+	# grants more attacks, never more movement. Placed after the enemy-bump branch (which already
+	# returned) so a bump INTO an adjacent enemy — the actual second attack — is never blocked here.
+	if GameState.monk_extra_attack_pending:
+		GameState.game_log("[color=gray]Extra Attack: attack again, or wait to end your turn.[/color]")
 		return
 
 	# Thief Tools primed + bump = interact without moving (door or revealed trap).
@@ -2681,6 +2761,9 @@ func _try_move(dir: Vector2i) -> void:
 	var _longstrider_free_step: bool = false
 	if stats.longstrider_turns > 0:
 		_longstrider_free_step = _consume_duty_cycle("longstrider", 1, 3)
+	var _monk_um_free_step: bool = false
+	if _monk.unarmored_movement_active():
+		_monk_um_free_step = _consume_duty_cycle("monk_unarmored_movement", PlayerMonk.unarmored_movement_numerator(stats.character_level), PlayerMonk.UNARMORED_MOVEMENT_DUTY_CYCLE_PER)
 	var _large_form_free_step: bool = _goliath.consume_large_form_free_move()
 	if _large_form_free_step:
 		GameState.game_log("[color=cyan]Large Form: your giant stride carries you further at no cost.[/color]")
@@ -2706,6 +2789,12 @@ func _try_move(dir: Vector2i) -> void:
 	elif _wood_elf_free_step:
 		# Deliberately silent — same reasoning as Longstrider above (this fires roughly every
 		# 6th move for the whole run; a chat line every 6th step was pure log spam).
+		await _take_free_move_beat()
+		_reverted_this_round = true
+		TurnManager.revert_to_waiting()
+		return
+	elif _monk_um_free_step:
+		# Deliberately silent — same reasoning as Longstrider/Wood Elf above.
 		await _take_free_move_beat()
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
@@ -2776,10 +2865,15 @@ func _activate_rage() -> void:
 	if _is_raging:
 		GameState.game_log("[color=red]You are already raging![/color]")
 		return
+	if GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	var ab: Ability = _find_ability("rage")
 	if ab == null or not ab.has_uses():
 		GameState.game_log("[color=red]No Rage uses remaining (resets on floor descent).[/color]")
 		return
+	if not GameState.invincible:
+		GameState.bonus_action_used = true
 	_is_raging = true
 	_rage_turns = 1  # baseline: lasts 1 turn, refreshed to 1 by attacking or being attacked
 	_rage_attacked_this_turn = false
@@ -2806,6 +2900,12 @@ func _activate_grip_of_the_forest() -> void:
 		return
 	if GameState.grip_of_the_forest_used_this_turn:
 		return
+	if GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
+	if not GameState.invincible:
+		GameState.bonus_action_used = true
+		GameState.ability_bar_changed.emit()
 	_hook_mode_active = true
 	var rank: int = GameState.get_talent_rank("grip_of_the_forest")
 	var hook_range: int = [0, 3, 4, 5][mini(rank, 3)]
@@ -2881,14 +2981,17 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Monk unarmed: uses DEX for both attack roll and damage. Others: STR.
 	var is_unarmed: bool = GameState.equipped_weapon == null
 	var is_monk_unarmed: bool = is_unarmed and stats.character_class == Stats.CharacterClass.MONK
+	# Martial Arts' Dextrous Attacks: DEX for both attack + damage rolls, active while unarmed OR
+	# wielding a Monk weapon (Simple, or Martial+Light), unarmored, shield-free — see player_monk.gd.
+	var monk_ma_active: bool = stats.character_class == Stats.CharacterClass.MONK and _monk.martial_arts_active(GameState.equipped_weapon)
 	var is_str_weapon: bool = not is_unarmed and not (GameState.equipped_weapon.is_ranged)
 	var str_mod: int = stats.str_modifier()
 	var dex_mod: int = stats.dex_modifier()
-	var prof: int = CombatMath.weapon_prof_bonus(null if is_unarmed else GameState.equipped_weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
+	var prof: int = CombatMath.weapon_prof_bonus(null if is_unarmed else GameState.equipped_weapon, stats.proficiency_bonus, stats)
 	var weapon_bonus: int = GameState.equipped_weapon.bonus_damage if not is_unarmed else 0
 	var is_finesse_weapon: bool = not is_unarmed and GameState.equipped_weapon.is_finesse
-	# Monk unarmed uses DEX; Finesse weapons use max(STR, DEX); everyone else uses STR for melee attack roll.
-	var attack_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
+	# Monk Dextrous Attacks uses DEX; Finesse weapons use max(STR, DEX); everyone else uses STR.
+	var attack_mod: int = dex_mod if monk_ma_active else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
 	var attack_exh: int = CombatMath.exhaustion_penalty()
 	var total_hit_bonus: int = attack_mod + prof + weapon_bonus + attack_exh
 	# Advantage/Disadvantage sources are counted, but CombatMath.roll_with_adv_disadv() applies the
@@ -2957,9 +3060,12 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	# Compute damage breakdown for tooltip (separate die vs enhancement vs rage)
 	var w_dmin: int
 	var w_dmax: int
-	if is_monk_unarmed:
-		w_dmin = 1
-		w_dmax = stats.martial_arts_die_sides
+	if monk_ma_active:
+		# Martial Arts Die: replaces the weapon's own die (or stands in for no weapon at all)
+		# whenever it would deal more — see PlayerMonk.damage_die().
+		var ma_die: Vector2i = _monk.damage_die(null if is_unarmed else GameState.equipped_weapon)
+		w_dmin = ma_die.x
+		w_dmax = ma_die.y
 	elif not is_unarmed and GameState.equipped_weapon.damage_die_min > 0:
 		w_dmin = GameState.equipped_weapon.damage_die_min
 		w_dmax = GameState.equipped_weapon.damage_die_max
@@ -2967,8 +3073,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		w_dmin = stats.base_min_damage
 		w_dmax = stats.base_max_damage
 	var w_enh: int = weapon_bonus  # weapon.bonus_damage
-	# Use dex= key for Monk unarmed, or for a Finesse weapon whose DEX mod is the one actually used.
-	var mod_key: String = "dex" if (is_monk_unarmed or (is_finesse_weapon and dex_mod > str_mod)) else "str"
+	# Use dex= key for Monk Martial Arts, or for a Finesse weapon whose DEX mod is the one actually used.
+	var mod_key: String = "dex" if (monk_ma_active or (is_finesse_weapon and dex_mod > str_mod)) else "str"
 	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,exh=%d" % [
 		die, die1, die2, mod_key, attack_mod, prof, w_enh, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0,
@@ -2989,6 +3095,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_try_graze(enemy, is_str_weapon, attack_mod)
 		_try_cleave(enemy, is_str_weapon)
 		_try_offhand_attack(enemy, is_str_weapon)
+		_monk.try_bonus_unarmed_strike(enemy)
 		_handle_post_attack_turn(is_monk_unarmed)
 		return
 
@@ -3004,8 +3111,8 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	var dice_ct: Vector2i = CombatMath.dice_notation(w_dmin, w_dmax)
 	var rolls: Array[int] = Rng.roll_dice(dice_ct.x, dice_ct.y)
 	var rage_bonus: int = stats.rage_bonus_damage if (_is_raging and is_str_weapon) else 0
-	# Monk unarmed uses DEX for damage; Finesse weapons use max(STR, DEX); all others use STR.
-	var dmg_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
+	# Monk Dextrous Attacks uses DEX for damage; Finesse weapons use max(STR, DEX); all others use STR.
+	var dmg_mod: int = dex_mod if monk_ma_active else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
 
 	# All bonus damage sources (Ironwood Bark, Judgement Day) are computed BEFORE
 	# take_damage/show_damage — see "Damage types / resistances" rule in
@@ -3261,6 +3368,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		_dungeon_floor.update_fog(grid_pos)
 	_try_cleave(enemy, is_str_weapon)
 	_try_offhand_attack(enemy, is_str_weapon)
+	_monk.try_bonus_unarmed_strike(enemy)
 	_handle_post_attack_turn(is_monk_unarmed)
 
 # Graze mastery (Greatsword): a missed melee attack still deals damage equal to the ability
@@ -3328,7 +3436,7 @@ func _resolve_cleave_attack(enemy: Enemy, weapon: Item) -> void:
 	var was_surprised: bool = _vfx.has_advantage(enemy)
 	enemy.on_disturbed(grid_pos)
 	var str_mod: int = stats.str_modifier()
-	var prof: int = CombatMath.weapon_prof_bonus(weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
+	var prof: int = CombatMath.weapon_prof_bonus(weapon, stats.proficiency_bonus, stats)
 	var weapon_bonus: int = weapon.bonus_damage
 	var adv_count: int = 0
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
@@ -3432,7 +3540,7 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	var str_mod: int = stats.str_modifier()
 	var dex_mod: int = stats.dex_modifier()
 	var attack_mod: int = CombatMath.finesse_modifier(str_mod, dex_mod, weapon.is_finesse)
-	var prof: int = CombatMath.weapon_prof_bonus(weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
+	var prof: int = CombatMath.weapon_prof_bonus(weapon, stats.proficiency_bonus, stats)
 	var weapon_bonus: int = weapon.bonus_damage
 	var adv_count: int = 0
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
@@ -3567,14 +3675,16 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	enemy.on_disturbed(grid_pos)
 	var weapon: Item = GameState.equipped_weapon
 	var is_unarmed: bool = weapon == null
-	var is_monk_unarmed: bool = is_unarmed and stats.character_class == Stats.CharacterClass.MONK
+	# Martial Arts' Dextrous Attacks/Martial Arts Die apply to Opportunity Attacks too — same
+	# unarmed-or-Monk-weapon-and-unarmored gate as _bump_attack(), see player_monk.gd.
+	var monk_ma_active: bool = stats.character_class == Stats.CharacterClass.MONK and _monk.martial_arts_active(weapon)
 	var is_str_weapon: bool = not is_unarmed and not weapon.is_ranged
 	var str_mod: int = stats.str_modifier()
 	var dex_mod: int = stats.dex_modifier()
-	var prof: int = CombatMath.weapon_prof_bonus(null if is_unarmed else weapon, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
+	var prof: int = CombatMath.weapon_prof_bonus(null if is_unarmed else weapon, stats.proficiency_bonus, stats)
 	var weapon_bonus: int = weapon.bonus_damage if not is_unarmed else 0
 	var is_finesse_weapon: bool = not is_unarmed and weapon.is_finesse
-	var attack_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
+	var attack_mod: int = dex_mod if monk_ma_active else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
 	var adv_count: int = 0
 	adv_count += _base_talents.consume_psycho_or_battlefield_adv()
 	# Bloodhound R1: the first attack against a freshly-marked Hunter's Mark target gets Advantage.
@@ -3604,7 +3714,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 		_base_talents.on_crit()
 		_berserker.refresh_on_any_crit()
 	var is_nat_one: bool = die == 1
-	var mod_key: String = "dex" if (is_monk_unarmed or (is_finesse_weapon and dex_mod > str_mod)) else "str"
+	var mod_key: String = "dex" if (monk_ma_active or (is_finesse_weapon and dex_mod > str_mod)) else "str"
 	var hit_meta: String = "hit:die=%d,d1=%d,d2=%d,%s=%d,prof=%d,wpn=%d,reck=0,total=%d,ac=%d,adv=%d,disadv=%d,n20=%d,n1=%d,lucky1=%d,lucky2=%d,exh=%d" % [
 		die, die1, die2, mod_key, attack_mod, prof, weapon_bonus, roll, enemy.stats.armor_class,
 		1 if (adv and not disadv) else 0, 1 if (disadv and not adv) else 0, 1 if is_crit else 0, 1 if is_nat_one else 0,
@@ -3619,9 +3729,10 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	_vfx.flash_hit(enemy)
 	var w_dmin: int
 	var w_dmax: int
-	if is_monk_unarmed:
-		w_dmin = 1
-		w_dmax = stats.martial_arts_die_sides
+	if monk_ma_active:
+		var ma_die: Vector2i = _monk.damage_die(null if is_unarmed else weapon)
+		w_dmin = ma_die.x
+		w_dmax = ma_die.y
 	elif not is_unarmed and weapon.damage_die_min > 0:
 		w_dmin = weapon.damage_die_min
 		w_dmax = weapon.damage_die_max
@@ -3631,7 +3742,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	var dice_ct: Vector2i = CombatMath.dice_notation(w_dmin, w_dmax)
 	var rolls: Array[int] = Rng.roll_dice(dice_ct.x, dice_ct.y)
 	var rage_bonus: int = stats.rage_bonus_damage if (_is_raging and is_str_weapon) else 0
-	var dmg_mod: int = dex_mod if is_monk_unarmed else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
+	var dmg_mod: int = dex_mod if monk_ma_active else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
 	var dmg_type: String = weapon.damage_type if (not is_unarmed and not weapon.damage_type.is_empty()) else ("Bludgeoning" if is_unarmed else "<unknown_damage_type>")
 	var raw_mods: Array = [
 		{"name": "Weapon enhancement", "amount": weapon_bonus, "color": "lightblue"},
@@ -3660,6 +3771,29 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 		_finish_kill(enemy)
 
 func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
+	# Monk's Extra Attack (level 5+): the granted second attack was just resolved (hit or miss,
+	# same "doesn't matter which" convention as Bonus Unarmed Strike) — clear the window and end
+	# the turn for real. Only this chokepoint (the PRIMARY swing both hit/miss branches of
+	# _bump_attack() funnel through — never Cleave/Off-hand/OA, which don't call this at all) can
+	# consume the window, matching 5e's "more attacks with the Attack action," not a chain of
+	# every bonus swing.
+	if GameState.monk_extra_attack_pending:
+		GameState.monk_extra_attack_pending = false
+		TurnManager.on_player_action_complete()
+		return
+	# First primary attack of a real turn: grant the second one instead of ending the turn.
+	# GameState.monk_extra_attack_used_this_turn (reset every real turn) makes this a genuine
+	# once-per-turn grant, not "every attack chains forever." _try_move()/the LMB click handler
+	# both refuse anything but landing that second attack (or Wait, which forfeits it) while the
+	# window is open — see their own "Extra Attack" comments.
+	if stats.character_class == Stats.CharacterClass.MONK and stats.character_level >= 5 \
+			and not GameState.monk_extra_attack_used_this_turn:
+		GameState.monk_extra_attack_used_this_turn = true
+		GameState.monk_extra_attack_pending = true
+		GameState.game_log("[color=cyan]Extra Attack: attack again, or wait to end your turn.[/color]")
+		_reverted_this_round = true
+		TurnManager.revert_to_waiting()
+		return
 	TurnManager.on_player_action_complete()
 
 
@@ -3713,6 +3847,11 @@ func _on_action_requested(action_name: String) -> void:
 
 func _use_quickbar_slot(idx: int) -> void:
 	if idx < 0 or idx >= GameState.QUICKBAR_SIZE:
+		return
+	# Extra Attack (Monk, level 5+): no items/abilities during the granted second-attack window —
+	# same "attack again or wait, nothing else" rule as movement (_try_move()) and mouse clicks.
+	if GameState.monk_extra_attack_pending:
+		GameState.game_log("[color=gray]Extra Attack: attack again, or wait to end your turn.[/color]")
 		return
 	# Delegate to item bar or ability bar depending on current HUD mode
 	# The HUD manages the visual toggle; player.gd reads _ability_bar_active via signal
@@ -3777,7 +3916,13 @@ func _use_ability_slot(idx: int) -> void:
 		"rage":                    _activate_rage()
 		"hunters_mark":            _ranger_talents.activate_hunters_mark()
 		"unarmored_defense_monk":  GameState.game_log("[color=gray]Unarmored Defense is passive — active when unarmored (AC = 10+DEX+WIS).[/color]")
-		"martial_arts":            GameState.game_log("[color=gray]Martial Arts is passive — attack unarmed to trigger a bonus-action strike.[/color]")
+		"martial_arts":            GameState.game_log("[color=gray]Martial Arts is passive — attack unarmed or with a Monk weapon to trigger it.[/color]")
+		"deflect_attacks":         GameState.game_log("[color=gray]Deflect Attacks is passive — it triggers automatically on the first physical hit each turn.[/color]")
+		"slow_fall":               GameState.game_log("[color=gray]Slow Fall isn't implemented yet — this game has no fall-damage mechanic.[/color]")
+		"extra_attack":            GameState.game_log("[color=gray]Extra Attack is passive — it triggers automatically on your first melee attack each turn.[/color]")
+		"flurry_of_blows":         _monk.activate_flurry_of_blows()
+		"patient_defense":         _monk.activate_patient_defense()
+		"step_of_wind":            _monk.activate_step_of_wind()
 		"wild_companion":         _wild_heart.activate_one_with_nature(ab)
 		"animal_form":             _wild_heart.cycle_animal_form(ab)
 		"enhanced_forms":

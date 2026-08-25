@@ -26,6 +26,12 @@ func set_rewind_fields(d: Dictionary) -> void:
 func activate_zealot_strike(ab: Ability) -> void:
 	if GameState.hit_dice <= 0:
 		return
+	if GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
+	if not GameState.invincible:
+		GameState.bonus_action_used = true
+		GameState.ability_bar_changed.emit()
 	zealot_strike_armed = true
 	GameState.game_log("[color=gold]Zealot Strike armed — your next melee attack this turn heals you.[/color]")
 	# Free action — does NOT consume the turn.

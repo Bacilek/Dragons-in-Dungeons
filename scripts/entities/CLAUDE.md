@@ -1684,8 +1684,8 @@ cycle) — the two stack rather than reusing one mechanism, since Aggressive is 
 `"speed"` isn't.
 
 **Player movement-speed visual consistency (PERMANENT RULE)**: whatever affects the PLAYER's own
-movement speed (difficult terrain/Slowed → slower, Expeditious Retreat/Longstrider/Wood Elf/Large
-Form/Battlefield Expert's free side-step → faster) must NEVER change the visual
+movement speed (difficult terrain/Slowed → slower, Expeditious Retreat/Longstrider/Wood Elf/Monk
+Unarmored Movement/Large Form/Battlefield Expert's free side-step → faster) must NEVER change the visual
 tween itself — `Entity.move_to()` is always the same fixed duration regardless of speed status.
 The only thing allowed to differ is the turn economy: how many actions the environment (enemies)
 gets for that one player move. `TurnManager.enemy_actions_this_round: int` (default 1, always
@@ -1716,7 +1716,7 @@ there is no environment to race against, so granting a free move (skip enemy pha
 Slowed/Exhaustion penalty (double enemy phase) accomplishes nothing except advancing duty-cycle
 counters for no reason. Both `_try_move()` and `_apply_queued_step_speed()` check `TurnManager.
 has_any_enemy()` first and, if false, skip the ENTIRE free-move/Slowed/Exhaustion block outright —
-neither touches `_free_sidestep`/Wood Elf/Longstrider/Large Form/Expeditious Retreat's own
+neither touches `_free_sidestep`/Wood Elf/Longstrider/Monk Unarmored Movement/Large Form/Expeditious Retreat's own
 duty-cycle consumption, so their counters don't advance while there's nothing to spend a free move
 on. Once a new enemy is registered (`TurnManager.register_enemy()`, e.g. entering a room with
 sleepers), every duty cycle resumes exactly where it left off — nothing is reset, just paused.
@@ -1755,7 +1755,7 @@ check or beat at all, so a cleared floor's click-to-move genuinely does move fas
 
 **Body armor proficiency flags**: `Stats.proficient_light_armor`/`proficient_medium_armor`/`proficient_heavy_armor: bool` (all default `false`; Barbarian/Ranger set Light+Medium true in `apply_class_defaults()`, no class trains Heavy). Gates `GameState.can_equip_armor()` the same hard-block way as Shield proficiency, plus a real body-armor item's own `str_requirement` (Heavy only). `Stats.recalc_ac(has_armor_equipped, armor_item)` takes the equipped `"armor"` slot `Item` directly: when it's real body armor (`armor_item.base_ac > 0`), AC = `base_ac + DEX bonus` (capped per `armor_item.dex_cap` — see `scripts/items/CLAUDE.md`'s "Body armor") and this always wins over Barbarian/Monk unarmored defense or Mage Armor. Equip/unequip/swap of body armor is NOT a free action (unlike every other equip except Shield) — see `scripts/items/CLAUDE.md`'s "Body armor" for `GameState.begin_armor_change()`'s multi-turn mechanism.
 
-**Weapon proficiency flags**: `Stats.proficient_simple_weapons: bool`, `Stats.proficient_martial_weapons: bool` (both default `false`, set per-class in `apply_class_defaults()`). Only Barbarian currently has both `true`. `Item.weapon_category` ("Simple"/"Martial"/`""`) determines which flag gates a given weapon. `CombatMath.weapon_prof_bonus(weapon, proficiency_bonus, proficient_simple, proficient_martial) -> int` (`scripts/entities/combat_math.gd`, moved from the old `player.gd._weapon_prof_bonus()` — see "Split-out modules" below) is the single chokepoint: unarmed (`weapon == null`) is always proficient; otherwise returns the proficiency bonus if the matching flag is set, else `0`. Used for `prof` in `player.gd._bump_attack()`/`_resolve_cleave_attack()` and `PlayerRanged.ranged_attack()` — lacking proficiency does not block using the weapon, it only drops the proficiency bonus from the attack roll (damage is unaffected). Weapon tooltips (`hud.gd`, `inventory_overlay.gd`) show the category right under the damage line, colored red when the equipped class lacks that proficiency (`_is_weapon_category_proficient()` in each file).
+**Weapon proficiency flags**: `Stats.proficient_simple_weapons: bool`, `Stats.proficient_martial_weapons: bool` (both default `false`, set per-class in `apply_class_defaults()`), plus `Stats.martial_weapon_restriction: String` (`""` = none; `"light"` = Martial weapons with the Light property only, Monk's own case) for a class that gets a restricted subset of Martial rather than none-or-all. `Item.weapon_category` ("Simple"/"Martial"/`""`) determines which flag gates a given weapon. `Stats.is_weapon_proficient(item) -> bool` is the single chokepoint folding all three together (unarmed/`null` always proficient; Simple checks `proficient_simple_weapons`; Martial checks `proficient_martial_weapons`, falling back to `martial_weapon_restriction`'s match if that's false) — both `EquipRequirements.can_equip_weapon(item, stats)` (hard-blocks equipping) and `CombatMath.weapon_prof_bonus(weapon, proficiency_bonus, stats) -> int` (`scripts/entities/combat_math.gd`, moved from the old `player.gd._weapon_prof_bonus()` — see "Split-out modules" below) call it, so equip-gating and the attack-roll bonus can never disagree. Used for `prof` in `player.gd._bump_attack()`/`_resolve_cleave_attack()` and `PlayerRanged.ranged_attack()` — lacking proficiency (and no restriction match) blocks equipping the weapon outright via `EquipRequirements`, so `weapon_prof_bonus()`'s own "attack roll, not equip, is gated" comment only matters for weapons somehow already equipped when proficiency changes. Weapon tooltips (`hud.gd`, `inventory_overlay.gd`) show the category right under the damage line, colored red when the equipped class lacks that proficiency (`_is_weapon_category_proficient()` in each file).
 
 ### Enemy stat scaling (in `_apply_stats()`)
 ```gdscript
@@ -2215,6 +2215,69 @@ automatically.
   for it at the moment of the would-be 6th increment and kills the character instead of ever
   setting the field to 6, so `exhaustion_level` tops out at 5 in practice.
 
+## Bonus Action economy
+
+`GameState.bonus_action_used: bool` — a single shared once-per-real-round gate over every
+formerly-unlimited "free action" (`TurnManager.revert_to_waiting()`) ability that could otherwise
+be chained infinitely in one round before the player's real action (direct owner request — the
+old model let a Barbarian activate Rage, arm Zealot Strike, execute Frenzy, cast Blade Ward, and
+more, all before spending their one real action, with nothing gating how many "free" abilities
+stacked in a single round). Reset in `player.gd`'s `_on_turn_started()`'s `if not came_from_revert:`
+block, alongside `grip_of_the_forest_used_this_turn` etc. Captured in `RewindManager.
+REWIND_GAMESTATE_FIELDS` so Backspace can't be used to refresh it for free. `invincible` (God
+Mode) skips consumption entirely at every gated site, same "skip all consumption" convention as
+every other resource — see root `CLAUDE.md`'s "Invincible mode" rule.
+
+**Gated abilities** (each checks `GameState.bonus_action_used` before spending its own resource,
+refuses with a gray "Already used your bonus action this turn." log line if already spent, and
+sets `bonus_action_used = true` only on confirmed activation/resolution — matching whatever
+"spend only on confirmed use" convention that ability already followed):
+- **Rage** — `player.gd._activate_rage()`.
+- **Frenzy** — `player_berserker.gd.execute_frenzy()`.
+- **Zealot Strike** — `player_zealot.gd.activate_zealot_strike()` (gated on arming).
+- **Flurry of Blows** — `player_monk.gd.activate_flurry_of_blows()`.
+- **Step of the Wind** — `player_monk.gd.activate_step_of_wind()` (its own pre-existing
+  `step_of_wind_used_this_turn` per-turn cap is unaffected, both gates must pass).
+- **Halfling Nimbleness** — `player_halfling.gd.resolve_nimbleness()` (gated on confirmed
+  resolution, alongside its own `used_this_turn` cap).
+- **Cloud Giant's Jaunt** — `player_goliath.gd.resolve_cloud_teleport()` (gated on confirmed
+  resolution, alongside its own charge spend).
+- **Orc Adrenaline Rush** — `player_orc.gd.activate_adrenaline_rush()`.
+- **Human Heroic Inspiration** — `player_human.gd.activate_heroic_inspiration()`.
+- **Blade Ward** — `spell_effects.gd.cast_leveled_self()`'s `"blade_ward"` branch. **Reworked to
+  match 5e RAW's own bonus-action casting time**: this cantrip used to cost the player's full
+  turn like any other `cast_leveled_self()` spell; it's now gated BEFORE the turn/slot are ever
+  touched (a top-of-function early check on `spell.effect_id == "blade_ward"`, since every other
+  spell dispatched through this shared function still costs a normal turn) and, once cast, takes
+  the same `player._reverted_this_round = true; TurnManager.revert_to_waiting()` free-action exit
+  Shield's own branch already uses — Blade Ward no longer ends the player's turn at all, it just
+  spends the Bonus Action. `Spell.casting_time` updated to `"Bonus Action"` (`spell_db.gd`).
+- **Grip of the Forest** — `player.gd._activate_grip_of_the_forest()` (gated on
+  activation/arming, alongside its own `grip_of_the_forest_used_this_turn` cap).
+
+**Deliberately NOT gated**: Shield (spell) — stays a free action; it simulates a 5e Reaction,
+which this engine has no framework for, and the direct owner decided against folding it into this
+system. Equip/unequip/drop/torch-lighting/Inspect/the Versatile-grip toggle, and Monk's
+auto-granted Bonus Unarmed Strike/Extra Attack windows (automatic side effects of an attack, not a
+standalone player choice) are untouched — administrative/passive actions were never in scope.
+
+**Rage house-rule (on top of 5e 2024, direct owner request)**: a leftover, UNUSED Bonus Action at
+the end of a real player turn automatically extends Rage — `player.gd._on_turn_ending()` (fires
+once per real turn, `TurnManager.player_turn_ending`'s own contract, so no extra revert guard is
+needed): `if _is_raging and not GameState.bonus_action_used:` sets `_rage_attacked_this_turn =
+true` and `GameState.bonus_action_used = true`, logging a gray "Your leftover bonus action keeps
+the Rage going." line. This reuses the exact `combat_last_turn` check `_on_turn_started()`'s
+rage-tick block already reads at the top of the FOLLOWING turn — it's an additional trigger for
+Rage's existing "refreshed to 1 turn" rule, alongside (not replacing) the pre-existing "attack or
+be attacked last turn" trigger.
+
+**HUD indicator**: `hud.gd._update_status_icons()` appends a `"bonus_action"` status-tray entry —
+unconditional, like `race_bonus` (always visible regardless of class, tier 0, leftmost) — green
+while available this round, dark gray once `bonus_action_used` is true. No dedicated art yet
+(`res://icons/status/bonus_action.png`, renders as a tinted placeholder square). Refreshed via the
+tray's usual chokepoints (`TurnManager.player_turn_started`, `GameState.ability_bar_changed` —
+every gated site above emits `ability_bar_changed` right after flipping the flag).
+
 ## Multi-turn action interrupts (short rest / armor change / scroll learn)
 
 `Player._rest_interrupted()` (`scripts/entities/player.gd`) is the single interrupt check shared
@@ -2350,6 +2413,7 @@ Pool entries may set `"attack_profile": {"kind": "ranged", "range": N, "projecti
 - `player_actions.gd` (`PlayerActions`) — short rest / talent picker openers, wait, search/inspect, passive trap perception, floor-item pickup, door/trap interact dispatch. Owns `_last_search_request` (was a player.gd field) and `_inspect_panel` (the live `InspectPanel` instance — see below). **Passive trap perception** (`passive_trap_check()`, called every real player turn from BOTH `_try_move()` (WASD) and `_execute_queued_path()`'s two per-step move bodies (click-to-move and enemy-chase)): rolls `d20 + WIS mod` vs a flat `DC 15` (no longer floor-scaled) against every unrevealed trap within Chebyshev 2 of the player **that is also currently in FOV** (`DungeonFloor.is_tile_visible(trap_pos)`, checked after that step's own `update_fog()` call so it reflects the player's just-updated position — a trap within range but behind a wall/closed door, or otherwise out of line of sight, is silently skipped, never rolled against) — **re-rolled every single turn** the player stays in range (no "already checked this trap" memory), not just on first entering range. Revealing a trap sets `Player._trap_alert = true` and, when a queued path/enemy-chase was active, clears it itself with its own "stop cautiously" log line (the function's own `player._queued_path.size() > 0` branch) — `_execute_queued_path()`'s own step body additionally checks `_trap_alert` right after the call and clears/breaks out of the move loop so a long automated run genuinely halts on the discovery, not just the very next queued step. `_process()`'s hold-movement-repeat interrupt check (see "Player-specific" below) also consumes the flag the next frame — a freshly-discovered trap stops a held WASD key exactly like a freshly-visible enemy does, instead of the player walking straight past it. `do_inspect(pos)` opens a full-value `InspectPanel` (`scripts/ui/CLAUDE.md`'s "Inspect Panel") instead of the old plain chat-log line — an enemy target's status-icon row is built by `EnemyInspect.status_entries()`/`build_bbcode()` (`enemy_inspect.gd`, same directory), a static helper mirroring `status_tooltips.gd`'s pattern generalized to read an `Enemy`'s own fields directly.
 - `combat_math.gd` (`CombatMath`, static-func-only helper, `extends RefCounted`, mirrors `scripts/ui/tooltip_formatters.gd`'s pattern) — the ADV/DISADV d20-roll resolution shared verbatim by melee/cleave/ranged (`roll_with_adv_disadv()`), weapon proficiency bonus (`weapon_prof_bonus()` — was `player.gd._weapon_prof_bonus()`, see "Weapon proficiency flags" above), `melee_reach_bonus()` (Branching Strike's talent-rank reach) and `melee_reach(weapon, rank)` (total melee range = `1 + melee_reach_bonus(rank) + 1 if weapon.is_reach`, additive — used by the chase-to-attack range check and Cleave's target-gathering radius), `finesse_modifier(str_mod, dex_mod, is_finesse) -> int` (returns `max(str_mod, dex_mod)` when `is_finesse`, else `str_mod` — used for both the attack roll and damage roll in `player.gd._bump_attack()` when `GameState.equipped_weapon.is_finesse`), and `encode_bonus_sources()`/`decode_bonus_sources()` (generic bonus-damage tooltip encoding — see "Bonus damage stacking" below). The bonus-damage STACKING sequence itself (Ironwood Bark/Judgement Day summation) and the full hit/miss/log flow stay in `player.gd._bump_attack()`/`PlayerRanged.ranged_attack()` — see "Bonus damage stacking" above.
 - `player_ranged.gd` (`PlayerRanged`) — the full ranged-combat body: range/LOS checks (`is_ranged_target_in_range()`, `ranged_shot_disadvantage()`, `is_in_ranged_range()`), the ranged attack roll (`ranged_attack()`), projectile VFX (`show_projectile()`), and ranged-at-tile (`ranged_attack_tile()`). Mirrors `_bump_attack()`'s ADV/DISADV/crit/Divine-Fury-stacking structure closely — kept as one function per the same "don't split stateful stacking logic" reasoning as melee (see "Bonus damage stacking" above). **`ranged_attack(enemy)` redirects to a blocking body**: before anything else, it calls `DungeonFloor.get_blocking_body_on_line(player.grid_pos, enemy.nearest_occupied_tile(...))` — if another `Enemy` occupies an intermediate tile of the shot, the local `enemy` parameter is reassigned to that blocker and the entire rest of the function (on_disturbed, roll, damage, log, Hunter's Mark, kill handling) resolves against it instead of whoever was actually clicked. Matches the "the arrow hits the first thing in its path" rule — see `scripts/world/CLAUDE.md`'s `has_clear_shot()`/`get_blocking_body_on_line()`.
+- `player_monk.gd` (`PlayerMonk`) — Martial Arts (Dextrous Attacks/Martial Arts Die/Bonus Unarmed Strike), Unarmored Movement, and Monk's Focus (Flurry of Blows/Patient Defense/Step of the Wind). See "Monk class" below.
 
 ---
 
@@ -3815,13 +3879,159 @@ codebase only has a Wizard caster, so `class_list` stays `["WIZARD"]` like every
   capping the shadowcast radius, not through a separate visibility union.
 
 ## Monk class
-Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: STR + DEX. Weapon proficiency: intended to be simple weapons + martial weapons with the light property, but `Stats.proficient_simple_weapons`/`proficient_martial_weapons` are not yet set in `apply_class_defaults()` for Monk (TODO — currently only wired up for Barbarian). No armor training (any armor → DISADV on STR/DEX checks/saves + DISADV on attacks; TODO: enforce). Starting abilities (slot 0–1 of ability bar):
-- **Unarmored Defense** (passive, ability_id `"unarmored_defense_monk"`): AC = 10 + DEX + WIS while wearing no armor. Handled in `Stats.recalc_ac(has_armor_equipped)`.
-- **Martial Arts** (passive, ability_id `"martial_arts"`): Unarmed strikes use DEX for attack AND damage. Damage die = `Stats.martial_arts_die_sides` (1d6 → 1d8 at lvl 5 → 1d10 at lvl 11 → 1d12 at lvl 17). Each unarmed attack ends the turn normally. Both main attack uses `_bump_attack()` with `is_monk_unarmed = true`.
+Stats: DEX=16, WIS=14, CON=12, STR=10 (d8 HD, 8+CON HP). Check proficiencies: STR + DEX. Weapon proficiency: Simple weapons (`proficient_simple_weapons = true`) plus Martial weapons with the Light property only, via `Stats.martial_weapon_restriction = "light"` — `Stats.is_weapon_proficient(item)` is the single check both `EquipRequirements.can_equip_weapon()` (hard-blocks equipping a non-Light Martial weapon) and `CombatMath.weapon_prof_bonus()` (attack-roll proficiency bonus) call, so a Monk equipping e.g. a Handaxe (Martial+Light) works and gets the bonus, while a Greataxe (Martial, not Light) is blocked outright. No armor training (any armor → DISADV on STR/DEX checks/saves + DISADV on attacks; TODO: enforce). Starting abilities (slot 0–1 of ability bar):
+- **Unarmored Defense** (passive, ability_id `"unarmored_defense_monk"`): AC = 10 + DEX + WIS while wearing no armor AND wielding no shield (5e RAW: unlike Barbarian's own Unarmored Defense, a shield voids Monk's version entirely rather than stacking with it). Handled in `Stats.recalc_ac(has_armor_equipped, armor_item, has_shield_equipped)` — `GameState.recalculate_stats()` passes `has_shield_equipped` from the `"hand2"` slot's `Item.is_shield`. In practice a Monk can never equip a Shield to begin with (`Stats.proficient_shields` is false for Monk, hard-blocked by `EquipRequirements.can_equip_shield()`), so `has_shield_equipped` exists for correctness/documentation rather than because the case is reachable today.
+- **Martial Arts** (passive, ability_id `"martial_arts"`, `PlayerMonk`/`_monk`, `scripts/entities/player_monk.gd`): active whenever `PlayerMonk.martial_arts_active(main_hand)` is true — Monk class, no armor (`GameState.equipment["armor"] == null`), no shield (`hand2` item's `is_shield` false), and Main Hand is unarmed or a Monk weapon (`PlayerMonk.is_monk_weapon()`: Simple, or Martial+Light — exactly `Stats.martial_weapon_restriction`'s own `"light"` definition, see "Weapon proficiency flags" above). Three effects, all gated on that one check:
+  - **Dextrous Attacks**: DEX instead of STR for both the attack roll and the damage roll (`monk_ma_active` in `player.gd._bump_attack()`/`resolve_opportunity_attack()`, same override point Finesse weapons use).
+  - **Martial Arts Die**: `PlayerMonk.damage_die(main_hand)` returns `Stats.martial_arts_die_sides` (1d6 → 1d8 at lvl 5 → 1d10 at lvl 11 → 1d12 at lvl 17) in place of the weapon's own die whenever it would roll higher — unarmed always uses it (no weapon die to compare against); wielding a Monk weapon compares `martial_arts_die_sides` against the weapon's own `damage_die_max` and keeps whichever is bigger. Damage TYPE still follows the weapon (Piercing for a Dagger, etc.) or Bludgeoning when genuinely unarmed.
+  - **Bonus Unarmed Strike**: `PlayerMonk.try_bonus_unarmed_strike(enemy)` — called from both the hit and miss tails of `_bump_attack()`, right alongside `_try_offhand_attack()` — resolves one free additional unarmed attack (full DEX mod on both rolls, `martial_arts_die_sides` damage, Bludgeoning, its own `[color=cyan]Bonus Unarmed Strike:[/color]` log line) after the main swing lands or misses. Deliberately excludes `resolve_opportunity_attack()` (an OA is meant to stay a single self-contained swing, same reasoning Vex/Frenzy/Ironwood-Bark are excluded from OAs) and skips entirely if the dual-wield Off-hand bonus attack (`_try_offhand_attack()`) already fired this swing — a Monk dual-wielding two Light Monk weapons gets one bonus attack, not two.
+- **Unarmored Movement** (passive from level 2, no ability-bar entry — same "pure background passive" treatment as Wood Elf's own speed trait): while unarmored and shield-free (`PlayerMonk.unarmored_movement_active()`, the same armor/shield half of the gate Martial Arts uses, factored out into `PlayerMonk._unarmored_and_unshielded()`), extra movement speed scaling by character level — +1/3 at level 2, +1/2 at 6, +2/3 at 10, +5/6 at 14, a full extra move (every move is free) at 18 (`PlayerMonk.unarmored_movement_numerator(level)`, a numerator out of a fixed denominator of 6). Reuses the exact same Bresenham-style duty-cycle machinery as Longstrider's own +1/3 speed and Wood Elf's +1/6 (`Player._consume_duty_cycle()`/`CombatMath.tick_duty_cycle()`, see "Movement speed scaling" above) — wired into `_try_move()`'s free-step `elif` chain as `_monk_um_free_step`, same `_try_move()`-only scope limitation (not `_execute_queued_path()`) and same no-live-enemy skip as Longstrider/Wood Elf.
+
+**Monk's Focus** (D&D 2024's rename of "Ki", `Stats.monk_focus_points`/`monk_focus_points_max` —
+the max scales 1:1 with `character_level`, granted starting level 2): regains to max on **both** a
+completed short AND long rest (`GameState._on_short_rest_completed()`/`long_rest()`) — the one
+per-rest resource in this codebase that isn't long-rest-only. Spent via
+`GameState.spend_monk_focus(amount) -> bool` (same `invincible`-skips-consumption convention as
+`spend_gold()`). `Stats.monk_save_dc` (`8 + proficiency_bonus + WIS modifier`, the real D&D 2024
+formula) exists for forward compatibility only — none of the three level-2 features below actually
+roll against it. Three abilities granted at level 2 (`GameState._grant_monk_focus_abilities()`,
+called from `_apply_monk_level_features(level)`'s `2:` case), each costing 1 Focus Point and living
+in `player_monk.gd`:
+- **Flurry of Blows** (`"flurry_of_blows"`, `PlayerMonk.activate_flurry_of_blows()`): a free action
+  (no turn cost) — requires Martial Arts currently active (same gear/armor/shield gate as the
+  Bonus Unarmed Strike it doubles); silently no-ops instead of double-spending Focus if already
+  armed. Sets `PlayerMonk.flurry_pending`, consumed by the very next `try_bonus_unarmed_strike()`
+  trigger: that single strike resolves TWICE instead of once (a `for` loop, breaking early if the
+  first swing kills the target), logging its own `"Flurry of Blows!"` line before the doubled
+  strikes. Not serialized (mid-combat transient), captured/restored via
+  `PlayerMonk.get_rewind_fields()`/`set_rewind_fields()` (`player.gd`'s `_monk` entry in
+  `capture_rewind_state()`/`restore_rewind_state()`).
+- **Patient Defense** (`"patient_defense"`, `PlayerMonk.activate_patient_defense()`): only
+  activatable while **engaged** (`PlayerMonk.is_engaged()` — adjacent, via `Enemy.min_dist_to()`,
+  to a live visible enemy; static, group-looks-up `"dungeon_floor"` so
+  `GameState.is_ability_usable()` can call it without a live `Player` reference) — greys out
+  otherwise with a red "Not Engaged" tooltip reason (`GameState.ability_unusable_reason()`).
+  Costs the player's turn (a Dodge-action substitute, `TurnManager.begin_player_action()`/
+  `on_player_action_complete()`, same shape as `PlayerActions.wait_action()`) and sets
+  `Stats.dodge_turns = 1` — every enemy attack roll against the player gets DISADV while it's > 0
+  (`enemy.gd`'s `_attack_player()` disadv expression), ticked down by `Stats.tick_status()` so it
+  naturally lasts through the following enemy round and clears right before the player's own next
+  turn ("until the start of your next turn"). Serialized (`Stats.to_dict()`/`from_dict()`'s
+  `dodge_turns` key), same tier as `slowed_turns`/`blade_ward_turns`.
+- **Step of the Wind** (`"step_of_wind"`, `PlayerMonk.activate_step_of_wind()`/
+  `resolve_step_of_wind()`/`cancel_step_of_wind()`): a free 1-tile dash, **directly modeled on
+  Orc's Adrenaline Rush** (`player_orc.gd`'s `dash_mode_active`/`resolve_dash()` — same
+  arm-then-click-or-WASD-direction pattern, same 4 wiring points in `player.gd`: the range/target
+  preview, LMB tile-click resolve, WASD-direction resolve, and Esc-cancel) but Focus-gated instead
+  of a per-rest counter, no temp HP grant, and limited to **once per turn**
+  (`GameState.step_of_wind_used_this_turn`, reset in `player.gd`'s `_on_turn_started()` alongside
+  Grip of the Forest/Halfling Nimbleness's own once-per-turn flags — same precedent, so
+  `is_ability_usable()` can read it without a `Player` reference). The Focus Point is spent on
+  arm, not on a successful landing (matches Adrenaline Rush's own convention) — a cancelled/
+  out-of-range/blocked attempt doesn't refund it, but also doesn't burn the once-per-turn flag
+  (only a genuinely completed dash does).
+
+All three abilities keep `Ability.uses_max == 0` (the free-base-ability convention, same as Rage/
+Hunter's Mark) since the shared Focus pool, not a per-ability use count, is what actually gates
+them — `hud.gd`'s ability-bar use-count badge shows the live `monk_focus_points`/
+`monk_focus_points_max` count on their slots instead of a normal `X/Y` per-ability counter (same
+"read a Stats field directly, checked before the generic `uses_max == 0` branch" pattern Hunter's
+Mark/Hellish Rebuke/lineage spells already use — see `scripts/ui/CLAUDE.md`'s "Ability bar
+greying").
+
+**Deflect Attacks** (passive from level 3, ability_id `"deflect_attacks"` — granted an ability-bar
+entry purely for discoverability, same "clicking it just logs a passive-reminder line" treatment
+as Unarmored Defense/Martial Arts, no player activation): the first time each turn the player
+takes Slashing/Piercing/Bludgeoning damage, automatically reduces it by `1d10 + DEX modifier +
+character_level` — implemented directly in `GameState.take_damage_raw()`, right after the Stone
+Giant ancestry block (same "roll at the moment damage actually lands, not when some toggle was
+armed" shape — there's no toggle here at all, it's unconditional once the level/class gate is
+met). `GameState.deflect_attacks_used_this_turn` is the once-per-turn gate, reset in `player.gd`'s
+`_on_turn_started()` alongside Grip of the Forest/Halfling Nimbleness/Step of the Wind's own
+once-per-turn flags (and captured in `RewindManager.REWIND_GAMESTATE_FIELDS`). Since it hooks
+`take_damage_raw()` directly, it only ever fires on the same damage paths Rage's own 50% physical
+DR does — **not** on trap damage, which `DungeonFloor._apply_trap_damage()` applies straight to
+`Stats.take_damage()`, bypassing `take_damage_raw()` entirely (a pre-existing, documented gap
+shared with Rage DR, not something this feature changes). **Deferred-log shape, mirroring Stone's
+Endurance**: `take_damage_raw()` can't log the "reduces the damage by N" line itself (it runs
+INSIDE whatever attack resolver is still building its own "X hits you for N dmg" line), so the
+message is stashed in `GameState._pending_deflect_attacks_log` and only printed by
+`GameState.flush_deflect_attacks_log()` — every `take_damage_raw()` caller that builds its own hit
+line calls this immediately after logging it, the exact same call sites as
+`flush_stone_endurance_log()` (`enemy.gd._attack_player()`, `player_berserker.gd`'s two Frenzy
+self-damage branches, `spell_effects.gd`'s Fireball self-catch, `dungeon_floor.gd`'s
+standing-in-fire tick, and `player.gd`'s status-tick block — harmless no-ops at the non-physical-
+damage sites, since `is_physical` already gates whether anything was ever stashed to flush).
+Hoverable roll breakdown via a `[url=deflect:die=,dex=,lvl=,total=]` tag
+(`TooltipFormatters.fmt_deflect_tooltip()`, `hud.gd`'s `_format_tooltip()` dispatch), same pattern
+as Stone's Endurance's own `stonedr:` tag.
+
+**Slow Fall** (level 4, ability_id `"slow_fall"`) — **PLACEHOLDER ONLY, per direct owner request**:
+grants an ability-bar entry (`is_passive = true`, click just logs "isn't implemented yet") so the
+level-up reads as a real feature, but the mechanic itself does nothing. This game has no
+fall-damage system anywhere to hook into — a chasm removes/kills an entity outright
+(`scripts/world/CLAUDE.md`'s forced-movement/Push-mastery chasm handling), it never rolls damage —
+so there's currently nothing for "reduce fall damage" to reduce. Revisit if/when a real
+fall-damage mechanic is ever added; until then this is intentionally inert, same "the resource/slot
+exists, nothing consumes it yet" shape as Tier 3/4 talent scaffolding
+(`scripts/autoloads/CLAUDE.md`'s "Tier scaffolding" section).
+
+**Extra Attack** (level 5+, ability_id `"extra_attack"`, passive/no player activation — click just
+logs a reminder like Martial Arts): the first primary melee attack of a real player turn — the
+single chokepoint every `_bump_attack()` call (hit AND miss branch) funnels through,
+`player.gd._handle_post_attack_turn()` — grants a second attack instead of ending the turn.
+Mechanism: `GameState.monk_extra_attack_used_this_turn` (once-per-real-turn gate, reset in
+`_on_turn_started()`'s per-round block) decides whether to grant; on grant,
+`GameState.monk_extra_attack_pending = true` and `_reverted_this_round = true` is set BEFORE
+`TurnManager.revert_to_waiting()` (same "free action, enemies don't get a round" primitive
+Adrenaline Rush/Step of the Wind/Battlefield Expert's free side-step all reuse — critically, setting
+`_reverted_this_round` first means `_on_turn_started()`'s reset block is skipped for this firing,
+so `monk_extra_attack_used_this_turn` does NOT get cleared before the second attack, which would
+otherwise let the window re-grant itself forever). Landing the second attack (`_handle_post_attack_turn()`
+seeing `monk_extra_attack_pending == true`) clears the flag and ends the turn normally via
+`TurnManager.on_player_action_complete()`. **While the window is open, nothing but that second
+attack or forfeiting can happen** (5e RAW: Extra Attack grants more attacks, never more movement) —
+three separate guards, all logging the same "attack again, or wait to end your turn." line:
+`_try_move()` (placed right after the enemy-bump branch, which already returned — so a bump INTO
+an adjacent enemy is never blocked, only a genuine empty-tile move is), the LMB mouse-click handler
+(only an already-adjacent, targetable enemy with no Shift/Alt modifier held resolves — an empty
+tile, a distant enemy that would need chasing, or a ranged/spell modifier are all refused), and
+`_use_quickbar_slot()` (blocks every item/ability activation outright; `GameState.is_ability_usable()`
+also unconditionally greys every ability-bar slot while pending, for the matching visual). **Wait
+(Space/./Numpad5) forfeits the window** — `PlayerActions.wait_action()` checks
+`monk_extra_attack_pending` first and, if set, clears it and logs "Extra Attack forfeited."
+instead of the normal "You skipped a turn." line, then ends the turn as usual. Both
+`monk_extra_attack_pending`/`monk_extra_attack_used_this_turn` are captured in
+`RewindManager.REWIND_GAMESTATE_FIELDS`. **Known gap, not fixed by this feature**: a Monk's Bonus
+Unarmed Strike (Martial Arts, level 2+) has no once-per-turn cap of its own, so if Extra Attack's
+second swing also triggers it, the player nets TWO Bonus Unarmed Strikes that turn — real 5e 2024
+text grants exactly one Bonus Unarmed Strike per Attack action regardless of how many attacks
+Extra Attack packs into it, so this is a minor homebrew-favorable divergence, not a crash; add a
+`monk_bonus_strike_used_this_turn`-style gate to `PlayerMonk.try_bonus_unarmed_strike()` if this
+needs tightening later. **No Extra Attack precedent exists elsewhere in this codebase** (Barbarian/
+Ranger do not have it) — despite root `CLAUDE.md`'s Controls line mentioning "wait... also forfeits
+Extra Attack" (written for a Monk that gains it, this section), an unrelated abandoned worktree
+(`action-economy`) explored a much larger token-pool action-economy rewrite that was never merged;
+this implementation is a self-contained, narrowly-scoped addition to the existing turn/phase model
+instead, not a reuse of that worktree's code.
 
 **Monk level-up features** (applied in `GameState._apply_monk_level_features(level)`, called alongside `_apply_barbarian_level_features()` from `gain_exp()`):
-- **Level 4 — DEX +2**: `player_stats.dexterity += 2`, `recalculate_stats()` applied.
-- **Levels 5/11/17 — Martial Arts die upgrade**: updates `martial_arts` ability description; die is auto-computed by `Stats.martial_arts_die_sides`.
+- **Level 2 — Monk's Focus + Unarmored Movement unlock**: `_grant_monk_focus_abilities()` adds
+  Flurry of Blows/Patient Defense/Step of the Wind to the ability bar; Unarmored Movement needs no
+  explicit hook (`PlayerMonk.unarmored_movement_numerator()` reads `character_level` directly, so
+  it just starts returning non-zero once level 2 is reached). `gain_exp()` also grants the extra
+  Focus Point immediately on any level-up crossing a Focus-max threshold (every level, since
+  `monk_focus_points_max` scales 1:1), same "on the triggering level-up, not only after the next
+  rest" treatment `rage_uses_remaining` already gets.
+- **Level 3 — Deflect Attacks unlocks**: grants the `"deflect_attacks"` ability-bar entry; the
+  reduction math itself needs no explicit hook (`take_damage_raw()` reads `character_level >= 3`
+  directly).
+- **Level 4 — DEX +2 + Slow Fall (placeholder)**: `player_stats.dexterity += 2`,
+  `recalculate_stats()` applied; grants the inert `"slow_fall"` ability-bar entry, see above.
+- **Level 5 — Extra Attack + Martial Arts die upgrade**: grants the `"extra_attack"` ability-bar
+  entry (mechanism above); also the first of the 5/11/17 die-upgrade thresholds.
+- **Levels 11/17 — Martial Arts die upgrade**: updates `martial_arts` ability description; die is auto-computed by `Stats.martial_arts_die_sides`.
+- **Levels 6/10/14/18 — Unarmored Movement scaling**: no explicit hook needed, same reasoning as level 2 above.
 
 ## Locked classes — base D&D stat blocks only
 
@@ -3836,15 +4046,17 @@ playable yet** — same "sourced art, no mechanics" status as their locked chara
 (root `CLAUDE.md`'s "Locked-class art"): no `class_select.gd`/`character_select.gd` wiring, no
 `give_class_starting_items()` branch, no spellcasting (`caster` stays `null` even for the
 FULL_CASTER/HALF_CASTER roles `Stats.CLASS_ROLE` already lists them under), no class-specific
-abilities (e.g. Bard's starting instrument tool proficiency isn't implemented). Two classes
-(`MONK`, already pre-existing; `ROGUE`, new) have a real 5e proficiency gap **left deliberately
-unfixed**: their true weapon proficiency is Simple + a property-restricted subset of Martial (Monk:
-Light property only; Rogue: Finesse or Light only) — `Stats` only has flat
-`proficient_simple_weapons`/`proficient_martial_weapons` bools, no per-weapon-property granularity,
-so both classes leave `proficient_martial_weapons = false` (a conservative default) with the
-restriction documented as a comment at the class's `apply_class_defaults()` branch instead. Six of
-the eight (Bard/Cleric/Druid/Fighter/Paladin/Warlock) have full Simple-or-Simple+Martial
-proficiency and needed no such carve-out. Stat-block source (given directly by the project owner,
+abilities (e.g. Bard's starting instrument tool proficiency isn't implemented). `ROGUE` has a real
+5e proficiency gap **left deliberately unfixed**: true Rogue weapon proficiency is Simple + only
+the Martial weapons that are Finesse or Light — `Stats.martial_weapon_restriction` (added to fix
+this exact gap for `MONK`, see "Monk class" above: `"light"` = Martial-Light-only) only has the
+one `"light"` restriction value today, not a `"finesse_or_light"` one, so Rogue still leaves
+`proficient_martial_weapons = false` (a conservative default) with the real restriction documented
+as a comment at its `apply_class_defaults()` branch — adding a `"finesse_or_light"` case to
+`Stats.is_weapon_proficient()`'s match block is now a small, well-precedented fix whenever Rogue
+itself gets implemented. Six of the seven remaining locked classes (Bard/Cleric/Druid/Fighter/
+Paladin/Warlock) have full Simple-or-Simple+Martial proficiency and need no such carve-out.
+Stat-block source (given directly by the project owner,
 not derived from 5e SRD text verbatim): `check_prof_*`/weapon-and-armor proficiency columns are
 exact; the six ability scores themselves are this codebase's own invention, following the existing
 classes' established pattern (primary stat 16, a secondary support stat 14, a tertiary 12, two 10s,

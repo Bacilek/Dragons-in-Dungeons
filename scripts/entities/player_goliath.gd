@@ -183,6 +183,9 @@ func resolve_cloud_teleport(clicked: Vector2i) -> void:
 		return
 	if player.stats.giant_ancestry_uses_remaining <= 0 and not GameState.invincible:
 		return
+	if GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	var dist: int = maxi(absi(clicked.x - player.grid_pos.x), absi(clicked.y - player.grid_pos.y))
 	if dist > CLOUD_TELEPORT_RANGE:
 		GameState.game_log("[color=gray]Target out of range (max %d tiles).[/color]" % CLOUD_TELEPORT_RANGE)
@@ -198,7 +201,9 @@ func resolve_cloud_teleport(clicked: Vector2i) -> void:
 		return
 	if not GameState.invincible:
 		player.stats.giant_ancestry_uses_remaining -= 1
+		GameState.bonus_action_used = true
 	GameState._sync_ability_uses()
+	GameState.ability_bar_changed.emit()
 	var prev: Vector2i = player.grid_pos
 	player.set_grid_pos(clicked)
 	GameState.game_log("[color=cyan]Cloud's Jaunt: you blink through the air.[/color]")

@@ -31,6 +31,7 @@ const TITLES: Dictionary = {
 	"frightened": "Frightened",
 	"risen_from_dead": "Risen from the Dead",
 	"exhaustion": "Exhausted",
+	"bonus_action": "Bonus Action",
 }
 
 static func get_text(id: String) -> String:
@@ -101,6 +102,10 @@ static func get_text(id: String) -> String:
 		"exhaustion":
 			var lvl: int = GameState.player_stats.exhaustion_level
 			return "Level %d/6 — %d to every d20 test, %d/6 movement speed. A long rest removes 1 level. Reaching level 6 is fatal." % [lvl, -2 * lvl, 6 - lvl]
+		"bonus_action":
+			if GameState.bonus_action_used:
+				return "Already spent this round. Refreshes at the start of your next real turn."
+			return "Available this round — Rage, Frenzy, Zealot Strike, Flurry of Blows, Step of the Wind, Halfling Nimbleness, Cloud's Jaunt, Adrenaline Rush, Heroic Inspiration, Blade Ward, and Grip of the Forest all spend it."
 		_:
 			return ""
 

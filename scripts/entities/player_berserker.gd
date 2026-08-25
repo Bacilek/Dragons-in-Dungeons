@@ -26,7 +26,13 @@ func activate_frenzy() -> void:
 	GameState.game_log("[color=red]Frenzy — move into or click an adjacent enemy. [Esc] to cancel.[/color]")
 
 func execute_frenzy(enemy: Enemy) -> void:
+	if GameState.bonus_action_used and not GameState.invincible:
+		frenzy_mode_active = false
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	if not GameState.invincible:
+		GameState.bonus_action_used = true
+		GameState.ability_bar_changed.emit()
 		GameState.berserker_frenzy_used = true
 	GameState.berserker_turns_since_frenzy = 0
 	GameState.stealth_check_skip = true
@@ -43,7 +49,7 @@ func execute_frenzy(enemy: Enemy) -> void:
 	var dex_mod: int = stats.dex_modifier()
 	var is_finesse_weapon: bool = not is_unarmed and melee.is_finesse
 	var dmg_mod: int = CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
-	var prof: int = CombatMath.weapon_prof_bonus(melee, stats.proficiency_bonus, stats.proficient_simple_weapons, stats.proficient_martial_weapons)
+	var prof: int = CombatMath.weapon_prof_bonus(melee, stats.proficiency_bonus, stats)
 	var w_dmin: int = stats.base_min_damage
 	var w_dmax: int = stats.base_max_damage
 	var w_enh: int = 0
@@ -90,6 +96,7 @@ func execute_frenzy(enemy: Enemy) -> void:
 			weapon_dice, w_dmin, w_dmax, w_enh, dmg_mod, bonus_sources_self, self_dmg]
 		GameState.game_log("[color=red][url=%s]Frenzy misses![/url] You tear into yourself for [url=%s][color=orange]%d[/color][/url]%s damage.[/color]" % [attack_meta, dmg_meta, self_dmg, type_tag])
 		GameState.flush_stone_endurance_log()
+		GameState.flush_deflect_attacks_log()
 		_note_self_damage()
 		GameState.check_player_death()
 		player._try_graze(enemy, is_str_weapon, dmg_mod)
@@ -131,6 +138,7 @@ func execute_frenzy(enemy: Enemy) -> void:
 		var is_lethal: bool = enemy.stats.is_dead()
 		GameState.game_log("[color=red][url=%s]Frenzy![/url] %s takes [url=%s][color=orange]%d[/color][/url]%s damage — you take [url=%s][color=orange]%d[/color][/url]%s back.%s[/color]" % [attack_meta, enemy.display_name, dmg_meta, actual2, type_tag, self_meta, self_dmg2, type_tag, CombatMath.death_suffix(is_lethal)])
 		GameState.flush_stone_endurance_log()
+		GameState.flush_deflect_attacks_log()
 		_note_self_damage()
 		GameState.check_player_death()
 		if melee != null and melee.weapon_mastery == "Vex" and stats.knows_mastery("Vex"):

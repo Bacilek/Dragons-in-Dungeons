@@ -71,6 +71,9 @@ static func is_larger_than_halfling(enemy: Enemy) -> bool:
 func resolve_nimbleness(clicked: Vector2i) -> void:
 	if player._dungeon_floor == null:
 		return
+	if GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	var d: Vector2i = clicked - player.grid_pos
 	if maxi(absi(d.x), absi(d.y)) != 1:
 		GameState.game_log("[color=gray]Nimbleness: pick one of the tiles right next to you.[/color]")
@@ -93,6 +96,7 @@ func resolve_nimbleness(clicked: Vector2i) -> void:
 	if not GameState.invincible:
 		used_this_turn = true
 		GameState.halfling_nimbleness_used_this_turn = true
+		GameState.bonus_action_used = true
 		GameState.ability_bar_changed.emit()
 	var prev: Vector2i = player.grid_pos
 	player.set_grid_pos(landing)

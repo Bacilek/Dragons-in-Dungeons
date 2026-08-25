@@ -540,6 +540,12 @@ static func _consume_slot(player: Player, spell: Spell, cast_level: int, from_sc
 # sentinel Vector2i(-1,-1) = "no touch-target choice to make") is only read by the "invisibility"/
 # "longstrider" upcast branches below — see their own comments.
 static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dungeon_floor: Node, from_scroll: bool = false, clicked: Vector2i = Vector2i(-1, -1)) -> void:
+	# Blade Ward is a Bonus Action cast in 5e RAW (not a normal action) — gated on the Bonus Action
+	# economy BEFORE the turn/slot are ever touched, see scripts/entities/CLAUDE.md's "Bonus Action
+	# economy" section.
+	if spell.effect_id == "blade_ward" and GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	_consume_slot(player, spell, cast_level, from_scroll)
@@ -576,6 +582,16 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			player.stats.concentration_spell_id = "blade_ward"
 			player.stats.blade_ward_turns = 10
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — attacks against you falter for up to 10 turns.[/color]" % spell.spell_name)
+			# Costs a Bonus Action, not the full turn (5e RAW casting time) — same
+			# revert_to_waiting() free-action pattern as Shield above.
+			if not GameState.invincible:
+				GameState.bonus_action_used = true
+			GameState.ability_bar_changed.emit()
+			if dungeon_floor != null:
+				dungeon_floor.update_fog(player.grid_pos)
+			player._reverted_this_round = true
+			TurnManager.revert_to_waiting()
+			return
 		"thunderclap":
 			_resolve_thunderclap(player, spell, dungeon_floor)
 		"expeditious_retreat":
@@ -893,6 +909,7 @@ static func _resolve_sphere_aoe(player: Player, spell: Spell, center: Vector2i, 
 		GameState.game_log("[color=orange]You are [url=%s]%s[/url] in your own blast for [url=%s]%d[/url] Fire dmg%s.[/color]" % [
 			psave_meta, "caught" if not pass_save else "singed", pdmg_meta, actual_p, reduced_note])
 		GameState.flush_stone_endurance_log()
+		GameState.flush_deflect_attacks_log()
 
 ## Groups a dart-target descriptor (see PlayerSpellcasting._resolve_multi_target_at()) into a
 ## unique string key so repeated picks of the same target focus multiple darts onto it instead of

@@ -241,10 +241,10 @@ static func _blade_ward() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "blade_ward"
 	s.spell_name = "Blade Ward"
-	s.description = "Every attack roll against you rolls with -1d4. Breaks if you fail a CON check (DC = damage taken, min 10) when hit."
+	s.description = "Every attack roll against you rolls with -1d4. Breaks if you fail a CON check (DC = damage taken, min 10) when hit. Costs a Bonus Action, not your full turn."
 	s.icon_path = "res://icons/spells/0/blade_ward.png"
 	s.school = "Abjuration"
-	s.casting_time = "Action"
+	s.casting_time = "Bonus Action"
 	s.duration_turns = 10
 	s.is_concentration = true
 	s.range_tiles = 0

@@ -47,6 +47,13 @@ section.
 
 Each turn: status effects tick (`Stats.tick_status()` → dmg). Hunger has been removed — food items are long-rest fuel only (see "Rest system" below).
 
+**Bonus Action economy**: `GameState.bonus_action_used` is a once-per-real-round gate over the
+formerly-unlimited "free actions" (Rage, Frenzy, Zealot Strike, Flurry of Blows, Step of the Wind,
+Halfling Nimbleness, Cloud Giant's Jaunt, Orc Adrenaline Rush, Human Heroic Inspiration, Blade
+Ward, Grip of the Forest) — at most one per round, mirroring 5e's own single-bonus-action rule.
+Rage additionally auto-extends off a leftover unused Bonus Action at end of turn. Full mechanism:
+`scripts/entities/CLAUDE.md`'s "Bonus Action economy" section.
+
 ### Dungeon
 - **`DungeonGenerator.generate(seed, floor_num)`** — pure static, returns `DungeonData`. Seed: `run_seed XOR (floor * 0x9e3779b9)`. BSP depth 5, 48×48 grid, L-shaped corridors. Internally a three-phase pipeline (`FloorPlanner` → `BspBuilder` → `LevelPainter`, with `Room` type classes) — details in `scripts/dungeon/CLAUDE.md`.
 - **`DungeonData`** — `grid: Array[Array[int]]` indexed `[y][x]`. `TileType`: `VOID=0, FLOOR=1, WALL=2, STAIRS_DOWN=3, CHASM=4, WATER=5, MUD=6, GRASS=7, TRAMPLED_GRASS=8`. `boss_room: Rect2i` (empty if not boss floor). `rooms: Array[Rect2i]` — all BSP leaf rooms. `feeling: String` — Floor Feeling id, `""` on boss floors (see `scripts/dungeon/CLAUDE.md`).
