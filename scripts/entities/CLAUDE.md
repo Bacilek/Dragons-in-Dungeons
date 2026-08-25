@@ -2528,6 +2528,7 @@ Pool entries may set `"attack_profile": {"kind": "ranged", "range": N, "projecti
 - `combat_math.gd` (`CombatMath`, static-func-only helper, `extends RefCounted`, mirrors `scripts/ui/tooltip_formatters.gd`'s pattern) — the ADV/DISADV d20-roll resolution shared verbatim by melee/cleave/ranged (`roll_with_adv_disadv()`), weapon proficiency bonus (`weapon_prof_bonus()` — was `player.gd._weapon_prof_bonus()`, see "Weapon proficiency flags" above), `melee_reach_bonus()` (Branching Strike's talent-rank reach) and `melee_reach(weapon, rank)` (total melee range = `1 + melee_reach_bonus(rank) + 1 if weapon.is_reach`, additive — used by the chase-to-attack range check and Cleave's target-gathering radius), `finesse_modifier(str_mod, dex_mod, is_finesse) -> int` (returns `max(str_mod, dex_mod)` when `is_finesse`, else `str_mod` — used for both the attack roll and damage roll in `player.gd._bump_attack()` when `GameState.equipped_weapon.is_finesse`), and `encode_bonus_sources()`/`decode_bonus_sources()` (generic bonus-damage tooltip encoding — see "Bonus damage stacking" below). The bonus-damage STACKING sequence itself (Ironwood Bark/Judgement Day summation) and the full hit/miss/log flow stay in `player.gd._bump_attack()`/`PlayerRanged.ranged_attack()` — see "Bonus damage stacking" above.
 - `player_ranged.gd` (`PlayerRanged`) — the full ranged-combat body: range/LOS checks (`is_ranged_target_in_range()`, `ranged_shot_disadvantage()`, `is_in_ranged_range()`), the ranged attack roll (`ranged_attack()`), projectile VFX (`show_projectile()`), and ranged-at-tile (`ranged_attack_tile()`). Mirrors `_bump_attack()`'s ADV/DISADV/crit/Divine-Fury-stacking structure closely — kept as one function per the same "don't split stateful stacking logic" reasoning as melee (see "Bonus damage stacking" above). **`ranged_attack(enemy)` redirects to a blocking body**: before anything else, it calls `DungeonFloor.get_blocking_body_on_line(player.grid_pos, enemy.nearest_occupied_tile(...))` — if another `Enemy` occupies an intermediate tile of the shot, the local `enemy` parameter is reassigned to that blocker and the entire rest of the function (on_disturbed, roll, damage, log, Hunter's Mark, kill handling) resolves against it instead of whoever was actually clicked. Matches the "the arrow hits the first thing in its path" rule — see `scripts/world/CLAUDE.md`'s `has_clear_shot()`/`get_blocking_body_on_line()`.
 - `player_monk.gd` (`PlayerMonk`) — Martial Arts (Dextrous Attacks/Martial Arts Die/Bonus Unarmed Strike), Unarmored Movement, and Monk's Focus (Flurry of Blows/Patient Defense/Step of the Wind). See "Monk class" below.
+- `player_fighter.gd` (`PlayerFighter`) — Second Wind. See "Fighter class" below.
 
 ---
 
@@ -4253,6 +4254,27 @@ since no other class can select one):
   falls out as Bludgeoning via the existing `is_unarmed` branch in `dmg_type`'s own ternary — no
   change needed there. **The "1d4 Bludgeoning to a grappled creature at the start of your turn"
   clause is NOT implemented** — this codebase has no grapple mechanic at all to hook it into.
+
+**Second Wind** (level 1, ability_id `"second_wind"`, D&D 2024 Bonus Action):
+`Stats.second_wind_uses_remaining`/`second_wind_uses_max` (2 at level 1, 3 at level 4, 4 at level
+10 — Fighter's own schedule, a direct owner house-rule number, not RAW's flat 2) — regains
+`1d10 + character_level` HP via `PlayerFighter.activate_second_wind()`
+(`scripts/entities/player_fighter.gd`, a new composition child-node with no armed/pending state of
+its own, unlike Zealot Strike — the heal resolves immediately on activation). Gated through the
+shared Bonus Action economy like every other free-action ability (`"second_wind"` added to
+`GameState.BONUS_ACTION_ABILITY_IDS`, see "Bonus Action economy" above) — greys out and shows the
+generic "No Bonus Action" reason once `bonus_action_used` is true, on top of its own
+`uses_remaining > 0` check (`Ability.has_uses()`'s existing generic gate, since `uses_max` here is
+a real charge count, not the `0`/free-base-ability convention Fighting Style uses). Refills to max
+on a completed LONG rest ONLY (`GameState.long_rest()` — a direct owner house rule; real 5e 2024
+text refills on either a short or long rest) — `GameState._sync_ability_uses()`'s `"second_wind"`
+branch keeps the ability-bar badge in sync with `Stats.second_wind_uses_remaining`/`_max` the same
+way Rage's own badge does. `gain_exp()` grants the extra use immediately on the triggering
+level-up crossing the 4/10 threshold, same "on the level-up, not only after the next rest"
+treatment `rage_uses_remaining`/`monk_focus_points` already get. Heal tooltip:
+`heal:dice=1,sides=10,con=0,roll=,bonus=,total=` — the level bonus and any Bruiser R1 bonus both
+ride the generic `CombatMath.encode_bonus_sources()` mechanism as named sources (same shape Zealot
+Strike's own heal tooltip uses), rather than trying to force the level bonus into the `con=` slot.
 
 ## Locked classes — base D&D stat blocks only
 

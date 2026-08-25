@@ -130,6 +130,20 @@ const ALL_FIGHTING_STYLES: Array[String] = [
 	"interception", "protection", "thrown_weapon_fighting", "two_weapon_fighting", "unarmed_fighting",
 ]
 
+# Fighter's level-1 Second Wind (D&D 2024, Bonus Action): current uses. Refills to
+# second_wind_uses_max on a completed LONG rest only (a direct owner house rule — real 5e 2024
+# text refills on either a short or long rest; this project's Fighter only regains it on long
+# rest) — see GameState.long_rest(). Activated via player_fighter.gd's activate_second_wind(),
+# gated through the shared Bonus Action economy like every other free-action ability (see
+# GameState.BONUS_ACTION_ABILITY_IDS).
+var second_wind_uses_remaining: int = 0
+var second_wind_uses_max: int:
+	get:
+		if character_class != CharacterClass.FIGHTER: return 0
+		if character_level >= 10: return 4
+		if character_level >= 4:  return 3
+		return 2
+
 const FIGHTING_STYLE_NAMES: Dictionary = {
 	"archery": "Archery",
 	"blind_fighting": "Blind Fighting",
@@ -999,6 +1013,7 @@ func to_dict() -> Dictionary:
 		"blade_ward_turns": blade_ward_turns,
 		"known_weapon_masteries": known_weapon_masteries.duplicate(),
 		"fighting_style": fighting_style,
+		"second_wind_uses_remaining": second_wind_uses_remaining,
 		"elf_lineage_spell_ids": elf_lineage_spell_ids.duplicate(),
 		"elf_lineage_free_casts_remaining": elf_lineage_free_casts_remaining.duplicate(),
 		"tiefling_legacy_spell_ids": tiefling_legacy_spell_ids.duplicate(),
@@ -1061,6 +1076,7 @@ func from_dict(d: Dictionary) -> void:
 	for m: Variant in (d.get("known_weapon_masteries", []) as Array):
 		known_weapon_masteries.append(String(m))
 	fighting_style = String(d.get("fighting_style", ""))
+	second_wind_uses_remaining = int(d.get("second_wind_uses_remaining", 0))
 	elf_lineage_spell_ids.clear()
 	for sid: Variant in (d.get("elf_lineage_spell_ids", []) as Array):
 		elf_lineage_spell_ids.append(String(sid))

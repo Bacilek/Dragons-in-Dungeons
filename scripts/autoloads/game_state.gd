@@ -1393,6 +1393,20 @@ func _give_fighter_starting_items() -> void:
 	fs.is_passive = true
 	add_ability(fs)
 
+	# Second Wind (D&D 2024, Bonus Action) — slot 1. Uses live on Stats.second_wind_uses_remaining/
+	# uses_max (same "real resource, not the free-base-ability uses_max==0 convention" shape as
+	# Rage), refilled to max here at character creation, then only on a completed LONG rest
+	# (GameState.long_rest()) — see Stats.second_wind_uses_max's own comment.
+	player_stats.second_wind_uses_remaining = player_stats.second_wind_uses_max
+	var sw := Ability.new()
+	sw.ability_id = "second_wind"
+	sw.ability_name = "Second Wind"
+	sw.description = "Bonus Action. Regain 1d10 + your Fighter level in HP."
+	sw.icon_path = "res://sprites/items/misc/key_iron.png"
+	sw.uses_remaining = player_stats.second_wind_uses_remaining
+	sw.uses_max = player_stats.second_wind_uses_max
+	add_ability(sw)
+
 func _build_barbarian_handaxe() -> Item:
 	var handaxe := Item.new()
 	handaxe.item_name = "Handaxe"
@@ -2127,6 +2141,7 @@ func long_rest() -> void:
 	player_status_changed.emit()
 	player_stats.rage_uses_remaining = player_stats.rage_uses_max
 	player_stats.monk_focus_points = player_stats.monk_focus_points_max
+	player_stats.second_wind_uses_remaining = player_stats.second_wind_uses_max
 	player_stats.hunters_mark_uses_remaining = Stats.HUNTERS_MARK_USES_MAX
 	player_stats.breath_weapon_uses_remaining = player_stats.proficiency_bonus
 	player_stats.draconic_flight_used = false
@@ -2221,6 +2236,9 @@ func _sync_ability_uses() -> void:
 		elif ab.ability_id == "giant_ancestry":
 			ab.uses_remaining = player_stats.giant_ancestry_uses_remaining
 			ab.uses_max = player_stats.proficiency_bonus
+		elif ab.ability_id == "second_wind":
+			ab.uses_remaining = player_stats.second_wind_uses_remaining
+			ab.uses_max = player_stats.second_wind_uses_max
 	ability_bar_changed.emit()
 
 # Ability ids gated behind the shared Bonus Action economy (scripts/entities/CLAUDE.md's "Bonus
@@ -2234,6 +2252,7 @@ const BONUS_ACTION_ABILITY_IDS: PackedStringArray = [
 	"rage", "frenzy", "zealot_strike", "flurry_of_blows", "step_of_wind", "patient_defense",
 	"halfling_nimbleness", "adrenaline_rush", "heroic_inspiration", "draconic_flight",
 	"stonecunning", "large_form", "celestial_revelation", "hunters_mark", "grip_of_the_forest",
+	"second_wind",
 ]
 
 func _bonus_action_blocks(ab: Ability) -> bool:
@@ -2604,6 +2623,7 @@ func gain_exp(amount: int) -> void:
 	var old_max_hp: int = player_stats.max_hp
 	var old_rage_max: int = player_stats.rage_uses_max
 	var old_focus_max: int = player_stats.monk_focus_points_max
+	var old_second_wind_max: int = player_stats.second_wind_uses_max
 	var old_max_hit_dice: int = max_hit_dice()
 	var old_mastery_cap: int = player_stats.mastery_cap()
 	var old_prof_bonus: int = player_stats.proficiency_bonus
@@ -2646,6 +2666,15 @@ func gain_exp(amount: int) -> void:
 					player_stats.monk_focus_points + (new_focus_max - old_focus_max),
 					new_focus_max)
 				ability_bar_changed.emit()
+		# Second Wind uses scale at levels 4/10 — grant the extra use immediately, same
+		# "on the triggering level-up, not only after the next rest" treatment as Rage above.
+		if player_stats.character_class == Stats.CharacterClass.FIGHTER:
+			var new_second_wind_max: int = player_stats.second_wind_uses_max
+			if new_second_wind_max > old_second_wind_max:
+				player_stats.second_wind_uses_remaining = mini(
+					player_stats.second_wind_uses_remaining + (new_second_wind_max - old_second_wind_max),
+					new_second_wind_max)
+				_sync_ability_uses()
 		var lv_str: String = ""
 		if point_tier > 0:
 			lv_str = " +1 talent point."

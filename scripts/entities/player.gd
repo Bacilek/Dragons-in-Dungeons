@@ -34,6 +34,7 @@ var _tiefling: PlayerTiefling
 var _halfling: PlayerHalfling
 var _warlock: PlayerWarlock
 var _monk: PlayerMonk
+var _fighter: PlayerFighter
 
 var _queued_path: Array[Vector2i] = []
 var _path_executing: bool = false
@@ -261,6 +262,7 @@ func _ready() -> void:
 	_halfling = PlayerHalfling.new(); _halfling.player = self; add_child(_halfling)
 	_warlock = PlayerWarlock.new(); _warlock.player = self; add_child(_warlock)
 	_monk = PlayerMonk.new(); _monk.player = self; add_child(_monk)
+	_fighter = PlayerFighter.new(); _fighter.player = self; add_child(_fighter)
 
 	GameState.player_hp_changed.connect(_on_player_hp_changed)
 	GameState.player_action_requested.connect(_on_action_requested)
@@ -3961,6 +3963,7 @@ func _use_ability_slot(idx: int) -> void:
 		"slow_fall":               GameState.game_log("[color=gray]Slow Fall isn't implemented yet — this game has no fall-damage mechanic.[/color]")
 		"extra_attack":            GameState.game_log("[color=gray]Extra Attack is passive — it triggers automatically on your first melee attack each turn.[/color]")
 		"fighting_style":          GameState.game_log("[color=gray]Fighting Style: %s. Reselectable on your next level-up.[/color]" % Stats.FIGHTING_STYLE_NAMES.get(stats.fighting_style, "none chosen"))
+		"second_wind":             _fighter.activate_second_wind()
 		"flurry_of_blows":         _monk.activate_flurry_of_blows()
 		"patient_defense":         _monk.activate_patient_defense()
 		"step_of_wind":            _monk.activate_step_of_wind()
