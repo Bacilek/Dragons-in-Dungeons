@@ -368,10 +368,10 @@ static func _misty_step() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "misty_step"
 	s.spell_name = "Misty Step"
-	s.description = "Teleport to a visible tile."
+	s.description = "Teleport to a visible tile. Costs a Bonus Action, not your full turn."
 	s.icon_path = "res://icons/spells/2/misty_step.png"
 	s.school = "Conjuration"
-	s.casting_time = "Action"
+	s.casting_time = "Bonus Action"
 	s.level = 2
 	s.range_tiles = 3
 	s.target_kind = Spell.TargetKind.TILE
@@ -451,7 +451,7 @@ static func _witch_bolt() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "witch_bolt"
 	s.spell_name = "Witch Bolt"
-	s.description = "Ranged spell attack, deals 2d12 Lightning damage and begins Concentration. Target is Jolted while you concentrate."
+	s.description = "Ranged spell attack, deals 2d12 Lightning damage and begins Concentration. Target is Jolted while you concentrate. The recurring jolt at the end of each of your later turns needs a free Bonus Action to trigger — if yours is already spent, that round's jolt is simply skipped and the duration isn't spent early either."
 	s.icon_path = "res://icons/spells/1/witch_bolt.png"
 	s.school = "Evocation"
 	s.casting_time = "Action"
@@ -481,10 +481,10 @@ static func _expeditious_retreat() -> Spell:
 	var s := Spell.new()
 	s.spell_id = "expeditious_retreat"
 	s.spell_name = "Expeditious Retreat"
-	s.description = "Once per turn, your first move doesn't cost you your turn — you can still act (or move again) afterward."
+	s.description = "Once per turn, your first move doesn't cost you your turn — you can still act (or move again) afterward. Costs a Bonus Action to cast, not your full turn."
 	s.icon_path = "res://icons/spells/1/expeditious_retreat.png"
 	s.school = "Transmutation"
-	s.casting_time = "Free"
+	s.casting_time = "Bonus Action"
 	s.duration_turns = 100
 	s.is_concentration = true
 	s.level = 1
@@ -724,7 +724,7 @@ static func _barkskin() -> Spell:
 	s.spell_id = "barkskin"
 	s.spell_name = "Barkskin"
 	s.school = "Transmutation"
-	s.casting_time = "Free"
+	s.casting_time = "Bonus Action"
 	s.level = 2
 	s.range_tiles = 1
 	s.target_kind = Spell.TargetKind.SELF
@@ -734,7 +734,7 @@ static func _barkskin() -> Spell:
 	# Concentration, per the owner's own stat block (real 5e Barkskin IS Concentration; this one
 	# isn't) — same "self, or the Companion" touch-target scope as Cure Wounds/Aid above, but only
 	# ONE of the two is ever affected per cast (Aid can hit both at once, Barkskin can't).
-	s.description = "Until the spell ends, the touched creature's AC can be no less than 17."
+	s.description = "Until the spell ends, the touched creature's AC can be no less than 17. Costs a Bonus Action, not your full turn."
 	s.icon_path = "res://icons/spells/2/barkskin.png"
 	s.effect_id = "barkskin"
 	s.class_list = ["RANGER"]
@@ -745,10 +745,10 @@ static func _hail_of_thorns() -> Spell:
 	s.spell_id = "hail_of_thorns"
 	s.spell_name = "Hail of Thorns"
 	s.school = "Conjuration"
-	# RAW casting time is a Bonus Action toggle; approximated as Free, same convention as Hellish
-	# Rebuke's own reaction-toggle shape (this engine has no reaction/bonus-action-casting
-	# framework — see that spell's own comment).
-	s.casting_time = "Free"
+	# RAW casting time is a Bonus Action toggle — arming it now genuinely costs the Bonus Action
+	# economy's shared resource (see scripts/entities/CLAUDE.md's "Bonus Action economy" section);
+	# disarming stays free, same convention as Hellish Rebuke's own reaction-toggle shape.
+	s.casting_time = "Bonus Action"
 	s.level = 1
 	s.range_tiles = 0   # "your weapon range" — unlimited, matches whatever ranged weapon you fire, not a separate spell range
 	s.target_kind = Spell.TargetKind.ENEMY
@@ -758,7 +758,7 @@ static func _hail_of_thorns() -> Spell:
 	s.dice_count = 1
 	s.dice_sides = 10
 	s.damage_type = "Piercing"
-	s.description = "Toggle to arm — the next creature you hit with a ranged weapon attack, and every creature within 1 tile of it, must make a DEX save or take 1d10 Piercing (half on a success)."
+	s.description = "Toggle to arm (costs a Bonus Action) — the next creature you hit with a ranged weapon attack, and every creature within 1 tile of it, must make a DEX save or take 1d10 Piercing (half on a success)."
 	s.icon_path = "res://icons/spells/1/hail_of_thorns.png"
 	s.effect_id = "hail_of_thorns"
 	s.class_list = ["RANGER"]
@@ -770,10 +770,11 @@ static func _ensnaring_strike() -> Spell:
 	s.spell_id = "ensnaring_strike"
 	s.spell_name = "Ensnaring Strike"
 	s.school = "Conjuration"
-	# RAW casting time is a Bonus Action toggle; approximated as Free, same convention as Hail of
-	# Thorns/Hellish Rebuke's own reaction-toggle shape (this engine has no reaction/bonus-action-
-	# casting framework — see those spells' own comments).
-	s.casting_time = "Free"
+	# RAW casting time is a Bonus Action toggle — arming it now genuinely costs the Bonus Action
+	# economy's shared resource (see scripts/entities/CLAUDE.md's "Bonus Action economy" section);
+	# disarming stays free, same convention as Hail of Thorns/Hellish Rebuke's own reaction-toggle
+	# shape.
+	s.casting_time = "Bonus Action"
 	s.level = 1
 	s.range_tiles = 0   # "your weapon range" — unlimited, matches whatever weapon lands the trigger hit, not a separate spell range
 	s.target_kind = Spell.TargetKind.ENEMY
@@ -785,7 +786,7 @@ static func _ensnaring_strike() -> Spell:
 	s.dice_count = 1
 	s.dice_sides = 6
 	s.damage_type = "Piercing"
-	s.description = "Toggle to arm — the next creature you hit with a weapon attack makes a STR save (Advantage if Large or bigger) or is Restrained until the spell ends. While Restrained, the target takes 1d6 Piercing at the start of its turns and repeats the STR save each turn, ending the spell early on a success."
+	s.description = "Toggle to arm (costs a Bonus Action) — the next creature you hit with a weapon attack makes a STR save (Advantage if Large or bigger) or is Restrained until the spell ends. While Restrained, the target takes 1d6 Piercing at the start of its turns and repeats the STR save each turn, ending the spell early on a success."
 	s.icon_path = "res://icons/spells/1/ensnaring_strike.png"
 	s.effect_id = "ensnaring_strike"
 	s.class_list = ["RANGER"]

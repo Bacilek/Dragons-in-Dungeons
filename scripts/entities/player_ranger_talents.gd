@@ -178,8 +178,15 @@ func activate_hail_of_thorns() -> void:
 	if not player.stats.hail_of_thorns_armed and not can_activate_hail_of_thorns():
 		GameState.game_log("[color=gray]Hail of Thorns has no spell slot left to fuel it.[/color]")
 		return
+	# Only arming costs a Bonus Action — disarming (turning it back off) is always free.
+	if not player.stats.hail_of_thorns_armed and GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	player.stats.hail_of_thorns_armed = not player.stats.hail_of_thorns_armed
 	if player.stats.hail_of_thorns_armed:
+		if not GameState.invincible:
+			GameState.bonus_action_used = true
+			GameState.ability_bar_changed.emit()
 		GameState.game_log("[color=cyan]Hail of Thorns is armed — your next ranged hit brings down a rain of thorns.[/color]")
 	else:
 		GameState.game_log("[color=gray]Hail of Thorns stood down.[/color]")
@@ -201,8 +208,15 @@ func activate_ensnaring_strike() -> void:
 	if not player.stats.ensnaring_strike_armed and not can_activate_ensnaring_strike():
 		GameState.game_log("[color=gray]Ensnaring Strike has no spell slot left to fuel it.[/color]")
 		return
+	# Only arming costs a Bonus Action — disarming (turning it back off) is always free.
+	if not player.stats.ensnaring_strike_armed and GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	player.stats.ensnaring_strike_armed = not player.stats.ensnaring_strike_armed
 	if player.stats.ensnaring_strike_armed:
+		if not GameState.invincible:
+			GameState.bonus_action_used = true
+			GameState.ability_bar_changed.emit()
 		GameState.game_log("[color=cyan]Ensnaring Strike is armed — your next weapon hit binds its target in thorns.[/color]")
 	else:
 		GameState.game_log("[color=gray]Ensnaring Strike stood down.[/color]")

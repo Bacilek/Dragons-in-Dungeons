@@ -962,6 +962,16 @@ func _on_turn_ending() -> void:
 	if stats.witch_bolt_just_cast:
 		stats.witch_bolt_just_cast = false
 		return
+	# Witch Bolt's recurring jolt is itself a Bonus-Action-shaped automatic trigger (Bonus Action
+	# economy, scripts/entities/CLAUDE.md) — same "automatic BA consumption at turn end, silently
+	# skips if unavailable" shape as the Rage leftover-extend logic just above. If the bonus action
+	# was already spent on something else this round, this round's tick just doesn't happen at
+	# all — no damage, but the duration/Concentration backstop isn't touched either, so nothing is
+	# lost, it just tries again next turn.
+	if GameState.bonus_action_used:
+		return
+	GameState.bonus_action_used = true
+	GameState.ability_bar_changed.emit()
 	var wb_target: Enemy = stats.witch_bolt_target
 	if is_instance_valid(wb_target) and not wb_target.stats.is_dead():
 		SpellEffects.tick_witch_bolt(self, wb_target, _dungeon_floor)
@@ -1152,6 +1162,7 @@ func _setup_animations() -> void:
 		Stats.CharacterClass.WIZARD:  char_folder = "Wizard"
 		Stats.CharacterClass.MONK:    char_folder = "Monk"
 		Stats.CharacterClass.WARLOCK: char_folder = "Warlock"
+		Stats.CharacterClass.FIGHTER: char_folder = "Fighter"
 		_:                            char_folder = "Barbarian"   # BARBARIAN default
 	var base: String = KNIGHT_PATH + char_folder + "/"
 	var frames := SpriteFrames.new()
@@ -3069,6 +3080,16 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 	elif not is_unarmed and GameState.equipped_weapon.damage_die_min > 0:
 		w_dmin = GameState.equipped_weapon.damage_die_min
 		w_dmax = GameState.equipped_weapon.damage_die_max
+	elif is_unarmed and stats.fighting_style == "unarmed_fighting":
+		# Unarmed Fighting Style (Fighter): 1d6 + STR, or 1d8 + STR while wielding no weapon or
+		# shield at ALL (both hands empty) — is_unarmed alone only guarantees Main Hand is empty,
+		# so the upgrade also checks Off-hand isn't holding a weapon or Shield. The "1d4 Bludgeoning
+		# to a grappled creature at the start of your turn" clause is NOT implemented — this
+		# codebase has no grapple mechanic at all to hook it into.
+		var uf_off_hand: Item = GameState.equipment.get("hand2") as Item
+		var uf_both_empty: bool = uf_off_hand == null or (uf_off_hand.item_type != Item.Type.WEAPON and not uf_off_hand.is_shield)
+		w_dmin = 1
+		w_dmax = 8 if uf_both_empty else 6
 	else:
 		w_dmin = stats.base_min_damage
 		w_dmax = stats.base_max_damage
@@ -3110,9 +3131,25 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 
 	var dice_ct: Vector2i = CombatMath.dice_notation(w_dmin, w_dmax)
 	var rolls: Array[int] = Rng.roll_dice(dice_ct.x, dice_ct.y)
+	# Great Weapon Fighting Style (Fighter): rolling damage for a two-handed (or versatile
+	# gripped two-handed) melee weapon, treat any 1 or 2 on a damage die as a 3 — applied to the
+	# raw dice roll itself, before CombatMath.build_damage_instance() ever sees it, so crit
+	# doubling/tooltip breakdown all read the adjusted values transparently.
+	if is_str_weapon and weapon_item_ref != null and weapon_item_ref.is_two_handed and stats.fighting_style == "great_weapon_fighting":
+		for i: int in rolls.size():
+			if rolls[i] <= 2:
+				rolls[i] = 3
 	var rage_bonus: int = stats.rage_bonus_damage if (_is_raging and is_str_weapon) else 0
 	# Monk Dextrous Attacks uses DEX for damage; Finesse weapons use max(STR, DEX); all others use STR.
 	var dmg_mod: int = dex_mod if monk_ma_active else CombatMath.finesse_modifier(str_mod, dex_mod, is_finesse_weapon)
+	# Dueling Fighting Style (Fighter): +2 damage with a one-handed melee weapon, only while it's
+	# the sole weapon being wielded (no Off-hand weapon — an Off-hand non-weapon item, or nothing
+	# at all, still counts as "no other weapon").
+	var dueling_bonus: int = 0
+	if is_str_weapon and weapon_item_ref != null and not weapon_item_ref.is_two_handed and stats.fighting_style == "dueling":
+		var duel_off_hand: Item = GameState.equipment.get("hand2") as Item
+		if duel_off_hand == null or duel_off_hand.item_type != Item.Type.WEAPON:
+			dueling_bonus = 2
 
 	# All bonus damage sources (Ironwood Bark, Judgement Day) are computed BEFORE
 	# take_damage/show_damage — see "Damage types / resistances" rule in
@@ -3143,6 +3180,7 @@ func _bump_attack(enemy: Enemy, dir: Vector2i) -> void:
 		{"name": "Rage bonus", "amount": rage_bonus, "color": "red"},
 		{"name": "Frenzy", "amount": frenzy_bonus, "color": "red"},
 		{"name": "Ironwood Bark", "amount": ironwood_bonus, "color": "cyan"},
+		{"name": "Dueling", "amount": dueling_bonus, "color": "lightblue"},
 	]
 	var main_flat_mods: Array = raw_mods.filter(func(m: Dictionary) -> bool: return int(m.get("amount", 0)) != 0)
 	# Multiplication always happens LAST: build_damage_instance() sums dice + flat mods THEN
@@ -3592,9 +3630,9 @@ func _resolve_offhand_attack(enemy: Enemy, weapon: Item, label: String = "Off-ha
 	var rolls: Array[int] = Rng.roll_dice(dice_ct.x, dice_ct.y)
 	var rage_bonus: int = stats.rage_bonus_damage if _is_raging else 0
 	# Off-hand damage drops the positive ability modifier; a negative modifier still always applies
-	# — UNLESS Twin Fang R2 is active against this exact target (Marked, rank >= 2), which keeps
-	# the full modifier just for that swing.
-	var dmg_mod: int = attack_mod if _ranger_talents.twin_fang_r2_active(enemy) else mini(attack_mod, 0)
+	# — UNLESS Twin Fang R2 is active against this exact target (Marked, rank >= 2), or Two-Weapon
+	# Fighting Style (Fighter) is chosen — either keeps the full modifier just for this swing.
+	var dmg_mod: int = attack_mod if (_ranger_talents.twin_fang_r2_active(enemy) or stats.fighting_style == "two_weapon_fighting") else mini(attack_mod, 0)
 	var dmg_type: String = weapon.damage_type if not weapon.damage_type.is_empty() else "<unknown_damage_type>"
 	var raw_mods: Array = [
 		{"name": "Weapon enhancement", "amount": weapon_bonus, "color": "lightblue"},
@@ -3920,6 +3958,7 @@ func _use_ability_slot(idx: int) -> void:
 		"deflect_attacks":         GameState.game_log("[color=gray]Deflect Attacks is passive — it triggers automatically on the first physical hit each turn.[/color]")
 		"slow_fall":               GameState.game_log("[color=gray]Slow Fall isn't implemented yet — this game has no fall-damage mechanic.[/color]")
 		"extra_attack":            GameState.game_log("[color=gray]Extra Attack is passive — it triggers automatically on your first melee attack each turn.[/color]")
+		"fighting_style":          GameState.game_log("[color=gray]Fighting Style: %s. Reselectable on your next level-up.[/color]" % Stats.FIGHTING_STYLE_NAMES.get(stats.fighting_style, "none chosen"))
 		"flurry_of_blows":         _monk.activate_flurry_of_blows()
 		"patient_defense":         _monk.activate_patient_defense()
 		"step_of_wind":            _monk.activate_step_of_wind()

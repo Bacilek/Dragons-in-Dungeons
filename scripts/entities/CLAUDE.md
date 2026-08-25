@@ -1753,7 +1753,7 @@ check or beat at all, so a cleared floor's click-to-move genuinely does move fas
 
 **Shield proficiency flag**: `Stats.proficient_shields: bool` (default `false`, set per-class in `apply_class_defaults()` — Barbarian and Ranger only). Gates `GameState.can_equip_shield()`: lacking it blocks equipping a Shield outright (unlike weapon proficiency below, which just drops a bonus) — see `scripts/items/CLAUDE.md`'s "Shields".
 
-**Body armor proficiency flags**: `Stats.proficient_light_armor`/`proficient_medium_armor`/`proficient_heavy_armor: bool` (all default `false`; Barbarian/Ranger set Light+Medium true in `apply_class_defaults()`, no class trains Heavy). Gates `GameState.can_equip_armor()` the same hard-block way as Shield proficiency, plus a real body-armor item's own `str_requirement` (Heavy only). `Stats.recalc_ac(has_armor_equipped, armor_item)` takes the equipped `"armor"` slot `Item` directly: when it's real body armor (`armor_item.base_ac > 0`), AC = `base_ac + DEX bonus` (capped per `armor_item.dex_cap` — see `scripts/items/CLAUDE.md`'s "Body armor") and this always wins over Barbarian/Monk unarmored defense or Mage Armor. Equip/unequip/swap of body armor is NOT a free action (unlike every other equip except Shield) — see `scripts/items/CLAUDE.md`'s "Body armor" for `GameState.begin_armor_change()`'s multi-turn mechanism.
+**Body armor proficiency flags**: `Stats.proficient_light_armor`/`proficient_medium_armor`/`proficient_heavy_armor: bool` (all default `false`; Barbarian/Ranger set Light+Medium true in `apply_class_defaults()` — neither trains Heavy; Fighter is the one real playable class with all three, including Heavy). Gates `GameState.can_equip_armor()` the same hard-block way as Shield proficiency, plus a real body-armor item's own `str_requirement` (Heavy only). `Stats.recalc_ac(has_armor_equipped, armor_item)` takes the equipped `"armor"` slot `Item` directly: when it's real body armor (`armor_item.base_ac > 0`), AC = `base_ac + DEX bonus` (capped per `armor_item.dex_cap` — see `scripts/items/CLAUDE.md`'s "Body armor") and this always wins over Barbarian/Monk unarmored defense or Mage Armor. Equip/unequip/swap of body armor is NOT a free action (unlike every other equip except Shield) — see `scripts/items/CLAUDE.md`'s "Body armor" for `GameState.begin_armor_change()`'s multi-turn mechanism.
 
 **Weapon proficiency flags**: `Stats.proficient_simple_weapons: bool`, `Stats.proficient_martial_weapons: bool` (both default `false`, set per-class in `apply_class_defaults()`), plus `Stats.martial_weapon_restriction: String` (`""` = none; `"light"` = Martial weapons with the Light property only, Monk's own case) for a class that gets a restricted subset of Martial rather than none-or-all. `Item.weapon_category` ("Simple"/"Martial"/`""`) determines which flag gates a given weapon. `Stats.is_weapon_proficient(item) -> bool` is the single chokepoint folding all three together (unarmed/`null` always proficient; Simple checks `proficient_simple_weapons`; Martial checks `proficient_martial_weapons`, falling back to `martial_weapon_restriction`'s match if that's false) — both `EquipRequirements.can_equip_weapon(item, stats)` (hard-blocks equipping) and `CombatMath.weapon_prof_bonus(weapon, proficiency_bonus, stats) -> int` (`scripts/entities/combat_math.gd`, moved from the old `player.gd._weapon_prof_bonus()` — see "Split-out modules" below) call it, so equip-gating and the attack-roll bonus can never disagree. Used for `prof` in `player.gd._bump_attack()`/`_resolve_cleave_attack()` and `PlayerRanged.ranged_attack()` — lacking proficiency (and no restriction match) blocks equipping the weapon outright via `EquipRequirements`, so `weapon_prof_bonus()`'s own "attack roll, not equip, is gated" comment only matters for weapons somehow already equipped when proficiency changes. Weapon tooltips (`hud.gd`, `inventory_overlay.gd`) show the category right under the damage line, colored red when the equipped class lacks that proficiency (`_is_weapon_category_proficient()` in each file).
 
@@ -2281,6 +2281,40 @@ sets `bonus_action_used = true` only on confirmed activation/resolution — matc
   and consumes it. The non-Bloodhound "free re-mark window" itself (`hunters_mark_free_recast_
   pending` → `_available`, consumed by a normal manual `commit_mark()` re-click) needs no separate
   handling — it's just another `commit_mark()` call, already covered by that function's own gate.
+- **Misty Step** — `spell_effects.gd.cast_leveled_at_tile()`'s `"misty_step"` branch. Same rework
+  as Blade Ward — used to cost the player's full turn like every other `cast_leveled_at_tile()`
+  spell; now gated at the top of the function (before turn/slot) and exits via
+  `revert_to_waiting()` instead of falling through to `_handle_post_attack_turn()`.
+  `Spell.casting_time` → `"Bonus Action"`.
+- **Barkskin** — `spell_effects.gd.cast_leveled_self()`'s `"barkskin"` branch. Same rework —
+  `Spell.casting_time` was already (incorrectly) labeled `"Free"` in `spell_db.gd` despite the
+  code costing a full turn; the code now matches the label. `casting_time` → `"Bonus Action"`.
+- **Expeditious Retreat** — `spell_effects.gd.cast_leveled_self()`'s `"expeditious_retreat"`
+  branch. Same rework and same pre-existing label mismatch as Barkskin (was `"Free"` in
+  `spell_db.gd`, actually cost a full turn in code) — now genuinely free via
+  `revert_to_waiting()`, gated, `casting_time` → `"Bonus Action"`. **Not to be confused with the
+  spell's own EFFECT** (its buff grants one free move per turn while active, `Player._try_move()`'s
+  duty-cycle-free-move check) — that's a separate, pre-existing mechanic and is completely
+  untouched by this rework; only the CAST itself changed from turn-costing to Bonus-Action-costing.
+- **Hail of Thorns** / **Ensnaring Strike** (toggle-arm reactions) —
+  `player_ranger_talents.gd.activate_hail_of_thorns()`/`activate_ensnaring_strike()`. Both were
+  ALREADY free actions (never called `TurnManager.begin_player_action()` at all — same shape as
+  Hellish Rebuke's toggle) so no turn-cost rework was needed, just the gate — and **only on
+  arming**: `if not <armed> and GameState.bonus_action_used: refuse`. Disarming (pressing again
+  while already armed) stays free with no check at all, matching Hellish Rebuke's own "turning it
+  off is always allowed" precedent. `Spell.casting_time` → `"Bonus Action"` for both (was `"Free"`).
+
+**Witch Bolt's initial cast is deliberately NOT gated** — user confirmed it stays a normal,
+turn-costing action, unchanged. **Its recurring per-turn jolt tick IS gated**, as an automatic
+trigger (same "automatic BA consumption at turn end, silently skips if unavailable" shape as the
+Rage leftover-extend and Monk Bonus Unarmed Strike mechanics): `player.gd._on_turn_ending()`, right
+after the `witch_bolt_just_cast` check — if `GameState.bonus_action_used` is already true, the tick
+is skipped entirely for that round (`return` before touching `witch_bolt_turns`/dealing damage) —
+**no damage, but the duration/Concentration backstop is untouched too**, so a missed tick never
+ends the spell early, it just tries again at the end of the player's next turn. If available, it's
+consumed (`bonus_action_used = true`) and the jolt fires exactly as before. Ordering note: this
+check runs AFTER the Rage leftover-extend check earlier in the same function, so if both Rage and
+Witch Bolt are active in the same turn, Rage's own extend claims the bonus action first.
 
 **Deliberately NOT gated**: Shield (spell) — stays a free action; it simulates a 5e Reaction,
 which this engine has no framework for, and the direct owner decided against folding it into this
@@ -2331,10 +2365,14 @@ gated ability_id (Rage, Frenzy, Zealot Strike, Flurry of Blows, Step of the Wind
 Nimbleness, Adrenaline Rush, Heroic Inspiration, Draconic Flight, Stonecunning, Large Form,
 Celestial Revelation, Hunter's Mark, Grip of the Forest); Cloud's Jaunt (`ability_id ==
 "giant_ancestry"`, shared by all 6 Giant Ancestry variants — only greyed when
-`race_variant == Stats.GiantAncestry.CLOUD`) and Blade Ward/Hex (`ability_id.begins_with("spell:")`
-— checked by spell id, since a spell ability's id is prefixed) are handled as separate branches
-inside `_bonus_action_blocks()` since their bare ability_id doesn't uniquely identify the gated
-case. `ability_unusable_reason()` shows a red `"No Bonus Action"` line ONLY when no other
+`race_variant == Stats.GiantAncestry.CLOUD`), the 7 gated spell abilities (`ability_id.begins_with
+("spell:")` — Blade Ward/Hex/Misty Step/Expeditious Retreat/Barkskin — checked by spell id since a
+spell ability's id is prefixed), and Hail of Thorns/Ensnaring Strike (`"hail_of_thorns_toggle"`/
+`"ensnaring_strike_toggle"` — only blocked while NOT yet armed, since disarming must always stay
+free; each checks its own `Stats.hail_of_thorns_armed`/`ensnaring_strike_armed` directly) are all
+handled as separate branches inside `_bonus_action_blocks()` since their bare ability_id doesn't
+uniquely identify the gated case (or, for the two toggles, needs armed-state awareness the flat id
+list can't express). `ability_unusable_reason()` shows a red `"No Bonus Action"` line ONLY when no other
 ability-specific reason (e.g. `"No Rage"`, `"Not Engaged"`) is ALSO true — every gated ability's
 own `match` arm falls through (doesn't `return`) when its own condition is satisfied, so the
 generic Bonus-Action check right after the `match` block is what actually supplies the reason in
@@ -4095,11 +4133,94 @@ instead, not a reuse of that worktree's code.
 - **Levels 11/17 — Martial Arts die upgrade**: updates `martial_arts` ability description; die is auto-computed by `Stats.martial_arts_die_sides`.
 - **Levels 6/10/14/18 — Unarmored Movement scaling**: no explicit hook needed, same reasoning as level 2 above.
 
+## Fighter class
+
+No premade hero uses Fighter, so unlike every other real class `Stats.apply_class_defaults()`'s
+`FIGHTER` branch sets **no ability-score baseline at all** — `Stats`'s own Resource field defaults
+(10 across the board) are a safe placeholder for the brief window before the Custom path's point
+buy screen sets real numbers, matching the "just fine, nothing ever reads it" reasoning
+`markdowns/` classes don't need either. Check proficiencies: STR + CON. Weapon proficiency: Simple
++ Martial (full, no `martial_weapon_restriction` carve-out like Monk/Rogue). Armor: Light + Medium
++ **Heavy** + Shield (the only real playable class with Heavy armor training). `Stats.mastery_cap()`:
+3 at level 1, 4 at level 4, 5 at level 10 (Fighter is the other Weapon-Mastery class alongside
+Barbarian/Ranger — its own schedule, not shared with either). d10 HD (`GameState.hit_die_sides()`).
+Starting gear (`GameState._give_fighter_starting_items()`): Spear (Simple, Versatile 1d6/1d8,
+Piercing, `weapon_mastery="Sap"`, also Thrown) in Main Hand, Shield in Off-hand, Chain Shirt
+(Medium, no STR requirement) in the Armor slot — a build-agnostic "sword and board" default that
+works whether the eventual point-buy/Fighting Style pick leans STR or DEX.
+
+**Fighting Style** (level 1, ability_id `"fighting_style"` — a passive, ability-bar-entry-purely-
+for-the-tooltip like Barbarian's Unarmored Defense; click just logs the current pick):
+`Stats.fighting_style: String` (`""` = none yet), one of `Stats.ALL_FIGHTING_STYLES` (10 ids —
+`Stats.FIGHTING_STYLE_NAMES`/`FIGHTING_STYLE_DESCRIPTIONS` hold the display text). Picked via
+`scripts/ui/fighting_style_picker.gd` (row-list layout, no icon art — modeled on
+`attunement_picker.gd`'s shape rather than the spell pickers' icon-tile-grid, since there's nothing
+to show an icon for). **Mandatory at level 1**: spawned in `character_creation_mode = true`
+(no Esc) right after `mastery_picker.gd`'s own Learn-mode "pick 3 masteries" round finishes for a
+Fighter (`_finish_learn()`'s new branch, same "route onward instead of just closing" shape Ranger's
+own cantrip pick uses) — its own pick calls `GameState.snapshot_character_creation()` itself, since
+it's now the true last step of onboarding for this class. **Reselectable on every level-up**
+(`hud.gd._on_player_leveled_up()`, `level > 1` — a direct owner house rule, real 5e RAW does NOT
+allow freely swapping Fighting Style outside specific class features/feats): spawns the same picker
+in reselect mode (`character_creation_mode = false`, default), which has a "Keep Current" button
+and accepts Esc — purely optional, unlike the level-1 pick. Both modes reuse
+`GameState.mastery_picker_open` as their input-block flag (same no-dedicated-flag precedent as
+`high_elf_cantrip_swap.gd`/`attunement_picker.gd`) and call `GameState.set_fighting_style(id)` (sets
+`Stats.fighting_style`, re-runs `recalculate_stats()` so a swap into/out of Defense updates AC
+immediately, logs the change). Serialized (`Stats.to_dict()`/`from_dict()`'s `fighting_style` key)
+and captured in the character-creation "Try Again" snapshot
+(`GameState.snapshot_character_creation()`/`retry_same_character()`, Fighter-only branch).
+
+Per-style mechanism (all gate on `Stats.fighting_style == "<id>"`, all Fighter-only in practice
+since no other class can select one):
+- **Archery**: `+2` folded directly into `PlayerRanged.ranged_attack()`'s existing aggregate
+  `weapon_bonus` local (the same var `weapon.bonus_damage`/`prof` already share on the `wpn=`
+  tooltip field — not worth a dedicated tooltip line for one more flat add).
+- **Blind Fighting**: `Enemy.is_hidden_from_player()` returns `false` (ignoring Invisibility)
+  whenever the enemy is within Chebyshev 1 of `GameState.player_grid_pos`. **The darkness/Heavily-
+  Obscured half is NOT implemented** — a documented scope trim, not a design decision: every player
+  attack-roll site (`_bump_attack()`/ranged/thrown/cleave/off-hand/OA, 6+ places) independently
+  checks `GameState.is_blinded(grid_pos)` for its own DISADV, and none of them special-case an
+  adjacent target yet.
+- **Defense**: `+1` AC, folded into `Stats.recalc_ac()`'s real-body-armor branch only (never the
+  unarmored-defense ones) — gated on `armor_item.base_ac > 0`, so it only applies while genuinely
+  wearing light/medium/heavy armor, matching the style's own text.
+- **Dueling**: `+2` melee damage, computed in `_bump_attack()` and folded into `raw_mods` as its own
+  named "Dueling" tooltip source — gated on a one-handed weapon (`not weapon_item_ref.is_two_handed`)
+  with no weapon in Off-hand.
+- **Great Weapon Fighting**: rerolls (treats as `3`) any `1`/`2` on the raw dice array right after
+  `Rng.roll_dice()` in `_bump_attack()`, before `CombatMath.build_damage_instance()` ever sees it —
+  so crit doubling/tooltip breakdown both read the already-adjusted values transparently. Gated on
+  `weapon_item_ref.is_two_handed` (true for a naturally two-handed weapon OR a Versatile weapon
+  currently gripped two-handed via `toggle_versatile_grip()` — both set the same flag).
+- **Interception**: `enemy.gd._attack_companion()` (the player's Wild Heart Companion is the only
+  real ally this engine has to protect — real 5e text covers any adjacent creature) reduces the
+  landed hit by `1d10 + proficiency_bonus`, gated on the player wielding a Shield or a Simple/
+  Martial weapon and being Chebyshev-1 adjacent to the Companion.
+- **Protection**: same `_attack_companion()` call, gated on the player holding a Shield and being
+  adjacent — folds a DISADV source into that one attack roll. Real 5e text extends this to every
+  attack against that target for the rest of the turn; scope-limited here to just the triggering
+  attack (no "already protected this target this turn" cross-attack tracking exists).
+- **Thrown Weapon Fighting**: `+2` damage, added directly into `PlayerThrowTool._throw_weapon()`'s
+  `pre_crit` sum (so it doubles on a crit, matching this function's existing "whole sum doubles"
+  convention — unlike `_bump_attack()`'s per-source `build_damage_instance()` tooltip breakdown, a
+  thrown attack's damage line has no per-source list to fold a named entry into).
+- **Two-Weapon Fighting**: `_resolve_offhand_attack()`'s `dmg_mod` keeps the full (not
+  `mini(attack_mod, 0)`-clamped) ability modifier whenever this style is active — same override
+  point Twin Fang R2 (Ranger) already uses for the identical "keep the full mod on this swing" case.
+- **Unarmed Fighting**: `_bump_attack()`'s unarmed damage-die block gets a new branch (checked
+  before the generic `stats.base_min_damage`/`max_damage` fallback): `1d6` normally, `1d8` when
+  Off-hand is ALSO empty of any weapon/Shield (both hands genuinely empty). Damage type already
+  falls out as Bludgeoning via the existing `is_unarmed` branch in `dmg_type`'s own ternary — no
+  change needed there. **The "1d4 Bludgeoning to a grappled creature at the start of your turn"
+  clause is NOT implemented** — this codebase has no grapple mechanic at all to hook it into.
+
 ## Locked classes — base D&D stat blocks only
 
 `Stats.CharacterClass` gained 8 new enum entries — `BARD`, `CLERIC`, `DRUID`, `FIGHTER`,
-`PALADIN`, `ROGUE`, `SORCERER`, `WARLOCK` (WARLOCK has since been fully implemented — see
-"Warlock class" above — this section now covers the remaining 7) — each with a real
+`PALADIN`, `ROGUE`, `SORCERER`, `WARLOCK` (WARLOCK and, since this pass, FIGHTER have both been
+fully implemented — see "Warlock class" above and "Fighter class" below — this section now covers
+the remaining 6: Bard/Cleric/Druid/Paladin/Rogue/Sorcerer) — each with a real
 `apply_class_defaults()` branch
 (ability scores, HP via hit die + CON mod, `check_prof_*` flags, `proficient_simple_weapons`/
 `proficient_martial_weapons`, `proficient_shields`, `proficient_light_armor`/`medium`/`heavy`) plus
@@ -4116,13 +4237,16 @@ one `"light"` restriction value today, not a `"finesse_or_light"` one, so Rogue 
 `proficient_martial_weapons = false` (a conservative default) with the real restriction documented
 as a comment at its `apply_class_defaults()` branch — adding a `"finesse_or_light"` case to
 `Stats.is_weapon_proficient()`'s match block is now a small, well-precedented fix whenever Rogue
-itself gets implemented. Six of the seven remaining locked classes (Bard/Cleric/Druid/Fighter/
-Paladin/Warlock) have full Simple-or-Simple+Martial proficiency and need no such carve-out.
+itself gets implemented. Five of the six remaining locked classes (Bard/Cleric/Druid/
+Paladin/Sorcerer... Sorcerer actually has no armor/shield at all, see its own branch) have full
+Simple-or-Simple+Martial proficiency and need no such carve-out.
 Stat-block source (given directly by the project owner,
 not derived from 5e SRD text verbatim): `check_prof_*`/weapon-and-armor proficiency columns are
-exact; the six ability scores themselves are this codebase's own invention, following the existing
+exact; the ability scores themselves are this codebase's own invention, following the existing
 classes' established pattern (primary stat 16, a secondary support stat 14, a tertiary 12, two 10s,
 one dump stat 8) since only primary-ability/hit-die/proficiency data was specified, not a full
-ability array. `GameState.hit_die_sides()` (`scripts/autoloads/CLAUDE.md`) got matching explicit
-entries for `FIGHTER`/`PALADIN` (d10) and `SORCERER` (d6) — its old default branch already
-happened to return the right d8 for the other five.
+ability array — **FIGHTER is the one exception**: it deliberately has NO hardcoded ability-score
+baseline at all (see "Fighter class" below), removed once the class became real, since it has no
+premade hero to ever read the pre-point-buy default. `GameState.hit_die_sides()`
+(`scripts/autoloads/CLAUDE.md`) got matching explicit entries for `FIGHTER`/`PALADIN` (d10) and
+`SORCERER` (d6) — its old default branch already happened to return the right d8 for the rest.

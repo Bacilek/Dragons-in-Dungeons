@@ -540,10 +540,10 @@ static func _consume_slot(player: Player, spell: Spell, cast_level: int, from_sc
 # sentinel Vector2i(-1,-1) = "no touch-target choice to make") is only read by the "invisibility"/
 # "longstrider" upcast branches below — see their own comments.
 static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dungeon_floor: Node, from_scroll: bool = false, clicked: Vector2i = Vector2i(-1, -1)) -> void:
-	# Blade Ward is a Bonus Action cast in 5e RAW (not a normal action) — gated on the Bonus Action
-	# economy BEFORE the turn/slot are ever touched, see scripts/entities/CLAUDE.md's "Bonus Action
-	# economy" section.
-	if spell.effect_id == "blade_ward" and GameState.bonus_action_used and not GameState.invincible:
+	# Blade Ward/Barkskin/Expeditious Retreat are all Bonus Action casts in 5e RAW (not a normal
+	# action) — gated on the Bonus Action economy BEFORE the turn/slot are ever touched, see
+	# scripts/entities/CLAUDE.md's "Bonus Action economy" section.
+	if spell.effect_id in ["blade_ward", "barkskin", "expeditious_retreat"] and GameState.bonus_action_used and not GameState.invincible:
 		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
 		return
 	GameState.stealth_check_skip = true
@@ -600,6 +600,18 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			player.stats.concentration_spell_id = "expeditious_retreat"
 			player.stats.expeditious_retreat_turns = 100
 			GameState.game_log("[color=cyan]You cast [b]%s[/b] — your reflexes quicken for up to 100 turns.[/color]" % spell.spell_name)
+			# Costs a Bonus Action, not the full turn (5e RAW casting time) — same
+			# revert_to_waiting() free-action pattern as Shield/Blade Ward. The spell's own
+			# movement-free-step EFFECT (once-per-turn free move while the buff is active) is a
+			# separate, unrelated mechanic in player.gd's _try_move() and is untouched by this.
+			if not GameState.invincible:
+				GameState.bonus_action_used = true
+			GameState.ability_bar_changed.emit()
+			if dungeon_floor != null:
+				dungeon_floor.update_fog(player.grid_pos)
+			player._reverted_this_round = true
+			TurnManager.revert_to_waiting()
+			return
 		"false_life":
 			var rolls: Array[int] = Rng.roll_dice(spell.dice_count, spell.dice_sides)
 			var total: int = 4 + spell.upcast_flat_amount * extra_levels
@@ -654,6 +666,16 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			_resolve_aid(player, spell, extra_levels, clicked)
 		"barkskin":
 			_resolve_barkskin(player, spell, clicked)
+			# Costs a Bonus Action, not the full turn (5e RAW casting time) — same
+			# revert_to_waiting() free-action pattern as Shield/Blade Ward.
+			if not GameState.invincible:
+				GameState.bonus_action_used = true
+			GameState.ability_bar_changed.emit()
+			if dungeon_floor != null:
+				dungeon_floor.update_fog(player.grid_pos)
+			player._reverted_this_round = true
+			TurnManager.revert_to_waiting()
+			return
 		"pass_without_trace":
 			if player.stats.concentration_spell_id != "":
 				GameState.end_concentration("" if player.stats.concentration_spell_id == "pass_without_trace" else "[color=gray]Casting %s breaks your concentration.[/color]" % spell.spell_name)
@@ -680,6 +702,11 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 
 # TILE target (Misty Step teleport, Fireball AoE) — no attack roll against the tile itself.
 static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, tile_pos: Vector2i, dungeon_floor: Node, from_scroll: bool = false) -> void:
+	# Misty Step is a Bonus Action cast in 5e RAW — gated on the Bonus Action economy BEFORE the
+	# turn/slot are ever touched, see scripts/entities/CLAUDE.md's "Bonus Action economy" section.
+	if spell.effect_id == "misty_step" and GameState.bonus_action_used and not GameState.invincible:
+		GameState.game_log("[color=gray]Already used your bonus action this turn.[/color]")
+		return
 	GameState.stealth_check_skip = true
 	TurnManager.begin_player_action()
 	_consume_slot(player, spell, cast_level, from_scroll)
@@ -693,6 +720,16 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 			player.set_grid_pos(tile_pos)
 			GameState.player_grid_pos = tile_pos
 			GameState.game_log("[color=cyan]You blink in a puff of silver mist.[/color]")
+			# Costs a Bonus Action, not the full turn (5e RAW casting time) — same
+			# revert_to_waiting() free-action pattern as Shield/Blade Ward.
+			if not GameState.invincible:
+				GameState.bonus_action_used = true
+			GameState.ability_bar_changed.emit()
+			if dungeon_floor != null:
+				dungeon_floor.update_fog(player.grid_pos)
+			player._reverted_this_round = true
+			TurnManager.revert_to_waiting()
+			return
 		"burning_hands":
 			_resolve_cone_aoe(player, spell, tile_pos, dungeon_floor)
 		"fog_cloud":

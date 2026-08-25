@@ -466,6 +466,8 @@ func snapshot_character_creation() -> void:
 	d["race_variant"] = player_stats.race_variant
 	d["race_prof_ability"] = player_stats.race_prof_ability
 	d["masteries"] = player_stats.known_weapon_masteries.duplicate()
+	if player_stats.character_class == Stats.CharacterClass.FIGHTER:
+		d["fighting_style"] = player_stats.fighting_style
 	if player_stats.caster != null:
 		d["known_spells"] = player_stats.caster.known_spells.duplicate()
 		d["special_slot_spell_id"] = special_slot_spell_id
@@ -493,6 +495,9 @@ func retry_same_character() -> bool:
 		for m: Variant in masteries:
 			player_stats.known_weapon_masteries.append(String(m))
 		known_masteries_changed.emit()
+	if d.has("fighting_style"):
+		player_stats.fighting_style = String(d["fighting_style"])
+		recalculate_stats()
 	if player_stats.caster != null:
 		for sid: Variant in d.get("known_spells", []):
 			var spell_id: String = String(sid)
@@ -597,6 +602,8 @@ func give_class_starting_items() -> void:
 			_give_wizard_starting_items()
 		Stats.CharacterClass.WARLOCK:
 			_give_warlock_starting_items()
+		Stats.CharacterClass.FIGHTER:
+			_give_fighter_starting_items()
 
 # One-time, permanent race choice — called by race_select.gd's confirm button, fired between
 # class selection and the Mastery Picker. Mirrors choose_subclass()'s shape: sets the choice on
@@ -1304,6 +1311,75 @@ func _give_barbarian_starting_items() -> void:
 	ud.uses_max = 0
 	ud.is_passive = true
 	add_ability(ud)
+
+func _give_fighter_starting_items() -> void:
+	# Sword-and-board starter: a one-handed Simple melee weapon (versatile, so a Dueling/
+	# Great-Weapon-Fighting build can still grip it two-handed) + Shield + Chain Shirt (Medium,
+	# no STR requirement, capped DEX bonus) — works reasonably for a STR or DEX build alike, since
+	# Fighting Style/ability scores are both entirely up to Custom point buy for this class (no
+	# fixed stat block — see Stats.apply_class_defaults()'s FIGHTER branch).
+	var spear := Item.new()
+	spear.item_name = "Spear"
+	spear.item_type = Item.Type.WEAPON
+	spear.icon_path = "res://sprites/weapons/weapon_spear.png"
+	spear.description = ""
+	spear.bonus_damage = 0
+	spear.damage_die_min = 1
+	spear.damage_die_max = 6
+	spear.versatile_die_min = 1
+	spear.versatile_die_max = 8
+	spear.is_versatile = true
+	spear.floor_min = 1
+	spear.floor_max = 10
+	spear.is_ranged = false
+	spear.damage_type = "Piercing"
+	spear.weapon_mastery = "Sap"
+	spear.weapon_category = "Simple"
+	spear.is_thrown = true
+	spear.range = 3
+	spear.long_range = 12
+	spear.uses_max = 5
+	spear.uses_remaining = 5
+	spear.gold_value = 1
+	equipment["melee"] = spear
+
+	var shield := Item.new()
+	shield.item_name = "Shield"
+	shield.item_type = Item.Type.ARMOR
+	shield.icon_path = "res://sprites/items/shields/wood.png"
+	shield.description = ""
+	shield.is_shield = true
+	shield.bonus_ac = 2
+	shield.gold_value = 40
+	equipment["hand2"] = shield
+
+	var armor := Item.new()
+	armor.item_name = "Chain Shirt"
+	armor.item_type = Item.Type.ARMOR
+	armor.icon_path = "res://sprites/items/materials/plate/iron.png"
+	armor.description = ""
+	armor.armor_category = Item.ArmorCategory.MEDIUM
+	armor.base_ac = 13
+	armor.dex_cap = 2
+	armor.gold_value = 50
+	equipment["armor"] = armor
+
+	recalculate_stats()
+	equipment_changed.emit()
+
+	# Fighting Style info entry (slot 0 of ability bar) — same "passive, ability-bar entry purely
+	# for the icon/tooltip, click just logs a reminder" treatment as Barbarian's Unarmored Defense.
+	# The actual pick happens in fighting_style_picker.gd, spawned once mastery_picker.gd's own
+	# Learn-mode "pick 3 masteries" round finishes (see that file's _finish_learn()).
+	var fs := Ability.new()
+	fs.ability_id = "fighting_style"
+	fs.ability_name = "Fighting Style"
+	fs.description = "Passive: your chosen Fighting Style's effect is always active. Reselectable on every level-up."
+	fs.icon_path = "res://sprites/items/misc/key_iron.png"
+	fs.uses_remaining = 0
+	fs.uses_max = 0
+	fs.is_passive = true
+	add_ability(fs)
 
 func _build_barbarian_handaxe() -> Item:
 	var handaxe := Item.new()
@@ -2138,9 +2214,10 @@ func _sync_ability_uses() -> void:
 # Ability ids gated behind the shared Bonus Action economy (scripts/entities/CLAUDE.md's "Bonus
 # Action economy" section) — checked generically in is_ability_usable()/ability_unusable_reason()
 # below as an ADDITIONAL condition on top of each ability's own existing checks, not a replacement.
-# "giant_ancestry"/"spell:blade_ward"/"spell:hex" are handled separately since their ability_id
-# doesn't uniquely identify a gated ability (Giant Ancestry is shared by all 6 variants — only
-# Cloud's Jaunt is gated; spell abilities are prefixed).
+# "giant_ancestry"/"hail_of_thorns_toggle"/"ensnaring_strike_toggle"/spell-prefixed ids are handled
+# separately in _bonus_action_blocks() since their bare ability_id doesn't uniquely identify a
+# gated ability (Giant Ancestry is shared by all 6 variants — only Cloud's Jaunt is gated; the two
+# toggles only cost the Bonus Action on ARMING, never on disarming; spell abilities are prefixed).
 const BONUS_ACTION_ABILITY_IDS: PackedStringArray = [
 	"rage", "frenzy", "zealot_strike", "flurry_of_blows", "step_of_wind", "halfling_nimbleness",
 	"adrenaline_rush", "heroic_inspiration", "draconic_flight", "stonecunning", "large_form",
@@ -2154,8 +2231,15 @@ func _bonus_action_blocks(ab: Ability) -> bool:
 		return true
 	if ab.ability_id == "giant_ancestry":
 		return player_stats.race_variant == Stats.GiantAncestry.CLOUD
+	# Hail of Thorns/Ensnaring Strike: only ARMING costs the Bonus Action — disarming (pressing
+	# again while already armed) must always stay free, so these two aren't in the flat
+	# BONUS_ACTION_ABILITY_IDS list above; they need their own armed-state-aware check.
+	if ab.ability_id == "hail_of_thorns_toggle":
+		return not player_stats.hail_of_thorns_armed
+	if ab.ability_id == "ensnaring_strike_toggle":
+		return not player_stats.ensnaring_strike_armed
 	if ab.ability_id.begins_with("spell:"):
-		return ab.ability_id.substr(6) in ["blade_ward", "hex"]
+		return ab.ability_id.substr(6) in ["blade_ward", "hex", "misty_step", "expeditious_retreat", "barkskin"]
 	return false
 
 ## Whether an ability-bar entry can currently be activated — beyond the generic uses_remaining
@@ -2304,8 +2388,11 @@ func ability_unusable_reason(ab: Ability) -> String:
 				return "Lvl 5"
 			if player_stats.draconic_flight_used:
 				return "Used"
-		"hellish_rebuke_toggle", "hail_of_thorns_toggle", "ensnaring_strike_toggle":
+		"hellish_rebuke_toggle":
 			return "No Slot"
+		"hail_of_thorns_toggle", "ensnaring_strike_toggle":
+			if bonus_action_reason == "":
+				return "No Slot"
 		"flurry_of_blows":
 			if player_stats.monk_focus_points <= 0 and not invincible:
 				return "No Focus"
@@ -4026,6 +4113,15 @@ func toggle_mastery(mastery_name: String) -> bool:
 func discard_mastery(old_name: String) -> void:
 	player_stats.known_weapon_masteries.erase(old_name)
 	known_masteries_changed.emit()
+
+# Fighter's Fighting Style pick/reselect — scripts/ui/fighting_style_picker.gd's only mutator.
+# recalculate_stats() re-runs immediately so a swap into/out of "defense" updates AC right away
+# (matching every other equip/level-up path that can move armor_class).
+func set_fighting_style(id: String) -> void:
+	player_stats.fighting_style = id
+	recalculate_stats()
+	ability_bar_changed.emit()
+	game_log("[color=cyan]Fighting Style: %s.[/color]" % Stats.FIGHTING_STYLE_NAMES.get(id, id))
 
 # ── Magic item attunement (Item.requires_attunement/is_attuned) ─────────────────────
 # Only ever mutated from scripts/ui/attunement_picker.gd, itself only reachable from the
