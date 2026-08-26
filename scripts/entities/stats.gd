@@ -187,6 +187,7 @@ func mastery_cap() -> int:
 		CharacterClass.RANGER:
 			return 2
 		CharacterClass.FIGHTER:
+			if character_level >= 16: return 6
 			if character_level >= 10: return 5
 			if character_level >= 4:  return 4
 			return 3

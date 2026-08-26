@@ -4171,7 +4171,7 @@ buy screen sets real numbers, matching the "just fine, nothing ever reads it" re
 `markdowns/` classes don't need either. Check proficiencies: STR + CON. Weapon proficiency: Simple
 + Martial (full, no `martial_weapon_restriction` carve-out like Monk/Rogue). Armor: Light + Medium
 + **Heavy** + Shield (the only real playable class with Heavy armor training). `Stats.mastery_cap()`:
-3 at level 1, 4 at level 4, 5 at level 10 (Fighter is the other Weapon-Mastery class alongside
+3 at level 1, 4 at level 4, 5 at level 10, 6 at level 16 (Fighter is the other Weapon-Mastery class alongside
 Barbarian/Ranger — its own schedule, not shared with either). d10 HD (`GameState.hit_die_sides()`).
 Starting gear (`GameState._give_fighter_starting_items()`): Spear (Simple, Versatile 1d6/1d8,
 Piercing, `weapon_mastery="Sap"`, also Thrown) in Main Hand, Shield in Off-hand, Chain Shirt
