@@ -307,6 +307,17 @@ var bonus_action_used: bool = false
 # in the first place, reset in player.gd's _on_turn_started().
 var monk_extra_attack_pending: bool = false
 var monk_extra_attack_used_this_turn: bool = false
+# Fighter's Action Surge (level 2+): true while the granted extra-action window is open, consumed
+# by the player's very next move (player.gd._try_move()'s tail) or attack (melee/ranged/thrown —
+# player._handle_post_attack_turn()'s `is_spell == false` branch) — either reverts to waiting
+# instead of ending the turn. A spell cast (is_spell == true) deliberately does NOT consume/extend
+# it — it just resolves normally, ending the turn as if Action Surge had never been used. No
+# separate "used this turn" cap like Extra Attack — this is a manually-spent charge
+# (Stats.action_surge_uses_remaining), not an automatic per-turn trigger. Reset (cleared without
+# refunding) at the start of the player's next REAL turn if it was activated but never consumed by
+# a qualifying action (item/ability use, Wait, etc. all silently let it lapse) — see
+# player.gd's _on_turn_started().
+var action_surge_pending: bool = false
 # Human Heroic Inspiration: activating the ability arms this; the player's very next d20 roll
 # (attack, check, or save — anything routed through CombatMath.roll_with_adv_disadv() or the
 # stealth-check/Thief-Tools-disarm rolls) is forced to a natural 20, guaranteeing a critical
@@ -1569,6 +1580,15 @@ func _grant_monk_focus_abilities() -> void:
 	sow.uses_max = 0
 	add_ability(sow)
 
+	var um := Ability.new()
+	um.ability_id = "uncanny_metabolism"
+	um.ability_name = "Uncanny Metabolism"
+	um.description = "1/long rest, free action. Roll a Martial Arts die + your Monk level: heal that many HP, and refresh ALL your Focus Points to max."
+	um.icon_path = "res://sprites/items/misc/key_iron.png"
+	um.uses_remaining = 0
+	um.uses_max = 0
+	add_ability(um)
+
 func _find_ability_by_id(id: String) -> Ability:
 	for slot in player_ability_bar:
 		if slot != null and (slot as Ability).ability_id == id:
@@ -2141,7 +2161,9 @@ func long_rest() -> void:
 	player_status_changed.emit()
 	player_stats.rage_uses_remaining = player_stats.rage_uses_max
 	player_stats.monk_focus_points = player_stats.monk_focus_points_max
+	player_stats.uncanny_metabolism_used = false
 	player_stats.second_wind_uses_remaining = player_stats.second_wind_uses_max
+	player_stats.action_surge_uses_remaining = player_stats.action_surge_uses_max
 	player_stats.hunters_mark_uses_remaining = Stats.HUNTERS_MARK_USES_MAX
 	player_stats.breath_weapon_uses_remaining = player_stats.proficiency_bonus
 	player_stats.draconic_flight_used = false
@@ -2239,6 +2261,9 @@ func _sync_ability_uses() -> void:
 		elif ab.ability_id == "second_wind":
 			ab.uses_remaining = player_stats.second_wind_uses_remaining
 			ab.uses_max = player_stats.second_wind_uses_max
+		elif ab.ability_id == "action_surge":
+			ab.uses_remaining = player_stats.action_surge_uses_remaining
+			ab.uses_max = player_stats.action_surge_uses_max
 	ability_bar_changed.emit()
 
 # Ability ids gated behind the shared Bonus Action economy (scripts/entities/CLAUDE.md's "Bonus
@@ -2351,6 +2376,8 @@ func is_ability_usable(ab: Ability) -> bool:
 			if step_of_wind_used_this_turn:
 				return false
 			return invincible or player_stats.monk_focus_points > 0
+		"uncanny_metabolism":
+			return invincible or not player_stats.uncanny_metabolism_used
 	if ab.ability_id.begins_with("spell:"):
 		return can_cast_spell_now(ab.ability_id.substr(6))
 	return true
@@ -2439,6 +2466,9 @@ func ability_unusable_reason(ab: Ability) -> String:
 				return "Used"
 			if player_stats.monk_focus_points <= 0 and not invincible:
 				return "No Focus"
+		"uncanny_metabolism":
+			if player_stats.uncanny_metabolism_used and not invincible:
+				return "Used"
 		"hunters_mark":
 			# The round-cooldown case is already shown via hud.gd's own "%dt"/flat-"1" countdown
 			# overlay (frenzy_cooldown_turns), so this only ever fires for the "out of every
@@ -2462,6 +2492,9 @@ func _on_short_rest_completed() -> void:
 	# Monk's Focus: unlike every other per-rest resource in this codebase, refills on BOTH a short
 	# AND a long rest (D&D 2024 RAW) — see Stats.monk_focus_points_max's own comment.
 	player_stats.monk_focus_points = player_stats.monk_focus_points_max
+	# Fighter's Action Surge: same "short OR long rest" refill as Monk's Focus above (unlike
+	# Second Wind, which is long-rest-only) — see Stats.action_surge_uses_max's own comment.
+	player_stats.action_surge_uses_remaining = player_stats.action_surge_uses_max
 	if berserker_frenzy_used and _find_ability_by_id("frenzy") != null:
 		game_log("[color=lime]Frenzy: use refreshed.[/color]")
 	berserker_frenzy_used = false
@@ -2689,6 +2722,7 @@ func gain_exp(amount: int) -> void:
 		combat_message.emit(level_msg)
 		short_rest_changed.emit()
 		_apply_monk_level_features(player_stats.character_level)
+		_apply_fighter_level_features(player_stats.character_level)
 		if player_stats.caster != null and player_stats.caster.slot_pool != null:
 			player_stats.caster.slot_pool.grant_new_slots_on_levelup(old_slot_max)
 			spell_slots_changed.emit()
@@ -3920,7 +3954,7 @@ func _apply_monk_level_features(level: int) -> void:
 	match level:
 		2:
 			_grant_monk_focus_abilities()
-			combat_message.emit("[color=cyan]Level 2 Monk: Monk's Focus unlocked — Flurry of Blows, Patient Defense, Step of the Wind (%d Focus Points).[/color]" % player_stats.monk_focus_points_max)
+			combat_message.emit("[color=cyan]Level 2 Monk: Monk's Focus unlocked — Flurry of Blows, Patient Defense, Step of the Wind, Uncanny Metabolism (%d Focus Points).[/color]" % player_stats.monk_focus_points_max)
 		3:
 			var da := Ability.new()
 			da.ability_id = "deflect_attacks"
@@ -3970,6 +4004,30 @@ func _apply_monk_level_features(level: int) -> void:
 				ma.description = "Passive, while unarmed or wielding only Monk weapons (Simple, or Martial+Light), unarmored, no shield: Dextrous Attacks (use DEX instead of STR), Martial Arts Die (1d%d, replaces a weaker weapon die), Bonus Unarmed Strike (a free extra unarmed strike after your attack lands or misses)." % die_sides
 			ability_bar_changed.emit()
 			combat_message.emit("[color=cyan]Level %d Monk: Martial Arts die increased to [b]1d%d[/b]![/color]" % [level, die_sides])
+
+func _apply_fighter_level_features(level: int) -> void:
+	if player_stats.character_class != Stats.CharacterClass.FIGHTER:
+		return
+	match level:
+		2:
+			player_stats.action_surge_uses_remaining = player_stats.action_surge_uses_max
+			var asu := Ability.new()
+			asu.ability_id = "action_surge"
+			asu.ability_name = "Action Surge"
+			asu.description = "Instant, no action cost. Take one additional non-magical action (move or attack) this turn — casting a spell with it still ends your turn as normal."
+			asu.icon_path = "res://sprites/items/misc/key_iron.png"
+			asu.uses_remaining = player_stats.action_surge_uses_remaining
+			asu.uses_max = player_stats.action_surge_uses_max
+			add_ability(asu)
+			combat_message.emit("[color=cyan]Level 2 Fighter: [b]Action Surge[/b] unlocked — take one extra move or attack this turn, %d use(s) per rest.[/color]" % player_stats.action_surge_uses_max)
+		17:
+			var asu17: Ability = _find_ability_by_id("action_surge")
+			if asu17 != null:
+				asu17.uses_max = player_stats.action_surge_uses_max
+				asu17.description = "Instant, no action cost. Take one additional non-magical action (move or attack) this turn — casting a spell with it still ends your turn as normal. 2 uses per rest."
+			player_stats.action_surge_uses_remaining = mini(player_stats.action_surge_uses_remaining + 1, player_stats.action_surge_uses_max)
+			ability_bar_changed.emit()
+			combat_message.emit("[color=cyan]Level 17 Fighter: Action Surge now has [b]2 uses[/b] per rest.[/color]")
 
 func debug_jump_to_floor(n: int) -> void:
 	is_game_over = false

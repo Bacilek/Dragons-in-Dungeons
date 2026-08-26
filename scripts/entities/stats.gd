@@ -144,6 +144,21 @@ var second_wind_uses_max: int:
 		if character_level >= 4:  return 3
 		return 2
 
+# Fighter's level-2 Action Surge: instant, no action cost (doesn't call TurnManager.
+# begin_player_action()/on_player_action_complete() at all) — grants GameState.
+# action_surge_pending, consumed by the player's very next move or attack (never a spell cast) to
+# revert_to_waiting() instead of ending the turn. Refills on EITHER a completed short or long rest
+# (GameState.long_rest()/_on_short_rest_completed()) — unlike Second Wind above, which is
+# long-rest-only. See scripts/entities/player_fighter.gd's activate_action_surge() and
+# scripts/entities/CLAUDE.md's "Fighter class" section for the full mechanism.
+var action_surge_uses_remaining: int = 0
+var action_surge_uses_max: int:
+	get:
+		if character_class != CharacterClass.FIGHTER: return 0
+		if character_level >= 17: return 2
+		if character_level >= 2:  return 1
+		return 0
+
 const FIGHTING_STYLE_NAMES: Dictionary = {
 	"archery": "Archery",
 	"blind_fighting": "Blind Fighting",
@@ -429,6 +444,14 @@ var monk_focus_points_max: int:
 		return character_level
 var monk_save_dc: int:
 	get: return 8 + proficiency_bonus + wis_modifier()
+
+# Uncanny Metabolism (Monk only, level 2+, granted alongside the 3 Focus abilities above):
+# activated ability, 1/long rest (uncanny_metabolism_used resets in GameState.long_rest()) — rolls
+# martial_arts_die_sides + character_level and heals that amount of HP (GameState.heal(), so
+# Bruiser R1's +1d4-while-Bloodied bonus applies for free), AND separately refreshes Monk's Focus
+# to its max (not just by the rolled amount — direct owner correction) via PlayerMonk.
+# activate_uncanny_metabolism().
+var uncanny_metabolism_used: bool = false
 
 # Dragonborn Breath Weapon uses (Dragonborn only) — baseline level-1 ability, granted directly
 # like Rage/Hunter's Mark above. Max uses = proficiency_bonus (5e 2024 rule); refilled to max in
@@ -994,6 +1017,7 @@ func to_dict() -> Dictionary:
 		"base_max_damage": base_max_damage,
 		"rage_uses_remaining": rage_uses_remaining,
 		"monk_focus_points": monk_focus_points,
+		"uncanny_metabolism_used": uncanny_metabolism_used,
 		"hunters_mark_uses_remaining": hunters_mark_uses_remaining,
 		"breath_weapon_uses_remaining": breath_weapon_uses_remaining,
 		"draconic_flight_used": draconic_flight_used,
@@ -1015,6 +1039,7 @@ func to_dict() -> Dictionary:
 		"known_weapon_masteries": known_weapon_masteries.duplicate(),
 		"fighting_style": fighting_style,
 		"second_wind_uses_remaining": second_wind_uses_remaining,
+		"action_surge_uses_remaining": action_surge_uses_remaining,
 		"elf_lineage_spell_ids": elf_lineage_spell_ids.duplicate(),
 		"elf_lineage_free_casts_remaining": elf_lineage_free_casts_remaining.duplicate(),
 		"tiefling_legacy_spell_ids": tiefling_legacy_spell_ids.duplicate(),
@@ -1055,6 +1080,7 @@ func from_dict(d: Dictionary) -> void:
 	base_max_damage = int(d.get("base_max_damage", base_max_damage))
 	rage_uses_remaining = int(d.get("rage_uses_remaining", 0))
 	monk_focus_points = int(d.get("monk_focus_points", 0))
+	uncanny_metabolism_used = bool(d.get("uncanny_metabolism_used", false))
 	hunters_mark_uses_remaining = int(d.get("hunters_mark_uses_remaining", 0))
 	breath_weapon_uses_remaining = int(d.get("breath_weapon_uses_remaining", 0))
 	draconic_flight_used = bool(d.get("draconic_flight_used", false))
@@ -1078,6 +1104,7 @@ func from_dict(d: Dictionary) -> void:
 		known_weapon_masteries.append(String(m))
 	fighting_style = String(d.get("fighting_style", ""))
 	second_wind_uses_remaining = int(d.get("second_wind_uses_remaining", 0))
+	action_surge_uses_remaining = int(d.get("action_surge_uses_remaining", 0))
 	elf_lineage_spell_ids.clear()
 	for sid: Variant in (d.get("elf_lineage_spell_ids", []) as Array):
 		elf_lineage_spell_ids.append(String(sid))

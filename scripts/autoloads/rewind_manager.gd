@@ -51,6 +51,7 @@ const REWIND_GAMESTATE_FIELDS: Array[String] = [
 	"grip_of_the_forest_used_this_turn", "halfling_nimbleness_used_this_turn",
 	"step_of_wind_used_this_turn", "deflect_attacks_used_this_turn",
 	"monk_extra_attack_pending", "monk_extra_attack_used_this_turn",
+	"action_surge_pending",
 	"bonus_action_used",
 	"risen_from_dead_active", "player_on_difficult_terrain", "terrain_ac_bonus",
 	"natural_rager_form", "active_rager_form", "rager_form_switch_turns_remaining",

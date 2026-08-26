@@ -4009,9 +4009,9 @@ per-rest resource in this codebase that isn't long-rest-only. Spent via
 `GameState.spend_monk_focus(amount) -> bool` (same `invincible`-skips-consumption convention as
 `spend_gold()`). `Stats.monk_save_dc` (`8 + proficiency_bonus + WIS modifier`, the real D&D 2024
 formula) exists for forward compatibility only — none of the three level-2 features below actually
-roll against it. Three abilities granted at level 2 (`GameState._grant_monk_focus_abilities()`,
-called from `_apply_monk_level_features(level)`'s `2:` case), each costing 1 Focus Point and living
-in `player_monk.gd`:
+roll against it. Four abilities granted at level 2 (`GameState._grant_monk_focus_abilities()`,
+called from `_apply_monk_level_features(level)`'s `2:` case) and living in `player_monk.gd` — the
+first three cost 1 Focus Point each, the fourth (Uncanny Metabolism) is Focus-independent:
 - **Flurry of Blows** (`"flurry_of_blows"`, `PlayerMonk.activate_flurry_of_blows()`): a free action
   (no turn cost) — requires Martial Arts currently active (same gear/armor/shield gate as the
   Bonus Unarmed Strike it doubles); silently no-ops instead of double-spending Focus if already
@@ -4059,14 +4059,24 @@ in `player_monk.gd`:
   cancelled/out-of-range/blocked attempt doesn't refund it, but also doesn't burn the once-per-turn
   flag (only a genuinely completed dash does); the Disengage flag, however, is already granted the
   instant the ability arms, same as the Bonus Action spend it's bundled with.
+- **Uncanny Metabolism** (`"uncanny_metabolism"`, `PlayerMonk.activate_uncanny_metabolism()`): a
+  free action, 1/long rest (`Stats.uncanny_metabolism_used`, reset in `GameState.long_rest()`) —
+  does NOT spend a Focus Point itself (unlike the three above). Rolls
+  `Stats.martial_arts_die_sides + character_level` and heals that many HP via `GameState.heal()`
+  (so Bruiser R1's +1d4-while-Bloodied bonus applies for free, named as its own bonus source in
+  the `heal:` tooltip alongside "Monk Level"), and separately sets
+  `player.stats.monk_focus_points = player.stats.monk_focus_points_max` — a full refresh to max,
+  not just adding the rolled amount (direct owner correction to an earlier draft that added the
+  roll to the current pool instead).
 
-All three abilities keep `Ability.uses_max == 0` (the free-base-ability convention, same as Rage/
-Hunter's Mark) since the shared Focus pool, not a per-ability use count, is what actually gates
-them — `hud.gd`'s ability-bar use-count badge shows the live `monk_focus_points`/
+The first three abilities keep `Ability.uses_max == 0` (the free-base-ability convention, same as
+Rage/Hunter's Mark) since the shared Focus pool, not a per-ability use count, is what actually
+gates them — `hud.gd`'s ability-bar use-count badge shows the live `monk_focus_points`/
 `monk_focus_points_max` count on their slots instead of a normal `X/Y` per-ability counter (same
 "read a Stats field directly, checked before the generic `uses_max == 0` branch" pattern Hunter's
 Mark/Hellish Rebuke/lineage spells already use — see `scripts/ui/CLAUDE.md`'s "Ability bar
-greying").
+greying"). Uncanny Metabolism's own badge instead shows a flat `X/1` off `Stats.
+uncanny_metabolism_used`, the same shape every other 1/long-rest ability-bar bool uses.
 
 **Deflect Attacks** (passive from level 3, ability_id `"deflect_attacks"` — granted an ability-bar
 entry purely for discoverability, same "clicking it just logs a passive-reminder line" treatment
@@ -4146,7 +4156,7 @@ instead, not a reuse of that worktree's code.
 
 **Monk level-up features** (applied in `GameState._apply_monk_level_features(level)`, called alongside `_apply_barbarian_level_features()` from `gain_exp()`):
 - **Level 2 — Monk's Focus + Unarmored Movement unlock**: `_grant_monk_focus_abilities()` adds
-  Flurry of Blows/Patient Defense/Step of the Wind to the ability bar; Unarmored Movement needs no
+  Flurry of Blows/Patient Defense/Step of the Wind/Uncanny Metabolism to the ability bar; Unarmored Movement needs no
   explicit hook (`PlayerMonk.unarmored_movement_numerator()` reads `character_level` directly, so
   it just starts returning non-zero once level 2 is reached). `gain_exp()` also grants the extra
   Focus Point immediately on any level-up crossing a Focus-max threshold (every level, since
@@ -4275,6 +4285,53 @@ treatment `rage_uses_remaining`/`monk_focus_points` already get. Heal tooltip:
 `heal:dice=1,sides=10,con=0,roll=,bonus=,total=` — the level bonus and any Bruiser R1 bonus both
 ride the generic `CombatMath.encode_bonus_sources()` mechanism as named sources (same shape Zealot
 Strike's own heal tooltip uses), rather than trying to force the level bonus into the `con=` slot.
+
+**Action Surge** (level 2+, ability_id `"action_surge"`, D&D 2024 — no action cost to activate at
+all): `Stats.action_surge_uses_remaining`/`action_surge_uses_max` (1 at level 2, 2 at level 17).
+`PlayerFighter.activate_action_surge()` (`scripts/entities/player_fighter.gd`) spends a charge and
+sets `GameState.action_surge_pending = true` — deliberately does NOT call
+`TurnManager.begin_player_action()`/`on_player_action_complete()` at all (same "arm and return, no
+turn cost" shape Zealot Strike's own activation uses), and is NOT gated by the shared Bonus Action
+economy (5e RAW: Action Surge itself costs no action to use, unlike Second Wind above). **Grants
+one additional non-magical action** (a move or an attack — melee/ranged/thrown, NOT a spell cast),
+consumed at the two chokepoints every such action already funnels through:
+- `Player._handle_post_attack_turn()` — the shared tail every melee/ranged/thrown attack AND every
+  spell cast calls (`spell_effects.gd`'s ~11 call sites all pass `is_spell = true`; every attack
+  call site keeps the default `is_spell = false`). Its own check,
+  `if not is_spell and GameState.action_surge_pending:`, reverts to waiting (no enemy round)
+  instead of ending the turn — placed AFTER Monk's Extra Attack checks in the same function (the
+  two can never both apply to one character, since Extra Attack is Monk-only and Action Surge is
+  Fighter-only, but the ordering keeps the function's own "which free-continuation mechanic fires"
+  logic linear). **A spell cast does NOT consume or extend the window** — it just falls through to
+  the normal `TurnManager.on_player_action_complete()` below, ending the turn exactly as if Action
+  Surge had never been activated; if the player still has the charge conceptually "unused" at that
+  point, it's simply wasted (spent on activation, not refunded) — matching the direct owner's
+  "spell action still ends your turn" requirement.
+- `Player._try_move()`'s own tail — a NEW `elif GameState.action_surge_pending:` branch in the
+  same free-step chain as Longstrider/Wood Elf/Monk's Unarmored Movement (reached only for a
+  genuine move; a bump-attack into an adjacent enemy already returned earlier in the function,
+  via `_bump_attack()` → `_handle_post_attack_turn()` above) — consumes the flag and
+  `revert_to_waiting()`s the same way. **Scope limitation, matching every other free-move
+  mechanic's own documented gap**: only `_try_move()` (WASD), not `_execute_queued_path()`
+  (click-to-move/chase) — a chase that ends in an attack still resolves through
+  `_handle_post_attack_turn()` normally (fully covered), only a chase that ends in pure walking
+  isn't.
+Refills on EITHER a completed short or long rest (`GameState.long_rest()`/
+`_on_short_rest_completed()`, same "short OR long" shape as Monk's Focus — unlike Second Wind's
+long-rest-only refill). `gain_exp()` grants the extra use immediately at level 17, and updates the
+ability's own `uses_max`/description text, same "on the level-up, not only after the next rest"
+treatment every other scaling resource gets. **Left unconsumed by end of turn** (activated, then
+spent on an item/ability/Wait instead of a qualifying move/attack) **simply lapses with no
+refund** at the start of the player's next real turn (`player.gd`'s `_on_turn_started()`, alongside
+the other once-per-turn flags) — matches 5e's own "unused extra action just evaporates" rule.
+`GameState.action_surge_pending` is captured in `RewindManager.REWIND_GAMESTATE_FIELDS`.
+
+**Fighter level-up features** (applied in `GameState._apply_fighter_level_features(level)`, called
+alongside `_apply_monk_level_features()` from `gain_exp()`):
+- **Level 2 — Action Surge unlocks**: grants the `"action_surge"` ability-bar entry, 1 use.
+- **Level 17 — Action Surge's 2nd use**: updates the ability's own `uses_max`/description text and
+  grants the extra use immediately (same "on the level-up, not only after the next rest" treatment
+  every other scaling resource gets).
 
 ## Locked classes — base D&D stat blocks only
 

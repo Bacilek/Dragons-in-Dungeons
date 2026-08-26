@@ -83,7 +83,7 @@ static func cast_spell(player: Player, spell: Spell, target: Enemy, dungeon_floo
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
-	player._handle_post_attack_turn()
+	player._handle_post_attack_turn(false, true)
 
 # Multi-beam cantrip (Eldritch Blast): one independent ATTACK_ROLL hit per collected target,
 # gathered click-by-click in PlayerSpellcasting._handle_multi_target_click() exactly like Magic
@@ -110,7 +110,7 @@ static func cast_multi_beam_cantrip(player: Player, spell: Spell, targets: Array
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
-	player._handle_post_attack_turn()
+	player._handle_post_attack_turn(false, true)
 
 # Single-target attack-roll resolution shared by cast_spell() (one target) and
 # cast_multi_beam_cantrip() (one call per beam) — everything from the pre-attack ADV/DISADV state
@@ -356,7 +356,7 @@ static func cast_cantrip_save_at_enemy(player: Player, spell: Spell, target: Ene
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
-	player._handle_post_attack_turn()
+	player._handle_post_attack_turn(false, true)
 
 # Self-centered instant burst (Thunderclap) — every creature within spell.shape_size tiles of the
 # CASTER (not an impact point elsewhere) rolls a CON save or takes damage. No friendly fire (the
@@ -458,7 +458,7 @@ static func cast_light_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
-	player._handle_post_attack_turn()
+	player._handle_post_attack_turn(false, true)
 
 # Casting at an empty tile (no enemy there) — still costs the turn (same convention as
 # PlayerRanged.ranged_attack_tile()), but there's no attack roll/target: nothing happens unless
@@ -485,7 +485,7 @@ static func cast_spell_at_tile(player: Player, spell: Spell, tile_pos: Vector2i,
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
-	player._handle_post_attack_turn()
+	player._handle_post_attack_turn(false, true)
 
 # ── Leveled spells (docs/architecture/leveled-spells-and-slots-plan.md) ──────────────────────
 # Deliberately simplified vs. the framework doc: no upcasting at all — a spell is locked to its own
@@ -698,7 +698,7 @@ static func cast_leveled_self(player: Player, spell: Spell, cast_level: int, dun
 			GameState.game_log("[color=cyan]You cast [b]%s[/b].[/color]" % spell.spell_name)
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
-	player._handle_post_attack_turn()
+	player._handle_post_attack_turn(false, true)
 
 # TILE target (Misty Step teleport, Fireball AoE) — no attack roll against the tile itself.
 static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, tile_pos: Vector2i, dungeon_floor: Node, from_scroll: bool = false) -> void:
@@ -743,7 +743,7 @@ static func cast_leveled_at_tile(player: Player, spell: Spell, cast_level: int, 
 				_resolve_sphere_aoe(player, spell, tile_pos, dungeon_floor)
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
-	player._handle_post_attack_turn()
+	player._handle_post_attack_turn(false, true)
 
 # Shared cone tile-gather, also reused by DungeonFloor's AoE preview so the preview and the actual
 # blast use identical math. Matches 5e PHB's own cone definition ("the cone's width at a given
@@ -1026,7 +1026,7 @@ static func cast_magic_missile(player: Player, spell: Spell, cast_level: int, ta
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
-	player._handle_post_attack_turn()
+	player._handle_post_attack_turn(false, true)
 
 # ENEMY target, ATTACK_ROLL resolution, LEVELED spells (Chromatic Orb, Witch Bolt) — rolls an
 # attack vs the target's AC exactly like a cantrip (cast_spell()), but also consumes a spell slot.
@@ -1270,7 +1270,7 @@ static func cast_leveled_attack_at_enemy(player: Player, spell: Spell, cast_leve
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
-	player._handle_post_attack_turn()
+	player._handle_post_attack_turn(false, true)
 
 # Single-target SAVE-resolution LEVELED spells (Hold Person, Hideous Laughter — the leveled
 # counterpart to cast_cantrip_save_at_enemy() above, with real spell-slot consumption). A spell
@@ -1376,7 +1376,7 @@ static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level:
 						GameState.game_log("[color=cyan]%s collapses in a fit of uncontrollable laughter![/color]" % e4.display_name)
 		if dungeon_floor != null:
 			dungeon_floor.update_fog(player.grid_pos)
-		player._handle_post_attack_turn()
+		player._handle_post_attack_turn(false, true)
 		return
 
 	# Damage-dealing SAVE spells (dice_count > 0) are single-target only — no current spell reaches
@@ -1407,7 +1407,7 @@ static func cast_leveled_save_at_enemy(player: Player, spell: Spell, cast_level:
 
 	if dungeon_floor != null:
 		dungeon_floor.update_fog(player.grid_pos)
-	player._handle_post_attack_turn()
+	player._handle_post_attack_turn(false, true)
 
 const HEX_ABILITIES: Array[String] = ["str", "dex", "con", "int", "wis", "cha"]
 

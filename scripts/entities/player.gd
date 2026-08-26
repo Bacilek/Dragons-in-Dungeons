@@ -327,12 +327,16 @@ func _on_turn_started() -> void:
 			GameState.risen_from_dead_active = false
 			GameState.player_status_changed.emit()
 		_eagle_free_move_used = false
-		if GameState.grip_of_the_forest_used_this_turn or GameState.halfling_nimbleness_used_this_turn or GameState.step_of_wind_used_this_turn or GameState.deflect_attacks_used_this_turn or GameState.monk_extra_attack_used_this_turn:
+		if GameState.grip_of_the_forest_used_this_turn or GameState.halfling_nimbleness_used_this_turn or GameState.step_of_wind_used_this_turn or GameState.deflect_attacks_used_this_turn or GameState.monk_extra_attack_used_this_turn or GameState.action_surge_pending:
 			GameState.grip_of_the_forest_used_this_turn = false
 			GameState.halfling_nimbleness_used_this_turn = false
 			GameState.step_of_wind_used_this_turn = false
 			GameState.deflect_attacks_used_this_turn = false
 			GameState.monk_extra_attack_used_this_turn = false
+			# Action Surge left unconsumed (activated, then spent on something other than a
+			# qualifying move/attack — an item, an ability, Wait) simply lapses at the start of the
+			# next real turn, same as 5e's own "unused extra action, gone" rule — no refund.
+			GameState.action_surge_pending = false
 			GameState.ability_bar_changed.emit()
 		GameState.monk_disengage_this_round = false
 		# Bonus Action refreshes at the start of every real round — see scripts/entities/CLAUDE.md's
@@ -2813,6 +2817,17 @@ func _try_move(dir: Vector2i) -> void:
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return
+	elif GameState.action_surge_pending:
+		# Fighter's Action Surge (level 2+): a genuine MOVE (this branch is only reached when the
+		# target tile had no enemy — a bump-attack already returned earlier in this function,
+		# funneling through _handle_post_attack_turn()'s own Action Surge check instead) consumes
+		# the window exactly like an attack does.
+		GameState.action_surge_pending = false
+		GameState.game_log("[color=cyan]Action Surge: take another action.[/color]")
+		await _take_free_move_beat()
+		_reverted_this_round = true
+		TurnManager.revert_to_waiting()
+		return
 	# Slowed extra turn cost (skip if Panther/Salmon/Trailblazer bypassed the terrain penalty):
 	# opponents get 2 actions for this 1 move, resolved inside the SAME enemy-phase cycle as the
 	# move itself — never a second begin_player_action()/on_player_action_complete() pair, which
@@ -3812,7 +3827,7 @@ func resolve_opportunity_attack(enemy: Enemy) -> void:
 	if is_lethal:
 		_finish_kill(enemy)
 
-func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
+func _handle_post_attack_turn(_from_monk_unarmed: bool = false, is_spell: bool = false) -> void:
 	# Monk's Extra Attack (level 5+): the granted second attack was just resolved (hit or miss,
 	# same "doesn't matter which" convention as Bonus Unarmed Strike) — clear the window and end
 	# the turn for real. Only this chokepoint (the PRIMARY swing both hit/miss branches of
@@ -3833,6 +3848,16 @@ func _handle_post_attack_turn(_from_monk_unarmed: bool = false) -> void:
 		GameState.monk_extra_attack_used_this_turn = true
 		GameState.monk_extra_attack_pending = true
 		GameState.game_log("[color=cyan]Extra Attack: attack again, or wait to end your turn.[/color]")
+		_reverted_this_round = true
+		TurnManager.revert_to_waiting()
+		return
+	# Fighter's Action Surge (level 2+): consumed by any non-spell attack (melee/ranged/thrown) —
+	# grants one more move or attack instead of ending the turn. A spell cast (is_spell == true,
+	# set by every spell_effects.gd call site) does NOT consume/extend it — falls straight through
+	# to the normal turn-end below, exactly as if Action Surge had never been used.
+	if not is_spell and GameState.action_surge_pending:
+		GameState.action_surge_pending = false
+		GameState.game_log("[color=cyan]Action Surge: take another action.[/color]")
 		_reverted_this_round = true
 		TurnManager.revert_to_waiting()
 		return
@@ -3964,9 +3989,11 @@ func _use_ability_slot(idx: int) -> void:
 		"extra_attack":            GameState.game_log("[color=gray]Extra Attack is passive — it triggers automatically on your first melee attack each turn.[/color]")
 		"fighting_style":          GameState.game_log("[color=gray]Fighting Style: %s. Reselectable on your next level-up.[/color]" % Stats.FIGHTING_STYLE_NAMES.get(stats.fighting_style, "none chosen"))
 		"second_wind":             _fighter.activate_second_wind()
+		"action_surge":            _fighter.activate_action_surge()
 		"flurry_of_blows":         _monk.activate_flurry_of_blows()
 		"patient_defense":         _monk.activate_patient_defense()
 		"step_of_wind":            _monk.activate_step_of_wind()
+		"uncanny_metabolism":      _monk.activate_uncanny_metabolism()
 		"wild_companion":         _wild_heart.activate_one_with_nature(ab)
 		"animal_form":             _wild_heart.cycle_animal_form(ab)
 		"enhanced_forms":
