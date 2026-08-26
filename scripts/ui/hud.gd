@@ -534,6 +534,8 @@ func _update_status_icons() -> void:
 	if s.longstrider_turns > 0:
 		var _ls_spell: Spell = SpellDb.get_spell("longstrider")
 		entries.append({"id": "longstrider", "icon_path": _ls_spell.icon_path if _ls_spell != null else "", "fallback_color": Color(0.55, 0.85, 0.45)})
+	if s.draconic_flight_turns > 0:
+		entries.append({"id": "draconic_flight", "icon_path": "res://icons/races/dragonborn/draconic_flight.png", "fallback_color": Color(0.45, 0.75, 1.0)})
 	if s.aid_bonus_hp > 0:
 		var _aid_spell: Spell = SpellDb.get_spell("aid")
 		entries.append({"id": "aid", "icon_path": _aid_spell.icon_path if _aid_spell != null else "", "fallback_color": Color(0.5, 0.9, 0.6)})
@@ -1015,6 +1017,13 @@ func _refresh_ability_bar() -> void:
 					var fp: int = GameState.player_stats.monk_focus_points
 					use_lbl.text = "%d/%d" % [fp, GameState.player_stats.monk_focus_points_max]
 					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if fp > 0 else Color(0.5, 0.5, 0.5))
+				elif ab.ability_id == "uncanny_metabolism":
+					# 1/long rest, tracked by Stats.uncanny_metabolism_used (a bool, not a
+					# counter) rather than the shared Focus pool — its own badge, same
+					# checked-before-the-generic-uses_max==0-branch precedent as above.
+					var um_left: int = 0 if GameState.player_stats.uncanny_metabolism_used else 1
+					use_lbl.text = "%d/%d" % [um_left, 1]
+					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if um_left > 0 else Color(0.5, 0.5, 0.5))
 				elif ab.uses_max == 0:
 					# Passive / infinite uses.
 					use_lbl.text = ""

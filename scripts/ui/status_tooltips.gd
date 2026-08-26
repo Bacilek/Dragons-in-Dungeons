@@ -18,6 +18,7 @@ const TITLES: Dictionary = {
 	"hunters_mark_free_recast": "Hunter's Mark: Free Re-mark",
 	"torch": "Torch Lit",
 	"longstrider": "Longstrider",
+	"draconic_flight": "Flying",
 	"aid": "Aid",
 	"barkskin": "Barkskin",
 	"faerie_fire_outlined": "Outlined (Faerie Fire)",
@@ -74,6 +75,8 @@ static func get_text(id: String) -> String:
 			return "Lit — burns out in %d more turns.\n+1 FOV.%s" % [t.torch_turns_remaining, fire_note]
 		"longstrider":
 			return "+1/3 movement speed — every 3rd real move doesn't cost a turn.\nFades in %d more turns." % GameState.player_stats.longstrider_turns
+		"draconic_flight":
+			return "Your wings let you fly — you can cross chasms, grass never tramples underfoot, traps never trigger, and you're immune to standing-fire damage.\nFades in %d more turns." % GameState.player_stats.draconic_flight_turns
 		"aid":
 			return "+%d max HP and current HP. Lasts until your next long rest." % GameState.player_stats.aid_bonus_hp
 		"barkskin":
