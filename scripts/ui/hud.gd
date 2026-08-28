@@ -32,6 +32,7 @@ var _inventory_overlay_ref: Node = null
 var _debug_panel_ref: Node = null
 var _hit_dice_label: Label
 var _short_rest_label: RichTextLabel  # BG3-style pip row: short rests remaining this long-rest cycle
+var _bonus_action_label: RichTextLabel  # BG3-style single pip: bonus action available/spent this round
 var _gold_label: Label        # gold counter (coin icon + amount), wired to GameState.gold_changed
 var _spell_slots_label: RichTextLabel  # always-visible per-level spell slot remaining/max (Wizard only)
 
@@ -45,9 +46,9 @@ var _spell_slots_label: RichTextLabel  # always-visible per-level spell slot rem
 # Anything not listed here defaults to tier 2 (temporary) — see _status_tier() below.
 const STATUS_TIER: Dictionary = {
 	"race_bonus": 0,
-	"bonus_action": 0,
 	"unarmored_defense": 1,
 	"weapon_mastery": 1,
+	"fighting_style": 1,
 	"torch": 1,
 	"exhaustion": 1,
 	"tactician": 3,
@@ -120,6 +121,8 @@ const CLASS_PORTRAIT: Dictionary = {
 	# player.gd._setup_animations() already had a correct WARLOCK case for the actual in-world
 	# sprite (this dict is the separate HUD-portrait mapping, not shared code).
 	Stats.CharacterClass.WARLOCK:   "res://sprites/characters/classes/Warlock/idle_1.png",
+	# Same bug as Warlock above — Fighter was missing here too, silently falling back to Barbarian.
+	Stats.CharacterClass.FIGHTER:   "res://sprites/characters/classes/Fighter/idle_1.png",
 }
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -361,6 +364,23 @@ func _ready() -> void:
 	GameState.short_rest_changed.connect(_update_short_rest_pips)
 	_update_short_rest_pips()
 
+	# Bonus Action indicator (BG3-style single pip, same row as short rest pips) — was formerly a
+	# status-tray "buff" icon, moved out per direct owner request: it's a per-round resource gauge
+	# like short rests, not a status effect on the player. Refreshed off the exact same chokepoints
+	# the old status-tray entry used (TurnManager.player_turn_started, GameState.ability_bar_changed
+	# — every bonus-action-spending site already emits the latter right after flipping the flag, see
+	# scripts/entities/CLAUDE.md's "Bonus Action economy" section).
+	_bonus_action_label = RichTextLabel.new()
+	_bonus_action_label.bbcode_enabled = true
+	_bonus_action_label.fit_content = false
+	_bonus_action_label.scroll_active = false
+	_bonus_action_label.position = Vector2(72.0, 120.0)
+	_bonus_action_label.size = Vector2(150.0, 16.0)
+	_bonus_action_label.add_theme_font_size_override("normal_font_size", 13)
+	_bonus_action_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	$StatsPanel.add_child(_bonus_action_label)
+	_update_bonus_action_indicator()
+
 	# AC label — always visible to the right of the LevelLabel row
 	_ac_label = Label.new()
 	_ac_label.add_theme_font_size_override("font_size", 12)
@@ -444,8 +464,9 @@ func _ready() -> void:
 	_init_popup_extra_labels()
 
 	# Refresh popup every turn so AC, rage status, etc. stay live
-	TurnManager.player_turn_started.connect(func(): _refresh_popup(); _update_ac_label(); _update_status_icons())
+	TurnManager.player_turn_started.connect(func(): _refresh_popup(); _update_ac_label(); _update_status_icons(); _update_bonus_action_indicator())
 	GameState.ability_bar_changed.connect(_update_status_icons)
+	GameState.ability_bar_changed.connect(_update_bonus_action_indicator)
 	GameState.equipment_changed.connect(func(): _refresh_popup(); _update_ac_label())
 	GameState.player_status_changed.connect(func(): _refresh_popup(); _update_ac_label())
 
@@ -474,10 +495,6 @@ func _update_status_icons() -> void:
 	# at-a-glance reference for every trait the player's chosen race grants). Unlike every other
 	# tray entry this one is never conditional on a live game-state flag.
 	entries.append({"id": "race_bonus", "icon_path": StatusTooltips.race_portrait_icon_path(GameState.player_stats), "fallback_color": Color(0.85, 0.70, 0.35)})
-	# Bonus Action economy (scripts/entities/CLAUDE.md's "Bonus Action economy" section) — always
-	# shown, like race_bonus, so its availability is visible at a glance regardless of class; green
-	# while available this round, dark gray once spent.
-	entries.append({"id": "bonus_action", "icon_path": "res://icons/status/bonus_action.png", "fallback_color": Color(0.30, 0.30, 0.30) if GameState.bonus_action_used else Color(0.25, 0.80, 0.35)})
 	if s.poison_turns > 0:
 		entries.append({"id": "poisoned", "icon_path": "res://icons/status/poisoned.png", "fallback_color": Color(0.20, 0.85, 0.35)})
 	if s.burning_turns > 0:
@@ -546,6 +563,8 @@ func _update_status_icons() -> void:
 		entries.append({"id": "faerie_fire_outlined", "icon_path": "", "fallback_color": s.faerie_fire_outlined_color})
 	if s.mastery_cap() > 0 and s.known_weapon_masteries.size() > 0:
 		entries.append({"id": "weapon_mastery", "icon_path": "res://icons/status/weapon_mastery.png", "fallback_color": Color(0.80, 0.65, 0.20)})
+	if s.fighting_style != "":
+		entries.append({"id": "fighting_style", "icon_path": "res://icons/status/fighting_style.png", "fallback_color": Color(0.65, 0.75, 0.85)})
 	# Stable sort by permanence tier (see STATUS_TIER above) — race_bonus always leftmost, then
 	# semi-permanent passives, then real-duration temporary effects, then the shortest-lived procs
 	# rightmost. Array.sort_custom is stable in Godot 4, so entries sharing a tier keep the order
@@ -645,6 +664,17 @@ func _update_short_rest_pips() -> void:
 			pips.append("[color=#555560]○[/color]")
 	_short_rest_label.text = " ".join(pips)
 
+## BG3-style single pip for GameState.bonus_action_used — mirrors _update_short_rest_pips()'s
+## filled/empty-circle convention, just with a fixed max of 1 (a bonus action is a once-per-real-
+## round gate, not a stockpile — see scripts/entities/CLAUDE.md's "Bonus Action economy" section).
+func _update_bonus_action_indicator() -> void:
+	if _bonus_action_label == null:
+		return
+	var available: bool = not GameState.bonus_action_used
+	var pip: String = "[color=#40cc59]●[/color]" if available else "[color=#555560]○[/color]"
+	_bonus_action_label.text = "%s Bonus Action" % pip
+	_bonus_action_label.tooltip_text = "Available this round." if available else "Already spent this round. Refreshes at the start of your next real turn."
+
 func _on_floor_changed(new_floor: int) -> void:
 	floor_label.text = "Floor: %d" % new_floor
 	_log_messages.clear()
@@ -668,19 +698,31 @@ func _on_player_leveled_up(level: int) -> void:
 	if GameState.spell_learn_pending and not GameState.spell_learn_picker_open:
 		var picker = load("res://scripts/ui/spell_learn_picker.gd").new()
 		get_tree().root.add_child(picker)
-	# Mastery cap grew this level-up (e.g. Barbarian hitting level 4/10) — let the player pick
-	# the new slot immediately, same "instant pick" treatment as hit dice/spell slots.
+	# Mastery cap grew this level-up (e.g. Barbarian hitting level 4/10, Fighter at 4/10/16) — let
+	# the player pick the new slot immediately, same "instant pick" treatment as hit dice/spell slots.
+	var spawned_mastery_picker: Node = null
 	if GameState.mastery_learn_pending and not GameState.mastery_picker_open:
 		GameState.mastery_learn_pending = false
 		var mastery_picker = load("res://scripts/ui/mastery_picker.gd").new()
 		get_tree().root.add_child(mastery_picker)
+		spawned_mastery_picker = mastery_picker
 	# Fighter's own Fighting Style — a direct owner house rule (real 5e RAW doesn't allow this)
 	# lets it be freely reselected on every level-up, offered here the same "instant pick" way as
 	# the mastery-cap-grew case above, just optional (fighting_style_picker.gd's own "Keep Current"/
-	# Esc). Reuses mastery_picker_open as its own input-block flag, so this guard also covers it.
-	if level > 1 and GameState.player_stats.character_class == Stats.CharacterClass.FIGHTER and not GameState.mastery_picker_open:
-		var style_picker = load("res://scripts/ui/fighting_style_picker.gd").new()
-		get_tree().root.add_child(style_picker)
+	# Esc). Reuses mastery_picker_open as its own input-block flag. When the mastery picker was ALSO
+	# spawned this level-up (Fighter's 4/10/16 cap bumps), it holds mastery_picker_open, so defer the
+	# style picker until that one closes instead of silently dropping it.
+	if level > 1 and GameState.player_stats.character_class == Stats.CharacterClass.FIGHTER:
+		if spawned_mastery_picker != null:
+			spawned_mastery_picker.tree_exited.connect(_spawn_fighting_style_picker, CONNECT_ONE_SHOT)
+		elif not GameState.mastery_picker_open:
+			_spawn_fighting_style_picker()
+
+func _spawn_fighting_style_picker() -> void:
+	if GameState.mastery_picker_open:
+		return
+	var style_picker = load("res://scripts/ui/fighting_style_picker.gd").new()
+	get_tree().root.add_child(style_picker)
 
 func _on_death_save_started() -> void:
 	# 0-HP hit that isn't caught by Bruiser R3 / Relentless Endurance — see

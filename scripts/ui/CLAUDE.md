@@ -46,6 +46,16 @@ deliberately keeps `mouse_filter = STOP` unlike most decorative StatsPanel child
 `offset_bottom` grew 200→216 in `scenes/ui/hud.tscn` to make room; the status tray moved
 122→138 and the spell-slots row 158→174 to stay below it.
 
+**Bonus Action pip**: same BG3-style single-circle convention, `_bonus_action_label` (a second
+`RichTextLabel`), placed on the SAME row as the short-rest pips but to their right (`$StatsPanel`
+local position `(72, 120)`) rather than as its own row — direct owner correction: this used to be
+a status-tray "buff" icon (green/gray tint), moved out because it's a once-per-round resource gauge
+like short rests, not a status effect on the player. Green filled `●` while
+`not GameState.bonus_action_used`, gray hollow `○` once spent, native `tooltip_text` on hover.
+Refreshed via `TurnManager.player_turn_started` and `GameState.ability_bar_changed` (every
+bonus-action-spending site emits the latter right after flipping the flag — see
+`scripts/entities/CLAUDE.md`'s "Bonus Action economy" section).
+
 **Gold counter**: a small coin icon (`TextureRect`, `misc/coin_gold.png`, `ignore_texture_size = true` per the rule above) + gold-tinted amount Label (`_gold_label`) in `$StatsPanel` next to the hit-dice label, wired to `GameState.gold_changed` (`_on_gold_changed(new_amount)`). Session-7a minimal UI — visual polish deferred.
 
 **ActionBar (bottom quickbar/ability bar) scale**: `scenes/ui/hud.tscn`'s `ActionBar` panel and its 9 `ItemSlotN` buttons + Wait/Search/Interact buttons are sized 1.5× the original layout (`ActionBar` height 90→135, slot size 76→114px, pitch 80→120px). Item/ability icons use `Button.icon` + `expand_icon = true` so they auto-scale with the button — no separate icon-size code to touch. The per-slot quantity badge (`_slot_qty_labels`) and ability use-count badge (`_slot_use_labels`) offsets/font sizes in `hud.gd` scale alongside (`-32/-18/11pt` → `-48/-27/16pt`). `_bar_mode_label` offsets are pinned to `ActionBar`'s new top (`-135`), not the old `-90`. Each slot also carries a static top-left `_slot_num_labels` badge showing its 1-9 hotkey (slot index `i` → `KEY_(i+1)`, matches `player.gd`'s `_use_quickbar_slot`/`_use_ability_slot` dispatch) — created once in `_ready()`, never toggled, visible in both item and ability bar mode.
@@ -174,7 +184,14 @@ Picker last set. Refreshed via `GameState.known_masteries_changed` (fired by `to
 and the premade-hero setup path) in addition to the tray's usual chokepoints, so it updates
 immediately on a new game, a fresh mastery pick, a level-up cap increase, and a long-rest
 reselect — no separate wiring needed since all of those already end in a `toggle_mastery()` call
-or that same signal. `exhaustion` (`Stats.exhaustion_level > 0` — see `scripts/entities/CLAUDE.md`'s
+or that same signal. `fighting_style` (always-on passive, shown whenever `Stats.fighting_style != ""`
+— currently Fighter only, see `scripts/entities/CLAUDE.md`'s "Fighter class" section; no dedicated
+art yet, `res://icons/status/fighting_style.png` placeholder + slate-blue fallback tint, real icon
+still TBD). Hover tooltip title is dynamic (`status_tooltips.gd`'s `build_bbcode()` special-cases
+`"fighting_style"` to read `"Fighting Style: <chosen style name>"`, same pattern as
+`concentration`'s dynamic spell-name title) and its body is that style's own
+`Stats.FIGHTING_STYLE_DESCRIPTIONS` entry — always matches whatever `fighting_style_picker.gd` last
+set. `exhaustion` (`Stats.exhaustion_level > 0` — see `scripts/entities/CLAUDE.md`'s
 "Exhaustion" section for its one real source, death-save revival) shows the current level, flat
 d20 penalty, movement fraction, and the level-6-is-fatal rule on hover. No `icons/status/` art
 exists yet — every entry currently renders as a tinted placeholder square until real icons are
@@ -985,9 +1002,13 @@ per style (name + inline description, no hover popup needed) reads better with z
   instead of just closing" shape Ranger's own `cantrip_select.gd` hop uses). No Esc, no "Keep
   Current" — a style MUST be chosen. Picking one calls `GameState.snapshot_character_creation()`
   itself (the onboarding chain is genuinely done at this point) before closing.
-- **`false`** (default) — the reselect flow, spawned by `hud.gd._on_player_leveled_up()` on every
-  Fighter level-up past 1 (a direct owner house rule; real 5e RAW doesn't allow this). Has a "Keep
-  Current [Esc]" button — purely optional, changes nothing if dismissed.
+- **`false`** (default) — the reselect flow, spawned by `hud.gd._on_player_leveled_up()` (via
+  `_spawn_fighting_style_picker()`) on every Fighter level-up past 1 (a direct owner house rule;
+  real 5e RAW doesn't allow this). Has a "Keep Current [Esc]" button — purely optional, changes
+  nothing if dismissed. **On a level-up that also grows `mastery_cap()` (Fighter's 4/10/16), the
+  mastery picker spawns first and holds `mastery_picker_open`; the style picker is deferred to
+  that picker's `tree_exited` instead of being silently skipped** (the earlier
+  `not GameState.mastery_picker_open` guard dropped it outright at exactly those levels).
 
 Either mode's pick calls `GameState.set_fighting_style(id)` (sets `Stats.fighting_style`, re-runs
 `recalculate_stats()` so a swap into/out of Defense updates AC immediately, logs the change) then
