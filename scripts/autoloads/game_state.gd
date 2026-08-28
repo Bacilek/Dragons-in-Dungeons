@@ -116,7 +116,7 @@ var god_mode: bool = false
 # fires, no stillness ADV) — the default, untouched classification.
 var stealth_check_skip: bool = false        # true: this action was an attack/spell — no check at all
 var stealth_check_stillness: bool = false   # true: this action was combat-free & movement-free — ADV on the check
-var debug_show_all_checks: bool = false # debug-only: log EVERY resist/save-style check (pass or fail) — Stealth-vs-PP, Undead Fortitude, etc. — not just real events, never changes the roll/outcome, visibility only
+var debug_show_all_checks: bool = false # debug-only: log EVERY resist/save-style check (pass or fail) — Stealth-vs-PP, Undead Fortitude, Thief Tools disarm/lock/pick, etc. — not just real events, never changes the roll/outcome, visibility only
 var hit_dice: int = 1
 var short_rests_remaining: int = 2
 var max_short_rests: int = 2
@@ -127,6 +127,11 @@ var gold: int = 0   # the wallet — plain int counter, earned via add_gold(), s
 # on floor reload/save-load.
 var mold_target_floor: int = 1
 var mold_spawned: bool = false
+# Tenebrous NPC (see scripts/world/CLAUDE.md's "Tenebrous prop"): a special-room ROOM_POOL entry
+# whose prop only actually spawns once per run — interacting grants one random Major Arcana card
+# item and permanently flips this true, so any later TenebrousRoom that generates is just an empty
+# vault with no prop in it.
+var tenebrous_card_given: bool = false
 # Snapshot of the just-finished character creation (class/scores/race/masteries/known spells) —
 # see snapshot_character_creation()/retry_same_character() below. Survives start_new_run() (which
 # never touches it) so death's "Try Again" can rebuild the same character on a fresh run/seed.
@@ -378,6 +383,7 @@ func start_new_run() -> void:
 	Rng.reseed(run_seed)  # gameplay RNG stream — same seed → same run (rng.gd)
 	mold_target_floor = Rng.range_i(1, 4)
 	mold_spawned = false
+	tenebrous_card_given = false
 	blacksmith_panel_open = false
 	shop_open = false
 	current_floor = 1
@@ -2275,7 +2281,7 @@ func _sync_ability_uses() -> void:
 # toggles only cost the Bonus Action on ARMING, never on disarming; spell abilities are prefixed).
 const BONUS_ACTION_ABILITY_IDS: PackedStringArray = [
 	"rage", "frenzy", "zealot_strike", "flurry_of_blows", "step_of_wind", "patient_defense",
-	"halfling_nimbleness", "adrenaline_rush", "heroic_inspiration", "draconic_flight",
+	"halfling_nimbleness", "adrenaline_rush", "draconic_flight",
 	"stonecunning", "large_form", "celestial_revelation", "hunters_mark", "grip_of_the_forest",
 	"second_wind",
 ]
@@ -4968,6 +4974,7 @@ func to_dict() -> Dictionary:
 		"gold": gold,
 		"mold_target_floor": mold_target_floor,
 		"mold_spawned": mold_spawned,
+		"tenebrous_card_given": tenebrous_card_given,
 		"special_slot_spell_id": special_slot_spell_id,
 		"player_stats": player_stats.to_dict(),
 		"talents": {
@@ -5019,6 +5026,7 @@ func from_dict(d: Dictionary) -> void:
 	gold = int(d.get("gold", 0))  # old saves predating the gold economy load as 0
 	mold_target_floor = int(d.get("mold_target_floor", 1))
 	mold_spawned = bool(d.get("mold_spawned", false))
+	tenebrous_card_given = bool(d.get("tenebrous_card_given", false))
 	var stats_d: Dictionary = d.get("player_stats", {})
 	var talents_d: Dictionary = d.get("talents", {})
 	var inv_d: Dictionary = d.get("inventory", {})

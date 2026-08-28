@@ -61,12 +61,15 @@ func attempt_disarm(trap_pos: Vector2i) -> void:
 	var trap_name: String = trap.get("name", "trap")
 	var adv_tag: String = " [color=gray](Zealous Presence)[/color]" if has_adv else (" [color=gray](Disadvantage)[/color]" if has_disadv else "")
 	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d,lucky1=%d,lucky2=%d,exh=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, DC, 1 if total >= DC else 0, 1 if has_adv else 0, 1 if lucky1 else 0, 1 if lucky2 else 0, disarm_exh]
+	# The exact roll breakdown is debug-only ("All Checks" F3 toggle) — same as the Stealth check.
+	# Normal play just shows the pass/fail result.
+	var check_suffix: String = (" [url=%s]%d vs DC %d[/url]%s" % [check_meta, total, DC, adv_tag]) if GameState.debug_show_all_checks else ""
 
 	if total >= DC:
-		GameState.game_log(CombatMath.wrap_halfling_luck("[color=green]Disarmed [b]%s[/b]!%s [url=%s]%d vs DC %d[/url][/color]" % [trap_name, adv_tag, check_meta, total, DC], lucky))
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=green]Disarmed [b]%s[/b]!%s[/color]" % [trap_name, check_suffix], lucky))
 		player._dungeon_floor.disarm_trap(trap_pos)
 	else:
-		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]Failed to disarm [b]%s[/b]!%s [url=%s]%d vs DC %d[/url]%s[/color]" % [trap_name, adv_tag, check_meta, total, DC, " — Thief Tools lost!" if not GameState.invincible else ""], lucky))
+		GameState.game_log(CombatMath.wrap_halfling_luck("[color=red]Failed to disarm [b]%s[/b]!%s%s[/color]" % [trap_name, check_suffix, " — Thief Tools lost!" if not GameState.invincible else ""], lucky))
 		if not GameState.invincible:
 			GameState.consume_one(tools)
 
@@ -87,12 +90,14 @@ func attempt_lock_door(door_pos: Vector2i) -> void:
 	const LOCK_DC: int = 10
 	var door_world: Vector2 = Vector2(door_pos * Entity.TILE_SIZE) + Vector2(Entity.TILE_SIZE * 0.5, Entity.TILE_SIZE * 0.5)
 	var check_meta: String = "check:stat=DEX,die=%d,mod=%d,prof=0,total=%d,dc=%d,pass=%d" % [die, dex_mod, total, LOCK_DC, 1 if total >= LOCK_DC else 0]
+	# Roll breakdown is debug-only ("All Checks" F3 toggle) — same as the Stealth check.
+	var check_suffix: String = (" [url=%s]%d vs DC %d[/url]" % [check_meta, total, LOCK_DC]) if GameState.debug_show_all_checks else ""
 	if total >= LOCK_DC:
 		player._dungeon_floor.lock_door(door_pos, true)  # by_player=true
-		GameState.game_log("[color=green]You lock the door! [url=%s]%d vs DC %d[/url][/color]" % [check_meta, total, LOCK_DC])
+		GameState.game_log("[color=green]You lock the door!%s[/color]" % check_suffix)
 		show_float_text(door_world, "LOCKED!", Color(0.7, 0.4, 1.0))
 	else:
-		GameState.game_log("[color=red]Failed to lock the door [url=%s]%d vs DC %d[/url]%s[/color]" % [check_meta, total, LOCK_DC, " — Thief Tools lost!" if not GameState.invincible else ""])
+		GameState.game_log("[color=red]Failed to lock the door%s%s[/color]" % [check_suffix, " — Thief Tools lost!" if not GameState.invincible else ""])
 		if not GameState.invincible:
 			GameState.consume_one(tools)
 		show_float_text(door_world, "FAIL!", Color(1.0, 0.3, 0.3))
@@ -124,14 +129,16 @@ func attempt_disarm_lock(door_pos: Vector2i) -> void:
 	var dc: int = 10 + GameState.current_floor / 3
 	var adv_tag: String = " [color=gray](Zealous Presence)[/color]" if has_adv else ""
 	var check_meta: String = "check:stat=%s,die=%d,d1=%d,d2=%d,mod=%d,prof=%d,total=%d,dc=%d,pass=%d,adv=%d,exh=%d" % [effective_stat, die, die1, die2, dex_mod, prof_bonus, total, dc, 1 if total >= dc else 0, 1 if has_adv else 0, pick_exh]
+	# Roll breakdown is debug-only ("All Checks" F3 toggle) — same as the Stealth check.
+	var check_suffix: String = (" [url=%s]%d vs DC %d[/url]%s" % [check_meta, total, dc, adv_tag]) if GameState.debug_show_all_checks else ""
 	var door_world: Vector2 = Vector2(door_pos * Entity.TILE_SIZE) + Vector2(Entity.TILE_SIZE * 0.5, Entity.TILE_SIZE * 0.5)
 	if total >= dc:
 		player._dungeon_floor.unlock_door(door_pos)
 		player._dungeon_floor.open_door(door_pos)
-		GameState.game_log("[color=green]You pick the lock!%s [url=%s]%d vs DC %d[/url][/color]" % [adv_tag, check_meta, total, dc])
+		GameState.game_log("[color=green]You pick the lock!%s[/color]" % check_suffix)
 		show_float_text(door_world, "UNLOCKED!", Color(0.4, 1.0, 0.5))
 	else:
-		GameState.game_log("[color=red]Failed to pick the lock%s [url=%s]%d vs DC %d[/url]%s[/color]" % [adv_tag, check_meta, total, dc, " — Thief Tools lost!" if not GameState.invincible else ""])
+		GameState.game_log("[color=red]Failed to pick the lock%s%s[/color]" % [check_suffix, " — Thief Tools lost!" if not GameState.invincible else ""])
 		if not GameState.invincible:
 			GameState.consume_one(tools)
 		show_float_text(door_world, "FAIL!", Color(1.0, 0.3, 0.3))
