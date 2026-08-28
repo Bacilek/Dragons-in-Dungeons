@@ -1721,6 +1721,20 @@ duty-cycle consumption, so their counters don't advance while there's nothing to
 on. Once a new enemy is registered (`TurnManager.register_enemy()`, e.g. entering a room with
 sleepers), every duty cycle resumes exactly where it left off — nothing is reset, just paused.
 
+**The Slowed/Exhaustion `enemy_actions_this_round = 2` penalty is additionally narrowed to "an
+enemy is actually pursuing"** (`Player.is_being_pursued()` — any live enemy `CHASING`/`SEARCHING`),
+on top of the `has_any_enemy()` gate above. A floor with only unaware (SLEEPING/STATIONARY/ROAMING)
+enemies still counts as "has an enemy," so the old code spent the extra enemy round anyway — which
+changed nothing the player could observe EXCEPT an irregular hitch in held-WASD walking on every
+Nth step (the duty-cycle penalty landing every `1/6 × exhaustion_level` moves), the exact "every
+5th step gets stuck" jitter reported for Exhaustion (same class of visual bug the `FREE_MOVE_BEAT_SEC`
+beat fixed for the sped-up/free-move case). Now the penalty (and the `_exhaustion_move_penalizes()`
+call that consumes the shared duty-cycle accumulator) only fires while a pursuer is racing the
+player — during real combat it applies fully and reads as intentional tension; an unthreatened
+slowed/exhausted walk paces identically to a normal one. The duty-cycle counter pauses (doesn't
+desync) while unthreatened, same "resumes where it left off" behaviour as the `has_any_enemy()`
+pause. Both `_try_move()` and `_apply_queued_step_speed()` carry this guard.
+
 **`_try_move()`'s no-enemy branch still pays the `FREE_MOVE_BEAT_SEC` (0.08s) pacing beat** before
 completing the round (`await get_tree().create_timer(FREE_MOVE_BEAT_SEC).timeout` right before
 `TurnManager.on_player_action_complete()`) — direct owner correction to an earlier version of this
@@ -2208,7 +2222,9 @@ automatically.
   evenly spread via the shared accumulator (e.g. level 2 fires on moves 3 and 6, not 1 and 2). Wired
   into both `_try_move()` (WASD) and
   `_apply_queued_step_speed()` (click-to-move/enemy-chase), alongside their existing Slowed checks
-  — same "both movement paths" coverage Slowed itself has. A free move (Expeditious
+  — same "both movement paths" coverage Slowed itself has, and (like Slowed) now also gated on
+  `Player.is_being_pursued()` so an unthreatened exhausted walk doesn't hitch every Nth step (see
+  "No free-move/Slowed/Exhaustion duty-cycle bookkeeping" above). A free move (Expeditious
   Retreat/Longstrider/Wood Elf/Battlefield Expert's side-step) returns before
   reaching this check, so it doesn't advance the duty-cycle counter either — a documented
   simplification, not a bug (matches every other per-round-cap field's own reset-on-revert

@@ -2390,6 +2390,12 @@ func _apply_queued_step_speed(next_pos: Vector2i) -> void:
 	# to protect, so Slowed/Exhaustion's extra-enemy-round trick is skipped entirely.
 	if not TurnManager.has_any_enemy():
 		return
+	# Same narrowing as _try_move()'s own Slowed/Exhaustion block: only spend the environment's
+	# extra action while a pursuer is actually racing the player, so an unthreatened slowed/
+	# exhausted walk doesn't hitch every Nth step. _exhaustion_move_penalizes() consumes the
+	# shared duty cycle, so it's only called inside this guard (pauses, doesn't desync).
+	if not is_being_pursued():
+		return
 	if GameState.player_stats.slowed_turns > 0 and GameState.get_talent_rank("trailblazer") < 1:
 		TurnManager.enemy_actions_this_round = 2
 	if _exhaustion_move_penalizes():
@@ -2669,6 +2675,10 @@ func _try_move(dir: Vector2i) -> void:
 		if _dungeon_floor.has_shopkeeper_at(target):
 			_actions.open_shop_panel(target)
 			return
+		# Tenebrous prop: bump-to-interact, same ergonomics as Blacksmith/Shopkeeper above.
+		if _dungeon_floor.has_tenebrous_at(target):
+			_actions.interact_tenebrous()
+			return
 		if _dungeon_floor.has_door_at(target) and not _dungeon_floor.is_door_open(target):
 			if _dungeon_floor.is_door_locked(target):
 				if _dungeon_floor.is_door_player_locked(target):
@@ -2833,10 +2843,20 @@ func _try_move(dir: Vector2i) -> void:
 	# move itself — never a second begin_player_action()/on_player_action_complete() pair, which
 	# used to fire player_turn_ending twice (double Witch Bolt tick, double Stealth check) and
 	# flash the phase back to WAITING_FOR_INPUT mid-move. See TurnManager.enemy_actions_this_round.
-	if GameState.player_stats.slowed_turns > 0 and not _panther_bypass and not _salmon_bypass and not _trailblazer_bypass:
-		TurnManager.enemy_actions_this_round = 2
-	if _exhaustion_move_penalizes():
-		TurnManager.enemy_actions_this_round = 2
+	#
+	# Only applied while an enemy is actually racing the player (CHASING/SEARCHING). Against a
+	# floor with only unaware enemies the extra enemy round changes nothing the player can
+	# observe EXCEPT an irregular hitch in held-WASD walking every Nth step (the duty-cycle
+	# penalty landing) — same "turn economy is moot with nothing to race against" reasoning as
+	# the has_any_enemy() skip above, just narrowed to an active pursuer. _exhaustion_move_penalizes()
+	# (which consumes the shared duty-cycle accumulator) is only called inside this guard, so the
+	# counter pauses rather than desyncs while unthreatened — resumes exactly where it left off
+	# once a pursuer appears, matching the has_any_enemy() pause behaviour.
+	if is_being_pursued():
+		if GameState.player_stats.slowed_turns > 0 and not _panther_bypass and not _salmon_bypass and not _trailblazer_bypass:
+			TurnManager.enemy_actions_this_round = 2
+		if _exhaustion_move_penalizes():
+			TurnManager.enemy_actions_this_round = 2
 	TurnManager.on_player_action_complete()
 
 # See FREE_MOVE_BEAT_SEC's own comment — inserted before every free-move revert_to_waiting() so
