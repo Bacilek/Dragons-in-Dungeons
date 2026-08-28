@@ -190,6 +190,45 @@ const ITEM_POOL: Array = [
 	{"name": "Scroll of Minor Illusion", "type": 3, "icon": "minor_illusion.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Minor Illusion once, then it crumbles to dust.", "scroll_spell": "minor_illusion", "gold": 25},
 	{"name": "Scroll of Speak with Animals", "type": 3, "icon": "speak_with_animals.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Speak with Animals once, then it crumbles to dust.", "scroll_spell": "speak_with_animals", "gold": 25},
 	{"name": "Scroll of Mending", "type": 3, "icon": "mending.png", "src": "spells", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 1, "fmax": 10, "desc": "Reading this casts Mending once, then it crumbles to dust.", "scroll_spell": "mending", "gold": 25},
+	# Major Arcana cards (Tenebrous NPC, scripts/world/CLAUDE.md's "Tenebrous prop"): 22 flavor
+	# items, Type.TOOL, mechanically inert for now (effects TBD — see that section). Sentinel
+	# fmin/fmax=99 keeps every one of them out of every generic floor-loot roll — the only spawn
+	# path is DungeonFloor._spawn_tenebrous()'s interaction, which hands out exactly one random
+	# entry from this list. No dedicated card art exists yet — placeholder-reuses Materials/plate/
+	# gold.png, same "no art yet" precedent as Mold/every unarmored placeholder above.
+	{"name": "The Fool",            "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Magician",        "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The High Priestess",  "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Empress",         "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Emperor",         "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Hierophant",      "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Lovers",          "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Chariot",         "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "Strength",            "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Hermit",          "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "Wheel of Fortune",    "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "Justice",             "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Hanged Man",      "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "Death",               "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "Temperance",          "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Devil",           "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Tower",           "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Star",            "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Moon",            "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The Sun",             "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "Judgement",           "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+	{"name": "The World",           "type": 7, "icon": "Materials/plate/gold.png", "src": "items", "bonus_dmg": 0, "heal": 0, "str_bonus": 0, "fmin": 99, "fmax": 99, "desc": "A Major Arcana card, cool to the touch. Its power is not yet understood."},
+]
+
+# Names of the 22 Major Arcana ITEM_POOL entries above — the pool Tenebrous._spawn_tenebrous()
+# draws one random card from. Kept as its own list (rather than filtering ITEM_POOL by fmin==99,
+# which Mold/Poisoned Arrow also share) so adding a future fmin=99 sentinel item elsewhere never
+# silently becomes a drawable card.
+const MAJOR_ARCANA_NAMES: Array[String] = [
+	"The Fool", "The Magician", "The High Priestess", "The Empress", "The Emperor",
+	"The Hierophant", "The Lovers", "The Chariot", "Strength", "The Hermit",
+	"Wheel of Fortune", "Justice", "The Hanged Man", "Death", "Temperance",
+	"The Devil", "The Tower", "The Star", "The Moon", "The Sun", "Judgement", "The World",
 ]
 
 const BOSS_POOL: Array = [
@@ -324,7 +363,7 @@ const ENEMY_POOL: Array = [
 	 "multiattack": [{"name": "Greataxe", "count": 1, "dmg_min": 4, "dmg_max": 15, "damage_type": "Slashing"}],
 	 "thrown_weapon": {"name": "Javelin", "range": 3, "dmg_min": 4, "dmg_max": 9, "damage_type": "Piercing",
 		"icon": "weapon_spear.png", "drop_die_min": 1, "drop_die_max": 6, "weapon_category": "Simple",
-		"is_finesse": false, "is_light": false, "weapon_mastery": "", "drop_uses_max": 5, "random_uses": true},
+		"is_finesse": false, "is_light": false, "weapon_mastery": "Slow", "drop_uses_max": 5, "random_uses": true},
 	 "unarmed_fallback": {"name": "Fists", "dmg_min": 4, "dmg_max": 4, "damage_type": "Bludgeoning", "attack_stat": "str"}},
 	# Goblin Warrior — Small Fey, CE, CR 1/4. HP 10, AC 15 (natural armor — no shield).
 	# STR 8 (-1) DEX 15 (+2) CON 10 (+0) INT 10 (+0) WIS 8 (-1) CHA 8 (-1). Speed 1 (default).
@@ -457,7 +496,7 @@ const ENEMY_POOL: Array = [
 	 "traits": [{"id": "magic_resistance"}, {"id": "shape_shift"}],
 	 "invisibility": {"cooldown": 5, "duration": 600},
 	 "multiattack": [{"name": "Sting", "count": 1, "dmg_min": 4, "dmg_max": 9, "damage_type": "Piercing",
-	                  "extra": {"dmg_min": 2, "dmg_max": 12, "damage_type": "Poison"}}]},
+					  "extra": {"dmg_min": 2, "dmg_max": 12, "damage_type": "Poison"}}]},
 	# Quasit — Tiny Fiend (Demon), Chaotic Evil, CR 1. AC 13 (natural armor). STR 5 (-3) DEX 17 (+3)
 	# CON 10 (+0) INT 7 (-2) WIS 10 (+0) CHA 10 (+0). Speed 30ft -> {"moves": 4, "per": 3}. Superior
 	# darkvision -> "senses": {"sight_bonus": 2}. Passive Perception 10.
@@ -496,7 +535,7 @@ const ENEMY_POOL: Array = [
 	 "invisibility": {"cooldown": 5, "duration": 600},
 	 "scare": {"range": 2, "save_dc": 10},
 	 "multiattack": [{"name": "Rend", "count": 1, "dmg_min": 4, "dmg_max": 7, "damage_type": "Slashing",
-	                  "status": "poisoned_condition", "status_turns": 1}]},
+					  "status": "poisoned_condition", "status_turns": 1}]},
 	{"enemy_id": "pumpkin_dude",  "display_name": "Pumpkin Dude","sprite": "pumpkin_dude","idle_frames": 4, "run_frames": 4, "floor_min": 8, "floor_max": 10, "hp": 20, "hp_per_floor": 4, "dmg_min": 5, "dmg_max": 9, "armor": 2, "ac": 12, "exp": 25,
 	 "cr": 1, "creature_type": "Plant"},
 	# Goblin Archer — same base stat block as Goblin Warrior above (Small Fey, CE, CR 1/4, HP 10,
@@ -556,7 +595,7 @@ const ENEMY_POOL: Array = [
 	 "multiattack": [{"name": "Greatclub", "count": 1, "dmg_min": 6, "dmg_max": 20, "damage_type": "Bludgeoning"}],
 	 "thrown_weapon": {"name": "Javelin", "range": 3, "dmg_min": 6, "dmg_max": 20, "damage_type": "Piercing",
 		"icon": "weapon_spear.png", "drop_die_min": 2, "drop_die_max": 8, "weapon_category": "Simple",
-		"is_finesse": false, "is_light": false, "weapon_mastery": "", "drop_uses_max": 5, "random_uses": true},
+		"is_finesse": false, "is_light": false, "weapon_mastery": "Slow", "drop_uses_max": 5, "random_uses": true},
 	 "unarmed_fallback": {"name": "Fists", "dmg_min": 5, "dmg_max": 5, "damage_type": "Bludgeoning", "attack_stat": "str"}},
 	# Spider — Large Beast, unaligned, CR 1, proficiency +2. HP 26, AC 14 (natural armor).
 	# STR 14 (+2) DEX 16 (+3) CON 12 (+1) INT 2 (-4) WIS 11 (+0) CHA 4 (-3). Speed 30ft (default,
@@ -610,7 +649,7 @@ const ENEMY_POOL: Array = [
 	 "size": {"w": 2, "h": 2},
 	 "traits": [{"id": "ignore_terrain_slow"}, {"id": "web_walker"}],
 	 "multiattack": [{"name": "Bite", "count": 1, "dmg_min": 4, "dmg_max": 11, "damage_type": "Piercing",
-	                  "extra": {"dmg_min": 2, "dmg_max": 12, "damage_type": "Poison"}}],
+					  "extra": {"dmg_min": 2, "dmg_max": 12, "damage_type": "Poison"}}],
 	 "web": {"cooldown": 10, "range": 6, "save_dc": 13}},
 	# STR 9(-1) DEX 12(+1) CON 11(+0) INT 13(+1) WIS 8(-1) CHA 13(+1). AC 12 is natural armor
 	# (baked straight into "ac", no separate "armor" bonus). Small Beast, CR 1/4, a plain 1x1
@@ -645,5 +684,5 @@ const ENEMY_POOL: Array = [
 	 "passive_perception": 9,
 	 "attack_profile": {"attack_stat": "dex"},
 	 "multiattack": [{"name": "Bite", "count": 1, "dmg_min": 2, "dmg_max": 7, "damage_type": "Piercing",
-	                  "on_hit_save": {"stat": "con", "dc": 10, "status": "poisoned_condition", "turns": 10, "paralyze_margin": 5}}]},
+					  "on_hit_save": {"stat": "con", "dc": 10, "status": "poisoned_condition", "turns": 10, "paralyze_margin": 5}}]},
 ]
