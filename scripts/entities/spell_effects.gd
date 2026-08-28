@@ -298,12 +298,23 @@ static func _resolve_cantrip_hit(player: Player, spell: Spell, target: Enemy, du
 						GameState.game_log("[color=orange]The grass catches fire![/color]")
 				elif dungeon_floor != null:
 					dungeon_floor.ignite_flammable(target.grid_pos)
-		# Repelling Blast (Eldritch Invocation): unconditional 1-tile push on a non-lethal Eldritch
-		# Blast hit — no save, unlike the Heavy Crossbow's Push weapon mastery.
+		# Repelling Blast (Eldritch Invocation): a non-lethal Eldritch Blast hit pushes the target
+		# 1 tile away — but ONLY on a failed CON save (vs the spell save DC), not unconditionally.
+		# Real 5e has no save here (30 ft move → forced 10 ft push), but on a 1-tile grid a
+		# guaranteed 1-tile shove per beam is worth a full turn of the target's movement, so it's
+		# gated behind a save the same way the Heavy Crossbow's Push weapon mastery is.
 		if spell.spell_id == "eldritch_blast" and GameState.knows_invocation("repelling_blast") and dungeon_floor != null:
 			var away_dir: Vector2i = Vector2i(sign(target.grid_pos.x - player.grid_pos.x), sign(target.grid_pos.y - player.grid_pos.y))
 			if away_dir != Vector2i.ZERO:
-				await dungeon_floor.resolve_push(target, away_dir)
+				var push_dc: int = _save_dc(stats, spell)
+				var push_save: Dictionary = target.resist_check_detailed(push_dc, true, false, false, false, true)
+				var push_meta: String = "save:die=%d,mod=%d,prof=%d,prof_label=%s,total=%d,dc=%d,stat=%s,pass=%d,sliver=%d" % [
+					push_save["die"], push_save["mod"], push_save["floor_bonus"], push_save["prof_label"], push_save["total"], push_save["dc"], push_save["stat"], int(push_save["pass"]), push_save["sliver_penalty"]]
+				if not push_save["pass"]:
+					GameState.game_log("[color=cyan]Repelling Blast [url=%s]shoves[/url] %s back![/color]" % [push_meta, target.display_name])
+					await dungeon_floor.resolve_push(target, away_dir)
+				else:
+					GameState.game_log("[color=gray]%s [url=%s]holds its ground[/url] against Repelling Blast.[/color]" % [target.display_name, push_meta])
 
 # Single-target SAVE-resolution cantrips (Toll the Dead, Mind Sliver) — no attack roll, the target
 # just makes a save. Mirrors cast_spell()'s turn envelope/animation but skips the hit-roll block

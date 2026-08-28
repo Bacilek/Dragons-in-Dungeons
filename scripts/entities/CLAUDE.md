@@ -3206,8 +3206,14 @@ separate Pact Boon picker/field for these.
   rule) via a `spell.spell_id == "eldritch_blast" and GameState.knows_invocation("agonizing_blast")`
   check right before `build_damage_instance()`.
 - **Repelling Blast** (lvl 1) — a non-lethal Eldritch Blast hit pushes the target 1 tile directly
-  away, no save (unlike the Heavy Crossbow's Push weapon mastery) — reuses
-  `DungeonFloor.resolve_push()` verbatim, called from `cast_spell()`'s effect-dispatch tail.
+  away **on a failed CON save** (`resist_check_detailed(dc, use_con=true, magical=true)` vs the
+  spell save DC, `_save_dc(stats, spell)`) — reuses `DungeonFloor.resolve_push()` verbatim, called
+  per-beam from `_resolve_cantrip_hit()`'s effect-dispatch tail. **Deviates from 5e RAW on
+  purpose** (real Repelling Blast has no save — the 10 ft push is a fraction of a 30 ft move): on a
+  1-tile grid a guaranteed 1-tile shove per beam costs the target a full turn of movement, so it's
+  gated behind a save the same CON-based way the Heavy Crossbow's Push weapon mastery and the
+  Maul's Topple already are (the established "resist forced movement / knockdown" stat in this
+  codebase). Logs a hoverable `save:` roll breakdown on both outcomes.
 - **Armor of Shadows** (lvl 1) — Mage Armor castable at will, no spell slot.
 - **Fiendish Vigor** (lvl 1) — False Life castable at will, no spell slot.
 - **Eldritch Sight** (lvl 1) — Detect Magic castable at will, no spell slot.

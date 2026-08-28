@@ -4093,7 +4093,7 @@ static func eldritch_invocation_list() -> Array[EldritchInvocation]:
 		{"id": "agonizing_blast", "name": "Agonizing Blast", "lvl": 1,
 			"desc": "Add your Charisma modifier to the damage of your Eldritch Blast hits."},
 		{"id": "repelling_blast", "name": "Repelling Blast", "lvl": 1,
-			"desc": "A creature you hit with Eldritch Blast is pushed 1 tile directly away from you."},
+			"desc": "A creature you hit with Eldritch Blast is pushed 1 tile directly away from you on a failed CON save."},
 		{"id": "armor_of_shadows", "name": "Armor of Shadows", "lvl": 1,
 			"desc": "Cast Mage Armor on yourself at will, without expending a spell slot."},
 		{"id": "fiendish_vigor", "name": "Fiendish Vigor", "lvl": 1,
