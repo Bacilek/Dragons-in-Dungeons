@@ -396,8 +396,12 @@ func _begin_multi_target(spell_id: String, from_scroll: bool, scroll_item: Item)
 	if spell.effect_id == "magic_missile":
 		GameState.game_log("[color=lime]Magic Missile — choose up to 3 targets (1 dart each; click the same target again to focus more darts on it). Enemies, barrels, and doors are all valid. [Esc] to cancel.[/color]")
 	elif spell.multi_beam_scaling:
-		GameState.game_log("[color=lime]%s — choose %d target%s (1 beam each; click the same target again to focus more beams onto it). Enemies only. [Esc] to cancel.[/color]" % [
-			spell.spell_name, _mm_count, "s" if _mm_count != 1 else ""])
+		# Single-beam (character level < 5): behaves exactly like a plain single-target cantrip,
+		# so skip the multi-target instruction line entirely — nothing to explain, and it just
+		# spams the log every time an at-will attack cantrip is fired.
+		if _mm_count > 1:
+			GameState.game_log("[color=lime]%s — choose %d target%s (1 beam each; click the same target again to focus more beams onto it). Enemies only. [Esc] to cancel.[/color]" % [
+				spell.spell_name, _mm_count, "s" if _mm_count != 1 else ""])
 	else:
 		# Upcast SAVE spell (Hold Person/Hideous Laughter) — [Space] resolves early with fewer than
 		# the max, since every target beyond the first is purely optional (the base cast is always
