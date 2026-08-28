@@ -138,7 +138,8 @@ static func build(item: Item) -> String:
 	# joined with " + " here if a future weapon ever needs it.
 	var dmg_parts: Array[String] = []
 	if item.damage_die_max > 0:
-		dmg_parts.append("1d%d" % item.damage_die_max)
+		var dn: Vector2i = CombatMath.dice_notation(item.damage_die_min, item.damage_die_max)
+		dmg_parts.append("%dd%d" % [dn.x, dn.y])
 	if item.bonus_damage > 0:
 		dmg_parts.append("+%d" % item.bonus_damage)
 	if not dmg_parts.is_empty():
@@ -171,7 +172,8 @@ static func build(item: Item) -> String:
 	if item.is_two_handed:
 		props.append({"key": "Two-handed", "text": "[url=keyword:two_handed]Two-handed[/url]"})
 	if item.is_versatile:
-		props.append({"key": "Versatile", "text": "[url=keyword:versatile]Versatile(1d%d)[/url]" % item.versatile_die_max})
+		var vdn: Vector2i = CombatMath.dice_notation(item.versatile_die_min, item.versatile_die_max)
+		props.append({"key": "Versatile", "text": "[url=keyword:versatile]Versatile(%dd%d)[/url]" % [vdn.x, vdn.y]})
 	props.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["key"] < b["key"])
 	for p: Dictionary in props:
 		lines.append(p["text"])
