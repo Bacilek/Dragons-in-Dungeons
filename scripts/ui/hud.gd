@@ -1332,6 +1332,7 @@ func _on_qbar_slot_hover(idx: int) -> void:
 	var hover_item: Item = item_or_ability as Item if not _ability_bar_mode else null
 	var is_weapon_tooltip: bool = hover_item != null and (hover_item.item_type == Item.Type.WEAPON or ArmorTooltip.is_armor_item(hover_item))
 	var qtw: float = 210.0 if is_weapon_tooltip else 172.0
+	var _bw_nbsp: String = String.chr(0x00A0)
 	if _ability_bar_mode:
 		var hover_ab := item_or_ability as Ability
 		if hover_ab != null and (hover_ab.ability_id.begins_with("spell:") or hover_ab.ability_id == "hellish_rebuke_toggle"):
@@ -1339,6 +1340,13 @@ func _on_qbar_slot_hover(idx: int) -> void:
 			var hover_spell: Spell = SpellDb.get_spell(hover_sid)
 			if hover_spell != null:
 				qtw = maxf(qtw, SpellTooltip.required_width(hover_spell, 15))
+		elif hover_ab != null and hover_ab.description.find(_bw_nbsp) != -1:
+			# Abilities that build a SpellTooltip-style fixed-line block (nbsp-glued, non-wrapping,
+			# e.g. Breath Weapon) need the box widened to fit the longest such line.
+			var _f: Font = ThemeDB.fallback_font
+			for _ln: String in hover_ab.description.split("\n"):
+				if _ln.find(_bw_nbsp) != -1:
+					qtw = maxf(qtw, _f.get_string_size(_ln, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 24.0)
 	_qbar_tooltip_rtl.size = Vector2(qtw, 0)
 	_qbar_tooltip.size = Vector2(qtw + 8.0, 60)
 	_qbar_tooltip.visible = true

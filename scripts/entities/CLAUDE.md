@@ -405,6 +405,12 @@ Line, since no line-shaped preview existed before). Both shapes read `PlayerDrag
 BREATH_CONE_LENGTH`/`BREATH_LINE_LENGTH` directly rather than a `Spell` resource, since Breath
 Weapon isn't cast through the spell system at all.
 
+**Breath Weapon hover tooltip** mirrors the `SpellTooltip.build()` fixed-line format (Casting
+Time / Range: Self / Area: N-tile Cone or M-tile Line / Duration: Instantaneous, nbsp-glued so it
+never word-wraps) — built in `GameState._build_breath_weapon_ability()`'s `Ability.description`.
+`hud.gd`'s ability-bar tooltip has a generic branch (alongside the `spell:`-prefixed one) that
+widens the popup box to fit any ability whose description contains an nbsp fixed-line block.
+
 ## Dwarf
 
 Humanoid, Medium (4-5 ft), Speed 1 tile/turn (baseline).

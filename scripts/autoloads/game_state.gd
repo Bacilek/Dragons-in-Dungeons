@@ -1034,8 +1034,21 @@ func _build_breath_weapon_ability() -> Ability:
 	var ab := Ability.new()
 	ab.ability_id = "breath_weapon"
 	ab.ability_name = "Breath Weapon"
-	ab.description = "A %d-tile Cone or %d-tile Line dealing %s damage (DEX save for half). Click to arm (Cone), click again to switch to Line, once more to cancel — then click a direction to fire." % [
-		PlayerDragonborn.BREATH_CONE_LENGTH, PlayerDragonborn.BREATH_LINE_LENGTH, Stats.DRAGONBORN_DAMAGE_TYPE[clampi(player_stats.race_variant, 0, Stats.DRAGONBORN_DAMAGE_TYPE.size() - 1)]]
+	# Structured readout mirroring SpellTooltip.build()'s fixed-line format (Casting Time / Range /
+	# Area / Duration), so hovering Breath Weapon shows its ranges/area the same way a spell does,
+	# fixed lines glued with non-breaking spaces so they never word-wrap.
+	var _bw_type: String = Stats.DRAGONBORN_DAMAGE_TYPE[clampi(player_stats.race_variant, 0, Stats.DRAGONBORN_DAMAGE_TYPE.size() - 1)]
+	var _bw_lines: Array[String] = [
+		"Casting Time: Action",
+		"Range: Self",
+		"Area: %d-tile Cone or %d-tile Line" % [PlayerDragonborn.BREATH_CONE_LENGTH, PlayerDragonborn.BREATH_LINE_LENGTH],
+		"Duration: Instantaneous",
+	]
+	var _nbsp: String = String.chr(0x00A0)
+	for _i: int in _bw_lines.size():
+		_bw_lines[_i] = _bw_lines[_i].replace(" ", _nbsp)
+	ab.description = "\n".join(_bw_lines) + "\n%dd10 %s damage, DEX save for half. Uses = your proficiency bonus, refilled on a long rest. Click to arm (Cone), click again to switch to Line, once more to cancel, then click a direction to fire." % [
+		player_stats.breath_weapon_dice_count(), _bw_type]
 	ab.icon_path = "res://icons/races/dragonborn/breath_weapon.png"
 	ab.uses_remaining = player_stats.breath_weapon_uses_remaining
 	ab.uses_max = player_stats.proficiency_bonus
