@@ -340,13 +340,14 @@ func _ready() -> void:
 		_item_slots[_i].add_child(use_lbl)
 		_slot_use_labels.append(use_lbl)
 
-		# Big centered grey cooldown number, drawn across the whole (dimmed) slot icon.
+		# Big centered grey cooldown number, drawn across almost the whole (dimmed) slot icon.
 		var cd_lbl := Label.new()
-		cd_lbl.add_theme_font_size_override("font_size", 26)
+		cd_lbl.add_theme_font_size_override("font_size", 84)
 		cd_lbl.add_theme_color_override("font_color", Color(0.88, 0.88, 0.88))
 		cd_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-		cd_lbl.add_theme_constant_override("shadow_offset_x", 1)
-		cd_lbl.add_theme_constant_override("shadow_offset_y", 1)
+		cd_lbl.add_theme_constant_override("shadow_offset_x", 2)
+		cd_lbl.add_theme_constant_override("shadow_offset_y", 2)
+		cd_lbl.clip_text = true
 		cd_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cd_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		cd_lbl.text = ""
