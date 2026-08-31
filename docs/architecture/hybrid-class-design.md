@@ -51,10 +51,14 @@ An ability is **either** `cooldown_max > 0` **or** `essence_cost > 0` **or** nei
 never two at once. This mirrors the enemy stat-block rule that combining `cooldown` / `uses_max` /
 `recharge` on one ability is an authoring error (`scripts/entities/CLAUDE.md`).
 
-**Tick** - in `player.gd._on_turn_started()`'s `if not came_from_revert:` block (the same
-real-turns-only gate every per-round counter uses): for every `Ability` on
-`GameState.player_ability_bar` with `cooldown_remaining > 0`, decrement by 1. A free action
-(revert) never ticks a cooldown, exactly like it never ticks Rage duration.
+**Tick** - in `player.gd._on_turn_ending()` (fires exactly once per real, non-reverted player
+turn, **right before enemies act** - so the countdown visibly moves on the player's own turn,
+never during the enemy phase): for every `Ability` on `GameState.player_ability_bar` with
+`cooldown_remaining > 0` **that is not in `Player._hybrid_cd_skip_this_turn`**, decrement by 1,
+and log "<name> is ready." at 0. The skip list holds every ability activated this turn
+(populated by `PlayerHybrid._pay()`, cleared in `_on_turn_started()`) so an ability never burns a
+turn of its own cooldown on the turn it's cast. Net: `cooldown N` = unavailable for your next N
+turns, usable on the (N+1)th. A free action / revert never ticks a cooldown.
 
 **Set** - when an ability resolves, its dispatch case in `player.gd._use_ability_slot()` (or the
 ability's own resolver, matching whatever "spend only on confirmed use" convention that ability

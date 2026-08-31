@@ -29,6 +29,9 @@ var _dwarf: PlayerDwarf
 var _human: PlayerHuman
 var _orc: PlayerOrc
 var _hybrid: PlayerHybrid
+# Hybrid ability ids activated this turn - excluded from that turn's cooldown tick in
+# _on_turn_ending() so an ability never burns a turn of its own cooldown on the turn it's used.
+var _hybrid_cd_skip_this_turn: Array[String] = []
 var _aasimar: PlayerAasimar
 var _goliath: PlayerGoliath
 var _tiefling: PlayerTiefling
@@ -343,14 +346,9 @@ func _on_turn_started() -> void:
 			GameState.action_surge_pending = false
 			GameState.ability_bar_changed.emit()
 		GameState.monk_disengage_this_round = false
-		# Hybrid class: tick every ability cooldown once per real turn (docs/architecture/hybrid-class-design.md).
-		var _cd_changed: bool = false
-		for _ab in GameState.player_ability_bar:
-			if _ab != null and (_ab as Ability).cooldown_remaining > 0:
-				(_ab as Ability).cooldown_remaining -= 1
-				_cd_changed = true
-		if _cd_changed:
-			GameState.ability_bar_changed.emit()
+		# Hybrid class: cooldowns tick in _on_turn_ending() (the player's own turn, before enemies
+		# act) - NOT here. This clears the "activated this turn, don't tick it yet" skip list.
+		_hybrid_cd_skip_this_turn.clear()
 		# Bonus Action refreshes at the start of every real round — see scripts/entities/CLAUDE.md's
 		# "Bonus Action economy" section.
 		if GameState.bonus_action_used:
@@ -959,12 +957,28 @@ func _on_turn_started() -> void:
 			GameState.player_status_changed.emit()
 
 # Witch Bolt's per-turn jolt fires at the END of the player's turn (TurnManager.player_turn_ending,
-# right before enemies act), not the start of the next one — matches the user-facing framing "the
+# right before enemies act), not the start of the next one - matches the user-facing framing "the
 # bolt strikes at the end of your turn". `witch_bolt_just_cast` skips the very first firing (the
 # cast's own action-complete), so the first automatic 1d12 lands at the end of the turn AFTER the
 # casting turn, not the casting turn itself.
 func _on_turn_ending() -> void:
 	_resolve_stealth_check()
+	# Hybrid class: tick ability cooldowns HERE (once per real player turn, fired right before
+	# enemies act - so the countdown visibly moves on the player's own turn, never during the
+	# enemy phase - direct owner correction). An ability activated THIS turn is in the skip list
+	# and doesn't tick until next turn. docs/architecture/hybrid-class-design.md.
+	var _cd_changed: bool = false
+	for _cd_ab in GameState.player_ability_bar:
+		if _cd_ab == null:
+			continue
+		var _a := _cd_ab as Ability
+		if _a.cooldown_remaining > 0 and not _hybrid_cd_skip_this_turn.has(_a.ability_id):
+			_a.cooldown_remaining -= 1
+			_cd_changed = true
+			if _a.cooldown_remaining == 0:
+				GameState.game_log("[color=#5ab4e6]%s is ready.[/color]" % _a.ability_name)
+	if _cd_changed:
+		GameState.ability_bar_changed.emit()
 	# Rage house-rule (Bonus Action economy, scripts/entities/CLAUDE.md): a leftover, unused Bonus
 	# Action at the end of a real turn automatically extends Rage — on top of (not replacing) the
 	# existing "attack or be attacked" trigger the _on_turn_started() rage-tick block reads.
@@ -2063,7 +2077,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_goliath.resolve_cloud_teleport(clicked)
 			return
 
-		# Hybrid ability targeting (enemy / tile / sphere / direction) — click resolves it.
+		# Hybrid ability targeting (enemy / tile / sphere / direction) - click resolves it.
 		if _hybrid.is_targeting():
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
 				_hybrid.resolve_click(clicked)

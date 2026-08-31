@@ -104,6 +104,7 @@ const CLASS_DATA: Array = [
 	},
 	{
 		"cls":    12,  # Stats.CharacterClass.HYBRID
+		"hybrid": true,  # shown only under the "Hybrid" roster toggle
 		"name":   "Hybrid",
 		"sprite": CHAR_PATH + "Hybrid/idle_1.png",
 		"hd":     "d10 Hit Die",
@@ -127,12 +128,42 @@ const LOCKED_CLASSES: Array = [
 	"Paladin", "Rogue", "Sorcerer",
 ]
 
+# "dnd" = the current D&D-model classes (+ locked tiles + Random). "hybrid" = the cooldown/
+# Essence roster (docs/architecture/hybrid-class-design.md). Toggled at the top of the screen.
+var _roster: String = "dnd"
+var _grid_nodes: Array[Node] = []
+var _dnd_btn: Button
+var _hybrid_btn: Button
+
 func _ready() -> void:
 	layer = 20
 	if GameState.class_selected:
 		queue_free()
 		return
 	_build_ui()
+
+func _add_grid_node(n: Node) -> void:
+	add_child(n)
+	_grid_nodes.append(n)
+
+func _dnd_class_data() -> Array:
+	return CLASS_DATA.filter(func(d: Dictionary) -> bool: return not d.get("hybrid", false))
+
+func _hybrid_class_data() -> Array:
+	return CLASS_DATA.filter(func(d: Dictionary) -> bool: return d.get("hybrid", false))
+
+func _set_roster(mode: String) -> void:
+	if _roster == mode:
+		return
+	_roster = mode
+	_refresh_roster_buttons()
+	_build_grid()
+
+func _refresh_roster_buttons() -> void:
+	if _dnd_btn == null:
+		return
+	_dnd_btn.disabled = _roster == "dnd"
+	_hybrid_btn.disabled = _roster == "hybrid"
 
 func _build_ui() -> void:
 	var dim := ColorRect.new()
@@ -143,19 +174,13 @@ func _build_ui() -> void:
 	add_child(dim)
 
 	var vp: Vector2 = get_viewport().get_visible_rect().size
-	var total_count: int = CLASS_DATA.size() + 1 + LOCKED_CLASSES.size()  # +1 for the Random tile
-	var rows: int = ceili(float(total_count) / float(GRID_COLUMNS))
-	var total_w: float = GRID_COLUMNS * TILE_SIZE + (GRID_COLUMNS - 1) * TILE_GAP
-	var total_h: float = rows * TILE_SIZE + (rows - 1) * TILE_GAP
-	var origin_x: float = (vp.x - total_w) / 2.0
-	var origin_y: float = (vp.y - total_h) / 2.0
 
 	var title := Label.new()
 	title.text = "Choose Your Class"
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", Color(0.95, 0.85, 0.50))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.position = Vector2(0.0, origin_y - 64.0)
+	title.position = Vector2(0.0, 40.0)
 	title.size = Vector2(vp.x, 36.0)
 	add_child(title)
 
@@ -164,26 +189,61 @@ func _build_ui() -> void:
 	sub.add_theme_font_size_override("font_size", 11)
 	sub.add_theme_color_override("font_color", Color(0.55, 0.52, 0.44))
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.position = Vector2(0.0, origin_y - 28.0)
+	sub.position = Vector2(0.0, 76.0)
 	sub.size = Vector2(vp.x, 18.0)
 	add_child(sub)
 
+	# ── D&D / Hybrid roster toggle ──────────────────────────────────────────────
+	var toggle_row := HBoxContainer.new()
+	toggle_row.add_theme_constant_override("separation", 0)
+	toggle_row.position = Vector2(vp.x / 2.0 - 120.0, 100.0)
+	toggle_row.size = Vector2(240.0, 30.0)
+	add_child(toggle_row)
+	_dnd_btn = Button.new()
+	_dnd_btn.text = "D&D"
+	_dnd_btn.custom_minimum_size = Vector2(120.0, 30.0)
+	_dnd_btn.focus_mode = Control.FOCUS_NONE
+	_dnd_btn.pressed.connect(_set_roster.bind("dnd"))
+	toggle_row.add_child(_dnd_btn)
+	_hybrid_btn = Button.new()
+	_hybrid_btn.text = "Hybrid"
+	_hybrid_btn.custom_minimum_size = Vector2(120.0, 30.0)
+	_hybrid_btn.focus_mode = Control.FOCUS_NONE
+	_hybrid_btn.pressed.connect(_set_roster.bind("hybrid"))
+	toggle_row.add_child(_hybrid_btn)
+	_refresh_roster_buttons()
+
+	_build_grid()
+
+func _build_grid() -> void:
+	for n: Node in _grid_nodes:
+		if is_instance_valid(n):
+			n.queue_free()
+	_grid_nodes.clear()
+
+	var vp: Vector2 = get_viewport().get_visible_rect().size
+	var roster: Array = _dnd_class_data() if _roster == "dnd" else _hybrid_class_data()
+	var show_extras: bool = _roster == "dnd"  # Random + locked tiles are D&D-only
+	var total_count: int = roster.size() + (1 + LOCKED_CLASSES.size() if show_extras else 0)
+	var rows: int = maxi(1, ceili(float(total_count) / float(GRID_COLUMNS)))
+	var total_w: float = GRID_COLUMNS * TILE_SIZE + (GRID_COLUMNS - 1) * TILE_GAP
+	var total_h: float = rows * TILE_SIZE + (rows - 1) * TILE_GAP
+	var origin_x: float = (vp.x - total_w) / 2.0
+	var origin_y: float = maxf(150.0, (vp.y - total_h) / 2.0)
+
 	var idx: int = 0
-	for data: Dictionary in CLASS_DATA:
-		var col: int = idx % GRID_COLUMNS
-		var row: int = idx / GRID_COLUMNS
-		var pos := Vector2(origin_x + col * (TILE_SIZE + TILE_GAP), origin_y + row * (TILE_SIZE + TILE_GAP))
+	for data: Dictionary in roster:
+		var pos := Vector2(origin_x + (idx % GRID_COLUMNS) * (TILE_SIZE + TILE_GAP), origin_y + (idx / GRID_COLUMNS) * (TILE_SIZE + TILE_GAP))
 		_build_card(data, pos)
 		idx += 1
-	var random_pos := Vector2(origin_x + (idx % GRID_COLUMNS) * (TILE_SIZE + TILE_GAP), origin_y + (idx / GRID_COLUMNS) * (TILE_SIZE + TILE_GAP))
-	_build_random_card(random_pos)
-	idx += 1
-	for locked_name: String in LOCKED_CLASSES:
-		var col: int = idx % GRID_COLUMNS
-		var row: int = idx / GRID_COLUMNS
-		var pos := Vector2(origin_x + col * (TILE_SIZE + TILE_GAP), origin_y + row * (TILE_SIZE + TILE_GAP))
-		_build_locked_card(locked_name, pos)
+	if show_extras:
+		var random_pos := Vector2(origin_x + (idx % GRID_COLUMNS) * (TILE_SIZE + TILE_GAP), origin_y + (idx / GRID_COLUMNS) * (TILE_SIZE + TILE_GAP))
+		_build_random_card(random_pos)
 		idx += 1
+		for locked_name: String in LOCKED_CLASSES:
+			var pos := Vector2(origin_x + (idx % GRID_COLUMNS) * (TILE_SIZE + TILE_GAP), origin_y + (idx / GRID_COLUMNS) * (TILE_SIZE + TILE_GAP))
+			_build_locked_card(locked_name, pos)
+			idx += 1
 
 func _build_card(data: Dictionary, pos: Vector2) -> void:
 	var card := Button.new()
@@ -206,7 +266,7 @@ func _build_card(data: Dictionary, pos: Vector2) -> void:
 	card.add_theme_stylebox_override("hover", sbox_hover)
 	card.add_theme_stylebox_override("pressed", sbox_hover)
 	card.pressed.connect(_on_class_selected.bind(data["cls"] as int))
-	add_child(card)
+	_add_grid_node(card)
 
 	var icon := TextureRect.new()
 	var sprite_path: String = data["sprite"]
@@ -326,7 +386,7 @@ func _build_random_card(pos: Vector2) -> void:
 	card.add_theme_stylebox_override("hover", sbox_hover)
 	card.add_theme_stylebox_override("pressed", sbox_hover)
 	card.pressed.connect(_on_random_selected)
-	add_child(card)
+	_add_grid_node(card)
 
 	var icon_lbl := Label.new()
 	icon_lbl.text = "🎲"
@@ -376,7 +436,7 @@ func _build_locked_card(class_name_str: String, pos: Vector2) -> void:
 	sbox.border_color = Color(0.28, 0.28, 0.30)
 	sbox.set_corner_radius_all(6)
 	card.add_theme_stylebox_override("panel", sbox)
-	add_child(card)
+	_add_grid_node(card)
 
 	# A locked class with art already sourced (folder matches class_name_str, see root CLAUDE.md's
 	# Sprite Assets naming convention) shows a dimmed portrait instead of the "?" glyph — still

@@ -2,7 +2,7 @@ class_name HybridEffects
 extends RefCounted
 
 # Resolution for the Hybrid class's abilities (docs/architecture/hybrid-class-design.md).
-# Static, self-contained like SpellEffects/PlayerRanged — each public entry owns its own
+# Static, self-contained like SpellEffects/PlayerRanged - each public entry owns its own
 # TurnManager.begin_player_action() ... player._handle_post_attack_turn() turn envelope.
 #
 # Ability math reuses SpellEffects._attack_bonus(stats) / _save_dc(stats) (both fall back to
@@ -53,7 +53,7 @@ static func spark(player: Player, def: Dictionary, target: Enemy, dungeon_floor:
 
 	var parts: Array = _dice(def)
 	if not is_crit and (die == 1 or roll < dc_ac):
-		GameState.game_log(CombatMath.wrap_halfling_luck("You loose [color=cyan]Spark[/color] at [color=orange]%s[/color] — miss (%d vs AC %d)." % [target.display_name, roll, dc_ac], r["lucky"]))
+		GameState.game_log(CombatMath.wrap_halfling_luck("You loose [color=cyan]Spark[/color] at [color=orange]%s[/color] - miss (%d vs AC %d)." % [target.display_name, roll, dc_ac], r["lucky"]))
 		AudioManager.play("miss_enemy")
 		_finish(player, dungeon_floor)
 		return
@@ -111,7 +111,7 @@ static func tide(player: Player, def: Dictionary, center: Vector2i, dungeon_floo
 				var p: Vector2i = center + Vector2i(dx, dy)
 				if dungeon_floor.has_method("douse_tile"):
 					dungeon_floor.douse_tile(p)
-	GameState.game_log("[color=cyan]Tide: water washes over the area%s.[/color]" % ("" if soaked == 0 else " — %d soaked" % soaked))
+	GameState.game_log("[color=cyan]Tide: water washes over the area%s.[/color]" % ("" if soaked == 0 else " - %d soaked" % soaked))
 	_finish(player, dungeon_floor)
 
 # ── Arc (essence nova) ──────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ static func arc(player: Player, def: Dictionary, center: Vector2i, dungeon_floor
 			if lethal:
 				player._finish_kill(e)
 	if conductive_hit:
-		GameState.game_log("[color=cyan]The soaked ground conducts — enemies are staggered![/color]")
+		GameState.game_log("[color=cyan]The soaked ground conducts - enemies are staggered![/color]")
 	_finish(player, dungeon_floor)
 
 # ── Emberstep (cooldown dash) ───────────────────────────────────────────────

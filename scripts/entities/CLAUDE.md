@@ -4374,7 +4374,11 @@ The one class that runs OFF the D&D spell/rest model - a testbed for a cooldown 
 economy (`docs/architecture/hybrid-class-design.md`, which has the full rationale and the
 ability-authoring template). `Stats.CharacterClass.HYBRID` (enum value 12), `CLASS_ROLE` =
 `"MARTIAL"` (so nothing grants it a `caster`). Selectable on the Custom path only
-(`class_select.gd`'s `CLASS_DATA`, `"cls": 12`); no premade hero. d10 HD, INT 16 / DEX 14 / CON
+(`class_select.gd`'s `CLASS_DATA`, `"cls": 12`, `"hybrid": true`); no premade hero.
+`class_select.gd` has a **D&D / Hybrid roster toggle** at the top (`_roster` / `_set_roster()` /
+`_build_grid()`) - "D&D" shows the current classes + Random + locked tiles, "Hybrid" shows only
+`"hybrid": true` entries (just Hybrid today - more to come). The D&D roster is fully preserved
+behind the toggle, not removed. d10 HD, INT 16 / DEX 14 / CON
 14, DEX+INT check prof, Simple weapons + Light armor. Starting gear
 (`GameState._give_hybrid_starting_items()`): Dagger + Leather Armor. **Placeholder art** - the
 `sprites/characters/classes/Hybrid/` folder is a copy of the Wizard set (`player.gd
@@ -4382,10 +4386,15 @@ ability-authoring template). `Stats.CharacterClass.HYBRID` (enum value 12), `CLA
 
 **Cooldown model** (`Ability.cooldown_max` / `cooldown_remaining` / `essence_cost`, new
 `@export`s on `scripts/items/ability.gd`): an ability is COOLDOWN xor ESSENCE xor passive.
-`cooldown_remaining` ticks down once per real turn in `player.gd._on_turn_started()`'s
-`if not came_from_revert:` block; `GameState.is_ability_usable()` / `ability_unusable_reason()`
-gained a generic gate (`"CD N"` / `"No Essence"`) checked right after `_bonus_action_blocks()`.
-Set on a confirmed resolution (`PlayerHybrid._pay()`), skipped while `GameState.invincible`.
+`cooldown_remaining` ticks down once per real turn in `player.gd._on_turn_ending()` (fires right
+before enemies act, so the countdown moves on the player's OWN turn, never the enemy phase -
+direct owner correction from the first draft, which ticked at `_on_turn_started()` and read as
+"ticking during the enemy turn"). An ability activated this turn is in
+`Player._hybrid_cd_skip_this_turn` (populated by `PlayerHybrid._pay()`, cleared in
+`_on_turn_started()`) and doesn't tick until next turn - so `cooldown N` = unavailable for your
+next N turns. `GameState.is_ability_usable()` / `ability_unusable_reason()` gained a generic gate
+(`"CD N"` / `"No Essence"`) checked right after `_bonus_action_blocks()`. Set on a confirmed
+resolution (`PlayerHybrid._pay()`), skipped while `GameState.invincible`.
 Cleared on a long rest. Not serialized (mid-floor transient); `RewindManager`'s existing
 `_dup_ability_array()` deep-dup already snapshots the fields, no rewind change needed.
 

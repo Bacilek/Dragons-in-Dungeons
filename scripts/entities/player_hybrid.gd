@@ -7,9 +7,9 @@ extends Node
 
 var player: Player
 
-# Click-targeting mode (enemy / tile / sphere abilities) — armed ability id, "" = inactive.
+# Click-targeting mode (enemy / tile / sphere abilities) - armed ability id, "" = inactive.
 var targeting_id: String = ""
-# Direction-dash mode (emberstep) — armed ability id, "" = inactive.
+# Direction-dash mode (emberstep) - armed ability id, "" = inactive.
 var dash_id: String = ""
 var _armed_ab: Ability = null
 
@@ -52,14 +52,14 @@ func activate(ab: Ability) -> void:
 	match str(def.get("target", "self")):
 		"self":
 			_pay(ab)
-			# no self-target ability shipped yet — placeholder
+			# no self-target ability shipped yet - placeholder
 			GameState.game_log("[color=gray]%s has no effect yet.[/color]" % def.get("name", ""))
 		"direction":
 			dash_id = ab.ability_id
-			GameState.game_log("[color=cyan]%s armed — press a direction or click a tile.[/color]" % def.get("name", ""))
+			GameState.game_log("[color=cyan]%s armed - press a direction or click a tile.[/color]" % def.get("name", ""))
 		_:
 			targeting_id = ab.ability_id
-			GameState.game_log("[color=cyan]%s armed — click a target.[/color]" % def.get("name", ""))
+			GameState.game_log("[color=cyan]%s armed - click a target.[/color]" % def.get("name", ""))
 
 # ── click resolution (from player.gd mouse-release handler) ─────────────────
 func resolve_click(clicked: Vector2i) -> void:
@@ -125,4 +125,7 @@ func _pay(ab: Ability) -> void:
 		GameState.spend_hybrid_essence(int(def["essence_cost"]))
 	if int(def.get("cooldown", 0)) > 0:
 		ab.cooldown_remaining = int(def["cooldown"])
+		# Don't let this turn's own _on_turn_ending() tick immediately count down the cooldown.
+		if not player._hybrid_cd_skip_this_turn.has(ab.ability_id):
+			player._hybrid_cd_skip_this_turn.append(ab.ability_id)
 	GameState.ability_bar_changed.emit()
