@@ -1,6 +1,12 @@
 # Hybrid Class - Cooldown + Essence + Surface-Combo Design
 
-**Status:** design only, nothing implemented. Working title "Hybrid" (rename freely).
+**Status:** FIRST PASS IMPLEMENTED (2026-08-31), needs an in-editor smoke test. Working title
+"Hybrid" (rename freely). Shipped this pass: the class is selectable (Custom path), the cooldown
++ Essence economy, the `wet`/`shocked` element tags + electrified-water spread, and the 5 seed
+abilities (Spark / Tide / Grounded / Arc / Emberstep) auto-granted by level. NOT yet done:
+the pick-1-of-3 growth picker (abilities auto-grant instead - see section 4.4), the Essence Shard
+item, a premade hero, real ability art, and Phase-2 surfaces (section 8). `scripts/entities/
+CLAUDE.md`'s "Hybrid class" section is the maintenance reference.
 **Author's note:** this doc defines the *systems and the class skeleton*. The ability list
 itself is deliberately left for the owner to fill in - see section 5 (authoring template)
 and section 6 (seed examples showing each archetype).
@@ -85,10 +91,9 @@ Acceptable - loading a save is already a soft reset of mid-floor state.
   food value + 20 turns, so this isn't free nova-spam; short rest grants nothing.)
 - **"Essence Shard" item** - `Type.TOOL`, `use()` grants +1 (capped), consumed. Rare floor loot,
   ~1 per 2-3 floors (`fmin`/`fmax` tuned low-frequency; mirror in `debug_panel.ALL_ITEMS`).
-- **OPTIONAL, recommended: +1 on landing a surface detonation** (section 3.4), max once per real
-  turn (`GameState.hybrid_essence_from_combo_this_turn` gate, reset in `_on_turn_started()`). This
-  is what ties skilled surface play back into the nova economy and keeps the pool from feeling
-  purely attritional. Flag it in playtesting - easy to turn off.
+
+Essence is **not** granted for using terrain / landing surface combos (owner decision) - the
+surface reactions are their own reward (bigger damage), not an economy feedback loop.
 
 **Spent:** `GameState.spend_hybrid_essence(n) -> bool` - returns false (and the ability refuses
 with a gray log line) if `hybrid_essence < n`; skips consumption entirely while `invincible`.
@@ -168,13 +173,13 @@ site.
 ice (WATER + cold -> frozen difficult-terrain tile), poison clouds (+ fire -> detonation),
 real steam zones (needs generalised obscurement, see 3.5).
 
-### 3.4 Detonation and Essence feedback
+### 3.4 Detonation
 
 A "detonation" = an ability (or a fire hit on a poison cloud, in Phase 2) that consumes a surface
 to produce a burst. In Phase 1 the only detonation is **electrified water** (a shock ability
-spent on a water/wet cluster). If the optional rule in 2.2 is on, resolving a detonation that
-hits at least one enemy grants **+1 Essence** (once per real turn). This is the core skill loop:
-set up wet -> shock -> refund -> nova.
+spent on a water/wet cluster): the shock damage roll re-applies to every entity in the connected
+WATER + `wet` set, each gains `shocked_turns`. The reward is the spread damage itself, nothing
+else. Core loop: set up wet -> shock the cluster -> big multi-target hit.
 
 ### 3.5 Known dependency
 
@@ -302,8 +307,7 @@ puts out burning grass. No damage. The setup half of the combo.
 **`arc` - ESSENCE nova**
 `min_level 3`, `power_type ESSENCE`, `essence_cost 2`, `target SPHERE`, `range 6`,
 `shape_size 2`, `resolution SAVE` (DEX, half), `damage 4d8 Lightning`. `detonates ["shock"]`.
-Any WATER / `wet` entity in the blast triggers full electrified spread and grants the +1 Essence
-combo refund (2.2 optional rule). The payoff.
+Any WATER / `wet` entity in the blast triggers full electrified spread. The payoff.
 
 **`emberstep` - COOLDOWN mobility**
 `min_level 5`, `power_type COOLDOWN`, `cooldown_max 3`, `target DIRECTION`, `range 3`,
@@ -331,12 +335,12 @@ electrified-water spread. Bar entry logs a reminder on click.
 5. `scripts/entities/spell_effects.gd` sibling or new `scripts/entities/hybrid_effects.gd` -
    ability resolvers + the reaction matrix (`_resolve_electrified_water()` flood-fill, etc.).
 6. `player.gd._use_ability_slot()` - dispatch Hybrid ability ids; `_on_turn_started()` - cooldown
-   tick + `hybrid_essence_from_combo_this_turn` reset.
+   tick.
 7. `scripts/world/dungeon_floor.gd` - `_hazards` dict, `_update_hazard_glow()`, tick in the
    per-turn sweep; electrified-water flood-fill helper over WATER tiles.
 8. `hud.gd` - cooldown darken+number on the bar; Essence pip row on `$StatsPanel`.
-9. `RewindManager` - snapshot `cooldown_remaining` per bar ability; `hybrid_essence` +
-   `hybrid_essence_from_combo_this_turn` in `REWIND_GAMESTATE_FIELDS`.
+9. `RewindManager` - snapshot `cooldown_remaining` per bar ability; `hybrid_essence` handled via
+   the normal `Stats` snapshot.
 10. `scripts/ui/class_select.gd` / `character_select.gd` - Hybrid card + premade;
     `scripts/ui/spell_learn_picker.gd` - generalise candidate source (or fork).
 11. Sprites: `sprites/characters/classes/Hybrid/` (idle/run; no hit art -> `has_real_hit_art`

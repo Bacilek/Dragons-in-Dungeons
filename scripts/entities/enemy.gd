@@ -53,6 +53,8 @@ var _surprise_before_decide: bool = false
 var passive_perception: int = 10  # docs/architecture/stealth-and-surprise-attacks-design.md §3.2 — static DC (pool key "passive_perception", default 10 + WIS mod, derived in _apply_stats())
 var oa_used_this_round: bool = false  # Opportunity Attack reaction cap — reset at the top of take_turn()
 var slowed_turns: int = 0
+var wet_turns: int = 0           # Hybrid class — +100% Lightning taken, -50% Fire; enables arc spread. See docs/architecture/hybrid-class-design.md
+var shocked_turns: int = 0       # Hybrid class — shaves a movement step, same path as slowed_turns
 var rooted_turns: int = 0        # World Tree Grip of the Forest R2 — skips movement, still attacks if adjacent
 var disadv_next_attack: bool = false  # World Tree Grip of the Forest R3 — consumed on next attack roll
 var prone: bool = false          # Maul's Topple mastery — real Prone condition (not turn-counted): auto-stands at the top of this enemy's own next turn, consuming one point of movement budget to do so (see decide_turn()). While it remains prone (i.e. on the PLAYER's turns before then), Player.gd's melee/ranged attack sites grant ADV/DISADV against it directly off this field.
@@ -258,6 +260,7 @@ func to_dict() -> Dictionary:
 		"_search_target": _search_target, "_search_path": _search_path.duplicate(),
 		"_speed_accum": _speed_accum, "_moves_this_turn": _moves_this_turn,
 		"slowed_turns": slowed_turns, "rooted_turns": rooted_turns,
+		"wet_turns": wet_turns, "shocked_turns": shocked_turns,
 		"disadv_next_attack": disadv_next_attack, "prone": prone,
 		"poisoned_condition_turns": poisoned_condition_turns,
 		"incapacitated_turns": incapacitated_turns, "faerie_fire_turns": faerie_fire_turns,
@@ -302,6 +305,8 @@ func from_dict(d: Dictionary) -> void:
 	_moves_this_turn = int(d.get("_moves_this_turn", 1))
 	slowed_turns = int(d.get("slowed_turns", 0))
 	rooted_turns = int(d.get("rooted_turns", 0))
+	wet_turns = int(d.get("wet_turns", 0))
+	shocked_turns = int(d.get("shocked_turns", 0))
 	disadv_next_attack = bool(d.get("disadv_next_attack", false))
 	prone = bool(d.get("prone", false))
 	poisoned_condition_turns = int(d.get("poisoned_condition_turns", 0))
@@ -370,6 +375,10 @@ func take_typed_damage(amount: int, damage_type: String, is_crit: bool = false) 
 		mul = 2.0
 	elif damage_type in damage_resistances:
 		mul = 0.5
+	# Hybrid class: a Wet target takes double Lightning, half Fire (docs/architecture/hybrid-class-design.md).
+	if wet_turns > 0:
+		if damage_type == "Lightning": mul *= 2.0
+		elif damage_type == "Fire": mul *= 0.5
 	if mul == 0.0:
 		return {"actual": 0, "mul": 0.0}
 	var effective: int = maxi(1, int(floor(amount * mul))) if mul != 1.0 else amount
@@ -433,6 +442,8 @@ func apply_status(condition: String, turns: int) -> bool:
 		"poisoned_condition": poisoned_condition_turns = maxi(poisoned_condition_turns, turns)
 		"incapacitated": incapacitated_turns = maxi(incapacitated_turns, turns)
 		"frightened": frightened_turns = maxi(frightened_turns, turns)
+		"wet":      wet_turns = maxi(wet_turns, turns)
+		"shocked":  shocked_turns = maxi(shocked_turns, turns)
 	return true
 
 # Frightened (enemy-side mirror of Player._frightened_active() — see scripts/entities/CLAUDE.md's
@@ -1365,9 +1376,13 @@ func decide_turn() -> Dictionary:
 	# below-baseline "speed" entry (e.g. Zombie's 2/3) that already grants 0 movement credit is
 	# untouched by this (nothing left to reduce), matching "no difference on a round it wasn't
 	# going to move anyway".
-	var _slowed_this_turn: bool = slowed_turns > 0
-	if _slowed_this_turn:
+	if wet_turns > 0:
+		wet_turns -= 1
+	var _slowed_this_turn: bool = slowed_turns > 0 or shocked_turns > 0
+	if slowed_turns > 0:
 		slowed_turns -= 1
+	if shocked_turns > 0:
+		shocked_turns -= 1
 	var _intent: Dictionary = _decide_action()
 	_intent["slowed"] = _slowed_this_turn
 	return _intent
@@ -2081,6 +2096,8 @@ func _move_step(step: Vector2i, next_pos: Vector2i, provokes_oa: bool = true) ->
 	if tile_type == DungeonData.TileType.WATER and stats.burning_turns > 0:
 		stats.burning_turns = 0
 		GameState.game_log("[color=cyan]The water extinguishes %s's flames![/color]" % display_name)
+	if tile_type == DungeonData.TileType.WATER:
+		wet_turns = maxi(wet_turns, 3)  # Hybrid class — standing in water soaks the target
 	# A lit torch embedded in this enemy (thrown-and-lodged, scripts/items/CLAUDE.md's "Torch")
 	# also douses out when it steps into water — same "water extinguishes fire" rule as the
 	# burning_turns status above, just for the physically-embedded torch item instead.

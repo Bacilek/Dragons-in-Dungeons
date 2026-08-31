@@ -33,6 +33,7 @@ var _debug_panel_ref: Node = null
 var _hit_dice_label: Label
 var _short_rest_label: RichTextLabel  # BG3-style pip row: short rests remaining this long-rest cycle
 var _bonus_action_label: RichTextLabel  # BG3-style single pip: bonus action available/spent this round
+var _essence_label: RichTextLabel        # Hybrid class Essence pool pip row
 var _gold_label: Label        # gold counter (coin icon + amount), wired to GameState.gold_changed
 var _spell_slots_label: RichTextLabel  # always-visible per-level spell slot remaining/max (Wizard only)
 
@@ -381,6 +382,18 @@ func _ready() -> void:
 	$StatsPanel.add_child(_bonus_action_label)
 	_update_bonus_action_indicator()
 
+	# Hybrid class: Essence pip row (docs/architecture/hybrid-class-design.md).
+	_essence_label = RichTextLabel.new()
+	_essence_label.bbcode_enabled = true
+	_essence_label.fit_content = false
+	_essence_label.scroll_active = false
+	_essence_label.position = Vector2(72.0, 136.0)
+	_essence_label.size = Vector2(150.0, 16.0)
+	_essence_label.add_theme_font_size_override("normal_font_size", 13)
+	_essence_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	$StatsPanel.add_child(_essence_label)
+	_update_essence_indicator()
+
 	# AC label — always visible to the right of the LevelLabel row
 	_ac_label = Label.new()
 	_ac_label.add_theme_font_size_override("font_size", 12)
@@ -464,9 +477,10 @@ func _ready() -> void:
 	_init_popup_extra_labels()
 
 	# Refresh popup every turn so AC, rage status, etc. stay live
-	TurnManager.player_turn_started.connect(func(): _refresh_popup(); _update_ac_label(); _update_status_icons(); _update_bonus_action_indicator())
+	TurnManager.player_turn_started.connect(func(): _refresh_popup(); _update_ac_label(); _update_status_icons(); _update_bonus_action_indicator(); _update_essence_indicator())
 	GameState.ability_bar_changed.connect(_update_status_icons)
 	GameState.ability_bar_changed.connect(_update_bonus_action_indicator)
+	GameState.ability_bar_changed.connect(_update_essence_indicator)
 	GameState.equipment_changed.connect(func(): _refresh_popup(); _update_ac_label())
 	GameState.player_status_changed.connect(func(): _refresh_popup(); _update_ac_label())
 
@@ -674,6 +688,21 @@ func _update_bonus_action_indicator() -> void:
 	var pip: String = "[color=#40cc59]●[/color]" if available else "[color=#555560]○[/color]"
 	_bonus_action_label.text = "%s Bonus Action" % pip
 	_bonus_action_label.tooltip_text = "Available this round." if available else "Already spent this round. Refreshes at the start of your next real turn."
+
+func _update_essence_indicator() -> void:
+	if _essence_label == null:
+		return
+	var is_hybrid: bool = GameState.player_stats.character_class == Stats.CharacterClass.HYBRID
+	_essence_label.visible = is_hybrid
+	if not is_hybrid:
+		return
+	var cur: int = GameState.player_stats.hybrid_essence
+	var mx: int = GameState.player_stats.hybrid_essence_max
+	var pips: String = ""
+	for k: int in mx:
+		pips += "[color=#5ab4e6]◆[/color]" if k < cur else "[color=#555560]◇[/color]"
+	_essence_label.text = "%s Essence" % pips
+	_essence_label.tooltip_text = "Essence: %d / %d. +1 per floor, full on a long rest." % [cur, mx]
 
 func _on_floor_changed(new_floor: int) -> void:
 	floor_label.text = "Floor: %d" % new_floor
@@ -1066,6 +1095,15 @@ func _refresh_ability_bar() -> void:
 					var um_left: int = 0 if GameState.player_stats.uncanny_metabolism_used else 1
 					use_lbl.text = "%d/%d" % [um_left, 1]
 					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if um_left > 0 else Color(0.5, 0.5, 0.5))
+				elif ab.cooldown_remaining > 0:
+					# Hybrid class: on cooldown — show turns remaining (docs/architecture/hybrid-class-design.md).
+					use_lbl.text = "%dt" % ab.cooldown_remaining
+					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
+				elif ab.essence_cost > 0:
+					# Hybrid Essence ability — show its cost, dimmed if unaffordable.
+					var ess: int = GameState.player_stats.hybrid_essence
+					use_lbl.text = "%d◆" % ab.essence_cost
+					use_lbl.add_theme_color_override("font_color", Color(0.45, 0.75, 0.95) if ess >= ab.essence_cost else Color(0.5, 0.5, 0.5))
 				elif ab.uses_max == 0:
 					# Passive / infinite uses.
 					use_lbl.text = ""

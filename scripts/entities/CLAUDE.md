@@ -4368,6 +4368,67 @@ alongside `_apply_monk_level_features()` from `gain_exp()`):
   grants the extra use immediately (same "on the level-up, not only after the next rest" treatment
   every other scaling resource gets).
 
+## Hybrid class
+
+The one class that runs OFF the D&D spell/rest model - a testbed for a cooldown + nova-resource
+economy (`docs/architecture/hybrid-class-design.md`, which has the full rationale and the
+ability-authoring template). `Stats.CharacterClass.HYBRID` (enum value 12), `CLASS_ROLE` =
+`"MARTIAL"` (so nothing grants it a `caster`). Selectable on the Custom path only
+(`class_select.gd`'s `CLASS_DATA`, `"cls": 12`); no premade hero. d10 HD, INT 16 / DEX 14 / CON
+14, DEX+INT check prof, Simple weapons + Light armor. Starting gear
+(`GameState._give_hybrid_starting_items()`): Dagger + Leather Armor. **Placeholder art** - the
+`sprites/characters/classes/Hybrid/` folder is a copy of the Wizard set (`player.gd
+._setup_animations()` maps HYBRID → `"Hybrid"` and adds it to `has_real_hit_art`).
+
+**Cooldown model** (`Ability.cooldown_max` / `cooldown_remaining` / `essence_cost`, new
+`@export`s on `scripts/items/ability.gd`): an ability is COOLDOWN xor ESSENCE xor passive.
+`cooldown_remaining` ticks down once per real turn in `player.gd._on_turn_started()`'s
+`if not came_from_revert:` block; `GameState.is_ability_usable()` / `ability_unusable_reason()`
+gained a generic gate (`"CD N"` / `"No Essence"`) checked right after `_bonus_action_blocks()`.
+Set on a confirmed resolution (`PlayerHybrid._pay()`), skipped while `GameState.invincible`.
+Cleared on a long rest. Not serialized (mid-floor transient); `RewindManager`'s existing
+`_dup_ability_array()` deep-dup already snapshots the fields, no rewind change needed.
+
+**Essence** (`Stats.hybrid_essence` / `hybrid_essence_max` - 2/3/4 at levels 1/6/12, serialized):
++1 per floor descent (`GameState.advance_floor()` → `grant_hybrid_essence(1)`), full refill on a
+long rest, spent via `GameState.spend_hybrid_essence()` (same invincible-skips convention as
+`spend_monk_focus()`). **Not** granted for landing surface combos (owner decision). HUD: a
+`◆`/`◇` pip row on `$StatsPanel` (`hud.gd._update_essence_indicator()`), Hybrid-only.
+`Stats.hybrid_power_dc` = `8 + prof + INT mod`, `hybrid_attack_bonus` = `prof + INT mod` (computed
+live) - and since `SpellEffects._attack_bonus(stats)` / `_save_dc(stats)` already fall back to
+exactly that for a null caster, `HybridEffects` reuses those helpers directly.
+
+**Surface reactions** (`docs/architecture/hybrid-class-design.md` §3, Phase 1 only): reuses the
+existing fire/water/grass sim + two new lightweight element tags on BOTH `Stats` and `Enemy`
+(mirrored, ticked in `tick_status()` / `decide_turn()`):
+- **`wet_turns`** - set by ending a move on a WATER tile (`Enemy._move_step()`) or by Tide. A wet
+  target takes ×2 Lightning and ×0.5 Fire (`Enemy.take_typed_damage()`, folded into `mul` before
+  the resist clamp), and can't burn.
+- **`shocked_turns`** - shaves one movement step, reusing the `slowed_turns` step-budget path
+  (`Enemy.decide_turn()` ORs it into `_slowed_this_turn`).
+`Enemy.apply_status()` gained `"wet"` / `"shocked"` cases. `DungeonFloor.douse_tile(pos)` puts
+out one burning-grass tile without trampling it (Tide).
+
+**Abilities** are data in `HybridAbilityDb.DEFS` (`scripts/items/hybrid_ability_db.gd`, static
+factory, no `.tres` - same as `SpellDb`), resolved by `HybridEffects` (`scripts/entities/
+hybrid_effects.gd`, static, owns its own `TurnManager.begin_player_action()` …
+`player._handle_post_attack_turn()` envelope like `SpellEffects`). Targeting / arming lives in
+`PlayerHybrid` (`scripts/entities/player_hybrid.gd`, `_hybrid` composition child on `Player`,
+same pattern as `PlayerOrc`): `player.gd._use_ability_slot()`'s `_:` arm routes any
+`HybridAbilityDb.is_hybrid_ability(id)` to `_hybrid.activate(ab)`; the mouse-release handler and
+the WASD handler each got a `_hybrid.is_targeting()` / `_hybrid.dash_id` branch next to Orc's
+dash; Esc and the move-cancel sweep call `_hybrid.cancel()`. Rewind fields
+(`targeting_id` / `dash_id`) wired into `Player.capture_rewind_state()` like `_orc`.
+
+**No growth picker yet** - `GameState._grant_hybrid_abilities_for_level()` auto-grants every
+ability whose `min_level` the character has reached (called from `_give_hybrid_starting_items()`,
+`gain_exp()`'s level-up block, and `from_dict()` - abilities are derived from class+level, never
+serialized). 5 seed abilities shipped (Spark / Tide / Grounded / Arc / Emberstep) - the owner
+iterates the kit by editing `HybridAbilityDb.DEFS`. Simplifications this pass: attack/save rolls
+have no ADV/DISADV/tooltip fidelity beyond a plain `dmg:` instance + a bare hit/miss line (no
+`sphit:` hover breakdown); electrified spread is a radius-2 check between conductive enemies, not
+a real flood-fill; a blocked Emberstep still spends its cooldown.
+
 ## Locked classes — base D&D stat blocks only
 
 `Stats.CharacterClass` gained 8 new enum entries — `BARD`, `CLERIC`, `DRUID`, `FIGHTER`,

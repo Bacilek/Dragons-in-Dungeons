@@ -28,6 +28,7 @@ var _dragonborn: PlayerDragonborn
 var _dwarf: PlayerDwarf
 var _human: PlayerHuman
 var _orc: PlayerOrc
+var _hybrid: PlayerHybrid
 var _aasimar: PlayerAasimar
 var _goliath: PlayerGoliath
 var _tiefling: PlayerTiefling
@@ -199,6 +200,7 @@ func capture_rewind_state() -> Dictionary:
 		"goliath": _goliath.get_rewind_fields(),
 		"halfling": _halfling.get_rewind_fields(),
 		"orc": _orc.get_rewind_fields(),
+		"hybrid": _hybrid.get_rewind_fields(),
 		"monk": _monk.get_rewind_fields(),
 	}
 
@@ -227,6 +229,7 @@ func restore_rewind_state(d: Dictionary) -> void:
 	_goliath.set_rewind_fields(d.get("goliath", {}))
 	_halfling.set_rewind_fields(d.get("halfling", {}))
 	_orc.set_rewind_fields(d.get("orc", {}))
+	_hybrid.set_rewind_fields(d.get("hybrid", {}))
 	_monk.set_rewind_fields(d.get("monk", {}))
 
 
@@ -256,6 +259,7 @@ func _ready() -> void:
 	_dwarf = PlayerDwarf.new(); _dwarf.player = self; add_child(_dwarf)
 	_human = PlayerHuman.new(); _human.player = self; add_child(_human)
 	_orc = PlayerOrc.new(); _orc.player = self; add_child(_orc)
+	_hybrid = PlayerHybrid.new(); _hybrid.player = self; add_child(_hybrid)
 	_aasimar = PlayerAasimar.new(); _aasimar.player = self; add_child(_aasimar)
 	_goliath = PlayerGoliath.new(); _goliath.player = self; add_child(_goliath)
 	_tiefling = PlayerTiefling.new(); _tiefling.player = self; add_child(_tiefling)
@@ -339,6 +343,14 @@ func _on_turn_started() -> void:
 			GameState.action_surge_pending = false
 			GameState.ability_bar_changed.emit()
 		GameState.monk_disengage_this_round = false
+		# Hybrid class: tick every ability cooldown once per real turn (docs/architecture/hybrid-class-design.md).
+		var _cd_changed: bool = false
+		for _ab in GameState.player_ability_bar:
+			if _ab != null and (_ab as Ability).cooldown_remaining > 0:
+				(_ab as Ability).cooldown_remaining -= 1
+				_cd_changed = true
+		if _cd_changed:
+			GameState.ability_bar_changed.emit()
 		# Bonus Action refreshes at the start of every real round — see scripts/entities/CLAUDE.md's
 		# "Bonus Action economy" section.
 		if GameState.bonus_action_used:
@@ -1170,6 +1182,7 @@ func _setup_animations() -> void:
 		Stats.CharacterClass.MONK:    char_folder = "Monk"
 		Stats.CharacterClass.WARLOCK: char_folder = "Warlock"
 		Stats.CharacterClass.FIGHTER: char_folder = "Fighter"
+		Stats.CharacterClass.HYBRID:  char_folder = "Hybrid"   # placeholder art (Wizard set)
 		_:                            char_folder = "Barbarian"   # BARBARIAN default
 	var base: String = KNIGHT_PATH + char_folder + "/"
 	var frames := SpriteFrames.new()
@@ -1179,7 +1192,7 @@ func _setup_animations() -> void:
 	# sourced idle/run packs shipped no matching hit frame) — it visibly mismatches the new
 	# idle/run sprites, so until real art exists these two classes play a static idle frame
 	# instead (no swing animation) rather than flashing the wrong-looking sprite.
-	var has_real_hit_art: bool = char_folder in ["Wizard", "Monk"]
+	var has_real_hit_art: bool = char_folder in ["Wizard", "Monk", "Hybrid"]
 	_add_anim(frames, "hit",  base + (("hit" if has_real_hit_art else "idle") + "_%d.png"), 1, false, 8.0)
 	$AnimatedSprite2D.sprite_frames = frames
 	$AnimatedSprite2D.offset = Vector2(0, -11)
@@ -1266,6 +1279,10 @@ func _process(_delta: float) -> void:
 	if _spellcasting.spell_targeting_active:
 		_spellcasting.cancel()
 		GameState.game_log("[color=gray]Spell cancelled.[/color]")
+	# Hybrid: a click-targeting ability cancels on move; a primed direction-dash is instead
+	# consumed by the direction press in _try_move() (same as Thief Tools' bump).
+	if _hybrid.targeting_id != "":
+		_hybrid.cancel()
 	_dragonborn.cancel_breath_weapon()
 	_aasimar.cancel_healing_hands()
 	if _goliath.cloud_teleport_mode_active:
@@ -1798,6 +1815,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				GameState.game_log("[color=gray]Nimbleness cancelled.[/color]")
 			_dragonborn.cancel_breath_weapon()
 			_aasimar.cancel_healing_hands()
+			if _hybrid.is_targeting():
+				_hybrid.cancel()
 			if _spellcasting.spell_targeting_active:
 				_spellcasting.cancel()
 				GameState.game_log("[color=gray]Spell cancelled.[/color]")
@@ -2042,6 +2061,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_goliath.cloud_teleport_mode_active = false
 			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
 				_goliath.resolve_cloud_teleport(clicked)
+			return
+
+		# Hybrid ability targeting (enemy / tile / sphere / direction) — click resolves it.
+		if _hybrid.is_targeting():
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				_hybrid.resolve_click(clicked)
+			else:
+				_hybrid.cancel()
 			return
 
 		# Adrenaline Rush's one-tile dash targeting mode (Orc) — click an adjacent visible tile;
@@ -2562,6 +2589,11 @@ func _try_move(dir: Vector2i) -> void:
 	if _orc.dash_mode_active:
 		_orc.dash_mode_active = false
 		_orc.resolve_dash(target)
+		return
+
+	# Hybrid direction-dash (emberstep) primed: a WASD direction picks the dash line.
+	if _hybrid.dash_id != "":
+		_hybrid.resolve_dash(target)
 		return
 
 	# Step of the Wind dash primed: a WASD/arrow direction picks the dash's own target instead of
@@ -4045,4 +4077,8 @@ func _use_ability_slot(idx: int) -> void:
 		"hail_of_thorns_toggle":   _ranger_talents.activate_hail_of_thorns()
 		"ensnaring_strike_toggle": _ranger_talents.activate_ensnaring_strike()
 		"halfling_nimbleness":     _halfling.activate_nimbleness()
-		_:                         GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
+		_:
+			if HybridAbilityDb.is_hybrid_ability(ab.ability_id):
+				_hybrid.activate(ab)
+			else:
+				GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)

@@ -102,6 +102,22 @@ const CLASS_DATA: Array = [
 			"starting_equipment": "",
 		},
 	},
+	{
+		"cls":    12,  # Stats.CharacterClass.HYBRID
+		"name":   "Hybrid",
+		"sprite": CHAR_PATH + "Hybrid/idle_1.png",
+		"hd":     "d10 Hit Die",
+		"desc":   "Elemental adept.\nCooldowns + Essence,\nsurface combos.",
+		"color":  Color(0.45, 0.75, 0.95),
+		"info": {
+			"primary_ability": "INT",
+			"hit_die": "d10",
+			"check_profs": "DEX, INT",
+			"weapon_profs": "Simple",
+			"armor_training": "Light",
+			"starting_equipment": "Dagger, Leather Armor",
+		},
+	},
 ]
 
 # Classes with no implementation yet — shown as locked silhouette tiles so the

@@ -633,6 +633,8 @@ func give_class_starting_items() -> void:
 			_give_warlock_starting_items()
 		Stats.CharacterClass.FIGHTER:
 			_give_fighter_starting_items()
+		Stats.CharacterClass.HYBRID:
+			_give_hybrid_starting_items()
 
 # One-time, permanent race choice — called by race_select.gd's confirm button, fired between
 # class selection and the Mastery Picker. Mirrors choose_subclass()'s shape: sets the choice on
@@ -1532,6 +1534,49 @@ func _build_ranger_dagger() -> Item:
 	dagger.uses_remaining = 5
 	return dagger
 
+# ── Hybrid class (docs/architecture/hybrid-class-design.md) ───────────────────
+func _give_hybrid_starting_items() -> void:
+	equipment["melee"] = _build_ranger_dagger()
+	var armor := Item.new()
+	armor.item_name = "Leather Armor"
+	armor.item_type = Item.Type.ARMOR
+	armor.icon_path = "res://sprites/items/materials/plate/iron.png"
+	armor.armor_category = Item.ArmorCategory.LIGHT
+	armor.base_ac = 11
+	armor.dex_cap = -1
+	armor.gold_value = 10
+	equipment["armor"] = armor
+	recalculate_stats()
+	equipment_changed.emit()
+	_grant_hybrid_abilities_for_level()
+
+func _build_hybrid_ability(id: String) -> Ability:
+	var def: Dictionary = HybridAbilityDb.get_def(id)
+	var ab := Ability.new()
+	ab.ability_id = id
+	ab.ability_name = str(def.get("name", id))
+	ab.description = "[b]%s[/b]\n%s" % [def.get("name", id), def.get("description", "")]
+	ab.icon_path = str(def.get("icon", ""))
+	# Deliberately NOT ab.is_passive — a passive Hybrid ability still shows on the bar as a
+	# clickable reminder (same treatment as Monk's Unarmored Defense / Martial Arts entries).
+	ab.cooldown_max = int(def.get("cooldown", 0))
+	ab.essence_cost = int(def.get("essence_cost", 0))
+	return ab
+
+# Grants every Hybrid ability the character's level currently entitles them to that isn't already
+# on the bar. No pick-1-of-3 growth picker yet (docs §4.4) — auto-grant is the first-pass stand-in.
+func _grant_hybrid_abilities_for_level() -> void:
+	if player_stats.character_class != Stats.CharacterClass.HYBRID:
+		return
+	for id: String in HybridAbilityDb.ids_for_level(player_stats.character_level):
+		var already := false
+		for slot in player_ability_bar:
+			if slot != null and (slot as Ability).ability_id == id:
+				already = true
+				break
+		if not already:
+			add_ability(_build_hybrid_ability(id))
+
 func _build_hunters_mark_description() -> String:
 	var uses: int = Stats.HUNTERS_MARK_USES_MAX
 	var lines: Array[String] = []
@@ -2093,8 +2138,26 @@ func spend_monk_focus(amount: int) -> bool:
 	ability_bar_changed.emit()
 	return true
 
+# Hybrid class Essence spend chokepoint (docs/architecture/hybrid-class-design.md) — same
+# "invincible skips consumption" invariant as spend_monk_focus()/spend_gold().
+func spend_hybrid_essence(amount: int) -> bool:
+	if invincible:
+		return true
+	if amount > player_stats.hybrid_essence:
+		return false
+	player_stats.hybrid_essence -= amount
+	ability_bar_changed.emit()
+	return true
+
+func grant_hybrid_essence(amount: int) -> void:
+	if player_stats.character_class != Stats.CharacterClass.HYBRID:
+		return
+	player_stats.hybrid_essence = mini(player_stats.hybrid_essence + amount, player_stats.hybrid_essence_max)
+	ability_bar_changed.emit()
+
 func advance_floor() -> void:
 	current_floor += 1
+	grant_hybrid_essence(1)  # the slow Essence drip — one per floor descent
 	# Floor descent is no longer a rest — see long_rest() for every long-rest-gated resource.
 	# Only floor bookkeeping and terrain reset happen here.
 	terrain_ac_bonus = 0  # reset terrain AC; player.gd will reapply on next move
@@ -2180,6 +2243,13 @@ func long_rest() -> void:
 	player_status_changed.emit()
 	player_stats.rage_uses_remaining = player_stats.rage_uses_max
 	player_stats.monk_focus_points = player_stats.monk_focus_points_max
+	player_stats.wet_turns = 0
+	player_stats.shocked_turns = 0
+	player_stats.hybrid_essence = player_stats.hybrid_essence_max  # Hybrid Essence — full on a long rest
+	# Hybrid ability cooldowns clear on a long rest.
+	for _cd_ab in player_ability_bar:
+		if _cd_ab != null:
+			(_cd_ab as Ability).cooldown_remaining = 0
 	player_stats.uncanny_metabolism_used = false
 	player_stats.second_wind_uses_remaining = player_stats.second_wind_uses_max
 	player_stats.action_surge_uses_remaining = player_stats.action_surge_uses_max
@@ -2333,6 +2403,11 @@ func is_ability_usable(ab: Ability) -> bool:
 		return false
 	if _bonus_action_blocks(ab):
 		return false
+	# Hybrid class — generic cooldown / Essence gate (docs/architecture/hybrid-class-design.md).
+	if ab.is_on_cooldown():
+		return false
+	if ab.essence_cost > 0 and not invincible and player_stats.hybrid_essence < ab.essence_cost:
+		return false
 	match ab.ability_id:
 		"frenzy":
 			return is_raging and not berserker_frenzy_used
@@ -2440,6 +2515,10 @@ func ability_unusable_reason(ab: Ability) -> String:
 	# "No Bonus Action" only wins when it's the SOLE blocker — a more specific existing reason
 	# (e.g. "No Rage", "Not Engaged") still takes priority if that's ALSO true, checked below.
 	var bonus_action_reason: String = "No Bonus Action" if _bonus_action_blocks(ab) else ""
+	if ab.is_on_cooldown():
+		return "CD %d" % ab.cooldown_remaining
+	if ab.essence_cost > 0 and not invincible and player_stats.hybrid_essence < ab.essence_cost:
+		return "No Essence"
 	match ab.ability_id:
 		"frenzy":
 			if not is_raging:
@@ -2552,6 +2631,7 @@ func hit_die_sides() -> int:
 		Stats.CharacterClass.FIGHTER:   return 10
 		Stats.CharacterClass.PALADIN:   return 10
 		Stats.CharacterClass.SORCERER:  return 6
+		Stats.CharacterClass.HYBRID:    return 10
 		_:                              return 8  # Bard/Cleric/Druid/Rogue/Warlock: d8
 
 func check_player_death() -> void:
@@ -2742,6 +2822,7 @@ func gain_exp(amount: int) -> void:
 		short_rest_changed.emit()
 		_apply_monk_level_features(player_stats.character_level)
 		_apply_fighter_level_features(player_stats.character_level)
+		_grant_hybrid_abilities_for_level()  # auto-grant newly-eligible Hybrid abilities
 		if player_stats.caster != null and player_stats.caster.slot_pool != null:
 			player_stats.caster.slot_pool.grant_new_slots_on_levelup(old_slot_max)
 			spell_slots_changed.emit()
@@ -5105,6 +5186,7 @@ func from_dict(d: Dictionary) -> void:
 	player_stats.from_dict(stats_d)
 	_rebuild_spell_ability_bar()
 	_restore_race_ability_bar()
+	_grant_hybrid_abilities_for_level()  # Hybrid abilities are derived from class+level, not serialized
 	# Restore the special quick-cast slot last — set_special_slot() validates against the just-
 	# restored known_spells and silently clears (returns false, leaves "" default) if the saved
 	# spell is no longer known (e.g. a respec edge case), never crashes on a stale id.

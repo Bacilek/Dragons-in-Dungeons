@@ -3,7 +3,8 @@ extends Resource
 
 enum CharacterClass {
 	BARBARIAN, RANGER, WIZARD, MONK,
-	BARD, CLERIC, DRUID, FIGHTER, PALADIN, ROGUE, SORCERER, WARLOCK
+	BARD, CLERIC, DRUID, FIGHTER, PALADIN, ROGUE, SORCERER, WARLOCK,
+	HYBRID,
 }
 
 # Internal-only D&D-role categorization — never shown in any UI, purely a filter this codebase's
@@ -38,6 +39,9 @@ const CLASS_ROLE: Dictionary = {
 	"WIZARD":    "FULL_CASTER",
 	"RANGER":    "HALF_CASTER",
 	"PALADIN":   "HALF_CASTER",
+	# Hybrid runs on its own cooldown + Essence economy (docs/architecture/hybrid-class-design.md),
+	# not the D&D spell/rest model — categorized MARTIAL only so nothing tries to grant it a caster.
+	"HYBRID":    "MARTIAL",
 }
 enum CharacterRace { ORC, HUMAN, HALFLING, DWARF, ELF, DRAGONBORN, TIEFLING, AASIMAR, GNOME, GOLIATH }
 enum ElfSubrace { DROW, HIGH_ELF, WOOD_ELF }          # only meaningful when character_race == ELF
@@ -444,6 +448,26 @@ var monk_focus_points_max: int:
 		return character_level
 var monk_save_dc: int:
 	get: return 8 + proficiency_bonus + wis_modifier()
+
+# ── Hybrid class (docs/architecture/hybrid-class-design.md) ────────────────────
+# Essence: the small, slowly-refilling nova pool. +1 per floor descent, full refill on a long
+# rest, +1 from an Essence Shard item. Spent via GameState.spend_hybrid_essence(). Serialized.
+var hybrid_essence: int = 0
+var hybrid_essence_max: int:
+	get:
+		if character_class != CharacterClass.HYBRID: return 0
+		if character_level >= 12: return 4
+		if character_level >= 6:  return 3
+		return 2
+# Ability math — computed live, never cached (mirrors SpellcasterState / monk_save_dc).
+var hybrid_power_dc: int:
+	get: return 8 + proficiency_bonus + int_modifier()
+var hybrid_attack_bonus: int:
+	get: return proficiency_bonus + int_modifier()
+# Element tags (enemy side mirrored on Enemy — same "duplicate not unified" convention as
+# Conditions). Ticked down in tick_status().
+var wet_turns: int = 0       # +100% Lightning taken, -50% Fire taken, can't burn
+var shocked_turns: int = 0   # loses next movement step (reuses the slowed step-budget path)
 
 # Uncanny Metabolism (Monk only, level 2+, granted alongside the 3 Focus abilities above):
 # activated ability, 1/long rest (uncanny_metabolism_used resets in GameState.long_rest()) — rolls
@@ -883,6 +907,7 @@ func hp_per_level_breakdown() -> Dictionary:
 		CharacterClass.ROGUE:     avg = 5  # d8 avg = 5
 		CharacterClass.SORCERER:  avg = 4  # d6 avg = 4
 		CharacterClass.WARLOCK:   avg = 5  # d8 avg = 5
+		CharacterClass.HYBRID:    avg = 6  # d10 avg = 6
 		_:                        avg = 5
 	var con: int = con_modifier()
 	var dwarf: int = 1 if character_race == CharacterRace.DWARF else 0
@@ -942,6 +967,10 @@ func tick_status() -> int:
 		bleeding_turns -= 1
 	if slowed_turns > 0:
 		slowed_turns -= 1
+	if wet_turns > 0:
+		wet_turns -= 1
+	if shocked_turns > 0:
+		shocked_turns -= 1
 	if dodge_turns > 0:
 		dodge_turns -= 1
 	if poisoned_condition_turns > 0:
@@ -1017,6 +1046,7 @@ func to_dict() -> Dictionary:
 		"base_max_damage": base_max_damage,
 		"rage_uses_remaining": rage_uses_remaining,
 		"monk_focus_points": monk_focus_points,
+		"hybrid_essence": hybrid_essence,
 		"uncanny_metabolism_used": uncanny_metabolism_used,
 		"hunters_mark_uses_remaining": hunters_mark_uses_remaining,
 		"breath_weapon_uses_remaining": breath_weapon_uses_remaining,
@@ -1030,6 +1060,8 @@ func to_dict() -> Dictionary:
 		"burning_turns": burning_turns,
 		"bleeding_turns": bleeding_turns,
 		"slowed_turns": slowed_turns,
+		"wet_turns": wet_turns,
+		"shocked_turns": shocked_turns,
 		"dodge_turns": dodge_turns,
 		"exhaustion_level": exhaustion_level,
 		"zealous_presence_turns": zealous_presence_turns,
@@ -1080,6 +1112,7 @@ func from_dict(d: Dictionary) -> void:
 	base_max_damage = int(d.get("base_max_damage", base_max_damage))
 	rage_uses_remaining = int(d.get("rage_uses_remaining", 0))
 	monk_focus_points = int(d.get("monk_focus_points", 0))
+	hybrid_essence = int(d.get("hybrid_essence", 0))
 	uncanny_metabolism_used = bool(d.get("uncanny_metabolism_used", false))
 	hunters_mark_uses_remaining = int(d.get("hunters_mark_uses_remaining", 0))
 	breath_weapon_uses_remaining = int(d.get("breath_weapon_uses_remaining", 0))
@@ -1093,6 +1126,8 @@ func from_dict(d: Dictionary) -> void:
 	burning_turns = int(d.get("burning_turns", 0))
 	bleeding_turns = int(d.get("bleeding_turns", 0))
 	slowed_turns = int(d.get("slowed_turns", 0))
+	wet_turns = int(d.get("wet_turns", 0))
+	shocked_turns = int(d.get("shocked_turns", 0))
 	dodge_turns = int(d.get("dodge_turns", 0))
 	exhaustion_level = int(d.get("exhaustion_level", 0))
 	zealous_presence_turns = int(d.get("zealous_presence_turns", 0))
@@ -1153,6 +1188,7 @@ func point_buy_hit_die_base() -> int:
 		CharacterClass.ROGUE: return 8
 		CharacterClass.SORCERER: return 6
 		CharacterClass.WARLOCK: return 8
+		CharacterClass.HYBRID: return 10
 	return 8
 
 # Overrides the six base ability scores with a player-allocated point-buy result, then
@@ -1337,6 +1373,17 @@ func apply_class_defaults() -> void:
 			caster.spellcasting_ability = "CHA"
 			caster.slot_pool = PactSlotPool.new()
 			caster.slot_pool.owner_stats = self
+		CharacterClass.HYBRID:
+			intelligence = 16; dexterity = 14; constitution = 14
+			strength = 10; wisdom = 10; charisma = 8
+			max_hp = 10 + modifier(constitution)   # Hybrid HD d10
+			check_prof_dex = true
+			check_prof_int = true
+			proficient_simple_weapons = true
+			proficient_light_armor = true
+			hybrid_essence = hybrid_essence_max
+			# No caster, no talents, no weapon-mastery picker — the kit is the ability bar
+			# (docs/architecture/hybrid-class-design.md).
 	current_hp = max_hp
 	# Barbarian and Monk start unarmored — apply unarmored defense formulas.
 	recalc_ac(false)
