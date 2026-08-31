@@ -4394,7 +4394,10 @@ direct owner correction from the first draft, which ticked at `_on_turn_started(
 `_on_turn_started()`) and doesn't tick until next turn - so `cooldown N` = unavailable for your
 next N turns. `GameState.is_ability_usable()` / `ability_unusable_reason()` gained a generic gate
 (`"CD N"` / `"No Essence"`) checked right after `_bonus_action_blocks()`. Set on a confirmed
-resolution (`PlayerHybrid._pay()`), skipped while `GameState.invincible`.
+resolution (`PlayerHybrid._pay()`), skipped while `GameState.invincible`. **HUD**: an ability on
+cooldown shows a big grey number centred across the dimmed icon (`hud.gd`'s
+`_slot_cooldown_labels`, a per-slot full-rect `Label`) - no colour, no "t"; off cooldown it's
+just the plain icon.
 Cleared on a long rest. Not serialized (mid-floor transient); `RewindManager`'s existing
 `_dup_ability_array()` deep-dup already snapshots the fields, no rewind change needed.
 

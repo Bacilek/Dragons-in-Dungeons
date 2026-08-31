@@ -76,6 +76,7 @@ var _crit_banner: CritBanner
 var _ability_bar_mode: bool = false  # false = items, true = abilities
 var _bar_mode_label: Label           # shows "ITEMS" / "ABILITIES [Tab]"
 var _slot_use_labels: Array[Label] = []  # ability uses remaining badges
+var _slot_cooldown_labels: Array[Label] = []  # big centered grey cooldown number (Hybrid class)
 
 # ── Log tooltip ───────────────────────────────────────────────────────────────
 var _log_tooltip: Panel = null
@@ -338,6 +339,23 @@ func _ready() -> void:
 		use_lbl.visible = false
 		_item_slots[_i].add_child(use_lbl)
 		_slot_use_labels.append(use_lbl)
+
+		# Big centered grey cooldown number, drawn across the whole (dimmed) slot icon.
+		var cd_lbl := Label.new()
+		cd_lbl.add_theme_font_size_override("font_size", 26)
+		cd_lbl.add_theme_color_override("font_color", Color(0.88, 0.88, 0.88))
+		cd_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+		cd_lbl.add_theme_constant_override("shadow_offset_x", 1)
+		cd_lbl.add_theme_constant_override("shadow_offset_y", 1)
+		cd_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cd_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cd_lbl.text = ""
+		cd_lbl.anchor_right = 1.0
+		cd_lbl.anchor_bottom = 1.0
+		cd_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cd_lbl.visible = false
+		_item_slots[_i].add_child(cd_lbl)
+		_slot_cooldown_labels.append(cd_lbl)
 
 	# Hit dice label below level label
 	_hit_dice_label = Label.new()
@@ -965,6 +983,8 @@ func _refresh_item_bar() -> void:
 		slot.modulate = Color(1.0, 1.0, 1.0)  # reset tint from ability bar (e.g. active-toggle orange)
 		if _slot_use_labels.size() > i:
 			_slot_use_labels[i].visible = false
+		if _slot_cooldown_labels.size() > i:
+			_slot_cooldown_labels[i].visible = false
 		if raw == null:
 			slot.text = ""
 			slot.icon = null
@@ -1016,6 +1036,8 @@ func _refresh_ability_bar() -> void:
 		qty_lbl.text = ""
 		if _slot_use_labels.size() > i:
 			_slot_use_labels[i].visible = false
+		if _slot_cooldown_labels.size() > i:
+			_slot_cooldown_labels[i].visible = false
 		if raw == null:
 			slot.text = ""
 			slot.icon = null
@@ -1096,9 +1118,12 @@ func _refresh_ability_bar() -> void:
 					use_lbl.text = "%d/%d" % [um_left, 1]
 					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2) if um_left > 0 else Color(0.5, 0.5, 0.5))
 				elif ab.cooldown_remaining > 0:
-					# Hybrid class: on cooldown — show turns remaining (docs/architecture/hybrid-class-design.md).
-					use_lbl.text = "%dt" % ab.cooldown_remaining
-					use_lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
+					# Hybrid class: on cooldown - big grey number across the dimmed icon,
+					# nothing else (docs/architecture/hybrid-class-design.md).
+					use_lbl.visible = false
+					if _slot_cooldown_labels.size() > i:
+						_slot_cooldown_labels[i].visible = true
+						_slot_cooldown_labels[i].text = str(ab.cooldown_remaining)
 				elif ab.essence_cost > 0:
 					# Hybrid Essence ability — show its cost, dimmed if unaffordable.
 					var ess: int = GameState.player_stats.hybrid_essence
@@ -1120,6 +1145,10 @@ func _refresh_ability_bar() -> void:
 				slot.modulate = Color(1.0, 0.55, 0.1)
 			elif GameState.is_ability_usable(ab):
 				slot.modulate = Color(1.0, 1.0, 1.0)
+			elif ab.cooldown_remaining > 0:
+				# Cooldown: dim the icon but keep it light enough that the big grey number over
+				# it stays clearly readable (both get multiplied by this modulate).
+				slot.modulate = Color(0.62, 0.62, 0.62)
 			else:
 				slot.modulate = Color(0.45, 0.45, 0.45)
 
