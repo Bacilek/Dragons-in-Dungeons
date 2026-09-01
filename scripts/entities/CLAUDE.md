@@ -4446,6 +4446,49 @@ have no ADV/DISADV/tooltip fidelity beyond a plain `dmg:` instance + a bare hit/
 `sphit:` hover breakdown); electrified spread is a radius-2 check between conductive enemies, not
 a real flood-fill; a blocked Emberstep still spends its cooldown.
 
+## Rampager class
+
+"Our version of the Barbarian" — same reckless melee-bruiser fantasy, **off the D&D rest model,
+running on the exact same economy as the Hybrid** (cooldown abilities + a small nova pool). The
+Hybrid's pool is Essence; the Rampager's is **Fury**. Mechanically a clone — deliberately the ONE
+sanctioned alternative economy reused, not a third bespoke model (see
+`docs/architecture/rampager-class-design.md` for the full rationale). `Stats.CharacterClass.RAMPAGER`
+(enum value 13), `CLASS_ROLE` = `"MARTIAL"`. Selectable on the Custom path under `class_select.gd`'s
+non-D&D roster toggle (`"hybrid": true`, `"cls": 13`); no premade hero.
+
+d12 HD, STR 16 / CON 15 / DEX 12, STR+CON check prof, Simple+Martial weapons, Light+Medium armor +
+Shields (no Heavy, no unarmored defense — it wears armor). `Stats.mastery_cap()` mirrors the
+Barbarian curve (2/3/4 at L1/4/10) — the weapon-mastery picker stays. Starting gear
+(`GameState._give_rampager_starting_items()`): Spear + 2 thrown Handaxes (same as the Barbarian's
+current starter). **Placeholder art** — `_setup_animations()` maps `RAMPAGER → "Barbarian"`, reusing
+the Barbarian sprite set until its own lands.
+
+**Fury** (`Stats.rampager_fury` / `rampager_fury_max` — 2/3/4 at L1/6/12, serialized): exact clone
+of `hybrid_essence` — +1 per floor descent (`GameState.grant_rampager_fury(1)` in `advance_floor()`),
+full refill on a long rest, spent via `GameState.spend_rampager_fury()` (invincible skips
+consumption). `Ability.fury_cost` mirrors `essence_cost` (same xor-with-cooldown rule); the generic
+`is_ability_usable()` / `ability_unusable_reason()` gate gained a Fury branch (`"No Fury"`). HUD:
+the shared `hud.gd._update_essence_indicator()` pip row shows "Fury" (orange ◆) for a Rampager
+instead of "Essence". `Stats.rampager_power_dc` = `8 + prof + STR mod`, `rampager_attack_bonus` =
+`prof + STR mod` (computed live) — `RampagerEffects` reuses `SpellEffects._attack_bonus()`/
+`_save_dc()` (INT-based for a null caster) and shifts by `str_mod - int_mod` to realign onto STR.
+
+**Collision hook** (the one Rampager-specific system, parallel to the Hybrid's surfaces): abilities
+shove / hurl enemies via the existing `DungeonFloor.resolve_push()` (WALL → Bludgeoning + no move,
+trap → trigger, CHASM → removed). `RampagerEffects._resolve_collision()` (deferred to a later
+slice) will add enemy-into-enemy collisions.
+
+**Abilities** are data in `RampagerAbilityDb.DEFS` (`scripts/items/rampager_ability_db.gd`, static
+factory, `"kind"` = `"passive"`/`"activation"`, same shape as `HybridAbilityDb`), resolved by
+`RampagerEffects` (`scripts/entities/rampager_effects.gd`, copies `HybridEffects`'s structure),
+armed/targeted by `PlayerRampager` (`scripts/entities/player_rampager.gd`, `_rampager` composition
+child on `Player`, copies `PlayerHybrid` — dispatch, mouse-release + WASD dash branches, move/Esc
+`cancel()`, rewind fields all mirror the `_hybrid` sites). First-pass kit (auto-granted by
+`min_level` via `GameState._grant_rampager_abilities_for_level()`, no picker yet): **Bracer**
+(passive reminder, L1), **Overrun** (cooldown 2 charge + ram + shove, L1), **Shockwave** (Fury 2,
+radius-2 STR-save Bludgeoning + Prone, L3). Progression cadence + base talents + a level-5
+boss-gated subclass (Juggernaut / Feral) are specced in the design doc but not built.
+
 ## Locked classes — base D&D stat blocks only
 
 `Stats.CharacterClass` gained 8 new enum entries — `BARD`, `CLERIC`, `DRUID`, `FIGHTER`,

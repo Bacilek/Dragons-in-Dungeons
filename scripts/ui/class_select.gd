@@ -119,6 +119,23 @@ const CLASS_DATA: Array = [
 			"starting_equipment": "Dagger, Leather Armor",
 		},
 	},
+	{
+		"cls":    13,  # Stats.CharacterClass.RAMPAGER
+		"hybrid": true,  # shown only under the non-D&D roster toggle
+		"name":   "Rampager",
+		"sprite": CHAR_PATH + "Barbarian/idle_1.png",
+		"hd":     "d12 Hit Die",
+		"desc":   "Reckless bruiser.\nCooldowns + Fury,\ncollision combos.",
+		"color":  Color(0.85, 0.35, 0.30),
+		"info": {
+			"primary_ability": "STR",
+			"hit_die": "d12",
+			"check_profs": "STR, CON",
+			"weapon_profs": "Simple, Martial",
+			"armor_training": "Light, Medium, Shields",
+			"starting_equipment": "Spear, 2 Handaxes",
+		},
+	},
 ]
 
 # Classes with no implementation yet — shown as locked silhouette tiles so the

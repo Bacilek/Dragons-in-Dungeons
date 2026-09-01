@@ -17,6 +17,9 @@ extends Resource
 # Essence cost (Hybrid nova abilities). 0 = free / cooldown-based. Mutually exclusive with
 # cooldown_max > 0 (authoring error to set both).
 @export var essence_cost: int = 0
+# Fury cost (Rampager nova abilities — docs/architecture/rampager-class-design.md). Exact clone of
+# essence_cost, just against Stats.rampager_fury instead of hybrid_essence. Same xor rule.
+@export var fury_cost: int = 0
 # For toggle abilities (e.g. Reckless Attack): true while toggled on.
 @export var is_active: bool = false
 # Passive abilities are shown only in the talent screen, never placed in the ability bar.

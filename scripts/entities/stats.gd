@@ -474,25 +474,16 @@ var wet_turns: int = 0       # +100% Lightning taken, -50% Fire taken, can't bur
 var shocked_turns: int = 0   # loses next movement step (reuses the slowed step-budget path)
 
 # ── Rampager class (docs/architecture/rampager-class-design.md) ────────────────
-# Momentum: a live 0..momentum_cap combat gauge — builds from dealing/taking melee damage,
-# bleeds when the fight stops. The whole offensive economy (no per-rest resource). Built/decayed
-# in player.gd (needs combat context); serialized. long_rest() deliberately does NOT touch it.
-var momentum: int = 0
-var rampage_turns_remaining: int = 0   # Rampage burst window countdown
-var momentum_cap: int:
+# Runs on the SAME economy as the Hybrid (cooldown abilities + a small nova pool) — Fury is the
+# Rampager's Essence: +1 per floor descent, full refill on a long rest, spent via
+# GameState.spend_rampager_fury(). Serialized. Mechanically a clone of hybrid_essence.
+var rampager_fury: int = 0
+var rampager_fury_max: int:
 	get:
 		if character_class != CharacterClass.RAMPAGER: return 0
-		if character_level >= 12: return 150
-		if character_level >= 6:  return 125
-		return 100
-# 0 = below 25, 1 = Heated (>=25), 2 = Furious (>=50), 3 = Unbridled (>=75), 4 = Rampage-ready (full)
-func rampager_tier() -> int:
-	if character_class != CharacterClass.RAMPAGER: return 0
-	if momentum >= momentum_cap: return 4
-	if momentum >= 75: return 3
-	if momentum >= 50: return 2
-	if momentum >= 25: return 1
-	return 0
+		if character_level >= 12: return 4
+		if character_level >= 6:  return 3
+		return 2
 # Ability math — computed live, never cached (mirrors hybrid_power_dc / monk_save_dc).
 var rampager_power_dc: int:
 	get: return 8 + proficiency_bonus + str_modifier()
@@ -1078,8 +1069,7 @@ func to_dict() -> Dictionary:
 		"rage_uses_remaining": rage_uses_remaining,
 		"monk_focus_points": monk_focus_points,
 		"hybrid_essence": hybrid_essence,
-		"momentum": momentum,
-		"rampage_turns_remaining": rampage_turns_remaining,
+		"rampager_fury": rampager_fury,
 		"uncanny_metabolism_used": uncanny_metabolism_used,
 		"hunters_mark_uses_remaining": hunters_mark_uses_remaining,
 		"breath_weapon_uses_remaining": breath_weapon_uses_remaining,
@@ -1146,8 +1136,7 @@ func from_dict(d: Dictionary) -> void:
 	rage_uses_remaining = int(d.get("rage_uses_remaining", 0))
 	monk_focus_points = int(d.get("monk_focus_points", 0))
 	hybrid_essence = int(d.get("hybrid_essence", 0))
-	momentum = int(d.get("momentum", 0))
-	rampage_turns_remaining = int(d.get("rampage_turns_remaining", 0))
+	rampager_fury = int(d.get("rampager_fury", 0))
 	uncanny_metabolism_used = bool(d.get("uncanny_metabolism_used", false))
 	hunters_mark_uses_remaining = int(d.get("hunters_mark_uses_remaining", 0))
 	breath_weapon_uses_remaining = int(d.get("breath_weapon_uses_remaining", 0))
@@ -1431,8 +1420,8 @@ func apply_class_defaults() -> void:
 			proficient_shields = true
 			proficient_light_armor = true
 			proficient_medium_armor = true
-			momentum = 0
-			# No caster. Runs on the Momentum gauge instead of rage_uses_max
+			rampager_fury = rampager_fury_max
+			# No caster. Same cooldown + nova-pool (Fury) economy as the Hybrid, not rage_uses_max
 			# (docs/architecture/rampager-class-design.md).
 	current_hp = max_hp
 	# Barbarian and Monk start unarmored — apply unarmored defense formulas.

@@ -635,6 +635,8 @@ func give_class_starting_items() -> void:
 			_give_fighter_starting_items()
 		Stats.CharacterClass.HYBRID:
 			_give_hybrid_starting_items()
+		Stats.CharacterClass.RAMPAGER:
+			_give_rampager_starting_items()
 
 # One-time, permanent race choice — called by race_select.gd's confirm button, fired between
 # class selection and the Mastery Picker. Mirrors choose_subclass()'s shape: sets the choice on
@@ -1577,6 +1579,60 @@ func _grant_hybrid_abilities_for_level() -> void:
 		if not already:
 			add_ability(_build_hybrid_ability(id))
 
+# ── Rampager class (docs/architecture/rampager-class-design.md) ───────────────
+# Same cooldown + nova economy as the Hybrid, Fury in place of Essence, STR-based power.
+func _give_rampager_starting_items() -> void:
+	# Same starter as the Barbarian today: Tier-1 Spear + 2 thrown Handaxes.
+	var spear := Item.new()
+	spear.item_name = "Spear"
+	spear.item_type = Item.Type.WEAPON
+	spear.icon_path = "res://sprites/weapons/weapon_spear.png"
+	spear.damage_die_min = 1
+	spear.damage_die_max = 6
+	spear.versatile_die_min = 1
+	spear.versatile_die_max = 8
+	spear.is_versatile = true
+	spear.floor_min = 1
+	spear.floor_max = 10
+	spear.damage_type = "Piercing"
+	spear.weapon_mastery = "Sap"
+	spear.weapon_category = "Simple"
+	spear.is_thrown = true
+	spear.range = 3
+	spear.long_range = 12
+	spear.uses_max = 5
+	spear.uses_remaining = 5
+	spear.gold_value = 1
+	equipment["melee"] = spear
+	recalculate_stats()
+	equipment_changed.emit()
+	for _i: int in 2:
+		add_item(_build_barbarian_handaxe())
+	_grant_rampager_abilities_for_level()
+
+func _build_rampager_ability(id: String) -> Ability:
+	var def: Dictionary = RampagerAbilityDb.get_def(id)
+	var ab := Ability.new()
+	ab.ability_id = id
+	ab.ability_name = str(def.get("name", id))
+	ab.description = "[b]%s[/b]\n%s" % [def.get("name", id), def.get("description", "")]
+	ab.icon_path = str(def.get("icon", ""))
+	ab.cooldown_max = int(def.get("cooldown", 0))
+	ab.fury_cost = int(def.get("fury_cost", 0))
+	return ab
+
+func _grant_rampager_abilities_for_level() -> void:
+	if player_stats.character_class != Stats.CharacterClass.RAMPAGER:
+		return
+	for id: String in RampagerAbilityDb.ids_for_level(player_stats.character_level):
+		var already := false
+		for slot in player_ability_bar:
+			if slot != null and (slot as Ability).ability_id == id:
+				already = true
+				break
+		if not already:
+			add_ability(_build_rampager_ability(id))
+
 func _build_hunters_mark_description() -> String:
 	var uses: int = Stats.HUNTERS_MARK_USES_MAX
 	var lines: Array[String] = []
@@ -2155,9 +2211,26 @@ func grant_hybrid_essence(amount: int) -> void:
 	player_stats.hybrid_essence = mini(player_stats.hybrid_essence + amount, player_stats.hybrid_essence_max)
 	ability_bar_changed.emit()
 
+# Rampager Fury — exact clone of hybrid_essence's spend/grant, against Stats.rampager_fury.
+func spend_rampager_fury(amount: int) -> bool:
+	if invincible:
+		return true
+	if amount > player_stats.rampager_fury:
+		return false
+	player_stats.rampager_fury -= amount
+	ability_bar_changed.emit()
+	return true
+
+func grant_rampager_fury(amount: int) -> void:
+	if player_stats.character_class != Stats.CharacterClass.RAMPAGER:
+		return
+	player_stats.rampager_fury = mini(player_stats.rampager_fury + amount, player_stats.rampager_fury_max)
+	ability_bar_changed.emit()
+
 func advance_floor() -> void:
 	current_floor += 1
 	grant_hybrid_essence(1)  # the slow Essence drip — one per floor descent
+	grant_rampager_fury(1)   # the slow Fury drip — one per floor descent
 	# Floor descent is no longer a rest — see long_rest() for every long-rest-gated resource.
 	# Only floor bookkeeping and terrain reset happen here.
 	terrain_ac_bonus = 0  # reset terrain AC; player.gd will reapply on next move
@@ -2246,7 +2319,8 @@ func long_rest() -> void:
 	player_stats.wet_turns = 0
 	player_stats.shocked_turns = 0
 	player_stats.hybrid_essence = player_stats.hybrid_essence_max  # Hybrid Essence — full on a long rest
-	# Hybrid ability cooldowns clear on a long rest.
+	player_stats.rampager_fury = player_stats.rampager_fury_max    # Rampager Fury — full on a long rest
+	# Hybrid / Rampager ability cooldowns clear on a long rest.
 	for _cd_ab in player_ability_bar:
 		if _cd_ab != null:
 			(_cd_ab as Ability).cooldown_remaining = 0
@@ -2408,6 +2482,8 @@ func is_ability_usable(ab: Ability) -> bool:
 		return false
 	if ab.essence_cost > 0 and not invincible and player_stats.hybrid_essence < ab.essence_cost:
 		return false
+	if ab.fury_cost > 0 and not invincible and player_stats.rampager_fury < ab.fury_cost:
+		return false
 	match ab.ability_id:
 		"frenzy":
 			return is_raging and not berserker_frenzy_used
@@ -2519,6 +2595,8 @@ func ability_unusable_reason(ab: Ability) -> String:
 		return "CD %d" % ab.cooldown_remaining
 	if ab.essence_cost > 0 and not invincible and player_stats.hybrid_essence < ab.essence_cost:
 		return "No Essence"
+	if ab.fury_cost > 0 and not invincible and player_stats.rampager_fury < ab.fury_cost:
+		return "No Fury"
 	match ab.ability_id:
 		"frenzy":
 			if not is_raging:
@@ -2632,6 +2710,7 @@ func hit_die_sides() -> int:
 		Stats.CharacterClass.PALADIN:   return 10
 		Stats.CharacterClass.SORCERER:  return 6
 		Stats.CharacterClass.HYBRID:    return 10
+		Stats.CharacterClass.RAMPAGER:  return 12
 		_:                              return 8  # Bard/Cleric/Druid/Rogue/Warlock: d8
 
 func check_player_death() -> void:
@@ -2823,6 +2902,7 @@ func gain_exp(amount: int) -> void:
 		_apply_monk_level_features(player_stats.character_level)
 		_apply_fighter_level_features(player_stats.character_level)
 		_grant_hybrid_abilities_for_level()  # auto-grant newly-eligible Hybrid abilities
+		_grant_rampager_abilities_for_level()  # auto-grant newly-eligible Rampager abilities
 		if player_stats.caster != null and player_stats.caster.slot_pool != null:
 			player_stats.caster.slot_pool.grant_new_slots_on_levelup(old_slot_max)
 			spell_slots_changed.emit()
@@ -5187,6 +5267,7 @@ func from_dict(d: Dictionary) -> void:
 	_rebuild_spell_ability_bar()
 	_restore_race_ability_bar()
 	_grant_hybrid_abilities_for_level()  # Hybrid abilities are derived from class+level, not serialized
+	_grant_rampager_abilities_for_level()  # ditto for Rampager
 	# Restore the special quick-cast slot last — set_special_slot() validates against the just-
 	# restored known_spells and silently clears (returns false, leaves "" default) if the saved
 	# spell is no longer known (e.g. a respec edge case), never crashes on a stale id.

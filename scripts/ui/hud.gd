@@ -711,17 +711,21 @@ func _update_bonus_action_indicator() -> void:
 func _update_essence_indicator() -> void:
 	if _essence_label == null:
 		return
-	var is_hybrid: bool = GameState.player_stats.character_class == Stats.CharacterClass.HYBRID
-	_essence_label.visible = is_hybrid
-	if not is_hybrid:
+	var cls: int = GameState.player_stats.character_class
+	var is_hybrid: bool = cls == Stats.CharacterClass.HYBRID
+	var is_rampager: bool = cls == Stats.CharacterClass.RAMPAGER
+	_essence_label.visible = is_hybrid or is_rampager
+	if not (is_hybrid or is_rampager):
 		return
-	var cur: int = GameState.player_stats.hybrid_essence
-	var mx: int = GameState.player_stats.hybrid_essence_max
+	var label: String = "Essence" if is_hybrid else "Fury"
+	var col: String = "#5ab4e6" if is_hybrid else "#e6743a"
+	var cur: int = GameState.player_stats.hybrid_essence if is_hybrid else GameState.player_stats.rampager_fury
+	var mx: int = GameState.player_stats.hybrid_essence_max if is_hybrid else GameState.player_stats.rampager_fury_max
 	var pips: String = ""
 	for k: int in mx:
-		pips += "[color=#5ab4e6]◆[/color]" if k < cur else "[color=#555560]◇[/color]"
-	_essence_label.text = "%s Essence" % pips
-	_essence_label.tooltip_text = "Essence: %d / %d. +1 per floor, full on a long rest." % [cur, mx]
+		pips += "[color=%s]◆[/color]" % col if k < cur else "[color=#555560]◇[/color]"
+	_essence_label.text = "%s %s" % [pips, label]
+	_essence_label.tooltip_text = "%s: %d / %d. +1 per floor, full on a long rest." % [label, cur, mx]
 
 func _on_floor_changed(new_floor: int) -> void:
 	floor_label.text = "Floor: %d" % new_floor
@@ -1130,6 +1134,11 @@ func _refresh_ability_bar() -> void:
 					var ess: int = GameState.player_stats.hybrid_essence
 					use_lbl.text = "%d◆" % ab.essence_cost
 					use_lbl.add_theme_color_override("font_color", Color(0.45, 0.75, 0.95) if ess >= ab.essence_cost else Color(0.5, 0.5, 0.5))
+				elif ab.fury_cost > 0:
+					# Rampager Fury ability — show its cost, dimmed if unaffordable.
+					var fury: int = GameState.player_stats.rampager_fury
+					use_lbl.text = "%d◆" % ab.fury_cost
+					use_lbl.add_theme_color_override("font_color", Color(0.90, 0.45, 0.23) if fury >= ab.fury_cost else Color(0.5, 0.5, 0.5))
 				elif ab.uses_max == 0:
 					# Passive / infinite uses.
 					use_lbl.text = ""

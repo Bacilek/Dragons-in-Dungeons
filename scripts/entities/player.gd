@@ -29,7 +29,8 @@ var _dwarf: PlayerDwarf
 var _human: PlayerHuman
 var _orc: PlayerOrc
 var _hybrid: PlayerHybrid
-# Hybrid ability ids activated this turn - excluded from that turn's cooldown tick in
+var _rampager: PlayerRampager
+# Hybrid/Rampager ability ids activated this turn - excluded from that turn's cooldown tick in
 # _on_turn_ending() so an ability never burns a turn of its own cooldown on the turn it's used.
 var _hybrid_cd_skip_this_turn: Array[String] = []
 var _aasimar: PlayerAasimar
@@ -204,6 +205,7 @@ func capture_rewind_state() -> Dictionary:
 		"halfling": _halfling.get_rewind_fields(),
 		"orc": _orc.get_rewind_fields(),
 		"hybrid": _hybrid.get_rewind_fields(),
+		"rampager": _rampager.get_rewind_fields(),
 		"monk": _monk.get_rewind_fields(),
 	}
 
@@ -233,6 +235,7 @@ func restore_rewind_state(d: Dictionary) -> void:
 	_halfling.set_rewind_fields(d.get("halfling", {}))
 	_orc.set_rewind_fields(d.get("orc", {}))
 	_hybrid.set_rewind_fields(d.get("hybrid", {}))
+	_rampager.set_rewind_fields(d.get("rampager", {}))
 	_monk.set_rewind_fields(d.get("monk", {}))
 
 
@@ -263,6 +266,7 @@ func _ready() -> void:
 	_human = PlayerHuman.new(); _human.player = self; add_child(_human)
 	_orc = PlayerOrc.new(); _orc.player = self; add_child(_orc)
 	_hybrid = PlayerHybrid.new(); _hybrid.player = self; add_child(_hybrid)
+	_rampager = PlayerRampager.new(); _rampager.player = self; add_child(_rampager)
 	_aasimar = PlayerAasimar.new(); _aasimar.player = self; add_child(_aasimar)
 	_goliath = PlayerGoliath.new(); _goliath.player = self; add_child(_goliath)
 	_tiefling = PlayerTiefling.new(); _tiefling.player = self; add_child(_tiefling)
@@ -1197,6 +1201,7 @@ func _setup_animations() -> void:
 		Stats.CharacterClass.WARLOCK: char_folder = "Warlock"
 		Stats.CharacterClass.FIGHTER: char_folder = "Fighter"
 		Stats.CharacterClass.HYBRID:  char_folder = "Hybrid"   # placeholder art (Wizard set)
+		Stats.CharacterClass.RAMPAGER: char_folder = "Barbarian"  # "our Barbarian" — reuses Barbarian art until its own set exists
 		_:                            char_folder = "Barbarian"   # BARBARIAN default
 	var base: String = KNIGHT_PATH + char_folder + "/"
 	var frames := SpriteFrames.new()
@@ -1297,6 +1302,8 @@ func _process(_delta: float) -> void:
 	# consumed by the direction press in _try_move() (same as Thief Tools' bump).
 	if _hybrid.targeting_id != "":
 		_hybrid.cancel()
+	if _rampager.targeting_id != "":
+		_rampager.cancel()
 	_dragonborn.cancel_breath_weapon()
 	_aasimar.cancel_healing_hands()
 	if _goliath.cloud_teleport_mode_active:
@@ -1831,6 +1838,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_aasimar.cancel_healing_hands()
 			if _hybrid.is_targeting():
 				_hybrid.cancel()
+			if _rampager.is_targeting():
+				_rampager.cancel()
 			if _spellcasting.spell_targeting_active:
 				_spellcasting.cancel()
 				GameState.game_log("[color=gray]Spell cancelled.[/color]")
@@ -2083,6 +2092,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				_hybrid.resolve_click(clicked)
 			else:
 				_hybrid.cancel()
+			return
+
+		# Rampager ability targeting (direction dash / sphere) - click resolves it.
+		if _rampager.is_targeting():
+			if TurnManager.phase == TurnManager.Phase.WAITING_FOR_INPUT and not _path_executing and _dungeon_floor != null:
+				_rampager.resolve_click(clicked)
+			else:
+				_rampager.cancel()
 			return
 
 		# Adrenaline Rush's one-tile dash targeting mode (Orc) — click an adjacent visible tile;
@@ -2608,6 +2625,11 @@ func _try_move(dir: Vector2i) -> void:
 	# Hybrid direction-dash (emberstep) primed: a WASD direction picks the dash line.
 	if _hybrid.dash_id != "":
 		_hybrid.resolve_dash(target)
+		return
+
+	# Rampager direction-dash (overrun) primed: a WASD direction picks the charge line.
+	if _rampager.dash_id != "":
+		_rampager.resolve_dash(target)
 		return
 
 	# Step of the Wind dash primed: a WASD/arrow direction picks the dash's own target instead of
@@ -4094,5 +4116,7 @@ func _use_ability_slot(idx: int) -> void:
 		_:
 			if HybridAbilityDb.is_hybrid_ability(ab.ability_id):
 				_hybrid.activate(ab)
+			elif RampagerAbilityDb.is_rampager_ability(ab.ability_id):
+				_rampager.activate(ab)
 			else:
 				GameState.game_log("[color=gray]%s: not yet implemented.[/color]" % ab.ability_name)
