@@ -1,12 +1,21 @@
 # Hybrid Class - Cooldown + Essence + Surface-Combo Design
 
-**Status:** FIRST PASS IMPLEMENTED (2026-08-31), needs an in-editor smoke test. Working title
-"Hybrid" (rename freely). Shipped this pass: the class is selectable (Custom path), the cooldown
-+ Essence economy, the `wet`/`shocked` element tags + electrified-water spread, and the 5 seed
-abilities (Spark / Tide / Grounded / Arc / Emberstep) auto-granted by level. NOT yet done:
-the pick-1-of-3 growth picker (abilities auto-grant instead - see section 4.4), the Essence Shard
-item, a premade hero, real ability art, and Phase-2 surfaces (section 8). `scripts/entities/
-CLAUDE.md`'s "Hybrid class" section is the maintenance reference.
+**Status:** FIRST PASS IMPLEMENTED (2026-08-31); progression model REVISED 2026-09-01 (sections
+4.3-4.6 below - talents + subclass are back in, the "ability bar is the whole kit" first pass was
+too thin). Working title "Hybrid" (rename freely). Shipped so far: the class is selectable (Custom
+path), the cooldown + Essence economy, the `wet`/`shocked` element tags + electrified-water spread,
+and the 5 seed abilities (Spark / Tide / Grounded / Arc / Emberstep). As of 2026-09-01 those 5 are
+retagged to the new cadence (`HybridAbilityDb` `"kind"` field + retuned `min_level`s: Grounded
+passive + Spark activation at L1, Tide L3, Arc L5, Emberstep L7) and still auto-grant by level.
+NOT yet done: the pick-1-of-3 growth picker (section 4.4), the **base-talent list (section 4.5)**,
+the **subclass (section 4.6)**, the Essence Shard item, a premade hero, real ability art, and
+Phase-2 surfaces (section 8). `scripts/entities/CLAUDE.md`'s "Hybrid class" section is the
+maintenance reference.
+
+**Recommended build order** (section 4.3+): (1) ship the level cadence - done as data, picker
+still pending; (2) add the flat base-talent list; (3) add the subclass last. Don't build tier
+plumbing the Hybrid doesn't need - it reuses the existing `talent_investments` / `talent_points`
+/ `subclass_choice_required` infrastructure as-is.
 **Author's note:** this doc defines the *systems and the class skeleton*. The ability list
 itself is deliberately left for the owner to fill in - see section 5 (authoring template)
 and section 6 (seed examples showing each archetype).
@@ -218,9 +227,30 @@ Armor. No focus item.
 `Stats.hybrid_power_dc` / `hybrid_attack_bonus` as defined in 2.2. Add a `race_bonus`-style
 status-tray hover later if useful; not required for the first pass.
 
-### 4.3 The ability bar is the whole kit
+### 4.3 Progression skeleton (REVISED 2026-09-01)
 
-No Tier 1 talents, no subclass. The Hybrid gets abilities purely through level-up growth picks.
+The original "no talents, no subclass, abilities only" model was too thin. The Hybrid now gets
+three interleaved things as it levels, one grant per level-up so no level feels empty:
+
+| Level | Grant |
+|---|---|
+| 1 | 1 passive (always-on identity) + 1 activation (pick-1-of-3, the core cooldown tool) |
+| 2 | base talent point #1 |
+| 3 | activation #2 (pick-1-of-3) |
+| 4 | base talent point #2 |
+| 5 | **subclass** (boss-gated, section 4.6) - grants its signature activation free, in place of this level's normal activation |
+| 6 | Essence max 2->3 (already in `hybrid_essence_max`) + base talent point #3 |
+| 7 | activation #3 |
+| 8+ | keep alternating: activations on odd character levels, base talent points on even ones |
+
+Rules of thumb: activations land on **odd** character levels, base talent points on **even** ones.
+Tier-2 (subclass) talent points still follow the existing levels-7-12 boss-pending schedule
+(`talent_points[2]`), unchanged from Barbarian.
+
+`HybridAbilityDb` entries carry a `"kind"` (`"passive"` / `"activation"`) so the picker / cadence
+logic can tell the two tracks apart. Today `_grant_hybrid_abilities_for_level()` still auto-grants
+by `min_level` (the passive + activations at 1/3/5/7); the picker (4.4) and talents (4.5) are the
+next slices.
 
 ### 4.4 Onboarding + growth
 
@@ -233,14 +263,71 @@ new `GameState.choose_hybrid_ability(id)` that builds the `Ability` and calls `a
 **Premade hero:** add a Hybrid premade to `character_select.gd`'s `PREMADE` with a fixed
 `"hybrid_ability": "<id>"` key, applied the same way every premade's fixed picks are.
 
-**Level-up growth:** every **2nd** level (2, 4, 6, ...), `GameState.gain_exp()`'s level-up block
-sets `hybrid_ability_pick_pending` + rolls up to 3 candidates from the pool filtered to
+**Level-up growth:** on each **odd** character level from 3 up (3, 7, 9, 11, ... - level 5 is the
+subclass instead, section 4.6), `GameState.gain_exp()`'s level-up block sets
+`hybrid_ability_pick_pending` + rolls up to 3 `kind == "activation"` candidates filtered to
 `min_level <= character_level` and not already known. `hud.gd._on_player_leveled_up()` spawns the
 same picker (mandatory, one card commits via `GameState.learn_hybrid_ability(id)` ->
 `add_ability()`). Degrades to fewer than 3 cards when the pool runs thin (same graceful fallback
 as the Wizard spell-learn picker). Replayed on save/load: serialize `known_hybrid_ability_ids:
 Array[String]` and rebuild the bar in a `_rebuild_hybrid_ability_bar()` call after
-`Stats.from_dict()`, mirroring `_rebuild_spell_ability_bar()`.
+`Stats.from_dict()`, mirroring `_rebuild_spell_ability_bar()`. The L1 passive is not a pick - it's
+granted flat alongside the starter activation.
+
+### 4.5 Base talents - general, never bolted to one activation
+
+The starter/base talents are **general** and never modify a specific activation. Reasoning (the
+Pixel Dungeon / SPD model): activations come from a random pick-1-of-3, so a talent bolted to one
+ability is a feel-bad draw whenever you didn't pick that ability. In SPD the base/starter talents
+are generic and the ability-specific power lives in the later "armor" talents once you actually own
+the ability - for the Hybrid, that ability-specific depth lives in the **subclass** tier (4.6).
+
+"General" here means the surface / Essence economy that IS the class identity, not flat "+2 HP".
+First-pass candidate pool (flat list, no tiers; pick 1 per even level from those not yet taken; a
+talent with `ranks` can be re-picked to rank it up - numbers untuned, owner tunes):
+
+| id | effect |
+|---|---|
+| `hb_conduction` | Wet / in-water enemies you hit take +1 Lightning (R2 +2, R3 +3). |
+| `hb_priming` | The first surface you create each floor has +1 radius and skips its cooldown. |
+| `hb_sure_footed` | Ignore difficult terrain from Mud / Water; you are immune to your own `shocked`. |
+| `hb_reservoir` | While standing on your own surface (`wet` tile / `shock` hazard), your cooldowns tick twice per turn. |
+| `hb_overload` | Once per floor, an Essence ability may be cast with 0 Essence in the pool. |
+| `hb_hardened` | +2 max HP per level (R1-R3) - the deliberate boring-but-safe pick. |
+| `hb_reflexes` | +1 AC while `hybrid_essence == 0` (R2 +2). |
+
+**Implementation:** new `HybridTalentDb` (data dicts, same shape as `HybridAbilityDb` /
+`SpellDb` - no `.tres`), Hybrid talents are `tier = 1`, `class_id = "HYBRID"`. Reuse the existing
+`talent_investments` / `talent_points` / `talent_picker.gd` infrastructure verbatim; add a
+`_apply_hybrid_talent_rank(id, rank)` branch to `_apply_talent_rank()`'s dispatch. `gain_exp()`
+grants `talent_points[1]` on even levels for a Hybrid (mirrors the Barbarian tier-1 grant).
+`_build_class_talents()` / the `_class_talents` assignment gets a `HYBRID` case feeding
+`HybridTalentDb`. Save/load: replayed through the existing talent-replay path in `from_dict()`,
+no new serialization.
+
+### 4.6 Subclass (level 5, boss-gated)
+
+Reuses the **exact Barbarian mechanism** with zero new plumbing: the `TIER2_GATING_BOSS_ID`
+("big_demon", floor 5) kill emits `subclass_choice_required`, `hud.gd` spawns `subclass_select.gd`,
+its confirm calls `choose_subclass()` -> `unlock_tier2()` -> `_setup_tier2_for_active_subclass()`.
+Tier-2 points earned at levels 7-12 pend until that kill, same as Barbarian.
+
+**2-3 elemental leanings, NOT five.** First pass:
+- **Storm** - lightning / wet-payoff. Signature activation: a chain-lightning nova that always
+  triggers electrified-water spread. 3 tier-2 talents deepen it (bigger chain, `shocked` on every
+  hit, refund Essence on a multi-target hit).
+- **Pyre** - fire / grass. Signature activation: a fire dash (Emberstep on steroids) that ignites
+  every tile crossed and leaves a burning wake. 3 tier-2 talents deepen it (longer dash, burning
+  wake lasts longer, ignites adjacent barrels/doors).
+- **Frost** - deferred until Phase-2 surfaces (ice tiles) exist (section 8).
+
+Each subclass grants **one free signature activation** at selection (like Frenzy / Limit Break /
+Zealot Strike - see `TIER2_BASE_ABILITY_ID`), never gated by a talent rank; the 3 tier-2 talents
+only upgrade it. Add: a `match` case in `_setup_tier2_for_active_subclass()`, a
+`_setup_hybrid_<sub>_tier2_talents()` per subclass, `TIER2_BASE_ABILITY_ID` entries, and cards in
+`subclass_select.gd`'s `SUBCLASSES` - all following the existing Barbarian-subclass pattern. This
+is a per-class-conditional subclass set, so `subclass_select.gd` / `TIER2_SUBCLASSES` need to be
+made class-aware (today they're hardcoded to the 5 Barbarian names).
 
 No respec (matches talent/invocation permanence).
 
@@ -350,7 +437,16 @@ electrified-water spread. Bar entry logs a reminder on click.
 11. Sprites: `sprites/characters/classes/Hybrid/` (idle/run; no hit art -> `has_real_hit_art`
     stays `["Wizard","Monk"]`, Hybrid plays a static idle frame on attack).
 12. `Stats.hit_die_sides()` / `point_buy_hit_die_base()` / `hp_per_level_breakdown()` - d10 entry.
-13. Docs: `scripts/entities/CLAUDE.md` "Hybrid class" section, `scripts/items/CLAUDE.md` ability/
+13. **Progression cadence (section 4.3):** `HybridAbilityDb` `"kind"` field + retuned `min_level`s
+    (DONE 2026-09-01). Next: `hybrid_ability_pick_pending` growth roll on odd levels in
+    `gain_exp()` + reuse `spell_learn_picker.gd` for the pick-1-of-3.
+14. **Base talents (section 4.5):** `scripts/items/hybrid_talent_db.gd` (new); `_apply_talent_rank()`
+    `HYBRID` dispatch branch; `_class_talents` / `_build_class_talents()` `HYBRID` case;
+    `gain_exp()` grants `talent_points[1]` on even levels for a Hybrid.
+15. **Subclass (section 4.6):** make `TIER2_SUBCLASSES` / `subclass_select.gd` class-aware;
+    `_setup_tier2_for_active_subclass()` `Storm` / `Pyre` cases + `_setup_hybrid_*_tier2_talents()`;
+    `TIER2_BASE_ABILITY_ID` entries for the two signature activations.
+16. Docs: `scripts/entities/CLAUDE.md` "Hybrid class" section, `scripts/items/CLAUDE.md` ability/
     surface notes, root `CLAUDE.md` pointer lines. Delete this design doc once fully shipped and
     the sub-docs cover it (repo doc-cleanup rule).
 

@@ -4435,7 +4435,12 @@ dash; Esc and the move-cancel sweep call `_hybrid.cancel()`. Rewind fields
 **No growth picker yet** - `GameState._grant_hybrid_abilities_for_level()` auto-grants every
 ability whose `min_level` the character has reached (called from `_give_hybrid_starting_items()`,
 `gain_exp()`'s level-up block, and `from_dict()` - abilities are derived from class+level, never
-serialized). 5 seed abilities shipped (Spark / Tide / Grounded / Arc / Emberstep) - the owner
+serialized). 5 seed abilities shipped (Spark / Tide / Grounded / Arc / Emberstep). As of
+2026-09-01 they follow the **revised progression cadence** (`docs/architecture/hybrid-class-design.md`
+Sections 4.3-4.6): `HybridAbilityDb` entries carry a `"kind"` (`"passive"` / `"activation"`), and
+`min_level`s are retuned to L1 Grounded(passive)+Spark, L3 Tide, L5 Arc, L7 Emberstep - one grant
+per odd level. Base talents (Section 4.5) and a level-5 boss-gated subclass (Section 4.6, Storm /
+Pyre, reusing the Barbarian `subclass_choice_required` flow) are specced but not built. The owner
 iterates the kit by editing `HybridAbilityDb.DEFS`. Simplifications this pass: attack/save rolls
 have no ADV/DISADV/tooltip fidelity beyond a plain `dmg:` instance + a bare hit/miss line (no
 `sphit:` hover breakdown); electrified spread is a radius-2 check between conductive enemies, not
