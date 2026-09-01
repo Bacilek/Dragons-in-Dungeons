@@ -5,6 +5,7 @@ enum CharacterClass {
 	BARBARIAN, RANGER, WIZARD, MONK,
 	BARD, CLERIC, DRUID, FIGHTER, PALADIN, ROGUE, SORCERER, WARLOCK,
 	HYBRID,
+	RAMPAGER,
 }
 
 # Internal-only D&D-role categorization — never shown in any UI, purely a filter this codebase's
@@ -42,6 +43,9 @@ const CLASS_ROLE: Dictionary = {
 	# Hybrid runs on its own cooldown + Essence economy (docs/architecture/hybrid-class-design.md),
 	# not the D&D spell/rest model — categorized MARTIAL only so nothing tries to grant it a caster.
 	"HYBRID":    "MARTIAL",
+	# Rampager runs on its own Momentum gauge (docs/architecture/rampager-class-design.md), not the
+	# D&D rest model — MARTIAL only so nothing tries to grant it a caster.
+	"RAMPAGER":  "MARTIAL",
 }
 enum CharacterRace { ORC, HUMAN, HALFLING, DWARF, ELF, DRAGONBORN, TIEFLING, AASIMAR, GNOME, GOLIATH }
 enum ElfSubrace { DROW, HIGH_ELF, WOOD_ELF }          # only meaningful when character_race == ELF
@@ -199,7 +203,7 @@ const ALL_WEAPON_MASTERIES: Array[String] = [
 # level-up silently raises the cap with no stale value — see design doc decision #4.
 func mastery_cap() -> int:
 	match character_class:
-		CharacterClass.BARBARIAN:
+		CharacterClass.BARBARIAN, CharacterClass.RAMPAGER:
 			if character_level >= 10: return 4
 			if character_level >= 4:  return 3
 			return 2
@@ -468,6 +472,32 @@ var hybrid_attack_bonus: int:
 # Conditions). Ticked down in tick_status().
 var wet_turns: int = 0       # +100% Lightning taken, -50% Fire taken, can't burn
 var shocked_turns: int = 0   # loses next movement step (reuses the slowed step-budget path)
+
+# ── Rampager class (docs/architecture/rampager-class-design.md) ────────────────
+# Momentum: a live 0..momentum_cap combat gauge — builds from dealing/taking melee damage,
+# bleeds when the fight stops. The whole offensive economy (no per-rest resource). Built/decayed
+# in player.gd (needs combat context); serialized. long_rest() deliberately does NOT touch it.
+var momentum: int = 0
+var rampage_turns_remaining: int = 0   # Rampage burst window countdown
+var momentum_cap: int:
+	get:
+		if character_class != CharacterClass.RAMPAGER: return 0
+		if character_level >= 12: return 150
+		if character_level >= 6:  return 125
+		return 100
+# 0 = below 25, 1 = Heated (>=25), 2 = Furious (>=50), 3 = Unbridled (>=75), 4 = Rampage-ready (full)
+func rampager_tier() -> int:
+	if character_class != CharacterClass.RAMPAGER: return 0
+	if momentum >= momentum_cap: return 4
+	if momentum >= 75: return 3
+	if momentum >= 50: return 2
+	if momentum >= 25: return 1
+	return 0
+# Ability math — computed live, never cached (mirrors hybrid_power_dc / monk_save_dc).
+var rampager_power_dc: int:
+	get: return 8 + proficiency_bonus + str_modifier()
+var rampager_attack_bonus: int:
+	get: return proficiency_bonus + str_modifier()
 
 # Uncanny Metabolism (Monk only, level 2+, granted alongside the 3 Focus abilities above):
 # activated ability, 1/long rest (uncanny_metabolism_used resets in GameState.long_rest()) — rolls
@@ -908,6 +938,7 @@ func hp_per_level_breakdown() -> Dictionary:
 		CharacterClass.SORCERER:  avg = 4  # d6 avg = 4
 		CharacterClass.WARLOCK:   avg = 5  # d8 avg = 5
 		CharacterClass.HYBRID:    avg = 6  # d10 avg = 6
+		CharacterClass.RAMPAGER:  avg = 7  # d12 avg = 7 (our Barbarian)
 		_:                        avg = 5
 	var con: int = con_modifier()
 	var dwarf: int = 1 if character_race == CharacterRace.DWARF else 0
@@ -1047,6 +1078,8 @@ func to_dict() -> Dictionary:
 		"rage_uses_remaining": rage_uses_remaining,
 		"monk_focus_points": monk_focus_points,
 		"hybrid_essence": hybrid_essence,
+		"momentum": momentum,
+		"rampage_turns_remaining": rampage_turns_remaining,
 		"uncanny_metabolism_used": uncanny_metabolism_used,
 		"hunters_mark_uses_remaining": hunters_mark_uses_remaining,
 		"breath_weapon_uses_remaining": breath_weapon_uses_remaining,
@@ -1113,6 +1146,8 @@ func from_dict(d: Dictionary) -> void:
 	rage_uses_remaining = int(d.get("rage_uses_remaining", 0))
 	monk_focus_points = int(d.get("monk_focus_points", 0))
 	hybrid_essence = int(d.get("hybrid_essence", 0))
+	momentum = int(d.get("momentum", 0))
+	rampage_turns_remaining = int(d.get("rampage_turns_remaining", 0))
 	uncanny_metabolism_used = bool(d.get("uncanny_metabolism_used", false))
 	hunters_mark_uses_remaining = int(d.get("hunters_mark_uses_remaining", 0))
 	breath_weapon_uses_remaining = int(d.get("breath_weapon_uses_remaining", 0))
@@ -1189,6 +1224,7 @@ func point_buy_hit_die_base() -> int:
 		CharacterClass.SORCERER: return 6
 		CharacterClass.WARLOCK: return 8
 		CharacterClass.HYBRID: return 10
+		CharacterClass.RAMPAGER: return 12
 	return 8
 
 # Overrides the six base ability scores with a player-allocated point-buy result, then
@@ -1384,6 +1420,20 @@ func apply_class_defaults() -> void:
 			hybrid_essence = hybrid_essence_max
 			# No caster, no talents, no weapon-mastery picker — the kit is the ability bar
 			# (docs/architecture/hybrid-class-design.md).
+		CharacterClass.RAMPAGER:
+			strength = 16; constitution = 15; dexterity = 12
+			intelligence = 8; wisdom = 10; charisma = 8
+			max_hp = 12 + modifier(constitution)   # Rampager HD d12 (our Barbarian)
+			check_prof_str = true
+			check_prof_con = true
+			proficient_simple_weapons = true
+			proficient_martial_weapons = true
+			proficient_shields = true
+			proficient_light_armor = true
+			proficient_medium_armor = true
+			momentum = 0
+			# No caster. Runs on the Momentum gauge instead of rage_uses_max
+			# (docs/architecture/rampager-class-design.md).
 	current_hp = max_hp
 	# Barbarian and Monk start unarmored — apply unarmored defense formulas.
 	recalc_ac(false)
