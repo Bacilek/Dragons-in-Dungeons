@@ -60,6 +60,7 @@ Abilities reach the player from six sources. Only three of them may hand out an 
 | Subclass (boss-gated) | **1** | The subclass *is* the new-ability moment |
 | Race | **1** | Breath Weapon, Adrenaline Rush, Large Form, ... |
 | Talents | **0** | Passives and upgrades only - see §3 |
+| Epic Boon (cap) | **0** | Passive or triggered only - see §4.2 |
 | Spells | see §2.2 | Caster parallel track |
 | Items | quickbar | Separate bar, separate Tab |
 
@@ -117,17 +118,21 @@ direction, not from any single rank being strong.
 yes, the rank is too big. A rank should be barely perceptible alone and clearly felt at 3.
 
 Because magnitude is what controls power, run length does not. That is why a level 20 cap is safe
-here and would not be in D&D, and why extending to 30 later (§5) changes nothing about balance.
+here and would not be in D&D, and why extending the cap later (§5) changes nothing about balance.
+
+**The Epic Boon is the single licensed exception** - see §4.2.
 
 ### 3.2 The tier shape
 
-> **Tier = 5 levels = ~5 points = 4 talents x 3 ranks (12 capacity)**
-
-(The final tier gets 4 points rather than 5 - see §4. Talent count and rank count are uniform across
-every tier; only that one point count differs.)
+> **Tier = 6 levels = 6 points = 4 talents x 3 ranks (12 capacity, 50% spent)**
 
 This one line is the unit the whole system is built from. Fix the *shape*, not the level cap - see
-§5.
+§5. Every tier is identical: same level span, same point count, same talent count, same rank count.
+There is no shortfall tier and no special case.
+
+At 6 points into 4 talents capped at rank 3, the player **maxes exactly two of four**. Typical
+distributions: `3/3/0/0`, `3/2/1/0`, `2/2/2/0`. That is a build the player can state in one
+sentence, which a 5-point tier ("one and a bit") cannot.
 
 **Why 4 talents and not 3.** Width produces choice; depth produces commitment. Putting rank 2 and 3
 into the same talent is one decision made once and then repeated, whereas each additional talent
@@ -138,7 +143,8 @@ gap concrete:
 |---|---|---|---|
 | 3 talents x 3 ranks | 9 | 5 | 12 |
 | 4 talents x 2 ranks (SPD-like) | 8 | 4 | 19 |
-| **4 talents x 3 ranks** | **12** | **5** | **40** |
+| 4 talents x 3 ranks, 5 points | 12 | 5 | 40 |
+| **4 talents x 3 ranks, 6 points** | **12** | **6** | **44** |
 
 **Why 3 ranks and not 2.** Three ranks carry an arc (barely perceptible, felt, build-defining) that
 two compress, which is what §3.1 needs. It is also what every shipped talent already uses
@@ -169,96 +175,125 @@ whenever the class has a signature ability to attach to.
 
 | Scope | Capacity | Points | Spent |
 |---|---|---|---|
-| One tier (T1-T3) | 12 | 5 | 42% |
-| Final tier (T4) | 12 | 4 | 33% |
-| Whole run (cap 20) | 48 | 19 | 40% |
+| One tier | 12 | 6 | 50% |
+| Whole run (cap 20) | 36 | 18 | 50% |
 
-The player maxes roughly one talent per tier and spreads the rest. Typical tier distributions:
-`3/2/0/0`, `2/2/1/0`, `3/1/1/0`.
+Uniform at every scope, by construction. The player maxes two talents per tier and leaves two
+untouched, or spreads across three.
 
-Not being able to max everything is the feature, not a problem to be tuned away. Keep spend near
-40-50% whenever the cap or tier shape changes.
+Not being able to max everything is the feature, not a problem to be tuned away. Keep spend near 50%
+whenever the cap or tier shape changes.
 
-**Total talents to author: 16 per class** (4 tiers x 4), or 24 if the cap is later extended to 30.
+**Total talents to author: 12 per class** (3 tiers x 4), plus the shared Epic Boon list.
 
 ---
 
 ## 4. Level 1-20 schedule
 
 Level cap is **20**. **The player starts with zero talent points** (direct owner requirement) - the
-first point arrives on the level-up into 2, so total points are **19**, not 20.
+first point arrives on the level-up into 2.
 
-Target floor count is **~15**, bosses on 5 / 10 / 15, which keeps the existing floor-5 boss as the
-Tier 2 gate.
+**Three tiers of 6 points each (18 points, levels 2-19), then one Epic Boon at level 20.**
 
-| Tier | Levels | Points | Opens on |
-|---|---|---|---|
-| T1 | 1-6 | 5 | always |
-| T2 | 7-11 | 5 | floor-5 boss kill (subclass choice) |
-| T3 | 12-16 | 5 | level 12 |
-| T4 | 17-20 | **4** | level 17 |
+| Tier | Levels | Points | Opens on | Boss |
+|---|---|---|---|---|
+| T1 | 1-7 | 6 | always | - |
+| T2 | 8-13 | 6 | subclass choice | **floor 5** |
+| T3 | 14-19 | 6 | tier gate | **floor 10** |
+| Boon | 20 | 1 | level 20 | ~floor 15 |
+
+### 4.1 Why three tiers and not four
+
+1. **Genuinely uniform.** 6/6/6 needs no justification; a 4-tier split of the same 18-19 points
+   forces one tier to be short (5/5/5/4) and needs a paragraph explaining why.
+2. **Half the authoring.** 12 talents per class instead of 16 - and much more than that in practice,
+   since a per-subclass tier multiplies: Barbarian's 5 subclasses at 4 talents each cost 20 talents
+   for one extra tier, 40 for two. Authoring throughput is the real constraint on this whole system
+   (§5), so this is the dominant argument.
+3. **Three tiers map onto three bosses.** T2 on the floor-5 boss is already implemented
+   (`GameState.TIER2_GATING_BOSS_ID`); T3 lands naturally on floor 10. A 4-tier split has no
+   diegetic event for its extra gate. Every tier gate becoming a *thing that happened* rather than a
+   number is worth more than an extra tier.
+
+### 4.2 The Epic Boon (level 20)
+
+One large, terminal pick at the cap, modelled on D&D 2024's Epic Boons. It gives level 20 its own
+identity instead of making it the 19th talent point.
+
+Three rules:
+
+- **Never an active ability.** A boon that adds a button puts the player at 4 actives and breaks
+  §2.1. Boons are type A, B, or D only (§3.3) - passive or triggered. Real D&D boons are mostly
+  passive too (Combat Prowess, Fortitude, Irresistible Offense), so this costs no fidelity.
+- **It is the one licensed exception to §3.1's small-magnitude rule.** A boon is supposed to be big.
+  That is safe precisely because it is **terminal** - nothing follows it, so it can never compound
+  with a later pick. Do not read §3.1 and nerf the boons; this exemption is deliberate.
+- **It is not a new system.** Implement it as tier 4 of the existing talent machinery: a pool of
+  3-4 boons with `max_rank = 1`, one point granted at level 20. That reuses the talent picker,
+  `can_invest_talent()`, the save/load talent replay, and the icon resolver with zero new plumbing.
+  `TIER_LEVEL_RANGES` keeps its existing 4 keys; only the boundaries change.
+
+Boons are **shared across classes** unless a class has a reason to differ - that keeps the authoring
+cost flat as classes are added, and matches how D&D's own boon list works.
+
+### 4.3 Chassis and caster track
 
 | Lvl | Chassis (every class) | Talent point | Caster track |
 |---|---|---|---|
 | 1 | signature active #1, baseline passives | none | 3 cantrips, 1st-level slots |
-| 2-6 | passive feature around L3 | +1 T1 each (5 total) | 4 cantrips at L4, 3rd-level slots at L5 |
-| 7 | **SUBCLASS: active #2** (boss-gated) | +1 T2 | - |
-| 8-11 | passive feature around L8 | +1 T2 each (5 total w/ L7) | 5th-level slots at L9 (the cap), 5 cantrips at L10 |
-| 12 | **Tier 3 opens** (specialization) | +1 T3 | slots widen only from here |
-| 13-16 | passive feature around L13 | +1 T3 each (5 total w/ L12) | - |
-| 17 | **Tier 4 opens** (capstone) | +1 T4 | - |
-| 18-20 | capstone passive at L20 | +1 T4 each (4 total w/ L17) | - |
+| 2-7 | passive feature around L3 | +1 T1 each (6 total) | 4 cantrips at L4, 3rd-level slots at L5 |
+| 8 | **SUBCLASS: active #2** (boss-gated) | +1 T2 | - |
+| 9-13 | passive feature around L10 | +1 T2 each (6 total w/ L8) | 5th-level slots at L9 (the cap), 5 cantrips at L10 |
+| 14 | **Tier 3 opens** (specialization) | +1 T3 | slots widen only from here |
+| 15-19 | passive feature around L16 | +1 T3 each (6 total w/ L14) | - |
+| 20 | **EPIC BOON** | +1 boon | - |
 
-**19 talent points total.**
-
-**Why T4 gets 4 and not 5:** 19 points do not divide evenly by 4, and granting a point at level 1 was
-rejected. Putting the shortfall in the capstone tier is the least harmful place for it - T4 is where
-the player spreads rather than maxes anyway, and talent *count* stays uniform at 4 x 3 in every tier,
-which is what §3.2 actually fixes.
+**Landmarks:** L1, L8 (subclass), L14 (Tier 3), L20 (boon). Four deliberate spikes; every other
+level is flat by design. People need orientation points, but not twenty of them.
 
 **Implementation note:** `GameState.gain_exp()` grants points on a level-up *transition*, so a tier's
-point count is the number of transitions inside its range, not the range's length. T1's shipped range
-`[1, 6]` already yields exactly 5 (transitions into 2, 3, 4, 5, 6) and needs **no change**. Only T2
-and T4's boundaries move - see §9.
-
-**Landmarks:** L1, L7 (subclass), L12 (Tier 3), L17 (Tier 4). Four deliberate spikes; every other
-level is flat by design. People need orientation points, but not twenty of them.
+point count is the number of transitions inside its range, not the range's length. T1's range
+`[1, 7]` yields 6 (transitions into 2 through 7). No point is ever granted at level 1.
 
 ---
 
 ## 5. Level cap is a knob, not an architecture
 
-Fix the **tier shape** (§3.2), not the cap. The cap is then just how many tiers exist:
+Fix the **tier shape** (§3.2), not the cap. The cap is then just how many tiers exist, and because
+the shape is 6 levels per tier plus one boon level, the natural caps come in steps of 6:
 
 | Cap | Tiers | Points | Talents/class | Capacity | Spent |
 |---|---|---|---|---|---|
-| **20** | 4 | 19 | 16 | 48 | 40% |
-| 30 | 6 | 29 | 24 | 72 | 40% |
+| **20** | 3 | 18 | 12 | 36 | 50% |
+| 26 | 4 | 24 | 16 | 48 | 50% |
+| 32 | 5 | 30 | 20 | 60 | 50% |
 
-The ratio is identical, so **the cap-20 design literally is the cap-30 design with the first four
-tiers**. Extending later is additive: two more keys in `GameState.talent_points`, two more cases in
-`TalentTiers.tier_unlocked()`, two more rows in `TIER_LEVEL_RANGES`, and 8 more talents per class.
-No refactor.
+The ratio is identical at every step, so **extending is purely additive**: one more key range in
+`TIER_LEVEL_RANGES`, one more case in `TalentTiers.tier_unlocked()`, one more `talent_points` key,
+and 4 more talents per class. No refactor, no rebalance.
 
-**Current target is 20.** Reasons: it divides cleanly into 4 uniform tiers, level 20 is *the* D&D
-cap (free brand consistency), and the flat-curve goal comes from rank magnitude (§3.1) rather than
-level count.
+Note that **30 is not a natural cap** under this shape - 26 or 32 is. A cap of 30 would need either
+an uneven tier or a different tier span, which is exactly the asymmetry §4.1 exists to avoid.
 
-**Before extending to 30, two things must be true:**
+**Current target is 20.** Reasons: three tiers map onto the three planned bosses (§4.1), level 20 is
+*the* D&D cap (free brand consistency), and the flat-curve goal comes from rank magnitude (§3.1)
+rather than level count.
 
-1. **Authoring throughput is known.** 16 -> 24 talents per class is +50% across every class and
-   subclass tree. Author one class completely through all 4 tiers first and measure how long a tier
-   actually takes. This, not any ratio, is the real constraint.
-2. **The class has a 5th and 6th distinct direction.** Build diversity comes from the number of
-   distinct *mechanical directions* a class has, not the number of talent entries. A Barbarian has
-   maybe 4-5 (tank, damage, mobility, control, sustain). More talents make each direction *deeper*,
-   not the class *broader*. If tiers 5 and 6 would just be more numbers, 20 is the better cap.
+**Before extending the cap, two things must be true:**
 
-A third consideration, if 30 is ever taken seriously: SPD affords its long ladder because its power
-curve runs through **item upgrades**, not levels. This game has that infrastructure
+1. **Authoring throughput is known.** Each extra tier is +4 talents per class *and per subclass
+   tree*. Author one class completely through all 3 tiers first and measure how long a tier actually
+   takes. This, not any ratio, is the real constraint.
+2. **The class has a 4th distinct direction.** Build diversity comes from the number of distinct
+   *mechanical directions* a class has, not the number of talent entries. A Barbarian has maybe 4-5
+   (tank, damage, mobility, control, sustain). More talents make each direction *deeper*, not the
+   class *broader*. If a 4th tier would just be more numbers, 20 is the better cap.
+
+A third consideration, if a longer ladder is ever taken seriously: SPD affords its length because
+its power curve runs through **item upgrades**, not levels. This game has that infrastructure
 (`GameState.MAX_ATTUNED_ITEMS`, blacksmith, gold, weapon tiers) but **no `ITEM_POOL` entry sets
 `requires_attunement` yet**, so the curve currently runs through class features. Filling attunement
-with real magic items is worth doing on its own merits, and it is what would make a 30-level ladder
+with real magic items is worth doing on its own merits, and it is what would make a longer ladder
 feel like progression instead of noise.
 
 ---
@@ -384,29 +419,29 @@ must not become precedent.
   its Tier 2 talents only upgrade it - §2.3 and §3.3 working correctly. **Reference shape.**
 - Every shipped talent uses `max_rank = 3` (§3.2).
 - Barbarian Tier 1 (Psycho / Bruiser / Battlefield Expert): passive-shaped, no new buttons.
+- `TIER_LEVEL_RANGES` already has 4 tier keys, so the boon pool needs no new structure (§4.2).
 - `HalfCasterSlotPool` / `PactSlotPool` already cap at 5th-level spells (§6.1).
 
-### fix - tier level ranges are not uniform
+### fix - tier level ranges do not match the 3-tier shape
 
-`TalentTiers.TIER_LEVEL_RANGES` is `{1:[1,6], 2:[7,12], 3:[13,17], 4:[18,20]}`, which yields
-**5/6/5/3** points (count the level-up transitions inside each range, not the range length). T1 is
-already correct; T2 has one too many and T4 two too few.
+`TalentTiers.TIER_LEVEL_RANGES` is `{1:[1,6], 2:[7,12], 3:[13,17], 4:[18,20]}`, yielding **5/6/5/3**
+points (count level-up transitions inside each range, not the range length).
 
-Change to `{1:[1,6], 2:[7,11], 3:[12,16], 4:[17,20]}` -> **5/5/5/4**, per §4. Two boundaries move, T1
-and T3's talent content are unaffected, and no point is granted at level 1.
+Change to `{1:[1,7], 2:[8,13], 3:[14,19], 4:[20,20]}` -> **6/6/6/1**, per §4. Tier 4 becomes the Epic
+Boon pool.
+
+### fix - Tier 3 is unreachable, Tier 4 gate is wrong
+
+`TalentTiers.tier_unlocked(3)` requires `tier3_selected_class != -1`, a multiclass stub that does not
+exist anywhere - Tier 3 talents would be unreachable even once authored. Change to the floor-10 boss
+kill (consistent with T2's own gate, and what §4.1's boss mapping assumes) or a plain `>= 14` level
+check. `tier_unlocked(4)` should become `character_level >= 20`.
 
 ### fix - level cap is not enforced
 
-`Stats.gain_exp()`'s `while experience >= exp_for_level(character_level)` loop has no upper bound,
-so a character can reach level 21+, where `tier_for_level()` returns 0 and `gain_exp()`'s
+`Stats.gain_exp()`'s `while experience >= exp_for_level(character_level)` loop has no upper bound, so
+a character can reach level 21+, where `tier_for_level()` returns 0 and `gain_exp()`'s
 `if point_tier > 0` guard **silently discards the talent point**. Clamp at 20.
-
-### fix - Tier 3 is unreachable
-
-`TalentTiers.tier_unlocked(3)` requires `tier3_selected_class != -1`, a multiclass stub that does
-not exist anywhere. Tier 3 talents would be unreachable even once authored. Change to a plain level
-check (like Tier 4) or a floor-10 boss gate (consistent with Tier 2) - do not leave a tier gated on
-a feature that was never designed.
 
 ### fix - Wizard prepared count
 
@@ -415,8 +450,8 @@ casters, clamp Ranger's formula at 3. See §6.2. Highest-value single change in 
 
 ### fix - full-caster slot table
 
-`StandardSlotPool.SLOT_TABLE` grants 6th-9th level slots at levels 11+. Replace rows 11-20 per
-§6.1. Rows 1-10 stay.
+`StandardSlotPool.SLOT_TABLE` grants 6th-9th level slots at levels 11+. Replace rows 11-20 per §6.1.
+Rows 1-10 stay.
 
 ### fix - cantrips occupy the bar
 
@@ -434,41 +469,45 @@ Options in preference order:
 
 ### fix - races with two active abilities
 
-§2.1 budgets one active per race. Over budget: **Goliath** (Large Form + Giant Ancestry),
-**Aasimar** (Healing Hands + Celestial Revelation), **Dragonborn** (Breath Weapon + Draconic
-Flight). For each, one of the pair should become a passive or a triggered effect. Already correct:
-Orc (Adrenaline Rush active, Relentless Endurance passive), Human, Halfling, Dwarf.
+§2.1 budgets one active per race. Over budget: **Goliath** (Large Form + Giant Ancestry), **Aasimar**
+(Healing Hands + Celestial Revelation), **Dragonborn** (Breath Weapon + Draconic Flight). For each,
+one of the pair should become a passive or a triggered effect. Already correct: Orc (Adrenaline Rush
+active, Relentless Endurance passive), Human, Halfling, Dwarf.
 
-### Content gap - tiers need a 4th talent, and T3/T4 are empty
+### Content gap - tiers need a 4th talent, T3 is empty, boons do not exist
 
 Every existing tier holds 3 talents and needs a 4th (§3.2): +1 for Barbarian T1, +1 for each of the
 5 subclass T2 trees, and likewise for Ranger/Monk/other trees. Existing talents do not change.
 
-Tiers 3 and 4 have **no talents at all** for any class - 8 talents per class from scratch. This is
-the largest single gap between the shipped game and a level 20 cap.
+Tier 3 has **no talents at all** for any class - 4 per class (or per subclass tree). The Epic Boon
+list does not exist either, though being shared across classes keeps it small.
 
-### Open - XP curve is untuned against the target
+This is the largest single gap between the shipped game and a level 20 cap.
 
-`Stats.exp_for_level(lv) = lv * 10` is linear; cumulative cost to reach L20 is 1900 XP. Enemy `exp`
-values run 3-12 (floors 1-3) up to 25-40 (floors 8-10), bosses 100-200. Rough estimate: today's 10
-floors yield ~1000-1500 XP, landing a run around L13-15 rather than the cap. This is an **estimate,
-not a measurement** (spawns are CR-budgeted, so per-floor counts vary) - measure it per §1.2 before
-retuning, and tune the curve against the final floor count, not the reverse.
+### Deferred - XP curve and level pacing
+
+`Stats.exp_for_level(lv) = lv * 10` is linear, cumulative 1900 XP to reach L20, and enemy `exp` runs
+3-12 early to 25-40 late. Whether that lands a run at the cap is **deliberately not settled here**
+(owner call): floor 15 is not planned as the final boss, and secondary XP sources beyond kills may
+exist, so both the numerator and denominator are still moving. Retune the curve once the floor count
+and XP sources are fixed, measuring per §1.2 rather than estimating.
+
+Nothing else in this doc depends on it - the tier shape is defined in levels, not in floors.
 
 ---
 
 ## 10. Recommended order of work
 
-1. **Ship the mechanical fixes**: level cap clamp, T2/T4 tier boundaries, Tier 3 gate,
+1. **Ship the mechanical fixes**: tier boundaries to 6/6/6/1, T3 + T4 gates, level cap clamp,
    `prepared_max()`, slot table rows 11-20, live-cantrip cap. All small, no design decisions left.
 2. **Resolve the judgement calls** in §9 - Wild Heart and the three over-budget races. Decide fix or
    grandfather and record the decision here. Deciding is the work; not all need code.
-3. **Run the metric** (§1.2) on a Barbarian to the cap, and record the actual end level for the XP
-   curve. Do not design Tier 3/4 content against a guess about pacing.
+3. **Author the Epic Boon list** (3-4 shared boons, `max_rank = 1`, passive or triggered only). Small,
+   shared across classes, and it makes the cap real.
 4. **Make Barbarian the reference class.** Most built-out (5 subclasses, full T1/T2 trees) and the
-   strongest D&D anchor. Get it correct at L1-L20 against this doc first: add the 4th talent to
-   existing tiers, then author T3 and T4.
-5. **Then decide cap 20 vs 30** using §5's two preconditions, now that throughput is known.
+   strongest D&D anchor. Get it correct at L1-L20 against this doc: add the 4th talent to T1 and each
+   subclass T2, then author T3.
+5. **Run the metric** (§1.2) on that Barbarian to the cap.
 6. **Only then add classes.** With a reference class, a new class is one question ("does it have the
    same shape as Barbarian?") instead of fifteen design decisions.
 
@@ -482,9 +521,9 @@ additional one widens the surface steps 1-5 must be applied to.
 - [ ] Exactly 1 active ability from the class baseline at level 1
 - [ ] Exactly 1 active ability from the subclass, granted at selection, boss-gated
 - [ ] At most 1 active ability from the race
-- [ ] 0 talents that grant an active ability
+- [ ] 0 talents that grant an active ability, and 0 boons that do
 - [ ] Total live options within the role's §2.2 row (martial 3 / half-caster 6 / full caster 8)
-- [ ] Each tier: 4 talents x 3 ranks, one each of types A/B/C/D (§3.3), at most one type D
+- [ ] 3 tiers, each 4 talents x 3 ranks, one each of types A/B/C/D (§3.3), at most one type D
 - [ ] No talent point granted at level 1 (§4)
 - [ ] Each talent rank passes the §3.1 sanity test (skipping one rank does not break the run)
 - [ ] Rest-gated charges unless "never needs to rest" is genuinely this class's identity (§7.2)
