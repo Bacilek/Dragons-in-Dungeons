@@ -279,11 +279,18 @@ scrolls entry.
 **Read `docs/architecture/class-progression-rules.md` before designing a new class, subclass, race,
 or talent tree.** It is the shared constraint doc, not a feature design: level cap 20, one invariant
 ("progression almost never adds a button"), a hard ceiling of **3 non-spell active abilities** at
-every level (1 class baseline + 1 subclass + 1 race; talents grant **zero**), talent balance by
-rank *magnitude* rather than point count, spell slots capped at 5th level (grow wide, not tall),
-rest-gated charges as the default economy with cooldowns (Hybrid/Rampager) as a deliberate minority
-class identity, and a "D&D gives the names and resource shapes, we give the numbers and triggers"
-fidelity test. It also carries an audit of where the shipped game currently violates its own rule.
+every level (1 class baseline + 1 subclass + 1 race; talents grant **zero**) plus a per-role total
+live-option budget (martial 3 / half-caster 6 / full caster 8), the uniform **tier shape** (5 levels
+= ~5 points = 4 talents x 3 ranks, one talent each of 4 defined types; 19 points total, none at
+level 1) with the level cap as a
+tunable knob rather than an architecture (cap 30 = the same 4 tiers plus 2 more), talent balance by
+rank *magnitude* rather than point count, spell slots capped at 5th level (grow wide, not tall) with
+prepared counts capped by role and cantrips treated as the caster's basic attack, rest-gated charges
+as the default economy with cooldowns (Hybrid/Rampager) as a deliberate minority class identity, and
+a "D&D gives the names and resource shapes, we give the numbers and triggers" fidelity test. It also
+carries an audit of where the shipped game currently violates its own rule (non-uniform tier ranges,
+unenforced level cap, unreachable Tier 3, `prepared_max()`, slot table rows 11-20, Wild Heart's
+ability-granting talents, three over-budget races, empty Tier 3/4).
 
 ### Talent system (`scripts/items/talent.gd`, `scripts/autoloads/game_state.gd`)
 `Talent` is a reusable Resource: `talent_id`, `talent_name`, `description`, `icon_path`, `tier`, `class_id`, `max_rank`, `ranks: Array[Dictionary]`. `rank_description(rank)` returns the description string for a given rank.
