@@ -748,10 +748,10 @@ for that spell.
   are computed **live, never cached** (`proficiency_bonus + ability_mod`,
   `8 + proficiency_bonus + ability_mod`) — mirrors `Stats.mastery_cap()`'s "recompute every time"
   convention, and deliberately does NOT derive from `character_class` (keeps a future multiclass
-  caster sane — see the design doc §10.3). `prepared_max(stats) -> int` branches on
-  `character_class`: `stats.character_level` for Wizard (leveled-spells-and-slots-plan.md §1 —
-  supersedes the framework doc's `ability_mod + caster_level` formula), or the real 2024
-  half-caster formula `max(1, WIS mod + character_level / 2)` for Ranger.
+  caster sane — see the design doc §10.3). `prepared_max(stats) -> int` is capped by class ROLE
+  (`Stats.CLASS_ROLE`, `docs/architecture/class-progression-rules.md` §6.2): full casters (Wizard,
+  Warlock) `mini(character_level, FULL_CASTER_PREPARED_CAP = 5)`, half-casters (Ranger) the real
+  2024 formula `WIS mod + character_level / 2` clamped to `1..HALF_CASTER_PREPARED_CAP (3)`.
 - **`StandardSlotPool`** (`Resource`, `scripts/items/spell_slot_pool.gd`) — Wizard's full-caster
   bookkeeper, the real D&D 2024 full-caster 1–20 slot table (`SLOT_TABLE` const), long-rest-only
   recharge (`on_short_rest()` is a no-op). `available_level(spell) -> int` returns `spell.level` if

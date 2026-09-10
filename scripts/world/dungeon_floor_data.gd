@@ -236,7 +236,7 @@ const BOSS_POOL: Array = [
 	# project owner (see scripts/entities/CLAUDE.md's "Bearded Devil" section for the full
 	# mechanism, including "on_hit_save"/"infernal_wound" — two new generic multiattack sub-keys
 	# introduced for this monster). `boss_id` stays "big_demon" (the old identity this replaced)
-	# since GameState.TIER2_GATING_BOSS_ID and every save keys off it — only display_name/sprite
+	# since every save keys off it — only display_name/sprite
 	# reuse is cosmetic-old, the stat block itself is entirely new.
 	{"boss_id": "big_demon",   "display_name": "Bearded Devil",   "sprite": "big_demon",   "idle_frames": 4, "run_frames": 4, "floor": 5,  "hp": 52,  "hp_per_floor": 0, "dmg_min": 8,  "dmg_max": 14, "armor": 0, "ac": 13, "exp": 100,
 	 "cr": 3, "creature_type": "Fiend", "size_category": "Medium", "passive_perception": 10,

@@ -161,8 +161,9 @@ var mastery_learn_pending: bool = false
 
 # Talent system — points earned per level, invested per talent.
 # Points are tier-locked pools: talent_points[tier] holds that tier's unspent points
-# (levels 1-6 → tier 1, 7-12 → tier 2, 13-17 → tier 3, 18-20 → tier 4; see TIER_LEVEL_RANGES).
-# Points accumulate even while a tier is locked (Tier 2 points pend until the gating boss dies).
+# (levels 1-7 → tier 1, 8-13 → tier 2, 14-19 → tier 3, 20 → tier 4/Epic Boon; see TIER_LEVEL_RANGES).
+# Points accumulate even while a tier is locked (only possible for Tier 2 while a Barbarian's
+# level-8 subclass pick is still open — every tier gate is level-only now).
 # talent_points_available is a computed sum used for backward-compat (signals, auto-close logic).
 var talent_points: Dictionary = {1: 0, 2: 0, 3: 0, 4: 0}   # tier → unspent points
 var talent_points_available: int:
@@ -175,16 +176,11 @@ var talent_points_available: int:
 const TIER_LEVEL_RANGES: Dictionary = TalentTiers.TIER_LEVEL_RANGES
 var talent_investments: Dictionary = {}   # talent_id → current_rank (int)
 var _class_talents: Array[Talent] = []    # all talents for current class, populated on class select
-# Tier 2 unlocks when the gating boss (TIER2_GATING_BOSS_ID, the floor-5 boss) is defeated —
-# NOT at level 7. Levels 7-12 still fill talent_points[2], pending until the kill. On the kill,
-# classes with subclasses (Barbarian) get the one-time subclass choice (subclass_choice_required
-# → scripts/ui/subclass_select.gd → choose_subclass() → unlock_tier2()); other classes unlock
-# directly. See _on_boss_defeated().
+# Tier 2 unlocks by LEVEL alone (TalentTiers.tier_start_level(2) = 8) — no boss kill required
+# (direct owner decision, 2026-09-10). Reaching it, classes with subclasses (Barbarian) get the
+# one-time subclass choice (subclass_choice_required → scripts/ui/subclass_select.gd →
+# choose_subclass() → unlock_tier2()); other classes unlock directly. See _check_tier2_level_gate().
 var tier2_unlocked: bool = false
-const TIER2_GATING_BOSS_ID: String = "big_demon"
-# Tier 3 (multiclass) selection stub — no Tier 3 content yet; -1 = no multiclass chosen.
-# tier_unlocked(3) reads it so the accessor shape is final before Tier 3 lands.
-var tier3_selected_class: int = -1
 var subclass_chosen: bool = false  # true once the player has made their one-time subclass choice
 const TIER2_SUBCLASSES: PackedStringArray = ["Berserker", "Scarred Warrior", "Wild Heart", "Zealot", "World Tree"]
 var active_tier2_subclass: String = "Berserker"
@@ -376,7 +372,6 @@ var equipped_armor: Item:
 func _ready() -> void:
 	start_new_run()
 	short_rest_completed.connect(_on_short_rest_completed)
-	boss_defeated.connect(_on_boss_defeated)
 
 func start_new_run() -> void:
 	run_seed = randi()
@@ -414,7 +409,6 @@ func start_new_run() -> void:
 	light_source_pos = Vector2i(-1, -1)
 	light_source_item = null
 	talent_points = {1: 0, 2: 0, 3: 0, 4: 0}
-	tier3_selected_class = -1
 	talent_investments = {}
 	_class_talents = []
 	tier2_unlocked = false
@@ -2846,14 +2840,19 @@ func gain_exp(amount: int) -> void:
 		player_hp_changed.emit(player_stats.current_hp, player_stats.max_hp)
 		var hp_gained: int = player_stats.max_hp - old_max_hp
 		var lv: int = player_stats.character_level
-		var point_tier: int = tier_for_level(lv)
-		if point_tier > 0:
-			# Points accumulate into their tier pool even while the tier is locked —
-			# Tier 2 points earned at levels 7-12 sit pending until the gating boss dies
-			# (see _on_boss_defeated(); Tier 2 is NOT auto-unlocked by leveling).
-			talent_points[point_tier] += 1
+		# One point per level-up TRANSITION, each into the tier its own level belongs to — a single
+		# large XP grant can cross several levels (Stats.gain_exp()'s loop), and every crossed
+		# level still owes its point. Points accumulate into their tier pool even while that tier
+		# is locked (only Tier 2, while a Barbarian's subclass pick is pending).
+		var points_granted: int = 0
+		for plv: int in range(old_level + 1, lv + 1):
+			var t: int = tier_for_level(plv)
+			if t > 0:
+				talent_points[t] += 1
+				points_granted += 1
+		if points_granted > 0:
 			talent_points_changed.emit(talent_points_available)
-		# Levels outside TIER_LEVEL_RANGES (21+ past tier 4): no talent points (gap between tiers)
+		_check_tier2_level_gate()
 		# Max hit dice grows by 1 per level (character_level term of max_hit_dice()) — grant the
 		# extra die immediately to CURRENT hit_dice too (not just the cap), so it's usable in a
 		# short rest right away instead of only after the next long rest.
@@ -2887,8 +2886,10 @@ func gain_exp(amount: int) -> void:
 					new_second_wind_max)
 				_sync_ability_uses()
 		var lv_str: String = ""
-		if point_tier > 0:
+		if points_granted == 1:
 			lv_str = " +1 talent point."
+		elif points_granted > 1:
+			lv_str = " +%d talent points." % points_granted
 		# A single gain_exp() call can cross more than one level threshold on a large XP grant —
 		# the breakdown's per-component values are per-level (CON mod / Dwarf bonus don't change
 		# level to level), so scale by how many levels this call actually applied.
@@ -2984,13 +2985,14 @@ func tier_for_level(lv: int) -> int:
 
 ## Whether talents of `tier` can currently be invested in. Points accumulate while locked.
 func tier_unlocked(tier: int) -> bool:
-	return TalentTiers.tier_unlocked(tier, tier2_unlocked, tier3_selected_class, player_stats.character_level)
+	return TalentTiers.tier_unlocked(tier, tier2_unlocked, player_stats.character_level)
 
-# The Tier 2 gate. Fires on every boss kill; only TIER2_GATING_BOSS_ID matters. Classes with
-# subclasses (Barbarian) get the one-time subclass overlay; other classes unlock directly.
-# God-Mode debug arrows / debug panel remain the escape hatch if Jump-to-Floor skips floor 5.
-func _on_boss_defeated(boss_id: String) -> void:
-	if boss_id != TIER2_GATING_BOSS_ID or tier2_unlocked:
+# The Tier 2 gate — level-only, no boss kill (direct owner decision, 2026-09-10). Called from
+# gain_exp() after every level-up. Classes with subclasses (Barbarian) get the one-time subclass
+# overlay; other classes unlock directly. A Barbarian whose pick is somehow still open re-emits on
+# the next level-up (hud.gd guards against a duplicate overlay).
+func _check_tier2_level_gate() -> void:
+	if tier2_unlocked or player_stats.character_level < TalentTiers.tier_start_level(2):
 		return
 	if player_stats.character_class == Stats.CharacterClass.BARBARIAN and not subclass_chosen:
 		subclass_choice_required.emit()
@@ -3001,8 +3003,11 @@ func unlock_tier2() -> void:
 	if tier2_unlocked:
 		return
 	tier2_unlocked = true
-	_setup_tier2_for_active_subclass()
-	game_log("[color=gold]%s Tier 2 talents unlocked![/color]" % active_tier2_subclass)
+	# Only Barbarian has Tier 2 subclass trees today. active_tier2_subclass defaults to
+	# "Berserker", so running the setup for any other class would graft Berserker talents onto it.
+	if player_stats.character_class == Stats.CharacterClass.BARBARIAN:
+		_setup_tier2_for_active_subclass()
+		game_log("[color=gold]%s Tier 2 talents unlocked![/color]" % active_tier2_subclass)
 
 # One-time, permanent player subclass choice — called by subclass_select.gd's confirm button.
 # Reuses the same setup path as unlock_tier2()/debug_switch_subclass(); after this only the

@@ -42,15 +42,20 @@ func _ability_mod(stats: Stats) -> int:
 		"CHA": return stats.cha_modifier()
 		_:     return stats.int_modifier()
 
-# leveled-spells-and-slots-plan.md §1 owner decision: prepared count = character level, counting
-# only leveled (non-cantrip) prepared spells. Supersedes the framework doc's
-# ability_mod + caster_level formula for Wizard. Ranger (half-caster, scripts/entities/CLAUDE.md's
-# "Ranger class") uses the real 2024 half-caster formula instead: WIS mod + half level (floored),
-# minimum 1 — a Ranger always has at least one spell prepared once they have any slot at all.
+# Prepared count (leveled spells only, cantrips never count) is capped by class ROLE, not level —
+# docs/architecture/class-progression-rules.md §6.2: a prepared spell is only castable from the
+# ability bar, so prepared count IS bar occupancy. Full casters (Wizard, Warlock) still grow 1 per
+# character level but stop at FULL_CASTER_PREPARED_CAP; half-casters (Ranger) keep the 2024
+# half-caster formula (casting mod + half level, minimum 1) clamped at HALF_CASTER_PREPARED_CAP.
+# Known spells stay uncapped — swapping what's prepared is the Spellbook's job.
+const FULL_CASTER_PREPARED_CAP: int = 5
+const HALF_CASTER_PREPARED_CAP: int = 3
+
 func prepared_max(stats: Stats) -> int:
-	if stats.character_class == Stats.CharacterClass.RANGER:
-		return maxi(1, _ability_mod(stats) + stats.character_level / 2)
-	return stats.character_level
+	var role: String = String(Stats.CLASS_ROLE.get(Stats.CharacterClass.keys()[stats.character_class], "FULL_CASTER"))
+	if role == "HALF_CASTER":
+		return clampi(_ability_mod(stats) + stats.character_level / 2, 1, HALF_CASTER_PREPARED_CAP)
+	return mini(stats.character_level, FULL_CASTER_PREPARED_CAP)
 
 func is_cantrip(spell_id: String) -> bool:
 	var s: Spell = SpellDb.get_spell(spell_id)

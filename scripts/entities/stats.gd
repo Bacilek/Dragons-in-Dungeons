@@ -22,11 +22,11 @@ enum CharacterClass {
 #   THIRD_CASTER — subclass-specific (e.g. Fighter's Eldritch Knight, Rogue's Arcane Trickster) —
 #                  not a base-class role at all, so no third-caster row is implemented; noted here
 #                  only so the categorization itself is complete.
-# The only thing that currently CONSUMES this dict's information is `apply_class_defaults()`
-# below, which grants a `caster` to every non-MARTIAL implemented class by hand (Wizard: FULL_CASTER,
-# Ranger: HALF_CASTER) — nothing reads CLASS_ROLE programmatically yet, it's documentation of the
-# decision, not a live gate. Extend this table (and the matching `apply_class_defaults()` branch)
-# the moment a new class — Bard, Paladin, etc. — actually gets implemented.
+# `apply_class_defaults()` below still grants a `caster` to every non-MARTIAL implemented class by
+# hand (Wizard/Warlock: FULL_CASTER, Ranger: HALF_CASTER). The one live programmatic reader is
+# `SpellcasterState.prepared_max()`, which caps prepared spells by role (full 5 / half 3 —
+# class-progression-rules.md §6.2). Extend this table (and the matching `apply_class_defaults()`
+# branch) the moment a new class — Bard, Paladin, etc. — actually gets implemented.
 const CLASS_ROLE: Dictionary = {
 	"BARBARIAN": "MARTIAL",
 	"FIGHTER":   "MARTIAL",
@@ -890,6 +890,11 @@ var martial_arts_die_sides: int:
 			return 6
 		return 4  # global default: 1d4 for unarmed
 
+# Level cap (docs/architecture/class-progression-rules.md §4-5). A soft cap: XP keeps
+# accumulating past it, the character just never levels again. A knob, not an architecture —
+# extending means raising this and adding a tier range in TalentTiers.TIER_LEVEL_RANGES.
+const MAX_LEVEL: int = 20
+
 func exp_for_level(lv: int) -> int:
 	return lv * 10
 
@@ -899,7 +904,7 @@ func exp_to_next() -> int:
 func gain_exp(amount: int) -> bool:
 	experience += amount
 	var leveled := false
-	while experience >= exp_for_level(character_level):
+	while character_level < MAX_LEVEL and experience >= exp_for_level(character_level):
 		experience -= exp_for_level(character_level)
 		character_level += 1
 		var hp_gain: int = _hp_per_level()

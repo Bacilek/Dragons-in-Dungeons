@@ -57,7 +57,7 @@ Abilities reach the player from six sources. Only three of them may hand out an 
 | Source | Active abilities | Notes |
 |---|---|---|
 | Class baseline (L1) | **1** | Rage, Flurry of Blows, Hunter's Mark, Spark |
-| Subclass (boss-gated) | **1** | The subclass *is* the new-ability moment |
+| Subclass (level 8) | **1** | The subclass *is* the new-ability moment |
 | Race | **1** | Breath Weapon, Adrenaline Rush, Large Form, ... |
 | Talents | **0** | Passives and upgrades only - see §3 |
 | Epic Boon (cap) | **0** | Passive or triggered only - see §4.2 |
@@ -195,12 +195,15 @@ first point arrives on the level-up into 2.
 
 **Three tiers of 6 points each (18 points, levels 2-19), then one Epic Boon at level 20.**
 
-| Tier | Levels | Points | Opens on | Boss |
-|---|---|---|---|---|
-| T1 | 1-7 | 6 | always | - |
-| T2 | 8-13 | 6 | subclass choice | **floor 5** |
-| T3 | 14-19 | 6 | tier gate | **floor 10** |
-| Boon | 20 | 1 | level 20 | ~floor 15 |
+| Tier | Levels | Points | Opens on |
+|---|---|---|---|
+| T1 | 1-7 | 6 | always |
+| T2 | 8-13 | 6 | level 8 (subclass choice for classes that have one) |
+| T3 | 14-19 | 6 | level 14 |
+| Boon | 20 | 1 | level 20 |
+
+**Gates are level-only** (owner decision, 2026-09-10) - no tier requires killing a boss. The boss
+mapping in §4.1 point 3 is a pacing expectation (the XP curve should land roughly there), not a gate.
 
 ### 4.1 Why three tiers and not four
 
@@ -210,10 +213,9 @@ first point arrives on the level-up into 2.
    since a per-subclass tier multiplies: Barbarian's 5 subclasses at 4 talents each cost 20 talents
    for one extra tier, 40 for two. Authoring throughput is the real constraint on this whole system
    (§5), so this is the dominant argument.
-3. **Three tiers map onto three bosses.** T2 on the floor-5 boss is already implemented
-   (`GameState.TIER2_GATING_BOSS_ID`); T3 lands naturally on floor 10. A 4-tier split has no
-   diegetic event for its extra gate. Every tier gate becoming a *thing that happened* rather than a
-   number is worth more than an extra tier.
+3. **Three tiers map onto three bosses (pacing, not gating).** A run should reach T2 around the
+   floor-5 boss and T3 around floor 10. The gates themselves are level-only (see above) - an
+   earlier boss-kill gate on T2 was removed - so a boss is where a tier *tends* to arrive, not a lock.
 
 ### 4.2 The Epic Boon (level 20)
 
@@ -242,7 +244,7 @@ cost flat as classes are added, and matches how D&D's own boon list works.
 |---|---|---|---|
 | 1 | signature active #1, baseline passives | none | 3 cantrips, 1st-level slots |
 | 2-7 | passive feature around L3 | +1 T1 each (6 total) | 4 cantrips at L4, 3rd-level slots at L5 |
-| 8 | **SUBCLASS: active #2** (boss-gated) | +1 T2 | - |
+| 8 | **SUBCLASS: active #2** | +1 T2 | - |
 | 9-13 | passive feature around L10 | +1 T2 each (6 total w/ L8) | 5th-level slots at L9 (the cap), 5 cantrips at L10 |
 | 14 | **Tier 3 opens** (specialization) | +1 T3 | slots widen only from here |
 | 15-19 | passive feature around L16 | +1 T3 each (6 total w/ L14) | - |
@@ -413,7 +415,7 @@ must not become precedent.
 
 ### Already conforms
 
-- `GameState.gain_exp()` grants 1 talent point per level into the level's tier pool.
+- `GameState.gain_exp()` grants 1 talent point per level-up transition into that level's tier pool.
 - `GameState.bonus_action_used` - the action-economy half of §1.1 is already solved.
 - Subclass grants exactly one free ability (Frenzy / Limit Break / Animal Form / Zealot Strike) and
   its Tier 2 talents only upgrade it - §2.3 and §3.3 working correctly. **Reference shape.**
@@ -422,31 +424,24 @@ must not become precedent.
 - `TIER_LEVEL_RANGES` already has 4 tier keys, so the boon pool needs no new structure (§4.2).
 - `HalfCasterSlotPool` / `PactSlotPool` already cap at 5th-level spells (§6.1).
 
-### fix - tier level ranges do not match the 3-tier shape
+### done (2026-09-10) - tier ranges, gates, level cap, prepared count
 
-`TalentTiers.TIER_LEVEL_RANGES` is `{1:[1,6], 2:[7,12], 3:[13,17], 4:[18,20]}`, yielding **5/6/5/3**
-points (count level-up transitions inside each range, not the range length).
+- **Tier ranges**: `TalentTiers.TIER_LEVEL_RANGES` is now `{1:[1,7], 2:[8,13], 3:[14,19], 4:[20,20]}`
+  -> **6/6/6/1**. `GameState.gain_exp()` also now grants one point per crossed level (a multi-level
+  XP grant used to award only one).
+- **Gates are level-only, no boss kill** (owner decision): T2 opens at level 8
+  (`GameState._check_tier2_level_gate()` -> Barbarian subclass pick, or a direct unlock for other
+  classes), T3 at 14, T4 at 20. The boss-kill gate (`_on_boss_defeated`/`TIER2_GATING_BOSS_ID`) and
+  the `tier3_selected_class` multiclass stub were removed. `unlock_tier2()` only builds subclass trees
+  for Barbarian (it used to graft Berserker talents onto any class reaching the gate).
+- **Level cap**: `Stats.MAX_LEVEL = 20`, a soft cap - `Stats.gain_exp()` stops leveling, XP still
+  accumulates.
+- **Prepared count**: `SpellcasterState.prepared_max()` reads `Stats.CLASS_ROLE` - full casters
+  (Wizard, Warlock) `min(level, 5)`, half-casters (Ranger) the 2024 formula clamped to 1..3.
 
-Change to `{1:[1,7], 2:[8,13], 3:[14,19], 4:[20,20]}` -> **6/6/6/1**, per §4. Tier 4 becomes the Epic
-Boon pool.
-
-### fix - Tier 3 is unreachable, Tier 4 gate is wrong
-
-`TalentTiers.tier_unlocked(3)` requires `tier3_selected_class != -1`, a multiclass stub that does not
-exist anywhere - Tier 3 talents would be unreachable even once authored. Change to the floor-10 boss
-kill (consistent with T2's own gate, and what §4.1's boss mapping assumes) or a plain `>= 14` level
-check. `tier_unlocked(4)` should become `character_level >= 20`.
-
-### fix - level cap is not enforced
-
-`Stats.gain_exp()`'s `while experience >= exp_for_level(character_level)` loop has no upper bound, so
-a character can reach level 21+, where `tier_for_level()` returns 0 and `gain_exp()`'s
-`if point_tier > 0` guard **silently discards the talent point**. Clamp at 20.
-
-### fix - Wizard prepared count
-
-`SpellcasterState.prepared_max()` returns `character_level` (20 at cap). Change to 5 for full
-casters, clamp Ranger's formula at 3. See §6.2. Highest-value single change in this list.
+Still open from this list: slot table rows 11-20, the live-cantrip cap, Wild Heart, the three
+over-budget races (deferred by the owner - one working Barbarian prototype first), and all T1/T2 4th
+talents, T3 content and the Epic Boon list.
 
 ### fix - full-caster slot table
 
@@ -519,7 +514,7 @@ additional one widens the surface steps 1-5 must be applied to.
 ## 11. Checklist for a new class / subclass / race
 
 - [ ] Exactly 1 active ability from the class baseline at level 1
-- [ ] Exactly 1 active ability from the subclass, granted at selection, boss-gated
+- [ ] Exactly 1 active ability from the subclass, granted at selection (level 8)
 - [ ] At most 1 active ability from the race
 - [ ] 0 talents that grant an active ability, and 0 boons that do
 - [ ] Total live options within the role's §2.2 row (martial 3 / half-caster 6 / full caster 8)
